@@ -168,7 +168,9 @@ def _require_apply_request(request: _ImportRequest) -> _ApplyRequest:
     if request.processor is None:
         raise CommandError("No EndoscopyProcessor is configured for video ingestion.")
     if request.watched_path.exists():
-        raise CommandError(f"Watcher drop target already exists: {request.watched_path}")
+        raise CommandError(
+            f"Watcher drop target already exists: {request.watched_path}"
+        )
     if request.source_path.resolve() == request.watched_path.resolve(strict=False):
         raise CommandError(
             "source_path resolves to the watcher target; choose a different "

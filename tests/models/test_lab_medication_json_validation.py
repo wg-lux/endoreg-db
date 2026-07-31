@@ -5,7 +5,14 @@ from pathlib import Path
 import pytest
 from django.core.exceptions import ValidationError
 
-from endoreg_db.models import LabValue, Medication, Patient, PatientLabValue, PatientMedication, Unit
+from endoreg_db.models import (
+    LabValue,
+    Medication,
+    Patient,
+    PatientLabValue,
+    PatientMedication,
+    Unit,
+)
 
 
 def _patient() -> Patient:
@@ -73,7 +80,9 @@ def test_patient_lab_value_normal_range_round_trips_canonically() -> None:
     "payload",
     [[], None, {"min": "0"}, {"other": {"min": 0.0, "extra": 1.0}}],
 )
-def test_patient_lab_value_normal_range_rejects_invalid_payloads(payload: object) -> None:
+def test_patient_lab_value_normal_range_rejects_invalid_payloads(
+    payload: object,
+) -> None:
     model = PatientLabValue(normal_range=payload)
 
     with pytest.raises(ValidationError) as exc_info:

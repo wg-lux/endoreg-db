@@ -33,28 +33,34 @@ def test_categorical_distribution_rejects_invalid_payloads(payload: object) -> N
 
 
 def test_clear_tombstone_canonicalizes_iso_timestamp() -> None:
-    assert normalize_direct_identifier_tombstone(
-        {
-            "schema_version": "1.0",
-            "policy": "clear_direct_identifiers",
-            "cleared_at": "2026-07-31T10:20:30+00:00",
-            "cleared_fields_count": 2,
-            "cleared_examiners": False,
-            "pseudonym_hashes_retained": True,
-        }
-    )["cleared_at"] == "2026-07-31T10:20:30+00:00"
+    assert (
+        normalize_direct_identifier_tombstone(
+            {
+                "schema_version": "1.0",
+                "policy": "clear_direct_identifiers",
+                "cleared_at": "2026-07-31T10:20:30+00:00",
+                "cleared_fields_count": 2,
+                "cleared_examiners": False,
+                "pseudonym_hashes_retained": True,
+            }
+        )["cleared_at"]
+        == "2026-07-31T10:20:30+00:00"
+    )
 
 
 def test_retained_tombstone_is_strict_and_empty_is_allowed() -> None:
     assert normalize_direct_identifier_tombstone({}) == {}
-    assert normalize_direct_identifier_tombstone(
-        {
-            "schema_version": "1.0",
-            "policy": "retain_for_governance",
-            "status": "retained_by_policy",
-            "direct_values_retained": True,
-        }
-    )["direct_values_retained"] is True
+    assert (
+        normalize_direct_identifier_tombstone(
+            {
+                "schema_version": "1.0",
+                "policy": "retain_for_governance",
+                "status": "retained_by_policy",
+                "direct_values_retained": True,
+            }
+        )["direct_values_retained"]
+        is True
+    )
 
 
 @pytest.mark.parametrize(

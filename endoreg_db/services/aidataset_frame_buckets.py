@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
-from typing import TYPE_CHECKING, Callable, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from lx_dtypes.models.contracts.aidataset_frame_buckets import (
     AIDataSetFrameBucketCount,
@@ -259,7 +259,7 @@ def _build_segment_frame_buckets(
     prediction_segments_only: bool,
 ) -> dict[int, set[int]]:
     from endoreg_db.models.media.frame.frame import Frame
-    import endoreg_db.models.state.frame_annotation as frame_annotation_state
+    from endoreg_db.services.frame_annotation_workflow import is_prediction_segment
 
     buckets: dict[int, set[int]] = defaultdict(set)
     segments = (
@@ -273,13 +273,8 @@ def _build_segment_frame_buckets(
         .order_by("video_file_id", "start_frame_number", "end_frame_number")
     )
     segments_by_video_id: dict[int, list["LabelVideoSegment"]] = defaultdict(list)
-    is_prediction_segment_typed: Callable[["LabelVideoSegment"], bool] = cast(
-        Callable[["LabelVideoSegment"], bool],
-        getattr(frame_annotation_state, "is_prediction_segment"),
-    )
-
     for segment in segments.iterator():
-        if prediction_segments_only and not is_prediction_segment_typed(segment):
+        if prediction_segments_only and not is_prediction_segment(segment):
             continue
         label_id = _model_optional_int(segment, "label_id")
         if not _label_allowed_by_set(label_id, label_set):

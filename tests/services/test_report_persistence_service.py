@@ -38,34 +38,3 @@ def test_save_report_submission_final_purges_patient_examination_draft() -> None
     patient_examination.refresh_from_db()
     assert patient_examination.report_draft == {}
     assert patient_examination.draft_updated_at is None
-
-
-@pytest.mark.django_db
-@pytest.mark.xfail(
-    reason="Needs minimal clinical fixtures + migration in test db for PatientExaminationReport"
-)
-def test_save_report_submission_template_validation_warning_scaffold():
-    """
-    Scaffold for report persistence service.
-
-    Target assertions:
-    - persists report + normalized data first
-    - template/runtime validation warnings remain advisory
-    - final save remains non-blocking for clinician workflow
-    """
-    raise NotImplementedError
-
-
-@pytest.mark.django_db
-@pytest.mark.xfail(
-    reason="Needs deterministic fixture setup for versioned report objects"
-)
-def test_save_report_submission_expected_version_conflict_scaffold():
-    """
-    Scaffold for optimistic locking behavior.
-
-    Target assertions:
-    - stale expected_version raises ValidationError
-    - no partial DB mutations remain after exception
-    """
-    raise NotImplementedError

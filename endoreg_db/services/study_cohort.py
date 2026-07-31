@@ -308,9 +308,7 @@ def _apply_filters(
                 frame__video__state__processed_file_sha256__gt="",
             )
             .exclude(frame__video__processed_file="")
-            .filter(
-                Q(frame__video__examination_id=OuterRef("pk"))
-            )
+            .filter(Q(frame__video__examination_id=OuterRef("pk")))
         )
         queryset = queryset.annotate(
             cohort_annotation_label=Exists(matching_annotation)
@@ -659,9 +657,7 @@ def _query_scope_options(
             frame__video__state__processed_file_sha256__gt="",
         )
         .exclude(frame__video__processed_file="")
-        .filter(
-            Q(frame__video__examination_id__in=scope_case_ids)
-        )
+        .filter(Q(frame__video__examination_id__in=scope_case_ids))
         .order_by("label__name")
         .values_list("label__name", flat=True)
         .distinct()

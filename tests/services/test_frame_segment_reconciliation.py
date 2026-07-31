@@ -13,7 +13,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_segment_identity import (
     SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX,
     segment_derived_external_annotation_id,
 )

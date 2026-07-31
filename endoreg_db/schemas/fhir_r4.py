@@ -240,9 +240,7 @@ class FhirBundle(FhirR4Model):
         }
         if len(resources) != len(self.entry):
             raise ValueError("Bundle resource identities must be unique")
-        resources_by_reference = {
-            item.full_url: item.resource for item in self.entry
-        }
+        resources_by_reference = {item.full_url: item.resource for item in self.entry}
 
         def require_reference(reference: FhirReference, expected_type: str) -> None:
             target = resources_by_reference.get(reference.reference)

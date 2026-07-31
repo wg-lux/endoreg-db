@@ -95,9 +95,12 @@ class ReportLlmStatusScopeTests(TestCase):
         self._login_center_user(self.center_a)
 
         for body_id in ("report_id", "pdf_id"):
-            with self.subTest(body_id=body_id), patch(
-                "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
-            ) as dispatch:
+            with (
+                self.subTest(body_id=body_id),
+                patch(
+                    "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+                ) as dispatch,
+            ):
                 response = self.client.post(
                     f"/api/media/pdfs/{self.report.pk}/reimport/",
                     data={body_id: self.report.pk},
@@ -111,9 +114,12 @@ class ReportLlmStatusScopeTests(TestCase):
         self._login_center_user(self.center_a)
 
         for retry in ("true", "false", 1, 0):
-            with self.subTest(retry=retry), patch(
-                "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
-            ) as dispatch:
+            with (
+                self.subTest(retry=retry),
+                patch(
+                    "endoreg_db.views.report.reimport.dispatch_report_llm_reimport"
+                ) as dispatch,
+            ):
                 response = self.client.post(
                     f"/api/media/pdfs/{self.report.pk}/reimport/",
                     data={"retry": retry},

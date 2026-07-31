@@ -136,6 +136,7 @@ def resolve_segment_annotation_status(video: VideoFile) -> str:
 def segment_annotations_are_final(video: VideoFile) -> bool:
     return resolve_segment_annotation_status(video) in SEGMENT_ANNOTATION_FINAL_STATUSES
 
+
 __all__ = [
     "blackening_history_config",
     "is_outside_frame_blackening_history",

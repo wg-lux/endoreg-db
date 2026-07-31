@@ -30,6 +30,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -246,6 +247,22 @@ def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
 
 
 def _reset_reimport_state(video: VideoFile) -> int:
+    if _video_has_integrity_loss(video):
+        raise RuntimeError(
+            "Video is marked lost by media integrity and cannot be re-imported."
+        )
+
+    get_state = getattr(video, "get_or_create_state", None)
+    if callable(get_state):
+        state = cast(VideoState, get_state())
+        locked_state = VideoState.objects.select_for_update().get(pk=state.pk)
+        # A processing failure is retryable when the durable integrity marker is
+        # absent. Revoke every derived release flag before the new attempt; the
+        # prior processing history, audit ledger, and quality metrics remain rows.
+        locked_state.processing_error = False
+        locked_state.mark_processing_not_started()
+        video.state = locked_state
+
     old_meta_id = video.sensitive_meta_id
     if old_meta_id is not None:
         logger.info(
@@ -308,18 +325,11 @@ def _mark_upload_jobs_lost(video: VideoFile, error_detail: str) -> int:
 
 
 def _video_has_integrity_loss(video: VideoFile) -> bool:
-    get_state = getattr(video, "get_or_create_state", None)
-    video_state: object | None = (
-        get_state() if callable(get_state) else getattr(video, "state", None)
-    )
     video_meta: object | None = getattr(video, "meta", None)
     if not isinstance(video_meta, dict):
         video_meta = {}
     video_meta_dict = cast(dict[str, object], video_meta)
-    return bool(
-        getattr(video_state, "processing_error", False)
-        or video_meta_dict.get("integrity_status") == "lost"
-    )
+    return video_meta_dict.get("integrity_status") == "lost"
 
 
 def _dispatch_prediction_refresh(

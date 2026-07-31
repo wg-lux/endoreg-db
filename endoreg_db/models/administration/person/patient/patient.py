@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import random
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
@@ -65,6 +66,77 @@ class _PatientMedicationLinkSource(Protocol):
     medication: "Medication | NoPatientValue"
     medication_indication: "MedicationIndication | NoPatientValue"
     intake_times: models.Manager["MedicationIntakeTime"]
+
+
+@dataclass(frozen=True, slots=True)
+class _PseudoPatientProfile:
+    first_name: str
+    last_name: str
+    dob: date
+    gender: "Gender"
+
+
+@dataclass(frozen=True, slots=True)
+class _PseudoPatientCreationInput:
+    center: "Center"
+    gender: "Gender"
+    birth_month: int
+    birth_year: int
+
+
+def _resolve_pseudo_patient_gender(gender: "Gender | str") -> "Gender":
+    from ....other import Gender
+
+    if not isinstance(gender, str):
+        return gender
+
+    gender_manager = cast(_PatientGenderManager, Gender.objects)
+    gender_obj = gender_manager.resolve_by_name(gender)
+    if gender_obj is None:
+        raise ValueError(f"Gender '{gender}' not found in database.")
+    return gender_obj
+
+
+def _validate_pseudo_patient_creation_input(
+    *,
+    center: "Center | NoPatientValue",
+    gender: PatientGenderInput,
+    birth_month: int | NoPatientValue,
+    birth_year: int | NoPatientValue,
+) -> _PseudoPatientCreationInput:
+    assert center, "Center must be provided to create a new pseudo patient"
+    assert gender, "Gender must be provided to create a new pseudo patient"
+    assert birth_month, "Birth month must be provided to create a new pseudo patient"
+    assert birth_year, "Birth year must be provided to create a new pseudo patient"
+
+    gender_obj = _resolve_pseudo_patient_gender(gender)
+    if not 1 <= birth_month <= 12:
+        raise ValueError("Birth month must be between 1 and 12.")
+    return _PseudoPatientCreationInput(
+        center=center,
+        gender=gender_obj,
+        birth_month=birth_month,
+        birth_year=birth_year,
+    )
+
+
+def _build_pseudo_patient_profile(
+    creation_input: _PseudoPatientCreationInput,
+) -> _PseudoPatientProfile:
+    from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
+
+    pseudo_dob = random_day_by_month_year(
+        month=creation_input.birth_month,
+        year=creation_input.birth_year,
+    )
+    gender_name = cast(_PatientGenderSource, creation_input.gender).name
+    first_name, last_name = create_mock_patient_name(gender_name)
+    return _PseudoPatientProfile(
+        first_name=first_name,
+        last_name=last_name,
+        dob=pseudo_dob,
+        gender=creation_input.gender,
+    )
 
 
 class Patient(Person):
@@ -140,61 +212,35 @@ class Patient(Person):
         birth_month: int | NoPatientValue = None,
         birth_year: int | NoPatientValue = None,
     ) -> tuple["Patient", bool]:
-        from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
-
-        from ....other import Gender  # Import Gender model
-
-        created: bool = False
-
         existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
         if existing_patient:
             logger.info(f"Patient with hash {patient_hash} already exists")
             logger.info(f"Returning existing patient: {existing_patient}")
-            return existing_patient, created
+            return existing_patient, False
 
-        # If no patient with the given hash exists, create a new pseudo patient
-        assert center, "Center must be provided to create a new pseudo patient"
-        assert gender, "Gender must be provided to create a new pseudo patient"
-        assert birth_month, (
-            "Birth month must be provided to create a new pseudo patient"
+        creation_input = _validate_pseudo_patient_creation_input(
+            center=center,
+            gender=gender,
+            birth_month=birth_month,
+            birth_year=birth_year,
         )
-        assert birth_year, "Birth year must be provided to create a new pseudo patient"
-
-        # Ensure gender is a Gender model instance.
-        if isinstance(gender, str):
-            gender_manager = cast(_PatientGenderManager, Gender.objects)
-            gender_obj = gender_manager.resolve_by_name(gender)
-            if gender_obj is None:
-                raise ValueError(f"Gender '{gender}' not found in database.")
-        else:
-            gender_obj = gender
-
-        assert birth_month is not None
-        if not 1 <= birth_month <= 12:
-            raise ValueError("Birth month must be between 1 and 12.")
-        assert birth_year is not None
-        pseudo_dob = random_day_by_month_year(month=birth_month, year=birth_year)
-        gender_source = cast(_PatientGenderSource, gender_obj)
-        gender_name = gender_source.name
-        first_name, last_name = create_mock_patient_name(gender_name)
+        profile = _build_pseudo_patient_profile(creation_input)
 
         logger.info(f"Creating pseudo patient with hash {patient_hash}")
-        logger.info(f"Generated name: {first_name} {last_name}")
+        logger.info(f"Generated name: {profile.first_name} {profile.last_name}")
 
         patient = cls.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            dob=pseudo_dob,
-            gender=gender_obj,  # Use the fetched/validated Gender instance.
-            center=center,
+            first_name=profile.first_name,
+            last_name=profile.last_name,
+            dob=profile.dob,
+            gender=profile.gender,
+            center=creation_input.center,
             patient_hash=patient_hash,
             is_real_person=False,
         )
 
         cast(_PatientSaveSource, patient).save()
-        created = True
-
-        return patient, created
+        return patient, True
 
     def get_dob(self) -> PatientDateValue:
         return self.dob

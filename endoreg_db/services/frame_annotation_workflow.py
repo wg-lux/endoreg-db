@@ -52,6 +52,9 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.models.state.frame_annotation import (
     validated_annotators_for_video as _validated_annotators_for_video,
 )
+from endoreg_db.services.frame_annotation_segment_identity import (
+    is_prediction_segment,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -436,6 +439,7 @@ __all__ = [
     "FrameAnnotationTaskPayload",
     "ai_dataset_requires_raw_frames",
     "build_frame_task_queue",
+    "is_prediction_segment",
     "mark_frame_prediction_completed",
     "mark_frame_prediction_reset",
     "mark_prediction_segments_created",

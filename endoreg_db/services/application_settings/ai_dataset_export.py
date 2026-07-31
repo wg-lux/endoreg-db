@@ -94,9 +94,7 @@ def _selection_validation_errors(
             AIDataSet.DATASET_TYPE_IMAGE,
             AIDataSet.DATASET_TYPE_VIDEO,
         }:
-            errors["ai_dataset_type"] = (
-                "ai_dataset_type must be one of: image, video."
-            )
+            errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
     return errors
 
 

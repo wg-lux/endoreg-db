@@ -68,11 +68,6 @@ class TestDateParsingUtilities:
         result = parse_any_date("")
         assert result is None
 
-    def test_parse_none(self):
-        """Test parsing None returns None."""
-        result = parse_any_date("")
-        assert result is None
-
     def test_parse_whitespace_only(self):
         """Test parsing whitespace-only string."""
         result = parse_any_date("   ")

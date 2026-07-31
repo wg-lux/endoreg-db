@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import random
-from hashlib import sha256
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -23,6 +22,14 @@ from django.db.models import Q, QuerySet
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.state.frame_annotation_segment_identity import (
+    is_prediction_segment,
+    is_segment_derived_external_annotation_id,
+    manual_annotation_filter,
+    manual_frame_annotation_preference_filter,
+    prediction_annotation_filter,
+    segment_derived_external_annotation_id,
+)
 from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.media_urls import build_video_frame_stream_path
 from endoreg_db.utils.rust_backend import (
@@ -35,6 +42,7 @@ from lx_dtypes.models.contracts.frame_annotation import (
     FrameAnnotationLabelOptionPayload,
     FrameAnnotationTaskPayload,
 )
+
 if TYPE_CHECKING:
     from endoreg_db.models.aidataset.aidataset import AIDataSet
     from endoreg_db.models.label.annotation.image_classification import (
@@ -278,23 +286,7 @@ class SegmentAnnotationSnapshot(TypedDict):
 logger = logging.getLogger(__name__)
 
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
-SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX = "segment-derived:v1"
 PHI_REGION_DATASET_MODEL_TYPE = "phi_region_detector"
-
-PREDICTION_INFORMATION_SOURCE_NAMES = {
-    "prediction",
-    "default_prediction",
-    "prediction_annotation",
-}
-
-MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES = {
-    "annotation",
-    "default_annotation",
-    "frame_annotation_frontend",
-    "human_annotation",
-    "lx_anonymizer_evaluation",
-    "manual_annotation",
-}
 
 NoPredictionMetaIdValue: TypeAlias = NoneType
 NoFrameAnnotationSourceValue: TypeAlias = NoneType
@@ -558,91 +550,6 @@ def _label_allowed_by_set(label_id: int | None, label_set: LabelSet | None) -> b
     if label_set is None:
         return True
     return label_set.labels.filter(pk=label_id).exists()
-
-
-def is_prediction_segment(segment: object) -> bool:
-    source = cast(FrameAnnotationSourceName | None, getattr(segment, "source", None))
-    source_name = (source.name if source else "").strip().lower()
-    prediction_meta_id = getattr(segment, "prediction_meta_id", None)
-    return (
-        prediction_meta_id is not None
-        or source_name in PREDICTION_INFORMATION_SOURCE_NAMES
-        or source_name.startswith("prediction")
-        or source_name.startswith("model")
-    )
-
-
-def segment_derived_external_annotation_id(
-    *,
-    segment_id: int | None,
-    frame_id: int | None,
-    label_id: int | None,
-    information_source_id: int | None,
-    model_meta_id: int | None,
-    annotator: str | None = None,
-) -> str:
-    normalized_parts = [
-        str(segment_id or ""),
-        str(frame_id or ""),
-        str(label_id or ""),
-        str(information_source_id or ""),
-        str(model_meta_id or ""),
-        str(annotator or ""),
-    ]
-    digest = sha256("|".join(normalized_parts).encode("utf-8")).hexdigest()[:24]
-    return (
-        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-        f"{segment_id or 'none'}:{frame_id or 'none'}:{digest}"
-    )
-
-
-def segment_derived_external_annotation_prefix_for_segment(
-    segment_id: int,
-) -> str:
-    return f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:{segment_id}:"
-
-
-def is_segment_derived_external_annotation_id(value: object) -> bool:
-    return isinstance(value, str) and value.startswith(
-        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-    )
-
-
-def non_segment_derived_annotation_filter() -> Q:
-    return (
-        Q(external_annotation_id__isnull=True)
-        | Q(external_annotation_id__exact="")
-        | ~Q(
-            external_annotation_id__startswith=(
-                f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-            )
-        )
-    )
-
-
-def prediction_annotation_filter() -> Q:
-    return (
-        Q(information_source__information_source_types__name="prediction")
-        | Q(information_source__name__in=PREDICTION_INFORMATION_SOURCE_NAMES)
-        | Q(model_meta_id__isnull=False)
-    )
-
-
-def manual_annotation_filter(
-    information_source_name: str | None = None,
-) -> Q:
-    if information_source_name:
-        return Q(information_source__name=information_source_name)
-    return Q(
-        information_source__information_source_types__name__in=[
-            "annotation",
-            "manual_annotation",
-        ]
-    ) | Q(information_source__name__in=MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES)
-
-
-def manual_frame_annotation_preference_filter() -> Q:
-    return manual_annotation_filter() & non_segment_derived_annotation_filter()
 
 
 def _build_frame_task_queryset(

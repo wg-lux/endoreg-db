@@ -1430,9 +1430,7 @@ class ApplicationSettingsEndpointTests(TestCase):
             content_type="application/json",
         )
         assert unknown_response.status_code == 400, unknown_response.content
-        assert unknown_response.json()["errors"] == {
-            "displayName": "Unknown field."
-        }
+        assert unknown_response.json()["errors"] == {"displayName": "Unknown field."}
 
         conflict_response = self.client.post(
             "/api/settings/application/network_nodes/",

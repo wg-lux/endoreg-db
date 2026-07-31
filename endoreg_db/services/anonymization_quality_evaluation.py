@@ -790,12 +790,14 @@ def _mark_sensitive_meta_policy(
 ) -> None:
     SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
         direct_identifier_policy=policy.value,
-        direct_identifier_tombstone=normalize_direct_identifier_tombstone({
-            "schema_version": "1.0",
-            "policy": policy.value,
-            "status": status,
-            "direct_values_retained": True,
-        }),
+        direct_identifier_tombstone=normalize_direct_identifier_tombstone(
+            {
+                "schema_version": "1.0",
+                "policy": policy.value,
+                "status": status,
+                "direct_values_retained": True,
+            }
+        ),
     )
 
 
@@ -826,19 +828,23 @@ def _clear_sensitive_meta_direct_identifiers(
         {
             "direct_identifiers_cleared_at": cleared_at,
             "direct_identifier_policy": policy.value,
-            "direct_identifier_tombstone": normalize_direct_identifier_tombstone({
-                "schema_version": "1.0",
-                "policy": policy.value,
-                "cleared_at": cleared_at.isoformat(),
-                "cleared_fields_count": len(cleared_fields),
-                "cleared_examiners": cleared_examiners,
-                "pseudonym_hashes_retained": bool(
-                    cast(_SensitiveMetaIdentifierRecord, sensitive_meta).patient_hash
-                    or cast(
-                        _SensitiveMetaIdentifierRecord, sensitive_meta
-                    ).examination_hash
-                ),
-            }),
+            "direct_identifier_tombstone": normalize_direct_identifier_tombstone(
+                {
+                    "schema_version": "1.0",
+                    "policy": policy.value,
+                    "cleared_at": cleared_at.isoformat(),
+                    "cleared_fields_count": len(cleared_fields),
+                    "cleared_examiners": cleared_examiners,
+                    "pseudonym_hashes_retained": bool(
+                        cast(
+                            _SensitiveMetaIdentifierRecord, sensitive_meta
+                        ).patient_hash
+                        or cast(
+                            _SensitiveMetaIdentifierRecord, sensitive_meta
+                        ).examination_hash
+                    ),
+                }
+            ),
         }
     )
     if updates:

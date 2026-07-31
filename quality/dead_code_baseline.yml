@@ -220,7 +220,7 @@ deletion_candidates:
     evidence:
       - extract_single_frame has no repository caller.
       - The only production caller of extract_selected_frames is the dead NICE/PARIS serializer.
-      - tests/utils/test_extract_specific_frames.py tests the isolated helper but does not establish a production consumer.
+      - The former isolated helper tests were retired; no test or production consumer now exercises this path.
     reason: Exclusive helper for the unmounted classification experiment.
     recommended_action: remove
     risk: medium

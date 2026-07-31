@@ -2919,7 +2919,6 @@ def _prepare_preanonymized_watcher_context(
     center: Center | None,
     source_system: str,
 ) -> _PreanonymizedWatcherContext:
-    strict_local = local_study_server_mode_enabled()
     sidecar_path = next(
         (
             candidate
@@ -2937,20 +2936,19 @@ def _prepare_preanonymized_watcher_context(
     except WatcherFileNotReadyError:
         raise
     except Exception as exc:
-        if strict_local:
-            _quarantine_preanonymized_drop(
-                media_path=watched_path,
-                sidecar_path=sidecar_path,
-            )
-            emit_hub_audit_event(
-                "hub.preanonymized_drop_rejected",
-                source_system=source_system,
-                request_user=None,
-                hub_mode=hub_mode_enabled(),
-                watched_path=str(watched_path),
-                sidecar_path=str(sidecar_path),
-                reason=str(exc),
-            )
+        _quarantine_preanonymized_drop(
+            media_path=watched_path,
+            sidecar_path=sidecar_path,
+        )
+        emit_hub_audit_event(
+            "hub.preanonymized_drop_rejected",
+            source_system=source_system,
+            request_user=None,
+            hub_mode=hub_mode_enabled(),
+            watched_path=str(watched_path),
+            sidecar_path=str(sidecar_path),
+            reason=str(exc),
+        )
         raise
 
 

@@ -28,6 +28,8 @@ from endoreg_db.models.state.frame_annotation import (
     mark_prediction_segments_created,
     resolve_frame_annotation_status,
     resolve_ai_dataset_for_queue,
+)
+from endoreg_db.models.state.frame_annotation_segment_identity import (
     segment_derived_external_annotation_id,
 )
 

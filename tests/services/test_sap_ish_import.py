@@ -11,6 +11,7 @@ from endoreg_db.services.sap_ish_import import (
     convert_sap_ish_txt_directory_to_preanonymized_drop,
     convert_sap_ish_zip_to_preanonymized_drop,
 )
+from endoreg_db.services.tabular_import_formats import build_preanonymized_payload
 from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
 
 
@@ -25,6 +26,22 @@ def _build_zip_from_directory(source_dir: Path, archive_path: Path) -> None:
         for file_path in sorted(source_dir.rglob("*")):
             if file_path.is_file():
                 archive.write(file_path, arcname=file_path.relative_to(source_dir))
+
+
+def test_build_preanonymized_payload_omits_external_id_pair_without_patient() -> None:
+    payload = build_preanonymized_payload(
+        {
+            "document_type": "labor",
+            "canonical_row": {"fall_nr": "3000"},
+            "raw_columns": {"FallNr": "3000"},
+        },
+        source_system="sap_ish_test",
+    )
+
+    assert "external_id" not in payload
+    assert "external_id_origin" not in payload
+    assert payload["source_system"] == "sap_ish_test"
+    assert payload["casenumber"] == "3000"
 
 
 def test_convert_sap_ish_zip_prefers_text_bearing_case_rows() -> None:

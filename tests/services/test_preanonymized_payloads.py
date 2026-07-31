@@ -68,6 +68,39 @@ def test_preanonymized_payload_json_dump_serializes_date_and_time_values() -> No
     }
 
 
+def test_preanonymized_payload_accepts_canonical_identity_hashes() -> None:
+    payload = PreanonymizedIngestPayload.model_validate(
+        {
+            "patient_hash": "a" * 64,
+            "examination_hash": "0123456789abcdef" * 4,
+        }
+    )
+
+    assert payload.patient_hash == "a" * 64
+    assert payload.examination_hash == "0123456789abcdef" * 4
+
+
+@pytest.mark.parametrize(
+    "invalid_payload",
+    [
+        {"unexpected_field": "value"},
+        {"external_id": "ext-42"},
+        {"external_id_origin": "hospital"},
+        {"external_id": " ", "external_id_origin": "hospital"},
+        {"patient_hash": "a" * 63},
+        {"patient_hash": "A" * 64},
+        {"patient_hash": f" {'a' * 64}"},
+        {"patient_hash": 1},
+        {"examination_hash": "g" * 64},
+    ],
+)
+def test_preanonymized_payload_rejects_noncanonical_input(
+    invalid_payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        PreanonymizedIngestPayload.model_validate(invalid_payload)
+
+
 @pytest.mark.parametrize(
     "invalid_update",
     [
@@ -103,6 +136,4 @@ def test_local_study_server_payload_roundtrips_canonical_json() -> None:
         "validated_at": "2026-05-06T12:00:00+02:00",
     }
     assert restored == payload
-    assert restored.validated_at == datetime.fromisoformat(
-        "2026-05-06T12:00:00+02:00"
-    )
+    assert restored.validated_at == datetime.fromisoformat("2026-05-06T12:00:00+02:00")

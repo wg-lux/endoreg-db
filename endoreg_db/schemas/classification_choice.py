@@ -39,8 +39,7 @@ class ClassificationSubcategoryDefinition(BaseModel):
         if self.default is not None and self.default not in self.choices:
             raise ValueError("default must be one of choices")
         if self.probability is not None and any(
-            probability < 0.0 or probability > 1.0
-            for probability in self.probability
+            probability < 0.0 or probability > 1.0 for probability in self.probability
         ):
             raise ValueError("probability values must be between 0 and 1")
         return self
@@ -114,9 +113,7 @@ def validate_classification_choice_json(
     # Finding choices use the runtime shape (``value``), while the other
     # classification choices use definition metadata (``default``).
     mapping = cast(dict[object, object], value)
-    if any(
-        isinstance(item, dict) and "value" in item for item in mapping.values()
-    ):
+    if any(isinstance(item, dict) and "value" in item for item in mapping.values()):
         runtime_contract = (
             PatientFindingClassificationSubcategoriesPayload
             if field_name == "subcategories"
@@ -131,15 +128,12 @@ def validate_classification_choice_json(
             ) from exc
         return runtime_payload.model_dump(mode="json")
 
-    adapter = (
-        _Subcategories if field_name == "subcategories" else _NumericalDescriptors
-    )
+    adapter = _Subcategories if field_name == "subcategories" else _NumericalDescriptors
     try:
         validated = adapter.validate_python(value)
     except ValidationError as exc:
         raise ClassificationChoiceJSONValidationError(
-            field_name,
-            f"{field_name} does not match the shared contract: {exc}"
+            field_name, f"{field_name} does not match the shared contract: {exc}"
         ) from exc
 
     return {

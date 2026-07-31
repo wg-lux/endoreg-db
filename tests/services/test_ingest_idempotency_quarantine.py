@@ -483,7 +483,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         video_path = self._create_temp_file(filename, self.video_content)
         sidecar_path = self._create_temp_file(
             sidecar_filename,
-            b'{"patient_hash": "test"}',
+            b'{"patient_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
         )
 
         with (
@@ -532,7 +532,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertFalse(sidecar_path.exists())
         self.assertEqual(
             quarantined_sidecar_path.read_bytes(),
-            b'{"patient_hash": "test"}',
+            b'{"patient_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
         )
         self.assertIn("quarantined_sidecar_path", upload_job.processing_provenance)
         self.assertEqual(

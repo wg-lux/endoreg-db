@@ -76,7 +76,9 @@ class CategoricalDistributionPayload(BaseModel):
 
     @model_validator(mode="after")
     def _validate_probabilities(self) -> "CategoricalDistributionPayload":
-        if any(not math.isfinite(probability) for probability in self.categories.values()):
+        if any(
+            not math.isfinite(probability) for probability in self.categories.values()
+        ):
             raise ValueError("category probabilities must be finite")
         if any(probability < 0 for probability in self.categories.values()):
             raise ValueError("category probabilities must be non-negative")

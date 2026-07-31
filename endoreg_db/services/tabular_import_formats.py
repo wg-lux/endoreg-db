@@ -361,10 +361,11 @@ def build_preanonymized_payload(
         None,
     )
 
+    external_id = canonical_row.get("patient_nr") or canonical_row.get(
+        "source_patient_id"
+    )
     payload: dict[str, Any] = {
-        "external_id": canonical_row.get("patient_nr")
-        or canonical_row.get("source_patient_id"),
-        "external_id_origin": source_system,
+        "external_id": external_id,
         "casenumber": canonical_row.get("fall_nr"),
         "anonymized_text": anonymized_text,
         "patient_gender": normalize_patient_gender(canonical_row.get("geschlecht")),
@@ -376,6 +377,8 @@ def build_preanonymized_payload(
         "original_document_version": canonical_row.get("dokumentversion"),
         "raw_columns": normalized_document.get("raw_columns") or {},
     }
+    if external_id:
+        payload["external_id_origin"] = source_system
     if center_name:
         payload["center_name"] = center_name
     if center_key:

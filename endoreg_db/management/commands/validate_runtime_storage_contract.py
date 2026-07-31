@@ -134,10 +134,8 @@ class Command(BaseCommand):
         options: dict[str, object],
     ) -> ValidateRuntimeStorageContractCommandOptionsPayload:
         try:
-            return (
-                ValidateRuntimeStorageContractCommandOptionsPayload.model_validate(
-                    options
-                )
+            return ValidateRuntimeStorageContractCommandOptionsPayload.model_validate(
+                options
             )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc

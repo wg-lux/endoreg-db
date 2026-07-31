@@ -42,9 +42,7 @@ BANNED_MODEL_IMPLEMENTATION_IMPORT_PREFIXES = (
     "endoreg_db.models.media.video.video_file_streaming",
     "endoreg_db.models.media.video.video_file_time",
 )
-MODEL_BARREL_CLEAN_ROOTS = (
-    MODELS_ROOT / "label" / "label_video_segment",
-)
+MODEL_BARREL_CLEAN_ROOTS = (MODELS_ROOT / "label" / "label_video_segment",)
 MODEL_BARREL_CLEAN_FILES = (
     MODELS_ROOT / "metadata" / "video_prediction_logic.py",
     MODELS_ROOT / "metadata" / "video_prediction_meta.py",
@@ -58,13 +56,10 @@ MODEL_WORKFLOW_IMPORT_MODULES = (
 )
 ALLOWLISTED_RUNTIME_MODEL_WORKFLOW_IMPORTS: ImportMap = {}
 FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE = "endoreg_db.models.state.frame_annotation"
+FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE = (
+    "endoreg_db.models.state.frame_annotation_segment_identity"
+)
 ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS: ImportMap = {
-    (
-        "endoreg_db/services/aidataset_frame_buckets.py",
-        FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
-    ): frozenset(
-        {"endoreg_db.models.state.frame_annotation as frame_annotation_state"}
-    ),
     (
         "endoreg_db/services/frame_annotation_workflow.py",
         FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
@@ -104,33 +99,6 @@ ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS: ImportMap = {
         }
     ),
     (
-        "endoreg_db/services/frame_segment_reconciliation.py",
-        FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
-    ): frozenset(
-        {
-            "MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES",
-            "PREDICTION_INFORMATION_SOURCE_NAMES",
-            "SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX",
-            "is_prediction_segment",
-            "is_segment_derived_external_annotation_id",
-            "manual_annotation_filter",
-            "non_segment_derived_annotation_filter",
-            "prediction_annotation_filter",
-            "segment_derived_external_annotation_id",
-            "segment_derived_external_annotation_prefix_for_segment",
-        }
-    ),
-    (
-        "endoreg_db/services/segment_annotations.py",
-        FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
-    ): frozenset(
-        {
-            "is_prediction_segment",
-            "manual_frame_annotation_preference_filter",
-            "segment_derived_external_annotation_id",
-        }
-    ),
-    (
         "endoreg_db/services/segment_frame_annotations.py",
         FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE,
     ): frozenset(
@@ -139,6 +107,60 @@ ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS: ImportMap = {
             "SegmentAnnotationSnapshot",
             "delete_frame_annotations_for_segment as _delete_frame_annotations_for_segment",
             "sync_frame_annotations_for_segment as _sync_frame_annotations_for_segment",
+        }
+    ),
+}
+ALLOWLISTED_MODEL_FRAME_ANNOTATION_IMPORTS: ImportMap = {}
+ALLOWLISTED_FRAME_ANNOTATION_SEGMENT_IDENTITY_IMPORTS: ImportMap = {
+    (
+        "endoreg_db/models/label/label_video_segment/label_video_segment.py",
+        FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE,
+    ): frozenset(
+        {
+            "is_prediction_segment",
+            "manual_annotation_filter",
+            "manual_frame_annotation_preference_filter",
+            "prediction_annotation_filter",
+            "segment_derived_external_annotation_id",
+        }
+    ),
+    (
+        "endoreg_db/models/media/frame/frame.py",
+        FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE,
+    ): frozenset(
+        {
+            "manual_annotation_filter",
+            "prediction_annotation_filter",
+        }
+    ),
+    (
+        "endoreg_db/models/state/frame_annotation.py",
+        FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE,
+    ): frozenset(
+        {
+            "is_prediction_segment",
+            "is_segment_derived_external_annotation_id",
+            "manual_annotation_filter",
+            "manual_frame_annotation_preference_filter",
+            "prediction_annotation_filter",
+            "segment_derived_external_annotation_id",
+        }
+    ),
+    (
+        "endoreg_db/services/frame_annotation_segment_identity.py",
+        FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE,
+    ): frozenset(
+        {
+            "MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES",
+            "PREDICTION_INFORMATION_SOURCE_NAMES",
+            "SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX",
+            "is_prediction_segment",
+            "is_segment_derived_external_annotation_id",
+            "manual_annotation_filter",
+            "manual_frame_annotation_preference_filter",
+            "non_segment_derived_annotation_filter",
+            "prediction_annotation_filter",
+            "segment_derived_external_annotation_id",
         }
     ),
 }
@@ -503,6 +525,32 @@ def _service_frame_annotation_imports() -> ImportMap:
     )
 
 
+def _model_frame_annotation_imports() -> ImportMap:
+    return _model_workflow_imports(
+        (
+            path
+            for path in MODELS_ROOT.rglob("*.py")
+            if path != MODELS_ROOT / "state" / "frame_annotation.py"
+            and path.name != "__init__.py"
+            and "migrations" not in path.parts
+        ),
+        frozenset({FRAME_ANNOTATION_MODEL_WORKFLOW_MODULE}),
+    )
+
+
+def _frame_annotation_segment_identity_imports() -> ImportMap:
+    return _model_workflow_imports(
+        (
+            path
+            for path in PACKAGE_ROOT.rglob("*.py")
+            if path != MODELS_ROOT / "state" / "frame_annotation_segment_identity.py"
+            and path.name != "__init__.py"
+            and "migrations" not in path.parts
+        ),
+        frozenset({FRAME_ANNOTATION_SEGMENT_IDENTITY_MODULE}),
+    )
+
+
 def _model_barrel_imports(paths: Iterable[Path]) -> ImportMap:
     imports: defaultdict[ImportKey, set[str]] = defaultdict(set)
 
@@ -543,11 +591,7 @@ def _runtime_model_barrel_imports() -> ImportMap:
 
 def _clean_model_cohort_barrel_imports() -> ImportMap:
     return _model_barrel_imports(
-        (
-            path
-            for root in MODEL_BARREL_CLEAN_ROOTS
-            for path in root.rglob("*.py")
-        ),
+        (path for root in MODEL_BARREL_CLEAN_ROOTS for path in root.rglob("*.py")),
     ) | _model_barrel_imports(
         MODEL_BARREL_CLEAN_FILES,
     )
@@ -711,6 +755,19 @@ def test_frame_annotation_service_ingress_matches_reduction_baseline() -> None:
     assert (
         _service_frame_annotation_imports()
         == ALLOWLISTED_SERVICE_FRAME_ANNOTATION_IMPORTS
+    )
+
+
+def test_frame_annotation_model_consumers_match_reduction_baseline() -> None:
+    assert (
+        _model_frame_annotation_imports() == ALLOWLISTED_MODEL_FRAME_ANNOTATION_IMPORTS
+    )
+
+
+def test_frame_annotation_segment_identity_consumers_match_baseline() -> None:
+    assert (
+        _frame_annotation_segment_identity_imports()
+        == ALLOWLISTED_FRAME_ANNOTATION_SEGMENT_IDENTITY_IMPORTS
     )
 
 

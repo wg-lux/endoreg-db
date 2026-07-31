@@ -38,9 +38,9 @@ def test_ffmpeg_meta_canonicalizes_raw_probe_data_on_round_trip() -> None:
 
     meta.refresh_from_db()
 
-    expected = FfmpegProbeDataPayload.model_validate(
-        _valid_probe_data()
-    ).model_dump(mode="json")
+    expected = FfmpegProbeDataPayload.model_validate(_valid_probe_data()).model_dump(
+        mode="json"
+    )
     assert meta.raw_probe_data == expected
 
 

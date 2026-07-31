@@ -143,8 +143,7 @@ class PatientLabValue(models.Model):
     def __str__(self) -> str:
         formatted_datetime = self.timestamp.strftime("%Y-%m-%d %H:%M")
         norm_range_string = (
-            f"[{self.normal_range.get('min', '')}"
-            f" - {self.normal_range.get('max', '')}]"
+            f"[{self.normal_range.get('min', '')} - {self.normal_range.get('max', '')}]"
         )
         return (
             f"{self.lab_value} - {self.value} {self.unit} - "

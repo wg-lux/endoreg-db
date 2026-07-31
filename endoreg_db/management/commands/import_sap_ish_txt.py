@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType
 from typing import TypeAlias, TypedDict, Unpack
@@ -13,9 +14,13 @@ from endoreg_db.services.hub.ingest import (
     resolve_default_center,
 )
 from endoreg_db.services.sap_ish_import import (
+    SapIshImportResult,
     convert_sap_ish_txt_directory_to_preanonymized_drop,
 )
-from endoreg_db.services.sap_ish_clinical import persist_sap_ish_clinical_rows
+from endoreg_db.services.sap_ish_clinical import (
+    SapIshClinicalImportResult,
+    persist_sap_ish_clinical_rows,
+)
 from endoreg_db.utils.paths import (
     WATCHER_PREANONYMIZED_DROP_DIR,
     ensure_within_data_root,
@@ -31,6 +36,17 @@ class ImportSapIshTxtOptions(TypedDict):
     center_name: str
     center_key: str
     process: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _TxtImportRequest:
+    source_dir: Path
+    output_dir: Path
+    source_system: str
+    center_name: str | None
+    center_key: str | None
+    should_process: bool
+    center: Center | None
 
 
 def _resolve_processing_center(
@@ -53,6 +69,63 @@ def _resolve_processing_center(
     if center is None:
         raise CommandError("No default center is configured for immediate processing")
     return center
+
+
+def _resolve_source_dir(raw_source_dir: str) -> Path:
+    source_dir = Path(raw_source_dir).expanduser().resolve()
+    if not source_dir.exists():
+        raise CommandError(f"Source directory does not exist: {source_dir}")
+    if not source_dir.is_dir():
+        raise CommandError(f"Source path is not a directory: {source_dir}")
+    return source_dir
+
+
+def _resolve_import_request(options: ImportSapIshTxtOptions) -> _TxtImportRequest:
+    source_dir = _resolve_source_dir(options["source_dir"])
+    output_dir = ensure_within_data_root(
+        Path(options["output_dir"]).expanduser().resolve()
+    )
+    source_system = options["source_system"].strip() or "sap_ish"
+    center_name = options["center_name"].strip() or None
+    center_key = options["center_key"].strip() or None
+    should_process = options["process"]
+    center = _resolve_processing_center(
+        center_key=center_key,
+        center_name=center_name,
+        should_process=should_process,
+    )
+    return _TxtImportRequest(
+        source_dir=source_dir,
+        output_dir=output_dir,
+        source_system=source_system,
+        center_name=center_name or (center.name if center is not None else None),
+        center_key=center_key
+        or (str(center.center_key) if center is not None else None),
+        should_process=should_process,
+        center=center,
+    )
+
+
+def _process_generated_files(
+    *,
+    request: _TxtImportRequest,
+    result: SapIshImportResult,
+) -> SapIshClinicalImportResult | None:
+    if not request.should_process:
+        return None
+    if request.center is None:
+        raise CommandError("A center is required for immediate processing")
+    for generated_file in result.generated_files:
+        process_preanonymized_watcher_file(
+            file_path=generated_file.carrier_path,
+            center=request.center,
+            source_system=request.source_system,
+        )
+    return persist_sap_ish_clinical_rows(
+        rows=result.normalized_rows,
+        source_system=request.source_system,
+        center=request.center,
+    )
 
 
 class Command(BaseCommand):
@@ -107,38 +180,21 @@ class Command(BaseCommand):
         *args: str,
         **options: Unpack[ImportSapIshTxtOptions],
     ) -> None:
-        source_dir = Path(options["source_dir"]).expanduser().resolve()
-        if not source_dir.exists():
-            raise CommandError(f"Source directory does not exist: {source_dir}")
-        if not source_dir.is_dir():
-            raise CommandError(f"Source path is not a directory: {source_dir}")
-
-        output_dir = ensure_within_data_root(
-            Path(options["output_dir"]).expanduser().resolve()
-        )
-        source_system = options["source_system"].strip() or "sap_ish"
-        center_name = options["center_name"].strip() or None
-        center_key = options["center_key"].strip() or None
-        should_process = options["process"]
-        center = _resolve_processing_center(
-            center_key=center_key,
-            center_name=center_name,
-            should_process=should_process,
-        )
-        effective_center_name = center_name or (
-            center.name if center is not None else None
-        )
-        effective_center_key = center_key or (
-            str(center.center_key) if center is not None else None
-        )
-
+        del args
+        request = _resolve_import_request(options)
         result = convert_sap_ish_txt_directory_to_preanonymized_drop(
-            source_dir=source_dir,
-            output_dir=output_dir,
-            source_system=source_system,
-            center_name=effective_center_name,
-            center_key=effective_center_key,
+            source_dir=request.source_dir,
+            output_dir=request.output_dir,
+            source_system=request.source_system,
+            center_name=request.center_name,
+            center_key=request.center_key,
         )
+        self._write_import_summary(result)
+        clinical_result = _process_generated_files(request=request, result=result)
+        if clinical_result is not None:
+            self._write_clinical_summary(result, clinical_result)
+
+    def _write_import_summary(self, result: SapIshImportResult) -> None:
         self.stdout.write(
             self.style.SUCCESS(
                 "Generated "
@@ -154,21 +210,11 @@ class Command(BaseCommand):
                 )
             )
 
-        if not should_process:
-            return
-        if center is None:
-            raise CommandError("A center is required for immediate processing")
-        for generated_file in result.generated_files:
-            process_preanonymized_watcher_file(
-                file_path=generated_file.carrier_path,
-                center=center,
-                source_system=source_system,
-            )
-        clinical_result = persist_sap_ish_clinical_rows(
-            rows=result.normalized_rows,
-            source_system=source_system,
-            center=center,
-        )
+    def _write_clinical_summary(
+        self,
+        result: SapIshImportResult,
+        clinical_result: SapIshClinicalImportResult,
+    ) -> None:
         self.stdout.write(
             self.style.SUCCESS(
                 f"Persisted {len(result.generated_files)} generated file(s); "

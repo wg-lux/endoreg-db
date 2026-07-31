@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, Self
 
 from pydantic import (
     BaseModel,
@@ -10,11 +10,12 @@ from pydantic import (
     StrictBool,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 
 class PreanonymizedIngestPayload(BaseModel):
-    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     external_id: str | None = None
     external_id_origin: str | None = None
@@ -62,8 +63,6 @@ class PreanonymizedIngestPayload(BaseModel):
         "file_path",
         "endoscope_type",
         "endoscope_sn",
-        "patient_hash",
-        "examination_hash",
         "center_key",
         "center_name",
         "source_system",
@@ -82,6 +81,28 @@ class PreanonymizedIngestPayload(BaseModel):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @field_validator("patient_hash", "examination_hash", mode="before")
+    @classmethod
+    def _validate_identity_sha256(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("identity hash must be a string")
+        if len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value):
+            raise ValueError(
+                "identity hash must be a canonical 64-character lowercase "
+                "SHA-256 hex digest"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_external_id_pair(self) -> Self:
+        if (self.external_id is None) != (self.external_id_origin is None):
+            raise ValueError(
+                "external_id and external_id_origin must be provided together"
+            )
+        return self
 
     @field_validator("file_sha256")
     @classmethod

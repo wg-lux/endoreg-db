@@ -666,8 +666,8 @@ def _record_unavailable_hls_playlist(
 ) -> None:
     simulation.issues.append("hls_playlist_unavailable")
     simulation.result["playback_mode"] = "error"
-    simulation.result["hls_playlist_x_accel_redirect"] = (
-        _optional_x_accel_redirect(response)
+    simulation.result["hls_playlist_x_accel_redirect"] = _optional_x_accel_redirect(
+        response
     )
     simulation.result["hls_playlist_handoff_ok"] = False
 
@@ -751,8 +751,8 @@ def _probe_frontend_hls_segment(
         simulation.request_count += 1
         segment_handoff_ok = _x_accel_handoff_ok(segment_response)
         simulation.result["hls_segment_status"] = int(segment_response.status_code)
-        simulation.result["hls_segment_x_accel_redirect"] = (
-            _optional_x_accel_redirect(segment_response)
+        simulation.result["hls_segment_x_accel_redirect"] = _optional_x_accel_redirect(
+            segment_response
         )
         simulation.result["hls_segment_handoff_ok"] = segment_handoff_ok
         if not segment_handoff_ok:

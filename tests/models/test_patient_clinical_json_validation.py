@@ -17,9 +17,7 @@ from endoreg_db.schemas.patient_clinical import (
 def test_patient_definition_contracts_canonicalize_aliases() -> None:
     assert validate_patient_subcategories(
         {"grade": {"choices": ["I", "II"], "default": "I", "required": True}}
-    ) == {
-        "grade": {"choices": ["I", "II"], "default": "I", "required": True}
-    }
+    ) == {"grade": {"choices": ["I", "II"], "default": "I", "required": True}}
     assert validate_patient_numerical_descriptors(
         {
             "size": {
@@ -91,9 +89,12 @@ def test_patient_finding_runtime_contracts_canonicalize_values() -> None:
             "value": "present",
         }
     }
-    assert validate_patient_finding_numerical_descriptors(
-        {"score": {"min": 0.0, "max": 1.0, "value": 0.75}}
-    )["score"]["value"] == 0.75
+    assert (
+        validate_patient_finding_numerical_descriptors(
+            {"score": {"min": 0.0, "max": 1.0, "value": 0.75}}
+        )["score"]["value"]
+        == 0.75
+    )
 
 
 @pytest.mark.parametrize(

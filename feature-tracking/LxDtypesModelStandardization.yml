@@ -178,6 +178,10 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/schemas/hub_payloads.py
     - kind: code
+      reference: endoreg_db/services/hub/ingest.py
+    - kind: code
+      reference: endoreg_db/services/tabular_import_formats.py
+    - kind: code
       reference: endoreg_db/schemas/network_nodes.py
     - kind: code
       reference: endoreg_db/services/hub/network_nodes.py
@@ -223,6 +227,14 @@ definition_of_done:
       reference: tests/services/test_preanonymized_payloads.py
     - kind: test
       reference: tests/services/test_preanonymized_watcher_ingest.py
+    - kind: test
+      reference: tests/services/test_watcher_storage_import.py
+    - kind: test
+      reference: tests/services/test_sap_ish_import.py
+    - kind: test
+      reference: tests/management/commands/test_import_sap_ish_txt.py
+    - kind: test
+      reference: tests/services/test_ingest_idempotency_quarantine.py
     - kind: test
       reference: tests/services/test_network_node_settings_service.py
     - kind: test
@@ -289,7 +301,11 @@ definition_of_done:
       reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_video_frame_annotations.py lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py'
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/views/video/test_frame_annotation_bulk_upsert.py tests/views/video/test_frame_annotation_task_endpoints.py tests/views/video/test_frame_box_annotation.py tests/views/video/test_frame_annotation_temporal_inference_workflow.py tests/views/video/test_annotation_access_controls.py tests/utils/test_media_urlpatterns_contract.py -q
-    note: Zehn externe Boundary-Kohorten sind typisiert. AIDataSet-Exporte verwenden AIDataSetExportRequestPayload;
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/services/test_preanonymized_payloads.py tests/services/test_watcher_storage_import.py tests/services/test_preanonymized_watcher_ingest.py tests/services/test_sap_ish_import.py tests/management/commands/test_import_sap_ish_txt.py tests/services/test_ingest_idempotency_quarantine.py::IngestIdempotencyQuarantineTests::test_process_preanonymized_watcher_file_quarantines_on_failure -q
+    - kind: command
+      reference: devenv shell -- pyright endoreg_db/schemas/hub_payloads.py endoreg_db/services/hub/ingest.py endoreg_db/services/tabular_import_formats.py tests/services/test_preanonymized_payloads.py tests/services/test_preanonymized_watcher_ingest.py tests/services/test_sap_ish_import.py tests/services/test_ingest_idempotency_quarantine.py
+    note: Elf externe Boundary-Kohorten sind typisiert. AIDataSet-Exporte verwenden AIDataSetExportRequestPayload;
       PatientExamination-Drafts verwenden PatientExaminationReportDraft Version 1.0 mit einmaliger Legacy-Normalisierung
       zu snake_case; Report-LLM-Dispatch-Payloads werden durch den zentralen ReportLlmJobConfig-Vertrag
       Version 1.0 in eine strikt JSON-kompatible interne Form überführt. Der frühere Service-lokale Doppelvertrag
@@ -298,7 +314,12 @@ definition_of_done:
       wird am Persistenzpfad über den gemeinsamen VideoSegmentsPayload-Vertrag validiert. Die zusätzlichen
       AI-Training- und Hub-Payload-Adapter erzwingen jetzt ebenfalls strikt JSON-kompatible Formen. Der
       Local-Study-Server-Sidecar-Vertrag lehnt unbekannte Felder und boolesche String-Coercion am Ingest ab;
-      fehlerhafte Sidecars werden vor Modellanlage quarantänisiert. NetworkNode-Create, -Update und -Response
+      fehlerhafte Sidecars werden vor Modellanlage quarantänisiert. Der generische Preanonymized-Sidecar-
+      Vertrag ist ebenfalls geschlossen, verlangt vollständige External-ID-Paare und akzeptiert Identitätshashes
+      nur als kanonische kleingeschriebene SHA-256-Digests. Parsing- und Validierungsfehler quarantänisieren
+      Medium und Sidecar vor UploadJob- oder Modellanlage; nicht fertig geschriebene Dateien bleiben aufschiebbar.
+      SAP-ISH erzeugt ohne Patienten-ID kein verwaistes external_id_origin. Die exakte Integrationsmatrix bestand
+      mit 55 Tests und vier Negativ-Subtests. NetworkNode-Create, -Update und -Response
       verwenden einen geschlossenen snake_case-Vertrag, lehnen CamelCase/Unknown Fields sowie widersprüchliche
       owning_center_id-/owning_center_key-Identitäten ab und führen nach der Boundary kein Roh-Mapping parallel.
       Video-Temporal-Inferenz normalisiert Legacy-Optionen jetzt einmalig in CanonicalTemporalOptions;
@@ -326,7 +347,7 @@ definition_of_done:
       Adapter entfallen. Die Matrix bestand mit 24 Shared-Contract- und 57 Endpunkt-/Regressions-Tests
       sowie vier Negativ-Subtests. Pyright ist in beiden Repositories fehlerfrei.
     assessed_by: Codex
-    assessed_at: '2026-07-31T11:40:29Z'
+    assessed_at: '2026-07-31T13:41:32Z'
 - id: persisted_model_validation
   category: data_integrity
   title: Persistierte Modellzustände und JSON-Payloads besitzen eine zentrale Validierungsgrenze

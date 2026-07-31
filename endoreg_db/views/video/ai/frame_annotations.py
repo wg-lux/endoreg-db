@@ -1136,9 +1136,7 @@ class FrameAnnotationBulkUpsertView(APIView):
         **kwargs: object,
     ) -> Response:
         try:
-            payload = validate_frame_annotation_bulk_ingress(
-                cast(object, request.data)
-            )
+            payload = validate_frame_annotation_bulk_ingress(cast(object, request.data))
         except (ValidationError, ValueError) as exc:
             return Response(
                 {"error": "Invalid payload.", "details": str(exc)},
@@ -1206,9 +1204,7 @@ class FrameAnnotationSkipView(APIView):
         **kwargs: object,
     ) -> Response:
         try:
-            payload = validate_frame_annotation_skip_ingress(
-                cast(object, request.data)
-            )
+            payload = validate_frame_annotation_skip_ingress(cast(object, request.data))
         except (ValidationError, ValueError) as exc:
             return Response(
                 {"error": "Invalid payload.", "details": str(exc)},

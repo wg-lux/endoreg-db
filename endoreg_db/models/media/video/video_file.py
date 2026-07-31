@@ -226,10 +226,12 @@ class VideoFile(models.Model):
     suffix: models.CharField[str | None, Any] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    sequences: models.JSONField[VideoSegmentsPayloadDict, VideoSegmentsPayloadDict] = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="AI prediction sequences based on raw frames.",
+    sequences: models.JSONField[VideoSegmentsPayloadDict, VideoSegmentsPayloadDict] = (
+        models.JSONField(
+            default=dict,
+            blank=True,
+            help_text="AI prediction sequences based on raw frames.",
+        )
     )
     export_segments_by_video: models.BooleanField[bool, Any] = models.BooleanField(
         default=False,

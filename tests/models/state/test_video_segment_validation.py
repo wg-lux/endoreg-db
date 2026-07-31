@@ -91,7 +91,9 @@ def test_resolve_segment_annotation_status_states(
     if history_status is not None:
         _blackening_history(video, status=history_status)
 
-    assert validation_workflow.resolve_segment_annotation_status(video) == expected_status
+    assert (
+        validation_workflow.resolve_segment_annotation_status(video) == expected_status
+    )
 
 
 @pytest.mark.django_db

@@ -10,9 +10,7 @@ from django.core.exceptions import ValidationError
 from endoreg_db.models import AnonymExaminationReport, AnonymHistologyReport
 
 
-ReportModelType: TypeAlias = (
-    type[AnonymExaminationReport] | type[AnonymHistologyReport]
-)
+ReportModelType: TypeAlias = type[AnonymExaminationReport] | type[AnonymHistologyReport]
 
 REPORT_MODELS: tuple[ReportModelType, ...] = (
     AnonymExaminationReport,

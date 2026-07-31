@@ -53,9 +53,7 @@ def _network_node_payload(node: NetworkNode) -> dict[str, Any]:
             if owning_center is not None
             else None
         ),
-        has_shared_secret=bool(
-            cast(str, getattr(node, "shared_secret_hash", ""))
-        ),
+        has_shared_secret=bool(cast(str, getattr(node, "shared_secret_hash", ""))),
         created_at=created_at,
         updated_at=updated_at,
     )

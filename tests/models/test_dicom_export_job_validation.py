@@ -66,9 +66,7 @@ def test_dicom_export_job_canonicalizes_manifest_on_direct_save() -> None:
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    "manifest_mutation", ["unknown", "unsupported_version"]
-)
+@pytest.mark.parametrize("manifest_mutation", ["unknown", "unsupported_version"])
 def test_dicom_export_job_rejects_invalid_manifest_on_direct_save(
     manifest_mutation: Literal["unknown", "unsupported_version"],
 ) -> None:

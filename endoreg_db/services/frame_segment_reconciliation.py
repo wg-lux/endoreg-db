@@ -14,7 +14,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.models.state.frame_annotation import (
+from endoreg_db.services.frame_annotation_segment_identity import (
     MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES,
     PREDICTION_INFORMATION_SOURCE_NAMES,
     SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX,

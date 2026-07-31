@@ -545,7 +545,7 @@ class LabelVideoSegment(models.Model):
         from endoreg_db.models.label.annotation.image_classification import (
             ImageClassificationAnnotation,
         )
-        from endoreg_db.models.state.frame_annotation import (
+        from endoreg_db.models.state.frame_annotation_segment_identity import (
             prediction_annotation_filter,
         )
 
@@ -577,7 +577,9 @@ class LabelVideoSegment(models.Model):
         from endoreg_db.models.label.annotation.image_classification import (
             ImageClassificationAnnotation,
         )
-        from endoreg_db.models.state.frame_annotation import manual_annotation_filter
+        from endoreg_db.models.state.frame_annotation_segment_identity import (
+            manual_annotation_filter,
+        )
 
         try:
             video_obj = self.get_video()
@@ -659,7 +661,7 @@ class LabelVideoSegment(models.Model):
             ImageClassificationAnnotation,
         )
         from endoreg_db.models.other.information_source import InformationSource
-        from endoreg_db.models.state.frame_annotation import (
+        from endoreg_db.models.state.frame_annotation_segment_identity import (
             is_prediction_segment,
             manual_frame_annotation_preference_filter,
             segment_derived_external_annotation_id,

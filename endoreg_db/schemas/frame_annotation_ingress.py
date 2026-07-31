@@ -91,9 +91,7 @@ def validate_frame_annotation_bulk_ingress(
     """Backport strict lx_dtypes mutation handling for the pinned 0.2.9 runtime."""
 
     envelope: object = (
-        {"annotations": cast(list[object], value)}
-        if isinstance(value, list)
-        else value
+        {"annotations": cast(list[object], value)} if isinstance(value, list) else value
     )
     if isinstance(envelope, Mapping):
         mapping = cast(Mapping[object, object], envelope)
@@ -126,9 +124,7 @@ def validate_frame_box_annotation_bulk_ingress(
     """Backport the next shared box normalization without a local payload model."""
 
     envelope: object = (
-        {"annotations": cast(list[object], value)}
-        if isinstance(value, list)
-        else value
+        {"annotations": cast(list[object], value)} if isinstance(value, list) else value
     )
     if not isinstance(envelope, Mapping):
         return FrameBoxAnnotationBulkEnvelopePayload.model_validate(envelope)
@@ -161,7 +157,10 @@ def validate_frame_box_annotation_bulk_ingress(
             normalized_item["frame_id"] = outer_frame_id
         if not normalized_item.get("information_source_name"):
             normalized_item["information_source_name"] = outer_source
-        if normalized_item.get("annotator") in {None, ""} and outer_annotator is not None:
+        if (
+            normalized_item.get("annotator") in {None, ""}
+            and outer_annotator is not None
+        ):
             normalized_item["annotator"] = outer_annotator
         normalized_items.append(normalized_item)
 

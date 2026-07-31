@@ -208,11 +208,7 @@ def extract_temporal_options(payload: Mapping[str, Any]) -> dict[str, Any]:
         raise TemporalInferenceConfigError(
             "unknown temporal request options: " + ", ".join(unknown_keys)
         )
-    return {
-        key: payload[key]
-        for key in TEMPORAL_OPTION_KEYS
-        if key in payload
-    }
+    return {key: payload[key] for key in TEMPORAL_OPTION_KEYS if key in payload}
 
 
 def _prediction_segments_for_video(video: VideoFile):

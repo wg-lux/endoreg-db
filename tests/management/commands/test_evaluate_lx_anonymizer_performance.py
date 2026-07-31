@@ -5,9 +5,92 @@ from __future__ import annotations
 from pathlib import Path
 from django.core.management.base import CommandError
 import pytest
+from lx_dtypes.models.contracts import LxAnonymizerPerformanceRunPayload
 
-from endoreg_db.management.commands.evaluate_lx_anonymizer_performance import Command
+from endoreg_db.management.commands.evaluate_lx_anonymizer_performance import (
+    Command,
+    _roi_is_configured,
+)
 from endoreg_db.models import EndoscopyProcessor
+
+
+@pytest.mark.parametrize(
+    ("roi", "expected"),
+    [
+        (None, False),
+        ({"x": 0, "y": 0, "width": 100, "height": 100}, True),
+        ({"x": -1, "y": 0, "width": 100, "height": 100}, False),
+        ({"x": 0, "y": 0, "width": 0, "height": 100}, False),
+        ({"x": 0, "width": 100, "height": 100}, False),
+    ],
+)
+def test_roi_is_configured_requires_valid_rectangle(
+    roi: dict[str, int | None] | None,
+    expected: bool,
+) -> None:
+    assert _roi_is_configured(roi) is expected
+
+
+def _performance_run(
+    *,
+    ok: bool,
+    total_seconds: float,
+    import_seconds: float,
+    anonymizer_seconds: float | None,
+    short_circuited: bool = False,
+) -> LxAnonymizerPerformanceRunPayload:
+    return LxAnonymizerPerformanceRunPayload(
+        source_path="/protected/input.mp4",
+        staged_path="/protected/staged.mp4",
+        media_type="video",
+        iteration=1,
+        source_size_bytes=100,
+        source_sha256="a" * 64,
+        ok=ok,
+        total_seconds=total_seconds,
+        import_seconds=import_seconds,
+        staging_seconds=0.1,
+        anonymizer_seconds=anonymizer_seconds,
+        process_cpu_seconds=0.5,
+        max_rss_kib_delta=10,
+        short_circuited=short_circuited,
+    )
+
+
+def test_performance_summary_uses_successful_runs_for_duration_statistics() -> None:
+    summary = Command._summarize(
+        [
+            _performance_run(
+                ok=True,
+                total_seconds=3.0,
+                import_seconds=2.0,
+                anonymizer_seconds=1.5,
+            ),
+            _performance_run(
+                ok=True,
+                total_seconds=1.0,
+                import_seconds=0.5,
+                anonymizer_seconds=0.0,
+                short_circuited=True,
+            ),
+            _performance_run(
+                ok=False,
+                total_seconds=9.0,
+                import_seconds=8.0,
+                anonymizer_seconds=None,
+            ),
+        ]
+    )
+
+    assert summary.total_runs == 3
+    assert summary.ok_runs == 2
+    assert summary.failed_runs == 1
+    assert summary.short_circuited_runs == 1
+    assert summary.total_seconds == 4.0
+    assert summary.import_seconds.count == 2
+    assert summary.import_seconds.mean == 1.25
+    assert summary.anonymizer_seconds.count == 2
+    assert summary.end_to_end_seconds.mean == 2.0
 
 
 def test_performance_command_accepts_manifest_flags(tmp_path: Path) -> None:

@@ -41,9 +41,7 @@ def _canonical_json_value(value: object, *, field_name: str) -> object:
         return value
     if isinstance(value, list):
         items = cast(list[object], value)
-        return [
-            _canonical_json_value(item, field_name=field_name) for item in items
-        ]
+        return [_canonical_json_value(item, field_name=field_name) for item in items]
     if isinstance(value, dict):
         normalized: dict[str, object] = {}
         items = cast(dict[object, object], value)

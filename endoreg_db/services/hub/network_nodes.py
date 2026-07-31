@@ -78,16 +78,15 @@ def _raw_reference_errors(
     center_key = raw_payload.get("owning_center_key")
     normalized_center_key = center_key.strip() if isinstance(center_key, str) else ""
     valid_center_id = (
-        isinstance(center_id, int)
-        and not isinstance(center_id, bool)
-        and center_id > 0
+        isinstance(center_id, int) and not isinstance(center_id, bool) and center_id > 0
     )
     valid_center_key = bool(normalized_center_key)
     if valid_center_id and not Center.objects.filter(pk=center_id).exists():
         errors["owning_center"] = "Owning center not found."
-    elif valid_center_key and not Center.objects.filter(
-        center_key=normalized_center_key
-    ).exists():
+    elif (
+        valid_center_key
+        and not Center.objects.filter(center_key=normalized_center_key).exists()
+    ):
         errors["owning_center"] = "Owning center not found."
 
 
@@ -155,9 +154,10 @@ def _resolve_owning_center(
 def _build_network_node_create_plan(value: object) -> _NetworkNodeCreatePlan:
     payload = _validate_create_boundary(value)
     errors: dict[str, str] = {}
-    if payload.node_key and NetworkNode.objects.filter(
-        node_key=payload.node_key
-    ).exists():
+    if (
+        payload.node_key
+        and NetworkNode.objects.filter(node_key=payload.node_key).exists()
+    ):
         errors["node_key"] = "node_key already exists."
     owning_center = _resolve_owning_center(
         payload,

@@ -334,7 +334,9 @@ class Command(BaseCommand):
         for classification_name in classification_names:
             indication_type = indication_types_by_name.get(classification_name)
             description = (
-                indication_type.description.strip() if indication_type is not None else ""
+                indication_type.description.strip()
+                if indication_type is not None
+                else ""
             )
             classification, _created = (
                 ExaminationIndicationClassification.objects.get_or_create(

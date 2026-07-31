@@ -139,9 +139,7 @@ def test_migrate_video_streamable_storage_dry_run_does_not_materialize_hls(
         video_hash="streamable-dry-run-video",
     )
     video.processed_file.name = "processed_videos_final/dry-run.mp4"
-    video.processed_streamable_relative_path = (
-        "streamable_videos/processed/dry-run.mp4"
-    )
+    video.processed_streamable_relative_path = "streamable_videos/processed/dry-run.mp4"
     video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
 
     def fake_sync_video_streamable_artifacts(
@@ -185,7 +183,9 @@ def test_migrate_video_streamable_storage_dry_run_does_not_materialize_hls(
         stdout=output,
     )
 
-    assert f"video={video.pk} would replace: 1 streamable artifact(s)" in output.getvalue()
+    assert (
+        f"video={video.pk} would replace: 1 streamable artifact(s)" in output.getvalue()
+    )
     assert "migrated=0 hls_materialized=1 unchanged=0 failed=0" in output.getvalue()
 
 

@@ -6,7 +6,8 @@ import logging
 import os
 import resource
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType
 from typing import (
@@ -130,6 +131,13 @@ class _ReportEvaluationMedia(Protocol):
     processed_file: FieldFile
 
 
+@dataclass(frozen=True)
+class _PerformanceDurationSeries:
+    anonymizer: list[float]
+    import_pipeline: list[float]
+    end_to_end: list[float]
+
+
 def _roi_is_configured(roi: ProcessorRoi | JsonNull) -> bool:
     if roi is None:
         return False
@@ -139,20 +147,25 @@ def _roi_is_configured(roi: ProcessorRoi | JsonNull) -> bool:
         return False
     if roi_box is None:
         return False
-    x = roi_box.x
-    y = roi_box.y
-    width = roi_box.width
-    height = roi_box.height
-    coordinates_are_valid = x >= 0 and y >= 0 and width > 0 and height > 0
-    if not coordinates_are_valid:
+    if not _roi_coordinates_are_valid(roi_box):
         return False
+    return _roi_image_dimensions_are_valid(roi_box)
 
-    image_width = getattr(roi_box, "image_width", None)
-    image_height = getattr(roi_box, "image_height", None)
-    image_dimensions_are_valid = (image_width is None or image_width > 0) and (
-        image_height is None or image_height > 0
+
+def _roi_coordinates_are_valid(roi: RoiBoxCore) -> bool:
+    return roi.x >= 0 and roi.y >= 0 and roi.width > 0 and roi.height > 0
+
+
+def _roi_image_dimensions_are_valid(roi: RoiBoxCore) -> bool:
+    image_width = cast(int | None, getattr(roi, "image_width", None))
+    image_height = cast(int | None, getattr(roi, "image_height", None))
+    return _optional_dimension_is_valid(image_width) and _optional_dimension_is_valid(
+        image_height
     )
-    return image_dimensions_are_valid
+
+
+def _optional_dimension_is_valid(value: int | None) -> bool:
+    return value is None or value > 0
 
 
 class TimedCallRecorder:
@@ -495,28 +508,41 @@ class Command(BaseCommand):
         limit: int,
     ) -> list[tuple[Path, MediaType]]:
         discovered: list[tuple[Path, MediaType]] = []
-
         for raw_path in paths:
-            path = Path(raw_path).expanduser().resolve()
-            if not path.exists():
-                raise CommandError(f"Input path does not exist: {path}")
-            candidates: Iterable[Path]
-            if path.is_dir():
-                candidates = path.rglob("*") if recursive else path.iterdir()
-            else:
-                candidates = [path]
-
-            for candidate in sorted(candidates):
-                if not candidate.is_file() or candidate.is_symlink():
+            for candidate in self._input_candidates(raw_path, recursive=recursive):
+                classified = self._classify_input_candidate(
+                    candidate,
+                    forced_media_type=forced_media_type,
+                )
+                if classified is None:
                     continue
-                media_type = self._media_type_for_path(candidate, forced_media_type)
-                if media_type is None:
-                    continue
-                discovered.append((candidate, media_type))
+                discovered.append(classified)
                 if limit and len(discovered) >= limit:
                     return discovered
-
         return discovered
+
+    @staticmethod
+    def _input_candidates(raw_path: str, *, recursive: bool) -> list[Path]:
+        path = Path(raw_path).expanduser().resolve()
+        if not path.exists():
+            raise CommandError(f"Input path does not exist: {path}")
+        if not path.is_dir():
+            return [path]
+        candidates = path.rglob("*") if recursive else path.iterdir()
+        return sorted(candidates)
+
+    def _classify_input_candidate(
+        self,
+        candidate: Path,
+        *,
+        forced_media_type: ForcedMediaType,
+    ) -> tuple[Path, MediaType] | None:
+        if not candidate.is_file() or candidate.is_symlink():
+            return None
+        media_type = self._media_type_for_path(candidate, forced_media_type)
+        if media_type is None:
+            return None
+        return candidate, media_type
 
     def _exclude_video_inputs_without_roi(
         self,
@@ -782,27 +808,44 @@ class Command(BaseCommand):
     def _summarize(
         results: list[LxAnonymizerPerformanceRunPayload],
     ) -> LxAnonymizerPerformanceSummaryPayload:
-        ok_results = [result for result in results if result.ok]
-        failed_results = [result for result in results if not result.ok]
-        anonymizer_durations = [
-            result.anonymizer_seconds
-            for result in ok_results
-            if result.anonymizer_seconds is not None
-        ]
-        import_durations = [result.import_seconds for result in ok_results]
-        total_durations = [result.total_seconds for result in ok_results]
+        ok_results = Command._successful_results(results)
+        durations = Command._duration_series(ok_results)
         return LxAnonymizerPerformanceSummaryPayload(
             total_runs=len(results),
             ok_runs=len(ok_results),
-            failed_runs=len(failed_results),
-            short_circuited_runs=sum(
-                1 for result in ok_results if result.short_circuited
-            ),
-            total_seconds=sum(total_durations),
-            import_seconds=Command._duration_stats(import_durations),
-            anonymizer_seconds=Command._duration_stats(anonymizer_durations),
-            end_to_end_seconds=Command._duration_stats(total_durations),
+            failed_runs=len(results) - len(ok_results),
+            short_circuited_runs=Command._short_circuited_count(ok_results),
+            total_seconds=sum(durations.end_to_end),
+            import_seconds=Command._duration_stats(durations.import_pipeline),
+            anonymizer_seconds=Command._duration_stats(durations.anonymizer),
+            end_to_end_seconds=Command._duration_stats(durations.end_to_end),
         )
+
+    @staticmethod
+    def _successful_results(
+        results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> list[LxAnonymizerPerformanceRunPayload]:
+        return [result for result in results if result.ok]
+
+    @staticmethod
+    def _duration_series(
+        results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> _PerformanceDurationSeries:
+        return _PerformanceDurationSeries(
+            anonymizer=[
+                duration
+                for result in results
+                if (duration := result.anonymizer_seconds) is not None
+            ],
+            import_pipeline=[result.import_seconds for result in results],
+            end_to_end=[result.total_seconds for result in results],
+        )
+
+    @staticmethod
+    def _short_circuited_count(
+        results: list[LxAnonymizerPerformanceRunPayload],
+    ) -> int:
+        return sum(1 for result in results if result.short_circuited)
 
     @staticmethod
     def _duration_stats(values: list[float]) -> LxAnonymizerDurationStatsPayload:

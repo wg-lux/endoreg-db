@@ -83,7 +83,7 @@ class Frame(models.Model):
         Returns:
             QuerySet: A queryset of related ImageClassificationAnnotation objects filtered to those whose information source type is "prediction".
         """
-        from endoreg_db.models.state.frame_annotation import (
+        from endoreg_db.models.state.frame_annotation_segment_identity import (
             prediction_annotation_filter,
         )
 
@@ -99,7 +99,9 @@ class Frame(models.Model):
         Returns:
             QuerySet: A queryset of related ImageClassificationAnnotation objects whose information source type is "manual_annotation".
         """
-        from endoreg_db.models.state.frame_annotation import manual_annotation_filter
+        from endoreg_db.models.state.frame_annotation_segment_identity import (
+            manual_annotation_filter,
+        )
 
         return self.image_classification_annotations.filter(manual_annotation_filter())
 
