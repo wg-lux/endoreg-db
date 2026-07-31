@@ -48,7 +48,8 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
     # Custom fields for frontend compatibility
     examination_name = serializers.CharField(source="examination.name", read_only=True)
     examination_id = serializers.IntegerField(source="examination.id", read_only=True)
-    video_id = serializers.IntegerField(source="video.id", read_only=True)
+    video_id = serializers.SerializerMethodField()
+    video_ids = serializers.SerializerMethodField()
     patient_hash = serializers.CharField(source="patient.patient_hash", read_only=True)
 
     # Nested findings data
@@ -62,6 +63,7 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
             "examination_id",
             "examination_name",
             "video_id",
+            "video_ids",
             "patient_hash",
             "date_start",
             "date_end",
@@ -86,6 +88,13 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
             self._serialize_finding(patient_finding)
             for patient_finding in patient_findings
         ]
+
+    def get_video_ids(self, obj: PatientExamination) -> list[int]:
+        return sorted(int(video.pk) for video in obj.video_files.all())
+
+    def get_video_id(self, obj: PatientExamination) -> int | None:
+        video_ids = self.get_video_ids(obj)
+        return video_ids[0] if len(video_ids) == 1 else None
 
     @staticmethod
     def _serialize_finding(
@@ -170,26 +179,37 @@ class VideoExaminationCreateSerializer(serializers.Serializer[PatientExamination
                 "Video's sensitive metadata must have an associated pseudo patient"
             )
 
-        # Check if PatientExamination already exists for this video
-        existing_exam = PatientExamination.objects.filter(video=video).first()
-        if existing_exam:
-            # Update existing
-            patient_exam = existing_exam
-            patient_exam.examination = examination
-            if "date_start" in data:
-                patient_exam.date_start = data["date_start"]
-            if "date_end" in data:
-                patient_exam.date_end = data["date_end"]
-            cast(Any, patient_exam).save()
+        if video.examination_id is not None:
+            patient_exam = PatientExamination.objects.select_for_update().get(
+                pk=video.examination_id
+            )
+            if patient_exam.patient_id != patient.pk:
+                raise serializers.ValidationError(
+                    {"video_id": "Video is linked to another patient's examination."}
+                )
+            if (
+                patient_exam.examination_id is not None
+                and patient_exam.examination_id != examination.pk
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "examination_id": (
+                            "Examination type does not match the linked patient "
+                            "examination."
+                        )
+                    }
+                )
         else:
-            # Create new
             patient_exam = PatientExamination.objects.create(
                 patient=patient,
                 examination=examination,
-                video=video,
                 date_start=data.get("date_start"),
                 date_end=data.get("date_end"),
             )
+
+        video.examination = patient_exam
+        video.patient = patient
+        video.save(update_fields=["examination", "patient", "date_modified"])
 
         return patient_exam
 

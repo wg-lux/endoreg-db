@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING, Protocol, cast
 
 from rest_framework import serializers
 
-from ...models import VideoFile
+from endoreg_db.models.media.video.video_file import VideoFile
 
 cv2_mod: Any
 try:

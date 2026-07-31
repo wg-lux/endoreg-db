@@ -125,8 +125,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
             PatientExamination.objects.select_related(
                 "patient",
                 "examination",
-                "video",
-            ).prefetch_related("patient_findings")
+            ).prefetch_related("patient_findings", "video_files")
         )
         try:
             query_payload = validate_video_examination_list_query(
@@ -138,7 +137,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
         filters = dump_video_examination_list_query_payload(query_payload)
 
         if "video_id" in filters:
-            queryset = queryset.filter(video_id=filters["video_id"])
+            queryset = queryset.filter(video_files__id=filters["video_id"])
 
         if "patient_id" in filters:
             queryset = queryset.filter(patient_id=filters["patient_id"])
@@ -173,7 +172,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
         video = get_object_or_404(VideoFile, id=path_payload.video_id)
 
         # Get examinations for this video
-        examinations = self.get_queryset().filter(video=video)
+        examinations = self.get_queryset().filter(video_files=video)
 
         serializer = cast(
             _SerializerDataLike, self.get_serializer(examinations, many=True)

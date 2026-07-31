@@ -7,7 +7,7 @@ from django.conf import settings
 from rest_framework import serializers
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.state.video_segment_validation import (
+from endoreg_db.services.video_segment_validation_workflow import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,

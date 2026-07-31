@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.state.frame_annotation import (
@@ -46,6 +46,12 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.models.state.frame_annotation import (
     resolve_request_annotator as _resolve_request_annotator,
 )
+from endoreg_db.models.state.frame_annotation import (
+    validated_annotators_for_video as _validated_annotators_for_video,
+)
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def normalize_frame_task_mode(value: object) -> FrameTaskMode:
@@ -85,6 +91,10 @@ def resolve_ai_dataset_for_queue(
 
 def ai_dataset_requires_raw_frames(dataset: AIDataSet | None) -> bool:
     return _ai_dataset_requires_raw_frames(dataset)
+
+
+def validated_annotators_for_video(video: VideoFile) -> list[str]:
+    return _validated_annotators_for_video(video)
 
 
 def build_frame_task_queue(
@@ -427,4 +437,5 @@ __all__ = [
     "resolve_ai_dataset_for_queue",
     "resolve_frame_information_source_name",
     "resolve_request_annotator",
+    "validated_annotators_for_video",
 ]

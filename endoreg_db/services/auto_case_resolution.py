@@ -82,42 +82,6 @@ def _resolved_examination(
     return None
 
 
-def _link_video_primary_examination(
-    *, video: VideoFile, patient_examination: PatientExamination
-) -> None:
-    existing_primary: PatientExamination | None = None
-    try:
-        existing_primary = cast(
-            PatientExamination,
-            _model_relation(video, "patient_examination"),
-        )
-    except PatientExamination.DoesNotExist:
-        existing_primary = None
-
-    if _model_optional_int(
-        patient_examination, "video_id"
-    ) is not None and _model_optional_int(
-        patient_examination, "video_id"
-    ) != _model_required_int(video, "pk"):
-        raise ValueError(
-            "patient_examination is already linked to a different primary video"
-        )
-
-    if existing_primary is not None and _model_required_int(
-        existing_primary,
-        "pk",
-    ) != _model_required_int(patient_examination, "pk"):
-        setattr(existing_primary, "video", None)
-        _model_save(existing_primary, update_fields=["video"])
-
-    if _model_optional_int(patient_examination, "video_id") != _model_required_int(
-        video,
-        "pk",
-    ):
-        setattr(patient_examination, "video", video)
-        _model_save(patient_examination, update_fields=["video"])
-
-
 def link_media_to_patient_examination(
     *,
     media_type: Literal["video", "pdf"],
@@ -141,12 +105,6 @@ def link_media_to_patient_examination(
 
     if update_fields:
         _model_save(media_obj, update_fields=update_fields)
-
-    if media_type == "video":
-        assert isinstance(media_obj, VideoFile)
-        _link_video_primary_examination(
-            video=media_obj, patient_examination=patient_examination
-        )
 
 
 def _hydrate_inferred_patient_examination(

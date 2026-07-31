@@ -56,9 +56,6 @@ from endoreg_db.models.media.video.video_metadata import VideoMetadata
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
-from endoreg_db.models.state.video_segment_validation import (
-    mark_segment_annotations_stale,
-)
 from endoreg_db.services.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
@@ -70,6 +67,9 @@ from endoreg_db.services.jobs.video_correction_jobs import (
 )
 from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.video_segment_validation_workflow import (
+    mark_segment_annotations_stale,
+)
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_move_file,

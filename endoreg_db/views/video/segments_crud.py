@@ -46,12 +46,6 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.models.state.video_segment_validation import (
-    mark_segment_annotations_complete_without_cleanup,
-    mark_segment_annotations_pending_cleanup,
-    mark_segment_annotations_stale,
-    resolve_segment_annotation_status,
-)
 from endoreg_db.services.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
@@ -64,6 +58,12 @@ from endoreg_db.services.segment_frame_annotations import (
 from endoreg_db.services.video_segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
+)
+from endoreg_db.services.video_segment_validation_workflow import (
+    mark_segment_annotations_complete_without_cleanup,
+    mark_segment_annotations_pending_cleanup,
+    mark_segment_annotations_stale,
+    resolve_segment_annotation_status,
 )
 from endoreg_db.services.media_operation_gate import (
     create_segment_update_lease_on_commit,

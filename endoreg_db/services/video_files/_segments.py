@@ -81,10 +81,10 @@ def _convert_sequences_to_db_segments(
     """
     from endoreg_db.models.other.information_source import InformationSource
 
-    from endoreg_db.models.label import (
-        Label,
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
-    )  # Local import for models
+    )
 
     logger.info(
         "Converting sequences to LabelVideoSegments for video %s, prediction meta %s",

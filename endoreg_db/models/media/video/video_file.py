@@ -25,6 +25,10 @@ from lx_dtypes.models.contracts.video_file import (
     FrameSourceMode,
     VideoFileMetaJsonObject,
 )
+from lx_dtypes.models.contracts.video_segments import (
+    VideoSegmentsPayloadDict,
+    validate_video_segments_payload,
+)
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 from numpy.typing import NDArray
@@ -222,7 +226,7 @@ class VideoFile(models.Model):
     suffix: models.CharField[str | None, Any] = models.CharField(
         max_length=10, blank=True, null=True
     )
-    sequences: models.JSONField[Any, Any] = models.JSONField(
+    sequences: models.JSONField[VideoSegmentsPayloadDict, VideoSegmentsPayloadDict] = models.JSONField(
         default=dict,
         blank=True,
         help_text="AI prediction sequences based on raw frames.",
@@ -768,6 +772,11 @@ class VideoFile(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        try:
+            validated_sequences = validate_video_segments_payload(self.sequences or {})
+        except ValueError as exc:
+            raise ValidationError({"sequences": str(exc)}) from exc
+        self.sequences = validated_sequences.model_dump(mode="json")
         try:
             validated_meta = validate_video_file_meta_payload(self.meta)
         except ValueError as exc:

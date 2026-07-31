@@ -1,6 +1,6 @@
 # Video Typing Integration Plan
 
-> Die Statusverfolgung wurde nach `feature-tracking/TypeSafety.yml` migriert.
+> Die Statusverfolgung wurde nach `feature-tracking/done/TypeSafety.yml` migriert.
 > Dieses Dokument bleibt als technischer Kontext erhalten und führt keinen
 > unabhängigen Fertigstellungsstatus mehr.
 

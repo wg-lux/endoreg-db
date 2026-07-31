@@ -4,7 +4,9 @@ from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, TypeVar
 
 if TYPE_CHECKING:
-    from endoreg_db.models import Label, VideoFile, VideoPredictionMeta
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
     from .label_video_segment import LabelVideoSegment
 
 __all__ = ["_create_from_video"]

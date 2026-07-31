@@ -6,7 +6,10 @@ from django.db.models import F, Window
 from django.db.models.functions import RowNumber
 from tqdm import tqdm
 
-from ...models import ImageClassificationAnnotation, LabelSet
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
+from endoreg_db.models.label.label_set import LabelSet
 
 
 class LegacyAnnotationEntry(TypedDict):

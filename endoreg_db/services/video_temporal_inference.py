@@ -14,12 +14,14 @@ from typing import Any, Protocol, cast
 import numpy as np
 from django.db import transaction
 from django.utils import timezone
+from pydantic import ValidationError
 
 from endoreg_db.config.env import (
     get_celery_inference_queue,
     get_video_temporal_inference_job_mode,
     get_video_temporal_inference_frame_source_mode,
 )
+from endoreg_db.schemas.temporal_inference import CanonicalTemporalOptions
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -43,9 +45,6 @@ from endoreg_db.models.state.frame_annotation import (
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
 )
-from endoreg_db.models.state.video_segment_validation import (
-    is_outside_frame_blackening_history,
-)
 from endoreg_db.services.video_files import (
     delete_video_frames,
     extract_video_frames,
@@ -53,6 +52,9 @@ from endoreg_db.services.video_files import (
     predict_video,
     update_video_meta,
     update_video_text_metadata,
+)
+from endoreg_db.services.video_segment_validation_workflow import (
+    is_outside_frame_blackening_history,
 )
 from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
 from lx_dtypes.models.contracts.video_temporal_inference import (
@@ -62,7 +64,10 @@ from lx_dtypes.models.contracts.video_temporal_inference import (
     parse_temporal_inference_history_config_payload,
     parse_temporal_inference_history_result_payload,
 )
-from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.video_segments import (
+    validate_video_segments_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,26 @@ TEMPORAL_OPTION_KEYS = frozenset(
         "include_uncertainty",
     }
 )
+TEMPORAL_OPTION_ENVELOPE_KEYS = frozenset(
+    {
+        "refresh_predictions",
+        "model_meta_id",
+        "hf_model_id",
+        "huggingface_model_id",
+        "model_id",
+        "labelset_name",
+        "label_set_name",
+        "labelset_version",
+        "model_name",
+        "model_meta_version",
+        "replace_prediction_segments",
+        "delete_frames_after",
+        "ocr_frame_fraction",
+        "ocr_cap",
+        "test_run",
+        "n_test_frames",
+    }
+)
 SUPPORTED_TEMPORAL_MODELS = {"hysteresis", "markov", "viterbi"}
 SUPPORTED_FRAME_SOURCE_MODES = {"cache", "stream", "auto"}
 
@@ -131,8 +156,7 @@ class TemporalInferenceHistoryConfig:
     delete_frames_after: bool
     ocr_frame_fraction: float
     ocr_cap: int
-    temporal_options: Mapping[str, Any]
-    raw_temporal_options: Mapping[str, Any]
+    temporal_options: CanonicalTemporalOptions
     queue: str
     frame_source_mode: FrameSourceMode
     test_run: bool
@@ -154,8 +178,7 @@ class TemporalInferenceHistoryConfig:
             "test_run": bool(self.test_run),
             "n_test_frames": int(self.n_test_frames),
             "lx_ai_core_version": _lx_ai_core_version(),
-            "temporal_options": dict(self.temporal_options),
-            "raw_temporal_options": dict(self.raw_temporal_options),
+            "temporal_options": self.temporal_options.to_dict(),
         }
         if self.deferred_reason:
             payload["deferred_reason"] = self.deferred_reason
@@ -174,7 +197,22 @@ class TemporalInferenceResultPayload:
 
 
 def extract_temporal_options(payload: Mapping[str, Any]) -> dict[str, Any]:
-    return {key: payload[key] for key in TEMPORAL_OPTION_KEYS if key in payload}
+    runtime_payload = cast(Mapping[Any, Any], payload)
+    invalid_keys = [key for key in runtime_payload if not isinstance(key, str)]
+    if invalid_keys:
+        raise TemporalInferenceConfigError("request option keys must be strings.")
+    unknown_keys = sorted(
+        set(payload) - TEMPORAL_OPTION_KEYS - TEMPORAL_OPTION_ENVELOPE_KEYS
+    )
+    if unknown_keys:
+        raise TemporalInferenceConfigError(
+            "unknown temporal request options: " + ", ".join(unknown_keys)
+        )
+    return {
+        key: payload[key]
+        for key in TEMPORAL_OPTION_KEYS
+        if key in payload
+    }
 
 
 def _prediction_segments_for_video(video: VideoFile):
@@ -256,9 +294,12 @@ def _coerce_float(value: Any, *, name: str, default: float | None = None) -> flo
             raise TemporalInferenceConfigError(f"{name} is required.")
         return float(default)
     try:
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError) as exc:
         raise TemporalInferenceConfigError(f"{name} must be numeric.") from exc
+    if not math.isfinite(result):
+        raise TemporalInferenceConfigError(f"{name} must be finite.")
+    return result
 
 
 def _coerce_nonnegative_seconds(value: Any, *, name: str, default: float) -> float:
@@ -281,11 +322,13 @@ def _coerce_probability_map_or_sequence(value: Any, *, name: str) -> Any:
     if value is None or value == "":
         return None
     if isinstance(value, Mapping):
-        mapping_value = cast(Mapping[str, Any], value)
-        return {
-            str(key): _coerce_probability(item, name=f"{name}.{key}")
-            for key, item in mapping_value.items()
-        }
+        mapping_value = cast(Mapping[object, Any], value)
+        result: dict[str, float] = {}
+        for key, item in mapping_value.items():
+            if not isinstance(key, str):
+                raise TemporalInferenceConfigError(f"{name} keys must be strings.")
+            result[key] = _coerce_probability(item, name=f"{name}.{key}")
+        return result
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         sequence_value = cast(Sequence[Any], value)
         return [
@@ -295,10 +338,10 @@ def _coerce_probability_map_or_sequence(value: Any, *, name: str) -> Any:
     return _coerce_probability(value, name=name)
 
 
-def build_lx_temporal_options(
+def _normalize_legacy_temporal_options(
     raw_options: Mapping[str, Any] | None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Normalize timestamp-domain options for lx-ai-core temporal segmentation.
+) -> CanonicalTemporalOptions:
+    """Normalize the legacy flat option mapping into the canonical shape.
 
     Duration-based smoothing, minimum length, and gap merging are applied by
     endoreg-db against authoritative presentation timestamps. lx-ai-core gets
@@ -310,8 +353,21 @@ def build_lx_temporal_options(
     segment extraction; disabling smoothing does not turn temporal inference
     into a no-op.
     """
-    raw: Mapping[str, Any] = raw_options or {}
-    temporal_model = str(raw.get("temporal_model") or "hysteresis").strip().lower()
+    object_raw = cast(Mapping[Any, Any], raw_options or {})
+    invalid_keys = [key for key in object_raw if not isinstance(key, str)]
+    if invalid_keys:
+        raise TemporalInferenceConfigError("temporal option keys must be strings.")
+    raw = cast(Mapping[str, Any], object_raw)
+    unknown_keys = sorted(set(raw) - TEMPORAL_OPTION_KEYS)
+    if unknown_keys:
+        raise TemporalInferenceConfigError(
+            "unknown temporal options: " + ", ".join(unknown_keys)
+        )
+    temporal_model = (
+        str(raw["temporal_model"]).strip().lower()
+        if "temporal_model" in raw
+        else "hysteresis"
+    )
     if temporal_model not in SUPPORTED_TEMPORAL_MODELS:
         supported = ", ".join(sorted(SUPPORTED_TEMPORAL_MODELS))
         raise TemporalInferenceConfigError(
@@ -412,20 +468,75 @@ def build_lx_temporal_options(
             lx_options[key] = raw[key]
 
     if "include_uncertainty" in raw:
-        lx_options["include_uncertainty"] = _coerce_bool(
-            raw.get("include_uncertainty"),
-            default=False,
+        lx_options["include_uncertainty"] = _coerce_strict_bool(
+            raw["include_uncertainty"],
+            name="include_uncertainty",
         )
 
-    history_options = {
-        "coordinate_basis": "presentation_timestamps",
-        "min_length_seconds": min_length_seconds,
-        "max_gap_seconds": max_gap_seconds,
-        "smoothing_window_seconds": smoothing_window_seconds,
-        "temporal_smoothing_enabled": temporal_smoothing_enabled,
-        "lx_options": lx_options,
+    try:
+        return CanonicalTemporalOptions.model_validate(
+            {
+                "coordinate_basis": "presentation_timestamps",
+                "min_length_seconds": min_length_seconds,
+                "max_gap_seconds": max_gap_seconds,
+                "smoothing_window_seconds": smoothing_window_seconds,
+                "temporal_smoothing_enabled": temporal_smoothing_enabled,
+                "lx_options": lx_options,
+            },
+            strict=True,
+        )
+    except ValidationError as exc:
+        raise TemporalInferenceConfigError(str(exc)) from exc
+
+
+def _legacy_options_from_canonical(
+    canonical: CanonicalTemporalOptions,
+) -> dict[str, Any]:
+    legacy_options = {
+        key: value
+        for key, value in canonical.lx_options.items()
+        if key in TEMPORAL_OPTION_KEYS
     }
-    return lx_options, history_options
+    legacy_options.update(
+        {
+            "min_length_seconds": canonical.min_length_seconds,
+            "max_gap_seconds": canonical.max_gap_seconds,
+            "smoothing_window_seconds": canonical.smoothing_window_seconds,
+            "temporal_smoothing_enabled": canonical.temporal_smoothing_enabled,
+        }
+    )
+    return legacy_options
+
+
+def normalize_temporal_options(
+    options: Mapping[str, Any] | CanonicalTemporalOptions | None,
+) -> CanonicalTemporalOptions:
+    """Accept one external/legacy shape and return the sole internal shape."""
+    if isinstance(options, CanonicalTemporalOptions):
+        return options
+    raw: Mapping[str, Any] = options or {}
+    if "coordinate_basis" in raw or "lx_options" in raw:
+        try:
+            canonical = CanonicalTemporalOptions.model_validate(raw, strict=True)
+        except ValidationError as exc:
+            raise TemporalInferenceConfigError(str(exc)) from exc
+        regenerated = _normalize_legacy_temporal_options(
+            _legacy_options_from_canonical(canonical)
+        )
+        if regenerated != canonical:
+            raise TemporalInferenceConfigError(
+                "canonical temporal options contain unsupported or inconsistent values."
+            )
+        return regenerated
+    return _normalize_legacy_temporal_options(raw)
+
+
+def build_lx_temporal_options(
+    raw_options: Mapping[str, Any] | CanonicalTemporalOptions | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Compatibility facade returning lx-core and canonical history mappings."""
+    canonical = normalize_temporal_options(raw_options)
+    return dict(canonical.lx_options), dict(canonical.to_dict())
 
 
 def _validated_score_row_count(score_result: VideoFrameScoreResult) -> int:
@@ -803,8 +914,7 @@ def _temporal_history_config(  # pyright: ignore[reportUnusedFunction]
     delete_frames_after: bool,
     ocr_frame_fraction: float,
     ocr_cap: int,
-    temporal_options: Mapping[str, Any],
-    raw_temporal_options: Mapping[str, Any] | None = None,
+    temporal_options: Mapping[str, Any] | CanonicalTemporalOptions,
     queue: str,
     frame_source_mode: str = "stream",
     test_run: bool = False,
@@ -818,8 +928,7 @@ def _temporal_history_config(  # pyright: ignore[reportUnusedFunction]
         delete_frames_after=bool(delete_frames_after),
         ocr_frame_fraction=float(ocr_frame_fraction),
         ocr_cap=int(ocr_cap),
-        temporal_options=dict(temporal_options),
-        raw_temporal_options=dict(raw_temporal_options or {}),
+        temporal_options=normalize_temporal_options(temporal_options),
         queue=str(queue),
         frame_source_mode=_normalize_temporal_frame_source_mode(frame_source_mode),
         test_run=bool(test_run),
@@ -841,7 +950,7 @@ def _coerce_int_config(value: Any, *, name: str, default: int | None = None) -> 
 
 
 def _parse_temporal_history_config(
-    config: dict[str, object] | TemporalInferenceHistoryConfigPayload | None,
+    config: Mapping[str, object] | TemporalInferenceHistoryConfigPayload | None,
 ) -> TemporalInferenceHistoryConfig | None:
     if config is None:
         return None
@@ -870,6 +979,11 @@ def _parse_temporal_history_config(
     if deferred_reason is not None:
         deferred_reason = str(deferred_reason).strip() or None
 
+    compatibility_options = (
+        config_payload.raw_temporal_options
+        if config_payload.raw_temporal_options
+        else config_payload.temporal_options
+    )
     return TemporalInferenceHistoryConfig(
         model_meta_id=_coerce_int_config(
             config_payload.model_meta_id,
@@ -893,8 +1007,7 @@ def _parse_temporal_history_config(
             name="ocr_cap",
             default=10,
         ),
-        temporal_options=dict(config_payload.temporal_options),
-        raw_temporal_options=dict(config_payload.raw_temporal_options),
+        temporal_options=normalize_temporal_options(compatibility_options),
         queue=queue,
         frame_source_mode=_normalize_temporal_frame_source_mode(
             config_payload.frame_source_mode
@@ -910,9 +1023,9 @@ def _parse_temporal_history_config(
     )
 
 
-def _normalized_history_config(config: object | None) -> dict[str, object]:
+def _normalized_history_config(config: object | None) -> Mapping[str, object]:
     if isinstance(config, dict):
-        return cast(dict[str, object], config)
+        return cast(Mapping[str, object], config)
     return {}
 
 
@@ -943,7 +1056,7 @@ def _temporal_request_signature(
         "delete_frames_after": config.delete_frames_after,
         "ocr_frame_fraction": config.ocr_frame_fraction,
         "ocr_cap": config.ocr_cap,
-        "raw_temporal_options": dict(config.raw_temporal_options),
+        "temporal_options": config.temporal_options.to_dict(),
         "frame_source_mode": config.frame_source_mode,
         "test_run": config.test_run,
         "n_test_frames": config.n_test_frames,
@@ -1091,7 +1204,6 @@ def _reserve_temporal_inference_history(
                 ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
                 ocr_cap=dispatch_config.ocr_cap,
                 temporal_options=dispatch_config.temporal_options,
-                raw_temporal_options=dispatch_config.raw_temporal_options,
                 queue=dispatch_config.queue,
                 frame_source_mode=dispatch_config.frame_source_mode,
                 test_run=dispatch_config.test_run,
@@ -1247,7 +1359,7 @@ def _dispatch_temporal_inference_history(
             delete_frames_after=dispatch_config.delete_frames_after,
             ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
             ocr_cap=dispatch_config.ocr_cap,
-            temporal_options=dispatch_config.raw_temporal_options,
+            temporal_options=dispatch_config.temporal_options,
             test_run=dispatch_config.test_run,
             n_test_frames=dispatch_config.n_test_frames,
             frame_source_mode=dispatch_config.frame_source_mode,
@@ -1285,7 +1397,7 @@ def _dispatch_temporal_inference_history(
                     "delete_frames_after": bool(dispatch_config.delete_frames_after),
                     "ocr_frame_fraction": float(dispatch_config.ocr_frame_fraction),
                     "ocr_cap": int(dispatch_config.ocr_cap),
-                    "temporal_options": dict(dispatch_config.raw_temporal_options),
+                    "temporal_options": dispatch_config.temporal_options.to_dict(),
                     "test_run": bool(dispatch_config.test_run),
                     "n_test_frames": int(dispatch_config.n_test_frames),
                     "frame_source_mode": dispatch_config.frame_source_mode,
@@ -1330,7 +1442,7 @@ def _dispatch_temporal_inference_history(
                 delete_frames_after=dispatch_config.delete_frames_after,
                 ocr_frame_fraction=dispatch_config.ocr_frame_fraction,
                 ocr_cap=dispatch_config.ocr_cap,
-                temporal_options=dispatch_config.raw_temporal_options,
+                temporal_options=dispatch_config.temporal_options,
                 test_run=dispatch_config.test_run,
                 n_test_frames=dispatch_config.n_test_frames,
                 frame_source_mode=dispatch_config.frame_source_mode,
@@ -1455,8 +1567,7 @@ def dispatch_deferred_temporal_inference_after_rebuild(
 class _PreparedTemporalRun:
     video: VideoFile
     model_meta: ModelMeta
-    lx_options: Mapping[str, Any]
-    normalized_options: Mapping[str, Any]
+    temporal_options: CanonicalTemporalOptions
     requested_frame_source_mode: FrameSourceMode
     resolved_frame_source_mode: FrameSourceMode
     frames_touched: bool
@@ -1566,7 +1677,7 @@ def _prepare_temporal_run(
     model_meta_id: int,
     history: VideoProcessingHistory | None,
     requested_frame_source_mode: FrameSourceMode,
-    temporal_options: Mapping[str, Any] | None,
+    temporal_options: CanonicalTemporalOptions,
     ocr_frame_fraction: float,
     ocr_cap: int,
 ) -> _PreparedTemporalRun:
@@ -1574,7 +1685,6 @@ def _prepare_temporal_run(
     model_meta = ModelMeta.objects.select_related("model", "labelset").get(
         pk=model_meta_id
     )
-    lx_options, normalized_options = build_lx_temporal_options(temporal_options)
     mark_frame_prediction_reset(video)
     video.refresh_from_db()
     update_video_meta(video)
@@ -1596,8 +1706,7 @@ def _prepare_temporal_run(
     return _PreparedTemporalRun(
         video=video,
         model_meta=model_meta,
-        lx_options=lx_options,
-        normalized_options=normalized_options,
+        temporal_options=temporal_options,
         requested_frame_source_mode=requested_frame_source_mode,
         resolved_frame_source_mode=resolved_mode,
         frames_touched=frames_touched,
@@ -1631,7 +1740,7 @@ def _predict_temporal_segments(
     score_result = _smooth_scores_by_presentation_time(
         score_result,
         score_timeline,
-        window_seconds=float(prepared.normalized_options["smoothing_window_seconds"]),
+        window_seconds=prepared.temporal_options.smoothing_window_seconds,
     )
     request_id = (
         f"video-{prepared.video.pk}-temporal-{history.pk if history else uuid.uuid4()}"
@@ -1640,15 +1749,15 @@ def _predict_temporal_segments(
         _run_lx_ai_core_temporal_inference(
             model_meta=prepared.model_meta,
             score_result=score_result,
-            lx_options=prepared.lx_options,
+            lx_options=prepared.temporal_options.lx_options,
             request_id=request_id,
         )
     )
     sequences = _segments_to_sequences(
         inference_result.temporal_segments,
         timeline=score_timeline,
-        min_length_seconds=float(prepared.normalized_options["min_length_seconds"]),
-        max_gap_seconds=float(prepared.normalized_options["max_gap_seconds"]),
+        min_length_seconds=prepared.temporal_options.min_length_seconds,
+        max_gap_seconds=prepared.temporal_options.max_gap_seconds,
     )
     return _TemporalPrediction(
         score_result=score_result,
@@ -1703,13 +1812,7 @@ def _save_temporal_video_state(
     sequences: Mapping[str, list[tuple[int, int]]],
     created_segment_count: int,
 ) -> None:
-    video.sequences = cast(
-        VideoFileMetaJsonObject,
-        {
-            label: [[start, end] for start, end in ranges]
-            for label, ranges in sequences.items()
-        },
-    )
+    video.sequences = validate_video_segments_payload(sequences).as_dict
     video.save(update_fields=["sequences"])
     mark_frame_prediction_completed(video)
     mark_prediction_segments_created(
@@ -1732,32 +1835,37 @@ def _record_temporal_history_success(
     result = prediction.inference_result
     score_result = prediction.score_result
     resolved_mode = prepared.resolved_frame_source_mode
-    history.config = {
-        **(history.config or {}),
-        "frame_source_mode": resolved_mode,
-        "requested_frame_source_mode": prepared.requested_frame_source_mode,
-        "resolved_frame_source_mode": resolved_mode,
-        "temporal_options": dict(prepared.normalized_options),
-        "result": {
-            "backend": result.backend,
-            "device": result.device,
-            "duration_ms": result.duration_ms,
-            "provenance": result.provenance,
-            "score_frame_count": score_result.frame_count,
-            "score_label_count": len(score_result.labels),
-            "score_frame_numbers_present": score_result.frame_numbers is not None,
-            "score_timestamps_present": score_result.timestamps is not None,
+    history.config = cast(
+        JsonObject,
+        {
+            **(history.config or {}),
             "frame_source_mode": resolved_mode,
             "requested_frame_source_mode": prepared.requested_frame_source_mode,
             "resolved_frame_source_mode": resolved_mode,
-            "source_video_kind": ("frame_cache" if resolved_mode == "cache" else "raw"),
-            "temporal_segment_count": len(result.temporal_segments),
-            "materialized_segment_count": current_count,
-            "created_segment_count": max(current_count - before_count, 0),
-            "deleted_prediction_segments": deleted_prediction_segments,
-            "score_vectors_stored": False,
+            "temporal_options": prepared.temporal_options.to_dict(),
+            "result": {
+                "backend": result.backend,
+                "device": result.device,
+                "duration_ms": result.duration_ms,
+                "provenance": result.provenance,
+                "score_frame_count": score_result.frame_count,
+                "score_label_count": len(score_result.labels),
+                "score_frame_numbers_present": score_result.frame_numbers is not None,
+                "score_timestamps_present": score_result.timestamps is not None,
+                "frame_source_mode": resolved_mode,
+                "requested_frame_source_mode": prepared.requested_frame_source_mode,
+                "resolved_frame_source_mode": resolved_mode,
+                "source_video_kind": (
+                    "frame_cache" if resolved_mode == "cache" else "raw"
+                ),
+                "temporal_segment_count": len(result.temporal_segments),
+                "materialized_segment_count": current_count,
+                "created_segment_count": max(current_count - before_count, 0),
+                "deleted_prediction_segments": deleted_prediction_segments,
+                "score_vectors_stored": False,
+            },
         },
-    }
+    )
     history.save(update_fields=["config"])
     history.mark_success(details="Temporal inference completed.")
 
@@ -1859,13 +1967,14 @@ def _run_video_temporal_inference(
     delete_frames_after: bool = True,
     ocr_frame_fraction: float = 0.001,
     ocr_cap: int = 10,
-    temporal_options: Mapping[str, Any] | None = None,
+    temporal_options: Mapping[str, Any] | CanonicalTemporalOptions | None = None,
     test_run: bool = False,
     n_test_frames: int = 10,
     frame_source_mode: str | None = None,
 ) -> bool:
+    canonical_temporal_options = normalize_temporal_options(temporal_options)
     history = _get_processing_history(history_id)
-    history_config: dict[str, object] = (
+    history_config: Mapping[str, object] = (
         _normalized_history_config(history.config) if history is not None else {}
     )
     requested_frame_source_mode = _normalize_temporal_frame_source_mode(
@@ -1886,7 +1995,7 @@ def _run_video_temporal_inference(
             model_meta_id=model_meta_id,
             history=history,
             requested_frame_source_mode=requested_frame_source_mode,
-            temporal_options=temporal_options,
+            temporal_options=canonical_temporal_options,
             ocr_frame_fraction=ocr_frame_fraction,
             ocr_cap=ocr_cap,
         )
@@ -1940,18 +2049,15 @@ def dispatch_video_temporal_inference(
     frame_source_mode = _normalize_temporal_frame_source_mode()
     task_id = str(uuid.uuid4())
     queue = get_celery_inference_queue()
+    canonical_temporal_options = normalize_temporal_options(temporal_options)
     video = VideoFile.objects.get(pk=video_id)
-    _, normalized_temporal_options = build_lx_temporal_options(
-        temporal_options,
-    )
     dispatch_config = TemporalInferenceHistoryConfig(
         model_meta_id=int(model_meta_id),
         replace_prediction_segments=bool(replace_prediction_segments),
         delete_frames_after=bool(delete_frames_after),
         ocr_frame_fraction=float(ocr_frame_fraction),
         ocr_cap=int(ocr_cap),
-        temporal_options=normalized_temporal_options,
-        raw_temporal_options=dict(temporal_options or {}),
+        temporal_options=canonical_temporal_options,
         queue=queue,
         frame_source_mode=frame_source_mode,
         test_run=bool(test_run),

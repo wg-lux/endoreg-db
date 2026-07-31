@@ -237,6 +237,121 @@ def test_build_lx_temporal_options_rejects_invalid_model():
         jobs.build_lx_temporal_options({"temporal_model": "unknown"})
 
 
+def test_temporal_options_boundary_normalizes_legacy_mapping_once():
+    options = jobs.normalize_temporal_options(
+        {
+            "temporal_model": " Markov ",
+            "min_length_seconds": "2.5",
+            "temporal_smoothing_enabled": "false",
+        }
+    )
+
+    assert isinstance(options, jobs.CanonicalTemporalOptions)
+    assert options.min_length_seconds == 2.5
+    assert options.smoothing_window_seconds == 0.0
+    assert options.temporal_smoothing_enabled is False
+    assert options.lx_options["temporal_model"] == "markov"
+    assert jobs.normalize_temporal_options(options) is options
+
+
+def test_temporal_options_boundary_roundtrips_only_canonical_shape():
+    canonical = jobs.normalize_temporal_options(
+        {"temporal_model": "viterbi", "max_gap_seconds": 0.25}
+    )
+
+    reparsed = jobs.normalize_temporal_options(canonical.to_dict())
+
+    assert reparsed == canonical
+    assert set(reparsed.to_dict()) == {
+        "coordinate_basis",
+        "min_length_seconds",
+        "max_gap_seconds",
+        "smoothing_window_seconds",
+        "temporal_smoothing_enabled",
+        "lx_options",
+    }
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"unexpected_option": True}, "unknown temporal options"),
+        ({"threshold": float("nan")}, "threshold must be finite"),
+        (
+            {
+                "coordinate_basis": "presentation_timestamps",
+                "min_length_seconds": "1.0",
+                "max_gap_seconds": 0.0,
+                "smoothing_window_seconds": 1.0,
+                "temporal_smoothing_enabled": True,
+                "lx_options": {},
+            },
+            "valid number",
+        ),
+    ],
+)
+def test_temporal_options_boundary_rejects_noncanonical_input(
+    payload: dict[str, object],
+    message: str,
+):
+    with pytest.raises(jobs.TemporalInferenceConfigError, match=message):
+        jobs.normalize_temporal_options(payload)
+
+
+def test_temporal_history_parser_upgrades_raw_options_to_canonical_shape():
+    config = jobs._parse_temporal_history_config(
+        {
+            "kind": jobs.TEMPORAL_INFERENCE_KIND,
+            "model_meta_id": 7,
+            "queue": "inference",
+            "temporal_options": jobs.normalize_temporal_options({}).to_dict(),
+            "raw_temporal_options": {"temporal_model": "markov"},
+        }
+    )
+
+    assert config is not None
+    assert config.temporal_options.lx_options["temporal_model"] == "markov"
+    assert "raw_temporal_options" not in config.to_dict()
+
+
+def test_extract_temporal_options_accepts_known_api_envelope_only():
+    assert jobs.extract_temporal_options(
+        {
+            "model_meta_id": 7,
+            "replace_prediction_segments": True,
+            "temporal_model": "markov",
+            "threshold": 0.7,
+        }
+    ) == {"temporal_model": "markov", "threshold": 0.7}
+
+
+def test_extract_temporal_options_rejects_unknown_api_field():
+    with pytest.raises(
+        jobs.TemporalInferenceConfigError,
+        match="unknown temporal request options: typo_threshold",
+    ):
+        jobs.extract_temporal_options({"typo_threshold": 0.7})
+
+
+def test_run_job_boundary_rejects_invalid_options_before_database_access(
+    monkeypatch: MonkeyPatch,
+):
+    history_lookup = Mock(side_effect=AssertionError("database must not be read"))
+    monkeypatch.setattr(jobs, "_get_processing_history", history_lookup)
+
+    with pytest.raises(
+        jobs.TemporalInferenceConfigError,
+        match="unknown temporal options: typo_threshold",
+    ):
+        jobs._run_video_temporal_inference(
+            1,
+            model_meta_id=1,
+            temporal_options={"typo_threshold": 0.7},
+        )
+
+    history_lookup.assert_not_called()
+
+
 def test_smooth_scores_uses_elapsed_presentation_time():
     score_result = VideoFrameScoreResult(
         labels=["finding"],
@@ -358,11 +473,14 @@ def test_dispatch_video_temporal_inference_uses_inference_queue(
     assert result.task_id == "temporal-task-1"
     fake_task.apply_async.assert_called_once()
     assert fake_task.apply_async.call_args.kwargs["queue"] == "inference_hi"
+    task_options = fake_task.apply_async.call_args.kwargs["kwargs"]["temporal_options"]
     history = VideoProcessingHistory.objects.get(pk=result.history_id)
     history_config = parse_temporal_inference_history_config_payload(history.config)
     assert history.operation == VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
     assert history_config.kind == jobs.TEMPORAL_INFERENCE_KIND
     assert history_config.frame_source_mode == "stream"
+    assert task_options == history_config.temporal_options
+    assert "raw_temporal_options" not in history.config
 
 
 @pytest.mark.django_db
@@ -438,7 +556,9 @@ def test_dispatch_video_temporal_inference_defers_for_blackening_rebuild(
         == jobs.TEMPORAL_INFERENCE_DEFERRED_REASON_REPROCESSING
     )
     assert history_config.blocked_by_history_id == rebuild_history.pk
-    assert history_config.raw_temporal_options == {"temporal_model": "markov"}
+    canonical_options = jobs.normalize_temporal_options(history_config.temporal_options)
+    assert canonical_options.lx_options["temporal_model"] == "markov"
+    assert "raw_temporal_options" not in history.config
     assert history_config.delete_frames_after is False
 
 
@@ -526,7 +646,11 @@ def test_dispatch_video_temporal_inference_latest_deferred_request_wins(
     )
     assert old_history.status == VideoProcessingHistory.STATUS_CANCELLED
     assert new_history.status == VideoProcessingHistory.STATUS_PENDING
-    assert new_history_config.raw_temporal_options == {"temporal_model": "hysteresis"}
+    canonical_options = jobs.normalize_temporal_options(
+        new_history_config.temporal_options
+    )
+    assert canonical_options.lx_options["temporal_model"] == "hysteresis"
+    assert "raw_temporal_options" not in new_history.config
 
 
 @pytest.mark.django_db

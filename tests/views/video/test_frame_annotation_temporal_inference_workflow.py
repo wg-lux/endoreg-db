@@ -469,6 +469,28 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         self.assertEqual(data["error_type"], "invalid_options")
         self.assertIn("replace existing prediction segments", data["error"])
 
+    def test_rerun_prediction_segments_rejects_unknown_temporal_option(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            {
+                "model_meta_id": self.model_meta.pk,
+                "typo_threshold": 0.7,
+            },
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference",
+            side_effect=AssertionError("invalid options must not dispatch"),
+        ) as dispatch:
+            response = rerun_prediction_segments(request, self.video.pk)
+        data = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 400, data)
+        self.assertEqual(data["error_type"], "invalid_temporal_options")
+        self.assertIn("unknown temporal request options: typo_threshold", data["error"])
+        dispatch.assert_not_called()
+
     def test_manual_frame_annotation_after_temporal_prediction_excludes_completed_target(
         self,
     ):

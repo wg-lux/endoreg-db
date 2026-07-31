@@ -11,7 +11,12 @@ from typing import Optional
 from django.contrib.auth.models import User
 from django.db import transaction
 
-from ..models import VideoFile, Label, LabelVideoSegment, InformationSource
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.other.information_source import InformationSource
 from ..models.label.label_video_segment.label_video_segment import (
     SegmentLabel,
     SegmentPredictionMeta,

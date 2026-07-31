@@ -14,17 +14,17 @@ from django.db.models.base import ModelBase
 from django.db.models import CheckConstraint, F, Q
 from tqdm import tqdm
 
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.frames import (
     delete_video_frame_range,
     extract_video_frame_range,
-    get_video_fps,
 )
+from endoreg_db.services.video_files.metadata import get_video_fps
 from ._create_from_video import _create_from_video
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.medical.patient.patient_finding import PatientFinding
     from endoreg_db.models.metadata.model_meta import ModelMeta
@@ -273,7 +273,7 @@ class LabelVideoSegment(models.Model):
         """
         Domain helper: update validation state (and optionally information source).
         """
-        from endoreg_db.models import InformationSource  # avoid import cycle
+        from endoreg_db.models.other.information_source import InformationSource
 
         # ensure state exists
         state, _ = self.get_or_create_state()
@@ -392,7 +392,7 @@ class LabelVideoSegment(models.Model):
                                                  object and a boolean indicating
                                                  if it was created.
         """
-        from endoreg_db.models import LabelVideoSegmentState
+        from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 
         state, created = LabelVideoSegmentState.objects.get_or_create(origin=self)
         return state, created
@@ -487,7 +487,7 @@ class LabelVideoSegment(models.Model):
         Returns:
             QuerySet[Frame]: Frames with frame numbers in [start_frame_number, end_frame_number) ordered by frame number, or an empty queryset if unavailable.
         """
-        from endoreg_db.models.media.frame import Frame
+        from endoreg_db.models.media.frame.frame import Frame
 
         try:
             video_obj = self.get_video()
@@ -515,7 +515,9 @@ class LabelVideoSegment(models.Model):
         Returns:
             QuerySet: ImageClassificationAnnotation objects for frames in the segment with the segment's label. Returns an empty queryset if the segment is not associated with a video.
         """
-        from endoreg_db.models import ImageClassificationAnnotation
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
 
         try:
             video_obj = self.get_video()
@@ -540,7 +542,9 @@ class LabelVideoSegment(models.Model):
         Returns:
             QuerySet: ImageClassificationAnnotation objects for frames in the segment, filtered by label and information source type "prediction".
         """
-        from endoreg_db.models import ImageClassificationAnnotation
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
         from endoreg_db.models.state.frame_annotation import (
             prediction_annotation_filter,
         )
@@ -570,7 +574,9 @@ class LabelVideoSegment(models.Model):
         Returns:
             QuerySet: Manual `ImageClassificationAnnotation` objects for the segment's frames and label. Returns an empty queryset if the segment is not associated with a video.
         """
-        from endoreg_db.models import ImageClassificationAnnotation
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
         from endoreg_db.models.state.frame_annotation import manual_annotation_filter
 
         try:
@@ -608,7 +614,9 @@ class LabelVideoSegment(models.Model):
         Get up to n frames within the segment that do not have an ImageClassificationAnnotation
         for this segment's label.
         """
-        from endoreg_db.models import ImageClassificationAnnotation
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
 
         frames_qs = self.get_frames()
         if not frames_qs.exists():
@@ -647,9 +655,12 @@ class LabelVideoSegment(models.Model):
         #     )
         #     return
 
-        from endoreg_db.models import ImageClassificationAnnotation, InformationSource
-        from endoreg_db.models.state import frame_annotation as frame_annotation_state
+        from endoreg_db.models.label.annotation.image_classification import (
+            ImageClassificationAnnotation,
+        )
+        from endoreg_db.models.other.information_source import InformationSource
         from endoreg_db.models.state.frame_annotation import (
+            is_prediction_segment,
             manual_frame_annotation_preference_filter,
             segment_derived_external_annotation_id,
         )
@@ -661,7 +672,7 @@ class LabelVideoSegment(models.Model):
             )
         typed_is_prediction_segment = cast(
             Callable[["LabelVideoSegment"], bool],
-            frame_annotation_state.is_prediction_segment,
+            is_prediction_segment,
         )
         normalized_annotator = None
         if annotator is not None:

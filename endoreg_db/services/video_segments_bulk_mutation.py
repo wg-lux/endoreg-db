@@ -20,15 +20,15 @@ from endoreg_db.models.state.frame_annotation import (
     delete_frame_annotations_for_segment as default_delete_frame_annotations,
     sync_frame_annotations_for_segment as default_sync_frame_annotations,
 )
-from endoreg_db.models.state.video_segment_validation import (
-    mark_segment_annotations_stale,
-)
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
     LabelVideoSegmentTimelineSerializer,
 )
 from endoreg_db.services.label_video_segment_states import (
     ensure_label_video_segment_states,
+)
+from endoreg_db.services.video_segment_validation_workflow import (
+    mark_segment_annotations_stale,
 )
 
 SyncFrameAnnotations = Callable[..., None]

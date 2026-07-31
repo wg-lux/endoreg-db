@@ -20,7 +20,10 @@ from typing import (
 
 from django.db.models import Q, QuerySet
 
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.media_urls import build_video_frame_stream_path
 from endoreg_db.utils.rust_backend import (
     derive_frame_annotation_status,
@@ -32,11 +35,15 @@ from lx_dtypes.models.contracts.frame_annotation import (
     FrameAnnotationLabelOptionPayload,
     FrameAnnotationTaskPayload,
 )
-from endoreg_db.models.label import LabelVideoSegment
-
 if TYPE_CHECKING:
-    from endoreg_db.models import AIDataSet, Frame, VideoFile
-    from endoreg_db.models.label import ImageClassificationAnnotation, Label, LabelSet
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_set import LabelSet
+    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 class RequestUserLike(Protocol):
@@ -404,7 +411,7 @@ def resolve_ai_dataset_for_queue(
     dataset_type_raw: object,
     dataset_id_raw: object = None,
 ) -> AIDataSet | None:
-    from endoreg_db.models import AIDataSet
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
     from endoreg_db.utils.set_default_center import get_application_settings
 
     if dataset_id_raw not in (None, ""):
@@ -530,7 +537,9 @@ def resolve_frame_annotation_status(video: VideoFile) -> str:
 
 
 def validated_annotators_for_video(video: VideoFile) -> list[str]:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     annotators = (
         ImageClassificationAnnotation.objects.filter(frame__video=video)
@@ -651,7 +660,7 @@ def _build_frame_task_queryset(
     exclude_frame_ids: set[int] | None = None,
     candidate_frame_ids: set[int] | None = None,
 ) -> QuerySet[Frame]:
-    from endoreg_db.models import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     frames_qs: QuerySet[Frame] = Frame.objects.select_related("video")
     if require_extracted_frames:
@@ -774,7 +783,7 @@ def _build_dataset_target_buckets(
     target_label: Label | None,
     require_extracted_frames: bool,
 ) -> dict[str, set[int]]:
-    from endoreg_db.models import AIDataSet
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
 
     if dataset is None:
         return {}
@@ -929,7 +938,7 @@ def _build_segment_frame_buckets(
     if dataset is None:
         return {}
 
-    from endoreg_db.models import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     buckets: dict[int, set[int]] = defaultdict(set)
 
@@ -1296,7 +1305,9 @@ def delete_frame_annotations_for_segment(
     information_source_id: int | None,
     model_meta_id: int | None,
 ) -> int:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     filters = _segment_annotation_filters(
         video=video,
@@ -1317,7 +1328,9 @@ def sync_frame_annotations_for_segment(
     segment: LabelVideoSegmentLike,
     old_snapshot: SegmentAnnotationSnapshot | None = None,
 ) -> None:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     if old_snapshot:
         delete_frame_annotations_for_segment(
