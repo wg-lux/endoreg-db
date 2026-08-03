@@ -19,20 +19,28 @@ from tracker import (
     AssessmentStatus,
     Evidence,
     EvidenceKind,
+    ExecutionMode,
     FeatureDefinition,
     FeatureTrackingState,
     REPOSITORY_ROOT,
     ReadinessStatus,
+    OrchestrationContract,
     TRACKING_DIR,
+    TaskTopology,
     TrackerError,
     Verification,
     VerificationCommand,
     VerificationKind,
+    WorkerFinding,
+    WorkerResult,
+    WorkUnit,
+    WorkUnitStatus,
     acquire_feature_lock,
     acknowledge_agent_message,
     active_feature_locks,
     actively_tracked_features,
     agent_inbox,
+    checkpoint_orchestration,
     derive_readiness,
     find_feature_references,
     guard_commit_message,
@@ -925,6 +933,120 @@ def test_agent_message_expiry_and_terminal_control_validation(tmp_path: Path) ->
             body="body",
             created_at=created_at,
             expires_at=created_at + timedelta(hours=1),
+        )
+
+
+def _work_unit(unit_id: str, *, depends_on: tuple[str, ...] = ()) -> WorkUnit:
+    return WorkUnit(
+        id=unit_id,
+        responsibility=f"Review {unit_id}",
+        criterion_id="terminal_commands",
+        depends_on=depends_on,
+        max_turns=1,
+        token_budget=1_000,
+    )
+
+
+def test_orchestration_contract_matches_execution_mode_to_topology() -> None:
+    with pytest.raises(ValueError, match="sequential topology requires single_agent"):
+        OrchestrationContract(
+            run_id="sequential-review",
+            feature_id="standard",
+            orchestrator="codex/root",
+            topology=TaskTopology.SEQUENTIAL_INTERDEPENDENT,
+            execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+            max_workers=2,
+            total_token_budget=2_000,
+            work_units=(_work_unit("first"), _work_unit("second")),
+        )
+
+    parallel = OrchestrationContract(
+        run_id="parallel-review",
+        feature_id="standard",
+        orchestrator="codex/root",
+        topology=TaskTopology.INDEPENDENT_PARALLEL,
+        execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+        max_workers=2,
+        total_token_budget=2_000,
+        work_units=(_work_unit("first"), _work_unit("second")),
+    )
+
+    assert parallel.max_workers == 2
+
+
+def test_orchestration_contract_enforces_dependency_and_budget_guardrails() -> None:
+    with pytest.raises(ValueError, match="at least two non-blocking root"):
+        OrchestrationContract(
+            run_id="false-parallelism",
+            feature_id="standard",
+            orchestrator="codex/root",
+            topology=TaskTopology.INDEPENDENT_PARALLEL,
+            execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+            max_workers=2,
+            total_token_budget=2_000,
+            work_units=(
+                _work_unit("first"),
+                _work_unit("second", depends_on=("first",)),
+            ),
+        )
+
+    with pytest.raises(ValueError, match="exceeding the 1000 token budget"):
+        OrchestrationContract(
+            run_id="over-budget",
+            feature_id="standard",
+            orchestrator="codex/root",
+            topology=TaskTopology.SEQUENTIAL_INTERDEPENDENT,
+            execution_mode=ExecutionMode.SINGLE_AGENT,
+            max_workers=1,
+            total_token_budget=1_000,
+            work_units=(_work_unit("first"), _work_unit("second")),
+        )
+
+
+def test_worker_result_schema_and_checkpoints_are_strict_and_idempotent() -> None:
+    contract = OrchestrationContract(
+        run_id="checkpoint-review",
+        feature_id="standard",
+        orchestrator="codex/root",
+        topology=TaskTopology.SEQUENTIAL_INTERDEPENDENT,
+        execution_mode=ExecutionMode.SINGLE_AGENT,
+        max_workers=1,
+        total_token_budget=1_000,
+        work_units=(_work_unit("review"),),
+    )
+    in_progress = checkpoint_orchestration(
+        contract,
+        work_unit_id="review",
+        status=WorkUnitStatus.IN_PROGRESS,
+    )
+    assert checkpoint_orchestration(
+        in_progress,
+        work_unit_id="review",
+        status=WorkUnitStatus.IN_PROGRESS,
+    ) is in_progress
+
+    result = WorkerResult(
+        task_status="complete",
+        findings=(
+            WorkerFinding(
+                claim="The focused contract passes.",
+                source="feature-tracking/test_tracker.py",
+                confidence="high",
+            ),
+        ),
+    )
+    complete = checkpoint_orchestration(
+        in_progress,
+        work_unit_id="review",
+        status=WorkUnitStatus.COMPLETE,
+        result=result,
+    )
+    assert complete.work_units[0].result == result
+    with pytest.raises(TrackerError, match="complete -> in_progress"):
+        checkpoint_orchestration(
+            complete,
+            work_unit_id="review",
+            status=WorkUnitStatus.IN_PROGRESS,
         )
 
 

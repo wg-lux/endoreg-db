@@ -38,18 +38,27 @@ definition_of_done:
       and deployment roles.
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: docs/wiki/hub_ingest_current_state.md
     - kind: document
+      reference: docs/deployment_note_hub_contract.md
+    - kind: document
       reference: docs/hub_ingest_operations.md
     - kind: document
-      reference: docs/deployment_note_hub_contract.md
-    note: Der Machine-to-Machine-Vertrag, die Node-basierte Center-Grenze und die Trennung von Benutzer-Uploads
-      sind dokumentiert; die vorgesehene gemeinsame Sender-/Receiver-Review bleibt ausstehend.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T12:44:37.094923Z'
+      reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
+    - kind: review
+      reference: 'PR #312 und lx-annotate Sender-/endoreg-db Receiver-Vertrag am 2026-08-03 gemeinsam
+        geprüft; Raw-Media bleibt verboten, Zustände sind getrennt, Phase 1 erzwingt mTLS und Phase 2
+        bleibt an Envelope Encryption gebunden.'
+    note: 'Sender- und Receiver-Verträge wurden gemeinsam gegen PR #312 und die aktuellen Ownership-Grenzen
+      geprüft. Ausschließlich anonymisierte verarbeitete Video-/Report-Artefakte sind zulässig; Markierung,
+      Queueing, Registrierung, Upload, verifizierte Anwendung und Cleanup bleiben getrennte Zustände.
+      Die aktuelle Phase 1 ist fail-closed an HTTPS/mTLS und den geschützten lokalen Speicher gebunden;
+      eigenständige Blob-Transfers bleiben bis zur Envelope-Encryption-Phase gesperrt.'
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T10:55:25.563881Z'
 - id: operator_verification_and_attribution
   category: functionality
   title: Every transfer intent is visibly verified and attributable to an authenticated operator
@@ -162,10 +171,27 @@ definition_of_done:
       reference: 'lx-annotate: tests/hub (65 passed)'
     - kind: command
       reference: 'lx-annotate frontend: HubExportOverviewComponent and hubExportStore (9 passed)'
-    note: Receiver Node-/Center-Grenzen, Sender-Autorisierung und -Integrität sowie UI-/Store-Verträge
-      sind in beiden Repositories grün.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T12:45:55.462479Z'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+        tests/services/test_transfer_job_contract.py -q (51 passed in 46.12s, 2026-08-03)
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in
+        11.92s, 2026-08-03)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q
+        (7 passed in 4.43s, 2026-08-03; uncommitted reviewed middleware change)
+    - kind: review
+      reference: 'GitHub PR #312 review thread r3703197736 and merge-tree review against prototype at
+        65bb109f: direct merge rejected because the stale branch conflicts across more than 60 files;
+        current contract and tests require NetworkNode.owning_center scope independent of Django session
+        scope.'
+    note: 'Receiver Node-/Center-Grenzen, Sender-Autorisierung und -Integrität sowie UI-/Store-Verträge
+      sind in beiden Repositories grün. PR #312 wird nicht direkt integriert: Die mTLS-Senderfunktion
+      liegt bereits typisiert und fail-closed in lx-annotate; der offene Session-Scope-Review widerspricht
+      dem festgelegten Machine-to-Machine-Vertrag. Die separate, noch uncommittete Proxy-Prefix-Korrektur
+      wurde geprüft und mit sieben Middleware-Tests bestätigt.'
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T13:05:00Z'
 - id: recovery_cleanup_and_capacity
   category: operations
   title: Recovery, retry exhaustion, cleanup, and capacity handling are production-ready

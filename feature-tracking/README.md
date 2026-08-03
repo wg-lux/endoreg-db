@@ -118,6 +118,39 @@ Nachrichten nach sieben Tagen ab. Betreff und Inhalt lehnen Terminal-Steuerzeich
 ab. Nachrichten dürfen keine Secrets, Patientendaten oder vollständigen
 sensiblen Payloads enthalten.
 
+## Typisierte Multi-Agent-Orchestrierung
+
+Mehrere Worker sind nur für unabhängig ausführbare Zweige zulässig. Sequenzielle
+oder voneinander abhängige Arbeit bleibt in einem kontextreichen Agenten. Jeder
+Lauf besitzt einen strikten JSON-Vertrag: Er wählt `single_agent` oder
+`centralized_multi_agent`, benennt genau einen Orchestrator, begrenzt Worker auf
+vier, Worker-Turns auf ein oder zwei und das gesamte Token-Budget auf 50.000.
+Parallele Pläne benötigen mindestens zwei nicht blockierte Root-Work-Units;
+Abhängigkeitsketten dürfen nicht als Parallelität deklariert werden.
+
+Jede Work-Unit hat genau eine Verantwortung und liefert ausschließlich ein
+schema-validiertes Ergebnis mit `task_status`, belegten `findings`, Konfidenz
+und expliziten `gaps`. Worker berichten an den benannten Orchestrator; ein
+Peer-to-Peer-Mesh ist nicht Teil des Vertrags. Vor Delegation wird der Plan
+gegen Tracker und Schema geprüft:
+
+```bash
+./feature-tracking/tracker.py orchestration validate run-contract.json
+```
+
+Stage-Grenzen werden atomar gespeichert. Eine Work-Unit wechselt von `pending`
+zu `in_progress` und danach zu `complete` oder `blocked`; blockierte Arbeit kann
+wieder aufgenommen werden. Derselbe Checkpoint ist idempotent, ungültige
+Übergänge schlagen laut fehl. Für `complete` und `blocked` ist eine passende
+Worker-Result-JSON-Datei erforderlich.
+
+```bash
+./feature-tracking/tracker.py orchestration checkpoint run-contract.json audit_api \
+  --status in_progress
+./feature-tracking/tracker.py orchestration checkpoint run-contract.json audit_api \
+  --status complete --result-file audit-api-result.json
+```
+
 ## Commit-Gate
 
 Die Pre-Commit-Konfiguration installiert zusätzlich einen `commit-msg`-Hook.

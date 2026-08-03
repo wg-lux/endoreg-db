@@ -446,6 +446,180 @@ class AgentMessage(BaseModel):
         return self
 
 
+class TaskTopology(StrEnum):
+    """Dependency shape used to choose a safe agent execution mode."""
+
+    INDEPENDENT_PARALLEL = "independent_parallel"
+    SEQUENTIAL_INTERDEPENDENT = "sequential_interdependent"
+
+
+class ExecutionMode(StrEnum):
+    SINGLE_AGENT = "single_agent"
+    CENTRALIZED_MULTI_AGENT = "centralized_multi_agent"
+
+
+class WorkUnitStatus(StrEnum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    COMPLETE = "complete"
+
+
+class FindingConfidence(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class WorkerFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    claim: str = Field(min_length=1, max_length=2000)
+    source: str = Field(min_length=1, max_length=1000)
+    confidence: FindingConfidence
+
+
+class WorkerResult(BaseModel):
+    """Schema-enforced worker-to-orchestrator response."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    task_status: Literal["complete", "blocked"]
+    findings: tuple[WorkerFinding, ...] = ()
+    gaps: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_result(self) -> "WorkerResult":
+        if self.task_status == "complete" and not self.findings:
+            raise ValueError("complete worker results require at least one finding")
+        if self.task_status == "blocked" and not self.gaps:
+            raise ValueError("blocked worker results require at least one gap")
+        if len(self.gaps) != len(set(self.gaps)):
+            raise ValueError("worker result gaps must be unique")
+        return self
+
+
+class WorkUnit(BaseModel):
+    """One single-responsibility, budgeted, checkpointable worker task."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    responsibility: str = Field(min_length=1, max_length=500)
+    criterion_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    depends_on: tuple[str, ...] = ()
+    max_turns: int = Field(default=1, ge=1, le=2)
+    token_budget: int = Field(ge=1)
+    status: WorkUnitStatus = WorkUnitStatus.PENDING
+    result: WorkerResult | None = None
+
+    @field_validator("responsibility")
+    @classmethod
+    def enforce_single_responsibility(cls, value: str) -> str:
+        if re.search(r"\band\b", value, flags=re.IGNORECASE):
+            raise ValueError(
+                "work unit responsibility must describe one job; split conjunctions"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_checkpoint(self) -> "WorkUnit":
+        if len(self.depends_on) != len(set(self.depends_on)):
+            raise ValueError(f"work unit {self.id} dependencies must be unique")
+        if self.id in self.depends_on:
+            raise ValueError(f"work unit {self.id} cannot depend on itself")
+        if self.status in {WorkUnitStatus.COMPLETE, WorkUnitStatus.BLOCKED}:
+            if self.result is None or self.result.task_status != self.status.value:
+                raise ValueError(
+                    f"{self.status.value} work unit {self.id} requires a matching result"
+                )
+        elif self.result is not None:
+            raise ValueError(
+                f"{self.status.value} work unit {self.id} cannot contain a result"
+            )
+        return self
+
+
+class OrchestrationContract(BaseModel):
+    """Validated hub-and-spoke plan with explicit scaling guardrails."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    run_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    feature_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    orchestrator: str = Field(min_length=1, max_length=200)
+    topology: TaskTopology
+    execution_mode: ExecutionMode
+    max_workers: int = Field(ge=1, le=4)
+    total_token_budget: int = Field(ge=1, le=50_000)
+    work_units: tuple[WorkUnit, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_orchestration(self) -> "OrchestrationContract":
+        units_by_id = {unit.id: unit for unit in self.work_units}
+        if len(units_by_id) != len(self.work_units):
+            raise ValueError("work unit ids must be unique")
+        unknown_dependencies = {
+            dependency
+            for unit in self.work_units
+            for dependency in unit.depends_on
+            if dependency not in units_by_id
+        }
+        if unknown_dependencies:
+            raise ValueError(
+                "unknown work unit dependencies: "
+                + ", ".join(sorted(unknown_dependencies))
+            )
+        _validate_acyclic_work_units(self.work_units)
+        allocated_tokens = sum(unit.token_budget for unit in self.work_units)
+        if allocated_tokens > self.total_token_budget:
+            raise ValueError(
+                f"work units allocate {allocated_tokens} tokens, exceeding the "
+                f"{self.total_token_budget} token budget"
+            )
+
+        if self.topology is TaskTopology.SEQUENTIAL_INTERDEPENDENT:
+            if self.execution_mode is not ExecutionMode.SINGLE_AGENT:
+                raise ValueError("sequential topology requires single_agent mode")
+            if self.max_workers != 1:
+                raise ValueError("sequential topology requires max_workers=1")
+        elif len(self.work_units) == 1:
+            if self.execution_mode is not ExecutionMode.SINGLE_AGENT:
+                raise ValueError("one work unit requires single_agent mode")
+            if self.max_workers != 1:
+                raise ValueError("one work unit requires max_workers=1")
+        else:
+            roots = tuple(unit for unit in self.work_units if not unit.depends_on)
+            if len(roots) < 2:
+                raise ValueError(
+                    "parallel topology requires at least two non-blocking root work units"
+                )
+            if self.execution_mode is not ExecutionMode.CENTRALIZED_MULTI_AGENT:
+                raise ValueError(
+                    "parallel topology requires centralized_multi_agent mode"
+                )
+            if not 2 <= self.max_workers <= min(4, len(self.work_units)):
+                raise ValueError(
+                    "parallel max_workers must be between 2 and the work unit count"
+                )
+        return self
+
+
+def _validate_acyclic_work_units(work_units: Sequence[WorkUnit]) -> None:
+    dependencies = {unit.id: set(unit.depends_on) for unit in work_units}
+    remaining = set(dependencies)
+    while remaining:
+        ready = {
+            unit_id
+            for unit_id in remaining
+            if not (dependencies[unit_id] & remaining)
+        }
+        if not ready:
+            raise ValueError("work unit dependency graph must be acyclic")
+        remaining -= ready
+
+
 def _load_yaml(path: Path) -> object:
     try:
         with path.open("r", encoding="utf-8") as handle:
@@ -1294,6 +1468,102 @@ def print_agent_messages(
         )
 
 
+def load_orchestration_contract(path: Path) -> OrchestrationContract:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return OrchestrationContract.model_validate(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise TrackerError(f"Ungültiger Orchestrierungsvertrag in {path}: {exc}") from exc
+
+
+def load_worker_result(path: Path) -> WorkerResult:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return WorkerResult.model_validate(payload)
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise TrackerError(f"Ungültiges Worker-Ergebnis in {path}: {exc}") from exc
+
+
+def validate_orchestration_against_registry(
+    contract: OrchestrationContract,
+    features: Sequence[FeatureDefinition],
+) -> None:
+    feature = find_feature(features, contract.feature_id)
+    if feature.tracking.state is FeatureTrackingState.DONE:
+        raise TrackerError(
+            f"{feature.id} ist done und kann nicht orchestriert werden"
+        )
+    for work_unit in contract.work_units:
+        find_criterion(feature, work_unit.criterion_id)
+
+
+def checkpoint_orchestration(
+    contract: OrchestrationContract,
+    *,
+    work_unit_id: str,
+    status: WorkUnitStatus,
+    result: WorkerResult | None = None,
+) -> OrchestrationContract:
+    selected = next(
+        (unit for unit in contract.work_units if unit.id == work_unit_id), None
+    )
+    if selected is None:
+        available = ", ".join(unit.id for unit in contract.work_units)
+        raise TrackerError(
+            f"Unbekannte Work-Unit '{work_unit_id}'. Verfügbar: {available}"
+        )
+    if selected.status is status and selected.result == result:
+        return contract
+
+    allowed_transitions = {
+        WorkUnitStatus.PENDING: {WorkUnitStatus.IN_PROGRESS},
+        WorkUnitStatus.IN_PROGRESS: {
+            WorkUnitStatus.BLOCKED,
+            WorkUnitStatus.COMPLETE,
+        },
+        WorkUnitStatus.BLOCKED: {WorkUnitStatus.IN_PROGRESS},
+        WorkUnitStatus.COMPLETE: set(),
+    }
+    if status not in allowed_transitions[selected.status]:
+        raise TrackerError(
+            f"Ungültiger Checkpoint-Übergang für {work_unit_id}: "
+            f"{selected.status.value} -> {status.value}"
+        )
+    try:
+        updated_unit = WorkUnit.model_validate(
+            {
+                **selected.model_dump(mode="python"),
+                "status": status,
+                "result": result,
+            }
+        )
+        updated_units = tuple(
+            updated_unit if unit.id == work_unit_id else unit
+            for unit in contract.work_units
+        )
+        return OrchestrationContract.model_validate(
+            {
+                **contract.model_dump(mode="python"),
+                "work_units": updated_units,
+            }
+        )
+    except ValidationError as exc:
+        raise TrackerError(f"Ungültiger Checkpoint für {work_unit_id}: {exc}") from exc
+
+
+def save_orchestration_contract(
+    contract: OrchestrationContract,
+    path: Path,
+) -> None:
+    serialized = contract.model_dump_json(indent=2).encode("utf-8") + b"\n"
+    atomic_write_file(
+        destination=path,
+        content=(serialized,),
+        required_bytes=len(serialized),
+        file_mode=0o600,
+    )
+
+
 def update_assessment(
     feature: FeatureDefinition,
     *,
@@ -1926,6 +2196,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--ttl-hours", type=int, default=DEFAULT_MESSAGE_TTL_HOURS
     )
 
+    orchestration = subparsers.add_parser(
+        "orchestration",
+        help="Typisierte Topologie-, Budget- und Checkpoint-Verträge verwalten",
+    )
+    orchestration_subparsers = orchestration.add_subparsers(
+        dest="orchestration_command", required=True
+    )
+    orchestration_validate = orchestration_subparsers.add_parser(
+        "validate", help="Orchestrierungsvertrag gegen Schema und Registry prüfen"
+    )
+    orchestration_validate.add_argument("contract_file", type=Path)
+    orchestration_checkpoint = orchestration_subparsers.add_parser(
+        "checkpoint", help="Work-Unit atomar und idempotent fortschreiben"
+    )
+    orchestration_checkpoint.add_argument("contract_file", type=Path)
+    orchestration_checkpoint.add_argument("work_unit_id")
+    orchestration_checkpoint.add_argument(
+        "--status", required=True, choices=tuple(WorkUnitStatus)
+    )
+    orchestration_checkpoint.add_argument("--result-file", type=Path)
+
     guard = subparsers.add_parser(
         "guard-commit-message",
         help="Commit bei nicht erfüllter Feature-DoD ablehnen",
@@ -2052,6 +2343,36 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Antwort zugestellt: {reply.message_id}")
             return 0
         raise TrackerError(f"Unbekannter Nachrichten-Befehl: {message_command}")
+    if command == "orchestration":
+        orchestration_command = cast(str, args.orchestration_command)
+        contract_path = cast(Path, args.contract_file).resolve()
+        contract = load_orchestration_contract(contract_path)
+        validate_orchestration_against_registry(contract, features)
+        if orchestration_command == "validate":
+            print(
+                f"OK: Orchestrierungsvertrag {contract.run_id} ist gültig "
+                f"({contract.execution_mode.value}, {len(contract.work_units)} Work-Units)."
+            )
+            return 0
+        if orchestration_command == "checkpoint":
+            status = WorkUnitStatus(cast(str, args.status))
+            result_path = cast(Path | None, args.result_file)
+            result = load_worker_result(result_path) if result_path is not None else None
+            updated = checkpoint_orchestration(
+                contract,
+                work_unit_id=cast(str, args.work_unit_id),
+                status=status,
+                result=result,
+            )
+            save_orchestration_contract(updated, contract_path)
+            print(
+                f"Checkpoint gespeichert: {contract.run_id}/"
+                f"{cast(str, args.work_unit_id)} -> {status.value}"
+            )
+            return 0
+        raise TrackerError(
+            f"Unbekannter Orchestrierungs-Befehl: {orchestration_command}"
+        )
     if command == "validate":
         selected = _selected_features(features, cast(Sequence[str], args.feature_ids))
         for feature in selected:

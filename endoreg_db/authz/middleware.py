@@ -46,8 +46,25 @@ PUBLIC_PREFIXES = (
     "/__vite",  # if Vite dev assets ever used
 )
 
+# These machine-to-machine endpoints authenticate the source NetworkNode in
+# the DRF view and must reach that view without an interactive OIDC redirect.
+# Keep the paths separate from PUBLIC_PREFIXES: they are not public, and the
+# downstream view remains responsible for HTTPS/mTLS, shared-secret, and
+# owning-center enforcement.
+NODE_AUTHENTICATED_PATH_PREFIXES = (
+    "/api/media/hub/transfers",
+    "/endoreg-api/media/hub/transfers",
+)
+
 
 type GetResponse = Callable[[HttpRequest], HttpResponseBase]
+
+
+def _is_node_authenticated_path(path: str) -> bool:
+    return any(
+        path == prefix or path.startswith(f"{prefix}/")
+        for prefix in NODE_AUTHENTICATED_PATH_PREFIXES
+    )
 
 
 class LoginRequiredForAPIsMiddleware:
@@ -74,6 +91,9 @@ class LoginRequiredForAPIsMiddleware:
         # Allow static, assets, vite HMR, favicon, and OIDC endpoints without redirect
         # Skip public stuff
         if path.startswith(PUBLIC_PREFIXES):
+            return self.get_response(request)
+
+        if _is_node_authenticated_path(path):
             return self.get_response(request)
 
         # If not protected, pass through (shouldn’t happen with PROTECTED_PREFIXES=('/' ,))

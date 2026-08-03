@@ -6,7 +6,7 @@ owners:
 - endoreg_db maintainers
 production_critical: true
 tracking:
-  state: done
+  state: active
   history:
   - action: done
     changed_by: Codex
@@ -32,6 +32,11 @@ tracking:
     changed_at: '2026-07-31T10:39:30.927919Z'
     note: Codex-CLI-Koordination mit atomarem lokalem Nachrichtenpostfach, Owner-Bindung, Ablauf, Dokumentation
       und 37 fokussierten Tests verifiziert.
+  - action: reopened
+    changed_by: codex-root-20260803-topology
+    changed_at: '2026-08-03T10:06:42.365155Z'
+    note: Add topology-aligned single-agent versus centralized multi-agent contracts, strict worker result
+      schemas, budget guardrails, and idempotent checkpoints.
 source_documents:
 - path: feature-tracking/README.md
   disposition: reference
@@ -77,6 +82,10 @@ definition_of_done:
     Feature-/Kriteriumsbezug; Lock-Akquisition zeigt ungelesene Nachrichten desselben Owners an.
   - Nachrichten werden atomar und owner-privat im lokalen Runtime-Verzeichnis gespeichert, laufen begrenzt
     ab, lehnen Terminal-Steuerzeichen ab und erzeugen keinen parallelen Readiness- oder Status-Tracker.
+  - Orchestrierungsverträge wählen für sequenzielle Arbeit genau einen Agenten und erlauben zentralisierte
+    Multi-Agent-Ausführung nur für mindestens zwei unabhängig ausführbare Zweige.
+  - Jede Work-Unit besitzt genau eine Verantwortung, höchstens zwei Turns, ein explizites Token-Budget,
+    ein schema-validiertes Ergebnis und atomare idempotente Checkpoints.
   required: true
   verification:
     kind: command
@@ -91,7 +100,7 @@ definition_of_done:
       - -q
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: test
       reference: feature-tracking/test_tracker.py::test_feature_locks_reject_overlapping_scopes_and_allow_independent_work
@@ -113,11 +122,10 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- /home/admin/endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
         tests/utils/test_file_operations.py -q (37 passed)
-    note: Lokale Codex-CLI-Nachrichten-API unterstützt owner-adressiertes Send, Inbox, Ack und Reply,
-      automatische Inbox-Anzeige bei Lock-Akquisition, Ablaufbereinigung, JSON-Ausgabe und Feature-/Kriteriumsbezug.
-      Runtime-Dateien sind Git-ignoriert und owner-privat; Feature-YAML bleibt autoritativ.
-    assessed_by: codex/root
-    assessed_at: '2026-07-31T10:39:22.101834Z'
+    note: Add topology-aligned single-agent versus centralized multi-agent contracts, strict worker result
+      schemas, budget guardrails, and idempotent checkpoints.
+    assessed_by: codex-root-20260803-topology
+    assessed_at: '2026-08-03T10:06:42.365155Z'
 - id: automated_tests
   category: testing
   title: Schema, Ableitung und Updates sind fokussiert getestet
