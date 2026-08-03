@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from django.core.files.uploadedfile import UploadedFile
-from django.db import models, transaction
+from django.db import DatabaseError, IntegrityError, connection, models, transaction
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.models.administration.center.center import Center
@@ -75,6 +75,42 @@ _UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
         "finalized_by",
     }
 )
+
+
+def _is_transfer_key_unique_violation(error: IntegrityError) -> bool:
+    """Recognize only the database constraint protecting ``transfer_key``."""
+
+    table_name = TransferJob._meta.db_table
+    field = cast(
+        models.Field[Any, Any],
+        TransferJob._meta.get_field("transfer_key"),
+    )
+    column_name = cast(str, field.column)
+    cause = error.__cause__
+    diagnostic = getattr(cause, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+
+    if isinstance(constraint_name, str) and constraint_name:
+        try:
+            with connection.cursor() as cursor:
+                constraints = connection.introspection.get_constraints(
+                    cursor,
+                    table_name,
+                )
+        except DatabaseError:
+            return False
+        transfer_key_constraints = {
+            name
+            for name, details in constraints.items()
+            if details.get("unique") is True and details.get("columns") == [column_name]
+        }
+        return constraint_name in transfer_key_constraints
+
+    if connection.vendor == "sqlite":
+        sqlite_detail = f"UNIQUE constraint failed: {table_name}.{column_name}"
+        return str(cause or error).strip() == sqlite_detail
+
+    return False
 
 
 class TransferProvenance(TypedDict, total=False):
@@ -282,7 +318,6 @@ def create_or_reuse_transfer_job(
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
     transfer_job_manager = cast(Any, TransferJob.objects)
-    existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
     source_node_pk = cast(int, source_node.pk)
     target_node_pk = cast(int, target_node.pk)
     normalized_provenance = _normalized_transfer_provenance(
@@ -294,15 +329,24 @@ def create_or_reuse_transfer_job(
         processing_policy=processing_policy,
         cleanup_policy=cleanup_policy,
     )
-    if existing is not None:
+
+    def reuse_existing(existing: TransferJob) -> tuple[TransferJob, bool]:
+        """Return an exact replay and reject any canonical identity mismatch."""
+
+        existing_source_node_id = cast(int, getattr(existing, "source_node_id"))
+        existing_target_node_id = cast(int, getattr(existing, "target_node_id"))
+        existing_source_center_id = cast(
+            int | None,
+            getattr(existing, "source_center_id"),
+        )
         identity_mismatch = (
-            existing.source_node_id != source_node_pk
-            or existing.target_node_id != target_node_pk
+            existing_source_node_id != source_node_pk
+            or existing_target_node_id != target_node_pk
             or existing.resource_kind != resource_kind
             or existing.resource_hash != resource_hash
         )
         payload_matches = (
-            existing.source_center_id == getattr(source_center, "pk", None)
+            existing_source_center_id == getattr(source_center, "pk", None)
             and existing.transfer_mode == transfer_mode
             and existing.processing_policy == processing_policy
             and existing.processing_intent == processing_intent
@@ -342,30 +386,47 @@ def create_or_reuse_transfer_job(
         )
         return existing, False
 
-    transfer_job = transfer_job_manager.create(
-        transfer_key=transfer_key,
-        source_node=source_node,
-        target_node=target_node,
-        source_center=source_center,
-        resource_kind=resource_kind,
-        resource_hash=resource_hash,
-        transfer_mode=transfer_mode,
-        processing_policy=processing_policy,
-        processing_intent=processing_intent,
-        cleanup_policy=cleanup_policy,
-        payload_schema_version=payload_schema_version,
-        resource_rows=resource_rows,
-        processing_snapshot=processing_snapshot,
-        provenance=normalized_provenance,
-        cleanup_status=(
-            TransferJob.CleanupStatus.NOT_REQUESTED
-            if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL.value
-            else TransferJob.CleanupStatus.DEFERRED
-        ),
-        created_by=(
-            created_by if getattr(created_by, "is_authenticated", False) else None
-        ),
-    )
+    existing = transfer_job_manager.filter(transfer_key=transfer_key).first()
+    if existing is not None:
+        return reuse_existing(cast(TransferJob, existing))
+
+    try:
+        # A savepoint keeps the caller's outer registration transaction usable
+        # when another request wins the unique transfer_key insert race.
+        with transaction.atomic():
+            transfer_job = transfer_job_manager.create(
+                transfer_key=transfer_key,
+                source_node=source_node,
+                target_node=target_node,
+                source_center=source_center,
+                resource_kind=resource_kind,
+                resource_hash=resource_hash,
+                transfer_mode=transfer_mode,
+                processing_policy=processing_policy,
+                processing_intent=processing_intent,
+                cleanup_policy=cleanup_policy,
+                payload_schema_version=payload_schema_version,
+                resource_rows=resource_rows,
+                processing_snapshot=processing_snapshot,
+                provenance=normalized_provenance,
+                cleanup_status=(
+                    TransferJob.CleanupStatus.NOT_REQUESTED
+                    if cleanup_policy == TransferJob.CleanupPolicy.RETAIN_ALL.value
+                    else TransferJob.CleanupStatus.DEFERRED
+                ),
+                created_by=(
+                    created_by
+                    if getattr(created_by, "is_authenticated", False)
+                    else None
+                ),
+            )
+    except IntegrityError as error:
+        if not _is_transfer_key_unique_violation(error):
+            raise
+        concurrent = transfer_job_manager.filter(transfer_key=transfer_key).first()
+        if concurrent is None:
+            raise
+        return reuse_existing(cast(TransferJob, concurrent))
     emit_hub_audit_event(
         "hub.transfer_job_created",
         transfer_job_id=str(transfer_job.id),

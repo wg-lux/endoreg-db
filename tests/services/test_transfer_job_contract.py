@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError
 
 from endoreg_db.models import Center, NetworkNode, TransferJob, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
@@ -343,6 +344,186 @@ class TransferJobContractTests(TestCase):
 
         transfer_job.refresh_from_db()
         assert transfer_job.transfer_key == "reuse-mismatch"
+
+    def test_concurrent_identical_registration_reuses_winning_insert(self) -> None:
+        transfer_key = "concurrent-identical-replay"
+        existing = self._create_transfer(
+            transfer_key=transfer_key,
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+        manager = cast(Any, TransferJob.objects)
+        existing_queryset = manager.filter(transfer_key=transfer_key)
+
+        with (
+            patch.object(
+                manager,
+                "filter",
+                side_effect=[SimpleNamespace(first=lambda: None), existing_queryset],
+            ),
+            patch.object(
+                manager,
+                "create",
+                side_effect=IntegrityError(
+                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
+                ),
+            ),
+        ):
+            reused, created = create_or_reuse_transfer_job(
+                transfer_key=transfer_key,
+                source_node=self.source_node,
+                target_node=self.target_node,
+                source_center=self.center,
+                resource_kind=TransferJob.ResourceKind.REPORT,
+                resource_hash=f"hash-{transfer_key}",
+                transfer_mode=TransferJob.TransferMode.METADATA_ONLY,
+                processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
+                processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
+                cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+                payload_schema_version="1.0",
+                resource_rows={},
+                processing_snapshot={},
+                provenance={"custom_marker": transfer_key},
+            )
+
+        assert created is False
+        assert reused.pk == existing.pk
+
+    def test_concurrent_changed_registration_rejects_winning_insert(self) -> None:
+        transfer_key = "concurrent-changed-replay"
+        existing = self._create_transfer(
+            transfer_key=transfer_key,
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+        manager = cast(Any, TransferJob.objects)
+        existing_queryset = manager.filter(transfer_key=transfer_key)
+
+        with (
+            patch.object(
+                manager,
+                "filter",
+                side_effect=[SimpleNamespace(first=lambda: None), existing_queryset],
+            ),
+            patch.object(
+                manager,
+                "create",
+                side_effect=IntegrityError(
+                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
+                ),
+            ),
+            self.assertRaisesMessage(
+                ValueError,
+                "transfer_key already exists for a different transfer payload",
+            ),
+        ):
+            create_or_reuse_transfer_job(
+                transfer_key=transfer_key,
+                source_node=self.source_node,
+                target_node=self.target_node,
+                source_center=self.center,
+                resource_kind=TransferJob.ResourceKind.REPORT,
+                resource_hash="changed-hash",
+                transfer_mode=TransferJob.TransferMode.METADATA_ONLY,
+                processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
+                processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
+                cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+                payload_schema_version="1.0",
+                resource_rows={},
+                processing_snapshot={},
+                provenance={"custom_marker": transfer_key},
+            )
+
+        existing.refresh_from_db()
+        assert existing.resource_hash == f"hash-{transfer_key}"
+
+    def test_concurrent_unrelated_integrity_error_is_not_treated_as_replay(
+        self,
+    ) -> None:
+        transfer_key = "concurrent-unrelated-integrity-error"
+        existing = self._create_transfer(
+            transfer_key=transfer_key,
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+        manager = cast(Any, TransferJob.objects)
+        existing_queryset = manager.filter(transfer_key=transfer_key)
+        unrelated_error = IntegrityError(
+            "CHECK constraint failed: unrelated_payload_check"
+        )
+
+        with (
+            patch.object(
+                manager,
+                "filter",
+                side_effect=[SimpleNamespace(first=lambda: None), existing_queryset],
+            ) as filter_mock,
+            patch.object(manager, "create", side_effect=unrelated_error),
+            self.assertRaises(IntegrityError) as raised,
+        ):
+            create_or_reuse_transfer_job(
+                transfer_key=transfer_key,
+                source_node=self.source_node,
+                target_node=self.target_node,
+                source_center=self.center,
+                resource_kind=TransferJob.ResourceKind.REPORT,
+                resource_hash=f"hash-{transfer_key}",
+                transfer_mode=TransferJob.TransferMode.METADATA_ONLY,
+                processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
+                processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
+                cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+                payload_schema_version="1.0",
+                resource_rows={},
+                processing_snapshot={},
+                provenance={"custom_marker": transfer_key},
+            )
+
+        assert raised.exception is unrelated_error
+        assert filter_mock.call_count == 1
+        existing.refresh_from_db()
+        assert existing.resource_hash == f"hash-{transfer_key}"
+
+    def test_concurrent_near_miss_unique_error_is_not_treated_as_replay(
+        self,
+    ) -> None:
+        transfer_key = "concurrent-near-miss-unique-error"
+        existing = self._create_transfer(
+            transfer_key=transfer_key,
+            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+        )
+        manager = cast(Any, TransferJob.objects)
+        existing_queryset = manager.filter(transfer_key=transfer_key)
+        near_miss_error = IntegrityError(
+            "unrelated: UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
+        )
+
+        with (
+            patch.object(
+                manager,
+                "filter",
+                side_effect=[SimpleNamespace(first=lambda: None), existing_queryset],
+            ) as filter_mock,
+            patch.object(manager, "create", side_effect=near_miss_error),
+            self.assertRaises(IntegrityError) as raised,
+        ):
+            create_or_reuse_transfer_job(
+                transfer_key=transfer_key,
+                source_node=self.source_node,
+                target_node=self.target_node,
+                source_center=self.center,
+                resource_kind=TransferJob.ResourceKind.REPORT,
+                resource_hash=f"hash-{transfer_key}",
+                transfer_mode=TransferJob.TransferMode.METADATA_ONLY,
+                processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
+                processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
+                cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
+                payload_schema_version="1.0",
+                resource_rows={},
+                processing_snapshot={},
+                provenance={"custom_marker": transfer_key},
+            )
+
+        assert raised.exception is near_miss_error
+        assert filter_mock.call_count == 1
+        existing.refresh_from_db()
+        assert existing.resource_hash == f"hash-{transfer_key}"
 
     def test_transfer_norms_build_expected_suffix_and_payload(self) -> None:
         video = VideoFile.objects.create(
