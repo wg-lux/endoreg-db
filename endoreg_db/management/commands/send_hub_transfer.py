@@ -41,12 +41,36 @@ class Command(BaseCommand):
         parser.add_argument("--object-id", type=int, required=True)
         parser.add_argument("--transfer-key", default="")
         parser.add_argument("--metadata-only", action="store_true")
+        parser.add_argument("--ca-file", default="", help=(
+                "CA bundle used to verify the receiver TLS certificate. "
+                "When omitted, the system CA store is used."
+            ),
+        )
+        parser.add_argument( "--client-certificate-file", default="", help="PEM client certificate used for mutual TLS.",)
+        parser.add_argument("--client-key-file", default="", help="PEM private key matching the mTLS client certificate.",)
         parser.add_argument("--insecure-skip-tls-verify", action="store_true")
 
     def handle(self, *args, **options):
         section("SENDER INITIALIZATION", "🚀")
     
         secret_path = Path(options["source_node_secret_file"]).expanduser().resolve()
+        ca_path = (
+            Path(options["ca_file"]).expanduser().resolve()
+            if options["ca_file"].strip()
+            else None
+        )
+        
+        client_certificate_path = (
+            Path(options["client_certificate_file"]).expanduser().resolve()
+            if options["client_certificate_file"].strip()
+            else None
+        )
+        
+        client_key_path = (
+            Path(options["client_key_file"]).expanduser().resolve()
+            if options["client_key_file"].strip()
+            else None
+        )
     
         step(1, "Validate sender configuration")
         kv("Target URL", options["target_url"])
@@ -56,8 +80,39 @@ class Command(BaseCommand):
         kv("Resource kind", options["resource_kind"])
         kv("Source object ID", options["object_id"])
         kv("Metadata only", options["metadata_only"])
-        kv("TLS verification enabled", not options["insecure_skip_tls_verify"])
+        kv("TLS verification enabled", not options["insecure_skip_tls_verify"],)
+        kv("Custom receiver CA configured",ca_path is not None,)
+        kv(
+            "mTLS client certificate configured",
+            client_certificate_path is not None,
+        )
+        kv(
+            "mTLS client key configured",
+            client_key_path is not None,
+        )
+
         path_info(label="Node secret file", path=secret_path)
+
+        if ca_path is not None:
+            path_info(
+                label="Receiver CA bundle",
+                path=ca_path,
+                check_exists=True,
+            )
+
+        if client_certificate_path is not None:
+            path_info(
+                label="mTLS client certificate",
+                path=client_certificate_path,
+                check_exists=True,
+            )
+
+        if client_key_path is not None:
+            path_info(
+                label="mTLS client private key",
+                path=client_key_path,
+                check_exists=True,
+            )
     
         if not options["source_node_secret_file"].strip():
             error("The --source-node-secret-file argument is empty")
@@ -82,6 +137,25 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Secret path is not a regular file: {secret_path}"
             )
+        if (
+            client_certificate_path is None
+        ) != (
+            client_key_path is None
+        ):
+            raise CommandError(
+                "--client-certificate-file and --client-key-file "
+                "must be provided together"
+            )
+
+        for label, configured_path in (
+            ("CA bundle", ca_path),
+            ("mTLS client certificate", client_certificate_path),
+            ("mTLS client private key", client_key_path),
+        ):
+            if configured_path is not None and not configured_path.is_file():
+                raise CommandError(
+                    f"{label} not found: {configured_path}"
+                )
     
         node_secret = secret_path.read_text(encoding="utf-8").strip()
         if not node_secret:
@@ -192,11 +266,20 @@ class Command(BaseCommand):
     
         step(4, "Initialize HTTP transfer client")
     
+        if options["insecure_skip_tls_verify"]:
+            verify_tls: bool | str = False
+        elif ca_path is not None:
+            verify_tls = str(ca_path)
+        else:
+            verify_tls = True
+
         client = HubTransferClient(
             base_url=options["target_url"],
             node_key=options["source_node_key"],
             node_secret=node_secret,
-            verify_tls=not options["insecure_skip_tls_verify"],
+            verify_tls=verify_tls,
+            client_certificate_file=client_certificate_path,
+            client_key_file=client_key_path,
         )
     
         success("HTTP transfer client initialized")

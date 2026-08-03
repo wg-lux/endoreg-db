@@ -2,19 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any
 
 import requests
-import time
 from endoreg_db.services.hub.transfer_logging import (
-    error,
     info,
     json_block,
     kv,
-    path_info,
-    step,
     subsection,
-    success,
 )
 @dataclass(frozen=True)
 class HubTransferClient:
@@ -22,7 +18,14 @@ class HubTransferClient:
     node_key: str
     node_secret: str
     timeout: int = 900
+    #requests accepts either:
+    # - True: use the system CA store
+    # - False: disable server-certificate verification
+    # - a path: use the specified CA bundle
     verify_tls: bool = True
+    # Mutual-TLS client identity. Both values must be supplied together.
+    client_certificate_file: Path | None = None
+    client_key_file: Path | None = None
 
     def _url(self, path: str) -> str:
         return f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
@@ -32,6 +35,60 @@ class HubTransferClient:
             "X-Network-Node-Key": self.node_key,
             "X-Network-Node-Secret": self.node_secret,
         }
+    
+    def _verify_argument(self) -> bool | str:
+        if isinstance(self.verify_tls, str):
+            ca_path = Path(self.verify_tls).expanduser().resolve()
+            if not ca_path.is_file():
+                raise FileNotFoundError(
+                    f"TLS CA bundle not found: {ca_path}"
+                )
+            return str(ca_path)
+
+        return self.verify_tls
+
+    def _client_certificate_argument(
+        self,
+    ) -> tuple[str, str] | None:
+        cert_file = self.client_certificate_file
+        key_file = self.client_key_file
+
+        if cert_file is None and key_file is None:
+            return None
+
+        if cert_file is None or key_file is None:
+            raise ValueError(
+                "Both client_certificate_file and client_key_file "
+                "must be configured for mutual TLS"
+            )
+
+        cert_path = cert_file.expanduser().resolve()
+        key_path = key_file.expanduser().resolve()
+
+        if not cert_path.is_file():
+            raise FileNotFoundError(
+                f"mTLS client certificate not found: {cert_path}"
+            )
+
+        if not key_path.is_file():
+            raise FileNotFoundError(
+                f"mTLS client private key not found: {key_path}"
+            )
+
+        return str(cert_path), str(key_path)
+
+    def _request_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "headers": self._headers(),
+            "timeout": self.timeout,
+            "verify": self._verify_argument(),
+        }
+
+        client_certificate = self._client_certificate_argument()
+        if client_certificate is not None:
+            kwargs["cert"] = client_certificate
+
+        return kwargs
     
     @staticmethod
     def _response_json(res: requests.Response, *, operation: str) -> dict[str, Any]:
@@ -75,11 +132,9 @@ class HubTransferClient:
         started = time.monotonic()
 
         res = requests.post(
-            self._url("/api/media/hub/transfers/"),
+            url,
             json=payload,
-            headers=self._headers(),
-            timeout=self.timeout,
-            verify=self.verify_tls,
+            **self._request_kwargs(),
         )
         
         elapsed = time.monotonic() - started
@@ -106,21 +161,29 @@ class HubTransferClient:
 
         with file_path.open("rb") as fh:
             res = requests.post(
-                self._url(f"/api/media/hub/transfers/{transfer_key}/media/"),
-                headers=self._headers(),
-                files={"file": (file_path.name, fh, content_type)},
+                self._url(
+                    f"/api/media/hub/transfers/"
+                    f"{transfer_key}/media/"
+                ),
+                files={
+                    "file": (
+                        file_path.name,
+                        fh,
+                        content_type,
+                    )
+                },
                 data={"media_role": "processed"},
-                timeout=self.timeout,
-                verify=self.verify_tls,
+                **self._request_kwargs(),
             )
 
         return self._response_json(res, operation="Hub transfer media upload")
 
     def get_status(self, transfer_key: str) -> dict[str, Any]:
         res = requests.get(
-            self._url(f"/api/media/hub/transfers/{transfer_key}/status/"),
-            headers=self._headers(),
-            timeout=self.timeout,
-            verify=self.verify_tls,
+            self._url(
+                f"/api/media/hub/transfers/"
+                f"{transfer_key}/status/"
+            ),
+            **self._request_kwargs(),
         )
         return self._response_json(res, operation="Hub transfer status request")
