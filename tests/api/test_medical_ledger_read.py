@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import time
-from typing import Any, cast
+from typing import Any, Protocol, TypedDict, cast
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -22,6 +22,30 @@ from endoreg_db.services.medical_ledger import (
     build_patient_medical_ledger_for_patient,
 )
 from endoreg_db.views.patient.patient import MedicalLedgerContractUnavailable
+
+
+class _JsonResponseLike(Protocol):
+    def json(self) -> dict[str, object]: ...
+
+
+class _MedicationPayload(TypedDict):
+    external_ids: dict[str, str]
+    medication: str
+
+
+class _MedicationSchedulePayload(TypedDict):
+    external_ids: dict[str, str]
+    medications: list[_MedicationPayload]
+
+
+class _MedicalLedgerPayload(TypedDict):
+    patient: str
+    medications: list[_MedicationPayload]
+    medication_schedules: list[_MedicationSchedulePayload]
+
+
+def _response_payload(response: object) -> dict[str, object]:
+    return cast(_JsonResponseLike, response).json()
 
 
 def _pk(instance: object) -> int:
@@ -110,7 +134,7 @@ def test_patient_medical_ledger_api_returns_validated_projection(
     response = api_client.get(f"/api/patients/{_pk(patient)}/medical-ledger/")
 
     assert response.status_code == 200, response.content
-    payload = cast(dict[str, Any], response.json())
+    payload = cast(_MedicalLedgerPayload, _response_payload(response))
     assert payload["patient"] == str(_pk(patient))
     assert payload["medications"][0]["external_ids"]["endoreg_db"] == (
         f"PatientMedication:{_pk(patient_medication)}"
@@ -141,7 +165,7 @@ def test_patient_medical_ledger_api_reports_unavailable_contract(
         response = api_client.get(f"/api/patients/{_pk(patient)}/medical-ledger/")
 
     assert response.status_code == 503
-    assert response.json() == {
+    assert _response_payload(response) == {
         "code": "medical-ledger-contract-unavailable",
         "detail": (
             "The installed lx-dtypes package does not provide the medical ledger contract."

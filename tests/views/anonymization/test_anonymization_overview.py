@@ -1,5 +1,6 @@
 from datetime import timedelta
-from typing import Any, cast
+from collections.abc import Mapping
+from typing import Any, Protocol, cast
 
 import pytest
 from django.contrib.auth.models import User
@@ -29,6 +30,11 @@ from endoreg_db.views.anonymization.overview import (
 )
 
 
+class _ResponseLike(Protocol):
+    status_code: int
+    data: Mapping[str, object]
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "deployment_role",
@@ -42,7 +48,10 @@ def test_centerless_overview_returns_explicit_forbidden(
     force_authenticate(request, user=user)
 
     with override_settings(ENDOREG_DEPLOYMENT_ROLE=deployment_role):
-        response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+        response = cast(
+            _ResponseLike,
+            AnonymizationOverviewView.as_view(permission_classes=[])(request),
+        )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert "No center membership" in str(response.data["detail"])

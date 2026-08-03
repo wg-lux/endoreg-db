@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import cast
+
 from endoreg_db.exceptions import (
     DicomConcurrentImportConflictError,
     DicomImportConflictError,
@@ -17,13 +20,15 @@ def test_interoperability_response_maps_conflict_and_retry_contract() -> None:
     concurrent = interoperability_error_response(
         DicomConcurrentImportConflictError("internal")
     )
+    ordinary_payload = cast(Mapping[str, object], ordinary.data)
+    concurrent_payload = cast(Mapping[str, object], concurrent.data)
 
     assert ordinary.status_code == 409
-    assert ordinary.data["retryable"] is False
+    assert ordinary_payload["retryable"] is False
     assert concurrent.status_code == 409
-    assert concurrent.data["retryable"] is True
-    assert concurrent.data["code"] == "dicom_concurrent_identity_conflict"
-    assert "internal" not in str(concurrent.data)
+    assert concurrent_payload["retryable"] is True
+    assert concurrent_payload["code"] == "dicom_concurrent_identity_conflict"
+    assert "internal" not in str(concurrent_payload)
 
 
 def test_interoperability_response_maps_validation_contract() -> None:

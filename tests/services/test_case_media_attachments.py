@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypedDict, cast
 from uuid import uuid4
 
 import pytest
@@ -27,6 +27,28 @@ def _pk(instance: object) -> int:
 class _SerializerDataLike(Protocol):
     @property
     def data(self) -> object: ...
+
+
+class _ResolverMatchLike(Protocol):
+    url_name: str
+
+
+class _ResponseLike(Protocol):
+    data: dict[str, object]
+    resolver_match: _ResolverMatchLike
+
+
+class _DocumentPayload(TypedDict):
+    media_type: str
+    id: int
+    uuid: str
+    patient_examination_id: int
+    occurrence_at: object
+    file_name: str
+
+
+def _response(response: object) -> _ResponseLike:
+    return cast(_ResponseLike, response)
 
 
 @pytest.mark.django_db
@@ -98,7 +120,7 @@ def test_case_examination_keeps_multiple_text_pdf_and_video_documents(
     response = api_client.get(f"/api/cases/{patient_case.case_id}/")
 
     assert response.status_code == 200, response.content
-    documents = cast(list[dict[str, object]], response.data["documents"])
+    documents = cast(list[_DocumentPayload], _response(response).data["documents"])
     assert len(documents) == 6
     assert {(document["media_type"], document["id"]) for document in documents} == {
         *(("pdf", _pk(pdf)) for pdf in pdfs),
@@ -156,11 +178,14 @@ def test_case_document_attachment_is_idempotent_and_strict(
     second_response = api_client.post(endpoint, data=payload, format="json")
 
     assert first_response.status_code == 200, first_response.content
-    assert first_response.resolver_match.url_name == "case-attach-document"
+    assert _response(first_response).resolver_match.url_name == "case-attach-document"
     assert second_response.status_code == 200, second_response.content
+    second_documents = cast(
+        list[_DocumentPayload], _response(second_response).data["documents"]
+    )
     assert [
         document
-        for document in second_response.data["documents"]
+        for document in second_documents
         if document["media_type"] == "pdf" and document["id"] == _pk(pdf)
     ] == [
         {
@@ -168,7 +193,7 @@ def test_case_document_attachment_is_idempotent_and_strict(
             "id": _pk(pdf),
             "uuid": str(pdf.uuid),
             "patient_examination_id": _pk(patient_examination),
-            "occurrence_at": second_response.data["documents"][0]["occurrence_at"],
+            "occurrence_at": second_documents[0]["occurrence_at"],
             "file_name": pdf.file.name,
         }
     ]
@@ -187,7 +212,7 @@ def test_case_document_attachment_is_idempotent_and_strict(
     )
 
     assert invalid_response.status_code == 422
-    assert invalid_response.data["code"] == "validation-error"
+    assert _response(invalid_response).data["code"] == "validation-error"
     assert bool_id_response.status_code == 422
 
 

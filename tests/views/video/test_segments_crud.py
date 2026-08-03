@@ -74,10 +74,11 @@ class VideoSegmentFpsNormalizationViewTest(TestCase):
         )
 
         response = video_segments_normalize_fps(request, pk=int(self.video.pk))
+        response_payload = cast(Mapping[str, object], response.data)
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(response.data["status"], "queued")
-        self.assertEqual(response.data["max_fps"], 50.0)
+        self.assertEqual(response_payload["status"], "queued")
+        self.assertEqual(response_payload["max_fps"], 50.0)
         dispatch.assert_called_once_with(self.video)
 
 

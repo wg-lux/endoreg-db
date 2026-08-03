@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import time
-from typing import Any, cast
+from typing import Any, Protocol, TypedDict, cast
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -20,6 +20,48 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.medical_ledger import create_patient_medication
 from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
+
+
+class _ResolverMatchLike(Protocol):
+    url_name: str
+
+
+class _JsonResponseLike(Protocol):
+    resolver_match: _ResolverMatchLike
+
+    def json(self) -> dict[str, object]: ...
+
+
+class _MedicationPayload(TypedDict):
+    external_ids: dict[str, str]
+    medication: str
+    active: bool
+
+
+class _MedicationSchedulePayload(TypedDict):
+    medications: list[_MedicationPayload]
+
+
+class _MedicalLedgerPayload(TypedDict):
+    patient: str
+    medications: list[_MedicationPayload]
+    medication_schedules: list[_MedicationSchedulePayload]
+
+
+def _response(response: object) -> _JsonResponseLike:
+    return cast(_JsonResponseLike, response)
+
+
+def _response_payload(response: object) -> dict[str, object]:
+    return _response(response).json()
+
+
+def _medication_schedule_payload(response: object) -> _MedicationSchedulePayload:
+    return cast(_MedicationSchedulePayload, _response_payload(response))
+
+
+def _medical_ledger_payload(response: object) -> _MedicalLedgerPayload:
+    return cast(_MedicalLedgerPayload, _response_payload(response))
 
 
 def _pk(instance: object) -> int:
@@ -87,13 +129,13 @@ def test_create_medication_validates_persists_and_returns_ledger_record(
     )
 
     assert response.status_code == 201, response.content
-    assert response.resolver_match.url_name == "patient-create-medication"
+    assert _response(response).resolver_match.url_name == "patient-create-medication"
     persisted = PatientMedication.objects.get(patient=patient)
     assert persisted.medication == medication
     assert persisted.unit == unit
     assert persisted.dosage == {"morning": 500}
     assert list(persisted.intake_times.all()) == [intake_time]
-    payload = cast(dict[str, Any], response.json())
+    payload = cast(_MedicationPayload, _response_payload(response))
     assert payload["external_ids"]["endoreg_db"] == (
         f"PatientMedication:{_pk(persisted)}"
     )
@@ -118,7 +160,7 @@ def test_create_medication_returns_422_without_writing_for_invalid_payload(
     )
 
     assert response.status_code == 422
-    assert response.json()["code"] == "validation-error"
+    assert _response_payload(response)["code"] == "validation-error"
     assert not PatientMedication.objects.filter(patient=patient).exists()
 
 
@@ -135,7 +177,7 @@ def test_create_medication_returns_409_without_writing_for_unknown_reference(
     )
 
     assert response.status_code == 409
-    assert response.json() == {
+    assert _response_payload(response) == {
         "code": "reference-conflict",
         "field": "medication",
         "detail": "A medical terminology reference could not be resolved.",
@@ -168,14 +210,14 @@ def test_update_medication_patches_only_provided_fields(
     )
 
     assert response.status_code == 200, response.content
-    assert response.resolver_match.url_name == "patient-update-medication"
+    assert _response(response).resolver_match.url_name == "patient-update-medication"
     record.refresh_from_db()
     assert record.medication == medication
     assert record.unit is None
     assert record.dosage is None
     assert record.active is False
     assert not record.intake_times.exists()
-    assert response.json()["active"] is False
+    assert _response_payload(response)["active"] is False
 
 
 @pytest.mark.django_db
@@ -230,13 +272,14 @@ def test_create_and_update_schedule_use_only_patient_owned_medications(
 
     assert create_response.status_code == 201, create_response.content
     assert (
-        create_response.resolver_match.url_name == "patient-create-medication-schedule"
+        _response(create_response).resolver_match.url_name
+        == "patient-create-medication-schedule"
     )
     schedule = PatientMedicationSchedule.objects.get(patient=patient)
     assert list(schedule.medication.all()) == [first]
-    assert create_response.json()["medications"][0]["external_ids"]["endoreg_db"] == (
-        f"PatientMedication:{_pk(first)}"
-    )
+    assert _medication_schedule_payload(create_response)["medications"][0][
+        "external_ids"
+    ]["endoreg_db"] == (f"PatientMedication:{_pk(first)}")
 
     update_response = api_client.patch(
         f"/api/patients/{_pk(patient)}/medication-schedules/{_pk(schedule)}/",
@@ -246,12 +289,13 @@ def test_create_and_update_schedule_use_only_patient_owned_medications(
 
     assert update_response.status_code == 200, update_response.content
     assert (
-        update_response.resolver_match.url_name == "patient-update-medication-schedule"
+        _response(update_response).resolver_match.url_name
+        == "patient-update-medication-schedule"
     )
     assert list(schedule.medication.all()) == [second]
-    assert update_response.json()["medications"][0]["external_ids"]["endoreg_db"] == (
-        f"PatientMedication:{_pk(second)}"
-    )
+    assert _medication_schedule_payload(update_response)["medications"][0][
+        "external_ids"
+    ]["endoreg_db"] == (f"PatientMedication:{_pk(second)}")
 
 
 @pytest.mark.django_db
@@ -328,8 +372,8 @@ def test_create_medical_ledger_aggregate_returns_reloaded_graph(
     )
 
     assert response.status_code == 201, response.content
-    assert response.resolver_match.url_name == "patient-medical-ledger"
-    payload = cast(dict[str, Any], response.json())
+    assert _response(response).resolver_match.url_name == "patient-medical-ledger"
+    payload = _medical_ledger_payload(response)
     assert payload["patient"] == str(_pk(patient))
     assert payload["medications"][0]["medication"] == medication.name
     assert payload["medication_schedules"][0]["medications"][0]["medication"] == (
@@ -352,7 +396,7 @@ def test_create_medical_ledger_requires_idempotency_key(
     )
 
     assert response.status_code == 422
-    assert response.json()["code"] == "idempotency-key-required"
+    assert _response_payload(response)["code"] == "idempotency-key-required"
 
 
 @pytest.mark.django_db
@@ -396,10 +440,11 @@ def test_create_medical_ledger_replays_same_response_without_duplication(
     assert first.headers["Idempotency-Replayed"] == "false"
     assert replay.status_code == 200, replay.content
     assert replay.headers["Idempotency-Replayed"] == "true"
-    assert replay.json() == first.json()
+    assert _response_payload(replay) == _response_payload(first)
     assert PatientMedication.objects.filter(patient=patient).count() == 2
     replayed_ids = {
-        item["external_ids"]["endoreg_db"] for item in replay.json()["medications"]
+        item["external_ids"]["endoreg_db"]
+        for item in _medical_ledger_payload(replay)["medications"]
     }
     assert f"PatientMedication:{_pk(unrelated)}" not in replayed_ids
 
@@ -433,7 +478,7 @@ def test_create_medical_ledger_rejects_changed_payload_for_same_key(
 
     assert first.status_code == 201
     assert conflict.status_code == 409
-    assert conflict.json()["code"] == "idempotency-conflict"
+    assert _response_payload(conflict)["code"] == "idempotency-conflict"
     assert PatientMedication.objects.filter(patient=patient).count() == 1
 
 
@@ -452,7 +497,7 @@ def test_create_medical_ledger_rejects_route_patient_mismatch(
     )
 
     assert response.status_code == 409
-    assert response.json()["field"] == "patient"
+    assert _response_payload(response)["field"] == "patient"
     assert not PatientMedication.objects.filter(patient=patient).exists()
 
 

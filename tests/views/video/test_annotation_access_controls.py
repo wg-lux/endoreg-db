@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, cast
+from typing import Protocol, TypedDict, cast
 
 from django.contrib.auth.models import AbstractUser, Group, User
 from django.test import TestCase
@@ -31,6 +31,18 @@ class _GroupRelation(Protocol):
 
 class _UserWithGroups(Protocol):
     groups: _GroupRelation
+
+
+class _ResponseDataLike(Protocol):
+    data: object
+
+
+class _RandomTaskPayloadItem(TypedDict):
+    video_id: int
+
+
+class _RandomTaskPayload(TypedDict):
+    tasks: list[_RandomTaskPayloadItem]
 
 
 class AnnotationAccessControlsTest(TestCase):
@@ -174,10 +186,14 @@ class AnnotationAccessControlsTest(TestCase):
         )
 
         response = FrameAnnotationRandomTaskView.as_view()(request)
+        payload = cast(
+            _RandomTaskPayload,
+            cast(_ResponseDataLike, response).data,
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            {task["video_id"] for task in response.data["tasks"]},
+            {task["video_id"] for task in payload["tasks"]},
             {self.video.pk, self.other_video.pk},
         )
 

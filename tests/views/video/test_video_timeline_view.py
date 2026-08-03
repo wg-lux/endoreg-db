@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import pytest
 from django.core.files.base import ContentFile
@@ -22,6 +23,14 @@ from endoreg_db.services.video_storage_normalization import evidence_as_json
 from endoreg_db.views.video.video_timeline import VideoFrameNeighborhoodView
 
 pytestmark = pytest.mark.django_db
+
+
+class _ResponseDataLike(Protocol):
+    data: object
+
+
+def _response_payload(response: object) -> Mapping[str, object]:
+    return cast(Mapping[str, object], cast(_ResponseDataLike, response).data)
 
 
 def _video_with_vfr_pts() -> VideoFile:
@@ -83,7 +92,7 @@ def test_frame_neighborhood_view_returns_canonical_pts() -> None:
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
     assert response.status_code == 200
-    assert response.data == {
+    assert _response_payload(response) == {
         "video_id": video.pk,
         "requested_timestamp": 0.12,
         "timeline_version": "pts_v1",
@@ -148,7 +157,9 @@ def test_frame_neighborhood_view_fails_closed_for_missing_vfr_pts() -> None:
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
     assert response.status_code == 422
-    assert response.data["error"] == "Frame neighborhood is unavailable."
+    assert _response_payload(response)["error"] == (
+        "Frame neighborhood is unavailable."
+    )
 
 
 def test_frame_neighborhood_view_is_center_scoped(
@@ -195,4 +206,4 @@ def test_centerless_hub_user_can_read_processed_video_timeline() -> None:
     response = VideoFrameNeighborhoodView.as_view()(request, pk=video.pk)
 
     assert response.status_code == 200
-    assert response.data["timeline_version"] == "pts_v1"
+    assert _response_payload(response)["timeline_version"] == "pts_v1"
