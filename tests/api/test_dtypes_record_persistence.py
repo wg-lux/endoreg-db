@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping
 from datetime import date
+from pathlib import Path
 
+import lx_dtypes
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
@@ -14,6 +16,10 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
     parse_dtypes_record_persistence_payload,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    clear_knowledge_base_resolver_caches,
+)
+from pytest_django.fixtures import SettingsWrapper
 from rest_framework.exceptions import AuthenticationFailed
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
@@ -189,12 +195,40 @@ def _create_center_user(*, center: Center, username: str) -> User:
 
 @pytest.fixture(autouse=True)
 def _use_report_template_examples_findings_module(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
 ) -> Iterator[None]:
-    monkeypatch.setenv("LX_DTYPES_FINDINGS_MODULE", "report_template_examples")
+    registry_path = tmp_path / "kb_registry.json"
+    dtypes_data_root = Path(lx_dtypes.__file__).resolve().parent / "data"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "active": {
+                    "module_name": "report_template_examples",
+                    "version": "0.1.0",
+                },
+                "modules": {
+                    "report_template_examples": {
+                        "0.1.0": {"input_dirs": [str(dtypes_data_root)]}
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+    monkeypatch.setattr(
+        settings,
+        "LX_DTYPES_KB_REGISTRY",
+        str(registry_path),
+        raising=False,
+    )
     clear_findings_route_caches()
+    clear_knowledge_base_resolver_caches()
     yield
     clear_findings_route_caches()
+    clear_knowledge_base_resolver_caches()
 
 
 def test_base_api_persists_full_dtypes_record() -> None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from datetime import date
 from importlib import import_module
-from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -265,14 +264,14 @@ def test_repository_inventory_matches_discovered_models() -> None:
         for item in inventory.models
         if item.target is not ModelTarget.UNCLASSIFIED
     )
-    assert version("lx-dtypes") == "0.2.9"
+    contract_reference_prefix = "lx-dtypes:"
     for item in inventory.models:
         if item.target is not ModelTarget.SHARED_LX_DTYPES_CONTRACT:
             continue
         contract_references = [
-            reference.removeprefix("lx-dtypes==0.2.9:")
+            reference.removeprefix(contract_reference_prefix)
             for reference in item.ownership_evidence
-            if reference.startswith("lx-dtypes==0.2.9:")
+            if reference.startswith(contract_reference_prefix)
         ]
         assert len(contract_references) == 1, item.label
         import_module(contract_references[0])

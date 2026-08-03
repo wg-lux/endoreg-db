@@ -131,7 +131,8 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright
     note: 'Alle 151 Modell-Deklarationen besitzen eine überprüfbare Ownership: 53 gemeinsam genutzte Verträge
-      verweisen auf importierbare Module der gepinnten lx-dtypes-Version 0.2.9, 40 endoreg_db-spezifische
+      verweisen auf importierbare Module der aktuell installierten, projektseitig gepinnten lx-dtypes-Version,
+      40 endoreg_db-spezifische
       Boundary-Schemata bleiben lokal und 58 reine Datenbankformen bleiben im Persistenzmodell. Persistierte
       JSON-Felder, sämtliche erkannten Consumer und dynamische Referenzen sind pro Modell dokumentiert.
       Es bestehen keine temporären Ausnahmen. Der Guard importiert alle Modell-Leaf-Module, prüft die

@@ -16,12 +16,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/views/misc/application_settings.py
   - endoreg_db/models/aidataset/aidataset.py:AIDataSet
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.ai_dataset
+  - lx-dtypes:lx_dtypes.models.contracts.ai_dataset
   boundary_consumers:
   - api:endoreg_db/views/misc/application_settings.py
   - api:endoreg_db/views/misc/application_settings_ai_datasets.py
@@ -93,7 +93,7 @@ models:
   ownership_evidence:
   - endoreg_db/models/aidataset/aidataset.py:AIDataSetExportArtifact.clean
   - endoreg_db/schemas/aidataset_export.py:AIDataSetExportRequestPayload
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.aidataset_export
+  - lx-dtypes:lx_dtypes.models.contracts.aidataset_export
   - lx_dtypes.models.contracts.aidataset_export.AIDataSetExportPayload
   boundary_consumers:
   - export:endoreg_db/services/application_settings/ai_dataset_export.py
@@ -343,12 +343,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/views/media/patient_media_timeline.py
   - endoreg_db/models/media/pdf/report_file.py:AnonymExaminationReport
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_examination_report
+  - lx-dtypes:lx_dtypes.models.contracts.patient_examination_report
   boundary_consumers:
   - api:endoreg_db/views/media/patient_media_timeline.py
   - api:endoreg_db/views/report/patient_examination_report.py
@@ -378,11 +378,11 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/media/pdf/report_file.py:AnonymHistologyReport
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_examination_report
+  - lx-dtypes:lx_dtypes.models.contracts.patient_examination_report
   - scripts/check_lx_dtypes_model_inventory.py:discover_boundary_references
   boundary_consumers: []
   dynamic_model_references: []
@@ -500,7 +500,7 @@ models:
     chain persistence.
   ownership_evidence:
   - endoreg_db/models/state/audit_ledger.py:AuditLedger
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.audit_ledger
+  - lx-dtypes:lx_dtypes.models.contracts.audit_ledger
   - lx_dtypes.models.contracts.audit_ledger.AuditLedgerHashPayload
   boundary_consumers:
   - export:endoreg_db/services/export_ready.py
@@ -558,12 +558,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/case.py
   - endoreg_db/models/administration/case/case.py:Case
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.case
+  - lx-dtypes:lx_dtypes.models.ledger.case
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
   - api:endoreg_db/views/case.py
@@ -592,12 +592,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/administration/center.py
   - endoreg_db/models/administration/center/center.py:Center
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.center
+  - lx-dtypes:lx_dtypes.models.ledger.center
   boundary_consumers:
   - api:endoreg_db/serializers/administration/center.py
   - api:endoreg_db/serializers/fields.py
@@ -772,12 +772,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/contraindication/__init__.py:Contraindication
   - job:endoreg_db/management/commands/load_contraindication_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.contraindication
+  - lx-dtypes:lx_dtypes.models.contracts.contraindication
   boundary_consumers:
   - job:endoreg_db/management/commands/load_contraindication_data.py
   dynamic_model_references: []
@@ -1065,11 +1065,11 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/media/pdf/report_file.py:DocumentType
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.document_type
+  - lx-dtypes:lx_dtypes.models.contracts.document_type
   - schema:endoreg_db/schemas/persisted_json.py
   boundary_consumers:
   - schema:endoreg_db/schemas/persisted_json.py
@@ -1397,12 +1397,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/examination/base.py
   - endoreg_db/models/medical/examination/examination.py:Examination
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.examination
+  - lx-dtypes:lx_dtypes.models.knowledge_base.examination
   boundary_consumers:
   - api:endoreg_db/serializers/examination/base.py
   - api:endoreg_db/serializers/examination/dropdown.py
@@ -1444,12 +1444,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/views/examination/get_indications.py
   - endoreg_db/models/medical/examination/examination_indication.py:ExaminationIndication
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.examination_indication
+  - lx-dtypes:lx_dtypes.models.contracts.examination_indication
   boundary_consumers:
   - api:endoreg_db/views/examination/get_indications.py
   - job:endoreg_db/management/commands/load_examination_data.py
@@ -1481,12 +1481,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/examination/examination_indication.py:ExaminationIndicationClassification
   - job:endoreg_db/management/commands/load_examination_indication_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.p_indication_classification
+  - lx-dtypes:lx_dtypes.models.ledger.p_indication_classification
   boundary_consumers:
   - job:endoreg_db/management/commands/load_examination_indication_data.py
   dynamic_model_references: []
@@ -1515,12 +1515,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/examination/examination_indication.py:ExaminationIndicationClassificationChoice
   - job:endoreg_db/management/commands/load_examination_indication_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.p_indication_classification_descriptor
+  - lx-dtypes:lx_dtypes.models.ledger.p_indication_classification_descriptor
   boundary_consumers:
   - job:endoreg_db/management/commands/load_examination_indication_data.py
   - service:endoreg_db/services/patient_examination_links.py
@@ -1609,12 +1609,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/examination/base.py
   - endoreg_db/models/medical/examination/examination_type.py:ExaminationType
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.examination
+  - lx-dtypes:lx_dtypes.models.knowledge_base.examination
   boundary_consumers:
   - api:endoreg_db/serializers/examination/base.py
   - job:endoreg_db/management/commands/load_examination_data.py
@@ -1641,11 +1641,11 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/administration/person/examiner/examiner.py:Examiner
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.examiner
+  - lx-dtypes:lx_dtypes.models.ledger.examiner
   - scripts/check_lx_dtypes_model_inventory.py:discover_boundary_references
   boundary_consumers: []
   dynamic_model_references: []
@@ -1674,7 +1674,7 @@ models:
     file-probe boundary.
   ownership_evidence:
   - endoreg_db/models/metadata/video_meta.py:FFMpegMeta.create_from_file
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.ffmpeg_metadata
+  - lx-dtypes:lx_dtypes.models.contracts.ffmpeg_metadata
   - lx_dtypes.models.contracts.ffmpeg_metadata.FfmpegProbeDataPayload
   boundary_consumers:
   - service:endoreg_db/services/media_integrity.py
@@ -1703,12 +1703,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/finding/finding.py
   - endoreg_db/models/medical/finding/finding.py:Finding
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.finding
+  - lx-dtypes:lx_dtypes.models.knowledge_base.finding
   boundary_consumers:
   - api:endoreg_db/serializers/finding/finding.py
   - api:endoreg_db/serializers/patient_examination/patient_examination.py
@@ -1743,12 +1743,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/finding/finding.py
   - endoreg_db/models/medical/finding/finding_classification.py:FindingClassification
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.finding_classification
+  - lx-dtypes:lx_dtypes.models.contracts.finding_classification
   boundary_consumers:
   - api:endoreg_db/serializers/finding/finding.py
   - api:endoreg_db/serializers/finding_classification/classification.py
@@ -1784,12 +1784,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/finding_classification/choice.py
   - endoreg_db/models/medical/finding/finding_classification.py:FindingClassificationChoice
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.finding_classification
+  - lx-dtypes:lx_dtypes.models.contracts.finding_classification
   boundary_consumers:
   - api:endoreg_db/serializers/finding_classification/choice.py
   - job:endoreg_db/management/commands/load_finding_data.py
@@ -1852,12 +1852,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/views/examination/get_interventions.py
   - endoreg_db/models/medical/finding/finding_intervention.py:FindingIntervention
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.finding_intervention
+  - lx-dtypes:lx_dtypes.models.contracts.finding_intervention
   boundary_consumers:
   - api:endoreg_db/views/examination/get_interventions.py
   - job:endoreg_db/management/commands/load_examination_indication_data.py
@@ -1887,12 +1887,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/finding/finding_intervention.py:FindingInterventionType
   - job:endoreg_db/management/commands/load_finding_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.intervention
+  - lx-dtypes:lx_dtypes.models.knowledge_base.intervention
   boundary_consumers:
   - job:endoreg_db/management/commands/load_finding_data.py
   dynamic_model_references: []
@@ -1916,12 +1916,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/finding/finding_type.py:FindingType
   - job:endoreg_db/management/commands/load_finding_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.finding_type
+  - lx-dtypes:lx_dtypes.models.contracts.finding_type
   boundary_consumers:
   - job:endoreg_db/management/commands/load_finding_data.py
   dynamic_model_references: []
@@ -1973,12 +1973,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - endoreg_db/models/media/frame/frame.py:Frame
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_frame
+  - lx-dtypes:lx_dtypes.models.contracts.video_frame
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - api:endoreg_db/views/media/frame_media.py
@@ -2037,12 +2037,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/label_video_segment/frame_box_annotation.py
   - endoreg_db/models/label/annotation/frame_box.py:FrameBoxAnnotation
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_frame_box_annotations
+  - lx-dtypes:lx_dtypes.models.contracts.video_frame_box_annotations
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/frame_box_annotation.py
   - api:endoreg_db/views/video/ai/frame_box_annotations.py
@@ -2136,12 +2136,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/label_video_segment/image_classification_annotation.py
   - endoreg_db/models/label/annotation/image_classification.py:ImageClassificationAnnotation
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_frame_annotations
+  - lx-dtypes:lx_dtypes.models.contracts.video_frame_annotations
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/image_classification_annotation.py
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
@@ -2183,12 +2183,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - endoreg_db/models/other/information_source.py:InformationSource
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.information_source
+  - lx-dtypes:lx_dtypes.models.knowledge_base.information_source
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - api:endoreg_db/views/video/ai/frame_annotations.py
@@ -2232,12 +2232,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/other/information_source.py:InformationSourceType
   - job:endoreg_db/management/commands/load_information_source.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.information_source
+  - lx-dtypes:lx_dtypes.models.knowledge_base.information_source
   boundary_consumers:
   - job:endoreg_db/management/commands/load_information_source.py
   - service:endoreg_db/data/information_source_type/data.yaml
@@ -2263,11 +2263,11 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/laboratory/lab_value.py:LabValue
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.lab_value
+  - lx-dtypes:lx_dtypes.models.contracts.lab_value
   - service:endoreg_db/services/medical_ledger.py
   boundary_consumers:
   - service:endoreg_db/services/medical_ledger.py
@@ -2297,12 +2297,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - endoreg_db/models/label/label.py:Label
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_ai_labels
+  - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - api:endoreg_db/serializers/label_video_segment/frame_annotation_bulk.py
@@ -2359,12 +2359,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/views/misc/application_settings_ai_datasets.py
   - endoreg_db/models/label/label_set.py:LabelSet
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_ai_labels
+  - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - api:endoreg_db/views/misc/application_settings_ai_datasets.py
   - api:endoreg_db/views/video/ai/frame_annotations.py
@@ -2407,12 +2407,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/label/label_type.py:LabelType
   - job:endoreg_db/management/commands/load_ai_model_label_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_ai_labels
+  - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - job:endoreg_db/management/commands/load_ai_model_label_data.py
   - service:endoreg_db/data/ai_model_label/label-type/data.yaml
@@ -2438,12 +2438,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - endoreg_db/models/label/label_video_segment/label_video_segment.py:LabelVideoSegment
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.label_video_segment_serializer
+  - lx-dtypes:lx_dtypes.models.contracts.label_video_segment_serializer
   boundary_consumers:
   - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
@@ -3061,12 +3061,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/patient/patient.py
   - endoreg_db/models/administration/person/patient/patient.py:Patient
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.patient
+  - lx-dtypes:lx_dtypes.models.ledger.patient
   boundary_consumers:
   - api:endoreg_db/serializers/patient/patient.py
   - api:endoreg_db/serializers/patient/patient_dropdown.py
@@ -3118,11 +3118,11 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/patient/patient_disease.py:PatientDisease
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   - service:endoreg_db/services/medical_ledger.py
   boundary_consumers:
   - service:endoreg_db/services/medical_ledger.py
@@ -3156,11 +3156,11 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/patient/patient_event.py:PatientEvent
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   - service:endoreg_db/services/medical_ledger.py
   boundary_consumers:
   - service:endoreg_db/services/medical_ledger.py
@@ -3198,7 +3198,7 @@ models:
   ownership_evidence:
   - endoreg_db/models/medical/patient/patient_examination.py:PatientExamination.clean
   - endoreg_db/schemas/report_draft.py:PatientExaminationReportDraft
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.dtypes_record_persistence
+  - lx-dtypes:lx_dtypes.models.contracts.dtypes_record_persistence
   - lx_dtypes.models.contracts.dtypes_record_persistence.parse_dtypes_record_persistence_payload
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
@@ -3254,11 +3254,11 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/medical/patient/patient_examination_indication.py:PatientExaminationIndication
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.p_indication
+  - lx-dtypes:lx_dtypes.models.ledger.p_indication
   - service:endoreg_db/services/patient_examination_links.py
   boundary_consumers:
   - service:endoreg_db/services/patient_examination_links.py
@@ -3294,7 +3294,7 @@ models:
   - endoreg_db/models/report/patient_examination_report.py:PatientExaminationReport.clean
   - endoreg_db/schemas/report_persistence.py:validate_persisted_report_json_object
   - endoreg_db/serializers/report/patient_examination_report.py:PatientExaminationReportSubmissionSchema
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_examination_report
+  - lx-dtypes:lx_dtypes.models.contracts.patient_examination_report
   - lx_dtypes.models.contracts.patient_examination_report.PatientExaminationReportSubmissionPayload
   boundary_consumers:
   - api:endoreg_db/serializers/report/patient_examination_report.py
@@ -3356,12 +3356,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/patient_finding/patient_finding.py
   - endoreg_db/models/medical/patient/patient_finding.py:PatientFinding
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_finding
+  - lx-dtypes:lx_dtypes.models.contracts.patient_finding
   boundary_consumers:
   - api:endoreg_db/serializers/patient_finding/patient_finding.py
   - api:endoreg_db/serializers/video_examination.py
@@ -3402,7 +3402,7 @@ models:
     by shared lx_dtypes contracts.
   ownership_evidence:
   - endoreg_db/models/medical/patient/patient_finding_classification.py:PatientFindingClassification.save
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_finding_classification_runtime
+  - lx-dtypes:lx_dtypes.models.contracts.patient_finding_classification_runtime
   - lx_dtypes.models.contracts.patient_finding_classification_runtime.PatientFindingClassificationSubcategoriesPayload
   boundary_consumers:
   - api:endoreg_db/serializers/patient_finding/patient_finding_classification.py
@@ -3440,12 +3440,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/patient_finding/patient_finding_intervention.py
   - endoreg_db/models/medical/patient/patient_finding_intervention.py:PatientFindingIntervention
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.patient_finding_intervention
+  - lx-dtypes:lx_dtypes.models.contracts.patient_finding_intervention
   boundary_consumers:
   - api:endoreg_db/serializers/patient_finding/patient_finding_intervention.py
   - service:endoreg_db/admin.py
@@ -3473,12 +3473,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/case.py
   - endoreg_db/models/medical/patient/patient_lab_sample.py:PatientLabSample
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
   - service:endoreg_db/data/case_template/rule/00_patient_lab_sample_add_default_value.yaml
@@ -3542,12 +3542,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/case.py
   - endoreg_db/models/medical/patient/patient_lab_value.py:PatientLabValue
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
   - service:endoreg_db/data/case_template/rule/00_patient_lab_sample_add_default_value.yaml
@@ -3580,12 +3580,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/case.py
   - endoreg_db/models/medical/patient/patient_medication.py:PatientMedication
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
   - service:endoreg_db/data/case_template/rule/12_create-patient_medication-anticoagulation.yaml
@@ -3615,12 +3615,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/case.py
   - endoreg_db/models/medical/patient/patient_medication_schedule.py:PatientMedicationSchedule
-  - lx-dtypes==0.2.9:lx_dtypes.models.ledger.medical
+  - lx-dtypes:lx_dtypes.models.ledger.medical
   boundary_consumers:
   - api:endoreg_db/serializers/case.py
   - service:endoreg_db/data/case_template/rule/13_create-patient_medication_schedule-anticoagulation.yaml
@@ -3683,7 +3683,7 @@ models:
   ownership_evidence:
   - endoreg_db/models/media/pdf/pdf_processing_history.py:PdfProcessingHistory.clean
   - endoreg_db/views/report/pdf_redaction.py:PdfApplyRedactionsView
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.pdf_redaction
+  - lx-dtypes:lx_dtypes.models.contracts.pdf_redaction
   - lx_dtypes.models.contracts.pdf_redaction.PdfRedactionManifest
   boundary_consumers:
   - api:endoreg_db/serializers/pdf/pdf_processing_history.py
@@ -4473,12 +4473,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/meta/sensitive_meta_detail.py
   - endoreg_db/models/metadata/sensitive_meta.py:SensitiveMeta
-  - lx-dtypes==0.2.9:lx_dtypes.models.meta.SensitiveMeta
+  - lx-dtypes:lx_dtypes.models.meta.SensitiveMeta
   boundary_consumers:
   - api:endoreg_db/serializers/meta/sensitive_meta_detail.py
   - api:endoreg_db/serializers/meta/sensitive_meta_update.py
@@ -4533,12 +4533,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/meta/sensitive_meta_verification.py
   - endoreg_db/models/state/sensitive_meta.py:SensitiveMetaState
-  - lx-dtypes==0.2.9:lx_dtypes.models.meta.SensitiveMeta
+  - lx-dtypes:lx_dtypes.models.meta.SensitiveMeta
   boundary_consumers:
   - api:endoreg_db/serializers/meta/sensitive_meta_verification.py
   dynamic_model_references: []
@@ -4743,12 +4743,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/other/unit.py:Unit
   - job:endoreg_db/management/commands/load_green_endoscopy_wuerzburg_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.knowledge_base.unit
+  - lx-dtypes:lx_dtypes.models.knowledge_base.unit
   boundary_consumers:
   - job:endoreg_db/management/commands/load_green_endoscopy_wuerzburg_data.py
   - job:endoreg_db/management/commands/load_lab_value_data.py
@@ -4841,7 +4841,7 @@ models:
   ownership_evidence:
   - endoreg_db/models/media/video/video_file.py:VideoFile.clean
   - endoreg_db/schemas/persisted_json.py:VideoFileMetaPayload
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_segments.VideoSegmentsPayload
+  - lx-dtypes:lx_dtypes.models.contracts.video_segments.VideoSegmentsPayload
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - api:endoreg_db/serializers/misc/file_overview.py
@@ -5085,12 +5085,12 @@ models:
   custom_save: true
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - api:endoreg_db/serializers/meta/video_meta.py
   - endoreg_db/models/metadata/video_meta.py:VideoMeta
-  - lx-dtypes==0.2.9:lx_dtypes.models.meta.VideoMeta
+  - lx-dtypes:lx_dtypes.models.meta.VideoMeta
   boundary_consumers:
   - api:endoreg_db/serializers/meta/video_meta.py
   - service:endoreg_db/services/media_integrity.py
@@ -5221,11 +5221,11 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/label/annotation/video_segmentation_annotation.py:VideoSegmentationAnnotation
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_frame_annotations
+  - lx-dtypes:lx_dtypes.models.contracts.video_frame_annotations
   - scripts/check_lx_dtypes_model_inventory.py:discover_boundary_references
   boundary_consumers: []
   dynamic_model_references: []
@@ -5249,12 +5249,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/label/video_segmentation_label.py:VideoSegmentationLabel
   - job:endoreg_db/management/commands/load_ai_model_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_ai_labels
+  - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - job:endoreg_db/management/commands/load_ai_model_data.py
   dynamic_model_references: []
@@ -5278,12 +5278,12 @@ models:
   custom_save: false
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
-  rationale: The cross-repository semantic shape is owned by the pinned lx-dtypes 0.2.9 contract family;
+  rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
   - endoreg_db/models/label/video_segmentation_labelset.py:VideoSegmentationLabelSet
   - job:endoreg_db/management/commands/load_ai_model_data.py
-  - lx-dtypes==0.2.9:lx_dtypes.models.contracts.video_ai_labels
+  - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - job:endoreg_db/management/commands/load_ai_model_data.py
   dynamic_model_references: []
@@ -5315,6 +5315,7 @@ models:
   boundary_consumers:
   - export:endoreg_db/services/export_ready.py
   - import:endoreg_db/import_files/file_storage/state_management.py
+  - import:endoreg_db/services/jobs/video_reimport_jobs.py
   - job:endoreg_db/management/commands/check_system_health.py
   - service:endoreg_db/services/anonymization_metrics.py
   - service:endoreg_db/services/hub/transfers.py
