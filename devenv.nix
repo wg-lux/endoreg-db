@@ -268,6 +268,7 @@ in
         cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
         cp rust/endoreg_rust_backend/endoreg_rust_backend.pyi endoreg_db/endoreg_rust_backend.pyi
         rm rust/endoreg_rust_backend/endoreg_rust_backend.pyi
+        .devenv/state/venv/bin/ruff format endoreg_db/endoreg_rust_backend.pyi
       '';
     };
     "rust:report-runtime" = {
