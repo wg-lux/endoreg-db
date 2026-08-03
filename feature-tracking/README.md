@@ -134,6 +134,26 @@ und expliziten `gaps`. Worker berichten an den benannten Orchestrator; ein
 Peer-to-Peer-Mesh ist nicht Teil des Vertrags. Vor Delegation wird der Plan
 gegen Tracker und Schema geprüft:
 
+Zentralisierte Pläne müssen zusätzlich genau ein typisiertes Ausführungsbackend
+wählen:
+
+- `native_subagent` delegiert begrenzte Arbeit an Child-Threads der aktuellen
+  Codex-Session. Ein optionales `agent_profile` benennt einen eingebauten oder
+  konfigurierten Custom Agent. Projektprofile liegen unter `.codex/agents/` und
+  müssen `name`, `description` und `developer_instructions` definieren; Modell-
+  und Sandbox-Einstellungen sind optionale Overrides.
+- `external_codex_exec` delegiert an Prozesse eines externen Orchestrators. Der
+  Vertrag erlaubt nur `read-only` oder `workspace-write` und fixiert die
+  nicht-interaktive Approval-Policy auf `never`. Launcher verwenden
+  `codex exec --sandbox <mode> --ask-for-approval never`; ein interaktiver
+  `codex`-Aufruf ist kein Headless-Worker-Vertrag.
+
+Native Subagents erben die Berechtigungsgrenze der Parent-Session. Externe
+Worker unterliegen denselben Feature-Locks, stabilen Owner-IDs, strukturierten
+Ergebnissen, Token-Allokationen und Checkpoints. Kein Backend erlaubt
+Peer-to-Peer-Delegation oder startet bei einer reinen Vertragsvalidierung
+stillschweigend Arbeit.
+
 ```bash
 ./feature-tracking/tracker.py orchestration validate run-contract.json
 ```

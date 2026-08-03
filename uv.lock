@@ -1020,7 +1020,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.8.0"
+version = "1.0.8.2"
 source = { editable = "." }
 dependencies = [
     { name = "celery" },
@@ -1167,7 +1167,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.5" },
-    { name = "lx-dtypes", specifier = "==0.2.9" },
+    { name = "lx-dtypes", specifier = "==0.2.11" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2106,7 +2106,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.9"
+version = "0.2.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2129,9 +2129,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/72/07aa9a5bcbbf1c84a334909b9856f8cdea361bd24712c3d240a2c3842339/lx_dtypes-0.2.9.tar.gz", hash = "sha256:5c33f8d6c9d512ed0735427226372c0a0d2f88f7eac416dceead872579f07dbe", size = 2117169, upload-time = "2026-07-29T14:08:19.178Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/65/f9/84316884b136865581c94c324ba4ebaa999f5da20e88421ef5c252856714/lx_dtypes-0.2.11.tar.gz", hash = "sha256:e11fd61d53ab644cfda49d365595810f60b868bee952e115fec926f90deb2b9b", size = 2530080, upload-time = "2026-08-03T14:20:15.321Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/73/ad6e27998512dbd3a8c5b177a02eef01efedc210e07ad40153690035fdc4/lx_dtypes-0.2.9-py3-none-any.whl", hash = "sha256:7e9fc06ba11cc5837d18798c2e0dd24144b901dfeb9e58192e290cb2574b2cc5", size = 663787, upload-time = "2026-07-29T14:08:16.381Z" },
+    { url = "https://files.pythonhosted.org/packages/17/0b/790d882baf01d3f1581db94d1c80c96e1c049b16f3173305fb10b0a2d897/lx_dtypes-0.2.11-py3-none-any.whl", hash = "sha256:55183562478f61fd9f2e3676b51f7d64a35291ea3464735f869c3a445f59b5de", size = 729887, upload-time = "2026-08-03T14:20:13.067Z" },
 ]
 
 [[package]]
@@ -2838,7 +2838,7 @@ wheels = [
 
 [[package]]
 name = "pandera"
-version = "0.31.1"
+version = "0.30.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
@@ -2847,9 +2847,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "typing-inspect" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/e1/aaa14c989ffd30c7acb293fb986715517ca2b5b435ca291432535bb2b111/pandera-0.31.1.tar.gz", hash = "sha256:c75aa3868af15d4f9aa613acf1a7f436a518f81f1eb658ad630c1dbe1dab0f13", size = 729785, upload-time = "2026-04-15T03:18:59.967Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/09/82/e5c312159bba3220e0ba2a3f30d2f89c44ab611d5b4d2655f952caad22f0/pandera-0.30.1.tar.gz", hash = "sha256:84af217d96dd6541026b75e273c06c5ce70bb54f3a63c8b0a1f371935e24460d", size = 592585, upload-time = "2026-03-18T00:58:58.277Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/2d/6ea7cad2c2f0625c4120bef5353ab7cf749141bf1d070011cebb72f68189/pandera-0.31.1-py3-none-any.whl", hash = "sha256:f9f1ff4852804e1a181a4cb968e732a492f4b6dbefe051a8c5500da43d5c326d", size = 386913, upload-time = "2026-04-15T03:18:58.358Z" },
+    { url = "https://files.pythonhosted.org/packages/37/17/4c89d26ba4f6fb7fc5d3c7f3558aaf4b1e4d843b855e01300a86876987cf/pandera-0.30.1-py3-none-any.whl", hash = "sha256:910656a8c1e10a9759b57dd58ac9dd16298e64baaaae476f1c2c40ee326fb263", size = 303587, upload-time = "2026-03-18T00:58:56.993Z" },
 ]
 
 [package.optional-dependencies]

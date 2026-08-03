@@ -48,8 +48,26 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+    - kind: test
+      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest -q (524 passed, 2 skipped)
+    - kind: command
+      reference: 'scripts/lint_kb_yaml.py strict: 110 files, 0 errors, 0 warnings'
+    note: 'LXDM 2026-08-03: Vier veröffentlichungsfähige, lokalisierte und leitlinienreferenzierte ReportingShell-Templates
+      sind implementiert (Koloskopie 34 Coverage-Konzepte, Upper GI 7, ERCP 5, EUS 5). Registry-Auflösung
+      ist fail-closed. 524 Tests bestanden, strict KB lint 110 Dateien 0 Fehler/0 Warnungen, changed-file
+      Pyright/Ruff und Docs-Linkcheck bestanden. Offen bleiben Frontend-Darstellung der neuen Metadaten,
+      klinische Fachfreigabe und populationsbezogene QI-Aggregation; repositoryweites Pyright bleibt an
+      einem vorbestehenden unveränderten FHIR-Testfehler blockiert.'
+    assessed_by: codex-lxdm-kb-019fc7c1
+    assessed_at: '2026-08-03T14:05:44.500297Z'
 - id: automated_tests
   category: testing
   title: Import, Persistenz, Materialisierung, LLM-Jobs und Streaming sind getestet

@@ -49,6 +49,7 @@ def test_patient_definition_contracts_canonicalize_aliases() -> None:
     ("validator", "payload"),
     [
         (validate_patient_subcategories, {"x": {"choices": ["a"]}}),
+        (validate_patient_subcategories, {1: {"choices": ["a"]}}),
         (
             validate_patient_subcategories,
             {"x": {"choices": ["a"], "default": "a", "required": 1}},
@@ -114,6 +115,7 @@ def test_patient_finding_runtime_contracts_canonicalize_values() -> None:
             {"score": {"value": math.inf}},
         ),
         (validate_patient_finding_subcategories, {1: {"choices": ["a"]}}),
+        (validate_patient_finding_subcategories, []),
     ],
 )
 def test_patient_finding_runtime_contracts_reject_invalid_payloads(

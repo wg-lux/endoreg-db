@@ -86,6 +86,8 @@ definition_of_done:
     Multi-Agent-Ausführung nur für mindestens zwei unabhängig ausführbare Zweige.
   - Jede Work-Unit besitzt genau eine Verantwortung, höchstens zwei Turns, ein explizites Token-Budget,
     ein schema-validiertes Ergebnis und atomare idempotente Checkpoints.
+  - Zentralisierte Läufe wählen explizit native Codex-Subagents oder externe codex-exec-Worker; beide
+    Backends bewahren dieselben Hub-and-Spoke-, Lock-, Budget-, Ergebnis- und Checkpoint-Grenzen.
   required: true
   verification:
     kind: command
@@ -100,7 +102,7 @@ definition_of_done:
       - -q
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: test
       reference: feature-tracking/test_tracker.py::test_feature_locks_reject_overlapping_scopes_and_allow_independent_work
@@ -122,10 +124,15 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- /home/admin/endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
         tests/utils/test_file_operations.py -q (37 passed)
-    note: Add topology-aligned single-agent versus centralized multi-agent contracts, strict worker result
-      schemas, budget guardrails, and idempotent checkpoints.
-    assessed_by: codex-root-20260803-topology
-    assessed_at: '2026-08-03T10:06:42.365155Z'
+    - kind: command
+      reference: devenv shell -- pyright feature-tracking/tracker.py feature-tracking/test_tracker.py
+        (0 errors)
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/release-worktrees/lx-dtypes-0.2.10 .devenv/state/venv/bin/pytest
+        feature-tracking/test_tracker.py -q (32 passed)
+    note: Native subagent and external codex exec backends are typed, documented, and verified.
+    assessed_by: codex-feature-tracker-topology-20260803
+    assessed_at: '2026-08-03T12:12:09.534904Z'
 - id: automated_tests
   category: testing
   title: Schema, Ableitung und Updates sind fokussiert getestet

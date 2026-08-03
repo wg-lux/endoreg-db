@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Literal, Sequence, cast
+from typing import Annotated, Callable, Literal, Sequence, cast
 from uuid import uuid4
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
@@ -458,6 +458,45 @@ class ExecutionMode(StrEnum):
     CENTRALIZED_MULTI_AGENT = "centralized_multi_agent"
 
 
+class NativeSubagentBackend(BaseModel):
+    """In-session child threads managed by the current Codex session."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    kind: Literal["native_subagent"] = "native_subagent"
+    agent_profile: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    )
+
+
+class ExternalCodexExecBackend(BaseModel):
+    """Headless Codex CLI workers launched by an external orchestrator."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["external_codex_exec"] = "external_codex_exec"
+    sandbox_mode: Literal["read-only", "workspace-write"]
+    approval_policy: Literal["never"] = "never"
+
+    @property
+    def command_prefix(self) -> tuple[str, ...]:
+        return (
+            "codex",
+            "exec",
+            "--sandbox",
+            self.sandbox_mode,
+            "--ask-for-approval",
+            self.approval_policy,
+        )
+
+
+AgentExecutionBackend = Annotated[
+    NativeSubagentBackend | ExternalCodexExecBackend,
+    Field(discriminator="kind"),
+]
+
+
 class WorkUnitStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -551,6 +590,7 @@ class OrchestrationContract(BaseModel):
     orchestrator: str = Field(min_length=1, max_length=200)
     topology: TaskTopology
     execution_mode: ExecutionMode
+    agent_backend: AgentExecutionBackend | None = None
     max_workers: int = Field(ge=1, le=4)
     total_token_budget: int = Field(ge=1, le=50_000)
     work_units: tuple[WorkUnit, ...] = Field(min_length=1)
@@ -584,11 +624,15 @@ class OrchestrationContract(BaseModel):
                 raise ValueError("sequential topology requires single_agent mode")
             if self.max_workers != 1:
                 raise ValueError("sequential topology requires max_workers=1")
+            if self.agent_backend is not None:
+                raise ValueError("single_agent mode cannot define an agent backend")
         elif len(self.work_units) == 1:
             if self.execution_mode is not ExecutionMode.SINGLE_AGENT:
                 raise ValueError("one work unit requires single_agent mode")
             if self.max_workers != 1:
                 raise ValueError("one work unit requires max_workers=1")
+            if self.agent_backend is not None:
+                raise ValueError("single_agent mode cannot define an agent backend")
         else:
             roots = tuple(unit for unit in self.work_units if not unit.depends_on)
             if len(roots) < 2:
@@ -598,6 +642,10 @@ class OrchestrationContract(BaseModel):
             if self.execution_mode is not ExecutionMode.CENTRALIZED_MULTI_AGENT:
                 raise ValueError(
                     "parallel topology requires centralized_multi_agent mode"
+                )
+            if self.agent_backend is None:
+                raise ValueError(
+                    "centralized_multi_agent mode requires an explicit agent backend"
                 )
             if not 2 <= self.max_workers <= min(4, len(self.work_units)):
                 raise ValueError(
@@ -1515,7 +1563,7 @@ def checkpoint_orchestration(
     if selected.status is status and selected.result == result:
         return contract
 
-    allowed_transitions = {
+    allowed_transitions: dict[WorkUnitStatus, set[WorkUnitStatus]] = {
         WorkUnitStatus.PENDING: {WorkUnitStatus.IN_PROGRESS},
         WorkUnitStatus.IN_PROGRESS: {
             WorkUnitStatus.BLOCKED,

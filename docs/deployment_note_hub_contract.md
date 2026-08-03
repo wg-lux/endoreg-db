@@ -108,6 +108,20 @@ The proxy must:
 - leave the mTLS attestation header absent or non-successful when client
   certificate verification fails
 
+The executable reference configuration is
+[`deployment/nginx/hub-transfer.conf`](../deployment/nginx/hub-transfer.conf).
+It is intended for a dedicated transfer hostname and must be included exactly
+once in the Nginx `http` context after adapting the listen address, three
+credential paths, and Django upstream address. Its explicit `proxy_set_header`
+assignments replace spoofed inbound values. Its transfer location rejects every
+request whose Nginx certificate-verification result is not `SUCCESS` before the
+request reaches Django. Publish each overlap or replacement CA bundle atomically
+under a new path, point the configuration at that path, and then reload Nginx;
+changing only the contents at an already loaded path is not a reliable rotation.
+During a graceful reload, old workers can briefly retain the previous trust set.
+Validate both identities during the overlap and wait for bounded old-worker
+retirement before treating the previous CA or certificate as revoked.
+
 Do not expose the Django process directly to untrusted clients when these
 headers are trusted.
 

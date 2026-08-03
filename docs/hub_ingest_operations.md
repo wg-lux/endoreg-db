@@ -5,6 +5,14 @@ Site-Node-zu-Central-Hub-Ingest. Der Fertigstellungsstatus wird ausschließlich
 in [`feature-tracking/done/HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
 geführt.
 
+Für Implementierer und Reviewer von Sendern beschreibt
+[`hub_transfer_typed_contract.md`](hub_transfer_typed_contract.md) den aktuell
+verbindlichen, typisierten Wire-Vertrag `3.0`, vollständige Video- und
+Reportbeispiele, den mTLS-Transporttyp und die Portierung älterer
+`data-transfer-nginx-mtls`-Ansätze. Eine vollständige
+[`englische Fassung`](hub_transfer_typed_contract.en.md) ist ebenfalls
+verfügbar.
+
 Das produktionskritische Import-Monitoring einschließlich transienter Fehler,
 Quarantäne und HTTP-Live-Streaming-(HLS)-Materialisierung wird ausschließlich
 in [`feature-tracking/ImportMonitoring.yml`](../feature-tracking/ImportMonitoring.yml)
@@ -245,9 +253,53 @@ Mindestens zu alarmieren sind:
 - wiederholte Auth-, mTLS-, Hash- oder Payload-Ablehnungen.
 
 Die Administration aktualisiert das Transfer-Monitoring automatisch. Für
-maschinenlesbare Hostprüfungen ist `python manage.py check_system_health --json`
-zu verwenden. Kapazitätsgrenzen müssen an erwartete parallele Uploads, temporäre
-Kopien, Quarantäne, verarbeitete Derivate und Backup-Fenster angepasst werden.
+den allgemeinen Import- und Speicherzustand ist
+`python manage.py check_system_health --json` zu verwenden. Der Zustand des
+Outbound-Hub-Transfers wird separat geprüft:
+
+```sh
+python manage.py check_hub_export_health
+python manage.py check_hub_export_health --no-fail-on-attention
+systemctl status lx-annotate-hub-export-health.service
+systemctl status lx-annotate-hub-export-health.timer
+journalctl -u lx-annotate-hub-export-health.service
+```
+
+Der erste Befehl gibt kompaktes JSON aus und endet ungleich null, sobald eine
+terminale Konfigurationsablehnung, Autorisierungsablehnung,
+Integritätsinkonsistenz, ein ausgeschöpfter Retry oder ein unklassifizierter
+Fehler vorliegt. Ein transienter Fehler bleibt bis zur Retry-Erschöpfung
+nichtkritisch sichtbar. Die LuxNix-Site-Node-Konfiguration führt diese Prüfung
+periodisch als persistierenden systemd-Timer aus; eine fehlgeschlagene Unit und
+das strukturierte Ereignis `hub_export.health_snapshot` bilden den lokalen
+Alarmzustand. `--no-fail-on-attention` ist nur für eine lesende Diagnose
+gedacht und unterdrückt nicht die persistierte Fehlerklasse.
+
+Die Exportübersicht zeigt dieselben persistierten Klassen pro Transfer in
+deutscher Bedienersprache sowie aktive, abgeschlossene und aufmerksamkeits-
+pflichtige Transfers. Das Health-JSON und die Alarmereignisse enthalten keine
+Fehlertexte, Secrets, Rohmedien oder absoluten Medienpfade. HTTP `401` und
+`403` vom Hub sind terminale Autorisierungsablehnungen und werden nicht als
+transiente Netzwerkfehler wiederholt. Kapazitätsgrenzen müssen an erwartete
+parallele Uploads, temporäre Kopien, Quarantäne, verarbeitete Derivate und
+Backup-Fenster angepasst werden.
+
+Für gekoppelte Hub-Backups erzwingt LuxNix zusätzlich
+`services.luxnix.lxAnnotateLocal.hub.backup.minimumFreeBytes`. Der Standardwert
+reserviert 10 GiB auf dem Snapshot-Dateisystem. Der Backup-Dienst prüft die
+Reserve vor dem Staging und erneut, nachdem Datenbank-Dump und Medien in den
+noch nicht publizierten Snapshot kopiert wurden. Unterschreitet der freie
+Speicher die Reserve, schlägt die Unit fehl, entfernt ausschließlich den
+unvollständigen Pending-Snapshot und lässt den bisherigen `latest`-Restore-Punkt
+unverändert. Der Grenzwert darf anhand dokumentierter Kapazitätsplanung erhöht
+werden; eine Absenkung benötigt eine begründete Betriebsentscheidung und darf
+nicht als Reaktion auf einen bereits vollen Datenträger erfolgen.
+
+```sh
+systemctl status lx-annotate-hub-backup.service
+journalctl -u lx-annotate-hub-backup.service | grep -F minimum_free_bytes
+df -B1 /var/lib/lx-annotate/data/hub/backup/snapshots
+```
 
 ## Backup und Restore
 
@@ -257,15 +309,46 @@ Ein Hub-Backup besteht immer aus zwei zusammengehörigen Teilen:
 2. Backup der verschlüsselten, geschützten Media-/Quarantäne-Grenze inklusive
    Storage-Namen und Berechtigungen.
 
+LuxNix publiziert diese Teile als einen Restore-Punkt. Ein manueller oder vom
+Timer ausgelöster Start von `lx-annotate-hub-backup.service` startet zuerst
+`postgresqlBackup.service`. Nur wenn der komprimierte PostgreSQL-Dump
+erfolgreich und lesbar vorliegt, reicht systemd ihn als private Credential an
+den unprivilegierten Hub-Backup-Dienst weiter. Der Dienst prüft das
+Gzip-Format, kopiert den Dump als `database/all.sql.gz` in den noch nicht
+publizierten Medien-Snapshot und nimmt ihn in dieselbe Prüfsummenliste und das
+JSON-Manifest auf. Erst danach wechselt der atomare `latest`-Symlink auf den
+neuen Restore-Punkt. Ein fehlender, beschädigter oder fehlgeschlagener
+Datenbank-Dump lässt den bisherigen `latest`-Restore-Punkt unverändert.
+
+Bedienerprüfung auf dem Central Hub:
+
+```sh
+sudo systemctl start lx-annotate-hub-backup.service
+sudo systemctl status postgresqlBackup.service lx-annotate-hub-backup.service
+sudo readlink -f /var/lib/lx-annotate/data/hub/backup/snapshots/latest
+sudo jq '.database_dump' /var/lib/lx-annotate/data/hub/backup/manifests/*.json
+sudo sh -c 'cd /var/lib/lx-annotate/data/hub/backup/snapshots/latest && sha256sum --check ../../manifests/$(basename "$(readlink -f .)").sha256'
+```
+
+Der ausgewählte Manifest-Eintrag muss für `database_dump.relative_path` den
+Wert `database/all.sql.gz`, für `format` den Wert
+`postgresql-pg_dumpall-sql-gzip` und einen zum Snapshot passenden SHA-256-Hash
+enthalten. Das Manifest und die Prüfsummenliste gehören immer zu dem
+Zeitstempel, auf den `latest` zeigt; nicht mehrere Zeitstempel kombinieren.
+
 Restore-Probe:
 
-1. In isolierter Umgebung Datenbank und geschützte Medien auf denselben
-   Sicherungszeitpunkt wiederherstellen.
-2. Migrationen ausführen und die Central-Hub-Produktionschecks starten.
-3. Audit-Ledger-Integrität aktualisieren und System-Health prüfen.
-4. Stichprobenweise `resource_hash`, Transfer-Snapshot, gespeichertes Medium und
+1. Den Zielpfad von `latest`, das gleichnamige JSON-Manifest und die
+   gleichnamige Prüfsummenliste als untrennbares Set auswählen und vor dem
+   Restore vollständig mit `sha256sum --check` validieren.
+2. In einer isolierten Umgebung `database/all.sql.gz` mit PostgreSQL-Werkzeugen
+   wiederherstellen und anschließend den übrigen Snapshot als geschützte
+   Medien-/Quarantäne-Grenze desselben Sicherungszeitpunkts einspielen.
+3. Migrationen ausführen und die Central-Hub-Produktionschecks starten.
+4. Audit-Ledger-Integrität aktualisieren und System-Health prüfen.
+5. Stichprobenweise `resource_hash`, Transfer-Snapshot, gespeichertes Medium und
    Acknowledgement verbinden.
-5. Fehlende oder nicht lesbare Artefakte als `LOST`/inkonsistent behandeln und
+6. Fehlende oder nicht lesbare Artefakte als `LOST`/inkonsistent behandeln und
    Logs erhalten; keine unsichere Auto-Recovery durchführen.
 
 Eine Datenbank ohne zugehörige Medien oder Medien ohne konsistente Ledger sind

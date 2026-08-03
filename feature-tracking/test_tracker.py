@@ -20,11 +20,14 @@ from tracker import (
     Evidence,
     EvidenceKind,
     ExecutionMode,
+    ExternalCodexExecBackend,
+    FindingConfidence,
     FeatureDefinition,
     FeatureTrackingState,
     REPOSITORY_ROOT,
     ReadinessStatus,
     OrchestrationContract,
+    NativeSubagentBackend,
     TRACKING_DIR,
     TaskTopology,
     TrackerError,
@@ -966,6 +969,7 @@ def test_orchestration_contract_matches_execution_mode_to_topology() -> None:
         orchestrator="codex/root",
         topology=TaskTopology.INDEPENDENT_PARALLEL,
         execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+        agent_backend=NativeSubagentBackend(agent_profile="explorer"),
         max_workers=2,
         total_token_budget=2_000,
         work_units=(_work_unit("first"), _work_unit("second")),
@@ -982,6 +986,7 @@ def test_orchestration_contract_enforces_dependency_and_budget_guardrails() -> N
             orchestrator="codex/root",
             topology=TaskTopology.INDEPENDENT_PARALLEL,
             execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+            agent_backend=NativeSubagentBackend(),
             max_workers=2,
             total_token_budget=2_000,
             work_units=(
@@ -1031,7 +1036,7 @@ def test_worker_result_schema_and_checkpoints_are_strict_and_idempotent() -> Non
             WorkerFinding(
                 claim="The focused contract passes.",
                 source="feature-tracking/test_tracker.py",
-                confidence="high",
+                confidence=FindingConfidence.HIGH,
             ),
         ),
     )
@@ -1047,6 +1052,56 @@ def test_worker_result_schema_and_checkpoints_are_strict_and_idempotent() -> Non
             complete,
             work_unit_id="review",
             status=WorkUnitStatus.IN_PROGRESS,
+        )
+
+
+def test_orchestration_contract_distinguishes_native_and_external_workers() -> None:
+    external = ExternalCodexExecBackend(sandbox_mode="read-only")
+    contract = OrchestrationContract(
+        run_id="external-review",
+        feature_id="standard",
+        orchestrator="codex/root",
+        topology=TaskTopology.INDEPENDENT_PARALLEL,
+        execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+        agent_backend=external,
+        max_workers=2,
+        total_token_budget=2_000,
+        work_units=(_work_unit("first"), _work_unit("second")),
+    )
+
+    assert contract.agent_backend == external
+    assert external.command_prefix == (
+        "codex",
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ask-for-approval",
+        "never",
+    )
+
+    with pytest.raises(ValueError, match="requires an explicit agent backend"):
+        OrchestrationContract(
+            run_id="missing-backend",
+            feature_id="standard",
+            orchestrator="codex/root",
+            topology=TaskTopology.INDEPENDENT_PARALLEL,
+            execution_mode=ExecutionMode.CENTRALIZED_MULTI_AGENT,
+            max_workers=2,
+            total_token_budget=2_000,
+            work_units=(_work_unit("first"), _work_unit("second")),
+        )
+
+    with pytest.raises(ValueError, match="cannot define an agent backend"):
+        OrchestrationContract(
+            run_id="single-with-backend",
+            feature_id="standard",
+            orchestrator="codex/root",
+            topology=TaskTopology.SEQUENTIAL_INTERDEPENDENT,
+            execution_mode=ExecutionMode.SINGLE_AGENT,
+            agent_backend=NativeSubagentBackend(),
+            max_workers=1,
+            total_token_budget=1_000,
+            work_units=(_work_unit("review"),),
         )
 
 

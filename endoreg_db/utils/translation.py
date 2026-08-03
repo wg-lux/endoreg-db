@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol, cast
 
 from lx_dtypes.models.contracts.translation import MultilingualResponseData
@@ -14,7 +15,7 @@ class _MultilingualSource(Protocol):
     description_de: str
     description_en: str
 
-    def get_choices(self) -> list["_MultilingualSource"]: ...
+    def get_choices(self) -> Sequence["_MultilingualSource"]: ...
 
 
 class _RequiredSource(_MultilingualSource, Protocol):

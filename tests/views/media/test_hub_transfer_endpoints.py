@@ -9,6 +9,7 @@ from typing import Any, Protocol, cast
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -348,6 +349,71 @@ class HubTransferEndpointTests(TestCase):
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_registration_returns_typed_model_validation_details(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__model-validation",
+            video_hash="hash-model-validation",
+        )
+
+        with patch(
+            "endoreg_db.views.media.hub.transfers.create_or_reuse_transfer_job",
+            side_effect=DjangoValidationError(
+                {"resource_rows": ["Typed resource rows are inconsistent."]}
+            ),
+        ):
+            response = self._secure_post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                headers=self._auth_headers(),
+            )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "error": "Transfer payload validation failed",
+            "details": {"resource_rows": ["Typed resource rows are inconsistent."]},
+        }
+        assert not TransferJob.objects.filter(
+            transfer_key=payload["transfer_key"]
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_metadata_validation_rolls_back_registration(self):
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__metadata-validation",
+            video_hash="hash-metadata-validation",
+        )
+
+        with patch(
+            "endoreg_db.views.media.hub.transfers.apply_transfer_metadata",
+            side_effect=DjangoValidationError(
+                ["Transferred metadata violates the typed model contract."]
+            ),
+        ):
+            response = self._secure_post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                headers=self._auth_headers(),
+            )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "error": "Transfer payload validation failed",
+            "details": {
+                "non_field_errors": [
+                    "Transferred metadata violates the typed model contract."
+                ]
+            },
+        }
+        assert not TransferJob.objects.filter(
+            transfer_key=payload["transfer_key"]
+        ).exists()
+        assert not VideoFile.objects.filter(
+            video_hash=payload["resource_hash"]
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_center_scope_uses_authenticated_node_not_django_user(self):
         foreign_center = Center.objects.create(name="foreign-session-center")
         session_user = User.objects.create_user(username="foreign-session-user")
@@ -651,20 +717,22 @@ class HubTransferEndpointTests(TestCase):
         ]
         payload["resource_rows"]["video_state"]["segment_annotations_validated"] = True
 
-        with (
-            patch(
-                "endoreg_db.services.hub.transfers._apply_frame_annotation_rows",
-                side_effect=ValueError("frame annotation apply failed"),
-            ),
-            self.assertRaisesMessage(ValueError, "frame annotation apply failed"),
+        with patch(
+            "endoreg_db.services.hub.transfers._apply_frame_annotation_rows",
+            side_effect=ValueError("frame annotation apply failed"),
         ):
-            self._secure_post(
+            response = self._secure_post(
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
                 headers=self._auth_headers(),
             )
 
+        assert response.status_code == 400, response.content
+        assert "frame annotation apply failed" in str(response.json())
+        assert not TransferJob.objects.filter(
+            transfer_key=payload["transfer_key"]
+        ).exists()
         assert not LabelVideoSegment.objects.filter(
             source_node_key=self.source_node.node_key,
             source_segment_id="rollback",
@@ -1384,6 +1452,52 @@ class HubTransferEndpointTests(TestCase):
 
         assert upload_response.status_code == 400, upload_response.content
         assert "multipart file upload is required" in str(upload_response.json())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_returns_typed_model_validation_details(self):
+        processed_bytes = b"processed-video"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__media-model-validation",
+            video_hash="hash-media-model-validation",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        with patch(
+            "endoreg_db.views.media.hub.transfers.attach_transfer_media",
+            side_effect=DjangoValidationError(
+                {"processed_file": ["Processed artifact state is inconsistent."]}
+            ),
+        ):
+            upload_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "processed",
+                    "file": SimpleUploadedFile(
+                        "processed.mp4",
+                        processed_bytes,
+                        content_type="video/mp4",
+                    ),
+                },
+                headers=self._auth_headers(),
+            )
+
+        assert upload_response.status_code == 400, upload_response.content
+        assert upload_response.json() == {
+            "error": "Media attachment validation failed",
+            "details": {
+                "processed_file": ["Processed artifact state is inconsistent."]
+            },
+        }
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_video_upload_preserves_sender_state(self):

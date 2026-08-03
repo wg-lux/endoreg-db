@@ -43,6 +43,7 @@ def test_django_path_prefix_has_no_leading_slash() -> None:
 
 
 def test_build_prefixed_path_joins_relative_paths() -> None:
+    assert build_prefixed_path(ENDOREG_API_PREFIX, "") == ENDOREG_API_PREFIX
     assert (
         build_prefixed_path(ENDOREG_API_PREFIX, "media/videos/7/stream/")
         == "/endoreg-api/media/videos/7/stream/"

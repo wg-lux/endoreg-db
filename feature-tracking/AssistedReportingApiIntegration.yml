@@ -93,11 +93,6 @@ definition_of_done:
       - --no-color
       working_directory: /home/admin/dev/lx-annotate
     timeout_seconds: 3600
-  # AGENT-MANAGER-NOTIZ (2026-07-31): `verified` widerspricht hier der eigenen
-  # Notiz und dem Akzeptanzvertrag. Wheel-, NixOS/systemd- und paketiertes
-  # Produktionsprofil sind noch nicht abgenommen; zudem belegt die vorhandene
-  # Evidenz nicht den oben definierten endoreg_db-Verifikationslauf. Erst nach
-  # exakten, reproduzierbaren Paket- und Routen-Smoke-Tests verifizieren.
   assessment:
     status: in_progress
     evidence:
@@ -156,12 +151,26 @@ definition_of_done:
       reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
     - kind: test
       reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
-    note: Ein kanonisches LX_DTYPES_KB_REGISTRY, persistierte atomare Aktivierung, immutable Versionen,
-      server-private Speicherpfade und fail-closed Startup-Validierung sind im Quellstand implementiert
-      und fokussiert getestet. Veröffentlichung des neuen lx-dtypes-Artefakts und paketierte Deployment-Abnahme
-      fehlen.
-    assessed_by: Codex
-    assessed_at: '2026-07-31T12:20:00Z'
+    - kind: command
+      reference: 'lx-annotate commit 213a8e2d pre-commit hooks: Ruff, format, Pyright, 368 passed/2 skipped
+        backend tests, runtime contract, Vitest, and frontend type-check passed'
+    - kind: command
+      reference: 'devenv shell -- make package at /tmp/lx-annotate-0.9.54-clean-213a8e2d: frontend, docs,
+        migrations (No changes detected), sdist and wheel passed'
+    - kind: command
+      reference: 'twine check plus installed-wheel terminology smoke for sha256 9e7723517374ec4ae4227deb869ea0ca8e30b0e808966367818c2fcf017da7fe:
+        passed; registry input_dirs resolved to installed lx_dtypes/data and repeated bootstrap preserved
+        registry hash'
+    - kind: command
+      reference: 'LuxNix isolated terminology contract: 4 passed; nix build gc-02 toplevel with clean
+        local lx_annotate-0.9.54 wheel override: passed'
+    note: 'lx-annotate 0.9.54 release candidate commit 213a8e2d packages a default report_template_examples
+      terminology bootstrap and treats missing or invalid terminology as a structured best-effort warning,
+      not a service startup gate. The clean make package artifact and an isolated LuxNix gc-02 build with
+      runtime.wheelPath overridden to that wheel passed. Remaining gate: publish this exact wheel, pin
+      its PyPI URL and hash in LuxNix options.nix, then repeat the default-path build.'
+    assessed_by: codex/root
+    assessed_at: '2026-08-03T12:24:17.376556Z'
 - id: frontend_backend_contract_tests
   category: testing
   title: Die Reporting-Aufrufe werden repository-übergreifend regressionsgetestet
