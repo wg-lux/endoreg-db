@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
@@ -12,6 +12,10 @@ from endoreg_db.utils.storage_profile import (
 class VideoStorageMode(StrEnum):
     ENCRYPTED = "app_encrypted"
     STREAMABLE = "fs_encrypted_streamable"
+
+    # Backward-compatible aliases for existing call sites.
+    APP_ENCRYPTED = "app_encrypted"
+    FS_ENCRYPTED_STREAMABLE = "fs_encrypted_streamable"
 
 
 VIDEO_STORAGE_MODE_CHOICES: list[tuple[str, str]] = [

@@ -1,20 +1,18 @@
-from __future__ import annotations
-
 from decimal import Decimal
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from ..shift.scheduled_days import ScheduledDays
+    from endoreg_db.models import (
+        Center,
+        ScheduledDays,
+        Shift,
+    )
 
-NoCenterShiftValue: TypeAlias = NoneType
-CenterShiftDescription: TypeAlias = str | NoCenterShiftValue
 
-
-class CenterShiftManager(models.Manager["CenterShift"]):
-    def get_by_natural_key(self, name: str) -> "CenterShift":
+class CenterShiftManager(models.Manager):
+    def get_by_natural_key(self, name):
         """
         Retrieves a CenterShift instance by its unique name.
 
@@ -32,47 +30,48 @@ class CenterShift(models.Model):
     Model representing a center shift.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
 
-    center: models.ForeignKey[Any] = models.ForeignKey(
+    center = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
-    shift: models.ForeignKey[Any] = models.ForeignKey(
+    shift = models.ForeignKey(
         "Shift",
         on_delete=models.CASCADE,
         related_name="center_shifts",
     )
 
-    start_time: models.TimeField[Any, Any] = models.TimeField()
-    end_time: models.TimeField[Any, Any] = models.TimeField()
-    scheduled_days: models.ManyToManyField[
-        ScheduledDays,
-        ScheduledDays,
-    ] = models.ManyToManyField(
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    scheduled_days = models.ManyToManyField(
         "ScheduledDays",
         related_name="center_shifts",
     )
 
     # TODO add validator; the value should be between 0 and 1
-    estimated_presence_fraction: models.DecimalField[Any, Any] = models.DecimalField(
+    estimated_presence_fraction = models.DecimalField(
         max_digits=5,
         decimal_places=4,
         default=Decimal("0"),
     )
 
     if TYPE_CHECKING:
-        pass
+        center: models.ForeignKey["Center"]
+        shift: models.ForeignKey["Shift"]
+        scheduled_days = cast(
+            models.manager.RelatedManager["ScheduledDays"], scheduled_days
+        )
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Returns a string representation of the center shift, combining the center and shift.
         """
         return f"{self.center} - {self.shift}"
 
-    def initialize_scheduled_days(self) -> None:
+    def initialize_scheduled_days(self):
         # shift_types
         """
         Initializes scheduled days for the center shift.
@@ -81,7 +80,7 @@ class CenterShift(models.Model):
         """
         pass
 
-    def get_scheduled_days(self, infer: bool = True) -> models.QuerySet[ScheduledDays]:
+    def get_scheduled_days(self, infer=True):
         """
         Retrieves the scheduled days associated with this center shift.
 

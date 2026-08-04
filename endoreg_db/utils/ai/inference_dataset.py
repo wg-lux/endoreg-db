@@ -1,18 +1,12 @@
-# endoreg_db/utils/ai/inference_dataset.py
-
 from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image
-from torchvision import transforms  # type: ignore
+from torchvision import transforms
 from .preprocess import Cropper
-import torch
-from typing import Any, Dict, Sequence, cast
 
 
-class InferenceDataset(Dataset[torch.Tensor]):
-    def __init__(
-        self, paths: Sequence[str], crops: Sequence[Any], config: Dict[str, Any]
-    ) -> None:
+class InferenceDataset(Dataset):
+    def __init__(self, paths, crops, config):
         self.paths = paths
         self.crops = crops
         self.cropper = Cropper()  # Assuming Cropper can work with NumPy arrays
@@ -28,31 +22,30 @@ class InferenceDataset(Dataset[torch.Tensor]):
             ]
         )
 
-    def __len__(self) -> int:
+    def __len__(self):
         # Returns the total number of samples
         return len(self.paths)
 
-    def __getitem__(self, idx: int) -> torch.Tensor:
+    def __getitem__(self, idx):
         # Open the image with Pillow
-        with Image.open(self.paths[idx]) as raw_image:
+        with Image.open(self.paths[idx]) as pil_image:
             # Convert the image to RGB to ensure 3 channels
-            pil_image = raw_image.convert("RGB")
+            pil_image = pil_image.convert("RGB")
 
-            # Get the corresponding crop for the current image
-            crop = self.crops[idx]
+        # Get the corresponding crop for the current image
+        crop = self.crops[idx]
 
-            # FIXED: scale von List [x, y] zu Tuple (x, y) geändert + Typen abgesichert
-            # Gesamte Cropper-Logik in den Context-Manager gezogen, um Typ-Leakage zu vermeiden
-            cropped = self.cropper(
-                np.array(pil_image),  # Convert PIL image to numpy array for cropping
-                crop,
-                scale=(int(self.config["size_x"]), int(self.config["size_y"])),
-            )
+        # Crop the image based on the provided crop parameters and convert to numpy for cropping
+        cropped = self.cropper(
+            np.array(pil_image),  # Convert PIL image to numpy array for cropping
+            crop,
+            scale=[self.config["size_x"], self.config["size_y"]],
+        )
 
         # Convert cropped numpy array back to PIL image for torchvision transforms
-        cropped_pil = Image.fromarray(cropped.astype("uint8"))
+        cropped_pil = Image.fromarray(cropped.astype("uint8"), "RGB")
 
         # Apply the transformations
-        img = cast(Image, self.transforms(cropped_pil))
+        img = self.transforms(cropped_pil)
 
-        return cast(torch.Tensor, img)
+        return img

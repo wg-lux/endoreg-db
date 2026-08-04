@@ -2,7 +2,7 @@
 
 from .video_media import VideoMediaView
 from .pdf_media import PdfMediaView
-from .frame_media import DecodedFrameStreamView, FrameStreamView
+from .frame_media import FrameStreamView
 from .hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
@@ -10,7 +10,6 @@ from .hub import (
 )
 from .patient_media_timeline import PatientMediaTimelineView
 from .anonymization_metrics import AnonymizationMetricsView
-from .study_cohort import StudyCohortPreviewView
 from ..video.reimport import VideoReimportView
 from ..report.reimport import ReportReimportView
 from endoreg_db.views.video.ai.label import label_list
@@ -29,13 +28,11 @@ __all__ = [
     "VideoMediaView",
     "PdfMediaView",
     "FrameStreamView",
-    "DecodedFrameStreamView",
     "HubTransferCreateView",
     "HubTransferMediaUploadView",
     "HubTransferStatusView",
     "PatientMediaTimelineView",
     "AnonymizationMetricsView",
-    "StudyCohortPreviewView",
     "VideoReimportView",
     "ReportReimportView",
     "get_sensitive_metadata_pk",

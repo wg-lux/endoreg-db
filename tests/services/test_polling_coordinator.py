@@ -12,7 +12,6 @@ Tests cover:
 import pytest
 import time
 import threading
-from typing import Any, cast
 from django.core.cache import cache
 from endoreg_db.services.polling_coordinator import (
     PollingCoordinator,
@@ -24,11 +23,11 @@ from endoreg_db.services.polling_coordinator import (
 class TestPollingCoordinator:
     """Test suite for PollingCoordinator service."""
 
-    def setup_method(self) -> None:
+    def setup_method(self):
         """Clear cache before each test."""
         cache.clear()
 
-    def teardown_method(self) -> None:
+    def teardown_method(self):
         """Clear cache after each test."""
         cache.clear()
 
@@ -155,9 +154,8 @@ class TestPollingCoordinator:
         file_type = "video"
 
         # Set a very short cooldown for testing
-        polling_coordinator_cls = cast(Any, PollingCoordinator)
-        original_cooldown: int = PollingCoordinator.CHECK_COOLDOWN
-        polling_coordinator_cls.CHECK_COOLDOWN = 1  # 1 second
+        original_cooldown = PollingCoordinator.CHECK_COOLDOWN
+        PollingCoordinator.CHECK_COOLDOWN = 1  # 1 second
 
         try:
             # First check
@@ -172,7 +170,7 @@ class TestPollingCoordinator:
             assert result2 is True
         finally:
             # Restore original cooldown
-            polling_coordinator_cls.CHECK_COOLDOWN = original_cooldown
+            PollingCoordinator.CHECK_COOLDOWN = original_cooldown
 
     def test_get_remaining_cooldown_seconds_active(self):
         """Test getting remaining cooldown seconds."""
@@ -205,9 +203,9 @@ class TestPollingCoordinator:
         """Test thread-safe lock acquisition."""
         file_id = 1400
         file_type = "video"
-        results: list[bool] = []
+        results = []
 
-        def try_acquire() -> None:
+        def try_acquire():
             result = PollingCoordinator.acquire_processing_lock(file_id, file_type)
             results.append(result)
 
@@ -221,7 +219,7 @@ class TestPollingCoordinator:
             thread.join()
 
         # Only one thread should succeed
-        assert sum(1 for result in results if result) == 1
+        assert sum(results) == 1
         assert results.count(True) == 1
         assert results.count(False) == 9
 
@@ -240,11 +238,11 @@ class TestPollingCoordinator:
 class TestProcessingLockContext:
     """Test suite for ProcessingLockContext manager."""
 
-    def setup_method(self) -> None:
+    def setup_method(self):
         """Clear cache before each test."""
         cache.clear()
 
-    def teardown_method(self) -> None:
+    def teardown_method(self):
         """Clear cache after each test."""
         cache.clear()
 

@@ -1,18 +1,13 @@
-from __future__ import annotations
-
 """
 Defines state tracking models related to report processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """
 
 import logging
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING
 
 from django.db import models, transaction
 
-from endoreg_db.models.state.anonymization import (
-    AnonymizationState,
-    derive_report_anonymization_state,
-)
+from endoreg_db.models.state.anonymization import AnonymizationState
 
 logger = logging.getLogger(__name__)
 
@@ -26,73 +21,62 @@ class RawPdfState(models.Model):
     Uses BooleanFields for clear, distinct states.
     """
 
-    text_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
+    text_meta_extracted = models.BooleanField(
         default=False, help_text="True if text metadata (OCR) has been extracted."
     )
 
     # AI / Annotation related states
-    initial_prediction_completed: models.BooleanField[Any, Any] = models.BooleanField(
+    initial_prediction_completed = models.BooleanField(
         default=False, help_text="True if initial AI prediction has run."
     )
 
     # Processing state
-    sensitive_meta_processed: models.BooleanField[Any, Any] = models.BooleanField(
+    sensitive_meta_processed = models.BooleanField(
         default=False,
         help_text="True if the video has been fully processed, meaning a anonymized person was created.",
     )
 
     # Anonymization state
-    anonymized: models.BooleanField[Any, Any] = models.BooleanField(
+    anonymized = models.BooleanField(
         default=False, help_text="True if the anonymized video file has been created."
     )
-    anonymization_validated: models.BooleanField[Any, Any] = models.BooleanField(
+    anonymization_validated = models.BooleanField(
         default=False,
         help_text="True if the anonymization process has been validated and confirmed.",
     )
 
     # Processing state
-    processing_started: models.BooleanField[Any, Any] = models.BooleanField(
+    processing_started = models.BooleanField(
         default=False,
         help_text="True if the processing has started, but not yet completed.",
     )
-    processing_error: models.BooleanField[Any, Any] = models.BooleanField(
+    processing_error = models.BooleanField(
         default=False, help_text="True if an error occurred during processing."
-    )
-    processed_file_sha256: models.CharField[Any, Any] = models.CharField(
-        max_length=64,
-        blank=True,
-        default="",
-        help_text=(
-            "SHA-256 of the plaintext anonymized PDF currently attached to the "
-            "RawPdfFile. Empty until a processed artifact has been verified."
-        ),
     )
 
     # Timestamps
-    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now_add=True
-    )
-    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
 
-    was_created: models.BooleanField[Any, Any] = models.BooleanField(
+    was_created = models.BooleanField(
         default=True, help_text="True if this state was created for the first time."
     )
 
     # report metadata extraction state
-    pdf_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
+    pdf_meta_extracted = models.BooleanField(
         default=False, help_text="True if report metadata has been extracted."
     )
 
     if TYPE_CHECKING:
         raw_pdf_file: "RawPdfFile"
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return a string summarizing the RawPdfState instance, including the related report file UUID and key processing state flags with timestamps.
         """
         try:
-            uuid = cast(int | None, self.raw_pdf_file.pk)
-        except AttributeError:
+            uuid = self.raw_pdf_file.pk
+        except Exception:
             uuid = None
 
         states = [
@@ -114,13 +98,29 @@ class RawPdfState(models.Model):
         Returns:
             AnonymizationStatus: The current status, reflecting progress or failure in the anonymization process.
         """
-        return derive_report_anonymization_state(
-            processing_error=self.processing_error,
-            anonymization_validated=self.anonymization_validated,
-            sensitive_meta_processed=self.sensitive_meta_processed,
-            anonymized=self.anonymized,
-            processing_started=self.processing_started,
-        )
+        if self.anonymization_validated:
+            return AnonymizationState.VALIDATED  #  Validation in Frontend completed -> Views related to this /home/admin/endoreg-db/endoreg_db/views/anonymization/validate.py
+        if self.sensitive_meta_processed:
+            return (
+                AnonymizationState.DONE_PROCESSING_ANONYMIZATION
+            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
+        if (
+            self.processing_started
+            and not self.processing_error
+            and not self.anonymized
+        ):
+            return AnonymizationState.PROCESSING_ANONYMIZING
+        if getattr(self, "processing_error", False):
+            return (
+                AnonymizationState.FAILED
+            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
+        if self.processing_started:
+            return (
+                AnonymizationState.STARTED
+            )  # /home/admin/endoreg-db/endoreg_db/services/pdf_import.py
+        if self.anonymized:
+            return AnonymizationState.ANONYMIZED
+        return AnonymizationState.NOT_STARTED
 
     def mark_processing_not_started(self) -> None:
         """
@@ -135,7 +135,6 @@ class RawPdfState(models.Model):
             self.was_created = False
             self.sensitive_meta_processed = False
             self.anonymization_validated = False
-            self.processed_file_sha256 = ""
             self.save()
 
     def mark_processing_started(self, *, save: bool = True) -> None:
@@ -146,32 +145,7 @@ class RawPdfState(models.Model):
             save (bool): If True, persist the change to the database immediately. Defaults to True.
         """
         self.processing_started = True
-        # An explicit retry starts a new attempt after a previous failure.
-        self.processing_error = False
-        self.save(
-            update_fields=["processing_started", "processing_error", "date_modified"]
-        )
-
-    def mark_processing_failed(self, *, save: bool = True) -> None:
-        """Record failure and revoke readiness derived from the removed artifact."""
-        self.processing_error = True
-        self.processing_started = False
-        self.anonymized = False
-        self.sensitive_meta_processed = False
-        self.anonymization_validated = False
-        self.processed_file_sha256 = ""
-        if save:
-            self.save(
-                update_fields=[
-                    "processing_error",
-                    "processing_started",
-                    "anonymized",
-                    "sensitive_meta_processed",
-                    "anonymization_validated",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        self.save(update_fields=["processing_started", "date_modified"])
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:

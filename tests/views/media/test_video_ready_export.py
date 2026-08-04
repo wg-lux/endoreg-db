@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-
-from typing import cast
 import hashlib
 from unittest.mock import patch
 from uuid import uuid4
@@ -12,7 +9,6 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
-from django.core.files.base import ContentFile
 from endoreg_db.models import (
     Center,
     Label,
@@ -22,7 +18,7 @@ from endoreg_db.models import (
     VideoState,
 )
 from endoreg_db.models.state.audit_ledger import AuditLedger
-import endoreg_db.services.video_segment_blackening as blackening
+from endoreg_db.models.state import video_segment_validation as segment_state
 
 
 class VideoReadyExportEndpointTests(TestCase):
@@ -49,19 +45,15 @@ class VideoReadyExportEndpointTests(TestCase):
                 segment_annotations_validated=True,
             ),
         )
-        video.processed_file.save(
-            "processed.mp4",
-            SimpleUploadedFile(
-                "ready-processed.mp4",
-                content,
-                content_type="video/mp4",
-            ),
-            save=True,
+        video.processed_file = SimpleUploadedFile(
+            "ready-processed.mp4",
+            content,
+            content_type="video/mp4",
         )
         video.save(update_fields=["processed_file"])
         self.processed_sha = hashlib.sha256(content).hexdigest()
         if default_state:
-            video_state = cast(VideoState, video.state)
+            video_state = video.state
             assert video_state is not None
             video_state.anonymization_validated = True
             video_state.outside_segments_removed = True
@@ -215,7 +207,7 @@ class VideoReadyExportEndpointTests(TestCase):
                         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
                         status=history_status,
                         task_id=f"cleanup-{history_status}",
-                        config=blackening.blackening_history_config(
+                        config=segment_state._blackening_history_config(
                             only_validated=False
                         ),
                     )
@@ -265,11 +257,12 @@ class VideoReadyExportEndpointTests(TestCase):
         video = self._video()
         self._mark_ready_state(video)
 
-        video.processed_file.save(
+        video.processed_file = SimpleUploadedFile(
             "replacement-processed.mp4",
-            ContentFile(b"replacement-processed-video"),
-            save=True,
+            b"replacement-processed-video",
+            content_type="video/mp4",
         )
+        video.save(update_fields=["processed_file"])
 
         video.refresh_from_db()
         state = video.get_or_create_state()

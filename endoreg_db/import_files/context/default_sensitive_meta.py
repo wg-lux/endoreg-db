@@ -1,14 +1,11 @@
 # endoreg_db/import_files/processing/create_sensitive_meta.py
 
-import logging
 import os
+import logging
 from datetime import date
-from types import NoneType
-from typing import Protocol, cast
+from typing import Union
 
-from endoreg_db.models.administration.center.center import Center
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media import RawPdfFile, VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta  # adjust path
 
 logger = logging.getLogger(__name__)
@@ -16,47 +13,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_PATIENT_FIRST_NAME = "unknown"
 DEFAULT_PATIENT_LAST_NAME = "unknown"
 DEFAULT_CENTER_NAME = "endoreg_db_demo"
+# DEFAULT_PATIENT_DOB can be a fixed date or None to let logic.generate_random_dob handle it
 DEFAULT_PATIENT_DOB = date(1970, 1, 1)
-
-type DefaultSensitiveMetaValue = str | date
-type DefaultSensitiveMetaData = dict[str, DefaultSensitiveMetaValue]
-
-
-class _NamedCenter(Protocol):
-    name: str
-
-
-class _SensitiveMetaCarrier(Protocol):
-    pk: int
-    center: Center | NoneType
-    sensitive_meta: SensitiveMeta | NoneType
-
-    def save(self, *, update_fields: list[str]) -> None: ...
-
-
-class _RawPdfIdentifier(Protocol):
-    pdf_hash: str
-
-
-def _center_name(center: Center | NoneType) -> str:
-    if center is None:
-        return DEFAULT_CENTER_NAME
-    named_center = cast(_NamedCenter, center)
-    if named_center.name:
-        return named_center.name
-    return os.environ.get("CENTER_NAME", DEFAULT_CENTER_NAME)
-
-
-def _instance_log_identifier(instance: _SensitiveMetaCarrier) -> str:
-    if isinstance(instance, RawPdfFile):
-        raw_pdf = cast(_RawPdfIdentifier, instance)
-        return raw_pdf.pdf_hash
-    return str(instance.pk)
 
 
 def default_sensitive_meta(
-    instance: RawPdfFile | VideoFile | NoneType,
-) -> SensitiveMeta | NoneType:
+    instance: Union[RawPdfFile, VideoFile],
+) -> SensitiveMeta | None:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.
 
@@ -66,38 +29,52 @@ def default_sensitive_meta(
         logger.warning("No instance available for ensuring default patient data")
         return None
 
-    typed_instance = cast(_SensitiveMetaCarrier, instance)
-    if typed_instance.sensitive_meta is not None:
+    if instance.sensitive_meta:
         # Already has meta; nothing to do
         return None
 
-    center_name = _center_name(typed_instance.center)
     logger.info(
         "No SensitiveMeta found for report %s, creating default",
-        _instance_log_identifier(typed_instance),
+        getattr(instance, "pdf_hash", instance.pk),
     )
+    center = getattr(instance, "center", None)
+    if center is not None and not isinstance(center.name, str):
+        try:
+            center_name = os.environ.get("CENTER_NAME")
+            assert center_name is not None
+            center.name = center_name
+        except AssertionError as e:
+            logger.debug(
+                f"{e}Center name is not set! You can set it in .env under CENTER_NAME using default from default_sensitive_meta"
+            )
+            center.name = DEFAULT_CENTER_NAME
+            center.get_by_name(DEFAULT_CENTER_NAME)
 
-    default_data: DefaultSensitiveMetaData = {
+    default_data = {
         "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
         "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
         "patient_dob": DEFAULT_PATIENT_DOB,
         "examination_date": date.today(),
-        "center_name": center_name,
+        "center_name": (center.name if center is not None else DEFAULT_CENTER_NAME),
+        # optional: link file_path for debugging/tracing
+        "file_path": str(getattr(instance, "file_path", ""))
+        if hasattr(instance, "file_path")
+        else None,
     }
 
     try:
         meta = SensitiveMeta.create_from_dict(default_data)
-        typed_instance.sensitive_meta = meta
-        typed_instance.save(update_fields=["sensitive_meta"])
+        instance.sensitive_meta = meta
+        instance.save(update_fields=["sensitive_meta"])
         logger.info(
             "Created default SensitiveMeta for report %s",
-            _instance_log_identifier(typed_instance),
+            getattr(instance, "pdf_hash", instance.pk),
         )
         return meta
     except Exception as e:
         logger.error(
             "Failed to create default SensitiveMeta for report %s: %s",
-            _instance_log_identifier(typed_instance),
+            getattr(instance, "pdf_hash", instance.pk),
             e,
         )
         return None

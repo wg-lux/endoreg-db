@@ -126,27 +126,23 @@ class CommonLabValuesTest(TestCase):
         Verifies that the correct normal range is provided for male and female genders, and that appropriate warnings are issued and fallback behavior occurs when gender is missing or unknown.
         """
         normal_range_male = self.hb.get_normal_range(gender=self.male_gender)
-        self.assertEqual(normal_range_male.min, 14)
-        self.assertEqual(normal_range_male.max, 18)
+        self.assertEqual(normal_range_male, {"min": 14, "max": 18})
 
         normal_range_female = self.hb.get_normal_range(gender=self.female_gender)
-        self.assertEqual(normal_range_female.min, 12)
-        self.assertEqual(normal_range_female.max, 16)
+        self.assertEqual(normal_range_female, {"min": 12, "max": 16})
 
         with self.assertWarnsRegex(
             UserWarning, "Gender not provided.*Defaulting to 'male' range"
         ):
             normal_range_none = self.hb.get_normal_range()
-            self.assertEqual(normal_range_none.min, 14)
-            self.assertEqual(normal_range_none.max, 18)
+            self.assertEqual(normal_range_none, {"min": 14, "max": 18})
 
         with self.assertWarnsRegex(
             UserWarning,
             "Normal range for gender 'unknown' not found.*Defaulting to 'male' range",
         ):
             normal_range_unknown = self.hb.get_normal_range(gender=self.unknown_gender)
-            self.assertEqual(normal_range_unknown.min, 14)
-            self.assertEqual(normal_range_unknown.max, 18)
+            self.assertEqual(normal_range_unknown, {"min": 14, "max": 18})
 
     def test_get_normal_range_non_gender_dependent(self):
         # Platelets: 150-350
@@ -156,12 +152,10 @@ class CommonLabValuesTest(TestCase):
         Verifies that calling `get_normal_range` on the platelets lab value returns the same range whether or not a gender is specified.
         """
         normal_range = self.platelets.get_normal_range()
-        self.assertEqual(normal_range.min, 150)
-        self.assertEqual(normal_range.max, 350)
+        self.assertEqual(normal_range, {"min": 150, "max": 350})
 
         normal_range_male = self.platelets.get_normal_range(gender=self.male_gender)
-        self.assertEqual(normal_range_male.min, 150)
-        self.assertEqual(normal_range_male.max, 350)
+        self.assertEqual(normal_range_male, {"min": 150, "max": 350})
 
     # def test_get_normal_range_no_default_range(self):
     #     with self.assertWarnsRegex(UserWarning, "Could not determine a 'min' normal range"):
@@ -174,8 +168,8 @@ class CommonLabValuesTest(TestCase):
         Tests that a lab value with only a minimum normal range returns the correct min value and no max value.
         """
         normal_range = self.min_only_lv.get_normal_range()
-        self.assertEqual(normal_range.min, 10)
-        self.assertIsNone(normal_range.max)
+        self.assertEqual(normal_range.get("min"), 10)
+        self.assertIsNone(normal_range.get("max"))
 
     def test_get_normal_range_max_only(self):
         """
@@ -184,8 +178,8 @@ class CommonLabValuesTest(TestCase):
         Verifies that the minimum is None and the maximum is correctly set.
         """
         normal_range = self.max_only_lv.get_normal_range()
-        self.assertIsNone(normal_range.min)
-        self.assertEqual(normal_range.max, 100)
+        self.assertIsNone(normal_range.get("min"))
+        self.assertEqual(normal_range.get("max"), 100)
 
     # Tests for get_increased_value
     def test_get_increased_value_no_distribution_with_upper_bound(self):

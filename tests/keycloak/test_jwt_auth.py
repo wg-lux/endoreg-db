@@ -1,33 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Literal, Protocol, cast
 from unittest.mock import Mock, patch
 
 import pytest
 from django.test import override_settings
-from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
-from endoreg_db.authz.backends import KeycloakOIDCBackend
 
 
-class _GroupNames(Protocol):
-    def values_list(
-        self,
-        field_name: str,
-        *,
-        flat: Literal[True],
-    ) -> Iterable[str]: ...
-
-
-class _UserWithGroups(Protocol):
-    groups: _GroupNames
-
-
-def test_extract_roles_ignores_untrusted_client_resource_roles() -> None:
-    claims: dict[str, JsonValue] = {
-        "preferred_username": "test-user",
+def test_extract_roles_merges_flat_realm_and_resource_roles() -> None:
+    claims = {
         "roles": ["flat-role"],
         "realm_access": {"roles": ["realm-role"]},
         "resource_access": {
@@ -36,33 +18,14 @@ def test_extract_roles_ignores_untrusted_client_resource_roles() -> None:
         },
     }
 
-    roles = KeycloakJWTAuthentication.extract_roles(claims)
+    roles = KeycloakJWTAuthentication._extract_roles(claims)
 
     assert roles == {
         "flat-role",
         "realm-role",
-    }
-
-
-@pytest.mark.django_db
-def test_oidc_group_sync_ignores_untrusted_client_resource_roles() -> None:
-    claims: dict[str, JsonValue] = {
-        "preferred_username": "oidc-scoped-role-user",
-        "roles": ["flat-role"],
-        "realm_access": {"roles": ["realm-role"]},
-        "resource_access": {
-            "account": {"roles": ["manage-account"]},
-            "unrelated-client": {"roles": ["patient:write"]},
-        },
-    }
-
-    backend = object.__new__(KeycloakOIDCBackend)
-    user = backend.create_user(claims)
-
-    group_names = cast(_UserWithGroups, user).groups.values_list("name", flat=True)
-    assert set(group_names) == {
-        "flat-role",
-        "realm-role",
+        "manage-account",
+        "api-read",
+        "api-write",
     }
 
 
@@ -72,7 +35,9 @@ def test_oidc_group_sync_ignores_untrusted_client_resource_roles() -> None:
     OIDC_VERIFY_SSL=True,
 )
 def test_init_uses_ssl_verify_for_discovery() -> None:
-    KeycloakJWTAuthentication.reset_cached_oidc_metadata()
+    KeycloakJWTAuthentication._jwks_client = None
+    KeycloakJWTAuthentication._iss = None
+    KeycloakJWTAuthentication._aud = None
 
     response = Mock()
     response.json.return_value = {
@@ -84,7 +49,7 @@ def test_init_uses_ssl_verify_for_discovery() -> None:
         patch("endoreg_db.authz.auth.requests.get", return_value=response) as get_mock,
         patch("endoreg_db.authz.auth.PyJWKClient", return_value=Mock()),
     ):
-        KeycloakJWTAuthentication.initialize_oidc_client()
+        KeycloakJWTAuthentication._init()
 
     get_mock.assert_called_once_with(
         "https://kc.example/realms/test/.well-known/openid-configuration",

@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-
 import logging
 import os
 from pathlib import Path
-from typing import Protocol, cast
-from django.core.files.storage import Storage
-from typing import TYPE_CHECKING, TypedDict, Unpack
+from typing import TYPE_CHECKING, Optional, Union
 
 from endoreg_db.utils.file_operations import get_content_hash_filename
-from endoreg_db.utils.hashs import get_pdf_hash
+from endoreg_db.utils.security.hashs import get_pdf_hash
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.structured_logging import (
-    emit_structured_event,
-    path_reference,
-)
+from endoreg_db.utils.observability.structured_logging import emit_structured_event
 
 from .state import get_or_create_raw_pdf_state
 from .types import ReportPdfArtifactKind
@@ -25,24 +19,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _StoredFileLike(Protocol):
-    name: str
-    storage: Storage
-
-
-class _RawPdfFileCreateKwargs(TypedDict, total=False):
-    pass
-
-
-class _RawPdfFilePersistence(Protocol):
-    pk: int
-    pdf_hash: str
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-    def delete(self, *args: object, **kwargs: object) -> tuple[int, dict[str, int]]: ...
-
-
 def _raw_pdf_model():
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 
@@ -50,12 +26,12 @@ def _raw_pdf_model():
 
 
 def create_raw_pdf_file_from_path(
-    file_path: str | Path,
-    center_name: str | None = None,
+    file_path: Union[str, Path],
+    center_name: Optional[str] = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
     save: bool = True,
-    **kwargs: Unpack[_RawPdfFileCreateKwargs],
+    **kwargs,
 ) -> "RawPdfFile":
     from endoreg_db.models.administration.center.center import Center
 
@@ -97,15 +73,14 @@ def create_raw_pdf_file_from_path(
 
         field_file = existing_pdf_file.file
         file_name = field_file.name if field_file else None
-        if file_name and cast(_StoredFileLike, field_file).storage.exists(file_name):
+        if file_name and field_file.storage.exists(file_name):
             logger.warning("File is present. Returning existing instance.")
             return existing_pdf_file
 
         logger.warning(
             "RawPdfFile exists but file is missing. Deleting orphaned record."
         )
-        existing_pdf = cast(_RawPdfFilePersistence, existing_pdf_file)
-        existing_pdf.delete()
+        existing_pdf_file.delete()
 
     new_file_name, _uuid = get_content_hash_filename(file_path)
     try:
@@ -122,19 +97,17 @@ def create_raw_pdf_file_from_path(
         )
 
         if save:
-            raw_pdf_persistence = cast(_RawPdfFilePersistence, raw_pdf)
-            raw_pdf_persistence.save()
+            raw_pdf.save()
             logger.info("Successfully created RawPdfFile PK %s", raw_pdf.pk)
 
-        raw_pdf_persistence = cast(_RawPdfFilePersistence, raw_pdf)
         emit_structured_event(
             logger,
             "raw_pdf.file_saved",
             status="ok",
             report_id=raw_pdf.pk,
-            pdf_hash=raw_pdf_persistence.pdf_hash,
+            pdf_hash=raw_pdf.pdf_hash,
             artifact_kind=ReportPdfArtifactKind.RAW.value,
-            source_path=path_reference(file_path),
+            source_path=file_path,
             storage_name=saved_name,
         )
         return raw_pdf
@@ -145,11 +118,11 @@ def create_raw_pdf_file_from_path(
 
 
 def create_initialized_raw_pdf_file_from_path(
-    file_path: str | Path,
-    center_name: str | None = None,
+    file_path: Union[str, Path],
+    center_name: Optional[str] = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
-    **kwargs: Unpack[_RawPdfFileCreateKwargs],
+    **kwargs,
 ) -> "RawPdfFile":
     raw_pdf = create_raw_pdf_file_from_path(
         file_path=file_path,
@@ -162,6 +135,5 @@ def create_initialized_raw_pdf_file_from_path(
 
 def initialize_raw_pdf_file(report: "RawPdfFile") -> "RawPdfFile":
     report.state = get_or_create_raw_pdf_state(report)
-    report_persistence = cast(_RawPdfFilePersistence, report)
-    report_persistence.save(update_fields=["state"])
+    report.save(update_fields=["state"])
     return report

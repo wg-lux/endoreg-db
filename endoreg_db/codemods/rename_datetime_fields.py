@@ -1,86 +1,49 @@
-from __future__ import annotations
-
+# endoreg_db/codemods/rename_datetime_fields.py
+from pathlib import Path
 import argparse
 import importlib
-import sys
-from collections.abc import Iterable, Iterator, Sequence
-from pathlib import Path
-from types import NoneType
-from typing import NoReturn, Protocol, Self, cast
-
 import yaml
-from pydantic import ValidationError
-
-from lx_dtypes.models.contracts import validate_codemod_rename_map
-from lx_dtypes.models.contracts.json_types import JsonValue
+import sys
 
 # Paths
 BASE = Path(__file__).resolve().parents[1]  # .../endoreg_db
 RENAMES_YML = BASE / "renames.yml"
-DEFAULT_TARGETS = ("endoreg_db/models",)  # safer default
+DEFAULT_TARGETS = ["endoreg_db/models"]  # safer default
 EXCLUDE_DIR_NAMES = {"migrations", "__pycache__"}
 
-type CliArgList = Sequence[str] | NoneType
-type PathInput = str | Path
 
-
-class BowlerQuery(Protocol):
-    def select_attribute(self, name: str) -> Self: ...
-
-    def select_var(self, name: str) -> Self: ...
-
-    def rename(self, new_name: str) -> Self: ...
-
-    def execute(self, *, write: bool, silent: bool) -> None: ...
-
-
-class BowlerQueryFactory(Protocol):
-    def __call__(self, filenames: list[str]) -> BowlerQuery: ...
-
-
-class ParsedArguments(Protocol):
-    targets: list[str]
-    yes: bool
-    silent: bool
-
-
-def _exit_config_error(message: str) -> NoReturn:
-    print(message, file=sys.stderr)
-    raise SystemExit(2)
-
-
-def load_renames() -> dict[str, str]:
+def load_renames():
     if not RENAMES_YML.exists():
-        _exit_config_error(f"ERROR: renames.yml not found at {RENAMES_YML}")
+        print(f"ERROR: renames.yml not found at {RENAMES_YML}", file=sys.stderr)
+        sys.exit(2)
+    data = yaml.safe_load(RENAMES_YML.read_text()) or {}
+    if not isinstance(data, dict) or not data:
+        print("ERROR: renames.yml is empty or not a mapping.", file=sys.stderr)
+        sys.exit(2)
+    return data
 
-    payload = cast(JsonValue, yaml.safe_load(RENAMES_YML.read_text(encoding="utf-8")))
-    try:
-        return validate_codemod_rename_map(payload).renames
-    except ValidationError as exc:
-        _exit_config_error(f"ERROR: invalid renames.yml: {exc}")
 
-
-def iter_python_targets(paths: Iterable[PathInput]) -> Iterator[str]:
+def iter_python_targets(paths):
     """Yield *.py files under given paths, excluding migrations and caches."""
-    for path in map(Path, paths):
-        if path.is_file() and path.suffix == ".py":
-            if not any(part in EXCLUDE_DIR_NAMES for part in path.parts):
-                yield str(path)
-        elif path.is_dir():
-            for file_path in path.rglob("*.py"):
-                if any(part in EXCLUDE_DIR_NAMES for part in file_path.parts):
+    for p in map(Path, paths):
+        if p.is_file() and p.suffix == ".py":
+            if not any(part in EXCLUDE_DIR_NAMES for part in p.parts):
+                yield str(p)
+        elif p.is_dir():
+            for f in p.rglob("*.py"):
+                if any(part in EXCLUDE_DIR_NAMES for part in f.parts):
                     continue
-                yield str(file_path)
+                yield str(f)
 
 
-def build_query(files: Iterable[str]) -> BowlerQuery:
+def build_query(files):
     # Bowler can take a list of files; we’ve already filtered them
     bowler_mod = importlib.import_module("bowler")
-    query_cls = cast(BowlerQueryFactory, getattr(bowler_mod, "Query"))
+    query_cls = getattr(bowler_mod, "Query")
     return query_cls(list(files))
 
 
-def main(argv: CliArgList = None) -> int:
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Rename legacy datetime fields to standardized names."
     )
@@ -99,7 +62,7 @@ def main(argv: CliArgList = None) -> int:
         action="store_true",
         help="Reduce output verbosity.",
     )
-    args = cast(ParsedArguments, parser.parse_args(argv))
+    args = parser.parse_args(argv)
 
     targets = args.targets or DEFAULT_TARGETS
     if args.targets == []:

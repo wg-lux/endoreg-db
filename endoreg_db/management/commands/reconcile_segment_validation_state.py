@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from pydantic import ValidationError
+from django.core.management.base import BaseCommand
 
-from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.jobs.video_post_validation_jobs import (
-    dispatch_video_post_validation_rebuild,
-)
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.models import VideoFile
+from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
 )
-from lx_dtypes.models.contracts.management_command import (
-    ReconcileSegmentValidationStateCommandOptionsPayload,
+from endoreg_db.services.jobs.video_post_validation_jobs import (
+    dispatch_video_post_validation_rebuild,
 )
 
 
@@ -21,7 +17,7 @@ class Command(BaseCommand):
         "outside-frame cleanup completed."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         parser.add_argument(
             "--video-id",
             dest="video_ids",
@@ -36,21 +32,12 @@ class Command(BaseCommand):
             help="Queue post-validation cleanup for matching videos.",
         )
 
-    def handle(self, *args: object, **options: object) -> None:
-        try:
-            command_options = (
-                ReconcileSegmentValidationStateCommandOptionsPayload.model_validate(
-                    options
-                )
-            )
-        except ValidationError as exc:
-            raise CommandError(str(exc)) from exc
-
+    def handle(self, *args, **options):
         queryset = VideoFile.objects.select_related("state").filter(
             state__segment_annotations_validated=True,
             state__outside_segments_removed=False,
         )
-        video_ids = command_options.video_ids
+        video_ids = options.get("video_ids")
         if video_ids:
             queryset = queryset.filter(pk__in=video_ids)
 
@@ -61,7 +48,7 @@ class Command(BaseCommand):
             )
             return
 
-        queue_cleanup = command_options.queue_cleanup
+        queue_cleanup = bool(options.get("queue_cleanup"))
         self.stdout.write(
             self.style.WARNING(
                 f"Found {len(videos)} video(s) with premature segment validation."

@@ -1,16 +1,14 @@
-from __future__ import annotations
-
 """Model for medication intake time"""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 
-class MedicationIntakeTimeManager(models.Manager["MedicationIntakeTime"]):
+class MedicationIntakeTimeManager(models.Manager):
     """Manager for the medication intake time model."""
 
-    def get_by_natural_key(self, name: str) -> "MedicationIntakeTime":
+    def get_by_natural_key(self, name):
         """Retrieve a medication intake time by its natural key."""
         return self.get(name=name)
 
@@ -18,11 +16,9 @@ class MedicationIntakeTimeManager(models.Manager["MedicationIntakeTime"]):
 class MedicationIntakeTime(models.Model):
     """Model representing a medication intake time."""
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    repeats: models.CharField[Any, Any] = models.CharField(
-        max_length=20, default="daily"
-    )
-    time: models.TimeField[Any, Any] = models.TimeField()
+    name = models.CharField(max_length=255, unique=True)  # Made unique=True
+    repeats = models.CharField(max_length=20, default="daily")
+    time = models.TimeField()
 
     objects = MedicationIntakeTimeManager()
 
@@ -35,28 +31,28 @@ class MedicationIntakeTime(models.Model):
         ) -> "models.Manager[MedicationSchedule]": ...
 
     @classmethod
-    def dm(cls) -> "MedicationIntakeTime":
+    def dm(cls):
         """Return the daily morning intake time object."""
         return cls.objects.get(name="daily-morning")
 
     @classmethod
-    def dno(cls) -> "MedicationIntakeTime":
+    def dno(cls):
         """Return the daily noon intake time object."""
         return cls.objects.get(name="daily-noon")
 
     @classmethod
-    def de(cls) -> "MedicationIntakeTime":
+    def de(cls):
         """Return the daily evening intake time object."""
         return cls.objects.get(name="daily-evening")
 
     @classmethod
-    def dn(cls) -> "MedicationIntakeTime":
+    def dn(cls):
         """Return the daily night intake time object."""
         return cls.objects.get(name="daily-night")
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Return the natural key for the medication intake time."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
-        return f"{self.name} at {self.time} ({self.repeats})"
+    def __str__(self):
+        return self.name + " at " + str(self.time) + " (" + self.repeats + ")"

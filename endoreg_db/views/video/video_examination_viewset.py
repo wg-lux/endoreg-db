@@ -1,6 +1,4 @@
 # endoreg_db/views/video/video_examination_viewset.py
-from __future__ import annotations
-
 """
 Video Examination ViewSet
 
@@ -20,31 +18,15 @@ Used by VideoExaminationAnnotation.vue for annotation workflow.
 """
 
 import logging
-from collections.abc import Mapping
-from typing import Any, Protocol, TypeAlias, cast
 
 from django.db import transaction
-from django.db.models import QuerySet
 from django.shortcuts import get_object_or_404
-from lx_dtypes.models.contracts import (
-    dump_video_examination_list_query_payload,
-    validate_video_examination_list_query,
-    validate_video_examination_path_payload,
-)
-from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError as DRFValidationError
-from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.serializers import BaseSerializer
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.utils.pydantic_drf import (
-    drf_validation_error_detail,
-    drf_validation_error_response,
-)
 
 from ...serializers.video_examination import (
     VideoExaminationCreateSerializer,
@@ -54,33 +36,8 @@ from ...serializers.video_examination import (
 
 logger = logging.getLogger(__name__)
 
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
-
-class _SerializerDataLike(Protocol):
-    @property
-    def data(self) -> JsonValue: ...
-
-
-def _request_payload(request: Request) -> Mapping[str, Any]:
-    payload = cast(object, request.data)
-    if isinstance(payload, Mapping):
-        return cast(Mapping[str, Any], payload)
-    return {}
-
-
-def _request_query(request: Request) -> Mapping[str, Any]:
-    query_params = cast(object, request.query_params)
-    query_dict = getattr(query_params, "dict", None)
-    if callable(query_dict):
-        return cast(dict[str, Any], query_dict())
-    if isinstance(query_params, Mapping):
-        return cast(Mapping[str, Any], query_params)
-    return {}
-
-
-class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class VideoExaminationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for Video Examination CRUD operations.
 
@@ -103,16 +60,26 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
     ```
     """
 
+    queryset = PatientExamination.objects.select_related(
+        "patient", "examination", "video"
+    ).prefetch_related("patient_findings")
     serializer_class = VideoExaminationSerializer
 
-    def get_serializer_class(self) -> type[BaseSerializer[PatientExamination]]:
+    def get_serializer_class(self):
+        """
+        Return appropriate serializer based on action.
+
+        - create: VideoExaminationCreateSerializer (handles complex creation logic)
+        - update/partial_update: VideoExaminationUpdateSerializer
+        - list/retrieve: VideoExaminationSerializer (read-only with nested data)
+        """
         if self.action == "create":
             return VideoExaminationCreateSerializer
-        if self.action in {"update", "partial_update"}:
+        elif self.action in ["update", "partial_update"]:
             return VideoExaminationUpdateSerializer
         return VideoExaminationSerializer
 
-    def get_queryset(self) -> QuerySet[PatientExamination]:
+    def get_queryset(self):
         """
         Filter examinations based on query parameters.
 
@@ -121,34 +88,27 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
         - ?patient_id=456 - Get examinations for specific patient
         - ?examination_id=789 - Get examinations of specific type
         """
-        queryset: QuerySet[PatientExamination] = (
-            PatientExamination.objects.select_related(
-                "patient",
-                "examination",
-            ).prefetch_related("patient_findings", "video_files")
-        )
-        try:
-            query_payload = validate_video_examination_list_query(
-                _request_query(self.request)
-            )
-        except PydanticValidationError as exc:
-            raise DRFValidationError(drf_validation_error_detail(exc)) from exc
+        queryset = super().get_queryset()
 
-        filters = dump_video_examination_list_query_payload(query_payload)
+        # Filter by video if provided
+        video_id = self.request.query_params.get("video_id")
+        if video_id:
+            queryset = queryset.filter(video_id=video_id)
 
-        if "video_id" in filters:
-            queryset = queryset.filter(video_files__id=filters["video_id"])
+        # Filter by patient if provided
+        patient_id = self.request.query_params.get("patient_id")
+        if patient_id:
+            queryset = queryset.filter(patient_id=patient_id)
 
-        if "patient_id" in filters:
-            queryset = queryset.filter(patient_id=filters["patient_id"])
-
-        if "examination_id" in filters:
-            queryset = queryset.filter(examination_id=filters["examination_id"])
+        # Filter by examination type if provided
+        examination_id = self.request.query_params.get("examination_id")
+        if examination_id:
+            queryset = queryset.filter(examination_id=examination_id)
 
         return queryset
 
     @action(detail=False, methods=["get"], url_path="video/(?P<video_id>[^/.]+)")
-    def by_video(self, request: Request, video_id: str | None = None) -> Response:
+    def by_video(self, request, video_id=None):
         """
         Get all examinations for a specific video.
 
@@ -162,24 +122,16 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
             200: List of examinations for the video
             404: Video not found
         """
-        try:
-            path_payload = validate_video_examination_path_payload(
-                {"video_id": video_id}
-            )
-        except PydanticValidationError as exc:
-            return drf_validation_error_response(exc, message="Invalid video id")
-
-        video = get_object_or_404(VideoFile, id=path_payload.video_id)
+        # Validate video exists
+        video = get_object_or_404(VideoFile, id=video_id)
 
         # Get examinations for this video
-        examinations = self.get_queryset().filter(video_files=video)
+        examinations = self.queryset.filter(video=video)
 
-        serializer = cast(
-            _SerializerDataLike, self.get_serializer(examinations, many=True)
-        )
+        serializer = self.get_serializer(examinations, many=True)
         return Response(serializer.data)
 
-    def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    def create(self, request, *args, **kwargs):
         """
         Create a new video examination.
 
@@ -200,8 +152,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
             400: Invalid data (missing required fields, validation errors)
             404: Video or examination type not found
         """
-        request_payload = _request_payload(request)
-        serializer = self.get_serializer(data=request_payload)
+        serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
@@ -209,14 +160,10 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
                 patient_exam = serializer.save()
 
                 # Return created examination with full serialization
-                response_serializer = cast(
-                    BaseSerializer[PatientExamination],
-                    VideoExaminationSerializer(patient_exam),
-                )
+                response_serializer = VideoExaminationSerializer(patient_exam)
                 logger.info(
-                    "Created video examination: video=%s, exam=%s",
-                    request_payload.get("video_id"),
-                    request_payload.get("examination_id"),
+                    f"Created video examination: video={request.data.get('video_id')}, "
+                    f"exam={request.data.get('examination_id')}"
                 )
                 return Response(
                     response_serializer.data, status=status.HTTP_201_CREATED
@@ -228,30 +175,46 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        partial = bool(kwargs.pop("partial", False))
-        instance = self.get_object()
+    def update(self, request, *args, **kwargs):
+        """
+        Update an existing video examination.
 
-        serializer = self.get_serializer(
-            instance,
-            data=_request_payload(request),
-            partial=partial,
-        )
+        **Endpoint:** PATCH /api/video-examinations/{id}/
+
+        **Payload:**
+        ```json
+        {
+            "examination_id": 6,
+            "date_start": "2024-01-16"
+        }
+        ```
+
+        Returns:
+            200: Examination updated successfully
+            400: Invalid data
+            404: Examination not found
+        """
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
 
         try:
             with transaction.atomic():
                 patient_exam = serializer.save()
+
+                # Return updated examination
                 response_serializer = VideoExaminationSerializer(patient_exam)
-                return Response(cast(_SerializerDataLike, response_serializer).data)
-        except Exception as exc:
-            logger.exception("Error updating video examination %s", instance.pk)
+                logger.info(f"Updated video examination {instance.id}")
+                return Response(response_serializer.data)
+        except Exception as e:
+            logger.error(f"Error updating video examination {instance.id}: {str(e)}")
             return Response(
-                {"error": f"Internal server error while updating examination {exc}"},
+                {"error": "Internal server error while updating examination"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def destroy(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+    def destroy(self, request, *args, **kwargs):
         """
         Delete a video examination.
 
@@ -262,7 +225,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyr
             404: Examination not found
         """
         instance = self.get_object()
-        examination_id = cast(int, instance.pk)
+        examination_id = instance.id
 
         try:
             with transaction.atomic():

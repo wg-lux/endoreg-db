@@ -1,41 +1,9 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
 from importlib import import_module
-from pathlib import Path
-from types import ModuleType, NoneType
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import Any
 
-if TYPE_CHECKING:
-    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-    from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-    from endoreg_db.import_files.context.default_sensitive_meta import (
-        default_sensitive_meta as default_sensitive_meta,
-    )
-    from endoreg_db.import_files.context.file_lock import (
-        content_hash_lock as content_hash_lock,
-        file_lock as file_lock,
-    )
-    from endoreg_db.import_files.context.import_context import (
-        ImportContext as ImportContext,
-    )
-    from endoreg_db.import_files.context.validate_directories import (
-        validate_directories as validate_directories,
-    )
-    from endoreg_db.import_files.file_storage import (
-        create_report_file as create_report_file,
-        create_video_file as create_video_file,
-        sensitive_meta_storage as sensitive_meta_storage,
-    )
-    from endoreg_db.import_files.report_import_service import (
-        ReportImportService as ReportImportService,
-    )
-    from endoreg_db.import_files.video_import_service import (
-        VideoImportService as VideoImportService,
-    )
-
-type ImportFilesExportName = Literal[
+__all__ = [
     "content_hash_lock",
     "file_lock",
     "create_report_file",
@@ -48,55 +16,7 @@ type ImportFilesExportName = Literal[
     "default_sensitive_meta",
 ]
 
-
-class _FileLockFactory(Protocol):
-    def __call__(self, path: Path) -> AbstractContextManager[None]: ...
-
-
-class _ContentHashLockFactory(Protocol):
-    def __call__(
-        self,
-        file_hash: str,
-        lock_root: Path,
-    ) -> AbstractContextManager[None]: ...
-
-
-class _ValidateDirectories(Protocol):
-    def __call__(self, dirs: list[Path]) -> bool: ...
-
-
-class _DefaultSensitiveMetaFactory(Protocol):
-    def __call__(
-        self,
-        instance: RawPdfFile | VideoFile | NoneType,
-    ) -> SensitiveMeta | NoneType: ...
-
-
-type ImportFilesExport = (
-    ModuleType
-    | type[ImportContext]
-    | type[ReportImportService]
-    | type[VideoImportService]
-    | _FileLockFactory
-    | _ContentHashLockFactory
-    | _ValidateDirectories
-    | _DefaultSensitiveMetaFactory
-)
-
-__all__: list[ImportFilesExportName] = [
-    "content_hash_lock",
-    "file_lock",
-    "create_report_file",
-    "create_video_file",
-    "sensitive_meta_storage",
-    "ReportImportService",
-    "VideoImportService",
-    "ImportContext",
-    "validate_directories",
-    "default_sensitive_meta",
-]
-
-_LAZY_EXPORTS: dict[ImportFilesExportName, str] = {
+_LAZY_EXPORTS = {
     "content_hash_lock": "endoreg_db.import_files.context.file_lock",
     "file_lock": "endoreg_db.import_files.context.file_lock",
     "ImportContext": "endoreg_db.import_files.context.import_context",
@@ -110,13 +30,12 @@ _LAZY_EXPORTS: dict[ImportFilesExportName, str] = {
 }
 
 
-def __getattr__(name: str) -> ImportFilesExport:
-    if name not in _LAZY_EXPORTS:
+def __getattr__(name: str) -> Any:
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-    export_name = name
-    module_name = _LAZY_EXPORTS[export_name]
     module = import_module(module_name)
-    value = cast(ImportFilesExport, getattr(module, export_name))
+    value = getattr(module, name)
     globals()[name] = value
     return value

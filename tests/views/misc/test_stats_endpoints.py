@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from django.core.cache import cache
 from django.test import TestCase
-from django.utils import timezone
 
 from endoreg_db.models import (
     Center,
@@ -47,7 +46,7 @@ class StatsEndpointTests(TestCase):
         self.sensitive_meta = SensitiveMeta.objects.create(
             patient_first_name="Stats",
             patient_last_name="Patient",
-            patient_dob=timezone.make_aware(datetime(1990, 1, 1, 0, 0)),
+            patient_dob=datetime(1990, 1, 1, 0, 0),
             examination_date=date(2026, 1, 1),
             examination_time=time(9, 0),
             center=self.center,

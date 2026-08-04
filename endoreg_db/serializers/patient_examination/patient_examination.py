@@ -1,59 +1,33 @@
-# pyright: reportIncompatibleMethodOverride=false, reportUnusedClass=false
-from __future__ import annotations
-
-from datetime import date
-from typing import Protocol, TypedDict, cast
-
 from rest_framework import serializers
-
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from lx_dtypes.models.contracts.patient_examination import (
-    PatientExaminationPatientDataPayload,
-)
+from datetime import date
 
 
-class _PatientExaminationOutputLike(Protocol):
-    patient: Patient
-    examination: Examination | None
-
-
-class _PatientExaminationSaveSource(Protocol):
-    def save(self) -> None: ...
-
-
-class _PatientExaminationWriteData(TypedDict, total=False):
-    patient: Patient
-    examination: Examination | None
-    date_start: date | None
-    date_end: date | None
-    hash: str
-    knowledge_base_module: str
-    knowledge_base_version: str
-
-
-class PatientExaminationSerializer(serializers.ModelSerializer[PatientExamination]):
+class PatientExaminationSerializer(serializers.ModelSerializer):
+    # Verwende CharField für patient, um patient_hash zu empfangen
     patient = serializers.CharField(
-        write_only=True,
+        write_only=True,  # Nur für Eingabe verwenden
         required=True,
         help_text="Patient Hash (z.B. 'patient_2')",
     )
+
+    # Für die Ausgabe verwenden wir ein schreibgeschütztes Feld
     patient_data = serializers.SerializerMethodField(read_only=True)
-    examination: object = cast(
-        object,
-        serializers.SlugRelatedField(
-            slug_field="name",
-            queryset=Examination.objects.all(),
-            required=False,
-            allow_null=True,
-        ),
+
+    examination = serializers.SlugRelatedField(
+        slug_field="name",
+        queryset=Examination.objects.all(),
+        required=False,
+        allow_null=True,
     )
+
+    # Zusätzliche schreibgeschützte Felder für bessere API-Antworten
     patient_name = serializers.SerializerMethodField()
     examination_name = serializers.SerializerMethodField()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:
         model = PatientExamination
         fields = [
             "id",
@@ -78,105 +52,123 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             "patient_data",
         ]
 
-    def get_patient_data(
-        self, obj: _PatientExaminationOutputLike
-    ) -> dict[str, str | int]:
-        patient = obj.patient
-        if patient.pk is None:
-            raise serializers.ValidationError("Patient ist nicht gespeichert")
-        patient_hash = patient.patient_hash
-        if not patient_hash:
-            raise serializers.ValidationError("Patient Hash fehlt")
-        payload = PatientExaminationPatientDataPayload(
-            id=patient.pk,
-            patient_hash=patient_hash,
-            first_name=patient.first_name,
-            last_name=patient.last_name,
-        )
-        return cast(dict[str, str | int], payload.model_dump(mode="python"))
+    def get_patient_data(self, obj):
+        """Gibt die Patient-Daten für die Ausgabe zurück"""
+        if obj.patient:
+            return {
+                "id": obj.patient.id,
+                "patient_hash": obj.patient.patient_hash,
+                "first_name": obj.patient.first_name,
+                "last_name": obj.patient.last_name,
+            }
+        return None
 
-    def get_patient_name(self, obj: _PatientExaminationOutputLike) -> str:
-        patient = obj.patient
-        return f"{patient.first_name} {patient.last_name}"
+    def get_patient_name(self, obj):
+        """Gibt den vollständigen Namen des Patienten zurück"""
+        if obj.patient:
+            return f"{obj.patient.first_name} {obj.patient.last_name}"
+        return None
 
-    def get_examination_name(self, obj: _PatientExaminationOutputLike) -> str:
-        examination = obj.examination
-        if examination is None:
-            return ""
-        return examination.name
+    def get_examination_name(self, obj):
+        """Gibt den Namen der Untersuchung zurück"""
+        if obj.examination:
+            return obj.examination.name
+        return None
 
-    def validate_patient(self, value: str) -> Patient:
+    def validate_patient(self, value):
+        """Validiert und erstellt Patient falls nötig"""
         if not value:
             raise serializers.ValidationError("Patient Hash ist erforderlich")
 
+        # Versuche Patient zu finden
         try:
-            return Patient.objects.get(patient_hash=value)
+            patient = Patient.objects.get(patient_hash=value)
+            return patient
         except Patient.DoesNotExist:
-            return Patient.objects.create(
+            # Erstelle automatisch einen Pseudo-Patienten
+            patient = Patient.objects.create(
                 patient_hash=value,
                 first_name="Patient",
                 last_name=value,
-                is_real_person=False,
+                is_real_person=False,  # Markiere als Pseudo-Patient
             )
+            return patient
 
-    def validate_date_start(self, value: date | None) -> date | None:
-        if value is not None and value > date.today():
+    def validate_date_start(self, value):
+        """Validiert das Startdatum"""
+        if value and value > date.today():
             raise serializers.ValidationError(
                 "Startdatum kann nicht in der Zukunft liegen"
             )
         return value
 
-    def validate_date_end(self, value: date | None) -> date | None:
-        if value is not None and value > date.today():
+    def validate_date_end(self, value):
+        """Validiert das Enddatum"""
+        if value and value > date.today():
             raise serializers.ValidationError(
                 "Enddatum kann nicht in der Zukunft liegen"
             )
         return value
 
-    def validate(
-        self, attrs: _PatientExaminationWriteData
-    ) -> _PatientExaminationWriteData:
-        date_start = attrs.get("date_start")
-        date_end = attrs.get("date_end")
-        if date_start is not None and date_end is not None and date_end < date_start:
+    def validate(self, data):
+        """Validiert die gesamten Daten"""
+        date_start = data.get("date_start")
+        date_end = data.get("date_end")
+
+        if date_start and date_end and date_end < date_start:
             raise serializers.ValidationError(
                 "Enddatum muss nach dem Startdatum liegen"
             )
-        return attrs
 
-    def create(
-        self, validated_data: _PatientExaminationWriteData
-    ) -> PatientExamination:
+        return data
+
+    def create(self, validated_data):
+        """Erstellt eine neue PatientExamination mit verbesserter Fehlerbehandlung"""
         try:
-            patient = validated_data.pop("patient")
-            validated_data["patient"] = patient
-            return PatientExamination.objects.create(**validated_data)
-        except Exception as exc:
+            # Patient wurde bereits in validate_patient erstellt/gefunden
+            patient = validated_data.pop(
+                "patient"
+            )  # Entferne patient aus validated_data
+            validated_data["patient"] = patient  # Füge das Patient-Objekt hinzu
+
+            patient_examination = PatientExamination.objects.create(**validated_data)
+            return patient_examination
+        except Exception as e:
             raise serializers.ValidationError(
-                f"Fehler beim Erstellen der Patientenuntersuchung: {exc}"
-            ) from exc
+                f"Fehler beim Erstellen der Patientenuntersuchung: {str(e)}"
+            )
 
-    def update(
-        self,
-        instance: PatientExamination,
-        validated_data: _PatientExaminationWriteData,
-    ) -> PatientExamination:
+    def update(self, instance, validated_data):
+        """
+        Update an existing PatientExamination instance with validated data.
+
+        If a new patient is provided, updates the patient reference. Applies all other validated fields to the instance and saves changes.
+
+        Returns:
+            PatientExamination: The updated PatientExamination instance.
+
+        Raises:
+            ValidationError: If an error occurs during the update process.
+        """
         try:
+            # Falls Patient geändert wird
             if "patient" in validated_data:
                 patient = validated_data.pop("patient")
                 validated_data["patient"] = patient
 
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
-            cast(_PatientExaminationSaveSource, instance).save()
+            instance.save()
             return instance
-        except Exception as exc:
+        except Exception as e:
             raise serializers.ValidationError(
-                f"Fehler beim Aktualisieren der Patientenuntersuchung: {exc}"
-            ) from exc
+                f"Fehler beim Aktualisieren der Patientenuntersuchung: {str(e)}"
+            )
 
-    def get_findings(self, patient_examination_id: int) -> list[Finding]:
-        instance = PatientExamination.objects.filter(pk=patient_examination_id).first()
-        if instance is None:
+    def get_findings(self, patient_examination_id):
+        """Gibt die zugehörigen Befunde zurück"""
+        obj = PatientExamination.objects.filter(pk=patient_examination_id).first()
+        if obj is None:
             return []
-        return instance.get_available_findings()
+        self.instance = obj
+        return self.instance.get_available_findings()

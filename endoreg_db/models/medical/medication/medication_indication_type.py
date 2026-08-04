@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 """Model for medication indication type."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -10,10 +8,10 @@ if TYPE_CHECKING:
     from endoreg_db.models import MedicationIndication
 
 
-class MedicationIndicationTypeManager(models.Manager["MedicationIndicationType"]):
+class MedicationIndicationTypeManager(models.Manager):
     """Manager for the medication indication type model."""
 
-    def get_by_natural_key(self, name: str) -> "MedicationIndicationType":
+    def get_by_natural_key(self, name):
         """Retrieve a medication indication type by its natural key."""
         return self.get(name=name)
 
@@ -21,7 +19,7 @@ class MedicationIndicationTypeManager(models.Manager["MedicationIndicationType"]
 class MedicationIndicationType(models.Model):
     """Model representing a medication indication type."""
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=True)
 
     objects = MedicationIndicationTypeManager()
 
@@ -32,15 +30,15 @@ class MedicationIndicationType(models.Model):
             self,
         ) -> "models.Manager[MedicationIndication]": ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Return the natural key for the medication indication type."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)
 
     @classmethod
-    def get_random_indication_by_type(cls, name: str) -> "MedicationIndication":
+    def get_random_indication_by_type(cls, name) -> "MedicationIndication":
         """Return a random medication indication of the given type."""
         med_indication = (
             cls.objects.get(name=name).medication_indications.order_by("?").first()
@@ -49,17 +47,12 @@ class MedicationIndicationType(models.Model):
             raise cls.DoesNotExist(f"No medication indication found for type: {name}")
         return med_indication
 
-    def get_random_medication_indication(self) -> "MedicationIndication":
+    def get_random_medication_indication(self):
         """Return a random medication indication of this type."""
         from endoreg_db.models import MedicationIndication
 
-        med_indication = (
+        return (
             MedicationIndication.objects.filter(indication_type=self)
             .order_by("?")
             .first()
         )
-        if med_indication is None:
-            raise MedicationIndication.DoesNotExist(
-                f"No medication indication found for type: {self.name}"
-            )
-        return med_indication

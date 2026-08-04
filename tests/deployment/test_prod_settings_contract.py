@@ -105,12 +105,12 @@ def test_prod_settings_accept_service_style_env_contract() -> None:
         "endoreg_db.authz.auth.KeycloakJWTAuthentication",
     ]
     assert payload["default_permission_classes"] == [
-        "endoreg_db.utils.permissions.EnvironmentAwarePermission",
+        "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
         "endoreg_db.authz.permissions.PolicyPermission",
     ]
     assert (
         payload["logging_formatter"]
-        == "endoreg_db.utils.structured_logging.StructuredJsonFormatter"
+        == "endoreg_db.utils.observability.structured_logging.StructuredJsonFormatter"
     )
     assert payload["logging_handler_class"] == "logging.StreamHandler"
     assert payload["logging_handler_formatter"] == "structured_json"

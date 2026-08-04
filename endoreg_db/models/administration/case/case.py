@@ -1,25 +1,10 @@
-from __future__ import annotations
-
-import uuid
-from datetime import datetime
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
-
-from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
+
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ...medical.patient.patient_examination import PatientExamination
-    from ...medical.patient.patient_lab_sample import PatientLabSample
-    from ...medical.patient.patient_lab_value import PatientLabValue
-    from ...medical.patient.patient_medication import PatientMedication
-    from ...medical.patient.patient_medication_schedule import (
-        PatientMedicationSchedule,
-    )
-
-NoCaseEndDate: TypeAlias = NoneType
-CaseEndDate: TypeAlias = datetime | NoCaseEndDate
+from django.utils import timezone
 
 
 class Case(models.Model):
@@ -29,9 +14,9 @@ class Case(models.Model):
     Attributes:
         patient (Patient): The patient associated with this case.
         patient_examinations (QuerySet[PatientExamination]): Examinations included in this case.
-        hash (str): A hash value for the case when configured.
+        hash (str): An optional hash value for the case.
         start_date (datetime): The start date and time of the case.
-        end_date (datetime): The end date and time of the case when closed.
+        end_date (datetime): The end date and time of the case (optional).
         is_active (bool): Indicates if the case is currently active.
         is_closed (bool): Indicates if the case has been closed.
         is_deleted (bool): Indicates if the case is marked as deleted.
@@ -39,14 +24,7 @@ class Case(models.Model):
         updated_at (datetime): Timestamp of last case update.
     """
 
-    case_id: models.UUIDField[Any, Any] = models.UUIDField(
-        default=uuid.uuid4,
-        unique=True,
-        editable=False,
-        db_index=True,
-        help_text="Stable public identifier for the clinical case.",
-    )
-    patient: models.ForeignKey[Any] = models.ForeignKey(
+    patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="cases",
@@ -58,50 +36,38 @@ class Case(models.Model):
         related_name="cases",
         help_text="The examinations included in this case.",
     )
-    patient_medications: "models.ManyToManyField[PatientMedication, PatientMedication]" = models.ManyToManyField(
-        "PatientMedication", related_name="cases", blank=True
-    )
-    patient_medication_schedules: "models.ManyToManyField[PatientMedicationSchedule, PatientMedicationSchedule]" = models.ManyToManyField(
-        "PatientMedicationSchedule", related_name="cases", blank=True
-    )
-    patient_lab_samples: "models.ManyToManyField[PatientLabSample, PatientLabSample]" = models.ManyToManyField(
-        "PatientLabSample", related_name="cases", blank=True
-    )
-    patient_lab_values: "models.ManyToManyField[PatientLabValue, PatientLabValue]" = (
-        models.ManyToManyField("PatientLabValue", related_name="cases", blank=True)
-    )
-    hash: models.CharField[Any, Any] = models.CharField(
+    hash = models.CharField(
         max_length=255,
         blank=True,
         null=True,
-        help_text="A hash value associated with the case when configured.",
+        help_text="An optional hash value associated with the case.",
     )
 
-    start_date: models.DateTimeField[Any, Any] = models.DateTimeField(
+    start_date = models.DateTimeField(
         help_text="The start date and time of the case.", db_index=True
     )
-    end_date: models.DateTimeField[Any, Any] = models.DateTimeField(
-        null=True, blank=True, help_text="The end date and time of the case."
+    end_date = models.DateTimeField(
+        null=True, blank=True, help_text="The end date and time of the case (optional)."
     )
-    is_active: models.BooleanField[Any, Any] = models.BooleanField(
+    is_active = models.BooleanField(
         default=True,
         help_text="Flag indicating if the case is currently active.",
         db_index=True,
     )
-    is_closed: models.BooleanField[Any, Any] = models.BooleanField(
+    is_closed = models.BooleanField(
         default=False,
         help_text="Flag indicating if the case has been closed.",
         db_index=True,
     )
-    is_deleted: models.BooleanField[Any, Any] = models.BooleanField(
+    is_deleted = models.BooleanField(
         default=False,
         help_text="Flag indicating if the case is marked as deleted.",
         db_index=True,
     )
-    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+    created_at = models.DateTimeField(
         auto_now_add=True, help_text="The date and time the case was created."
     )
-    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+    updated_at = models.DateTimeField(
         auto_now=True, help_text="The date and time the case was last updated."
     )
 
@@ -112,22 +78,8 @@ class Case(models.Model):
         ordering = ["-start_date", "patient"]
         verbose_name = "Case"
         verbose_name_plural = "Cases"
-        constraints = [
-            models.CheckConstraint(
-                condition=models.Q(end_date__isnull=True)
-                | models.Q(end_date__gte=models.F("start_date")),
-                name="case_end_not_before_start",
-            )
-        ]
 
-    def clean(self) -> None:
-        super().clean()
-        if self.end_date is not None and self.end_date < self.start_date:
-            raise ValidationError(
-                {"end_date": "Case end date must not be earlier than start date."}
-            )
-
-    def __str__(self) -> str:
+    def __str__(self):
         string_representation = f"Case {self.pk} ({self.patient})"
         if self.start_date:
             string_representation += f" - {self.start_date.strftime('%Y-%m-%d')}"
@@ -135,8 +87,8 @@ class Case(models.Model):
             string_representation += f" - {self.end_date.strftime('%Y-%m-%d')}"
         return string_representation
 
-    def close(self, end_date: CaseEndDate = None) -> None:
-        """Close this case with a provided end date or the current time."""
+    def close(self, end_date=None):
+        """Close this case with optional end date."""
         self.is_closed = True
         self.is_active = False
         if end_date:
@@ -145,13 +97,13 @@ class Case(models.Model):
             self.end_date = timezone.now()
         self.save()
 
-    def reopen(self) -> None:
+    def reopen(self):
         """Reopen this case if it was closed."""
         self.is_closed = False
         self.is_active = True
         self.save()
 
-    def mark_as_deleted(self) -> None:
+    def mark_as_deleted(self):
         """Mark this case as deleted."""
         self.is_deleted = True
         self.is_active = False

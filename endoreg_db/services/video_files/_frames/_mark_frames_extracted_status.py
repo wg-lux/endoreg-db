@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from typing import TYPE_CHECKING, Set
 
@@ -17,7 +16,7 @@ def _mark_frames_extracted_status(
     """
     Bulk updates the is_extracted status for a set of frame numbers.
     """
-    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.frame import Frame
 
     if not extracted_frame_numbers:
         logger.warning(

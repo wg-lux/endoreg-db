@@ -233,9 +233,7 @@ def main() -> None:
 
     # Add this only if your encrypted storage reads its key from this variable.
     # Otherwise rename it to the actual env var used by your storage backend.
-    new_values.setdefault(
-        "ENDOREG_ENCRYPTION_KEY_FILE", str(conf_dir / "encryption.key")
-    )
+    new_values.setdefault("ENDOREG_ENCRYPTION_KEY_FILE", str(conf_dir / "encryption.key"))
 
     encryption_key_file = Path(new_values["ENDOREG_ENCRYPTION_KEY_FILE"])
     if not encryption_key_file.is_absolute():

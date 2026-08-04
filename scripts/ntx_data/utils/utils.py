@@ -174,19 +174,12 @@ def load_dataframe(df_path: Path, rename_dict: Dict[str, str]):
 
     if "dob" in df.columns:
         # expected format is <YYYY-MM-DD>
-        df["dob"] = pd.to_datetime(
-            df["dob"], errors="coerce", dayfirst=True, format="%Y-%m-%d"
-        )
+        df["dob"] = pd.to_datetime(df["dob"], errors="coerce", dayfirst=True, format="%Y-%m-%d")
 
     if "test_datetime" in df.columns:
         # expected format is <YYYY-MM-DD HH:MM:SS.sss>
         # Example: 2014-11-27 12:08:00.000
-        df["test_datetime"] = pd.to_datetime(
-            df["test_datetime"],
-            errors="coerce",
-            dayfirst=True,
-            format=LAB_DF_DATETIME_FORMAT,
-        )
+        df["test_datetime"] = pd.to_datetime(df["test_datetime"], errors="coerce", dayfirst=True, format=LAB_DF_DATETIME_FORMAT)
 
     for date_column in (
         "transplant_date",
@@ -196,9 +189,7 @@ def load_dataframe(df_path: Path, rename_dict: Dict[str, str]):
         "dialysis_restart_date",
     ):
         if date_column in df.columns:
-            df[date_column] = pd.to_datetime(
-                df[date_column], errors="coerce", dayfirst=True
-            )
+            df[date_column] = pd.to_datetime(df[date_column], errors="coerce", dayfirst=True)
 
     if "first_name" in df.columns and "last_name" in df.columns and "dob" in df.columns:
         # apply function to each row
@@ -223,9 +214,7 @@ def compute_patient_hash(row):
     last_name = row["last_name"]
     dob = row["dob"]  # fixed salt for ntx data
 
-    patient_hash = get_patient_hash(
-        first_name=first_name, last_name=last_name, dob=dob, center="ntx-ukw"
-    )
+    patient_hash = get_patient_hash(first_name=first_name, last_name=last_name, dob=dob, center="ntx-ukw")
     return patient_hash
 
 
@@ -263,18 +252,14 @@ def serialize_patient_df(df) -> List[PatientData]:
             patients_dict_preparation[patient_id_ntx] = {
                 "first_name": row["first_name"],
                 "last_name": row["last_name"],
-                "dob": row["dob"].strftime("%Y-%m-%d")
-                if pd.notnull(row["dob"])
-                else None,
+                "dob": row["dob"].strftime("%Y-%m-%d") if pd.notnull(row["dob"]) else None,
                 "post_code": post_code,
                 "city": str(row["city"]) if pd.notnull(row["city"]) else "",
                 "street": str(row["street"]) if pd.notnull(row["street"]) else "",
                 "patient_id_ukw_list": [],
                 "patient_hash": row["patient_hash"],
             }
-        patients_dict_preparation[patient_id_ntx]["patient_id_ukw_list"].append(
-            str(row["patient_id_ukw"])
-        )
+        patients_dict_preparation[patient_id_ntx]["patient_id_ukw_list"].append(str(row["patient_id_ukw"]))
 
     for patient_id_ntx, data in patients_dict_preparation.items():
         patient_data = PatientData(
@@ -290,9 +275,7 @@ def serialize_patient_df(df) -> List[PatientData]:
         )
         data_list.append(patient_data)
 
-    assert len(data_list) == n_unique_patient_id_ntx, (
-        f"Expected {n_unique_patient_id_ntx} unique PatientData entries, but got {len(data_list)}."
-    )
+    assert len(data_list) == n_unique_patient_id_ntx, f"Expected {n_unique_patient_id_ntx} unique PatientData entries, but got {len(data_list)}."
     return data_list
 
 
@@ -441,9 +424,7 @@ def serialize_readout_df(df: pd.DataFrame) -> List[ReadoutData]:
         "tpu_year_20",
     ]
 
-    egfr_fields = {
-        f"egfr_year_{suffix}" for suffix in ("1", "3", "5", "10", "15", "20")
-    }
+    egfr_fields = {f"egfr_year_{suffix}" for suffix in ("1", "3", "5", "10", "15", "20")}
     tpu_fields = {f"tpu_year_{suffix}" for suffix in ("1", "3", "5", "10", "15", "20")}
 
     float_fields = {
@@ -548,9 +529,7 @@ def serialize_fu_tx_distance_df(df: pd.DataFrame) -> List[ReadoutData]:
             patient_id_ukw=row["patient_id_ukw"],
             first_name=row["first_name"],
             last_name=row["last_name"],
-            transplant_date=row["transplant_date"].isoformat()
-            if not pd.isna(row["transplant_date"])
-            else "",
+            transplant_date=row["transplant_date"].isoformat() if not pd.isna(row["transplant_date"]) else "",
             dob=row["dob"].isoformat() if not pd.isna(row["dob"]) else "",
             patient_hash=patient_hash,
         )
@@ -558,9 +537,7 @@ def serialize_fu_tx_distance_df(df: pd.DataFrame) -> List[ReadoutData]:
     return fu_tx_distance_data_list
 
 
-def create_lookup_patient_hash_for_transplant_id(
-    patient_data_by_hash: Dict[str, PatientData],
-) -> Dict[str, str]:
+def create_lookup_patient_hash_for_transplant_id(patient_data_by_hash: Dict[str, PatientData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for patient_hash, patient_data in patient_data_by_hash.items():
         transplant_ids = patient_data.transplant_ids
@@ -569,9 +546,7 @@ def create_lookup_patient_hash_for_transplant_id(
     return lookup
 
 
-def create_lookup_patient_hash_for_patient_id_ukw(
-    patient_data_by_hash: Dict[str, PatientData],
-) -> Dict[str, str]:
+def create_lookup_patient_hash_for_patient_id_ukw(patient_data_by_hash: Dict[str, PatientData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for patient_hash, patient_data in patient_data_by_hash.items():
         patient_ids_ukw = patient_data.patient_ids_ukw
@@ -581,9 +556,7 @@ def create_lookup_patient_hash_for_patient_id_ukw(
     return lookup
 
 
-def create_case_to_patient_id_ukw_lookup(
-    lab_data_list: List[LabData],
-) -> Dict[str, str]:
+def create_case_to_patient_id_ukw_lookup(lab_data_list: List[LabData]) -> Dict[str, str]:
     lookup: Dict[str, str] = {}
     for lab_data in lab_data_list:
         lookup[lab_data.case_id_ukw] = lab_data.patient_id_ukw

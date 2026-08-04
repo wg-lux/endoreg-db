@@ -1,5 +1,4 @@
 from django.test import TestCase
-from typing import Protocol, cast
 from logging import getLogger
 
 from endoreg_db.models import Product, Unit, ProductWeight
@@ -17,10 +16,6 @@ from ...helpers.data_loader import (
 
 
 class ProductWeightModelTest(TestCase):
-    _unit: Unit
-
-    _product_weights: list[ProductWeight]
-
     def setUp(self):
         load_unit_data()
         load_examination_data()
@@ -34,9 +29,8 @@ class ProductWeightModelTest(TestCase):
         """
         product_weights = ProductWeight.objects.all()
         for product_weight in product_weights:
-            product_weight_like = cast(_ProductWeightLike, product_weight)
             self.assertIsInstance(product_weight, ProductWeight)
-            self.assertIsInstance(product_weight_like.product, Product)
+            self.assertIsInstance(product_weight.product, Product)
 
     def test_product_weight_has_unit(self):
         """
@@ -44,10 +38,9 @@ class ProductWeightModelTest(TestCase):
         """
         product_weights = ProductWeight.objects.all()
         for product_weight in product_weights:
-            product_weight_like = cast(_ProductWeightLike, product_weight)
-            self.assertIsInstance(product_weight_like.unit, Unit)
-            self.assertIsInstance(product_weight_like.get_weight(), float)
-            self.assertIsInstance(product_weight_like.get_weight_source(), str)
+            self.assertIsInstance(product_weight.unit, Unit)
+            self.assertIsInstance(product_weight.get_weight(), float)
+            self.assertIsInstance(product_weight.get_weight_source(), str)
 
     def test_weight_has_weight(self):
         """
@@ -55,14 +48,5 @@ class ProductWeightModelTest(TestCase):
         """
         product_weights = ProductWeight.objects.all()
         for product_weight in product_weights:
-            product_weight_like = cast(_ProductWeightLike, product_weight)
-            self.assertIsInstance(product_weight_like.get_weight(), float)
-            self.assertIsInstance(product_weight_like.get_weight_source(), str)
-
-
-class _ProductWeightLike(Protocol):
-    product: Product
-    unit: Unit
-
-    def get_weight(self) -> float: ...
-    def get_weight_source(self) -> str: ...
+            self.assertIsInstance(product_weight.get_weight(), float)
+            self.assertIsInstance(product_weight.get_weight_source(), str)

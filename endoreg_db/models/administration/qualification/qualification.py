@@ -1,18 +1,15 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TypeAlias, Any
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
-from .qualification_type import QualificationType
+if TYPE_CHECKING:
+    from endoreg_db.models import (
+        QualificationType,
+    )
 
-NoQualificationDescriptionValue: TypeAlias = NoneType
-QualificationDescription: TypeAlias = "str | NoQualificationDescriptionValue"
 
-
-class QualificationManager(models.Manager["Qualification"]):
-    def get_queryset(self) -> models.QuerySet["Qualification"]:
+class QualificationManager(models.Manager):
+    def get_queryset(self):
         """
         Returns a queryset of qualifications filtered to include only active entries.
         """
@@ -24,19 +21,22 @@ class Qualification(models.Model):
     Model representing a qualification.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
 
-    qualification_types: models.ManyToManyField[
-        QualificationType, QualificationType
-    ] = models.ManyToManyField(
+    qualification_types = models.ManyToManyField(
         "QualificationType",
         related_name="qualifications",
     )
+    if TYPE_CHECKING:
+        qualification_types = cast(
+            models.manager.RelatedManager["QualificationType"], qualification_types
+        )
+
     objects = QualificationManager()
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Returns the string representation of the qualification's name.
         """

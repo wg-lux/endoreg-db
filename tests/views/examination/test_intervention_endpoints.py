@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-
 from uuid import uuid4
 
 from django.test import TestCase
@@ -46,21 +44,21 @@ class ExaminationInterventionEndpointTests(TestCase):
         self.finding_other.finding_interventions.add(self.intervention_other)
 
     def test_get_interventions_for_examination_returns_distinct_interventions(self):
-        response = self.client.get(f"/api/examinations/{self.exam.pk}/interventions/")
+        response = self.client.get(f"/api/examinations/{self.exam.id}/interventions/")
         assert response.status_code == 200, response.content
 
         payload = response.json()
         returned_ids = {item["id"] for item in payload}
         assert returned_ids == {
-            self.intervention_a.pk,
-            self.intervention_b.pk,
-            self.intervention_c.pk,
+            self.intervention_a.id,
+            self.intervention_b.id,
+            self.intervention_c.id,
         }
         assert all(set(item.keys()) == {"id", "name"} for item in payload)
 
     def test_get_interventions_for_examination_returns_empty_list(self):
         response = self.client.get(
-            f"/api/examinations/{self.exam_empty.pk}/interventions/"
+            f"/api/examinations/{self.exam_empty.id}/interventions/"
         )
         assert response.status_code == 200, response.content
         assert response.json() == []
@@ -71,17 +69,17 @@ class ExaminationInterventionEndpointTests(TestCase):
 
     def test_get_interventions_for_finding_returns_finding_interventions(self):
         response = self.client.get(
-            f"/api/examinations/{self.exam.pk}/findings/{self.finding_a.pk}/interventions/"
+            f"/api/examinations/{self.exam.id}/findings/{self.finding_a.id}/interventions/"
         )
         assert response.status_code == 200, response.content
         payload = response.json()
         returned_ids = {item["id"] for item in payload}
-        assert returned_ids == {self.intervention_a.pk, self.intervention_b.pk}
+        assert returned_ids == {self.intervention_a.id, self.intervention_b.id}
         assert all(set(item.keys()) == {"id", "name"} for item in payload)
 
     def test_get_interventions_for_finding_returns_404_when_finding_not_in_exam(self):
         response = self.client.get(
-            f"/api/examinations/{self.exam.pk}/findings/{self.finding_other.pk}/interventions/"
+            f"/api/examinations/{self.exam.id}/findings/{self.finding_other.id}/interventions/"
         )
         assert response.status_code == 404, response.content
         assert response.json() == {"error": "Finding not found for this examination"}

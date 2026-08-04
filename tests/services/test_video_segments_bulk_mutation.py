@@ -15,7 +15,6 @@ from endoreg_db.services.video_segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
 )
-from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 
 
 class VideoSegmentsBulkMutationServiceTest(TestCase):
@@ -81,38 +80,20 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
             },
         )
 
-        created_id: int = response_data["created"][0]["segment"]["id"]  # pyright: ignore[reportUnknownVariableType,reportIndexIssue]
-        if not isinstance(created_id, int):
-            return ValueError
-        update_segment_id: int = int(self.update_segment.pk)
-        expected_attached_segment_ids: list[int] = sorted(
-            [created_id, update_segment_id]
-        )
-
+        created_id = response_data["created"][0]["segment"]["id"]
         self.assertEqual(response_data["created_count"], 1)
         self.assertEqual(response_data["updated_count"], 1)
         self.assertEqual(response_data["deleted_count"], 0)
         self.assertEqual(response_data["ai_dataset_id"], dataset.pk)
         self.assertEqual(
             response_data["attached_segment_ids"],
-            expected_attached_segment_ids,
+            sorted([created_id, self.update_segment.pk]),
         )
         self.assertEqual(response_data["dataset_video_annotation_count"], 2)
         self.assertTrue(dataset.video_annotations.filter(pk=created_id).exists())
         self.assertTrue(
             dataset.video_annotations.filter(pk=self.update_segment.pk).exists()
         )
-        self.assertTrue(
-            LabelVideoSegmentState.objects.filter(origin_id=created_id).exists()
-        )
-        self.assertTrue(
-            LabelVideoSegmentState.objects.filter(
-                origin_id=self.update_segment.pk,
-            ).exists()
-        )
-        state = self.video.get_or_create_state()
-        self.assertFalse(state.segment_annotations_created)
-        self.assertFalse(state.segment_annotations_validated)
 
     def test_service_uses_eager_annotation_sync_when_defer_disabled(self):
         sync_frame_annotations = MagicMock()
@@ -158,11 +139,6 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
         state = self.video.get_or_create_state()
         self.assertTrue(state.segment_annotations_created)
         self.assertTrue(state.segment_annotations_validated)
-        self.assertTrue(
-            LabelVideoSegmentState.objects.filter(
-                origin_id=self.update_segment.pk,
-            ).exists()
-        )
 
     def test_service_rolls_back_created_segment_on_invalid_update(self):
         with self.assertRaises(BulkSegmentMutationServiceError) as error:

@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import json
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    ReconcileVideoFormatsCommandOptionsPayload,
-)
+from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.config.env import env_int
 from endoreg_db.services.video_format_reconciliation import (
     DEFAULT_MIN_FREE_BYTES,
     VIDEO_EXTENSIONS,
-    VideoFormatSummary,
     reconcile_video_formats,
 )
 
@@ -22,7 +18,7 @@ class Command(BaseCommand):
         "and optionally repair non-compliant MP4 files in place."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--root",
             action="append",
@@ -121,101 +117,68 @@ class Command(BaseCommand):
             help="Emit the summary as JSON.",
         )
 
-    def handle(self, *args: object, **options: object) -> None:
-        options_payload = ReconcileVideoFormatsCommandOptionsPayload.model_validate(
-            options
-        )
-        self._validate_repair_mode(options_payload)
-        summary = self._reconcile(options_payload)
-        self._write_summary(summary, json_output=options_payload.json_output)
-        self._raise_for_unresolved_issues(
-            summary,
-            fail_on_non_compliant=options_payload.fail_on_non_compliant,
-        )
+    def handle(self, *args, **options) -> None:
+        repair = bool(options["repair"])
+        dry_run = bool(options["dry_run"])
+        in_place = bool(options["in_place"])
 
-    @staticmethod
-    def _validate_repair_mode(
-        options: ReconcileVideoFormatsCommandOptionsPayload,
-    ) -> None:
-        if options.repair and not options.in_place and not options.dry_run:
+        if repair and not in_place and not dry_run:
             raise CommandError(
                 "Repair is intentionally disabled unless --in-place or --dry-run "
                 "is supplied. Re-run with --dry-run first, then --repair --in-place."
             )
 
-    @staticmethod
-    def _root_selection(
-        options: ReconcileVideoFormatsCommandOptionsPayload,
-    ) -> tuple[list[str], bool, bool]:
-        explicit_roots = options.root
-        include_default_roots = options.include_default_roots or not explicit_roots
-        if options.no_default_roots:
+        explicit_roots = list(options["root"] or [])
+        include_default_roots = (
+            bool(options["include_default_roots"]) or not explicit_roots
+        )
+        if options["no_default_roots"]:
             include_default_roots = False
-        include_legacy_roots = options.include_legacy_roots
+        include_legacy_roots = bool(options["include_legacy_roots"])
         if (
             not include_default_roots
             and not explicit_roots
             and not include_legacy_roots
         ):
             raise CommandError("No scan roots selected.")
-        return explicit_roots, include_default_roots, include_legacy_roots
 
-    @classmethod
-    def _reconcile(
-        cls,
-        options: ReconcileVideoFormatsCommandOptionsPayload,
-    ) -> VideoFormatSummary:
-        explicit_roots, include_default_roots, include_legacy_roots = (
-            cls._root_selection(options)
-        )
-        return reconcile_video_formats(
+        extensions = tuple(options["extension"] or VIDEO_EXTENSIONS)
+        summary = reconcile_video_formats(
             roots=explicit_roots,
             include_default_roots=include_default_roots,
             include_legacy_roots=include_legacy_roots,
-            dry_run=options.dry_run,
-            repair=options.repair,
-            in_place=options.in_place,
-            allow_unmanaged_roots=options.allow_unmanaged_root,
-            include_compliant=options.include_compliant,
-            max_files=options.max_files or None,
-            min_free_bytes=options.min_free_bytes,
-            force_cpu=options.force_cpu,
-            extensions=tuple(options.extension or VIDEO_EXTENSIONS),
+            dry_run=dry_run,
+            repair=repair,
+            in_place=in_place,
+            allow_unmanaged_roots=bool(options["allow_unmanaged_root"]),
+            include_compliant=bool(options["include_compliant"]),
+            max_files=options["max_files"],
+            min_free_bytes=int(options["min_free_bytes"]),
+            force_cpu=bool(options["force_cpu"]),
+            extensions=extensions,
         )
 
-    def _write_summary(
-        self,
-        summary: VideoFormatSummary,
-        *,
-        json_output: bool,
-    ) -> None:
         payload = summary.as_dict()
-        if json_output:
+        if options["json"]:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
-            return
-        self.stdout.write(
-            self.style.SUCCESS(
-                "video format reconciliation complete: "
-                f"checked={summary.checked_files} "
-                f"compliant={summary.compliant_files} "
-                f"non_compliant={summary.non_compliant_files} "
-                f"invalid={summary.invalid_files} "
-                f"repaired={summary.repaired_files} "
-                f"repair_failed={summary.repair_failed_files} "
-                f"skipped={summary.skipped_files}"
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "video format reconciliation complete: "
+                    f"checked={summary.checked_files} "
+                    f"compliant={summary.compliant_files} "
+                    f"non_compliant={summary.non_compliant_files} "
+                    f"invalid={summary.invalid_files} "
+                    f"repaired={summary.repaired_files} "
+                    f"repair_failed={summary.repair_failed_files} "
+                    f"skipped={summary.skipped_files}"
+                )
             )
-        )
 
-    @staticmethod
-    def _raise_for_unresolved_issues(
-        summary: VideoFormatSummary,
-        *,
-        fail_on_non_compliant: bool,
-    ) -> None:
         unresolved = (
             summary.non_compliant_files + summary.invalid_files - summary.repaired_files
         )
-        if fail_on_non_compliant and unresolved > 0:
+        if options["fail_on_non_compliant"] and unresolved > 0:
             raise CommandError(
                 f"Video format reconciliation found {unresolved} issues."
             )

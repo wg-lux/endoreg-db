@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .patient_disease import (
     PatientDisease,
 )
@@ -26,7 +25,6 @@ from .patient_lab_value import PatientLabValue
 # Medication
 from .patient_medication import PatientMedication
 from .patient_medication_schedule import PatientMedicationSchedule
-from .medical_ledger_write_receipt import MedicalLedgerWriteReceipt
 
 __all__ = [
     # Disease
@@ -47,5 +45,4 @@ __all__ = [
     # Medication
     "PatientMedication",
     "PatientMedicationSchedule",
-    "MedicalLedgerWriteReceipt",
 ]

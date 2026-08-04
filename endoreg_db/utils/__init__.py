@@ -1,30 +1,27 @@
 """Convenience exports for common utility helpers."""
 
-from typing import TYPE_CHECKING
-
-# parse_and_generate_yaml
-from . import dataloader as dataloader
-
-# file_operations
-from . import file_operations as file_operations
-from . import paths as paths
+from .data_loading.yaml_model_loader import load_model_data_from_yaml
 
 # dates
-from .dates import (
+from .core.dates import (
     ensure_aware_datetime,
     random_day_by_month_year,
     random_day_by_year,
 )
 
 # env
-from .env import DEBUG, get_env_var
+from .core.env import DEBUG, get_env_var
+
+# file_operations
+from . import file_operations as file_operations
+from .filesystem import paths as paths
 from .file_operations import (
     copy_with_progress,
     get_content_hash_filename,
 )
 
 # hashs
-from .hashs import (
+from .security.hashs import (
     DJANGO_NAME_SALT,
     get_examiner_hash,
     get_hash_string,
@@ -34,15 +31,18 @@ from .hashs import (
 )
 
 # names
-from .names import (
+from .core.names import (
     create_mock_examiner_name,
     create_mock_patient_name,
     guess_name_gender,
 )
-from .parse_and_generate_yaml import collect_center_names
+
+# parse_and_generate_yaml
+from .data_loading import dataloader as dataloader
+from .data_loading.parse_and_generate_yaml import collect_center_names
 
 # paths
-from .paths import data_paths
+from .filesystem.paths import data_paths
 
 # pydantic_models
 from .pydantic_models import DbConfig
@@ -55,58 +55,41 @@ from .storage import (
 from .storage import file_exists as storage_file_exists
 
 # validate_endo_roi
-from .validate_endo_roi import validate_endo_roi
-from .yaml_model_loader import load_model_data_from_yaml
+from .validation.endo_roi import validate_endo_roi
 
-# --- Lazy-loaded Video Utilities with Type Safety ---
 
-if TYPE_CHECKING:
-    # The type checker pulls the exact signatures from the wrapper package here
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        assemble_video_from_frames as assemble_video_from_frames,
+def assemble_video_from_frames(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import (
+        assemble_video_from_frames as _impl,
     )
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        extract_frames as extract_frames,
+
+    return _impl(*args, **kwargs)
+
+
+def get_stream_info(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import get_stream_info as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def transcode_video(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import transcode_video as _impl
+
+    return _impl(*args, **kwargs)
+
+
+def transcode_videofile_if_required(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import (
+        transcode_videofile_if_required as _impl,
     )
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        get_stream_info as get_stream_info,
-    )
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        transcode_video as transcode_video,
-    )
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        transcode_videofile_if_required as transcode_videofile_if_required,
-    )
-else:
-    # The runtime engine uses these deferred implementations to preserve speed
-    def assemble_video_from_frames(*args, **kwargs):
-        from endoreg_db.utils.ffmpeg_wrapper import (
-            assemble_video_from_frames as _impl,
-        )
 
-        return _impl(*args, **kwargs)
+    return _impl(*args, **kwargs)
 
-    def get_stream_info(*args, **kwargs):
-        from endoreg_db.utils.ffmpeg_wrapper import get_stream_info as _impl
 
-        return _impl(*args, **kwargs)
+def extract_frames(*args, **kwargs):
+    from endoreg_db.utils.video.ffmpeg_wrapper import extract_frames as _impl
 
-    def transcode_video(*args, **kwargs):
-        from endoreg_db.utils.ffmpeg_wrapper import transcode_video as _impl
-
-        return _impl(*args, **kwargs)
-
-    def transcode_videofile_if_required(*args, **kwargs):
-        from endoreg_db.utils.ffmpeg_wrapper import (
-            transcode_videofile_if_required as _impl,
-        )
-
-        return _impl(*args, **kwargs)
-
-    def extract_frames(*args, **kwargs):
-        from endoreg_db.utils.ffmpeg_wrapper import extract_frames as _impl
-
-        return _impl(*args, **kwargs)
+    return _impl(*args, **kwargs)
 
 
 # --- Exports ---
@@ -134,11 +117,11 @@ __all__ = [
     "random_day_by_month_year",
     "random_day_by_year",
     "validate_endo_roi",
-    "assemble_video_from_frames",
+    "assemble_video_from_frames",  # Updated name
     "get_stream_info",
     "transcode_video",
-    "transcode_videofile_if_required",
-    "extract_frames",
+    "transcode_videofile_if_required",  # Added
+    "extract_frames",  # Added
     "delete_field_file",
     "ensure_local_file",
     "field_file_is_readable",

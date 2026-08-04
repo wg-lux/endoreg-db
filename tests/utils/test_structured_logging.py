@@ -2,20 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
 
-from _pytest.logging import LogCaptureFixture
-
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.observability.structured_logging import (
     StructuredJsonFormatter,
     emit_structured_event,
     path_reference,
 )
 
 
-def test_structured_json_formatter_outputs_json_and_redacts_sensitive_values() -> None:
+def test_structured_json_formatter_outputs_json_and_redacts_sensitive_values():
     record = logging.LogRecord(
         name="tests.structured_logging",
         level=logging.WARNING,
@@ -25,17 +21,13 @@ def test_structured_json_formatter_outputs_json_and_redacts_sensitive_values() -
         args=(),
         exc_info=None,
     )
-    setattr(
-        record,
-        "structured_event",
-        {
-            "event": "security.auth_failed",
-            "shared_secret": "do-not-log",
-            "master_key": "do-not-log",
-            "source_path": Path("/patients/Jane Doe/raw_video.mp4"),
-            "raw_media": b"raw-bytes",
-        },
-    )
+    record.structured_event = {
+        "event": "security.auth_failed",
+        "shared_secret": "do-not-log",
+        "master_key": "do-not-log",
+        "source_path": Path("/patients/Jane Doe/raw_video.mp4"),
+        "raw_media": b"raw-bytes",
+    }
 
     payload = json.loads(StructuredJsonFormatter().format(record))
 
@@ -53,9 +45,7 @@ def test_structured_json_formatter_outputs_json_and_redacts_sensitive_values() -
     assert "raw-bytes" not in json.dumps(payload)
 
 
-def test_emit_structured_event_adds_sanitized_record_extra(
-    caplog: LogCaptureFixture,
-) -> None:
+def test_emit_structured_event_adds_sanitized_record_extra(caplog):
     logger = logging.getLogger("tests.structured_logging")
 
     with caplog.at_level(logging.INFO, logger="tests.structured_logging"):
@@ -63,13 +53,10 @@ def test_emit_structured_event_adds_sanitized_record_extra(
             logger,
             "file_operation",
             operation="write",
-            destination_path=path_reference(Path("/patients/Jane Doe/report.pdf")),
+            destination_path=Path("/patients/Jane Doe/report.pdf"),
         )
 
-    event = cast(
-        Mapping[str, object],
-        getattr(caplog.records[-1], "structured_event"),
-    )
+    event = caplog.records[-1].structured_event
     assert event["event"] == "file_operation"
     assert event["destination_path"] == path_reference(
         Path("/patients/Jane Doe/report.pdf")

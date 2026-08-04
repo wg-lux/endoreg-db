@@ -13,7 +13,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
-from endoreg_db.services.frame_annotation_segment_identity import (
+from endoreg_db.models.state.frame_annotation import (
     SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX,
     segment_derived_external_annotation_id,
 )
@@ -107,14 +107,10 @@ class FrameSegmentReconciliationServiceTest(TestCase):
             "frame__frame_number"
         )
         self.assertEqual(annotations.count(), 2)
-
         self.assertTrue(
             all(
-                (
-                    annotation.external_annotation_id is not None
-                    and annotation.external_annotation_id.startswith(
-                        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-                    )
+                annotation.external_annotation_id.startswith(
+                    f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
                 )
                 for annotation in annotations
             )
@@ -138,8 +134,8 @@ class FrameSegmentReconciliationServiceTest(TestCase):
         self.assertEqual(annotations.count(), 2)
         self.assertTrue(
             all(
-                getattr(annotation, "model_meta_id", None) == self.model_meta.pk
-                and getattr(annotation, "information_source_id", None)
+                annotation.model_meta_id == self.model_meta.pk
+                and annotation.information_source_id
                 == self.prediction_annotation_source.pk
                 for annotation in annotations
             )

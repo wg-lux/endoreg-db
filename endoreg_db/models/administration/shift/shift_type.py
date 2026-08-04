@@ -1,19 +1,10 @@
-from __future__ import annotations
-
 import logging  # Added import
-
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from .shift import Shift
-
-NoShiftTypeDescriptionValue: TypeAlias = NoneType
-NoShiftTypeValue: TypeAlias = NoneType
-ShiftTypeDescription: TypeAlias = "str | NoShiftTypeDescriptionValue"
-ShiftTypeLookupResult: TypeAlias = "ShiftType | NoShiftTypeValue"
+    from endoreg_db.models import Shift
 
 # Those are defined in our base data
 NAME_REGULAR = "regular"
@@ -24,8 +15,8 @@ NAME_OFF_HOURS = "off_hours"
 logger = logging.getLogger(__name__)  # Added logger
 
 
-class ShiftTypeManager(models.Manager["ShiftType"]):
-    def get_queryset(self) -> models.QuerySet["ShiftType"]:
+class ShiftTypeManager(models.Manager):
+    def get_queryset(self):
         """
         Returns a queryset containing only active shift types.
         """
@@ -37,23 +28,23 @@ class ShiftType(models.Model):
     Model representing a Shift type.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
 
     objects = ShiftTypeManager()
 
     if TYPE_CHECKING:
         shift: models.QuerySet["Shift"]
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Returns the name of the shift type as its string representation.
         """
         return str(self.name)
 
     @classmethod
-    def get_type_regular(cls) -> ShiftTypeLookupResult:
+    def get_type_regular(cls) -> "ShiftType | None":  # Modified return type
         """
         Retrieves the 'regular' shift type instance.
 
@@ -69,7 +60,7 @@ class ShiftType(models.Model):
             return None
 
     @classmethod
-    def get_type_on_call(cls) -> ShiftTypeLookupResult:
+    def get_type_on_call(cls) -> "ShiftType | None":  # Modified return type
         """
         Retrieves the ShiftType instance representing the on-call shift type.
 
@@ -85,7 +76,7 @@ class ShiftType(models.Model):
             return None
 
     @classmethod
-    def get_type_ward(cls) -> ShiftTypeLookupResult:
+    def get_type_ward(cls) -> "ShiftType | None":  # Modified return type
         """
         Retrieves the ShiftType instance representing a ward shift.
 
@@ -101,7 +92,7 @@ class ShiftType(models.Model):
             return None
 
     @classmethod
-    def get_type_off_hours(cls) -> ShiftTypeLookupResult:
+    def get_type_off_hours(cls) -> "ShiftType | None":  # Modified return type
         """
         Retrieves the off-hours shift type instance by name.
 

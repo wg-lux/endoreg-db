@@ -1,22 +1,15 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, List
 
-from django.core.exceptions import ValidationError
 from django.db import models
-
-from endoreg_db.schemas.classification_choice import (
-    ClassificationChoiceJSONValidationError,
-    validate_classification_choice_json_fields,
-)
 
 if TYPE_CHECKING:
     from .patient import PatientDisease
 
 
-class DiseaseManager(models.Manager["Disease"]):
+class DiseaseManager(models.Manager):
     """Manager for Disease with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "Disease":
+    def get_by_natural_key(self, name):
         """
         Retrieve a Disease instance by its natural key (name).
 
@@ -36,22 +29,11 @@ class Disease(models.Model):
     Can define associated subcategories and numerical descriptors applicable to the disease itself.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    name = models.CharField(max_length=255, unique=True)
+    subcategories = models.JSONField(default=dict)
+    numerical_descriptors = models.JSONField(default=dict)
 
     objects = DiseaseManager()
-
-    def clean(self) -> None:
-        super().clean()
-        try:
-            validate_classification_choice_json_fields(self)
-        except ClassificationChoiceJSONValidationError as exc:
-            raise ValidationError({exc.field_name: str(exc)}) from exc
-
-    def save(self, *args: object, **kwargs: object) -> None:
-        self.clean()
-        super().save(*args, **kwargs)
 
     if TYPE_CHECKING:
 
@@ -61,33 +43,33 @@ class Disease(models.Model):
         ) -> models.QuerySet["DiseaseClassification"]: ...
 
         @property
-        def patient_diseases(
-            self,
-        ) -> models.QuerySet["PatientDisease"]: ...
+        def patient_diseases(self) -> models.QuerySet["PatientDisease"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the disease."""
         return str(self.name)
 
-    def get_classifications(self) -> list["DiseaseClassification"]:
+    def get_classifications(self) -> List["DiseaseClassification"]:
         """
         Retrieves all classification systems associated with this disease.
 
         Returns:
             List[DiseaseClassification]: A list of related disease classification objects.
         """
-        classifications = [item for item in self.disease_classifications.all()]
+        classifications: List[DiseaseClassification] = [
+            _ for _ in self.disease_classifications.all()
+        ]
         return classifications
 
 
-class DiseaseClassificationManager(models.Manager["DiseaseClassification"]):
+class DiseaseClassificationManager(models.Manager):
     """Manager for DiseaseClassification with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "DiseaseClassification":
+    def get_by_natural_key(self, name):
         """
         Retrieve a DiseaseClassification instance by its natural key (name).
 
@@ -105,44 +87,47 @@ class DiseaseClassification(models.Model):
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=True)
 
-    disease: models.ForeignKey[Any] = models.ForeignKey(
+    disease = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
     )
 
     objects = DiseaseClassificationManager()
 
     if TYPE_CHECKING:
+        pass
 
         @property
         def disease_classification_choices(
             self,
         ) -> models.Manager["DiseaseClassificationChoice"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the classification."""
         return str(self.name)
 
-    def get_choices(self) -> list["DiseaseClassificationChoice"]:
+    def get_choices(self) -> List["DiseaseClassificationChoice"]:
         """
         Retrieves all choices within this classification system.
 
         Returns:
             List[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
-        choices = [item for item in self.disease_classification_choices.all()]
+        choices: List[DiseaseClassificationChoice] = [
+            _ for _ in self.disease_classification_choices.all()
+        ]
         return choices
 
 
-class DiseaseClassificationChoiceManager(models.Manager["DiseaseClassificationChoice"]):
+class DiseaseClassificationChoiceManager(models.Manager):
     """Manager for DiseaseClassificationChoice with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "DiseaseClassificationChoice":
+    def get_by_natural_key(self, name):
         """
         Retrieve a DiseaseClassificationChoice instance by its natural key (name).
 
@@ -162,14 +147,12 @@ class DiseaseClassificationChoice(models.Model):
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=True)
 
-    disease_classification: models.ForeignKey["DiseaseClassification | None"] = (
-        models.ForeignKey(
-            DiseaseClassification,
-            on_delete=models.CASCADE,
-            related_name="disease_classification_choices",
-        )
+    disease_classification = models.ForeignKey(
+        DiseaseClassification,
+        on_delete=models.CASCADE,
+        related_name="disease_classification_choices",
     )
 
     objects = DiseaseClassificationChoiceManager()
@@ -182,10 +165,10 @@ class DiseaseClassificationChoice(models.Model):
             self,
         ) -> models.Manager["PatientDisease"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the classification choice."""
         return str(self.name)

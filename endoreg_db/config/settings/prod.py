@@ -20,7 +20,7 @@ from endoreg_db.config.env import (
     env_str,
     get_secure_proxy_ssl_header,
 )
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.observability.structured_logging import (
     build_production_logging_config,
 )
 from . import keycloak as KEYCLOAK
@@ -28,10 +28,6 @@ from . import keycloak as KEYCLOAK
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 
 DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
-REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT = env_bool(
-    "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT",
-    not pytest_active,
-)
 if env_bool("DJANGO_DEBUG", False) and not pytest_active:
     raise ValueError(
         "DJANGO_DEBUG must be false in production; refusing to start with debug-mode auth bypass enabled"
@@ -43,45 +39,40 @@ if WATCHER_CELERY_INLINE_FALLBACK_ENABLED:
         "broker failures must fail closed instead of switching watcher processing inline"
     )
 
-_secret_key = env_str("DJANGO_SECRET_KEY")
-if not _secret_key:
+SECRET_KEY = env_str("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
     if pytest_active:
-        _secret_key = "test-secret-key"
+        SECRET_KEY = "test-secret-key"
     else:
         raise ValueError(
             "DJANGO_SECRET_KEY environment variable must be set in production"
         )
-SECRET_KEY = _secret_key
-
-_allowed_hosts = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
-if not _allowed_hosts:
+ALLOWED_HOSTS = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
+if not ALLOWED_HOSTS:
     if pytest_active:
-        _allowed_hosts = ["*"]
+        ALLOWED_HOSTS = ["*"]
     else:
         raise ValueError(
             "DJANGO_ALLOWED_HOSTS must be set in production (comma-separated list of allowed hosts)"
         )
-ALLOWED_HOSTS = _allowed_hosts
 
 # Require explicit DB engine in production (no default to SQLite)
-_db_engine = env_str("DB_ENGINE")
-if not _db_engine:
+DB_ENGINE = env_str("DB_ENGINE")
+if not DB_ENGINE:
     if pytest_active:
-        _db_engine = "django.db.backends.sqlite3"
+        DB_ENGINE = "django.db.backends.sqlite3"
     else:
         raise ValueError("DB_ENGINE must be set in production")
-DB_ENGINE = _db_engine
 
 # For non-sqlite engines, require DB_NAME; for sqlite, allow default to a file under BASE_DIR
 if DB_ENGINE.endswith("sqlite3"):
-    _db_name = env_str("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
+    DB_NAME = env_str("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
 else:
-    _db_name = env_str("DB_NAME")
-    if not _db_name:
+    DB_NAME = env_str("DB_NAME")
+    if not DB_NAME:
         raise ValueError(
             "DB_NAME must be set when using a non-sqlite database engine in production"
         )
-DB_NAME = _db_name
 
 _ROLE_REQUIRES_PRODUCTION_DB = {"central_hub", "local_study_server"}
 
@@ -94,7 +85,7 @@ if ENDOREG_DEPLOYMENT_ROLE in _ROLE_REQUIRES_PRODUCTION_DB and DB_ENGINE.endswit
         "Use PostgreSQL or another durable multi-user database engine."
     )
 
-# Credentials and connection params are only included when configured.
+# Optional credentials/connection params (only include if provided)
 DB_USER = env_str("DB_USER", "")
 DB_PASSWORD = env_str("DB_PASSWORD", "")
 DB_HOST = env_str("DB_HOST", "")
@@ -146,8 +137,8 @@ if (
 # Production must wire the same authz stack as development, but without any
 # debug shortcuts. Browser users authenticate via OIDC session login, and API
 # clients may use Bearer tokens verified by KeycloakJWTAuthentication.
-globals()["INSTALLED_APPS"] = INSTALLED_APPS + KEYCLOAK.EXTRA_INSTALLED_APPS  # noqa: F405
-globals()["MIDDLEWARE"] = MIDDLEWARE + KEYCLOAK.EXTRA_MIDDLEWARE  # noqa: F405
+INSTALLED_APPS = INSTALLED_APPS + KEYCLOAK.EXTRA_INSTALLED_APPS  # noqa: F405
+MIDDLEWARE = MIDDLEWARE + KEYCLOAK.EXTRA_MIDDLEWARE  # noqa: F405
 
 AUTHENTICATION_BACKENDS = KEYCLOAK.AUTHENTICATION_BACKENDS
 
@@ -155,7 +146,7 @@ REST_FRAMEWORK.update(  # noqa: F405
     {
         "DEFAULT_AUTHENTICATION_CLASSES": KEYCLOAK.REST_FRAMEWORK_DEFAULT_AUTH,
         "DEFAULT_PERMISSION_CLASSES": (
-            "endoreg_db.utils.permissions.EnvironmentAwarePermission",
+            "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
             "endoreg_db.authz.permissions.PolicyPermission",
         ),
     }

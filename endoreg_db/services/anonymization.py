@@ -1,20 +1,9 @@
 # endoreg_db/services/anonymization.py
 import logging
-from datetime import datetime
 from pathlib import Path
-from typing import cast
+from typing import Optional, Literal
 
 from django.db import transaction
-from lx_dtypes.models.contracts.anonymization import (
-    AnonymizationListItemData,
-    AnonymizationListItemPayload,
-    AnonymizationStartResult,
-    AnonymizationStatusData,
-    AnonymizationStatusPayload,
-    AnonymizationValidationResult,
-    dump_anonymization_list_item_payload,
-    dump_anonymization_status_payload,
-)
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -23,82 +12,14 @@ from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.filesystem.paths import STORAGE_DIR
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 logger = logging.getLogger(__name__)
 
 
-def _optional_text(value: object) -> str | None:
-    if value is None:
-        return None
-    normalized = str(value).strip()
-    return normalized or None
-
-
-def _required_text(value: object, *, fallback: str) -> str:
-    return _optional_text(value) or fallback
-
-
-def _optional_datetime(value: object) -> datetime | None:
-    return value if isinstance(value, datetime) else None
-
-
-def _related_object(instance: object, field_name: str) -> object | None:
-    return cast(object | None, getattr(instance, field_name, None))
-
-
-def _related_text(instance: object, relation_name: str, field_name: str) -> str | None:
-    relation = _related_object(instance, relation_name)
-    if relation is None:
-        return None
-    return _optional_text(getattr(relation, field_name, None))
-
-
-def _state_anonymization_status(state: object | None) -> str:
-    if state is None:
-        return "not_started"
-    return _required_text(
-        getattr(state, "anonymization_status", None), fallback="not_started"
-    )
-
-
-def _state_is_anonymized(state: object | None) -> bool:
-    return bool(getattr(state, "anonymized", False))
-
-
-def _mark_state_processing_started(state: object | None) -> None:
-    if state is None:
-        return
-    marker = getattr(state, "mark_processing_started", None)
-    if callable(marker):
-        marker()
-        return
-    setattr(state, "processing_started", True)
-    saver = getattr(state, "save", None)
-    if callable(saver):
-        saver(update_fields=["processing_started"])
-
-
-def _mark_state_processing_not_started(state: object | None) -> None:
-    if state is None:
-        return
-    setattr(state, "processing_started", False)
-    saver = getattr(state, "save", None)
-    if callable(saver):
-        saver(update_fields=["processing_started"])
-
-
-def _mark_state_anonymization_validated(state: object) -> None:
-    marker = getattr(state, "mark_anonymization_validated", None)
-    if callable(marker):
-        marker()
-
-
 def _video_integrity_status(video: VideoFile) -> tuple[str, str]:
-    payload = video.meta
-    if payload is None:
-        return "lost", "unknown"
+    payload = video.meta if isinstance(video.meta, dict) else {}
     integrity_status = str(payload.get("integrity_status") or "").strip()
     integrity_error = str(payload.get("integrity_error") or "").strip()
     if not integrity_status and bool(
@@ -121,7 +42,7 @@ class AnonymizationService:
     does HTTP <-> Service translation.
     """
 
-    def __init__(self, project_root: Path | None = None):
+    def __init__(self, project_root: Optional[Path] = None):
         """
         Initialize the AnonymizationService with service instances.
 
@@ -133,10 +54,7 @@ class AnonymizationService:
         self.pdf_service = ReportImportService()
 
     @staticmethod
-    def get_status(
-        file_id: int,
-        kind: str | None = None,
-    ) -> AnonymizationStatusData | None:
+    def get_status(file_id: int, kind: Optional[str] = None) -> Optional[dict]:
         """
         Retrieve status.
         Handles 'pdf' vs 'report' alias.
@@ -160,16 +78,14 @@ class AnonymizationService:
             )
             if vf:
                 integrity_status, integrity_error = _video_integrity_status(vf)
-                return dump_anonymization_status_payload(
-                    AnonymizationStatusPayload(
-                        media_type="video",
-                        anonymization_status=resolve_lx_anonymization_state(vf).value,
-                        integrity_status=integrity_status,
-                        integrity_error=integrity_error,
-                        file_exists=file_exists(vf.raw_file),
-                        uuid=_optional_text(getattr(vf, "video_hash", None)),
-                    )
-                )
+                return {
+                    "media_type": "video",
+                    "anonymization_status": resolve_lx_anonymization_state(vf).value,
+                    "integrity_status": integrity_status,
+                    "integrity_error": integrity_error,
+                    "file_exists": file_exists(vf.raw_file),
+                    "uuid": str(vf.video_hash) if vf.video_hash else None,
+                }
 
         # 4. Check RawPdfFile
         if check_report:
@@ -179,28 +95,22 @@ class AnonymizationService:
                 .first()
             )
             if pdf:
-                anonymization_status = _state_anonymization_status(
-                    _related_object(pdf, "state")
+                anonymization_status = (
+                    pdf.state.anonymization_status if pdf.state else "not_started"
                 )
-                return dump_anonymization_status_payload(
-                    AnonymizationStatusPayload(
-                        media_type="pdf",
-                        anonymization_status=str(anonymization_status),
-                        file_exists=file_exists(pdf.file),
-                        hash=_optional_text(getattr(pdf, "pdf_hash", None)),
-                    )
-                )
+                return {
+                    "media_type": "pdf",
+                    "anonymization_status": anonymization_status,
+                    "file_exists": file_exists(pdf.file),
+                    "hash": pdf.pdf_hash,
+                }
 
         # 5. Not found in either (or the specific requested type wasn't found)
         return None
 
     # ---------- COMMANDS ------------------------------------------------
     @transaction.atomic
-    def start(
-        self,
-        file_id: int,
-        kind: str | None = None,
-    ) -> AnonymizationStartResult | None:
+    def start(self, file_id: int, kind: Optional[str] = None) -> Optional[str]:
         """
         Start anonymization process for a file by its ID.
 
@@ -212,145 +122,154 @@ class AnonymizationService:
         """
         # Try VideoFile first
         if kind == "video" or kind is None:
-            video = (
+            vf = (
                 VideoFile.objects.select_related(
                     "state", "sensitive_meta", "center", "video_meta__processor"
                 )
                 .filter(pk=file_id)
                 .first()
             )
-            if video:
-                return self._start_video(video, file_id)
+            if vf:
+                try:
+                    logger.info(
+                        f"Starting video anonymization for VideoFile ID: {file_id}"
+                    )
 
+                    if _video_has_integrity_failure(vf):
+                        integrity_status, integrity_error = _video_integrity_status(vf)
+                        logger.error(
+                            "Refusing anonymization for failed/lost VideoFile %s "
+                            "(hash=%s, integrity_status=%s, reason=%s)",
+                            file_id,
+                            vf.video_hash,
+                            integrity_status,
+                            integrity_error,
+                        )
+                        return None
+
+                    # Check if already processed
+                    if vf.state and vf.state.anonymized:
+                        logger.info(f"VideoFile {file_id} already anonymized, skipping")
+                        return "video"
+
+                    raw_file = vf.raw_file
+                    if not raw_file or not raw_file.name or not file_exists(raw_file):
+                        logger.error(
+                            "Raw file not found for VideoFile %s in storage",
+                            file_id,
+                        )
+                        return None
+
+                    # Get processor name
+                    processor_name = None
+                    if vf.video_meta and vf.video_meta.processor:
+                        processor_name = vf.video_meta.processor.name
+                    elif hasattr(vf, "processor") and vf.processor:
+                        processor_name = vf.processor.name
+
+                    # Get center name
+                    center_name = vf.center.name if vf.center else "unknown_center"
+
+                    # Mark as started
+                    if vf.state:
+                        vf.state.mark_processing_started()
+
+                    # Use VideoImportService for anonymization
+                    safe_processor_name = processor_name or "unknown_processor"
+                    with ensure_local_file(raw_file) as file_path:
+                        self.video_service.import_and_anonymize(
+                            file_path=file_path,
+                            center_name=center_name,
+                            processor_name=safe_processor_name,
+                        )
+
+                    logger.info(
+                        f"Video anonymization completed for VideoFile ID: {file_id}"
+                    )
+                    return "video"
+
+                except Exception as e:
+                    logger.error(f"Failed to anonymize VideoFile {file_id}: {e}")
+                    # Mark as failed if state exists
+                    if vf.state:
+                        vf.state.processing_started = (
+                            False  # Mark processing as not started due to failure
+                        )
+                        vf.state.save(update_fields=["processing_started"])
+                    raise
         if kind == "report" or kind is None:
             # Try RawPdfFile
-            report = (
+            pdf = (
                 RawPdfFile.objects.select_related("state", "sensitive_meta", "center")
                 .filter(pk=file_id)
                 .first()
             )
-            if report:
-                return self._start_report(report, file_id)
+            if pdf:
+                try:
+                    logger.info(
+                        f"Starting report processing for RawPdfFile ID: {file_id}"
+                    )
+
+                    # Check if already processed
+                    if pdf.state and getattr(pdf.state, "anonymized", False):
+                        logger.info(f"RawPdfFile {file_id} already processed, skipping")
+                        return "pdf"
+
+                    file_field = pdf.file
+                    if not file_field or not file_field.name:
+                        logger.error(f"report file not found for RawPdfFile {file_id}")
+                        return None
+
+                    if not file_exists(file_field):
+                        logger.error(
+                            "report file missing from storage for RawPdfFile %s",
+                            file_id,
+                        )
+                        return None
+
+                    # Get center name
+                    center_name = pdf.center.name if pdf.center else "unknown_center"
+
+                    # Mark as started
+                    if pdf.state:
+                        pdf.state.processing_started = True
+                        pdf.state.save(update_fields=["processing_started"])
+
+                    with ensure_local_file(file_field) as local_path:
+                        self.pdf_service.import_and_anonymize(
+                            file_path=local_path,
+                            center_name=center_name,
+                        )
+
+                    logger.info(
+                        f"report processing completed for RawPdfFile ID: {file_id}"
+                    )
+                    return "pdf"
+
+                except Exception as e:
+                    logger.error(f"Failed to process RawPdfFile {file_id}: {e}")
+                    # Mark as failed if state exists
+                    if pdf.state and hasattr(pdf.state, "processing_failed"):
+                        pdf.state.save(update_fields=["processing_failed"])
+                    elif pdf.sensitive_meta and hasattr(
+                        pdf.sensitive_meta, "processing_failed"
+                    ):
+                        pdf.sensitive_meta.save(update_fields=["processing_failed"])
+                    raise
 
             logger.warning(f"No file found with ID: {file_id}")
             return None
 
         return None
 
-    def _start_video(
-        self,
-        video: VideoFile,
-        file_id: int,
-    ) -> AnonymizationStartResult | None:
-        try:
-            logger.info(f"Starting video anonymization for VideoFile ID: {file_id}")
-
-            if _video_has_integrity_failure(video):
-                integrity_status, integrity_error = _video_integrity_status(video)
-                logger.error(
-                    "Refusing anonymization for failed/lost VideoFile %s "
-                    "(hash=%s, integrity_status=%s, reason=%s)",
-                    file_id,
-                    _optional_text(getattr(video, "video_hash", None)),
-                    integrity_status,
-                    integrity_error,
-                )
-                return None
-
-            video_state = _related_object(video, "state")
-            if _state_is_anonymized(video_state):
-                logger.info(f"VideoFile {file_id} already anonymized, skipping")
-                return "video"
-
-            raw_file = video.raw_file
-            if not raw_file or not raw_file.name or not file_exists(raw_file):
-                logger.error(
-                    "Raw file not found for VideoFile %s in storage",
-                    file_id,
-                )
-                return None
-
-            processor_name = _related_text(
-                _related_object(video, "video_meta") or video,
-                "processor",
-                "name",
-            )
-            center_name = _required_text(
-                _related_text(video, "center", "name"),
-                fallback="unknown_center",
-            )
-            _mark_state_processing_started(video_state)
-
-            with ensure_local_file(raw_file) as file_path:
-                self.video_service.import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center_name,
-                    processor_name=processor_name or "unknown_processor",
-                )
-
-            logger.info(f"Video anonymization completed for VideoFile ID: {file_id}")
-            return "video"
-        except Exception as error:
-            logger.error(f"Failed to anonymize VideoFile {file_id}: {error}")
-            _mark_state_processing_not_started(_related_object(video, "state"))
-            raise
-
-    def _start_report(
-        self,
-        report: RawPdfFile,
-        file_id: int,
-    ) -> AnonymizationStartResult | None:
-        try:
-            logger.info(f"Starting report processing for RawPdfFile ID: {file_id}")
-
-            report_state = _related_object(report, "state")
-            if _state_is_anonymized(report_state):
-                logger.info(f"RawPdfFile {file_id} already processed, skipping")
-                return "pdf"
-
-            file_field = report.file
-            if not file_field or not file_field.name:
-                logger.error(f"report file not found for RawPdfFile {file_id}")
-                return None
-
-            if not file_exists(file_field):
-                logger.error(
-                    "report file missing from storage for RawPdfFile %s",
-                    file_id,
-                )
-                return None
-
-            center_name = _required_text(
-                _related_text(report, "center", "name"),
-                fallback="unknown_center",
-            )
-            _mark_state_processing_started(report_state)
-
-            with ensure_local_file(file_field) as local_path:
-                self.pdf_service.import_and_anonymize(
-                    file_path=local_path,
-                    center_name=center_name,
-                )
-
-            logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
-            return "pdf"
-        except Exception as error:
-            logger.error(f"Failed to process RawPdfFile {file_id}: {error}")
-            failure_state = _related_object(report, "state") or _related_object(
-                report, "sensitive_meta"
-            )
-            saver = getattr(failure_state, "save", None)
-            if callable(saver):
-                saver(update_fields=["processing_failed"])
-            raise
-
     @staticmethod
     @transaction.atomic
-    def validate(file_id: int) -> AnonymizationValidationResult | None:
+    def validate(file_id: int) -> None | Literal["video"] | Literal["pdf"]:
         vf = VideoFile.objects.select_related("state").filter(pk=file_id).first()
         if vf:
-            video_state = _related_object(vf, "state") or get_or_create_video_state(vf)
-            _mark_state_anonymization_validated(video_state)
+            video_state = vf.state or get_or_create_video_state(vf)
+            if hasattr(video_state, "mark_anonymization_validated"):
+                video_state.mark_anonymization_validated()
             return "video"
 
         pdf = RawPdfFile.objects.select_related("state").filter(pk=file_id).first()
@@ -363,46 +282,36 @@ class AnonymizationService:
         return None
 
     @staticmethod
-    def list_items() -> list[AnonymizationListItemData]:
+    def list_items():
         video_files = VideoFile.objects.select_related("state").all()
         pdf_files = RawPdfFile.objects.select_related(
             "state"
         ).all()  # was sensitive_meta
 
-        data: list[AnonymizationListItemData] = []
+        data = []
         for vf in video_files:
-            video_state = _related_object(vf, "state")
             data.append(
-                dump_anonymization_list_item_payload(
-                    AnonymizationListItemPayload(
-                        id=int(vf.pk),
-                        media_type="video",
-                        anonymization_status=_state_anonymization_status(video_state),
-                        created_at=_optional_datetime(
-                            getattr(vf, "date_created", None)
-                        ),
-                        updated_at=_optional_datetime(
-                            getattr(vf, "date_modified", None)
-                        ),
+                {
+                    "id": vf.pk,
+                    "media_type": "video",
+                    "anonymization_status": (
+                        vf.state.anonymization_status if vf.state else "not_started"
                     ),
-                )
+                    "created_at": vf.date_created,
+                    "updated_at": vf.date_modified,
+                }
             )
 
         for pdf in pdf_files:
-            pdf_state = _related_object(pdf, "state")
             data.append(
-                dump_anonymization_list_item_payload(
-                    AnonymizationListItemPayload(
-                        id=int(pdf.pk),
-                        media_type="pdf",
-                        anonymization_status=_state_anonymization_status(pdf_state),
-                        created_at=_optional_datetime(
-                            getattr(pdf, "date_created", None)
-                        ),
-                        updated_at=_optional_datetime(
-                            getattr(pdf, "date_modified", None)
-                        ),
+                {
+                    "id": pdf.pk,
+                    "media_type": "pdf",
+                    "anonymization_status": (
+                        pdf.state.anonymization_status if pdf.state else "not_started"
                     ),
-                )
+                    "created_at": pdf.date_created,
+                    "updated_at": pdf.date_modified,
+                }
             )
         return data

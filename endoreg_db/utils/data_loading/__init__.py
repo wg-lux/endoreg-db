@@ -1,3 +1,5 @@
-"""Deprecated package kept only to avoid namespace-package surprises."""
+"""YAML-backed data loading and setup configuration helpers."""
 
-__all__: list[str] = []
+from .yaml_model_loader import load_model_data_from_yaml
+
+__all__ = ["load_model_data_from_yaml"]

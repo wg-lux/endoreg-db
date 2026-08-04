@@ -13,7 +13,7 @@ import yaml
 
 from endoreg_db.services import offline_batch_runner as runner
 from endoreg_db.utils import rust_backend
-from endoreg_db.utils.filesystem.file_operations import advisory_file_lock
+from endoreg_db.utils.file_operations import advisory_file_lock
 
 
 @pytest.fixture(autouse=True)

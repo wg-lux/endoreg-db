@@ -1,8 +1,7 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 
@@ -14,10 +13,6 @@ from endoreg_db.utils.file_operations import (
     atomic_move_path,
     safe_rmtree,
     safe_unlink_file,
-)
-from endoreg_db.utils.media.frame_file_permissions import (
-    FRAME_CACHE_DIR_MODE,
-    apply_frame_cache_dir_mode,
 )
 
 if TYPE_CHECKING:
@@ -35,7 +30,7 @@ def _get_staged_deletion_path(path: str) -> str:
 def _dataset_backed_frame_ids_with_files(
     video: "VideoFile",
 ) -> tuple[set[int], set[Path]]:
-    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.frame import Frame
 
     frame_ids: set[int] = set()
     frame_paths: set[Path] = set()
@@ -76,12 +71,12 @@ def _delete_frames(video: "VideoFile") -> str:
     Does NOT delete Frame objects from DB, but marks them as is_extracted=False.
     Raises RuntimeError if state update fails.
     """
-    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.frame import Frame
 
-    deleted_messages: List[str] = []
-    error_messages: List[str] = []
-    state_updated: bool = False
-    db_updated: bool = False
+    deleted_messages = []
+    error_messages = []
+    state_updated = False
+    db_updated = False
     cleanup_directories: list[Path] = []
     dataset_frame_ids, dataset_frame_paths = _dataset_backed_frame_ids_with_files(video)
 
@@ -122,7 +117,7 @@ def _delete_frames(video: "VideoFile") -> str:
 
     try:
         state: "VideoState" = video.get_or_create_state()
-        update_fields_state: list[str] = []
+        update_fields_state = []
         if state.frames_extracted:
             state.frames_extracted = False
             update_fields_state.append("frames_extracted")
@@ -210,12 +205,7 @@ def _delete_frames(video: "VideoFile") -> str:
                     _get_staged_deletion_path(original_path.name)
                 )
                 try:
-                    atomic_move_path(
-                        source=original_path,
-                        destination=staged_path,
-                        dir_mode=FRAME_CACHE_DIR_MODE,
-                    )
-                    apply_frame_cache_dir_mode(staged_path)
+                    atomic_move_path(source=original_path, destination=staged_path)
                     safe_rmtree(staged_path, missing_ok=True)
                 except Exception as cleanup_exc:
                     if staged_path.exists() and not original_path.exists():
@@ -223,9 +213,7 @@ def _delete_frames(video: "VideoFile") -> str:
                             atomic_move_path(
                                 source=staged_path,
                                 destination=original_path,
-                                dir_mode=FRAME_CACHE_DIR_MODE,
                             )
-                            apply_frame_cache_dir_mode(original_path)
                         except Exception as restore_exc:
                             logger.error(
                                 "Failed to restore staged frame directory "
@@ -249,5 +237,9 @@ def _delete_frames(video: "VideoFile") -> str:
         final_message += "; Errors occurred: " + "; ".join(error_messages)
     elif state_updated and db_updated:
         final_message += "; State flags and Frame objects updated successfully."
+    elif state_updated:
+        final_message += "; State flags updated; Frame object update skipped or failed."
+    else:
+        final_message += "; State/Frame update skipped due to errors."
 
     return final_message

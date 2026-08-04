@@ -1,29 +1,21 @@
-# pyright: reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 import os
-from contextlib import ExitStack
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ContextManager, Iterable, cast
+from typing import Any, ContextManager, Iterable
 
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.video_processing import video_utils
-from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files import (
-    ensure_local_processed_video_file,
-    ensure_local_raw_video_file,
-)
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.storage import save_local_file
+from endoreg_db.utils.storage import materialize_video_file, save_local_file
 
 logger = logging.getLogger(__name__)
 PRESERVE_DIMENSIONS_MODE = "preserve_dimensions"
@@ -47,23 +39,16 @@ def _coerce_int(value: Any) -> int:
 
 
 def _probe_dimensions(path: Path) -> tuple[int, int]:
-    info = cast(object, video_utils.detect_video_format(path))
-    if isinstance(info, Mapping):
-        typed_info = cast(Mapping[str, object], info)
-        width = typed_info.get("width")
-        height = typed_info.get("height")
-    else:
-        width = getattr(info, "width", None)
-        height = getattr(info, "height", None)
-    return (_coerce_int(width), _coerce_int(height))
+    info = video_utils.detect_video_format(path)
+    return (_coerce_int(info.get("width")), _coerce_int(info.get("height")))
 
 
 def _local_raw_context(video: VideoFile) -> ContextManager[Path]:
-    return ensure_local_raw_video_file(video)
+    return materialize_video_file(video, "raw")
 
 
 def _local_processed_context(video: VideoFile) -> ContextManager[Path]:
-    return ensure_local_processed_video_file(video)
+    return materialize_video_file(video, "processed")
 
 
 def _store_repaired_processed_video(
@@ -71,7 +56,7 @@ def _store_repaired_processed_video(
     temp_output: Path,
     fallback_destination: Path,
 ) -> None:
-    processed_file = cast(FieldFile | None, getattr(video, "processed_file", None))
+    processed_file = getattr(video, "processed_file", None)
     if processed_file is not None and getattr(processed_file, "name", None):
         save_local_file(
             processed_file,
@@ -88,7 +73,7 @@ def _store_repaired_processed_video(
 def _mask_config_for_video(
     video: VideoFile,
     mask_application: MaskApplication,
-) -> Any:
+) -> dict[str, Any]:
     processor = getattr(video, "processor", None)
     if processor is None:
         return dict(mask_application.default_mask_config)
@@ -98,12 +83,10 @@ def _mask_config_for_video(
         return dict(mask_application.default_mask_config)
 
     roi = get_roi()
-    if not isinstance(roi, Mapping) and not all(
-        hasattr(roi, attr) for attr in ("x", "y", "width", "height")
-    ):
+    if not isinstance(roi, dict):
         return dict(mask_application.default_mask_config)
 
-    return mask_application.create_mask_config_from_roi(cast(Any, roi))
+    return mask_application.create_mask_config_from_roi(roi)
 
 
 def backfill_video_anonymized_dimensions(
@@ -116,7 +99,7 @@ def backfill_video_anonymized_dimensions(
     Regenerate a cropped anonymized video from its raw source while preserving
     source dimensions.
     """
-    video_id = video.pk
+    video_id = getattr(video, "pk", None)
     try:
         source_context = _local_raw_context(video)
     except (FileNotFoundError, ValueError) as exc:
@@ -134,23 +117,7 @@ def backfill_video_anonymized_dimensions(
             detail=str(exc),
         )
 
-    with ExitStack() as stack:
-        try:
-            source_path = stack.enter_context(source_context)
-        except (FileNotFoundError, ValueError) as exc:
-            return VideoDimensionBackfillResult(
-                video_id=video_id,
-                status="missing_source",
-                detail=str(exc),
-            )
-        try:
-            processed_path = stack.enter_context(processed_context)
-        except (FileNotFoundError, ValueError) as exc:
-            return VideoDimensionBackfillResult(
-                video_id=video_id,
-                status="missing_processed",
-                detail=str(exc),
-            )
+    with source_context as source_path, processed_context as processed_path:
         source_path = Path(source_path)
         processed_path = Path(processed_path)
         if not source_path.is_file():

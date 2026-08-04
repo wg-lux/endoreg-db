@@ -1,145 +1,35 @@
-from __future__ import annotations
-
 import random
 from datetime import date
 from logging import getLogger
 from pathlib import Path
-from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
+from typing import Optional
 
 from django.conf import settings  # Import settings
 from django.core.files.storage import default_storage  # Import default storage
 from django.db.models.fields.files import FieldFile
-
-from endoreg_db.services import raw_pdf_files as raw_pdf_file_services
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-    ensure_directory,
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.models.administration.ai.ai_model import AiModel
-from endoreg_db.models.administration.center.center import Center
-from endoreg_db.models.administration.person.patient.patient import Patient
-from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.examination.examination_indication import (
+from endoreg_db.models import (
+    AiModel,
+    Center,
+    EndoscopyProcessor,
+    Examination,
     ExaminationIndication,
+    Gender,
+    InformationSource,
+    ModelMeta,
+    Patient,
 )
-from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
-from endoreg_db.models.metadata.model_meta import ModelMeta
-from endoreg_db.models.other.gender import Gender
-from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.services.raw_pdf_files import (
+    create_raw_pdf_file_from_path,
+    process_raw_pdf_file,
+)
 from endoreg_db.utils import create_mock_patient_name
 
-if TYPE_CHECKING:
-    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-    from endoreg_db.models.media.video.video_file import VideoFile
-
 logger = getLogger("default_objects")
-
-type ReportMetaValue = str | date
-type ReportMeta = dict[str, ReportMetaValue]
-
-
-class _InformationSourceManager(Protocol):
-    def resolve_by_name(self, name: str) -> InformationSource | NoneType: ...
-
-
-class _GenderManager(Protocol):
-    def resolve_by_name(
-        self,
-        name: str,
-        *,
-        case_insensitive: bool = True,
-    ) -> Gender | NoneType: ...
-
-
-class _NamedModel(Protocol):
-    name: str
-
-
-class GeneratePatientKwargs(TypedDict, total=False):
-    randomize: bool
-    gender: Gender | str
-    first_name: str
-    last_name: str
-    dob: date | str
-    birth_date: date | str
-    center: Center | str
-
-
-class _CreateRawPdfFileFromPath(Protocol):
-    def __call__(
-        self,
-        file_path: str | Path,
-        center_name: str,
-        *,
-        save: bool = True,
-    ) -> RawPdfFile: ...
-
-
-class _ProcessRawPdfFile(Protocol):
-    def __call__(
-        self,
-        report: RawPdfFile,
-        text: str,
-        anonymized_text: str,
-        report_meta: ReportMeta,
-        verbose: bool,
-    ) -> tuple[str, str, ReportMeta]: ...
-
-
-def _information_source_manager() -> _InformationSourceManager:
-    return cast(_InformationSourceManager, InformationSource.objects)
-
-
-def _gender_manager() -> _GenderManager:
-    return cast(_GenderManager, Gender.objects)
-
-
-def _get_gender_by_name(name: str) -> Gender:
-    gender = _gender_manager().resolve_by_name(name)
-    if gender is None:
-        raise Gender.DoesNotExist(name)
-    return gender
-
-
-def _create_raw_pdf_file_from_path(
-    *,
-    file_path: Path,
-    center_name: str,
-    save: bool = True,
-) -> RawPdfFile:
-    create_raw_pdf_file = cast(
-        _CreateRawPdfFileFromPath,
-        raw_pdf_file_services.create_raw_pdf_file_from_path,
-    )
-    return create_raw_pdf_file(
-        file_path=file_path,
-        center_name=center_name,
-        save=save,
-    )
-
-
-def _process_raw_pdf_file(
-    report: RawPdfFile,
-    *,
-    text: str,
-    anonymized_text: str,
-    report_meta: ReportMeta,
-    verbose: bool,
-) -> tuple[str, str, ReportMeta]:
-    process_raw_pdf_file = cast(
-        _ProcessRawPdfFile,
-        raw_pdf_file_services.process_raw_pdf_file,
-    )
-    return process_raw_pdf_file(
-        report,
-        text=text,
-        anonymized_text=anonymized_text,
-        report_meta=report_meta,
-        verbose=verbose,
-    )
 
 
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
@@ -147,16 +37,16 @@ DEFAULT_ENDOSCOPE_NAME = "test_endoscope"
 DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 
 DEFAULT_EGD_PATH = Path("tests/assets/lux-gastro-report.pdf")
-DEFAULT_GENDERS: tuple[str, ...] = ("male", "female", "unknown")
-DEFAULT_EXAMINATIONS: tuple[str, ...] = ("colonoscopy",)
-DEFAULT_INDICATIONS: tuple[str, ...] = (
+DEFAULT_GENDERS = ["male", "female", "unknown"]
+DEFAULT_EXAMINATIONS = ["colonoscopy"]
+DEFAULT_INDICATIONS = [
     "colonoscopy",
     "colonoscopy_screening",
     "colonoscopy_lesion_removal_small",
     "colonoscopy_lesion_removal_emr",
     "colonoscopy_lesion_removal_large",
     "colonoscopy_diagnostic_acute_symptomatic",
-)
+]
 
 DEFAULT_SEGMENTATION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 
@@ -167,17 +57,17 @@ DEFAULT_PATIENT_GENDER_NAME = "female"
 DEFAULT_PATIENT_BIRTH_DATE = date(1970, 1, 1)
 
 
-def get_information_source_prediction() -> InformationSource:
+def get_information_source_prediction():
     """
-    Retrieves the InformationSource instance with the name "prediction".
+    Retrieves the InformationSource object with the name "prediction".
 
-    Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the source is not found.
+    Loads information source data if needed and returns the corresponding InformationSource instance. Raises a ValueError if the object is not found or is not an InformationSource.
     """
     from .data_load_orchestrator import load_information_source
 
     load_information_source()
-    source = _information_source_manager().resolve_by_name("prediction")
-    if source is None:
+    source = InformationSource.objects.resolve_by_name("prediction")
+    if not isinstance(source, InformationSource):
         raise ValueError("No InformationSource found in the database.")
     return source
 
@@ -245,33 +135,42 @@ def get_latest_segmentation_model(
 
 def get_default_gender() -> Gender:
     """
-    Retrieves the Gender instance representing the default "unknown" gender.
+    Retrieves the Gender object representing the default "unknown" gender.
 
     Returns:
         The Gender instance with the name "unknown".
     """
-    return _get_gender_by_name(DEFAULT_GENDER)
+    gender = Gender.objects.resolve_by_name(DEFAULT_GENDER)
+    if gender is None:
+        raise Gender.DoesNotExist(DEFAULT_GENDER)
+    return gender
 
 
 def get_gender_m_or_f() -> Gender:
     """
-    Returns a randomly selected Gender instance representing either male or female.
+    Returns a randomly selected Gender object representing either male or female.
     """
     gender_name = random.choice(["male", "female"])
-    return _get_gender_by_name(gender_name)
+    gender = Gender.objects.resolve_by_name(gender_name)
+    if gender is None:
+        raise Gender.DoesNotExist(gender_name)
+    return gender
 
 
 def get_random_gender() -> Gender:
     """
-    Returns a randomly selected Gender instance from the available default genders.
+    Returns a randomly selected Gender object from the available default genders.
     """
     gender_name = random.choice(DEFAULT_GENDERS)
-    return _get_gender_by_name(gender_name)
+    gender = Gender.objects.resolve_by_name(gender_name)
+    if gender is None:
+        raise Gender.DoesNotExist(gender_name)
+    return gender
 
 
 def get_default_processor() -> EndoscopyProcessor:
     """
-    Retrieves the default EndoscopyProcessor instance by its predefined name.
+    Retrieves the default EndoscopyProcessor object by its predefined name.
 
     Raises:
         ValueError: If no EndoscopyProcessor with the default name exists.
@@ -280,12 +179,16 @@ def get_default_processor() -> EndoscopyProcessor:
         The EndoscopyProcessor instance with the default name.
     """
     processor = EndoscopyProcessor.objects.get(name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME)
+    if not isinstance(processor, EndoscopyProcessor):
+        raise ValueError(
+            f"No EndoscopyProcessor found with name {DEFAULT_ENDOSCOPY_PROCESSOR_NAME}"
+        )
     return processor
 
 
 def get_default_center() -> Center:
     """
-    Retrieves the default Center instance with the predefined name.
+    Retrieves the default Center object with the predefined name.
 
     Raises:
         ValueError: If no Center with the default name exists.
@@ -296,50 +199,37 @@ def get_default_center() -> Center:
     center = Center.objects.get(
         name=DEFAULT_CENTER_NAME,
     )
+    if not isinstance(center, Center):
+        raise ValueError(f"No Center found with name {DEFAULT_CENTER_NAME}")
+
     return center
 
 
-def _resolve_patient_gender(
-    gender_input: Gender | str | NoneType,
-    *,
-    randomize: bool,
-) -> Gender:
-    if isinstance(gender_input, Gender):
-        return gender_input
-    if gender_input is not None:
-        return _get_gender_by_name(gender_input)
-    if randomize:
-        return get_random_gender()
-    return _get_gender_by_name(DEFAULT_PATIENT_GENDER_NAME)
-
-
-def _resolve_patient_center(center_input: Center | str | NoneType) -> Center:
-    if isinstance(center_input, Center):
-        return center_input
-    if center_input is None:
-        return get_default_center()
-    return Center.objects.get(name=center_input)
-
-
-def _resolve_patient_date(date_input: date | str) -> date:
-    if isinstance(date_input, date):
-        return date_input
-    return date.fromisoformat(date_input)
-
-
-def generate_patient(**kwargs: Unpack[GeneratePatientKwargs]) -> Patient:
+def generate_patient(**kwargs) -> Patient:
     """Create a Patient with deterministic defaults unless ``randomize=True`` is supplied."""
 
-    randomize = kwargs.get("randomize", False)
-    gender = _resolve_patient_gender(kwargs.get("gender"), randomize=randomize)
+    randomize = kwargs.pop("randomize", False)
+
+    gender = kwargs.get("gender")
+    if gender is None:
+        if randomize:
+            gender = get_random_gender()
+        else:
+            gender = Gender.objects.resolve_by_name(DEFAULT_PATIENT_GENDER_NAME)
+            if gender is None:
+                raise Gender.DoesNotExist(DEFAULT_PATIENT_GENDER_NAME)
+    elif not isinstance(gender, Gender):
+        gender_obj = Gender.objects.resolve_by_name(gender)
+        if gender_obj is None:
+            raise Gender.DoesNotExist(gender)
+        gender = gender_obj
 
     first_name = kwargs.get("first_name")
     last_name = kwargs.get("last_name")
     if first_name is None or last_name is None:
         if randomize:
-            named_gender = cast(_NamedModel, gender)
             generated_first, generated_last = create_mock_patient_name(
-                gender=named_gender.name
+                gender=gender.name
             )
         else:
             generated_first, generated_last = (
@@ -349,14 +239,19 @@ def generate_patient(**kwargs: Unpack[GeneratePatientKwargs]) -> Patient:
         first_name = first_name or generated_first
         last_name = last_name or generated_last
 
-    dob_input = kwargs.get("dob")
-    if dob_input is None:
-        birth_date_input = kwargs.get("birth_date", DEFAULT_PATIENT_BIRTH_DATE)
-        dob = _resolve_patient_date(birth_date_input)
-    else:
-        dob = _resolve_patient_date(dob_input)
+    dob = kwargs.get("dob")
+    if dob is None:
+        birth_date = kwargs.get("birth_date", DEFAULT_PATIENT_BIRTH_DATE)
+        if isinstance(birth_date, date):
+            dob = birth_date
+        else:
+            dob = date.fromisoformat(str(birth_date))
 
-    center = _resolve_patient_center(kwargs.get("center"))
+    center = kwargs.get("center")
+    if center is None:
+        center = get_default_center()
+    elif not isinstance(center, Center):
+        center = Center.objects.get(name=center)
 
     patient = Patient(
         first_name=first_name,
@@ -369,9 +264,9 @@ def generate_patient(**kwargs: Unpack[GeneratePatientKwargs]) -> Patient:
     return patient
 
 
-def get_random_default_examination() -> Examination:
+def get_random_default_examination():
     """
-    Retrieves a random Examination instance from the default examination names.
+    Retrieves a random Examination object from the default examination names.
 
     Returns:
         Examination: A randomly selected Examination instance from the defaults.
@@ -382,9 +277,9 @@ def get_random_default_examination() -> Examination:
     return examination
 
 
-def get_random_default_examination_indication() -> ExaminationIndication:
+def get_random_default_examination_indication():
     """
-    Returns a random ExaminationIndication instance from the default indications list.
+    Returns a random ExaminationIndication object from the default indications list.
 
     Selects a random indication name from the predefined defaults and retrieves the corresponding ExaminationIndication instance from the database.
     """
@@ -402,7 +297,7 @@ def get_random_default_examination_indication() -> ExaminationIndication:
     return examination_indication
 
 
-def get_default_egd_pdf() -> RawPdfFile:
+def get_default_egd_pdf():
     """
     Creates and processes a default EGD report file for testing purposes.
 
@@ -413,32 +308,38 @@ def get_default_egd_pdf() -> RawPdfFile:
     """
     egd_path = DEFAULT_EGD_PATH
     center = get_default_center()
-    named_center = cast(_NamedModel, center)
-    center_name = named_center.name
+    center_name = center.name
 
     # Create a temporary file path within the test's media root if possible,
     # otherwise use the source directory. Using MEDIA_ROOT is safer.
     # Ensure MEDIA_ROOT is configured correctly in test settings.
-    temp_dir = ensure_directory(Path(settings.MEDIA_ROOT) / "temp_test_files")
+    temp_dir = Path(settings.MEDIA_ROOT) / "temp_test_files"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     temp_file_path = temp_dir / f"temp_{egd_path.name}"
 
     atomic_copy_file(source=egd_path, destination=temp_file_path)
 
+    pdf_file = None
+    file_field: Optional[FieldFile] = None
     try:
         # Create the report record using the temporary file.
-        pdf_file = _create_raw_pdf_file_from_path(
+        pdf_file = create_raw_pdf_file_from_path(
             file_path=temp_file_path,
             center_name=center_name,
             save=True,  # save=True is default and handled internally now
         )
 
+        if pdf_file is None:
+            raise RuntimeError("Failed to create report file object")
+
         # Use storage API to check existence
-        file_field: FieldFile = pdf_file.file
-        file_name = file_field.name
-        if not file_name:
-            raise RuntimeError("RawPdfFile.file did not have a storage name")
-        if not default_storage.exists(file_name):
-            raise RuntimeError(f"report file does not exist in storage at {file_name}")
+        file_field = pdf_file.file
+        if not isinstance(file_field, FieldFile):
+            raise RuntimeError("RawPdfFile.file did not return a FieldFile instance")
+        if not default_storage.exists(file_field.name):
+            raise RuntimeError(
+                f"report file does not exist in storage at {file_field.name}"
+            )
 
         # Check that the source temp file was deleted
         if temp_file_path.exists():
@@ -447,16 +348,16 @@ def get_default_egd_pdf() -> RawPdfFile:
             )
 
         # Prepare a minimal report_meta for SensitiveMeta creation
-        default_report_meta: ReportMeta = {
+        default_report_meta = {
             "patient_first_name": "DefaultFirstName",
             "patient_last_name": "DefaultLastName",
-            "patient_dob": date(1980, 1, 1),
-            "examination_date": date(2024, 1, 1),
+            "patient_dob": date(1980, 1, 1),  # Pass date object directly
+            "examination_date": date(2024, 1, 1),  # Pass date object directly
             # center_name will be added by process_file using pdf_file.center.name
         }
 
         # Call service to create SensitiveMeta and extract other info
-        _process_raw_pdf_file(
+        process_raw_pdf_file(
             pdf_file,
             text="Default report text content.",
             anonymized_text="Default anonymized report text content.",
@@ -471,16 +372,17 @@ def get_default_egd_pdf() -> RawPdfFile:
             safe_unlink_file(temp_file_path)
         raise e  # Re-raise the exception
 
-    logger.info("report file created: %s", file_field.name)
+    if file_field is not None:
+        logger.info("report file created: %s", file_field.name)
 
     return pdf_file
 
 
-def get_default_video_file() -> VideoFile:
+def get_default_video_file():
     """
     Creates and returns a VideoFile instance using a randomly selected EGD examination video.
 
-    Loads all necessary data dependencies, selects a random video file for the 'egd' examination, and initializes a VideoFile instance with the default center and processor names. The original video file is retained after creation.
+    Loads all necessary data dependencies, selects a random video file for the 'egd' examination, and initializes a VideoFile object with the default center and processor names. The original video file is retained after creation.
 
     Returns:
         VideoFile: The created and initialized VideoFile instance.

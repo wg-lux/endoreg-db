@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import cast
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from lx_dtypes.models.contracts.json_types import JsonObject
-from lx_dtypes.models.contracts.management_command import (
-    RefreshAuditLedgerIntegrityCommandOptionsPayload,
-)
+from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.services.audit_integrity import (
     refresh_audit_ledger_integrity_status,
@@ -18,7 +13,7 @@ from endoreg_db.services.audit_integrity import (
 class Command(BaseCommand):
     help = "Refresh and print audit ledger integrity status."
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--once",
             action="store_true",
@@ -38,24 +33,21 @@ class Command(BaseCommand):
             ),
         )
 
-    def handle(self, *args: object, **options: object) -> None:
-        options_payload = (
-            RefreshAuditLedgerIntegrityCommandOptionsPayload.model_validate(options)
-        )
-        if options_payload.once:
-            payload = cast(JsonObject, refresh_audit_ledger_integrity_status_once())
+    def handle(self, *args, **options) -> None:
+        if options["once"]:
+            payload = refresh_audit_ledger_integrity_status_once()
         else:
-            payload = cast(JsonObject, refresh_audit_ledger_integrity_status())
+            payload = refresh_audit_ledger_integrity_status()
 
         self.stdout.write(
             json.dumps(
                 payload,
                 sort_keys=True,
-                indent=2 if options_payload.pretty else None,
+                indent=2 if options["pretty"] else None,
             )
         )
 
-        if options_payload.fail_on_non_verified and payload.get("status") != "verified":
+        if options["fail_on_non_verified"] and payload.get("status") != "verified":
             raise CommandError(
                 "Audit ledger integrity is not verified: "
                 f"status={payload.get('status')} error={payload.get('error')}"

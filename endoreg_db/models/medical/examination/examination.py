@@ -1,5 +1,4 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
@@ -20,7 +19,7 @@ class ExaminationManager(models.Manager["Examination"]):
     """
 
     def get_by_natural_key(self, name: str) -> "Examination":
-        return self.get(name=name)
+        return cast("Examination", self.get(name=name))
 
 
 class Examination(models.Model):
@@ -32,11 +31,11 @@ class Examination(models.Model):
         examination_types (ManyToManyField): The types associated with the examination.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    name = models.CharField(max_length=100, unique=True)
     examination_types: "models.ManyToManyField[ExaminationType, ExaminationType]" = (
         models.ManyToManyField("ExaminationType", blank=True)
     )
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
     indications: "models.ManyToManyField[ExaminationIndication, ExaminationIndication]" = models.ManyToManyField(
         "ExaminationIndication",
         related_name="examinations",
@@ -64,7 +63,14 @@ class Examination(models.Model):
     objects = ExaminationManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import FindingClassification
+        from endoreg_db.models import (
+            ExaminationIndication,
+            ExaminationTime,
+            ExaminationType,
+            Finding,
+            FindingClassification,
+            InformationSource,
+        )
 
         @property
         def finding_classifications(
@@ -97,23 +103,25 @@ class Examination(models.Model):
         """
         return str(self.name)
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self) -> tuple:
         """
         Returns the natural key for the examination.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (str(self.name),)
+        return (self.name,)
 
-    def get_available_findings(self) -> list["Finding"]:
+    def get_available_findings(self) -> List["Finding"]:
         """
         Retrieves all findings associated with the examination.
 
         Returns:
             list: A list of findings related to the examination.
         """
-        findings: list[Finding] = [finding for finding in self.findings.all()]
+        from endoreg_db.models import Finding
+
+        findings: List[Finding] = [_ for _ in self.findings.all()]
         return findings
 
     class Meta:

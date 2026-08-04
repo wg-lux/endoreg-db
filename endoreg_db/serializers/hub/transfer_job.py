@@ -1,34 +1,14 @@
 from __future__ import annotations
 
-from typing import TypedDict, cast
-
 from rest_framework import serializers
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.schemas import (
-    validate_transfer_processing_snapshot,
-    validate_transfer_resource_rows,
-)
 
 
-class _VideoFilePayload(TypedDict):
-    video_hash: str
-    processed_video_hash: str
-
-
-class _ReportFilePayload(TypedDict):
-    pdf_hash: str
-
-
-class _SensitiveMetaPayload(TypedDict, total=False):
-    patient_hash: str
-    examination_hash: str
-
-
-class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
+class TransferJobCreateSerializer(serializers.Serializer):
     transfer_key = serializers.CharField(max_length=255)
     source_node_key = serializers.CharField(max_length=255)
     target_node_key = serializers.CharField(
@@ -64,15 +44,11 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
     processing_snapshot = serializers.JSONField(default=dict)
     provenance = serializers.JSONField(default=dict, required=False)
 
-    _TRANSFER_ELIGIBLE_ANONYMIZATION_STATES = {AnonymizationState.VALIDATED}
-
-    def validate_payload_schema_version(self, value: str) -> str:
-        normalized = value.strip()
-        if normalized != "3.0":
-            raise serializers.ValidationError(
-                "Only privacy-preserving hub payload_schema_version '3.0' is accepted."
-            )
-        return normalized
+    _TRANSFER_ELIGIBLE_ANONYMIZATION_STATES = {
+        AnonymizationState.ANONYMIZED,
+        AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+        AnonymizationState.VALIDATED,
+    }
 
     def validate_source_node_key(self, value: str) -> str:
         normalized = value.strip()
@@ -84,57 +60,12 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             )
         return normalized
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        transfer_mode = str(attrs["transfer_mode"])
-        self._validate_transfer_mode(transfer_mode)
+    def validate(self, attrs: dict) -> dict:
+        transfer_mode = attrs["transfer_mode"]
 
-        source_node = NetworkNode.objects.get(
-            node_key=attrs["source_node_key"],
-            is_active=True,
-        )
-        target_node = self._resolve_target_node(attrs)
-        source_center = self._resolve_source_center(attrs, source_node=source_node)
-        self._validate_source_center_ownership(
-            source_node=source_node,
-            source_center=source_center,
-        )
-
-        resource_rows = cast(dict[str, object], attrs.get("resource_rows", {}))
-        self._validate_privacy_boundary(resource_rows)
-        resource_kind = str(attrs["resource_kind"])
-        self._validate_resource(
-            resource_rows,
-            resource_kind=resource_kind,
-            resource_hash=attrs["resource_hash"],
-            transfer_mode=transfer_mode,
-        )
-        self._validate_transfer_schemas(
-            attrs,
-            resource_rows=resource_rows,
-            resource_kind=resource_kind,
-        )
-
-        validated_resource_rows = cast(
-            dict[str, object], attrs.get("resource_rows", {})
-        )
-        if resource_kind == TransferJob.ResourceKind.VIDEO.value:
-            self._validate_video_segment_source_scope(
-                validated_resource_rows,
-                source_node_key=source_node.node_key,
-            )
-
-        self._validate_sensitive_meta_linkage(validated_resource_rows)
-
-        attrs["source_node"] = source_node
-        attrs["target_node"] = target_node
-        attrs["source_center"] = source_center
-        return attrs
-
-    @staticmethod
-    def _validate_transfer_mode(transfer_mode: str) -> None:
         if transfer_mode in {
-            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA.value,
-            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA.value,
+            TransferJob.TransferMode.METADATA_AND_RAW_MEDIA,
+            TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA,
         }:
             raise serializers.ValidationError(
                 {
@@ -145,9 +76,11 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 }
             )
 
-    @staticmethod
-    def _resolve_target_node(attrs: dict[str, object]) -> NetworkNode:
-        target_node_key = str(attrs.get("target_node_key", "")).strip()
+        source_node = NetworkNode.objects.get(
+            node_key=attrs["source_node_key"],
+            is_active=True,
+        )
+        target_node_key = (attrs.get("target_node_key") or "").strip()
         if target_node_key:
             target_node = NetworkNode.objects.filter(
                 node_key=target_node_key,
@@ -161,276 +94,131 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                         )
                     }
                 )
-            return target_node
-
-        target_node = (
-            NetworkNode.objects.filter(
-                role=NetworkNode.Role.CENTRAL_HUB,
-                is_active=True,
+        else:
+            target_node = (
+                NetworkNode.objects.filter(
+                    role=NetworkNode.Role.CENTRAL_HUB,
+                    is_active=True,
+                )
+                .order_by("pk")
+                .first()
             )
-            .order_by("pk")
-            .first()
-        )
-        if target_node is None:
-            raise serializers.ValidationError(
-                {
-                    "target_node_key": (
-                        "No active central_hub network node is configured"
-                    )
-                }
-            )
-        return target_node
+            if target_node is None:
+                raise serializers.ValidationError(
+                    {
+                        "target_node_key": (
+                            "No active central_hub network node is configured"
+                        )
+                    }
+                )
 
-    @staticmethod
-    def _resolve_source_center(
-        attrs: dict[str, object],
-        *,
-        source_node: NetworkNode,
-    ) -> Center | None:
-        source_center_key = str(attrs.get("source_center_key", "")).strip()
+        source_center_key = (attrs.get("source_center_key") or "").strip()
+        source_center = None
         if source_center_key:
             source_center = Center.objects.filter(center_key=source_center_key).first()
             if source_center is None:
                 raise serializers.ValidationError(
                     {"source_center_key": f"Unknown center_key: {source_center_key}"}
                 )
-            return source_center
-        return source_node.owning_center
+        elif source_node.owning_center_id is not None:
+            source_center = source_node.owning_center
 
-    @staticmethod
-    def _validate_source_center_ownership(
-        *,
-        source_node: NetworkNode,
-        source_center: Center | None,
-    ) -> None:
-        owning_center_id = getattr(source_node, "owning_center_id", None)
-        resolved_source_center_id = getattr(source_center, "pk", None)
-        if owning_center_id is None:
-            raise serializers.ValidationError(
-                {
-                    "source_node_key": (
-                        "The authenticated source node must have an owning center"
-                    )
-                }
-            )
-        if resolved_source_center_id != owning_center_id:
-            raise serializers.ValidationError(
-                {
-                    "source_center_key": (
-                        "source_center_key must match the authenticated "
-                        "source node owning center"
-                    )
-                }
-            )
-
-    def _validate_transfer_schemas(
-        self,
-        attrs: dict[str, object],
-        *,
-        resource_rows: dict[str, object],
-        resource_kind: str,
-    ) -> None:
-        try:
-            attrs["resource_rows"] = validate_transfer_resource_rows(
-                resource_rows,
-                resource_kind=resource_kind,
-            )
-            attrs["processing_snapshot"] = validate_transfer_processing_snapshot(
-                attrs.get("processing_snapshot", {})
-            )
-        except ValueError as exc:
-            raise serializers.ValidationError({"resource_rows": str(exc)}) from exc
-
-    def _validate_resource(
-        self,
-        resource_rows: dict[str, object],
-        *,
-        resource_kind: str,
-        resource_hash: object,
-        transfer_mode: str,
-    ) -> None:
-        if resource_kind == TransferJob.ResourceKind.VIDEO.value:
-            self._validate_video_resource(
-                resource_rows,
-                resource_hash=resource_hash,
-                transfer_mode=transfer_mode,
-            )
-        elif resource_kind == TransferJob.ResourceKind.REPORT.value:
-            self._validate_report_resource(
-                resource_rows,
-                resource_hash=resource_hash,
-                transfer_mode=transfer_mode,
-            )
-
-    def _validate_video_resource(
-        self,
-        resource_rows: dict[str, object],
-        *,
-        resource_hash: object,
-        transfer_mode: str,
-    ) -> None:
-        video_file = cast(
-            _VideoFilePayload | None,
-            resource_rows.get("video_file"),
-        )
-        if video_file is None:
-            raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "resource_rows.video_file is required for video transfers"
-                    )
-                }
-            )
-        self._validate_video_hashes(
-            video_file,
-            resource_hash=resource_hash,
-            transfer_mode=transfer_mode,
-        )
-        video_state_payload = cast(
-            dict[str, object], resource_rows.get("video_state", {})
-        )
-        anonymization_status = self._resolve_video_anonymization_status(
-            video_state_payload
-        )
-        self._validate_transfer_eligible_anonymization_status(
-            anonymization_status=anonymization_status,
-            resource_kind="video",
-        )
-        self._validate_processed_state_hash(
-            video_state_payload,
-            transfer_mode=transfer_mode,
-            state_path="video_state",
-        )
-
-    @staticmethod
-    def _validate_video_hashes(
-        video_file: _VideoFilePayload,
-        *,
-        resource_hash: object,
-        transfer_mode: str,
-    ) -> None:
-        video_hash = video_file["video_hash"].strip()
-        if not video_hash:
-            raise serializers.ValidationError(
-                {"resource_rows": ("resource_rows.video_file.video_hash is required")}
-            )
-        if video_hash != resource_hash:
-            raise serializers.ValidationError(
-                {
-                    "resource_hash": (
-                        "resource_hash must match resource_rows.video_file.video_hash"
-                    )
-                }
-            )
-        if (
-            transfer_mode == TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value
-            and not video_file.get("processed_video_hash", "").strip()
-        ):
-            raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "resource_rows.video_file.processed_video_hash is "
-                        "required when processed video media will be uploaded"
-                    )
-                }
-            )
-
-    def _validate_report_resource(
-        self,
-        resource_rows: dict[str, object],
-        *,
-        resource_hash: object,
-        transfer_mode: str,
-    ) -> None:
-        report_file = cast(_ReportFilePayload | None, resource_rows.get("raw_pdf_file"))
-        if report_file is None:
-            raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "resource_rows.raw_pdf_file is required for report transfers"
-                    )
-                }
-            )
-        self._validate_report_hash(report_file, resource_hash=resource_hash)
-        report_state_payload = cast(
-            dict[str, object], resource_rows.get("raw_pdf_state", {})
-        )
-        anonymization_status = self._resolve_report_anonymization_status(
-            report_state_payload
-        )
-        self._validate_transfer_eligible_anonymization_status(
-            anonymization_status=anonymization_status,
-            resource_kind="report",
-        )
-        self._validate_processed_state_hash(
-            report_state_payload,
-            transfer_mode=transfer_mode,
-            state_path="raw_pdf_state",
-        )
-
-    @staticmethod
-    def _validate_report_hash(
-        report_file: _ReportFilePayload,
-        *,
-        resource_hash: object,
-    ) -> None:
-        pdf_hash = report_file["pdf_hash"].strip()
-        if not pdf_hash:
-            raise serializers.ValidationError(
-                {"resource_rows": ("resource_rows.raw_pdf_file.pdf_hash is required")}
-            )
-        if pdf_hash != resource_hash:
-            raise serializers.ValidationError(
-                {
-                    "resource_hash": (
-                        "resource_hash must match resource_rows.raw_pdf_file.pdf_hash"
-                    )
-                }
-            )
-
-    @staticmethod
-    def _validate_processed_state_hash(
-        state_payload: dict[str, object],
-        *,
-        transfer_mode: str,
-        state_path: str,
-    ) -> None:
-        if (
-            transfer_mode == TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value
-            and not str(state_payload.get("processed_file_sha256", "") or "").strip()
-        ):
-            raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        f"resource_rows.{state_path}.processed_file_sha256 is "
-                        "required for processed-media transfer"
-                    )
-                }
-            )
-
-    @staticmethod
-    def _validate_video_segment_source_scope(
-        resource_rows: dict[str, object],
-        *,
-        source_node_key: str,
-    ) -> None:
-        segments_value = resource_rows.get("video_segments", [])
-        if not isinstance(segments_value, list):
-            return
-        segments = cast(list[object], segments_value)
-        for segment_value in segments:
-            if not isinstance(segment_value, dict):
-                continue
-            segment = cast(dict[str, object], segment_value)
-            if str(segment.get("source_node_key") or "") != source_node_key:
+        resource_rows = attrs.get("resource_rows") or {}
+        if attrs["resource_kind"] == TransferJob.ResourceKind.VIDEO:
+            video_file = resource_rows.get("video_file")
+            if not isinstance(video_file, dict):
                 raise serializers.ValidationError(
                     {
                         "resource_rows": (
-                            "video segment source_node_key must match transfer "
-                            "source_node_key"
+                            "resource_rows.video_file is required for video transfers"
                         )
                     }
                 )
+            video_hash = str(video_file.get("video_hash", "")).strip()
+            if not video_hash:
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "resource_rows.video_file.video_hash is required"
+                        )
+                    }
+                )
+            if video_hash != attrs["resource_hash"]:
+                raise serializers.ValidationError(
+                    {
+                        "resource_hash": (
+                            "resource_hash must match "
+                            "resource_rows.video_file.video_hash"
+                        )
+                    }
+                )
+            if transfer_mode in {
+                TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA,
+                TransferJob.TransferMode.METADATA_RAW_AND_PROCESSED_MEDIA,
+            }:
+                processed_video_hash = str(
+                    video_file.get("processed_video_hash", "")
+                ).strip()
+                if not processed_video_hash:
+                    raise serializers.ValidationError(
+                        {
+                            "resource_rows": (
+                                "resource_rows.video_file.processed_video_hash is "
+                                "required when processed video media will be uploaded"
+                            )
+                        }
+                    )
+            video_state_payload = resource_rows.get("video_state") or {}
+            anonymization_status = self._resolve_video_anonymization_status(
+                video_state_payload
+            )
+            self._validate_transfer_eligible_anonymization_status(
+                anonymization_status=anonymization_status,
+                resource_kind="video",
+            )
+        elif attrs["resource_kind"] == TransferJob.ResourceKind.REPORT:
+            report_file = resource_rows.get("raw_pdf_file")
+            if not isinstance(report_file, dict):
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "resource_rows.raw_pdf_file is required for report transfers"
+                        )
+                    }
+                )
+            pdf_hash = str(report_file.get("pdf_hash", "")).strip()
+            if not pdf_hash:
+                raise serializers.ValidationError(
+                    {
+                        "resource_rows": (
+                            "resource_rows.raw_pdf_file.pdf_hash is required"
+                        )
+                    }
+                )
+            if pdf_hash != attrs["resource_hash"]:
+                raise serializers.ValidationError(
+                    {
+                        "resource_hash": (
+                            "resource_hash must match "
+                            "resource_rows.raw_pdf_file.pdf_hash"
+                        )
+                    }
+                )
+            report_state_payload = resource_rows.get("raw_pdf_state") or {}
+            anonymization_status = self._resolve_report_anonymization_status(
+                report_state_payload
+            )
+            self._validate_transfer_eligible_anonymization_status(
+                anonymization_status=anonymization_status,
+                resource_kind="report",
+            )
+
+        self._validate_sensitive_meta_linkage(resource_rows)
+
+        attrs["source_node"] = source_node
+        attrs["target_node"] = target_node
+        attrs["source_center"] = source_center
+        return attrs
 
     def _validate_transfer_eligible_anonymization_status(
         self,
@@ -442,8 +230,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             raise serializers.ValidationError(
                 {
                     "resource_rows": (
-                        f"{resource_kind} transfer is only allowed for anonymized "
-                        "data that was explicitly validated. "
+                        f"{resource_kind} transfer is only allowed for anonymized data. "
                         f"Current anonymization_status={anonymization_status.value!r} is not eligible."
                     )
                 }
@@ -451,9 +238,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     @staticmethod
     def _resolve_video_anonymization_status(
-        video_state_payload: dict[str, object],
+        video_state_payload: object,
     ) -> AnonymizationState:
-        if not video_state_payload:
+        if not isinstance(video_state_payload, dict):
             return AnonymizationState.NOT_STARTED
         if bool(video_state_payload.get("processing_error")):
             return AnonymizationState.FAILED
@@ -477,9 +264,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     @staticmethod
     def _resolve_report_anonymization_status(
-        report_state_payload: dict[str, object],
+        report_state_payload: object,
     ) -> AnonymizationState:
-        if not report_state_payload:
+        if not isinstance(report_state_payload, dict):
             return AnonymizationState.NOT_STARTED
         if bool(report_state_payload.get("anonymization_validated")):
             return AnonymizationState.VALIDATED
@@ -499,62 +286,39 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             return AnonymizationState.ANONYMIZED
         return AnonymizationState.NOT_STARTED
 
-    def _validate_sensitive_meta_linkage(
-        self, resource_rows: dict[str, object]
-    ) -> None:
-        sensitive_meta = cast(
-            _SensitiveMetaPayload | None, resource_rows.get("sensitive_meta")
-        )
-        if sensitive_meta is None or not sensitive_meta:
+    def _validate_sensitive_meta_linkage(self, resource_rows: dict) -> None:
+        sensitive_meta = resource_rows.get("sensitive_meta")
+        if not isinstance(sensitive_meta, dict) or not sensitive_meta:
             return
 
         has_hashes = bool(
-            sensitive_meta.get("patient_hash", "").strip()
-            and sensitive_meta.get("examination_hash", "").strip()
+            str(sensitive_meta.get("patient_hash", "")).strip()
+            and str(sensitive_meta.get("examination_hash", "")).strip()
         )
-        if not has_hashes:
+        has_derivation_fields = all(
+            str(sensitive_meta.get(field, "")).strip()
+            for field in (
+                "patient_first_name",
+                "patient_last_name",
+                "patient_dob",
+                "examination_date",
+            )
+        )
+
+        if not has_hashes and not has_derivation_fields:
             raise serializers.ValidationError(
                 {
                     "resource_rows": (
-                        "resource_rows.sensitive_meta must include patient_hash "
-                        "and examination_hash; direct identity derivation fields "
-                        "are prohibited"
-                    )
-                }
-            )
-
-    def _validate_privacy_boundary(self, resource_rows: dict[str, object]) -> None:
-        sensitive_meta = resource_rows.get("sensitive_meta")
-        if isinstance(sensitive_meta, dict):
-            sensitive_meta_fields = cast(dict[str, object], sensitive_meta)
-            direct_identity_fields = sorted(
-                set(sensitive_meta_fields).difference(
-                    {"patient_hash", "examination_hash"}
-                )
-            )
-            if direct_identity_fields:
-                raise serializers.ValidationError(
-                    {
-                        "resource_rows": (
-                            "Direct identity fields are prohibited in hub transfers: "
-                            + ", ".join(direct_identity_fields)
-                        )
-                    }
-                )
-
-        raw_pdf_file = resource_rows.get("raw_pdf_file")
-        if isinstance(raw_pdf_file, dict) and "text" in raw_pdf_file:
-            raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "Raw report text is prohibited in hub transfers; use only "
-                        "validated anonymized_text."
+                        "resource_rows.sensitive_meta must include either "
+                        "patient_hash and examination_hash, or "
+                        "patient_first_name, patient_last_name, patient_dob, "
+                        "and examination_date"
                     )
                 }
             )
 
 
-class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
+class TransferJobStatusSerializer(serializers.ModelSerializer):
     source_node_key = serializers.CharField(
         source="source_node.node_key", read_only=True
     )
@@ -566,20 +330,8 @@ class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
         read_only=True,
         allow_null=True,
     )
-    processed_media_hash = serializers.SerializerMethodField()
 
-    def get_processed_media_hash(self, transfer_job: TransferJob) -> str:
-        resource_rows = cast(dict[str, object], transfer_job.resource_rows or {})
-        if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO:
-            video_file = cast(dict[str, object], resource_rows.get("video_file") or {})
-            return str(video_file.get("processed_video_hash") or "").strip()
-
-        raw_pdf_state = cast(
-            dict[str, object], resource_rows.get("raw_pdf_state") or {}
-        )
-        return str(raw_pdf_state.get("processed_file_sha256") or "").strip()
-
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:
         model = TransferJob
         fields = [
             "id",
@@ -589,7 +341,6 @@ class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
             "source_center_key",
             "resource_kind",
             "resource_hash",
-            "processed_media_hash",
             "transfer_mode",
             "transfer_status",
             "processing_policy",

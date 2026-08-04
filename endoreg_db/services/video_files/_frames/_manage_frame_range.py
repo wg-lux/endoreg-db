@@ -1,33 +1,24 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 import os
-from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from django.db import transaction
-from django.db.models.fields.files import FieldFile
 
 from endoreg_db.services.video_files._io import _get_frame_dir_path
-
-# Assuming ffmpeg_wrapper has or will have this function
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
-)
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
+    ensure_directory,
     safe_rmtree,
     safe_unlink_file,
 )
-from endoreg_db.utils.media.frame_file_permissions import (
-    FRAME_CACHE_DIR_MODE,
-    FRAME_FILE_MODE,
-    apply_frame_file_modes,
-    ensure_frame_cache_dir,
-    ensure_frame_staging_dir,
-)
 from endoreg_db.utils.storage import materialize_video_file
+
+# Assuming ffmpeg_wrapper has or will have this function
+from endoreg_db.utils.video.ffmpeg_wrapper import (
+    extract_frame_range as ffmpeg_extract_frame_range,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -35,30 +26,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _VideoMaterializableLike(Protocol):
-    video_hash: str
-
-    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
-
-    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
-
-    raw_file: FieldFile | None
-    processed_file: FieldFile | None
+def _raw_video_source_context(video: "VideoFile"):
+    return materialize_video_file(video, "raw")
 
 
-def _raw_video_source_context(video: "VideoFile") -> AbstractContextManager[Path]:
-    return materialize_video_file(cast(_VideoMaterializableLike, video), "raw")
-
-
-def _video_source_context(
-    video: "VideoFile",
-    *,
-    from_processed: bool,
-) -> AbstractContextManager[Path]:
+def _video_source_context(video: "VideoFile", *, from_processed: bool):
     if from_processed:
-        return materialize_video_file(
-            cast(_VideoMaterializableLike, video), "processed"
-        )
+        return materialize_video_file(video, "processed")
     return _raw_video_source_context(video)
 
 
@@ -77,8 +51,8 @@ def _ensure_stable_frame_rows(
     start_frame: int,
     end_frame: int,
     ext: str,
-) -> None:
-    from endoreg_db.models.media.frame.frame import Frame
+):
+    from endoreg_db.models.media.frame import Frame
 
     existing_frames = {
         frame.frame_number: frame
@@ -139,10 +113,10 @@ def extract_frame_range_to_directory(
     ext: str = "jpg",
     from_processed: bool = False,
 ) -> list[Path]:
-    ensure_frame_cache_dir(output_dir)
+    ensure_directory(output_dir)
     staged_output_dir = _get_staged_range_dir(output_dir, str(video.video_hash))
     try:
-        ensure_frame_staging_dir(staged_output_dir)
+        ensure_directory(staged_output_dir)
         with _video_source_context(video, from_processed=from_processed) as source_path:
             if not Path(source_path).exists():
                 raise FileNotFoundError(
@@ -157,7 +131,6 @@ def extract_frame_range_to_directory(
                 quality=quality,
                 ext=ext,
             )
-        apply_frame_file_modes(staged_output_dir.glob(f"frame_*.{ext}"))
 
         missing_files = [
             frame_number
@@ -172,25 +145,23 @@ def extract_frame_range_to_directory(
                 f"video {video.video_hash}: missing_sample={missing_files[:10]}"
             )
 
-        installed_paths: list[Path] = []
+        installed_paths = []
         for frame_number in range(start_frame, end_frame):
             relative_path = _expected_relative_path(frame_number, ext)
             source_path = staged_output_dir / relative_path
             target_path = output_dir / relative_path
-            atomic_move_file(
-                source=source_path,
-                destination=target_path,
-                file_mode=FRAME_FILE_MODE,
-                dir_mode=FRAME_CACHE_DIR_MODE,
-            )
+            atomic_move_file(source=source_path, destination=target_path)
             installed_paths.append(target_path)
         return installed_paths
     finally:
         safe_rmtree(staged_output_dir, missing_ok=True)
 
 
-def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) -> None:
-    """Delete frame files in [start_frame, end_frame) and clear DB flags after deletion."""
+def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int):
+    """
+    Deletes frame image files within the specified range [start_frame, end_frame)
+    and updates their is_extracted status to False. Runs within the caller's transaction.
+    """
 
     logger.info(
         "Deleting frame files for video %s in range [%d, %d)",
@@ -204,34 +175,12 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) ->
     )
 
     deleted_count = 0
-    paths_to_delete: list[Path] = [
+    paths_to_delete = [
         frame.file_path for frame in frames_to_delete
     ]  # Get paths before potential DB changes
 
-    failed_paths: list[Path] = []
-    for frame_path in paths_to_delete:
-        try:
-            if frame_path.exists():
-                safe_unlink_file(frame_path)
-                deleted_count += 1
-        except Exception as e:
-            logger.warning(
-                "Could not delete frame file %s for video %s: %s",
-                frame_path,
-                video.video_hash,
-                e,
-            )
-            failed_paths.append(frame_path)
-
-    if failed_paths:
-        raise RuntimeError(
-            "Could not delete all frame files for "
-            f"video {video.video_hash} range [{start_frame}, {end_frame}). "
-            f"failed_count={len(failed_paths)}"
-        )
-
-    with transaction.atomic():
-        update_count = frames_to_delete.update(is_extracted=False)
+    # Update DB first
+    update_count = frames_to_delete.update(is_extracted=False)
     logger.info(
         "Marked %d Frame objects as is_extracted=False for video %s range [%d, %d).",
         update_count,
@@ -239,6 +188,21 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) ->
         start_frame,
         end_frame,
     )
+
+    # Then delete files
+    for frame_path in paths_to_delete:
+        try:
+            if frame_path.exists():
+                safe_unlink_file(frame_path)
+                deleted_count += 1
+        except Exception as e:
+            # Log warning but continue; DB state is already updated.
+            logger.warning(
+                "Could not delete frame file %s for video %s: %s",
+                frame_path,
+                video.video_hash,
+                e,
+            )
 
     logger.info(
         "Attempted deletion of %d files for video %s range [%d, %d). Actual deleted: %d.",
@@ -250,14 +214,15 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) ->
     )
 
 
+@transaction.atomic
 def _extract_frame_range(
     video: "VideoFile",
     start_frame: int,
     end_frame: int,
     quality: int = 2,
     overwrite: bool = False,
-    ext: str = "jpg",
-    verbose: bool = False,
+    ext="jpg",
+    verbose=False,
 ) -> bool:
     """
     Extract frames within [start_frame, end_frame) using ffmpeg.
@@ -284,14 +249,14 @@ def _extract_frame_range(
             f"Cannot determine frame directory path for video {video.video_hash}."
         )
 
-    with transaction.atomic():
-        _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
-        frames_in_range = video.frames.filter(
-            frame_number__gte=start_frame, frame_number__lt=end_frame
-        )
-        existing_extracted_in_range = frames_in_range.filter(is_extracted=True).exists()
+    # Check frames within the range that might already exist
+    _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
+    frames_in_range = video.frames.filter(
+        frame_number__gte=start_frame, frame_number__lt=end_frame
+    )
+    existing_extracted_in_range = frames_in_range.filter(is_extracted=True)
 
-    if existing_extracted_in_range:
+    if existing_extracted_in_range.exists():
         range_files_available = _all_range_files_available(
             video,
             start_frame,
@@ -313,12 +278,9 @@ def _extract_frame_range(
                 end_frame,
                 video.video_hash,
             )
-            with transaction.atomic():
-                updated_count = video.frames.filter(
-                    frame_number__gte=start_frame,
-                    frame_number__lt=end_frame,
-                    is_extracted=False,
-                ).update(is_extracted=True)
+            updated_count = frames_in_range.filter(is_extracted=False).update(
+                is_extracted=True
+            )
             if updated_count > 0:
                 logger.info(
                     "Marked %d existing Frame objects in range [%d, %d) as extracted for video %s.",
@@ -337,8 +299,8 @@ def _extract_frame_range(
             )
             _delete_frame_range(video, start_frame, end_frame)
 
-    ensure_frame_cache_dir(frame_dir)
-    extracted_paths: list[Path] = []
+    ensure_directory(frame_dir)
+    extracted_paths = []
 
     try:
         logger.info(
@@ -365,13 +327,12 @@ def _extract_frame_range(
             len(extracted_paths),
         )
 
-        with transaction.atomic():
-            _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
-            frames_in_range = video.frames.filter(
-                frame_number__gte=start_frame,
-                frame_number__lt=end_frame,
-            )
-            update_count = frames_in_range.update(is_extracted=True)
+        _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
+        frames_in_range = video.frames.filter(
+            frame_number__gte=start_frame,
+            frame_number__lt=end_frame,
+        )
+        update_count = frames_in_range.update(is_extracted=True)
         logger.info(
             "Marked %d Frame objects in range [%d, %d) as is_extracted=True for video %s.",
             update_count,

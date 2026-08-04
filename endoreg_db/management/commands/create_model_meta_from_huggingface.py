@@ -2,59 +2,17 @@
 Django management command to create ModelMeta from Hugging Face model.
 """
 
-from pathlib import Path
-from importlib import import_module
-from typing import BinaryIO, Protocol, cast
-
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from lx_dtypes.models.contracts.huggingface_model_meta import (
-    HuggingFaceModelMetaCommandValue,
-    validate_huggingface_model_meta_command_payload,
-)
+from django.core.management.base import BaseCommand, CommandError
+from huggingface_hub import hf_hub_download
 
-from endoreg_db.models.administration.ai.ai_model import AiModel
-from endoreg_db.models.label.label_set import LabelSet
-from endoreg_db.models.metadata.model_meta import ModelMeta
-
-MODEL_WEIGHTS_FILENAME = "colo_segmentation_RegNetX800MF_base.safetensors"
-
-
-class _HfHubDownload(Protocol):
-    def __call__(
-        self,
-        *,
-        repo_id: str,
-        filename: str,
-        local_dir: str,
-    ) -> str: ...
-
-
-class _NamedAiModel(Protocol):
-    name: str
-    active_meta: "ModelMeta"
-
-    def save(self) -> None: ...
-
-
-class _WeightedModelMeta(Protocol):
-    weights: "_ModelWeightsFile"
-
-
-class _ModelWeightsFile(Protocol):
-    def save(self, name: str, content: ContentFile[bytes]) -> None: ...
-
-
-hf_hub_download = cast(
-    _HfHubDownload,
-    getattr(import_module("huggingface_hub"), "hf_hub_download"),
-)
+from endoreg_db.models import AiModel, LabelSet, ModelMeta
 
 
 class Command(BaseCommand):
     help = "Create ModelMeta by downloading model from Hugging Face"
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         parser.add_argument(
             "--model_id",
             type=str,
@@ -86,59 +44,48 @@ class Command(BaseCommand):
             help="LabelSet version; if omitted, the latest by name is used",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: HuggingFaceModelMetaCommandValue,
-    ) -> None:
-        try:
-            payload = validate_huggingface_model_meta_command_payload(options)
-        except ValueError as exc:
-            raise CommandError(str(exc)) from exc
+    def handle(self, *args, **options):
+        model_id = options["model_id"]
+        model_name = options["model_name"]
+        labelset_name = options["labelset_name"]
+        version = options["meta_version"]
+        labelset_version = options.get("labelset_version")
 
-        self.stdout.write(f"Downloading model {payload.model_id} from Hugging Face...")
+        self.stdout.write(f"Downloading model {model_id} from Hugging Face...")
 
         try:
             # Download the model weights
-            weights_path = Path(
-                hf_hub_download(
-                    repo_id=payload.model_id,
-                    filename=MODEL_WEIGHTS_FILENAME,
-                    local_dir="/tmp",
-                )
+            weights_path = hf_hub_download(
+                repo_id=model_id,
+                filename="colo_segmentation_RegNetX800MF_base.safetensors",
+                local_dir="/tmp",
             )
             self.stdout.write(f"Downloaded weights to: {weights_path}")
 
             # Get or create AI model
             ai_model, created = AiModel.objects.get_or_create(
-                name=payload.model_name,
-                defaults={"description": f"Model from {payload.model_id}"},
+                name=model_name, defaults={"description": f"Model from {model_id}"}
             )
-            typed_ai_model = cast(_NamedAiModel, ai_model)
             if created:
-                self.stdout.write(f"Created AI model: {typed_ai_model.name}")
+                self.stdout.write(f"Created AI model: {ai_model.name}")
 
             # Get labelset (optionally by version); fail with non-zero exit
-            labelset_qs = LabelSet.objects.filter(name=payload.labelset_name)
-            if payload.labelset_version is not None:
-                labelset_qs = labelset_qs.filter(version=payload.labelset_version)
+            labelset_qs = LabelSet.objects.filter(name=labelset_name)
+            if labelset_version is not None:
+                labelset_qs = labelset_qs.filter(version=labelset_version)
             labelset = labelset_qs.order_by("-version").first()
             if labelset is None:
                 raise CommandError(
-                    f"LabelSet '{payload.labelset_name}'"
-                    + (
-                        f" v{payload.labelset_version}"
-                        if payload.labelset_version is not None
-                        else ""
-                    )
+                    f"LabelSet '{labelset_name}'"
+                    + (f" v{labelset_version}" if labelset_version is not None else "")
                     + " not found"
                 )
 
             # Create ModelMeta
             model_meta, created = ModelMeta.objects.get_or_create(
-                name=payload.model_name,
+                name=model_name,
                 model=ai_model,
-                version=payload.meta_version,
+                version=version,
                 defaults={
                     "labelset": labelset,
                     "activation": "sigmoid",
@@ -149,23 +96,19 @@ class Command(BaseCommand):
                     "axes": "2,0,1",
                     "batchsize": 16,
                     "num_workers": 0,
-                    "description": f"Downloaded from {payload.model_id}",
+                    "description": f"Downloaded from {model_id}",
                 },
             )
-            typed_model_meta = cast(_WeightedModelMeta, model_meta)
 
             # Save the weights file to the model
-            with weights_path.open("rb") as weights_file:
-                _save_model_weights(
-                    model_meta=typed_model_meta,
-                    model_name=payload.model_name,
-                    version=payload.meta_version,
-                    weights_file=weights_file,
+            with open(weights_path, "rb") as f:
+                model_meta.weights.save(
+                    f"{model_name}_v{version}.safetensors", ContentFile(f.read())
                 )
 
             # Set as active meta
-            typed_ai_model.active_meta = model_meta
-            typed_ai_model.save()
+            ai_model.active_meta = model_meta
+            ai_model.save()
 
             self.stdout.write(
                 self.style.SUCCESS(
@@ -173,20 +116,62 @@ class Command(BaseCommand):
                 )
             )
 
-        except CommandError:
-            raise
-        except Exception as exc:
-            raise CommandError("ModelMeta creation failed") from exc
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"Error creating ModelMeta: {e}"))
+            import traceback
+
+            traceback.print_exc()
+            raise CommandError("ModelMeta creation failed") from e
 
 
-def _save_model_weights(
-    *,
-    model_meta: _WeightedModelMeta,
-    model_name: str,
-    version: str,
-    weights_file: BinaryIO,
-) -> None:
-    model_meta.weights.save(
-        f"{model_name}_v{version}.safetensors",
-        ContentFile[bytes](weights_file.read()),
-    )
+# TODO Review slimmed down version using service endoreg_db/services/model_meta_from_hf.py
+# your management command file
+# from django.core.management.base import BaseCommand, CommandError
+
+# from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+
+
+# class Command(BaseCommand):
+#     help = "Create ModelMeta by downloading model from Hugging Face"
+
+#     def add_arguments(self, parser):
+#         parser.add_argument(
+#             "--model_id",
+#             type=str,
+#             default="wg-lux/colo_segmentation_RegNetX800MF_base",
+#         )
+#         parser.add_argument(
+#             "--model_name",
+#             type=str,
+#             default="image_multilabel_classification_colonoscopy_default",
+#         )
+#         parser.add_argument(
+#             "--labelset_name",
+#             type=str,
+#             default="multilabel_classification_colonoscopy_default",
+#         )
+#         parser.add_argument(
+#             "--meta_version",
+#             type=str,
+#             default="1",
+#         )
+#         parser.add_argument(
+#             "--labelset_version",
+#             type=int,
+#             default=None,
+#         )
+
+#     def handle(self, *args, **options):
+#         try:
+#             model_meta = ensure_model_meta_from_hf(
+#                 model_id=options["model_id"],
+#                 model_name=options["model_name"],
+#                 labelset_name=options["labelset_name"],
+#                 meta_version=options["meta_version"],
+#                 labelset_version=options.get("labelset_version"),
+#             )
+#             self.stdout.write(
+#                 self.style.SUCCESS(f"Successfully ensured ModelMeta: {model_meta}")
+#             )
+#         except Exception as e:
+#             raise CommandError(f"ModelMeta creation failed: {e}") from e

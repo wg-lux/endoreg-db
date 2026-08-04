@@ -1,27 +1,23 @@
-from __future__ import annotations
-
 # models/data_file/import_classes/raw_pdf.py
 # django db model "RawPdf"
 # Class to store raw pdf file using django file field
 # Class contains classmethod to create object from pdf file
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
-import uuid as uuid_lib
-from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast, Any
+import uuid
+from typing import TYPE_CHECKING, Optional, Any, cast, Union
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
-
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.filesystem.paths import (
     ANONYM_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
 )
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
@@ -32,124 +28,90 @@ from pathlib import Path
 IMPORT_REPORT_DIR = path_utils.IMPORT_REPORT_DIR
 
 if TYPE_CHECKING:
-    from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.administration.person.examiner.examiner import Examiner
-    from endoreg_db.models.administration.person.patient.patient import Patient
-    from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
-    from endoreg_db.models.medical.patient.patient_examination import (
-        PatientExamination,
-    )
-    from endoreg_db.models.metadata.pdf_meta import PdfType
-    from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+    from django.db.models.fields.files import FieldFile
+
     from endoreg_db.models.state.raw_pdf import RawPdfState
 
 
-type ReportMetaJsonValue = (
-    JsonValue
-    | JsonNull
-    | list["ReportMetaJsonValue"]
-    | dict[str, "ReportMetaJsonValue"]
-)
-type ReportMetaJsonObject = dict[str, ReportMetaJsonValue]
-
-
-class _RawPdfFileCreateKwargs(TypedDict, total=False):
-    pass
-
-
 class RawPdfFile(models.Model):
-    objects = models.Manager["RawPdfFile"]()
+    objects = models.Manager()
     # Fields from AbstractPdfFile
-    uuid: models.UUIDField[Any, Any] = models.UUIDField(
-        default=uuid_lib.uuid4, unique=True, editable=False
-    )
-    pdf_hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    pdf_type: models.ForeignKey["PdfType | None"] = models.ForeignKey(
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    pdf_hash = models.CharField(max_length=255, unique=True)
+    pdf_type = models.ForeignKey(
         "PdfType",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
-    center: models.ForeignKey["Center | None"] = models.ForeignKey(
+    center = models.ForeignKey(
         "Center",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
-    examination: models.ForeignKey["PatientExamination | None"] = models.ForeignKey(
+    examination = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_files",
     )
-    examiner: models.ForeignKey["Examiner | None"] = models.ForeignKey(
+    examiner = models.ForeignKey(
         "Examiner",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
     )
-    text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now_add=True
-    )
-    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    text = models.TextField(blank=True, null=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
 
-    file: models.FileField = models.FileField(
+    file = models.FileField(
         # Use the relative path from the specific REPORT_DIR
         upload_to=SENSITIVE_REPORT_DIR.name,
         storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
     )
-    processed_file: models.FileField = models.FileField(
+    processed_file = models.FileField(
         upload_to=ANONYM_REPORT_DIR.name,
         storage=LazyEncryptedStorage(),
         validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         null=True,
         blank=True,
     )
-    state: models.OneToOneField["RawPdfState | None"] = models.OneToOneField(
+    state = models.OneToOneField(
         "RawPdfState",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_file",
     )
-    patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
+    patient = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_files",
     )
-    sensitive_meta: models.ForeignKey["SensitiveMeta | None"] = models.ForeignKey(
+    sensitive_meta = models.ForeignKey(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         related_name="raw_pdf_files",
         null=True,
         blank=True,
     )
-    state_report_processing_required: models.BooleanField[Any, Any] = (
-        models.BooleanField(default=True)
-    )
-    state_report_processed: models.BooleanField[Any, Any] = models.BooleanField(
-        default=False
-    )
-    raw_meta: models.JSONField[
-        ReportMetaJsonObject | None, ReportMetaJsonObject | None
-    ] = models.JSONField(blank=True, null=True)
-    anonym_examination_report: models.OneToOneField[
-        "AnonymExaminationReport | None"
-    ] = models.OneToOneField(
+    state_report_processing_required = models.BooleanField(default=True)
+    state_report_processed = models.BooleanField(default=False)
+    raw_meta = models.JSONField(blank=True, null=True)
+    anonym_examination_report = models.OneToOneField(
         "AnonymExaminationReport",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="raw_pdf_file",
     )
-    anonymized_text: models.TextField[Any, Any] = models.TextField(
-        blank=True, null=True
-    )
+    anonymized_text = models.TextField(blank=True, null=True)
 
     class Meta:
         indexes = [
@@ -163,16 +125,29 @@ class RawPdfFile(models.Model):
             ),
         ]
 
+    # Type hinting is needed, improve and use correct django types
     if TYPE_CHECKING:
-        pk: int
-        pdf_type_id: int | None
-        center_id: int | None
-        examination_id: int | None
-        examiner_id: int | None
-        state_id: int | None
-        patient_id: int | None
-        sensitive_meta_id: int | None
-        anonym_examination_report_id: int | None
+        from endoreg_db.models.administration.center.center import Center
+        from endoreg_db.models.administration.person.examiner.examiner import Examiner
+        from endoreg_db.models.administration.person.patient.patient import Patient
+        from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
+        from endoreg_db.models.medical.patient.patient_examination import (
+            PatientExamination,
+        )
+        from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+        from endoreg_db.models.state.raw_pdf import RawPdfState
+
+        center: models.ForeignKey["Center | None"]
+        examination: models.ForeignKey["PatientExamination | None"]
+        examiner: models.ForeignKey["Examiner | None"]
+        state: models.ForeignKey["RawPdfState | None"]
+        patient: models.ForeignKey["Patient | None"]
+        sensitive_meta: models.ForeignKey["SensitiveMeta | None"]
+        anonym_examination_report: models.OneToOneField[
+            "AnonymExaminationReport | None"
+        ]
+        file = cast(FieldFile, file)
+        processed_file = cast(FieldFile, processed_file)
 
     @property
     def storage_policy(self) -> StoragePolicy:
@@ -193,7 +168,7 @@ class RawPdfFile(models.Model):
 
         return get_raw_pdf_plaintext_path(self)
 
-    def set_file_path(self, file_path: Path) -> None:
+    def set_file_path(self, file_path: Path):
         """
         Sets the file path of the stored report file.
         """
@@ -212,7 +187,7 @@ class RawPdfFile(models.Model):
 
         return get_processed_pdf_plaintext_path(self)
 
-    def set_anonymized_file_path(self, file_path: Path) -> None:
+    def set_anonymized_file_path(self, file_path: Path):
         """
         Sets the file path of the anonymized report file.
         """
@@ -220,7 +195,7 @@ class RawPdfFile(models.Model):
 
         set_processed_pdf_file_path(self, file_path)
 
-    def get_raw_file_path(self) -> Path | None:
+    def get_raw_file_path(self) -> Optional[Path]:
         """
         Get the path to the raw report file, searching common locations.
 
@@ -237,7 +212,7 @@ class RawPdfFile(models.Model):
         return get_raw_pdf_file_path(self)
 
     @property
-    def file_url(self) -> str | None:
+    def file_url(self) -> Any | str | None:
         """
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
@@ -246,7 +221,7 @@ class RawPdfFile(models.Model):
         return get_raw_pdf_file_url(self)
 
     @property
-    def anonymized_file_url(self) -> str | None:
+    def anonymized_file_url(self):
         """
         Returns the URL of the stored report file if available; otherwise, returns None.
         """
@@ -254,18 +229,14 @@ class RawPdfFile(models.Model):
 
         return get_processed_pdf_file_url(self)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return a string representation of the RawPdfFile, including its report hash, type, and center.
         """
         str_repr = f"{self.pdf_hash} ({self.pdf_type}, {self.center})"
         return str_repr
 
-    def delete(
-        self,
-        using: str | None = None,
-        keep_parents: bool = False,
-    ) -> tuple[int, dict[str, int]]:
+    def delete(self, *args, **kwargs):
         """
         Deletes the RawPdfFile instance from the database and removes the associated file from storage if it exists.
 
@@ -273,18 +244,7 @@ class RawPdfFile(models.Model):
         """
         from endoreg_db.services.raw_pdf_files import delete_raw_pdf_with_owned_files
 
-        delete_with_owned_files = cast(
-            Callable[
-                ["RawPdfFile", str | None, bool],
-                tuple[int, dict[str, int]],
-            ],
-            delete_raw_pdf_with_owned_files,
-        )
-        return delete_with_owned_files(
-            self,
-            using,
-            keep_parents,
-        )
+        return delete_raw_pdf_with_owned_files(self, *args, **kwargs)
 
     # --- Convenience state/meta helpers used in tests and admin workflows ---
 
@@ -311,7 +271,7 @@ class RawPdfFile(models.Model):
         return mark_report_sensitive_meta_verified(self)
 
     def validate_metadata_annotation(
-        self, extracted_data_dict: ReportMetaJsonObject | None = None
+        self, extracted_data_dict: Optional[dict] = None
     ) -> bool:
         """
         Validate the metadata of the RawPdf instance.
@@ -323,18 +283,11 @@ class RawPdfFile(models.Model):
             validate_report_metadata_annotation,
         )
 
-        validate_annotation = cast(
-            Callable[["RawPdfFile", ReportMetaJsonObject | None], bool],
-            validate_report_metadata_annotation,
-        )
-        return validate_annotation(self, extracted_data_dict)
+        return validate_report_metadata_annotation(self, extracted_data_dict)
 
     @classmethod
     def create_from_file(
-        cls,
-        file_path: str | Path,
-        center_name: str | None = None,
-        **kwargs: Unpack[_RawPdfFileCreateKwargs],
+        cls, file_path: Union[str, Path], center_name: Optional[str] = None, **kwargs
     ) -> "RawPdfFile":
         """
         Creates or retrieves a RawPdfFile instance.
@@ -350,10 +303,7 @@ class RawPdfFile(models.Model):
 
     @classmethod
     def create_from_file_initialized(
-        cls,
-        file_path: str | Path,
-        center_name: str | None = None,
-        **kwargs: Unpack[_RawPdfFileCreateKwargs],
+        cls, file_path: Union[str, Path], center_name: Optional[str] = None, **kwargs
     ) -> "RawPdfFile":
         """
         Creates a RawPdfFile and immediately ensures states and metadata are initialized.
@@ -381,12 +331,11 @@ class RawPdfFile(models.Model):
     def clean(self) -> None:
         super().clean()
         try:
-            validated_raw_meta = validate_raw_pdf_meta_payload(self.raw_meta)
+            self.raw_meta = validate_raw_pdf_meta_payload(self.raw_meta)
         except ValueError as exc:
             raise ValidationError({"raw_meta": str(exc)}) from exc
-        self.raw_meta = cast(ReportMetaJsonObject | None, validated_raw_meta)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args, **kwargs):
         # Ensure hash is calculated before the first save if possible and not already set
         # This is primarily a fallback if instance created manually without using create_from_file
         """
@@ -412,7 +361,7 @@ class RawPdfFile(models.Model):
 
         return get_or_create_raw_pdf_state(self)
 
-    def verify_existing_file(self, fallback_file: Path | str) -> None:
+    def verify_existing_file(self, fallback_file):
         # This method might still be useful if called explicitly, but create_from_file now handles restoration
         # Ensure fallback_file is a Path object.
         """
@@ -425,31 +374,30 @@ class RawPdfFile(models.Model):
 
         verify_existing_raw_pdf_file(self, fallback_file)
 
-    def process_file(
-        self,
-        text: str,
-        anonymized_text: str,
-        report_meta: ReportMetaJsonObject,
-        verbose: bool,
-    ) -> tuple[str, str, ReportMetaJsonObject]:
+    def process_file(self, text, anonymized_text, report_meta, verbose):
         from endoreg_db.services.raw_pdf_files import process_raw_pdf_file
 
-        process_report = cast(
-            Callable[
-                ["RawPdfFile", str, str, ReportMetaJsonObject, bool],
-                tuple[str, str, ReportMetaJsonObject],
-            ],
-            process_raw_pdf_file,
-        )
-        return process_report(
+        return process_raw_pdf_file(
             self,
-            text,
-            anonymized_text,
-            report_meta,
-            verbose,
+            text=text,
+            anonymized_text=anonymized_text,
+            report_meta=report_meta,
+            verbose=verbose,
         )
 
-    def get_report_reader_config(self) -> ReportMetaJsonObject:
+    def get_report_reader_config(self):
         from endoreg_db.services.raw_pdf_files import build_report_reader_config
 
         return build_report_reader_config(self)
+
+    @staticmethod
+    def get_report_by_pk(pk: int) -> "RawPdfFile":
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
+
+        return get_raw_pdf_by_pk(pk)
+
+    @staticmethod
+    def get_report_by_hash(hash: str) -> "RawPdfFile":
+        from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_content_hash
+
+        return get_raw_pdf_by_content_hash(hash)

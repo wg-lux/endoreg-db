@@ -4,8 +4,6 @@ Serializers für Anonymisierungs-Validierung mit deutschem Datumsformat.
 Unterstützt DD.MM.YYYY als Primärformat und YYYY-MM-DD als Fallback.
 """
 
-from __future__ import annotations
-
 from rest_framework import serializers
 from endoreg_db.models.metadata.sensitive_meta_logic import parse_any_date
 
@@ -18,7 +16,7 @@ REPORT_DOCUMENT_TYPE_CHOICES = [
 ]
 
 
-class SensitiveMetaValidateSerializer(serializers.Serializer[dict[str, object]]):
+class SensitiveMetaValidateSerializer(serializers.Serializer):
     """
     Serializer für SensitiveMeta-Validierung mit deutscher Datums-Priorität.
 
@@ -56,7 +54,7 @@ class SensitiveMetaValidateSerializer(serializers.Serializer[dict[str, object]])
     validation_comment = serializers.CharField(required=False, allow_blank=True)
     no_more_names_confirmed = serializers.BooleanField(required=False, allow_null=True)
 
-    def validate_patient_dob(self, value: str):
+    def validate_patient_dob(self, value):
         """
         Validiert patient_dob mit deutscher Format-Priorität.
 
@@ -77,7 +75,7 @@ class SensitiveMetaValidateSerializer(serializers.Serializer[dict[str, object]])
             )
         return parsed_date
 
-    def validate_examination_date(self, value: str):
+    def validate_examination_date(self, value):
         """
         Validiert examination_date mit deutscher Format-Priorität.
 

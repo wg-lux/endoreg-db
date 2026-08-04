@@ -1,149 +1,85 @@
 """
 Video Media Management View (Phase 1.2)
 
-Provides CRUD-like operations for video files including listing, detail
-retrieval, and metadata management for the media management system.
+Provides CRUD operations for video files including listing, detail retrieval,
+and metadata management for the media management system.
+
+This complements VideoStreamView which handles the actual video streaming.
 """
 
-from __future__ import annotations
-
 import logging
-from collections.abc import Mapping
-from typing import Protocol, TypeAlias, cast
-from urllib.parse import urlencode
 
-from django.db import models
 from django.db.models import Prefetch, Q
-from django.db.models.query import QuerySet
 from django.http import Http404
-from lx_dtypes.models.contracts.video_file import VideoFilePayload
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
-from endoreg_db.serializers.video.video_file_list import (
-    CrossCenterProcessedVideoSerializer,
-)
-from endoreg_db.views.access_control import (
-    CenterScopedVideoPermission,
-    assert_anonymized_center_scope_allowed,
-    assert_center_scope_allowed,
-    filter_video_read_queryset,
-    has_cross_center_hub_processed_access,
-)
+
+from endoreg_db.authz.permissions import PolicyPermission
 
 logger = logging.getLogger(__name__)
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
-
-
-class _SerializerLike(Protocol):
-    @property
-    def data(self) -> JsonValue: ...
-
-
-def _query_params(request: Request) -> Mapping[str, str]:
-    return cast(Mapping[str, str], request.query_params)
-
-
-def _serialize_response_data(serializer: _SerializerLike) -> JsonValue:
-    return serializer.data
-
-
-def _query_str_param(params: Mapping[str, str], key: str, default: str = "") -> str:
-    return params.get(key, default)
-
-
-def _query_int_param(params: Mapping[str, str], key: str, default: int) -> int:
-    raw_value = params.get(key)
-    if raw_value in ("", None):
-        return default
-    try:
-        return int(raw_value)
-    except ValueError as exc:
-        raise ValueError(f"{key} must be an integer.") from exc
-
-
-def _query_bool_param(params: Mapping[str, str], key: str) -> bool | None:
-    raw_value = params.get(key)
-    if raw_value is None:
-        return None
-    normalized = raw_value.strip().lower()
-    if normalized in {"true", "1", "yes", "on"}:
-        return True
-    if normalized in {"false", "0", "no", "off"}:
-        return False
-    return None
-
-
-def _video_contract_payload(video: VideoFile) -> VideoFilePayload:
-    """
-    Validate stable scalar VideoFile fields through the shared lx_dtypes contract.
-
-    The endpoint still returns the existing serializer payload; this contract
-    call keeps the view aligned with the cross-package VideoFile boundary.
-    """
-    return VideoFilePayload.model_validate(
-        {
-            "pk": video.pk,
-            "id": video.pk,
-            "video_hash": str(video.video_hash),
-            "original_file_name": getattr(video, "original_file_name", None),
-            "fps": getattr(video, "fps", None),
-            "duration": getattr(video, "duration", None),
-            "frame_count": getattr(video, "frame_count", None),
-            "width": getattr(video, "width", None),
-            "height": getattr(video, "height", None),
-            "suffix": getattr(video, "suffix", None),
-            "frame_dir": getattr(video, "frame_dir", ""),
-            "storage_mode": getattr(video, "storage_mode", ""),
-            "raw_streamable_relative_path": getattr(
-                video,
-                "raw_streamable_relative_path",
-                "",
-            ),
-            "processed_streamable_relative_path": getattr(
-                video,
-                "processed_streamable_relative_path",
-                "",
-            ),
-            "has_raw": bool(getattr(video, "raw_file", None)),
-            "is_processed": bool(getattr(video, "processed_file", None)),
-            "uploaded_at": getattr(video, "uploaded_at", None),
-            "date_created": getattr(video, "date_created", None),
-            "date_modified": getattr(video, "date_modified", None),
-            "meta": getattr(video, "meta", None),
-        }
-    )
 
 
 class VideoMediaView(APIView):
     """
-    Video media management API for listing and detail operations.
+    Video Media Management API for CRUD operations on video files.
+
+    Endpoints:
+    - GET /api/media/videos/ - List all videos with filtering
+    - GET /api/media/videos/{id}/ - Get video details
+    - PATCH /api/media/videos/{id}/ - Update video metadata (future)
+    - DELETE /api/media/videos/{id}/ - Delete video
+
+    Query Parameters:
+    - status: Filter by processing status (not_started, processing, done, failed, validated)
+    - search: Search in filename
+    - limit: Limit results (default: 50)
+    - offset: Pagination offset
+
+    Examples:
+    - GET /api/media/videos/?status=done&search=exam
+    - GET /api/media/videos/123/
+
+    Phase 1.2 Implementation:
+    - List and detail views implemented
+    - Filtering and search functionality
+    - Pagination support
+    - Error handling with proper HTTP status codes
+    - Integration with existing serializers
     """
 
-    permission_classes = [
-        IsAuthenticated,
-        PolicyPermission,
-        CenterScopedVideoPermission,
-    ]
+    permission_classes = [IsAuthenticated, PolicyPermission]
 
-    def get(self, request: Request, pk: int | None = None) -> Response:
+    def get(self, request, pk=None):
+        """
+        Handle GET requests for video listing or detail retrieval.
+
+        Args:
+            request: HTTP request object
+            pk: Optional video ID for detail view
+
+        Returns:
+            Response: JSON response with video data or list
+
+        Raises:
+            Http404: If specific video not found
+        """
         if pk is not None:
-            return self._get_video_detail(request=request, pk=pk)
-        return self._list_videos(request)
+            # Detail view
+            return self._get_video_detail(pk)
+        else:
+            # List view
+            return self._list_videos(request)
 
-    def patch(self, request: Request, pk: int | None = None) -> Response:
+    def patch(self, request, pk=None):
         if pk is None:
             return Response(
                 {"error": "Video ID is required for update."},
@@ -151,181 +87,231 @@ class VideoMediaView(APIView):
             )
 
         try:
-            video: VideoFile = VideoFile.objects.get(pk=pk)
+            video_id_int = int(pk)
+        except (ValueError, TypeError):
+            raise Http404("Invalid video ID format")
+
+        try:
+            video = VideoFile.objects.get(pk=video_id_int)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video with ID {pk} not found")
-        assert_center_scope_allowed(request=request, obj=video)
 
-        payload = cast(Mapping[str, JsonValue], request.data)
-        raw_export_flag = payload.get("export_segments_by_video")
-        if isinstance(raw_export_flag, bool):
-            video.export_segments_by_video = raw_export_flag
-            models.Model.save(video, update_fields=["export_segments_by_video"])
-            serializer = VideoDetailSerializer(video, context={"request": request})
+        export_flag = request.data.get("export_segments_by_video")
+        if export_flag is None:
             return Response(
-                _serialize_response_data(cast(_SerializerLike, serializer)),
-                status=status.HTTP_200_OK,
+                {"error": "No supported fields provided for update."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return Response(
-            {"error": "No supported fields provided for update."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        video.export_segments_by_video = bool(export_flag)
+        video.save(update_fields=["export_segments_by_video"])
 
-    def _get_video_detail(self, request: Request, pk: int) -> Response:
+        serializer = VideoDetailSerializer(video, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def _get_video_detail(self, pk):
+        """
+        Get detailed information for a specific video.
+
+        Args:
+            pk: Video primary key
+
+        Returns:
+            Response: JSON response with video details
+
+        Raises:
+            Http404: If video not found
+        """
         try:
-            video = VideoFile.objects.select_related(
-                "state", "sensitive_meta", "center"
-            ).get(pk=pk)
+            # Validate video_id is numeric
+            try:
+                video_id_int = int(pk)
+            except (ValueError, TypeError):
+                raise Http404("Invalid video ID format")
+
+            # Fetch video with related data
+            video = VideoFile.objects.select_related("state", "sensitive_meta").get(
+                pk=video_id_int
+            )
+
+            # Serialize with request context for URL generation
+            serializer = VideoDetailSerializer(video, context={"request": self.request})
+
+            return Response(serializer.data)
+
         except VideoFile.DoesNotExist:
             raise Http404(f"Video with ID {pk} not found")
-        assert_anonymized_center_scope_allowed(request=request, obj=video)
-        _video_contract_payload(video)
-        if has_cross_center_hub_processed_access(user=request.user, obj=video):
-            serializer = CrossCenterProcessedVideoSerializer(video)
-        else:
-            serializer = VideoDetailSerializer(video, context={"request": request})
-        return Response(_serialize_response_data(cast(_SerializerLike, serializer)))
 
-    def _list_videos(self, request: Request) -> Response:
-        try:
-            segments_queryset: QuerySet[LabelVideoSegment] = (
-                LabelVideoSegment.objects.select_related(
-                    "label",
-                    "video_file",
-                ).order_by("start_frame_number")
+        except Exception as e:
+            logger.error(f"Unexpected error in video detail view for ID {pk}: {str(e)}")
+            return Response(
+                {"error": "Failed to retrieve video details"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    def _list_videos(self, request):
+        """
+        List videos with filtering, search, and pagination.
+
+        Args:
+            request: HTTP request with query parameters
+
+        Returns:
+            Response: JSON response with paginated video list
+        """
+        try:
+            # Start with all videos
             segments_prefetch = Prefetch(
                 "label_video_segments",
-                queryset=segments_queryset,
+                queryset=LabelVideoSegment.objects.select_related(
+                    "label", "video_file"
+                ).order_by("start_frame_number"),
             )
-            queryset: QuerySet[VideoFile] = (
+            queryset = (
                 VideoFile.objects.select_related("state", "sensitive_meta")
-                .select_related("center")
                 .prefetch_related(segments_prefetch)
                 .all()
             )
-            queryset = cast(
-                QuerySet[VideoFile],
-                filter_video_read_queryset(queryset=queryset, user=request.user),
-            )
 
-            query_params = _query_params(request)
-            queryset = self._apply_filters(queryset, query_params)
+            # Apply filters
+            queryset = self._apply_filters(queryset, request.query_params)
 
-            search = _query_str_param(query_params, "search", "").strip()
+            # Apply search
+            search = request.query_params.get("search", "").strip()
             if search:
                 queryset = queryset.filter(Q(original_file_name__icontains=search))
 
+            # Order by upload date (newest first)
             queryset = queryset.order_by("-uploaded_at")
 
-            limit = min(_query_int_param(query_params, "limit", 50), 100)
-            offset = _query_int_param(query_params, "offset", 0)
+            # Apply pagination
+            limit = min(int(request.query_params.get("limit", 50)), 100)
+            offset = int(request.query_params.get("offset", 0))
+
             total_count = queryset.count()
-            videos = list(queryset[offset : offset + limit])
+            videos = queryset[offset : offset + limit]
 
-            for video in videos:
-                _video_contract_payload(video)
+            # Serialize
+            serializer = VideoFileListSerializer(videos, many=True)
 
-            serialized_data = [
-                _serialize_response_data(
-                    cast(
-                        _SerializerLike,
-                        CrossCenterProcessedVideoSerializer(video)
-                        if has_cross_center_hub_processed_access(
-                            user=request.user, obj=video
-                        )
-                        else VideoFileListSerializer(video),
-                    )
-                )
-                for video in videos
-            ]
-            include_unresolved = _query_bool_param(query_params, "include_unresolved")
             return Response(
                 {
                     "count": total_count,
                     "next": self._get_next_url(request, offset, limit, total_count),
                     "previous": self._get_previous_url(request, offset, limit),
-                    "results": serialized_data,
-                    "include_unresolved": bool(include_unresolved),
+                    "results": serializer.data,
                 }
             )
 
-        except ValueError as exc:
+        except ValueError as e:
             return Response(
-                {"error": f"Invalid query parameter: {str(exc)}"},
+                {"error": f"Invalid query parameter: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception as exc:
-            logger.error("Unexpected error in video list view: %s", exc)
+
+        except Exception as e:
+            logger.error(f"Unexpected error in video list view: {str(e)}")
             return Response(
                 {"error": "Failed to retrieve video list"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    def _apply_filters(
-        self,
-        queryset: QuerySet[VideoFile],
-        query_params: Mapping[str, str],
-    ) -> QuerySet[VideoFile]:
-        status_filter = _query_str_param(query_params, "status", "").strip().lower()
+    def _apply_filters(self, queryset, query_params):
+        """
+        Apply status and other filters to video queryset.
+
+        Args:
+            queryset: Base queryset to filter
+            query_params: Request query parameters
+
+        Returns:
+            QuerySet: Filtered queryset
+        """
+        status_filter = query_params.get("status", "").strip().lower()
         failed_query = Q(state__processing_error=True) | Q(
             meta__integrity_status="lost"
         )
 
-        if status_filter == "not_started":
-            queryset = queryset.filter(
-                Q(state__isnull=True)
-                | Q(
-                    state__frames_extracted=False,
-                    state__sensitive_meta_processed=False,
-                )
-            ).exclude(failed_query)
-        elif status_filter == "processing":
-            queryset = queryset.filter(
-                state__frames_extracted=True,
-                state__sensitive_meta_processed=False,
-            ).exclude(failed_query)
-        elif status_filter == "done_processing_anonymization":
-            queryset = queryset.filter(
-                state__anonymized=True,
-                sensitive_meta__is_verified=False,
-            ).exclude(failed_query)
-        elif status_filter == "validated":
-            queryset = queryset.filter(
-                state__anonymized=True,
-                sensitive_meta__is_verified=True,
-            ).exclude(failed_query)
-        elif status_filter == "failed":
-            queryset = queryset.filter(failed_query)
+        if status_filter:
+            if status_filter == "not_started":
+                # Videos without state or with not_started status
+                queryset = queryset.filter(
+                    Q(state__isnull=True)
+                    | Q(
+                        state__frames_extracted=False,
+                        state__sensitive_meta_processed=False,
+                    )
+                ).exclude(failed_query)
+            elif status_filter == "processing":
+                # Videos in any processing state
+                queryset = queryset.filter(
+                    state__frames_extracted=True, state__sensitive_meta_processed=False
+                ).exclude(failed_query)
+            elif status_filter == "done_processing_anonymization":
+                # Videos with anonymization complete but not validated
+                queryset = queryset.filter(
+                    state__anonymized=True, sensitive_meta__is_verified=False
+                ).exclude(failed_query)
+            elif status_filter == "validated":
+                # Videos with human validation complete
+                queryset = queryset.filter(
+                    state__anonymized=True, sensitive_meta__is_verified=True
+                ).exclude(failed_query)
+            elif status_filter == "failed":
+                queryset = queryset.filter(failed_query)
 
         return queryset
 
-    def _get_next_url(
-        self,
-        request: Request,
-        offset: int,
-        limit: int,
-        total_count: int,
-    ) -> str | None:
+    def _get_next_url(self, request, offset, limit, total_count):
+        """Generate next page URL for pagination."""
         if offset + limit >= total_count:
             return None
-        return self._build_paginated_url(request, offset + limit, limit)
 
-    def _get_previous_url(
-        self,
-        request: Request,
-        offset: int,
-        limit: int,
-    ) -> str | None:
+        next_offset = offset + limit
+        return self._build_paginated_url(request, next_offset, limit)
+
+    def _get_previous_url(self, request, offset, limit):
+        """Generate previous page URL for pagination."""
         if offset <= 0:
             return None
-        return self._build_paginated_url(request, max(0, offset - limit), limit)
 
-    def _build_paginated_url(self, request: Request, offset: int, limit: int) -> str:
-        params: dict[str, str] = dict(_query_params(request))
-        params["offset"] = str(offset)
-        params["limit"] = str(limit)
+        prev_offset = max(0, offset - limit)
+        return self._build_paginated_url(request, prev_offset, limit)
+
+    def _build_paginated_url(self, request, offset, limit):
+        """Build URL with pagination parameters."""
+        params = request.query_params.copy()
+        params["offset"] = offset
+        params["limit"] = limit
 
         base_url = request.build_absolute_uri(request.path)
-        return f"{base_url}?{urlencode(params)}"
+        if params:
+            return f"{base_url}?{params.urlencode()}"
+        return base_url
+
+    # Future implementation placeholders
+    def _patch_not_implemented_placeholder(self, request, pk):
+        """
+        Update video metadata (Phase 1.2+ future enhancement).
+
+        Currently returns 501 Not Implemented.
+        """
+        return Response(
+            {"error": "Video metadata updates not yet implemented"},
+            status=status.HTTP_501_NOT_IMPLEMENTED,
+        )
+
+    def delete(self, request, pk):
+        """
+        Delete video file (Phase 1.2+ future enhancement).
+
+        Currently returns 501 Not Implemented.
+        Use /api/media-management/force-remove/{id}/ instead.
+        """
+        return Response(
+            {
+                "error": "Video deletion not yet implemented",
+                "alternative": f"Use DELETE /api/media-management/force-remove/{pk}/ instead",
+            },
+            status=status.HTTP_501_NOT_IMPLEMENTED,
+        )

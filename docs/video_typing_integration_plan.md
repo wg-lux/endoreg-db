@@ -1,9 +1,5 @@
 # Video Typing Integration Plan
 
-> Die Statusverfolgung wurde nach `feature-tracking/done/TypeSafety.yml` migriert.
-> Dieses Dokument bleibt als technischer Kontext erhalten und führt keinen
-> unabhängigen Fertigstellungsstatus mehr.
-
 ## Ziel
 
 Pruefen und schrittweise umsetzen, wie `endoreg-db` in der Videoverarbeitung vom staerkeren Typing in `lx-dtypes` profitieren kann, ohne die bestehenden Django-Modelle direkt zu ersetzen.
@@ -182,23 +178,3 @@ Zuerst:
 - Exportvalidierung
 
 Das bringt den groessten Nutzen bei geringstem Risiko.
-
-## Implementierter kanonischer Boundary-Pfad
-
-`endoreg_db.services.lx_video_contracts` ist der kanonische Adapter für
-`VideoFile`, `LabelVideoSegment`, `VideoState` und `SensitiveMeta`. Der
-AI-Dataset-Export verwendet dieselben Adapter.
-
-- Django-Primärschlüssel für Sensitive Meta und Segmente werden deterministisch
-  auf stabile Contract-UUIDs abgebildet.
-- Segmentzustände werden aus dem persistierten Zustand normalisiert; manuelle
-  Segmente werden nicht als Prediction ausgegeben.
-- Fehlende Labels, nicht auflösbare Labelsets, fehlende Zustände, unbekannte
-  Anonymisierungswerte und widersprüchliche Datumsangaben schlagen laut fehl.
-- Ungültige Segmente werden nicht aus einem Export übersprungen.
-- Der Video-Contract referenziert ausschließlich den verarbeiteten Dateipfad;
-  der Adapter exportiert keine Raw-Media-Referenz.
-- Der AI-Dataset-Artefaktpfad entfernt `PatientVideoFile.sensitive_meta` zentral
-  bei der JSON-Serialisierung. Direkte Identifikatoren, Geburtsdatum,
-  Fallnummer, externe ID und Rohtext verlassen diese Boundary nicht;
-  unbekannte Top-Level-Felder weist das strikte Exportmodell ab.

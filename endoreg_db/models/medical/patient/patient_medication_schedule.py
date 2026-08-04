@@ -1,22 +1,16 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, ClassVar, Any
-
+from django.db import models
+from typing import TYPE_CHECKING, List  # Added List
 from datetime import datetime as dt
 
-from django.db import models
-
-
 if TYPE_CHECKING:
+    from .patient_medication import PatientMedication
+    from ..medication import MedicationSchedule
+    from ....utils.links import ModelLinks  # Added
     from ..medication import (
         Medication,
         MedicationIndication,
         MedicationIntakeTime,
-        MedicationSchedule,
-    )
-    from .patient_medication import PatientMedication
-    from ...administration.person.patient.patient import Patient
-    from ....utils.links import ModelLinks
+    )  # Added
 
 
 class PatientMedicationSchedule(models.Model):
@@ -24,22 +18,18 @@ class PatientMedicationSchedule(models.Model):
     Represents a collection of medications associated with a patient, forming their schedule.
     """
 
-    patient: models.ForeignKey[Any] = models.ForeignKey(
-        "Patient", on_delete=models.CASCADE
-    )
-    medication: models.ManyToManyField[
-        "PatientMedication",
-        "PatientMedication",
-    ] = models.ManyToManyField(
-        "PatientMedication", related_name="patient_medication_schedules", blank=True
+    patient = models.ForeignKey("Patient", on_delete=models.CASCADE)
+    medication: "models.ManyToManyField[PatientMedication, PatientMedication]" = (
+        models.ManyToManyField(
+            "PatientMedication", related_name="patient_medication_schedules", blank=True
+        )
     )
 
-    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
-    updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    objects: ClassVar[models.Manager["PatientMedicationSchedule"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        models.Manager()
-    )
+    if TYPE_CHECKING:
+        pass
 
     @property
     def links(self) -> "ModelLinks":
@@ -48,11 +38,11 @@ class PatientMedicationSchedule(models.Model):
         """
         from ....utils.links import ModelLinks
 
-        aggregated_medications: list["Medication"] = []
-        aggregated_medication_indications: list["MedicationIndication"] = []
-        aggregated_medication_intake_times: list["MedicationIntakeTime"] = []
+        aggregated_medications: List["Medication"] = []
+        aggregated_medication_indications: List["MedicationIndication"] = []
+        aggregated_medication_intake_times: List["MedicationIntakeTime"] = []
 
-        patient_meds_in_schedule: list["PatientMedication"] = list(
+        patient_meds_in_schedule: List["PatientMedication"] = list(
             self.medication.all()
         )
 
@@ -75,17 +65,15 @@ class PatientMedicationSchedule(models.Model):
             patient_medication_schedules=[self],
         )
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns a string representation including the patient and associated medications."""
         return f"{self.patient} - {self.medication.all()}"
 
     @classmethod
-    def create_by_patient_and_indication_type(
-        cls, patient: "Patient", indication_type: str
-    ) -> "PatientMedicationSchedule":
+    def create_by_patient_and_indication_type(cls, patient, indication_type):
         """Creates a schedule and adds a medication based on a random indication of a given type."""
+        from ..medication import MedicationIndicationType
         from .patient_medication import PatientMedication
-        from ..medication.medication_indication_type import MedicationIndicationType
 
         medication_indication = MedicationIndicationType.get_random_indication_by_type(
             name=indication_type
@@ -103,14 +91,14 @@ class PatientMedicationSchedule(models.Model):
         return patient_medication_schedule
 
     @classmethod
-    def create_by_patient_and_indication(
-        cls,
-        patient: "Patient",
-        medication_indication: "MedicationIndication",
-    ) -> "PatientMedicationSchedule":
+    def create_by_patient_and_indication(cls, patient, medication_indication):
         """Creates a schedule and adds a medication based on a specific indication."""
+        from ..medication import MedicationIndication
         from .patient_medication import PatientMedication
+        from ...administration.person.patient import Patient
 
+        assert isinstance(medication_indication, MedicationIndication)
+        assert isinstance(patient, Patient)
         patient_medication_schedule = cls.objects.create(patient=patient)
         patient_medication_schedule.save()
 
@@ -125,12 +113,15 @@ class PatientMedicationSchedule(models.Model):
     def create_patient_medication_from_medication_schedule(
         self,
         medication_schedule: "MedicationSchedule",
-        medication_indication: "MedicationIndication | None" = None,
-        start_date: dt | None = None,
-    ) -> "PatientMedication":
+        medication_indication=None,
+        start_date=None,
+    ):
         """Creates and adds a PatientMedication based on a generic MedicationSchedule template."""
 
         from .patient_medication import PatientMedication
+
+        if not start_date:
+            start_date = dt.now()
 
         drug = medication_schedule.medication
         unit = medication_schedule.unit
@@ -153,6 +144,6 @@ class PatientMedicationSchedule(models.Model):
 
         return patient_medication
 
-    def get_patient_medication(self) -> models.QuerySet["PatientMedication"]:
+    def get_patient_medication(self):
         """Returns all PatientMedication instances associated with this schedule."""
         return self.medication.all()

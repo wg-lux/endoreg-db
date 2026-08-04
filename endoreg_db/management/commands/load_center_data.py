@@ -1,34 +1,18 @@
-from __future__ import annotations
-
-from typing import TypedDict, Unpack
-
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from ...data import CENTER_DATA_DIR, NAMES_FIRST_DATA_DIR, NAMES_LAST_DATA_DIR
-from endoreg_db.models.administration.center.center import Center
-from endoreg_db.models.administration.person.names.first_name import FirstName
-from endoreg_db.models.administration.person.names.last_name import LastName
+from django.core.management.base import BaseCommand
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from ...models import Center, FirstName, LastName
+from ...data import CENTER_DATA_DIR, NAMES_FIRST_DATA_DIR, NAMES_LAST_DATA_DIR
 
 
 SOURCE_DIR = CENTER_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 
-
-class LoadCenterCommandOptions(TypedDict):
-    verbose: bool
-
-
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
+IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     FirstName.__name__,
     LastName.__name__,
     Center.__name__,
 ]
 
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
+IMPORT_METADATA = {
     FirstName.__name__: {
         "dir": NAMES_FIRST_DATA_DIR,  # e.g. "first names"
         "model": FirstName,  # e.g. first name
@@ -54,7 +38,7 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         """
         Adds the '--verbose' flag to the argument parser.
 
@@ -66,11 +50,7 @@ class Command(BaseCommand):
             help="Display verbose output",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: Unpack[LoadCenterCommandOptions],
-    ) -> None:
+    def handle(self, *args, **options):
         """
         Load YAML data for each predefined model.
 
@@ -82,7 +62,7 @@ class Command(BaseCommand):
             *args: Additional positional arguments.
             **options: Command options; must include a 'verbose' key to control output detail.
         """
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
+        verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+            _metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, _metadata, verbose)

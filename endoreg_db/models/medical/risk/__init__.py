@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .risk import Risk
 from .risk_type import RiskType
 

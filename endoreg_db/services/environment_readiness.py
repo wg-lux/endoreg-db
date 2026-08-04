@@ -3,8 +3,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from django.conf import settings
-
 from endoreg_db.config.env import (
     get_media_url,
     get_protected_media_root,
@@ -15,7 +13,7 @@ from endoreg_db.services.streamable_media import (
     STREAMABLE_RAW_VIDEO_ROOT,
     STREAMABLE_VIDEO_ROOT,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     DATA_DIR,
     PROTECTED_DATA_ROOT,
     STORAGE_DIR,
@@ -23,7 +21,6 @@ from endoreg_db.utils.paths import (
     WATCHER_REPORT_DROP_DIR,
     WATCHER_VIDEO_DROP_DIR,
 )
-from endoreg_db.utils.rust_backend import has_native_capability
 
 
 @dataclass(frozen=True)
@@ -98,7 +95,7 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
             )
         )
 
-    if media_url and media_url.startswith("/media/"):
+    if media_url == "/media/" or media_url.startswith("/media/"):
         issues.append(
             ReadinessIssue(
                 severity="critical",
@@ -107,8 +104,7 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
                 path=media_url,
             )
         )
-
-    if media_url and media_url != protected_media_url:
+    elif media_url and media_url != protected_media_url:
         issues.append(
             ReadinessIssue(
                 severity="critical",
@@ -137,31 +133,9 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
     return issues
 
 
-def _check_report_native_snapshot_contract() -> list[ReadinessIssue]:
-    if not bool(getattr(settings, "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT", False)):
-        return []
-    if has_native_capability(
-        "report_source_snapshot",
-        "report_source_snapshot_v1",
-    ):
-        return []
-    return [
-        ReadinessIssue(
-            severity="critical",
-            code="report_native_snapshot_unavailable",
-            message=(
-                "The production report-import profile requires native capability "
-                "report_source_snapshot_v1, but the loaded extension does not "
-                "advertise it."
-            ),
-        )
-    ]
-
-
 def check_environment_readiness() -> list[ReadinessIssue]:
     issues: list[ReadinessIssue] = []
     issues.extend(_check_protected_media_contract())
-    issues.extend(_check_report_native_snapshot_contract())
     issues.extend(
         _check_directory_access(PROTECTED_DATA_ROOT, code_prefix="protected_root")
     )

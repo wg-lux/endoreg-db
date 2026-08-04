@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,14 +19,10 @@ def ensure_local_processed_video_file(video: "VideoFile"):
     return _ensure_local_processed_file(video)
 
 
-def delete_video_with_owned_files(
-    video: "VideoFile",
-    using: str | None = None,
-    keep_parents: bool = False,
-) -> tuple[int, dict[str, int]]:
+def delete_video_with_owned_files(video: "VideoFile", *args, **kwargs):
     from ._io import _delete_with_file
 
-    return _delete_with_file(video, using=using, keep_parents=keep_parents)
+    return _delete_with_file(video, *args, **kwargs)
 
 
 def get_video_base_frame_dir(video: "VideoFile") -> Path:

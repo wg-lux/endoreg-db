@@ -32,6 +32,5 @@ jobs:
           .devenv/state/venv/bin/ruff check endoreg_db tests
           .devenv/state/venv/bin/ruff format --check endoreg_db tests
           .devenv/state/venv/bin/mypy --config-file pyproject.toml endoreg_db
-          devenv tasks run rust:report-runtime
           devenv tasks run agent:smoke
           devenv tasks run test:fast

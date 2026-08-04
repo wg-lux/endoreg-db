@@ -1,45 +1,27 @@
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Generator, Protocol, cast
+from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 from django.db import transaction
 from icecream import ic
 from tqdm import tqdm
 
 if TYPE_CHECKING:
-    from ...models.media.frame.frame import Frame
     from ...models.media import VideoFile
 
 import io
 
 from django.core.files import File
-from django.core.files.storage import Storage
 
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.system.rust_backend import (
     build_frame_records as rust_build_frame_records,
 )
 from endoreg_db.utils.file_operations import ensure_directory
 
-from endoreg_db.utils.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
+from .ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
 
 
-class _VideoStateLike(Protocol):
-    frames_initialized: bool
-
-    def save(self, *, update_fields: list[str]) -> None: ...
-
-
-class _StorageLocationLike(Protocol):
-    location: str
-
-
-class _StorageBackedFieldFile(Protocol):
-    storage: Storage
-
-
-def prepare_bulk_frames(
-    frame_paths: list[Path],
-) -> Generator[tuple[int, File[bytes]], None, None]:
+def prepare_bulk_frames(frame_paths: List[Path]):
     """
     Reads the frame paths into memory as Django File objects.
     This avoids 'seek of closed file' errors by using BytesIO for each frame.
@@ -48,7 +30,7 @@ def prepare_bulk_frames(
         frame_number = int(path.stem.split("_")[1])
         with open(path, "rb") as f:
             content = f.read()
-        file_obj: File[bytes] = File(io.BytesIO(content), name=path.name)
+        file_obj = File(io.BytesIO(content), name=path.name)
         yield frame_number, file_obj
 
 
@@ -57,19 +39,19 @@ def extract_frames(
     output_dir: Path,
     quality: int,
     ext: str = "jpg",
-    fps: float | None = None,
-) -> list[Path]:
+    fps: Optional[float] = None,
+) -> List[Path]:
     """Extracts frames from a video file using ffmpeg_wrapper."""
     # Ensure output directory exists
     ensure_directory(output_dir)
     return ffmpeg_extract_frames(video_path, output_dir, quality, ext, fps)
 
 
-def initialize_frame_objects(video: "VideoFile", extracted_paths: list[Path]) -> None:
+def initialize_frame_objects(video: "VideoFile", extracted_paths: List[Path]):
     """
     Initialize frame objects for the extracted frames and update state.
     """
-    state = cast(_VideoStateLike, video.get_or_create_state())
+    state = video.get_or_create_state()
     # Check state before proceeding
     if state.frames_initialized:
         ic(f"Frames already initialized for video {video.video_hash}, skipping.")
@@ -82,7 +64,7 @@ def initialize_frame_objects(video: "VideoFile", extracted_paths: list[Path]) ->
         return
 
     video.frame_count = len(extracted_paths)
-    frames_to_create: list["Frame"] = []
+    frames_to_create = []
     batch_size = int(os.environ.get("DJANGO_FFMPEG_EXTRACT_FRAME_BATCHSIZE", "500"))
 
     # Prepare frame data (relative paths for storage)
@@ -90,9 +72,8 @@ def initialize_frame_objects(video: "VideoFile", extracted_paths: list[Path]) ->
     if not frame_dir:
         raise ValueError(f"Frame directory not set for video {video.video_hash}")
 
-    raw_file = cast(_StorageBackedFieldFile, video.raw_file)
-    storage = cast(_StorageLocationLike, raw_file.storage)
-    storage_base_path = Path(storage.location)
+    storage = video._meta.get_field("raw_file").storage
+    storage_base_path = Path(cast(Any, storage).location)  # Get storage root
 
     rust_records = rust_build_frame_records(
         extracted_paths,

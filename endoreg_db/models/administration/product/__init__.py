@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Module for product models"""
 
 from .product import Product

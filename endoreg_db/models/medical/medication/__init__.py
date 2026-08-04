@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Medication models initialization module."""
 
 from .medication import Medication, MedicationManager

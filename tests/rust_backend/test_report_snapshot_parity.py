@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_report_source_snapshot,
 )
 from endoreg_db.utils.rust_backend import stable_snapshot_to_path

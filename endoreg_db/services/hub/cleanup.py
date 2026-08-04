@@ -1,26 +1,26 @@
 from __future__ import annotations
 
-from django.db.models.fields.files import FieldFile
-
-from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import safe_delete_field_file
+from django.apps import apps
 
 
-def cleanup_upload_job_source(upload_job: UploadJob) -> bool:
+def cleanup_upload_job_source(upload_job) -> bool:
+    upload_job_model = type(upload_job)
     if (
-        upload_job.cleanup_status != UploadJob.CleanupStatus.ELIGIBLE.value
+        upload_job.cleanup_status != upload_job_model.CleanupStatus.ELIGIBLE
         or not upload_job.source_file_persisted
     ):
         return False
 
-    field_file: FieldFile = upload_job.file
-    file_name = (field_file.name or "").strip()
-    deleted = safe_delete_field_file(field_file) if file_name else False
+    field_file = upload_job.file
+    file_name = str(getattr(field_file, "name", "") or "").strip()
+    if file_name:
+        storage = field_file.storage
+        if storage.exists(file_name):
+            field_file.delete(save=False)
 
     upload_job.file.name = ""
     upload_job.source_file_persisted = False
-    upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED.value
+    upload_job.cleanup_status = upload_job_model.CleanupStatus.COMPLETED
     upload_job.save(
         update_fields=[
             "file",
@@ -29,19 +29,13 @@ def cleanup_upload_job_source(upload_job: UploadJob) -> bool:
             "updated_at",
         ]
     )
-    emit_hub_audit_event(
-        "hub.upload_source_cleanup_completed",
-        upload_job_id=str(upload_job.pk),
-        content_hash=upload_job.content_hash,
-        cleanup_status=upload_job.cleanup_status,
-        storage_object_deleted=deleted,
-    )
     return True
 
 
 def reap_upload_job_sources(*, limit: int | None = None) -> int:
-    queryset = UploadJob.objects.filter(
-        cleanup_status=UploadJob.CleanupStatus.ELIGIBLE.value,
+    upload_job_model = apps.get_model("endoreg_db", "UploadJob")
+    queryset = upload_job_model.objects.filter(
+        cleanup_status=upload_job_model.CleanupStatus.ELIGIBLE,
         source_file_persisted=True,
     ).order_by("created_at")
     if limit is not None:

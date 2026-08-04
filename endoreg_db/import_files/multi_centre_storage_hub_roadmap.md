@@ -1,9 +1,5 @@
 # Multi-Centre Storage Hub Roadmap
 
-> Status tracking was migrated to `feature-tracking/done/HubIngest.yml`. This
-> document is retained as architecture context and must not carry an independent
-> completion status.
-
 ## Purpose
 
 This document is for engineers extending `endoreg-db` for multi-centre
@@ -270,7 +266,7 @@ Implemented today:
   storage class, and retention policy fields
 - explicit local file moves, copies, writes, quarantine moves, and safe unlink
   operations in hub ingest paths use wrappers from
-  `endoreg_db.utils.file_operations`
+  `endoreg_db.utils.filesystem.file_operations`
 - those wrappers use atomic write, move, and copy semantics and emit structured
   JSON logs
 - video streaming can use Nginx `X-Accel-Redirect` for streamable protected

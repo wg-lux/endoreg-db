@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pytest import MonkeyPatch
-
 from endoreg_db.services.jobs.heavy_jobs import (
     HEAVY_JOB_QUEUE_BY_KIND,
     HeavyJobKind,
@@ -10,7 +8,7 @@ from endoreg_db.services.jobs.heavy_jobs import (
 )
 
 
-def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch: MonkeyPatch) -> None:
+def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch):
     assert set(HEAVY_JOB_QUEUE_BY_KIND) == set(HeavyJobKind)
 
     monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media")
@@ -32,7 +30,7 @@ def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch: MonkeyPatch) ->
     assert queue_for_job_kind(HeavyJobKind.MAINTENANCE) == "maintenance"
 
 
-def test_workload_queue_values_are_stable_public_queue_names() -> None:
+def test_workload_queue_values_are_stable_public_queue_names():
     assert {queue.value for queue in WorkloadQueue} == {
         "default",
         "pipeline",

@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple, List, Any, cast
+from typing import Optional, Sequence, Tuple, List
 
 import numpy as np
 from PIL import Image
 import torch
-from torch import Tensor
 from torch.utils.data import Dataset
 
 
-# Dataset ist eine generische Klasse. Wir müssen Pyright mitteilen,
-# welchen Typ ein einzelnes Element (__getitem__) zurückgibt.
-class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+class EndoMultiLabelDataset(Dataset):
     """
     PyTorch dataset wrapping the output of build_dataset_for_training.
 
@@ -36,11 +33,9 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
 
         self.image_paths: List[str] = list(image_paths)
 
-        # Explizite Typisierung der leeren Listen, um "Unknown Member Type"
-        # beim anschließenden .append() zu verhindern.
-        label_vec_list: List[List[int]] = []
-        mask_list: List[List[int]] = []
-
+        # Convert vectors with None → 0, but mask will ensure they are ignored
+        label_vec_list = []
+        mask_list = []
         for vec, mask in zip(label_vectors, label_masks):
             v = [0 if (x is None) else int(x) for x in vec]
             m = [int(x) for x in mask]
@@ -67,16 +62,11 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         img = Image.open(path).convert("RGB")
         img = img.resize((self.image_size, self.image_size))
         arr = np.array(img, dtype=np.float32) / 255.0  # [H, W, C]
-
-        # Weil PIL und NumPy standardmäßig oft keine strikten Typ-Stubs mitbringen,
-        # casten wir 'arr' zu Any, damit torch.from_numpy nicht über ein "Unknown" stolpert.
-        tensor: Tensor = (
-            cast(Any, torch).from_numpy(cast(Any, arr)).permute(2, 0, 1)
-        )  # [C, H, W]
-        tensor: Tensor = (tensor - self.mean) / self.std
+        tensor = torch.from_numpy(arr).permute(2, 0, 1)  # [C, H, W]
+        tensor = (tensor - self.mean) / self.std
         return tensor
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         path = self.image_paths[idx]
         x = self._load_image(path)
         y = self.labels[idx]

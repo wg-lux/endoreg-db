@@ -1,10 +1,5 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
-from contextlib import nullcontext
-from pathlib import Path
 from typing import TYPE_CHECKING
-
-from endoreg_db.services.video_files._io import _ensure_local_raw_file
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -36,8 +31,8 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
     Center is required for import bookkeeping. Processor needs a defined value
     so fallback is applied.
     """
-    center = getattr(video, "center", None)
-    if center is None or not getattr(center, "name", None):
+    center = video.center
+    if center is None or not center.name:
         raise ValueError(f"Video {video.video_hash} has no associated center.")
 
     processor = _get_import_processor(video)
@@ -48,7 +43,7 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
         )
 
         processor_name = resolve_processor_name_for_import(processor_name)
-    return str(getattr(center, "name")), str(processor_name or "Unknown")
+    return str(center.name), str(processor_name or "Unknown")
 
 
 def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
@@ -71,22 +66,18 @@ def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
     return update_fields
 
 
-def _update_video_meta(
-    video: "VideoFile",
-    save_instance: bool = True,
-    raw_video_path: Path | None = None,
-):
+def _update_video_meta(video: "VideoFile", save_instance: bool = True):
     """
     Updates or creates the technical VideoMeta from the raw video file.
     Raises FileNotFoundError or ValueError on pre-condition failure, RuntimeError on processing failure.
     """
-    from endoreg_db.models.metadata.video_meta import VideoMeta  # Local import
+    from endoreg_db.models.metadata import VideoMeta  # Local import
 
     logger.debug(
         "Updating technical VideoMeta for video %s (from raw file).", video.video_hash
     )
 
-    if raw_video_path is None and not video.has_raw:
+    if not video.has_raw:
         # DEFENSIVE: Log warning and skip instead of crashing
         logger.warning(
             f"Raw video file path not available for {video.video_hash}. Skipping VideoMeta update - this may indicate the video was processed and raw file moved."
@@ -94,11 +85,7 @@ def _update_video_meta(
         return  # Graceful skip instead of FileNotFoundError
 
     try:
-        raw_context = (
-            nullcontext(Path(raw_video_path))
-            if raw_video_path is not None
-            else _ensure_local_raw_file(video)
-        )
+        raw_context = video.ensure_local_raw_file()
     except (AttributeError, ValueError, FileNotFoundError):
         # DEFENSIVE: Log warning and skip instead of crashing production pipeline
         logger.warning(

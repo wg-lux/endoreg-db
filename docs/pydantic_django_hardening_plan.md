@@ -1,9 +1,5 @@
 # Pydantic and Django Hardening Plan
 
-> Status tracking was migrated to `feature-tracking/done/TypeSafety.yml`. This
-> document is retained as technical analysis and must not carry an independent
-> completion status.
-
 ## Purpose
 
 This note documents the current risk profile around the repository's Pydantic usage, especially where Pydantic models intersect with Django ORM objects, YAML-backed models, and multi-inheritance model composition.
@@ -93,7 +89,7 @@ The clearest example is:
 
 - `endoreg_db/models/medical/patient/patient_examination.py`
 
-Historically, `PatientExamination.links` performed live data gathering using:
+`PatientExamination.links` performs live data gathering using:
 
 - `self.indications.all()`
 - `PatientLabValue.objects.filter(patient=self.patient)`
@@ -105,10 +101,7 @@ Those inner helpers also return querysets:
 
 - `endoreg_db/models/medical/patient/patient_finding.py`
 
-That property has been removed. The canonical path now uses
-`load_patient_examination_for_links()` followed by
-`build_patient_examination_links()` in the service layer. The loader has a bounded
-query plan and aggregation performs no queries.
+This means requirement evaluation can look like in-memory logic while still producing repeated database activity.
 
 ### 4. Prefetching exists, but coverage is partial
 
@@ -184,7 +177,7 @@ Document and enforce this rule:
 
 This should become a code review expectation for:
 
-- `build_patient_examination_links()`
+- `PatientExamination.links`
 - `PatientFinding.links`
 - `Requirement.links`
 - other model-level link aggregators
@@ -195,7 +188,7 @@ Add targeted tests around:
 
 - `load_patient_exam_for_eval()`
 - `Requirement.evaluate()`
-- `build_patient_examination_links()`
+- `PatientExamination.links`
 
 Use Django query-count assertions to detect accidental N+1 behavior.
 
@@ -212,9 +205,7 @@ Desired outcome:
 
 #### 3. Align prefetch plans with actual traversal paths
 
-Review evaluation loaders and update them so they use the canonical
-`load_patient_examination_for_links()` object graph before calling
-`build_patient_examination_links()`.
+Review `load_patient_exam_for_eval()` and update it so it prefetches everything accessed later in `.links`.
 
 At minimum, inspect and likely cover:
 
@@ -353,7 +344,7 @@ If evaluation code consumes a Django object graph repeatedly, provide one loader
 Recommended order for actual hardening work:
 
 1. add query-count tests around requirement evaluation
-2. align evaluation loaders with the service-owned link traversal
+2. align `load_patient_exam_for_eval()` with actual `.links` traversal
 3. add duplicate-field detection for multi-parent Pydantic models
 4. clean up `ListFieldSerializationMixIn`
 5. simplify redundant inheritance

@@ -1,25 +1,10 @@
-from __future__ import annotations
-
-from collections.abc import Mapping
-from datetime import date, datetime
-from typing import Protocol, TypeAlias, cast
-
-from django.db.models import QuerySet
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonObject
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.exceptions import FhirExportError
-from endoreg_db.schemas.fhir_r4 import dump_fhir_r4_bundle
-from endoreg_db.services.interoperability.fhir_r4 import (
-    build_patient_examination_fhir_bundle,
-)
 from endoreg_db.serializers.patient.patient_dropdown import PatientDropdownSerializer
 from endoreg_db.serializers.patient_examination import (
     PatientExaminationDraftResponseSerializer,
@@ -27,38 +12,9 @@ from endoreg_db.serializers.patient_examination import (
     PatientExaminationSerializer,
 )
 from endoreg_db.serializers.examination import ExaminationDropdownSerializer
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import assert_center_scope_allowed
-from endoreg_db.views.interoperability_errors import interoperability_error_response
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
-RouteKwarg: TypeAlias = str | int | bool
 
 
-class _SerializerDataLike(Protocol):
-    @property
-    def data(self) -> JsonValue: ...
-
-
-class _SerializerErrorsLike(Protocol):
-    @property
-    def errors(self) -> JsonValue: ...
-
-
-def _query_params(request: Request) -> Mapping[str, str]:
-    return cast(Mapping[str, str], request.query_params)
-
-
-def _serializer_data(serializer: _SerializerDataLike) -> JsonValue:
-    return serializer.data
-
-
-def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
-    return serializer.errors
-
-
-class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientExaminationViewSet(viewsets.ModelViewSet):
     """
     ViewSet für PatientExamination mit vollständiger CRUD-Unterstützung
     """
@@ -66,7 +22,7 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
     queryset = PatientExamination.objects.all().select_related("patient", "examination")
     serializer_class = PatientExaminationSerializer
 
-    def get_queryset(self) -> QuerySet[PatientExamination]:
+    def get_queryset(self):
         """Optimierte Abfrage mit besserer Performance"""
         return (
             PatientExamination.objects.select_related("patient", "examination")
@@ -74,20 +30,11 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
             .order_by("-date_start", "-id")
         )
 
-    def get_patient_examination_ids(self) -> list[int]:
+    def get_patient_examination_ids(self):
         """Hilfsmethode zum Abrufen mehrerer PatientExamination IDs"""
-        return [
-            int(pk)
-            for pk in PatientExamination.objects.filter(all=True).values_list(
-                "id",
-                flat=True,
-            )
-        ]
+        return PatientExamination.objects.filter(all=True).values_list("id", flat=True)
 
-    def get_patient_examination_by_id(
-        self,
-        pk: int | str,
-    ) -> PatientExamination | None:
+    def get_patient_examination_by_id(self, pk):
         """Hilfsmethode zum Abrufen einer PatientExamination nach ID"""
         if not PatientExamination.objects.filter(pk=pk).exists():
             return None
@@ -97,82 +44,55 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
             ).get(pk=pk)
 
     @action(detail=False, methods=["get"])
-    def patients_dropdown(self, request: Request) -> Response:
+    def patients_dropdown(self, request):
         """
         Endpoint für Patient-Dropdown-Daten
         GET /api/patient-examinations/patients_dropdown/
         """
         patients = Patient.objects.all().order_by("first_name", "last_name")
         serializer = PatientDropdownSerializer(patients, many=True)
-        return Response(_serializer_data(serializer))
+        return Response(serializer.data)
 
     @action(detail=False, methods=["get"])
-    def examinations_dropdown(self, request: Request) -> Response:
+    def examinations_dropdown(self, request):
         """
         Endpoint für Examination-Dropdown-Daten
         GET /api/patient-examinations/examinations_dropdown/
         """
         examinations = Examination.objects.all().order_by("name")
         serializer = ExaminationDropdownSerializer(examinations, many=True)
-        return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
+        return Response(serializer.data)
 
     @action(detail=False, methods=["get"])
-    def recent(self, request: Request) -> Response:
+    def recent(self, request):
         """
         Endpoint für die letzten PatientExaminations
         GET /api/patient-examinations/recent/
         """
-        limit = int(_query_params(request).get("limit", "10"))
+        limit = int(request.query_params.get("limit", 10))
         recent_examinations = self.get_queryset()[:limit]
         serializer = self.get_serializer(recent_examinations, many=True)
-        return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
+        return Response(serializer.data)
 
     @action(detail=True, methods=["get"])
-    def details(self, request: Request, pk: str = "") -> Response:
+    def details(self, request, pk=None):
         """
         Detaillierte Informationen über eine PatientExamination
         GET /api/patient-examinations/{id}/details/
         """
         examination = self.get_object()
-        date_start = cast(date | None, getattr(examination, "date_start"))
-        data: dict[str, JsonValue] = {
-            "examination": _serializer_data(
-                cast(_SerializerDataLike, PatientExaminationSerializer(examination))
-            ),
+        data = {
+            "examination": PatientExaminationSerializer(examination).data,
             "findings": examination.get_findings().count(),
             "indications": examination.get_indications().count(),
             "patient_age_at_examination": examination.get_patient_age_at_examination()
-            if date_start is not None
+            if examination.date_start
             else None,
         }
         return Response(data)
 
-    @action(
-        detail=True,
-        methods=["get"],
-        url_path="fhir",
-        permission_classes=[EnvironmentAwarePermission, PolicyPermission],
-    )
-    def fhir_bundle(self, request: Request, pk: str = "") -> Response:
-        """Export one patient examination as a validated FHIR R4 Bundle."""
-
-        examination = self.get_object()
-        assert_center_scope_allowed(
-            request=request,
-            obj=examination,
-            not_found_message="Patient examination not found",
-        )
-        try:
-            bundle = build_patient_examination_fhir_bundle(examination)
-        except FhirExportError as error:
-            return interoperability_error_response(error)
-        return Response(
-            dump_fhir_r4_bundle(bundle),
-            content_type="application/fhir+json",
-        )
-
     @action(detail=True, methods=["get", "put"])
-    def draft(self, request: Request, pk: str = "") -> Response:
+    def draft(self, request, pk=None):
         """
         Draft endpoint for transient report editor state.
 
@@ -184,104 +104,67 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
         if request.method == "GET":
             serializer = PatientExaminationDraftResponseSerializer(
                 {
-                    "patient_examination_id": cast(int, examination.pk),
+                    "patient_examination_id": examination.id,
                     "draft": examination.report_draft or {},
-                    "updated_at": cast(
-                        datetime | None,
-                        getattr(examination, "draft_updated_at"),
-                    ),
+                    "updated_at": examination.draft_updated_at,
                 }
             )
-            return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
+            return Response(serializer.data)
 
         serializer = PatientExaminationDraftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        examination.report_draft = cast(JsonObject, serializer.validated_data)
+        examination.report_draft = serializer.validated_data
         examination.draft_updated_at = timezone.now()
         examination.save(update_fields=["report_draft", "draft_updated_at"])
 
         response_serializer = PatientExaminationDraftResponseSerializer(
             {
-                "patient_examination_id": cast(int, examination.pk),
+                "patient_examination_id": examination.id,
                 "draft": examination.report_draft,
-                "updated_at": cast(
-                    datetime | None,
-                    getattr(examination, "draft_updated_at"),
-                ),
+                "updated_at": examination.draft_updated_at,
             }
         )
-        return Response(
-            _serializer_data(cast(_SerializerDataLike, response_serializer)),
-            status=status.HTTP_200_OK,
-        )
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-    def create(
-        self,
-        request: Request,
-        *args: str,
-        **kwargs: RouteKwarg,
-    ) -> Response:
+    def create(self, request, *args, **kwargs):
         """
         Überschreibt die create-Methode für bessere Fehlerbehandlung
         """
-        serializer = cast(
-            PatientExaminationSerializer, self.get_serializer(data=request.data)
-        )
+        serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             try:
                 self.perform_create(serializer)
-                response_data = _serializer_data(cast(_SerializerDataLike, serializer))
-                headers = self.get_success_headers(
-                    cast(dict[str, JsonValue], response_data)
-                )
+                headers = self.get_success_headers(serializer.data)
                 return Response(
-                    response_data, status=status.HTTP_201_CREATED, headers=headers
+                    serializer.data, status=status.HTTP_201_CREATED, headers=headers
                 )
             except Exception as e:
                 return Response(
                     {"error": f"Fehler beim Erstellen der Untersuchung: {str(e)}"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        return Response(
-            _serializer_errors(cast(_SerializerErrorsLike, serializer)),
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def update(
-        self,
-        request: Request,
-        *args: str,
-        **kwargs: RouteKwarg,
-    ) -> Response:
+    def update(self, request, *args, **kwargs):
         """
         Überschreibt die update-Methode für bessere Fehlerbehandlung
         """
-        partial = kwargs.pop("partial", False) is True
+        partial = kwargs.pop("partial", False)
         instance = self.get_object()
-        serializer = cast(
-            PatientExaminationSerializer,
-            self.get_serializer(instance, data=request.data, partial=partial),
-        )
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
 
         if serializer.is_valid():
             try:
                 self.perform_update(serializer)
-                return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
+                return Response(serializer.data)
             except Exception as e:
                 return Response(
                     {"error": f"Fehler beim Aktualisieren der Untersuchung: {str(e)}"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        return Response(
-            _serializer_errors(cast(_SerializerErrorsLike, serializer)),
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def get_findings_for_examination(
-        self,
-        request: Request,
-        pk: str = "",
-    ) -> Response:
+    def get_findings_for_examination(self, request, pk=None):
         """
         Endpoint to retrieve findings for a specific PatientExamination
         GET /api/patient-examinations/{pk}/findings/
@@ -293,8 +176,6 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        findings = examination.get_findings()
-        finding_data: list[dict[str, JsonValue]] = [
-            {"id": cast(int | None, f.pk), "name": str(f)} for f in findings
-        ]
+        findings = PatientExaminationSerializer.get_
+        finding_data = [{"id": f.id, "name": str(f)} for f in findings]
         return Response(finding_data)

@@ -64,10 +64,19 @@ _SYSTEM_MODULES = (
     "model_meta_from_hf",
     "polling_coordinator",
     "reconciliation",
-    "sap_ish_clinical",
     "sap_ish_import",
     "tabular_import_formats",
 )
+_JOB_MODULES = (
+    "frame_extraction_jobs",
+    "heavy_jobs",
+    "model_training_jobs",
+    "report_llm_jobs",
+    "video_post_validation_jobs",
+    "video_reimport_jobs",
+    "video_task_cleanup",
+)
+
 _SERVICE_MODULES = {
     module_name: f".{module_name}"
     for module_name in (
@@ -78,6 +87,9 @@ _SERVICE_MODULES = {
         *_SYSTEM_MODULES,
     )
 }
+_SERVICE_MODULES.update(
+    {module_name: f".jobs.{module_name}" for module_name in _JOB_MODULES}
+)
 
 _EXPORTS = {
     "build_preanonymized_payload": (
@@ -87,14 +99,6 @@ _EXPORTS = {
     "convert_sap_ish_zip_to_preanonymized_drop": (
         ".sap_ish_import",
         "convert_sap_ish_zip_to_preanonymized_drop",
-    ),
-    "convert_sap_ish_txt_directory_to_preanonymized_drop": (
-        ".sap_ish_import",
-        "convert_sap_ish_txt_directory_to_preanonymized_drop",
-    ),
-    "persist_sap_ish_clinical_rows": (
-        ".sap_ish_clinical",
-        "persist_sap_ish_clinical_rows",
     ),
     "load_document_templates": (
         ".tabular_import_formats",
@@ -112,11 +116,9 @@ _EXPORTS = {
 
 __all__ = [
     "build_preanonymized_payload",
-    "convert_sap_ish_txt_directory_to_preanonymized_drop",
     "convert_sap_ish_zip_to_preanonymized_drop",
     "load_document_templates",
     "normalize_document_row",
-    "persist_sap_ish_clinical_rows",
     "resolve_document_template",
 ]
 
@@ -134,8 +136,10 @@ if TYPE_CHECKING:
     export_ready: ModuleType
     finding_description_service: ModuleType
     frames: ModuleType
+    frame_extraction_jobs: ModuleType
     frame_retention: ModuleType
     frame_segment_reconciliation: ModuleType
+    heavy_jobs: ModuleType
     hub: ModuleType
     jobs: ModuleType
     knowledge_base_identity: ModuleType
@@ -143,6 +147,7 @@ if TYPE_CHECKING:
     media_integrity: ModuleType
     media_operation_gate: ModuleType
     model_meta_from_hf: ModuleType
+    model_training_jobs: ModuleType
     pdf_import: ModuleType
     polling_coordinator: ModuleType
     pseudonym_service: ModuleType
@@ -150,11 +155,11 @@ if TYPE_CHECKING:
     reconciliation: ModuleType
     report_history: ModuleType
     report_import: ModuleType
+    report_llm_jobs: ModuleType
     report_materialization: ModuleType
     report_pdf_renderer: ModuleType
     report_persistence: ModuleType
     sap_ish_import: ModuleType
-    sap_ish_clinical: ModuleType
     segment_annotations: ModuleType
     segment_contracts: ModuleType
     segment_sync: ModuleType
@@ -166,15 +171,14 @@ if TYPE_CHECKING:
     video_files: ModuleType
     video_import: ModuleType
     video_post_validation_blackening: ModuleType
+    video_post_validation_jobs: ModuleType
+    video_reimport_jobs: ModuleType
     video_segments_bulk_mutation: ModuleType
+    video_task_cleanup: ModuleType
     video_temporal_inference: ModuleType
     video_transcoding: ModuleType
 
-    from .sap_ish_import import (
-        convert_sap_ish_txt_directory_to_preanonymized_drop,
-        convert_sap_ish_zip_to_preanonymized_drop,
-    )
-    from .sap_ish_clinical import persist_sap_ish_clinical_rows
+    from .sap_ish_import import convert_sap_ish_zip_to_preanonymized_drop
     from .tabular_import_formats import (
         build_preanonymized_payload,
         load_document_templates,

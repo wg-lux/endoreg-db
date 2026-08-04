@@ -1,36 +1,31 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
-
 from django.db import models
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .product import Product
-    from .reference_product import ReferenceProduct
+    from endoreg_db.models import (
+        Product,
+        ReferenceProduct,
+    )
 
-NoProductGroupValue: TypeAlias = NoneType
-ProductGroupReference: TypeAlias = "ReferenceProduct | NoProductGroupValue"
 
-
-class ProductGroupManager(models.Manager["ProductGroup"]):
-    def get_by_natural_key(self, name: str) -> "ProductGroup":
+class ProductGroupManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class ProductGroup(models.Model):
     objects = ProductGroupManager()
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    name = models.CharField(max_length=255)
 
     if TYPE_CHECKING:
         reference_product: "ReferenceProduct"
         products: models.QuerySet["Product"]
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)
 
     def get_products(self) -> models.QuerySet["Product"]:
@@ -42,5 +37,5 @@ class ProductGroup(models.Model):
         else:
             return Product.objects.none()
 
-    def get_reference_product(self) -> ProductGroupReference:
+    def get_reference_product(self) -> "None | ReferenceProduct":
         return self.reference_product

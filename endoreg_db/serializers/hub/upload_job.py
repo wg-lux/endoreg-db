@@ -1,43 +1,9 @@
-from __future__ import annotations
-
-from typing import Protocol, cast, TYPE_CHECKING
-
 from rest_framework import serializers
 
-if TYPE_CHECKING:
-    _ModelSerializerMeta = serializers.ModelSerializer.Meta
-else:
-    _ModelSerializerMeta = object
-
 from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
 
 
-class _UploadJobLike(Protocol):
-    status: str
-    error_detail: str | None
-    sensitive_meta: object | None
-    text: str | None
-    anonymized_text: str | None
-    source_center: object | None
-    source_system: str
-    ingest_mode: str
-    report_llm_inference_jobs: object
-
-
-class _ReportLlmInferenceJobQueryLike(Protocol):
-    def select_related(
-        self, *args: object, **kwargs: object
-    ) -> "_ReportLlmInferenceJobQueryLike": ...
-
-    def order_by(
-        self, *args: object, **kwargs: object
-    ) -> "_ReportLlmInferenceJobQueryLike": ...
-
-    def first(self) -> object | None: ...
-
-
-class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
+class UploadJobStatusSerializer(serializers.ModelSerializer):
     """
     Read-only serializer for upload job status responses.
     Returns status information for polling endpoints.
@@ -64,8 +30,8 @@ class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
     ingest_mode = serializers.CharField(read_only=True)
     report_llm_job = serializers.SerializerMethodField()
 
-    class Meta(_ModelSerializerMeta):
-        model = UploadJob  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = UploadJob
         fields = [
             "status",
             "error_detail",
@@ -80,10 +46,9 @@ class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
         ]
         read_only_fields = fields
 
-    def get_report_llm_job(self, obj: _UploadJobLike) -> dict[str, object] | None:
+    def get_report_llm_job(self, obj):
         job = (
-            cast(_ReportLlmInferenceJobQueryLike, obj.report_llm_inference_jobs)
-            .select_related("pdf")
+            obj.report_llm_inference_jobs.select_related("pdf")
             .order_by("-created_at", "-id")
             .first()
         )
@@ -92,24 +57,23 @@ class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
 
         from endoreg_db.services.jobs.report_llm_jobs import report_llm_job_payload
 
-        return cast(
-            dict[str, object],
-            report_llm_job_payload(cast(ReportLlmInferenceJob, job)),
-        )
+        return report_llm_job_payload(job)
 
-    def to_representation(self, instance: UploadJob) -> dict[str, object]:
+    def to_representation(self, instance):
         """
         Customize the representation to only include relevant fields based on status.
         """
-        data = cast(dict[str, object], super().to_representation(instance))
+        data = super().to_representation(instance)
 
         # Only include error_detail if status is error
-        if str(instance.status) not in {"error", "lost"}:
+        if instance.status not in {UploadJob.Status.ERROR, UploadJob.Status.LOST}:
             data.pop("error_detail", None)
 
         # Only include sensitive_meta_id if status is anonymized and we have a meta record
-        sensitive_meta = cast(object | None, instance.sensitive_meta)
-        if str(instance.status) != "anonymized" or not sensitive_meta:
+        if (
+            instance.status != UploadJob.Status.ANONYMIZED
+            or not instance.sensitive_meta
+        ):
             data.pop("sensitive_meta_id", None)
 
         # Remove empty optional fields
@@ -123,7 +87,7 @@ class UploadJobStatusSerializer(serializers.ModelSerializer[UploadJob]):
         return data
 
 
-class UploadCreateResponseSerializer(serializers.Serializer[dict[str, object]]):
+class UploadCreateResponseSerializer(serializers.Serializer):
     """
     Serializer for the initial upload response.
     Returns upload_id and status_url for polling.

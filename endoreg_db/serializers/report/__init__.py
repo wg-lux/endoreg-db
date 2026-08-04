@@ -1,11 +1,11 @@
 from .patient_examination_report import (
-    PatientExaminationReportMakeReportSchema,
-    PatientExaminationReportSchema,
-    PatientExaminationReportSubmissionSchema,
+    PatientExaminationReportMakeReportSerializer,
+    PatientExaminationReportSerializer,
+    PatientExaminationReportSubmissionSerializer,
 )
 
 __all__ = [
-    "PatientExaminationReportMakeReportSchema",
-    "PatientExaminationReportSchema",
-    "PatientExaminationReportSubmissionSchema",
+    "PatientExaminationReportMakeReportSerializer",
+    "PatientExaminationReportSerializer",
+    "PatientExaminationReportSubmissionSerializer",
 ]

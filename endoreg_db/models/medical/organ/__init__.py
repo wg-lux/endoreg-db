@@ -1,28 +1,25 @@
-from __future__ import annotations
-from typing import Any
-
 """Module for Organ models."""
 
 from django.db import models
 
 
-class OrganManager(models.Manager["Organ"]):
+class OrganManager(models.Manager):
     """Manager for Organ model."""
 
-    def get_by_natural_key(self, name: str) -> "Organ":
+    def get_by_natural_key(self, name):
         """Retrieve an Organ by its natural key."""
         return self.get(name=name)
 
-    def all_names(self) -> list[str]:
+    def all_names(self):
         """Return a list of all organ names."""
-        return [str(name) for name in self.all().values_list("name", flat=True)]
+        return list(self.all().values_list("name", flat=True))
 
 
 class Organ(models.Model):
     """Model representing an organ."""
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
 
     # Deprecated
     # location_choices = models.ManyToManyField(
@@ -32,10 +29,10 @@ class Organ(models.Model):
 
     objects = OrganManager()
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Return the natural key for the organ."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Return string representation of the organ."""
         return str(self.name)

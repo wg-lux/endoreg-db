@@ -11,7 +11,7 @@
 # ---------------
 # Add this class to DRF's global permission chain in settings:
 #   REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] = (
-#       "endoreg_db.utils.permissions.EnvironmentAwarePermission",
+#       "endoreg_db.utils.web.permissions.EnvironmentAwarePermission",
 #       "endoreg_db.authz.permissions.PolicyPermission",
 #   )
 # The first class gates "auth required in prod"; this class enforces *which role*
@@ -25,52 +25,52 @@
 # - Role satisfaction rule (in policy.satisfies): "write ⇒ read".
 # - User roles come from Django Groups, set at OIDC login by your OIDC backend.
 
-from __future__ import annotations
-
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, Protocol, cast
-
+from rest_framework.permissions import BasePermission
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import cached_property
-from rest_framework.permissions import BasePermission
-from rest_framework.request import Request
-
-from endoreg_db.utils.permissions import is_debug_mode
+from endoreg_db.utils.web.permissions import is_debug_mode
 from endoreg_db.authz.policy import REQUIRED_ROLES, satisfies, get_needed_role
 import logging
-
-if TYPE_CHECKING:
-    from rest_framework.views import APIView
 
 logger = logging.getLogger(__name__)
 
 
-class _UserGroupManager(Protocol):
-    def values_list(self, field_name: str, flat: bool) -> Iterable[str]: ...
-
-
-class _PolicyUser(Protocol):
-    username: str
-    is_authenticated: bool
-    groups: _UserGroupManager
-
-
-def _normalized_route_name(request: Request, view: APIView) -> str:
+def _normalized_route_name(request, view) -> str:
     """
     Return a stable, de-namespaced route name, e.g. 'patient-list'.
     Prefer resolver_match.view_name (may be 'endoreg_db:patient-list'),
     fallback to url_name, then class name.
     """
     rm = getattr(request, "resolver_match", None)
-    if rm is not None:
+    if rm:
         # Try namespaced form first (strip namespace)
-        view_name = rm.view_name or ""
+        view_name = getattr(rm, "view_name", "") or ""
         if view_name:
             return view_name.split(":")[-1]
-        url_name = rm.url_name or ""
+        url_name = getattr(rm, "url_name", "") or ""
         if url_name:
             return url_name
-    return type(view).__name__
+    return view.__class__.__name__
+
+
+def _route_name(request, view):
+    """
+    Resolve a stable name for the current endpoint.
+
+    For DRF ViewSets registered via DefaultRouter:
+      - request.resolver_match.url_name is typically "<basename>-<action>"
+        e.g., "patient-list", "patient-detail", "check_pe_exist"
+    For plain APIViews or function views with path(name="..."):
+      - .url_name is that explicit name.
+    Fallback:
+      - If resolver info is missing (edge cases), use the class name as a last resort.
+
+    NOTE: Namespaces (e.g., "api:patient-list") do not affect .url_name; it's just "patient-list".
+    """
+    rm = getattr(request, "resolver_match", None)
+    if rm and rm.url_name:
+        return rm.url_name
+    return view.__class__.__name__  # last-resort fallback (rarely used in practice)
 
 
 class PolicyPermission(BasePermission):
@@ -88,10 +88,10 @@ class PolicyPermission(BasePermission):
     """
 
     @cached_property
-    def _required_roles(self) -> dict[str, dict[str, str]]:
+    def _required_roles(self):
         return REQUIRED_ROLES
 
-    def has_permission(self, request: Request, view: APIView) -> bool:
+    def has_permission(self, request, view):
         route = _normalized_route_name(request, view)
         method = (request.method or "").upper()
 
@@ -106,11 +106,10 @@ class PolicyPermission(BasePermission):
             return True
 
         # 2) Must be authenticated
-        request_user = request.user
-        if isinstance(request_user, AnonymousUser) or not request_user.is_authenticated:
+        user = getattr(request, "user", None)
+        if not user or isinstance(user, AnonymousUser) or not user.is_authenticated:
             logger.info("RBAC DENY (UNAUTH): route=%s method=%s", route, method)
             return False
-        user = cast(_PolicyUser, request_user)
 
         # 3) Determine needed role
         needed = get_needed_role(route, method)
@@ -123,7 +122,7 @@ class PolicyPermission(BasePermission):
             return False
 
         # 4) Collect roles and decide
-        user_roles: set[str] = set(user.groups.values_list("name", flat=True))
+        user_roles = set(user.groups.values_list("name", flat=True))
         allowed = satisfies(user_roles, needed)
 
         logger.info(

@@ -28,18 +28,6 @@ DEFAULT_CACHE_TIMEOUT_SECONDS = 60 * 30
 DEFAULT_DRF_THROTTLE_USER = "100/hour"
 DEFAULT_DRF_THROTTLE_ANON = "20/hour"
 DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS = 8600
-DEFAULT_FFMPEG_TRANSCODE_QUALITY_MODE = "balanced"
-FFMPEG_TRANSCODE_QUALITY_MODES = frozenset({"fast", "balanced", "quality"})
-DEFAULT_VIDEO_STORAGE_MAX_BIT_RATE_BPS = 12_000_000
-DEFAULT_VIDEO_STORAGE_MAX_BYTES_PER_SECOND = 1_600_000
-DEFAULT_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES = 4 * 1024 * 1024
-DEFAULT_VIDEO_STORAGE_MAX_WIDTH = 4096
-DEFAULT_VIDEO_STORAGE_MAX_HEIGHT = 2160
-DEFAULT_VIDEO_STORAGE_MAX_SOURCE_FPS = 120.0
-DEFAULT_VIDEO_STORAGE_ANNOTATION_MAX_FPS = 50.0
-DEFAULT_HLS_ENCODING_PROFILE = "clinical_h264_libx264_crf_v1"
-DEFAULT_VIDEO_STORAGE_WARNING_FREE_BYTES = 2 * 1024 * 1024 * 1024
-DEFAULT_VIDEO_STORAGE_STOP_FREE_BYTES = 1024 * 1024 * 1024
 DEFAULT_VIDEO_FPS = 50.0
 DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
@@ -166,12 +154,12 @@ def _normalize_protected_runtime_paths(
     )
 
 
-_dotenv_loaded = False
+_DOTENV_LOADED = False
 
 import dotenv
 
 dotenv.load_dotenv()
-_dotenv_loaded = True
+_DOTENV_LOADED = True
 
 if _is_explicit_test_settings():
     test_root = (BASE_DIR / "data" / "tests").resolve()
@@ -369,10 +357,7 @@ def get_lookup_requirement_legacy_fallback_enabled() -> bool:
 
 
 def get_lx_dtypes_host_models_module() -> str:
-    return env_str(
-        "LX_DTYPES_HOST_MODELS_MODULE",
-        "endoreg_db.integrations.lx_dtypes_host_models",
-    )
+    return env_str("LX_DTYPES_HOST_MODELS_MODULE", "endoreg_db.models")
 
 
 def get_lx_dtypes_kb_registry() -> str:
@@ -532,10 +517,6 @@ def get_protected_media_root() -> Path:
     return env_path(PROTECTED_MEDIA_ROOT_ENV, default_root)
 
 
-def allow_insecure_protected_media_serving() -> bool:
-    return env_bool("ALLOW_INSECURE_PROTECTED_MEDIA", False)
-
-
 def get_data_dir() -> Path:
     runtime_env = build_protected_runtime_env()
     default_root = runtime_env[DATA_DIR_ENV]
@@ -567,130 +548,6 @@ def get_ffmpeg_transcode_timeout_seconds() -> int:
         "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
         DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     )
-
-
-def get_ffmpeg_transcode_quality_mode() -> str:
-    quality_mode = (
-        env_str(
-            "FFMPEG_TRANSCODE_QUALITY_MODE",
-            DEFAULT_FFMPEG_TRANSCODE_QUALITY_MODE,
-        )
-        .strip()
-        .lower()
-    )
-    if quality_mode not in FFMPEG_TRANSCODE_QUALITY_MODES:
-        allowed = ", ".join(sorted(FFMPEG_TRANSCODE_QUALITY_MODES))
-        raise ValueError(f"FFMPEG_TRANSCODE_QUALITY_MODE must be one of: {allowed}")
-    return quality_mode
-
-
-def get_video_storage_max_bit_rate_bps() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_MAX_BIT_RATE_BPS",
-        DEFAULT_VIDEO_STORAGE_MAX_BIT_RATE_BPS,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_MAX_BIT_RATE_BPS must be positive")
-    return value
-
-
-def get_video_storage_max_bytes_per_second() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_MAX_BYTES_PER_SECOND",
-        DEFAULT_VIDEO_STORAGE_MAX_BYTES_PER_SECOND,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_MAX_BYTES_PER_SECOND must be positive")
-    return value
-
-
-def get_video_storage_fixed_overhead_bytes() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES",
-        DEFAULT_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES,
-    )
-    if value < 0:
-        raise ValueError(
-            "ENDOREG_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES must not be negative"
-        )
-    return value
-
-
-def get_video_storage_max_width() -> int:
-    value = env_int("ENDOREG_VIDEO_STORAGE_MAX_WIDTH", DEFAULT_VIDEO_STORAGE_MAX_WIDTH)
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_MAX_WIDTH must be positive")
-    return value
-
-
-def get_video_storage_max_height() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_MAX_HEIGHT",
-        DEFAULT_VIDEO_STORAGE_MAX_HEIGHT,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_MAX_HEIGHT must be positive")
-    return value
-
-
-def get_video_storage_max_source_fps() -> float:
-    value = env_float(
-        "ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS",
-        DEFAULT_VIDEO_STORAGE_MAX_SOURCE_FPS,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS must be positive")
-    return value
-
-
-def get_video_storage_annotation_max_fps() -> float:
-    value = env_float(
-        "ENDOREG_VIDEO_STORAGE_ANNOTATION_MAX_FPS",
-        DEFAULT_VIDEO_STORAGE_ANNOTATION_MAX_FPS,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_ANNOTATION_MAX_FPS must be positive")
-    return value
-
-
-def get_hls_encoding_profile_name() -> str:
-    value = env_str(
-        "ENDOREG_HLS_ENCODING_PROFILE",
-        DEFAULT_HLS_ENCODING_PROFILE,
-    ).strip()
-    if not value:
-        raise ValueError("ENDOREG_HLS_ENCODING_PROFILE must not be empty")
-    return value
-
-
-def get_video_storage_warning_free_bytes() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_WARNING_FREE_BYTES",
-        DEFAULT_VIDEO_STORAGE_WARNING_FREE_BYTES,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_WARNING_FREE_BYTES must be positive")
-    return value
-
-
-def get_video_storage_stop_free_bytes() -> int:
-    value = env_int(
-        "ENDOREG_VIDEO_STORAGE_STOP_FREE_BYTES",
-        DEFAULT_VIDEO_STORAGE_STOP_FREE_BYTES,
-    )
-    if value <= 0:
-        raise ValueError("ENDOREG_VIDEO_STORAGE_STOP_FREE_BYTES must be positive")
-    warning_bytes = get_video_storage_warning_free_bytes()
-    if value >= warning_bytes:
-        raise ValueError(
-            "ENDOREG_VIDEO_STORAGE_STOP_FREE_BYTES must be lower than "
-            "ENDOREG_VIDEO_STORAGE_WARNING_FREE_BYTES"
-        )
-    return value
-
-
-def video_storage_destructive_migration_enabled() -> bool:
-    return env_bool("ENDOREG_VIDEO_STORAGE_DESTRUCTIVE_MIGRATION_ENABLED", False)
 
 
 def get_ffmpeg_env_candidates() -> list[str]:
@@ -884,7 +741,6 @@ def snapshot() -> Dict[str, Any]:
         "STORAGE_DIR",
         "DATA_DIR",
         "PROTECTED_MEDIA_ROOT",
-        "ALLOW_INSECURE_PROTECTED_MEDIA",
         "ASSET_DIR",
         "STATIC_URL",
         "MEDIA_URL",
@@ -899,7 +755,6 @@ def snapshot() -> Dict[str, Any]:
         # Flags
         "RUN_VIDEO_TESTS",
         "SKIP_EXPENSIVE_TESTS",
-        "FFMPEG_TRANSCODE_QUALITY_MODE",
         "ENDOREG_DEPLOYMENT_ROLE",
         "ENDOREG_ENABLE_HUB_TRANSFERS",
         "CELERY_BROKER_URL",
@@ -919,7 +774,7 @@ def snapshot() -> Dict[str, Any]:
     data: Dict[str, Any] = {k: os.environ.get(k) for k in keys}
     data.update(
         {
-            "DOTENV_LOADED": _dotenv_loaded,
+            "DOTENV_LOADED": _DOTENV_LOADED,
             "BASE_DIR": str(BASE_DIR),
         }
     )

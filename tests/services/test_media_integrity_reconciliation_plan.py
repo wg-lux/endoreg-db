@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
 
 import pytest
-from pytest import MonkeyPatch
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
@@ -125,9 +123,7 @@ def test_dry_run_does_not_create_missing_stable_frame(
     assert not (frame_dir / "frame_0000000.jpg").exists()
 
 
-def test_targeted_frame_zero_fix_uses_staged_output(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch, tmp_path: Path):
     video = _video_with_initialized_frames(
         tmp_path,
         frame_count=3,
@@ -143,14 +139,7 @@ def test_targeted_frame_zero_fix_uses_staged_output(
 
     seen_output_dirs: list[Path] = []
 
-    def fake_extract_range(
-        video_arg: VideoFile,
-        *,
-        output_dir: Path | str,
-        start_frame: int,
-        end_frame: int,
-        **_kwargs: Any,
-    ) -> list[Path]:
+    def fake_extract_range(video_arg, *, output_dir, start_frame, end_frame, **_kwargs):
         assert video_arg == video
         assert start_frame == 0
         assert end_frame == 1
@@ -227,72 +216,6 @@ def test_shifted_cache_with_annotations_is_reported_only(
     assert (frame_dir / "frame_0000003.jpg").exists()
 
 
-def test_shifted_cache_without_annotations_is_replaced_atomically(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2, 3):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"legacy-frame-{frame_number}".encode(),
-        )
-    frame_one = Frame.objects.get(video=video, frame_number=1)
-    frame_one.timestamp = 1.25
-    frame_one.presentation_timestamp = 125
-    frame_one.save(update_fields=["timestamp", "presentation_timestamp"])
-
-    def fake_extract_full_frame_set(
-        video_arg: VideoFile,
-        *,
-        output_dir: Path,
-        ext: str,
-        **_kwargs: Any,
-    ) -> list[Path]:
-        assert video_arg == video
-        ensure_directory(output_dir)
-        extracted_paths: list[Path] = []
-        for frame_number in range(3):
-            extracted_paths.append(
-                _write_test_file(
-                    output_dir / f"frame_{frame_number:07d}.{ext}",
-                    f"replacement-{frame_number}".encode(),
-                )
-            )
-        return extracted_paths
-
-    monkeypatch.setattr(
-        media_integrity,
-        "extract_full_frame_set_to_directory",
-        fake_extract_full_frame_set,
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    assert summary.frame_cache_shifted == 1
-    assert summary.repaired_frames == 3
-    assert sorted(path.name for path in frame_dir.glob("frame_*.jpg")) == [
-        "frame_0000000.jpg",
-        "frame_0000001.jpg",
-        "frame_0000002.jpg",
-    ]
-    frame_one.refresh_from_db()
-    assert frame_one.timestamp == 1.25
-    assert frame_one.presentation_timestamp == 125
-    assert frame_one.is_extracted is True
-
-
 def test_ffmpeg_report_records_defaulted_fps_source(tmp_path: Path):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     video.fps = None
@@ -327,16 +250,14 @@ def test_ffmpeg_report_records_db_fps_source(tmp_path: Path):
     assert report["action"] == "probe_unavailable"
 
 
-def test_ffmpeg_report_does_not_use_streamable_fallback_source(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Path):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(streamable_path, b"video")
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])
 
-    probe_data: dict[str, object] = {
+    probe_data = {
         "streams": [
             {
                 "codec_type": "video",
@@ -347,17 +268,10 @@ def test_ffmpeg_report_does_not_use_streamable_fallback_source(
     }
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
-
-    probed_paths: list[Path] = []
-
-    def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
-        probed_paths.append(path)
-        return True, probe_data, ""
-
     monkeypatch.setattr(
         media_integrity,
         "_probe_video_path",
-        fake_probe_video_path,
+        lambda path: (True, probe_data, ""),
     )
 
     summary = reconcile_media_integrity(
@@ -367,17 +281,15 @@ def test_ffmpeg_report_does_not_use_streamable_fallback_source(
     )
 
     report = summary.video_reports[0]["ffmpeg_metadata"]
-    assert report["source"] == "unavailable"
-    assert report["fps_provenance"] == "fps_defaulted"
-    assert report["probed_fps"] is None
-    assert report["action"] == "fps_defaulted"
-    assert report["default_fps"] == 50.0
-    assert probed_paths == []
+    assert report["source"] == "processed_streamable_fallback"
+    assert report["fps_provenance"] == "fps_verified_by_ffprobe"
+    assert report["probed_fps"] == 50.0
+    assert report["action"] == "would_backfill_ffmpeg_meta"
 
 
-def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
+    monkeypatch, tmp_path: Path
+):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(
@@ -385,20 +297,25 @@ def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
         b"corrupt-streamable",
         file_mode=media_integrity.STREAMABLE_FILE_MODE,
     )
+    video.processed_file.name = "processed/missing.mp4"
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
-    video.save(update_fields=["processed_streamable_relative_path"])
+    video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
 
     monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(
+        media_integrity,
+        "_probe_video_path",
+        lambda path: (False, {"streams": []}, "corrupt streamable"),
+    )
+    monkeypatch.setattr(
+        media_integrity,
+        "_verify_canonical_probe",
+        lambda video_arg, *, processed: (True, ""),
+    )
 
     called: list[dict[str, bool]] = []
 
-    def fake_sync(
-        video_arg: VideoFile,
-        *,
-        include_raw: bool,
-        include_processed: bool,
-        save: bool,
-    ) -> list[object]:
+    def fake_sync(video_arg, *, include_raw, include_processed, save):
         called.append(
             {
                 "include_raw": include_raw,
@@ -423,9 +340,8 @@ def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
     assert called == []
     assert summary.streamable_artifacts_checked == 1
     assert summary.streamable_artifacts_repaired == 1
-    assert summary.lost_records == 0
     artifact = summary.video_reports[0]["streamable_probe"]["artifacts"][0]
     assert artifact["kind"] == "processed"
     assert artifact["probe_ok"] is False
-    assert artifact["action"] == "would_remove_streamable"
-    assert artifact["detail"] == "legacy streamable MP4 is not allowed at rest"
+    assert artifact["canonical_probe_ok"] is True
+    assert artifact["action"] == "would_rebuild_streamable"

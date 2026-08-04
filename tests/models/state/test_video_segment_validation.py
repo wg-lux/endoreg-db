@@ -1,30 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
 import uuid
-from typing import Literal, cast
 
 import pytest
-
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state import SegmentAnnotationStatus
 from endoreg_db.models.state import video_segment_validation as segment_state
-import endoreg_db.services.video_segment_blackening as blackening
-import endoreg_db.services.video_segment_validation_workflow as validation_workflow
-
-
-SegmentStateValues = dict[str, bool]
-HistoryStatus = str | None
-SegmentStatusValue = str
-SegmentMutatorName = Literal[
-    "mark_segment_annotations_stale",
-    "mark_segment_annotations_pending_cleanup",
-    "mark_segment_annotations_complete_without_cleanup",
-    "mark_post_validation_incomplete",
-    "mark_post_validation_complete",
-]
 
 
 def _create_video() -> VideoFile:
@@ -44,7 +27,7 @@ def _blackening_history(video: VideoFile, *, status: str) -> VideoProcessingHist
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
         status=status,
         task_id=f"segment-state-{uuid.uuid4().hex}",
-        config=blackening.blackening_history_config(only_validated=False),
+        config=segment_state._blackening_history_config(only_validated=False),
     )
 
 
@@ -77,27 +60,24 @@ def _blackening_history(video: VideoFile, *, status: str) -> VideoProcessingHist
     ],
 )
 def test_resolve_segment_annotation_status_states(
-    state_values: SegmentStateValues,
-    history_status: HistoryStatus,
-    expected_status: SegmentStatusValue,
-) -> None:
+    state_values,
+    history_status,
+    expected_status,
+):
     video = _create_video()
     if state_values:
         state = video.get_or_create_state()
         for field_name, value in state_values.items():
             setattr(state, field_name, value)
-        update_fields: list[str] = [*state_values.keys(), "date_modified"]
-        state.save(update_fields=update_fields)
+        state.save(update_fields=[*state_values.keys(), "date_modified"])
     if history_status is not None:
         _blackening_history(video, status=history_status)
 
-    assert (
-        validation_workflow.resolve_segment_annotation_status(video) == expected_status
-    )
+    assert segment_state.resolve_segment_annotation_status(video) == expected_status
 
 
 @pytest.mark.django_db
-def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs() -> None:
+def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs():
     video = _create_video()
     VideoProcessingHistory.objects.create(
         video=video,
@@ -111,9 +91,9 @@ def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs() -> Non
         status=VideoProcessingHistory.STATUS_RUNNING,
     )
 
-    summary = validation_workflow.post_validation_rebuild_summary(video)
+    summary = segment_state.post_validation_rebuild_summary(video)
 
-    assert validation_workflow.latest_post_validation_rebuild(video) == history
+    assert segment_state.latest_post_validation_rebuild(video) == history
     assert summary is not None
     assert summary["id"] == history.pk
     assert summary["status"] == VideoProcessingHistory.STATUS_RUNNING
@@ -167,9 +147,9 @@ def test_latest_post_validation_rebuild_ignores_other_reprocessing_jobs() -> Non
     ],
 )
 def test_segment_state_mutators_clear_export_readiness(
-    mutator_name: SegmentMutatorName,
-    expected_values: SegmentStateValues,
-) -> None:
+    mutator_name,
+    expected_values,
+):
     video = _create_video()
     state = video.get_or_create_state()
     state.segment_annotations_created = True
@@ -196,7 +176,6 @@ def test_segment_state_mutators_clear_export_readiness(
     for field_name, value in expected_values.items():
         assert getattr(state, field_name) is value
     assert state.ready_for_export is False
-    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
-    assert ready_for_export_at is None
+    assert state.ready_for_export_at is None
     assert state.ready_for_export_by == ""
     assert state.processed_file_sha256 == ""

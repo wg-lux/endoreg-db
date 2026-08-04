@@ -36,8 +36,6 @@ class HeavyJobKind(StrEnum):
     VIDEO_UPLOAD_IMPORT = "video_upload_import"
     VIDEO_REIMPORT = "video_reimport"
     VIDEO_TRANSCODE = "video_transcode"
-    VIDEO_ANONYMIZATION_CORRECTION = "video_anonymization_correction"
-    VIDEO_HLS_MATERIALIZATION = "video_hls_materialization"
     VIDEO_FRAME_REMOVAL = "video_frame_removal"
     VIDEO_POST_VALIDATION_REBUILD = "video_post_validation_rebuild"
     FRAME_EXTRACTION = "frame_extraction"
@@ -53,8 +51,6 @@ HEAVY_JOB_QUEUE_BY_KIND: dict[HeavyJobKind, WorkloadQueue] = {
     HeavyJobKind.VIDEO_UPLOAD_IMPORT: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_REIMPORT: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_TRANSCODE: WorkloadQueue.FFMPEG_MEDIA,
-    HeavyJobKind.VIDEO_ANONYMIZATION_CORRECTION: WorkloadQueue.FFMPEG_MEDIA,
-    HeavyJobKind.VIDEO_HLS_MATERIALIZATION: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_FRAME_REMOVAL: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.VIDEO_POST_VALIDATION_REBUILD: WorkloadQueue.FFMPEG_MEDIA,
     HeavyJobKind.FRAME_EXTRACTION: WorkloadQueue.FRAME_EXTRACTION,
@@ -67,20 +63,24 @@ HEAVY_JOB_QUEUE_BY_KIND: dict[HeavyJobKind, WorkloadQueue] = {
 }
 
 
-QUEUE_NAME_BY_WORKLOAD_QUEUE: dict[WorkloadQueue, str] = {
-    WorkloadQueue.DEFAULT: get_celery_default_queue(),
-    WorkloadQueue.PIPELINE: get_celery_pipeline_queue(),
-    WorkloadQueue.FRAME_EXTRACTION: get_celery_frame_extraction_queue(),
-    WorkloadQueue.FFMPEG_MEDIA: get_celery_ffmpeg_media_queue(),
-    WorkloadQueue.INFERENCE: get_celery_inference_queue(),
-    WorkloadQueue.MODEL_TRAINING: get_celery_training_queue(),
-    WorkloadQueue.LLM_INFERENCE: get_celery_llm_inference_queue(),
-    WorkloadQueue.MAINTENANCE: get_celery_maintenance_queue(),
-}
-
-
 def queue_name(queue: WorkloadQueue) -> str:
-    return QUEUE_NAME_BY_WORKLOAD_QUEUE[queue]
+    if queue == WorkloadQueue.DEFAULT:
+        return get_celery_default_queue()
+    if queue == WorkloadQueue.PIPELINE:
+        return get_celery_pipeline_queue()
+    if queue == WorkloadQueue.FRAME_EXTRACTION:
+        return get_celery_frame_extraction_queue()
+    if queue == WorkloadQueue.FFMPEG_MEDIA:
+        return get_celery_ffmpeg_media_queue()
+    if queue == WorkloadQueue.INFERENCE:
+        return get_celery_inference_queue()
+    if queue == WorkloadQueue.MODEL_TRAINING:
+        return get_celery_training_queue()
+    if queue == WorkloadQueue.LLM_INFERENCE:
+        return get_celery_llm_inference_queue()
+    if queue == WorkloadQueue.MAINTENANCE:
+        return get_celery_maintenance_queue()
+    raise ValueError(f"Unsupported workload queue: {queue!r}")
 
 
 def queue_for_job_kind(kind: HeavyJobKind) -> str:

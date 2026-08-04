@@ -2,15 +2,11 @@
 Django model for AI models.
 """
 
-from __future__ import annotations
-
-from logging import getLogger
-from pathlib import Path
-from types import NoneType
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
-
 from django.db import models
 from icecream import ic
+from typing import TYPE_CHECKING
+from logging import getLogger
+from pathlib import Path
 
 logger = getLogger(__name__)
 
@@ -18,35 +14,23 @@ DEFAULT_HF_MODEL_ID = "wg-lux/colo_segmentation_RegNetX800MF_base"
 DEFAULT_PREDICTION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 DEFAULT_PREDICTION_LABELSET_NAME = "multilabel_classification_colonoscopy_default"
 
-NoAiModelRelationValue: TypeAlias = NoneType
-
 if TYPE_CHECKING:
-    from ...metadata.model_meta import ModelMeta
+    from .model_type import ModelType
+    from ...metadata import ModelMeta
+    from ...label import VideoSegmentationLabelSet
+
+    # Forward reference AiModel for use in type hints within the class itself
+    from typing import ForwardRef
+
+    AiModelRef = ForwardRef("'AiModel'")
 
 
-class _AiModelPkSource(Protocol):
-    pk: int
-
-
-class _AiModelMetaModelSource(Protocol):
-    model: _AiModelPkSource
-
-
-class _AiModelLabelSetSource(Protocol):
-    name: str
-    version: int
-
-
-class _AiModelVersionSource(Protocol):
-    version: str
-
-
-class AiModelManager(models.Manager["AiModel"]):
+class AiModelManager(models.Manager):
     """
     Manager for AI models with custom query methods.
     """
 
-    def get_by_natural_key(self, name: str) -> "AiModel":
+    def get_by_natural_key(self, name: str):
         """
         Retrieves the AiModel instance with the specified unique name.
 
@@ -69,38 +53,34 @@ class AiModel(models.Model):
     and associated label sets and meta information.
 
         name (str): Unique name of the AI model.
-        description (str): Detailed description of the AI model when configured.
-        model_type (str): Type/category of the AI model when configured.
-        model_subtype (str): Subtype within the broader model type when configured.
-        video_segmentation_labelset (VideoSegmentationLabelSet): associated label set for video segmentation tasks when configured.
-        active_meta (ModelMeta): reference to the currently active ModelMeta instance associated with the model when configured.
+        description (str): Optional detailed description of the AI model.
+        model_type (str): Optional type/category of the AI model.
+        model_subtype (str): Optional subtype within the broader model type.
+        video_segmentation_labelset (VideoSegmentationLabelSet): Optional associated label set for video segmentation tasks.
+        active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.
     """
 
     objects = AiModelManager()
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=True)
 
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    model_type: models.ForeignKey[Any, Any] = models.ForeignKey(
+    description = models.TextField(blank=True, null=True)
+    model_type = models.ForeignKey(
         "ModelType",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    model_subtype: models.CharField[Any, Any] = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-    )
-    video_segmentation_labelset: models.ForeignKey[Any, Any] = models.ForeignKey(
+    model_subtype = models.CharField(max_length=255, blank=True, null=True)
+    video_segmentation_labelset = models.ForeignKey(
         "VideoSegmentationLabelSet",
         on_delete=models.CASCADE,
         related_name="ai_models",
         blank=True,
         null=True,
     )
-    active_meta: models.ForeignKey[Any, Any] = models.ForeignKey(
+    active_meta = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
         related_name="active_model",
@@ -109,9 +89,12 @@ class AiModel(models.Model):
     )
 
     if TYPE_CHECKING:
-        metadata_versions: models.QuerySet[ModelMeta]
+        metadata_versions: models.QuerySet["ModelMeta"]
+        model_type: models.ForeignKey["ModelType|None"]
+        active_meta: models.ForeignKey["ModelMeta|None"]
+        video_segmentation_labelset: models.ForeignKey["VideoSegmentationLabelSet|None"]
 
-    def get_version(self, version: int) -> ModelMeta:
+    def get_version(self, version: int) -> "ModelMeta":
         """
         Retrieves the ModelMeta instance for the specified version.
 
@@ -126,28 +109,18 @@ class AiModel(models.Model):
         Raises:
             ValueError: If no ModelMeta with the given version exists.
         """
-        self._ensure_saved()
-        requested_version = str(version)
-
-        active_meta = self.active_meta
-        if active_meta is not None:
-            active_version = cast(_AiModelVersionSource, active_meta)
-            if active_version.version == requested_version:
-                return self._ensure_model_meta_ready(active_meta, "Active")
+        if self.active_meta is not None and self.active_meta.version == version:
+            return self.active_meta
 
         # Get the model metadata with the given version
-        model_meta = self.metadata_versions.filter(version=requested_version).first()
+        model_meta = self.metadata_versions.filter(version=version).first()
         if model_meta is not None:
-            return self._ensure_model_meta_ready(model_meta, "Requested")
+            return model_meta
 
-        raise ValueError(f"No model metadata found for version {requested_version}.")
-
-    def _ensure_saved(self) -> None:
-        if self.pk is None:
-            raise ValueError("Cannot resolve model metadata for an unsaved AiModel.")
+        raise ValueError(f"No model metadata found for version {version}.")
 
     @staticmethod
-    def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
+    def _model_meta_weights_exist(model_meta: "ModelMeta") -> bool:
         if not model_meta.weights:
             return False
         try:
@@ -155,7 +128,9 @@ class AiModel(models.Model):
         except (OSError, ValueError):
             return False
 
-    def _ensure_default_huggingface_weights(self, model_meta: ModelMeta) -> ModelMeta:
+    def _ensure_default_huggingface_weights(
+        self, model_meta: "ModelMeta"
+    ) -> "ModelMeta":
         if self.name != DEFAULT_PREDICTION_MODEL_NAME:
             raise ValueError(
                 f"Model weights for '{self.name}' are missing and no Hugging Face fallback is configured."
@@ -163,119 +138,98 @@ class AiModel(models.Model):
 
         from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
 
-        labelset = cast(_AiModelLabelSetSource, getattr(model_meta, "labelset"))
-        versioned_meta = cast(_AiModelVersionSource, model_meta)
+        labelset = model_meta.labelset
         return ensure_model_meta_from_hf(
             model_id=DEFAULT_HF_MODEL_ID,
             model_name=self.name,
-            labelset_name=labelset.name,
-            meta_version=str(versioned_meta.version),
-            labelset_version=labelset.version,
+            labelset_name=getattr(labelset, "name", DEFAULT_PREDICTION_LABELSET_NAME),
+            meta_version=str(model_meta.version),
+            labelset_version=getattr(labelset, "version", None),
         )
 
-    def _ensure_model_meta_belongs_to_self(self, model_meta: ModelMeta) -> None:
-        model = cast(_AiModelMetaModelSource, model_meta)
-        model_pk = model.model.pk
-        if model_pk != self.pk:
-            raise ValueError(
-                f"ModelMeta {model_meta.pk} belongs to AiModel {model_pk}, "
-                f"not AiModel {self.pk}."
+    def get_latest_version(self) -> "ModelMeta":
+        if self.active_meta is not None:
+            if (
+                self.name != DEFAULT_PREDICTION_MODEL_NAME
+                or self._model_meta_weights_exist(self.active_meta)
+            ):
+                return self.active_meta
+            logger.warning(
+                "Active ModelMeta %s for AiModel '%s' has no available weights file; "
+                "attempting Hugging Face repair.",
+                self.active_meta.pk,
+                self.name,
             )
-
-    def _repair_missing_default_weights(
-        self, model_meta: ModelMeta, source: str
-    ) -> ModelMeta:
-        if self.name != DEFAULT_PREDICTION_MODEL_NAME:
-            raise ValueError(
-                f"{source} ModelMeta {model_meta.pk} for AiModel '{self.name}' has "
-                "no available weights file and no Hugging Face fallback is configured."
-            )
-
-        logger.warning(
-            "%s ModelMeta %s for AiModel '%s' has no available weights file; "
-            "attempting Hugging Face repair.",
-            source,
-            model_meta.pk,
-            self.name,
-        )
-        repaired_meta = self._ensure_default_huggingface_weights(model_meta)
-        self._ensure_model_meta_belongs_to_self(repaired_meta)
-        if not self._model_meta_weights_exist(repaired_meta):
-            raise ValueError(
-                f"Hugging Face repair for AiModel '{self.name}' returned ModelMeta "
-                f"{repaired_meta.pk} without an available weights file."
-            )
-        return repaired_meta
-
-    def _ensure_model_meta_ready(self, model_meta: ModelMeta, source: str) -> ModelMeta:
-        self._ensure_model_meta_belongs_to_self(model_meta)
-        if self._model_meta_weights_exist(model_meta):
-            return model_meta
-        return self._repair_missing_default_weights(model_meta, source)
-
-    def get_latest_version(self) -> ModelMeta:
-        self._ensure_saved()
-
-        active_meta = self.active_meta
-        if active_meta is not None:
-            return self._ensure_model_meta_ready(active_meta, "Active")
+            return self._ensure_default_huggingface_weights(self.active_meta)
 
         latest_version = self.metadata_versions.order_by("-version").first()
         if latest_version is not None:
-            return self._ensure_model_meta_ready(latest_version, "Latest")
+            if (
+                self.name != DEFAULT_PREDICTION_MODEL_NAME
+                or self._model_meta_weights_exist(latest_version)
+            ):
+                return latest_version
+            logger.warning(
+                "Latest ModelMeta %s for AiModel '%s' has no available weights file; "
+                "attempting Hugging Face repair.",
+                latest_version.pk,
+                self.name,
+            )
+            return self._ensure_default_huggingface_weights(latest_version)
 
-        if self.name != DEFAULT_PREDICTION_MODEL_NAME:
-            raise ValueError(
-                f"No model metadata found for AiModel '{self.name}' and no "
-                "Hugging Face fallback is configured."
+        # Only in environments where auto-download is acceptable:
+        try:
+            logger.info(
+                "Locally, no segmentation model was available. We are using colo_segmentation_RegNetX800MF_base."
+            )
+            from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+
+            model_meta = ensure_model_meta_from_hf(
+                model_id=DEFAULT_HF_MODEL_ID,
+                model_name=DEFAULT_PREDICTION_MODEL_NAME,
+                labelset_name=DEFAULT_PREDICTION_LABELSET_NAME,
+                meta_version="1",
+            )
+            return model_meta
+        except Exception:
+            logger.exception(
+                "Failed to ensure ModelMeta from Hugging Face for AiModel '%s'",
+                self.name,
             )
 
-        logger.info(
-            "No local default segmentation model metadata was available; "
-            "attempting Hugging Face setup for %s.",
-            DEFAULT_HF_MODEL_ID,
-        )
-        from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
-
-        model_meta = ensure_model_meta_from_hf(
-            model_id=DEFAULT_HF_MODEL_ID,
-            model_name=DEFAULT_PREDICTION_MODEL_NAME,
-            labelset_name=DEFAULT_PREDICTION_LABELSET_NAME,
-            meta_version="1",
-        )
-        return self._ensure_model_meta_ready(model_meta, "Default Hugging Face")
+        raise ValueError("No model metadata found for this model.")
 
     @classmethod
-    def set_active_model_meta(
-        cls, model_name: str, meta_name: str, meta_version: int
-    ) -> None:
+    def set_active_model_meta(cls, model_name: str, meta_name: str, meta_version: int):
         """
         Sets the active metadata version for the specified AI model.
 
         Updates the `active_meta` field of the AiModel identified by `model_name` to the ModelMeta instance matching `meta_name` and `meta_version`.
         """
-        from ...metadata.model_meta import ModelMeta
+        from ...metadata import ModelMeta
 
         model = cls.objects.get(name=model_name)
+        assert model is not None, "Model not found"
 
         ic(f"Getting model meta for {model_name} {meta_name} {meta_version}")
 
         model_meta = ModelMeta.objects.get(
-            name=meta_name, model=model, version=str(meta_version)
+            name=meta_name, model=model, version=meta_version
         )
+        assert model_meta is not None, "ModelMeta not found"
 
         model.active_meta = model_meta
-        model.save(update_fields=["active_meta"])
+        model.save()
 
         ic(
             f"Set active model meta for {model_name} to {meta_name} version {meta_version}"
         )
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """
         Return the natural key for this model.
         """
         return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)

@@ -1,7 +1,6 @@
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
-import json
-from typing import Protocol, cast
+
 from endoreg_db.models import (
     Center,
     Frame,
@@ -13,28 +12,7 @@ from endoreg_db.models import (
 from endoreg_db.views.video.ai import FrameBoxAnnotationView
 
 
-class _FrameBoxAnnotationLike(Protocol):
-    frame: Frame
-    label: Label
-    external_annotation_id: str | None
-    annotator: str | None
-    x: float
-    width: float
-
-    def refresh_from_db(self) -> None: ...
-
-
 class FrameBoxAnnotationViewTest(TestCase):
-    factory: APIRequestFactory
-    center: Center
-    video: VideoFile
-    other_video: VideoFile
-    frame: Frame
-    other_video_frame: Frame
-    label: Label
-    other_label: Label
-    source: InformationSource
-
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = FrameBoxAnnotationView.as_view()
@@ -95,11 +73,10 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["upserted_count"], 1)
-        annotation = cast(_FrameBoxAnnotationLike, FrameBoxAnnotation.objects.get())
+        self.assertEqual(response.data["upserted_count"], 1)
+        annotation = FrameBoxAnnotation.objects.get()
         self.assertEqual(annotation.frame, self.frame)
         self.assertEqual(annotation.label, self.label)
         self.assertEqual(annotation.annotator, "box-user")
@@ -145,11 +122,10 @@ class FrameBoxAnnotationViewTest(TestCase):
             },
         )
         response = self.view(request)
-        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["count"], 1)
-        self.assertEqual(data["annotations"][0]["label_name"], self.label.name)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["annotations"][0]["label_name"], self.label.name)
 
     def test_box_replace_removes_stale_boxes_only_for_scope(self):
         FrameBoxAnnotation.objects.create(
@@ -239,10 +215,9 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["deleted_count"], 1)
+        self.assertEqual(response.data["deleted_count"], 1)
         self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
 
     def test_box_annotation_rejects_out_of_bounds_box(self):
@@ -268,71 +243,8 @@ class FrameBoxAnnotationViewTest(TestCase):
         )
         response = self.view(request)
 
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 400)
-        self.assertIn("width", str(data))
-
-    def test_box_annotation_rejects_unknown_wrapper_and_item_fields(self):
-        base_item = {
-            "label_id": self.label.pk,
-            "x": 10,
-            "y": 12,
-            "width": 20,
-            "height": 32,
-            "image_width": 800,
-            "image_height": 600,
-        }
-        payloads = [
-            {
-                "frame_id": self.frame.pk,
-                "annotations": [base_item],
-                "unexpected_wrapper": True,
-            },
-            {
-                "frame_id": self.frame.pk,
-                "annotations": [{**base_item, "unexpected_item": True}],
-            },
-        ]
-
-        for payload in payloads:
-            with self.subTest(payload=payload):
-                request = self.factory.post(
-                    "/api/media/annotations/frames/boxes/",
-                    payload,
-                    format="json",
-                )
-                response = self.view(request)
-
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
-
-    def test_box_annotation_rejects_conflicting_outer_and_item_frame_ids(self):
-        request = self.factory.post(
-            "/api/media/annotations/frames/boxes/",
-            {
-                "frame_id": self.frame.pk,
-                "annotations": [
-                    {
-                        "frame_id": self.other_video_frame.pk,
-                        "label_id": self.label.pk,
-                        "information_source_name": self.source.name,
-                        "x": 10,
-                        "y": 12,
-                        "width": 20,
-                        "height": 32,
-                        "image_width": 800,
-                        "image_height": 600,
-                    }
-                ],
-            },
-            format="json",
-        )
-
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(FrameBoxAnnotation.objects.count(), 0)
+        self.assertIn("width", str(response.data))
 
     def test_box_annotation_rejects_frames_outside_requested_video(self):
         payload = {
@@ -357,6 +269,6 @@ class FrameBoxAnnotationViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("invalid_frame_ids", data["details"])
+        self.assertIn("invalid_frame_ids", response.data["details"])

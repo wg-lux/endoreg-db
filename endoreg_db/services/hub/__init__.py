@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 from importlib import import_module
@@ -23,16 +22,12 @@ __all__ = [
     "MediaIntegrityResult",
     "MediaIntegrityStatus",
     "PreanonymizedIngestPayload",
-    "WatcherFileNotReadyError",
-    "is_in_progress_handoff_path",
-    "wait_for_watcher_file_ready",
     "check_upload_job_media_integrity",
     "process_preanonymized_watcher_file",
     "process_upload_job",
     "process_watcher_file",
     "reap_upload_job_sources",
     "resolve_allowed_center_id",
-    "resolve_allowed_center_ids",
     "resolve_api_upload_context",
     "resolve_declared_upload_center",
     "resolve_default_center",
@@ -43,15 +38,6 @@ __all__ = [
 
 _EXPORTS = {
     "PreanonymizedIngestPayload": (".payloads", "PreanonymizedIngestPayload"),
-    "WatcherFileNotReadyError": (".watcher_handoff", "WatcherFileNotReadyError"),
-    "is_in_progress_handoff_path": (
-        ".watcher_handoff",
-        "is_in_progress_handoff_path",
-    ),
-    "wait_for_watcher_file_ready": (
-        ".watcher_handoff",
-        "wait_for_watcher_file_ready",
-    ),
     "deployment_profile_payload": (".deployment", "deployment_profile_payload"),
     "get_deployment_role": (".deployment", "get_deployment_role"),
     "transfer_api_enabled": (".deployment", "transfer_api_enabled"),
@@ -84,7 +70,6 @@ _EXPORTS = {
     "start_upload_job_processing": (".ingest", "start_upload_job_processing"),
     "hub_mode_enabled": (".ingest", "hub_mode_enabled"),
     "resolve_allowed_center_id": (".ingest", "resolve_allowed_center_id"),
-    "resolve_allowed_center_ids": ("..center_access", "resolve_allowed_center_ids"),
     "resolve_declared_upload_center": (
         ".ingest",
         "resolve_declared_upload_center",
@@ -133,7 +118,6 @@ if TYPE_CHECKING:
         resolve_upload_center,
         start_upload_job_processing,
     )
-    from ..center_access import resolve_allowed_center_ids
     from .media_integrity import (
         MediaIntegrityError,
         MediaIntegrityExpectation,
@@ -142,11 +126,6 @@ if TYPE_CHECKING:
         check_upload_job_media_integrity,
     )
     from .payloads import PreanonymizedIngestPayload
-    from .watcher_handoff import (
-        WatcherFileNotReadyError,
-        is_in_progress_handoff_path,
-        wait_for_watcher_file_ready,
-    )
     from .transfers import (
         apply_transfer_metadata,
         attach_transfer_media,

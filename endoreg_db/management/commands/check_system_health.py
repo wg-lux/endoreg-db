@@ -6,36 +6,25 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import TypedDict, cast
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db import models
+from django.core.management.base import BaseCommand, CommandError
 from django.db.utils import OperationalError, ProgrammingError
-from django.utils import timezone
 
 from endoreg_db.config.env import (
     env_int,
     get_protected_media_root,
     get_protected_media_url,
 )
-from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.models.state.raw_pdf import RawPdfState
-from endoreg_db.models.state.video import VideoState
+from endoreg_db.models import UploadJob
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
-from endoreg_db.services.environment_readiness import (
-    ReadinessIssue,
-    check_environment_readiness,
-)
+from endoreg_db.services.environment_readiness import check_environment_readiness
 from endoreg_db.services.hub.deployment import (
     get_deployment_role,
     transfer_api_enabled,
 )
-from endoreg_db.services.jobs.stale_recovery import VIDEO_PROCESSING_STALE_TIMEOUT
 from endoreg_db.utils.file_operations import atomic_write_file
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     LOG_DIR,
     PROTECTED_DATA_ROOT,
     QUARANTINE_DIR,
@@ -45,24 +34,6 @@ from endoreg_db.utils.paths import (
 SECRET_KEY_FINGERPRINT_FILE = LOG_DIR / ".secret_key_fingerprint"
 DEFAULT_MIN_FREE_BYTES = 1024 * 1024 * 1024
 DEFAULT_QUARANTINE_MAX_AGE_DAYS = 30
-type _CommandOption = bool
-
-
-class _AuditLedgerIntegrityStatus(TypedDict):
-    status: str
-    verified: bool
-    checked_at: str | None
-    entry_count: int | None
-    error: str | None
-    source: str
-
-
-class _AnonymizationProcessingStats(TypedDict):
-    failed_videos: int | None
-    failed_reports: int | None
-    stale_video_histories: int | None
-    stale_timeout_seconds: int
-    error: str | None
 
 
 def _secret_key_fingerprint() -> str:
@@ -113,115 +84,22 @@ def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
 
 def _upload_job_failure_stats() -> dict[str, int | str | None]:
     try:
-        now = timezone.now()
         return {
             "failed": UploadJob.objects.filter(status=UploadJob.Status.ERROR).count(),
             "lost": UploadJob.objects.filter(status=UploadJob.Status.LOST).count(),
-            "retrying": UploadJob.objects.filter(
-                status=UploadJob.Status.RETRYING
-            ).count(),
-            "retry_due": UploadJob.objects.filter(
-                status=UploadJob.Status.RETRYING,
-                next_retry_at__lte=now,
-            ).count(),
-            "retry_exhausted": UploadJob.objects.filter(
-                status=UploadJob.Status.ERROR,
-                retry_count__gte=models.F("max_retries"),
-                retry_count__gt=0,
-            ).count(),
             "error": None,
         }
     except (OperationalError, ProgrammingError) as exc:
         return {
             "failed": None,
             "lost": None,
-            "retrying": None,
-            "retry_due": None,
-            "retry_exhausted": None,
             "error": str(exc),
         }
 
 
-def _hls_materialization_stats() -> dict[str, int | str | None]:
-    stale_before = timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT
+def _audit_ledger_integrity_status() -> dict[str, object]:
     try:
-        return {
-            "queued": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.QUEUED
-            ).count(),
-            "materializing": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.MATERIALIZING
-            ).count(),
-            "validated": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.VALIDATED
-            ).count(),
-            "ready": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.READY
-            ).count(),
-            "superseded": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.SUPERSEDED
-            ).count(),
-            "failed": VideoHlsArtifact.objects.filter(
-                status=VideoHlsArtifact.Status.FAILED
-            ).count(),
-            "stale_in_flight": VideoHlsArtifact.objects.filter(
-                status__in=(
-                    VideoHlsArtifact.Status.QUEUED,
-                    VideoHlsArtifact.Status.MATERIALIZING,
-                    VideoHlsArtifact.Status.VALIDATED,
-                ),
-                updated_at__lte=stale_before,
-            ).count(),
-            "error": None,
-        }
-    except (OperationalError, ProgrammingError) as exc:
-        return {
-            "queued": None,
-            "materializing": None,
-            "ready": None,
-            "failed": None,
-            "stale_in_flight": None,
-            "error": str(exc),
-        }
-
-
-def _anonymization_processing_stats() -> _AnonymizationProcessingStats:
-    """Return unresolved failures and stale processing visible to operators."""
-    stale_before = timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT
-    try:
-        return {
-            "failed_videos": VideoState.objects.filter(processing_error=True).count(),
-            "failed_reports": RawPdfState.objects.filter(processing_error=True).count(),
-            "stale_video_histories": VideoProcessingHistory.objects.filter(
-                status__in=(
-                    VideoProcessingHistory.STATUS_PENDING,
-                    VideoProcessingHistory.STATUS_RUNNING,
-                ),
-                created_at__lte=stale_before,
-            ).count(),
-            "stale_timeout_seconds": int(
-                VIDEO_PROCESSING_STALE_TIMEOUT.total_seconds()
-            ),
-            "error": None,
-        }
-    except (OperationalError, ProgrammingError) as exc:
-        return {
-            "failed_videos": None,
-            "failed_reports": None,
-            "stale_video_histories": None,
-            "stale_timeout_seconds": int(
-                VIDEO_PROCESSING_STALE_TIMEOUT.total_seconds()
-            ),
-            "error": str(exc),
-        }
-
-
-def _audit_ledger_integrity_status() -> _AuditLedgerIntegrityStatus:
-    try:
-        return cast(
-            _AuditLedgerIntegrityStatus,
-            get_audit_ledger_integrity_status(),
-        )
+        return get_audit_ledger_integrity_status()
     except (OperationalError, ProgrammingError) as exc:
         return {
             "status": "error",
@@ -255,178 +133,42 @@ def _storage_free_stats() -> dict[str, int | float | str | None]:
     }
 
 
-def _initialize_secret_key_fingerprint() -> tuple[str, str]:
-    secret_fingerprint = _secret_key_fingerprint()
-    if SECRET_KEY_FINGERPRINT_FILE.exists():
-        previous_fingerprint = SECRET_KEY_FINGERPRINT_FILE.read_text(
-            encoding="utf-8"
-        ).strip()
-        return secret_fingerprint, previous_fingerprint
-
-    atomic_write_file(
-        destination=SECRET_KEY_FINGERPRINT_FILE,
-        content=[secret_fingerprint.encode("utf-8")],
-        file_mode=0o640,
-        dir_mode=0o750,
-    )
-    return secret_fingerprint, ""
-
-
-def _base_health_checks(
-    *,
-    protected_media_url: str,
-    protected_media_root: Path,
-    current_gid: int,
-    supplemental_gids: set[int],
-    secret_fingerprint: str,
-    previous_fingerprint: str,
-) -> dict[str, bool]:
-    protected_media_root_exists = protected_media_root.exists()
-    media_gid = (
-        protected_media_root.stat().st_gid if protected_media_root_exists else -1
-    )
-    return {
-        "protected_media_url_reachable": protected_media_url == "/protected_media/",
-        "protected_media_root_exists": protected_media_root_exists,
-        "protected_media_root_within_protected_data": _path_within(
-            PROTECTED_DATA_ROOT, protected_media_root
-        ),
-        "app_user_has_media_gid": (
-            protected_media_root_exists
-            and (current_gid == media_gid or media_gid in supplemental_gids)
-        ),
-        "secret_key_stable": (
-            not previous_fingerprint or previous_fingerprint == secret_fingerprint
-        ),
-    }
-
-
-def _storage_free_above_threshold(
-    free_bytes: int | float | str | None,
-    min_free_bytes: int,
-) -> bool:
-    return free_bytes is not None and int(free_bytes) >= min_free_bytes
-
-
-def _quarantine_age_under_threshold(
-    oldest_age_seconds: int | float | None | str,
-    max_age_seconds: int,
-) -> bool:
-    if oldest_age_seconds is None:
-        return True
-    return (
-        isinstance(oldest_age_seconds, (int, float))
-        and oldest_age_seconds <= max_age_seconds
-    )
-
-
-def _audit_ledger_is_verified(
-    audit_ledger_integrity: _AuditLedgerIntegrityStatus,
-) -> bool:
-    return (
-        audit_ledger_integrity.get("status") == "verified"
-        and audit_ledger_integrity.get("verified") is True
-    )
-
-
-def _local_study_server_checks(
-    *,
-    upload_jobs: dict[str, int | str | None],
-    hls_materializations: dict[str, int | str | None],
-    anonymization_processing: _AnonymizationProcessingStats,
-    storage_free: dict[str, int | float | str | None],
-    audit_ledger_integrity: _AuditLedgerIntegrityStatus,
-    oldest_quarantine_age_seconds: int | float | None | str,
-    min_free_bytes: int,
-    max_quarantine_age_seconds: int,
-) -> dict[str, bool]:
-    return {
-        "local_study_server_transfer_api_disabled": not transfer_api_enabled(),
-        "local_study_server_no_failed_upload_jobs": upload_jobs["failed"] == 0,
-        "local_study_server_no_lost_upload_jobs": upload_jobs["lost"] == 0,
-        "local_study_server_no_exhausted_upload_retries": (
-            upload_jobs["retry_exhausted"] == 0
-        ),
-        "local_study_server_no_failed_hls_materialization": (
-            hls_materializations["failed"] == 0
-        ),
-        "local_study_server_no_stale_hls_materialization": (
-            hls_materializations["stale_in_flight"] == 0
-        ),
-        "local_study_server_no_failed_anonymization": (
-            anonymization_processing["failed_videos"] == 0
-            and anonymization_processing["failed_reports"] == 0
-        ),
-        "local_study_server_no_stale_video_processing": (
-            anonymization_processing["stale_video_histories"] == 0
-        ),
-        "local_study_server_storage_free_above_threshold": _storage_free_above_threshold(
-            storage_free["free_bytes"],
-            min_free_bytes,
-        ),
-        "local_study_server_quarantine_age_under_threshold": (
-            _quarantine_age_under_threshold(
-                oldest_quarantine_age_seconds,
-                max_quarantine_age_seconds,
-            )
-        ),
-        "local_study_server_audit_ledger_integrity_verified": (
-            _audit_ledger_is_verified(audit_ledger_integrity)
-        ),
-    }
-
-
-def _emit_health_check_results(
-    command: BaseCommand,
-    checks: dict[str, bool],
-) -> None:
-    for key, value in checks.items():
-        marker = command.style.SUCCESS("ok") if value else command.style.ERROR("fail")
-        command.stdout.write(f"{marker} {key}")
-
-
-def _emit_readiness_issues(
-    command: BaseCommand,
-    readiness_issues: list[ReadinessIssue],
-) -> None:
-    for issue in readiness_issues:
-        marker = (
-            command.style.ERROR("fail")
-            if issue.severity == "critical"
-            else command.style.WARNING("warn")
-        )
-        path_suffix = f" ({issue.path})" if issue.path else ""
-        command.stdout.write(f"{marker} {issue.code}: {issue.message}{path_suffix}")
-
-
-def _failed_health_checks(
-    checks: dict[str, bool],
-    readiness_issues: list[ReadinessIssue],
-) -> list[str]:
-    failed = [key for key, value in checks.items() if not value]
-    failed.extend(
-        issue.code for issue in readiness_issues if issue.severity == "critical"
-    )
-    return failed
-
-
 class Command(BaseCommand):
     help = (
         "Validate the LuxNix runtime contract for protected media, group access, "
         "and stable SECRET_KEY derivation."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--json",
             action="store_true",
             help="Emit the health report as JSON.",
         )
 
-    def handle(self, *args: str, **options: _CommandOption) -> None:
+    def handle(self, *args, **options) -> None:
         protected_media_url = get_protected_media_url()
         protected_media_root = get_protected_media_root().resolve()
-        secret_fingerprint, previous_fingerprint = _initialize_secret_key_fingerprint()
+        current_gid = os.getgid()
+        supplemental_gids = set(os.getgroups())
+        media_gid = (
+            protected_media_root.stat().st_gid if protected_media_root.exists() else -1
+        )
+        secret_fingerprint = _secret_key_fingerprint()
+
+        previous_fingerprint = ""
+        if SECRET_KEY_FINGERPRINT_FILE.exists():
+            previous_fingerprint = SECRET_KEY_FINGERPRINT_FILE.read_text(
+                encoding="utf-8"
+            ).strip()
+        else:
+            atomic_write_file(
+                destination=SECRET_KEY_FINGERPRINT_FILE,
+                content=[secret_fingerprint.encode("utf-8")],
+                file_mode=0o640,
+                dir_mode=0o750,
+            )
+
         deployment_role = get_deployment_role()
         local_study_server = deployment_role == "local_study_server"
         now = time.time()
@@ -440,33 +182,53 @@ class Command(BaseCommand):
         )
         quarantine = _quarantine_stats(now)
         upload_jobs = _upload_job_failure_stats()
-        hls_materializations = _hls_materialization_stats()
-        anonymization_processing = _anonymization_processing_stats()
         storage_free = _storage_free_stats()
         audit_ledger_integrity = _audit_ledger_integrity_status()
         oldest_age_seconds = quarantine["oldest_age_seconds"]
         max_quarantine_age_seconds = max_quarantine_age_days * 24 * 60 * 60
 
-        checks = _base_health_checks(
-            protected_media_url=protected_media_url,
-            protected_media_root=protected_media_root,
-            current_gid=os.getgid(),
-            supplemental_gids=set(os.getgroups()),
-            secret_fingerprint=secret_fingerprint,
-            previous_fingerprint=previous_fingerprint,
-        )
+        checks = {
+            "protected_media_url_reachable": protected_media_url == "/protected_media/",
+            "protected_media_root_exists": protected_media_root.exists(),
+            "protected_media_root_within_protected_data": _path_within(
+                PROTECTED_DATA_ROOT, protected_media_root
+            ),
+            "app_user_has_media_gid": (
+                protected_media_root.exists()
+                and (current_gid == media_gid or media_gid in supplemental_gids)
+            ),
+            "secret_key_stable": (
+                not previous_fingerprint or previous_fingerprint == secret_fingerprint
+            ),
+        }
         if local_study_server:
             checks.update(
-                _local_study_server_checks(
-                    upload_jobs=upload_jobs,
-                    hls_materializations=hls_materializations,
-                    anonymization_processing=anonymization_processing,
-                    storage_free=storage_free,
-                    audit_ledger_integrity=audit_ledger_integrity,
-                    oldest_quarantine_age_seconds=oldest_age_seconds,
-                    min_free_bytes=min_free_bytes,
-                    max_quarantine_age_seconds=max_quarantine_age_seconds,
-                )
+                {
+                    "local_study_server_transfer_api_disabled": (
+                        not transfer_api_enabled()
+                    ),
+                    "local_study_server_no_failed_upload_jobs": (
+                        upload_jobs["failed"] == 0
+                    ),
+                    "local_study_server_no_lost_upload_jobs": (
+                        upload_jobs["lost"] == 0
+                    ),
+                    "local_study_server_storage_free_above_threshold": (
+                        storage_free["free_bytes"] is not None
+                        and int(storage_free["free_bytes"]) >= min_free_bytes
+                    ),
+                    "local_study_server_quarantine_age_under_threshold": (
+                        oldest_age_seconds is None
+                        or (
+                            isinstance(oldest_age_seconds, (int, float))
+                            and oldest_age_seconds <= max_quarantine_age_seconds
+                        )
+                    ),
+                    "local_study_server_audit_ledger_integrity_verified": (
+                        audit_ledger_integrity.get("status") == "verified"
+                        and audit_ledger_integrity.get("verified") is True
+                    ),
+                }
             )
         readiness_issues = check_environment_readiness()
         payload = {
@@ -491,21 +253,32 @@ class Command(BaseCommand):
                 "audit_ledger_integrity": audit_ledger_integrity,
                 "quarantine": quarantine,
                 "upload_jobs": upload_jobs,
-                "hls_materializations": hls_materializations,
-                "anonymization_processing": anonymization_processing,
                 "storage_free": storage_free,
                 "min_free_bytes": min_free_bytes,
                 "max_quarantine_age_days": max_quarantine_age_days,
             },
         }
 
-        emit_json = options["json"]
-        if emit_json:
+        if options["json"]:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         else:
-            _emit_health_check_results(self, checks)
-            _emit_readiness_issues(self, readiness_issues)
+            for key, value in checks.items():
+                marker = self.style.SUCCESS("ok") if value else self.style.ERROR("fail")
+                self.stdout.write(f"{marker} {key}")
+            for issue in readiness_issues:
+                marker = (
+                    self.style.ERROR("fail")
+                    if issue.severity == "critical"
+                    else self.style.WARNING("warn")
+                )
+                path_suffix = f" ({issue.path})" if issue.path else ""
+                self.stdout.write(
+                    f"{marker} {issue.code}: {issue.message}{path_suffix}"
+                )
 
-        failed = _failed_health_checks(checks, readiness_issues)
+        failed = [key for key, value in checks.items() if not value]
+        failed.extend(
+            issue.code for issue in readiness_issues if issue.severity == "critical"
+        )
         if failed:
             raise CommandError(f"System health check failed: {', '.join(failed)}")

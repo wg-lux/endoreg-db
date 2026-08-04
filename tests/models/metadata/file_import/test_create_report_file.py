@@ -1,9 +1,7 @@
 import shutil
 from pathlib import Path
-from typing import Protocol
 
 import pytest
-from pytest import MonkeyPatch
 
 # report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
@@ -11,7 +9,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.filesystem import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
@@ -21,13 +19,8 @@ from endoreg_db.utils.file_operations import (
 )
 
 
-class _MockStorageLayout(Protocol):
-    storage: Path
-    sensitive_report: Path
-
-
 @pytest.fixture(autouse=True)
-def cleanup_temp_files() -> object:
+def cleanup_temp_files():
     # Setup: do nothing
     yield
     # Teardown: Scan for any leftover .tmp files and delete them
@@ -36,7 +29,7 @@ def cleanup_temp_files() -> object:
         safe_unlink_file(tmp_file, missing_ok=True)
 
 
-def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Path]:
+def _configure_storage_layout(mock_paths) -> tuple[Path, Path]:
     """
     Returns the storage root and sensitive directory from the mocked model.
     """
@@ -63,28 +56,20 @@ def _write_minimal_pdf(path: Path) -> None:
 
 
 @pytest.mark.django_db
-def test_create_from_file_happy_path(
-    mock_storage: _MockStorageLayout,
-    tmp_path: Path,
-    base_db_data: object,
-) -> None:
+def test_create_from_file_happy_path(mock_storage, tmp_path, base_db_data):
     """
     Happy path: new RawPdfFile is created, file is stored under the configured
     sensitive_report directory, and get_raw_file_path() returns a regular file.
     """
-    _storage_root, _sensitive_dir = _configure_storage_layout(mock_storage)
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     ensure_directory(import_dir)
     src_file = import_dir / "test_report.pdf"
     _write_minimal_pdf(src_file)
 
-    center = Center.objects.first()
-    processor = EndoscopyProcessor.objects.first()
-    assert center is not None
-    assert processor is not None
-    center_name = center.name
-    processor_name = processor.name
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
 
     ctx = ImportContext(
         file_path=src_file,
@@ -114,10 +99,8 @@ def test_create_from_file_happy_path(
 
 @pytest.mark.django_db
 def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_report(
-    mock_storage: _MockStorageLayout,
-    tmp_path: Path,
-    base_db_data: object,
-) -> None:
+    mock_storage, tmp_path, base_db_data
+):
     _storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
@@ -128,12 +111,8 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
     sensitive_copy = sensitive_dir / src_file.name
     atomic_copy_file(source=src_file, destination=sensitive_copy)
 
-    center = Center.objects.first()
-    processor = EndoscopyProcessor.objects.first()
-    assert center is not None
-    assert processor is not None
-    center_name = center.name
-    processor_name = processor.name
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
 
     ctx = ImportContext(
         file_path=src_file,
@@ -162,29 +141,22 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_existing_file(
-    mock_storage: _MockStorageLayout,
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-    base_db_data: object,
-) -> None:
+    mock_storage, tmp_path, monkeypatch, base_db_data
+):
     """
     When a RawPdfFile with the same hash already exists *and* its raw file exists,
     create_or_retrieve_report_file should return the existing instance and not
     create a new one.
     """
-    _storage_root, _sensitive_dir = _configure_storage_layout(mock_storage)
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     ensure_directory(import_dir)
     src_file = import_dir / "test_dup.pdf"
     _write_minimal_pdf(src_file)
 
-    center = Center.objects.first()
-    processor = EndoscopyProcessor.objects.first()
-    assert center is not None
-    assert processor is not None
-    center_name = center.name
-    processor_name = processor.name
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
 
     ctx = ImportContext(
         file_path=src_file,
@@ -222,29 +194,22 @@ def test_create_from_file_duplicate_with_existing_file(
 
 @pytest.mark.django_db
 def test_create_from_file_duplicate_with_missing_file_short_circuits_when_success_history_exists(
-    mock_storage: _MockStorageLayout,
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-    base_db_data: object,
-) -> None:
+    mock_storage, tmp_path, monkeypatch, base_db_data
+):
     """
     Successful ProcessingHistory wins over orphan detection in the current
     implementation, so a missing raw file still short-circuits to the existing
     report instance.
     """
-    _storage_root, _sensitive_dir = _configure_storage_layout(mock_storage)
+    storage_root, sensitive_dir = _configure_storage_layout(mock_storage)
 
     import_dir = tmp_path / "import"
     ensure_directory(import_dir)
     src_file = import_dir / "test_orphan.pdf"
     _write_minimal_pdf(src_file)
 
-    center = Center.objects.first()
-    processor = EndoscopyProcessor.objects.first()
-    assert center is not None
-    assert processor is not None
-    center_name = center.name
-    processor_name = processor.name
+    center_name = Center.objects.first().name
+    processor_name = EndoscopyProcessor.objects.first().name
 
     ctx = ImportContext(
         file_path=src_file,
@@ -287,10 +252,7 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
     assert reused_report.get_raw_file_path() is None
 
 
-def test_check_storage_capacity_raises_on_insufficient_space(
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_check_storage_capacity_raises_on_insufficient_space(tmp_path, monkeypatch):
     """
     Unit-test check_storage_capacity in isolation by faking disk_usage.
     """
@@ -298,17 +260,14 @@ def test_check_storage_capacity_raises_on_insufficient_space(
     _write_minimal_pdf(src_file)
 
     class FakeUsage:
-        def __init__(self, free: int) -> None:
+        def __init__(self, free):
             self.total = 10 * 1024
             self.used = 0
             self.free = free
 
-    def fake_disk_usage(path: str | Path) -> FakeUsage:
-        return FakeUsage(free=100)
-
     monkeypatch.setattr(
         shutil,
         "disk_usage",
-        fake_disk_usage,
+        lambda p: FakeUsage(free=100),
         raising=True,
     )

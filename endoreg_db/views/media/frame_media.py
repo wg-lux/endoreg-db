@@ -1,22 +1,16 @@
-from __future__ import annotations
-
 import logging
 import mimetypes
 from pathlib import Path
-from typing import Protocol, TypeGuard, cast
 
 from django.core.files import File
-from django.http import Http404, HttpResponse
-from django.http.response import HttpResponseBase
+from django.http import Http404, HttpResponse, HttpResponseBase
 from rest_framework import status
-from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.services.jobs.frame_extraction_jobs import (
     FrameExtractionDispatchResult,
     REQUEST_STATUS_FAILED,
@@ -24,102 +18,22 @@ from endoreg_db.services.jobs.frame_extraction_jobs import (
     request_frame_extraction,
 )
 from endoreg_db.services.video_files import get_video_frame_dir_path
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import (
-    CenterScopedVideoPermission,
-    assert_anonymized_center_scope_allowed,
-    assert_center_scope_allowed,
-)
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.filesystem.paths import (
     ensure_within_protected_media_root,
 )
-from endoreg_db.utils.storage_streaming import (
+from endoreg_db.utils.storage.streaming import (
     add_cors_headers,
     build_partial_content_response,
     parse_byte_range,
 )
-from endoreg_db.utils.nginx_accel import (
+from endoreg_db.utils.web.nginx_accel import (
     build_nginx_accel_response_for_path,
     nginx_offload_enabled,
 )
-from endoreg_db.utils.cors import resolve_response_origin
-import endoreg_db.utils.frame_stream as frame_stream_utils
-from endoreg_db.utils.frame_stream import EncodedFrameSample
+from endoreg_db.utils.web.cors import resolve_response_origin
 
 logger = logging.getLogger(__name__)
-
-
-SUPPORTED_DECODED_FRAME_FILE_TYPES: dict[str, VideoArtifactKind] = {
-    VideoArtifactKind.RAW.value: VideoArtifactKind.RAW,
-    VideoArtifactKind.PROCESSED.value: VideoArtifactKind.PROCESSED,
-}
-
-
-class _ReadVideoFileFrameJpeg(Protocol):
-    def __call__(
-        self,
-        video: VideoFile,
-        *,
-        frame_number: int,
-        file_type: str = "raw",
-    ) -> EncodedFrameSample: ...
-
-
-read_video_file_frame_jpeg = cast(
-    _ReadVideoFileFrameJpeg,
-    getattr(frame_stream_utils, "read_video_file_frame_jpeg"),
-)
-
-
-def _add_cors_headers_if_configured(
-    response: HttpResponseBase, frontend_origin: str | None
-) -> HttpResponseBase:
-    if frontend_origin is None:
-        return response
-    return add_cors_headers(response, frontend_origin)
-
-
-def _parse_int_path_value(value: int | str | None, *, name: str) -> int:
-    if value is None:
-        raise Http404(f"{name} is required")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise Http404(f"Invalid {name} format") from exc
-
-
-def _video_frame_count(video: VideoFile) -> int | None:
-    frame_count = getattr(video, "frame_count", None)
-    if frame_count is None:
-        return None
-    return int(frame_count)
-
-
-def _validate_frame_number_for_video(
-    *,
-    video: VideoFile,
-    video_id: int,
-    frame_number: int,
-) -> None:
-    if frame_number < 0:
-        raise Http404("frame_number must be non-negative")
-    frame_count = _video_frame_count(video)
-    if frame_count is not None and frame_number >= frame_count:
-        raise Http404(f"Frame {frame_number} out of range for video {video_id}")
-
-
-def _range_header(request: Request) -> str | None:
-    header_value = request.headers.get("Range")
-    if header_value is not None:
-        return header_value
-    meta_value = request.META.get("HTTP_RANGE")
-    if isinstance(meta_value, str):
-        return meta_value
-    return None
-
-
-def _field_file_has_name(field_file: object | None) -> TypeGuard[object]:
-    return bool(field_file and getattr(field_file, "name", None))
 
 
 class FrameStreamView(APIView):
@@ -137,7 +51,7 @@ class FrameStreamView(APIView):
         frame_path: Path,
         content_type: str,
         *,
-        frontend_origin: str | None,
+        frontend_origin: str,
     ) -> HttpResponseBase | None:
         try:
             return build_nginx_accel_response_for_path(
@@ -154,9 +68,7 @@ class FrameStreamView(APIView):
             )
             return None
 
-    def _assert_video_access_allowed(
-        self, *, request: Request, video: VideoFile
-    ) -> None:
+    def _assert_video_access_allowed(self, *, request, video: VideoFile) -> None:
         # Streaming access is centralized via RBAC permissions.
         self.check_object_permissions(request, video)
 
@@ -201,20 +113,18 @@ class FrameStreamView(APIView):
         return resolved_frame_path
 
     def _ensure_frame_file_available(self, *, frame: Frame) -> Response | None:
-        frame_path = cast(Path, getattr(frame, "file_path"))
+        frame_path = frame.file_path
         if frame_path.exists() and frame_path.is_file():
-            if not bool(getattr(frame, "is_extracted", False)):
-                Frame.objects.filter(
-                    pk=getattr(frame, "pk", None),
-                    is_extracted=False,
-                ).update(is_extracted=True)
-                setattr(frame, "is_extracted", True)
+            if not frame.is_extracted:
+                Frame.objects.filter(pk=frame.pk, is_extracted=False).update(
+                    is_extracted=True
+                )
+                frame.is_extracted = True
             return None
 
-        frame_number = int(cast(int | str, getattr(frame, "frame_number")))
         dispatch_result: FrameExtractionDispatchResult = request_frame_extraction(
-            video=cast(VideoFile, getattr(frame, "video")),
-            frame_number=frame_number,
+            video=frame.video,
+            frame_number=int(frame.frame_number),
         )
         payload = {
             "status": (
@@ -222,8 +132,8 @@ class FrameStreamView(APIView):
                 if dispatch_result.status == REQUEST_STATUS_FAILED
                 else "frame_extraction_pending"
             ),
-            "video_id": int(getattr(frame, "video_id")),
-            "frame_number": frame_number,
+            "video_id": int(frame.video_id),
+            "frame_number": int(frame.frame_number),
             "request_id": int(dispatch_result.request_id),
             "task_id": dispatch_result.task_id,
         }
@@ -231,19 +141,15 @@ class FrameStreamView(APIView):
             return Response(payload, status=status.HTTP_409_CONFLICT)
         return Response(payload, status=status.HTTP_202_ACCEPTED)
 
-    _add_cors_headers_if_configured = staticmethod(_add_cors_headers_if_configured)
-
-    def get(
-        self,
-        request: Request,
-        video_id: int | str | None = None,
-        frame_number: int | str | None = None,
-    ) -> HttpResponseBase:
+    def get(self, request, video_id=None, frame_number=None):
         if video_id is None or frame_number is None:
             raise Http404("video_id and frame_number are required")
 
-        video_id_int = _parse_int_path_value(video_id, name="video_id")
-        frame_number_int = _parse_int_path_value(frame_number, name="frame_number")
+        try:
+            video_id_int = int(video_id)
+            frame_number_int = int(frame_number)
+        except (TypeError, ValueError):
+            raise Http404("Invalid video_id or frame_number format")
 
         try:
             video = VideoFile.objects.get(pk=video_id_int)
@@ -251,11 +157,12 @@ class FrameStreamView(APIView):
             raise Http404(f"Video {video_id_int} not found")
         self._assert_video_access_allowed(request=request, video=video)
 
-        _validate_frame_number_for_video(
-            video=video,
-            video_id=video_id_int,
-            frame_number=frame_number_int,
-        )
+        if frame_number_int < 0:
+            raise Http404("frame_number must be non-negative")
+        if video.frame_count is not None and frame_number_int >= int(video.frame_count):
+            raise Http404(
+                f"Frame {frame_number_int} out of range for video {video_id_int}"
+            )
 
         frame = get_or_create_frame_record(
             video=video,
@@ -265,7 +172,7 @@ class FrameStreamView(APIView):
         pending_response = self._ensure_frame_file_available(frame=frame)
         if pending_response is not None:
             return pending_response
-        frame_path = cast(Path, getattr(frame, "file_path"))
+        frame_path = frame.file_path
 
         if not frame_path.exists() or not frame_path.is_file():
             raise Http404("Frame file not found on disk")
@@ -287,7 +194,7 @@ class FrameStreamView(APIView):
             if nginx_response is not None:
                 return nginx_response
 
-        range_header = _range_header(request)
+        range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
         file_size = frame_path.stat().st_size
         if range_header:
             try:
@@ -296,7 +203,7 @@ class FrameStreamView(APIView):
                 response = HttpResponse(status=416, content_type=content_type)
                 response["Content-Range"] = f"bytes */{file_size}"
                 response["Accept-Ranges"] = "bytes"
-                return self._add_cors_headers_if_configured(response, frontend_origin)
+                return add_cors_headers(response, frontend_origin)
 
         django_file = File(frame_path.open("rb"), name=frame_path.name)
         response = build_partial_content_response(
@@ -307,143 +214,4 @@ class FrameStreamView(APIView):
             disposition="inline",
             filename=frame_path.name,
         )
-        return self._add_cors_headers_if_configured(response, frontend_origin)
-
-
-class DecodedFrameStreamView(APIView):
-    """
-    Decode and return a single frame directly from a video artifact.
-
-    Endpoint:
-    - GET /api/media/videos/<video_id>/frames/<frame_number>/decoded-stream/?file_type=raw|processed
-    """
-
-    permission_classes = [
-        EnvironmentAwarePermission,
-        PolicyPermission,
-        CenterScopedVideoPermission,
-    ]
-
-    @staticmethod
-    def _parse_file_type(
-        request: Request,
-    ) -> tuple[VideoArtifactKind | None, Response | None]:
-        raw_value = request.query_params.get("file_type")
-        if raw_value is None:
-            raw_value = request.query_params.get("type", VideoArtifactKind.RAW.value)
-        normalized = str(raw_value or "").strip().lower()
-        artifact_kind = SUPPORTED_DECODED_FRAME_FILE_TYPES.get(normalized)
-        if artifact_kind is None:
-            return None, Response(
-                {
-                    "error": "file_type must be one of ['raw', 'processed'].",
-                    "details": {"file_type": raw_value},
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        return artifact_kind, None
-
-    @staticmethod
-    def _video_has_selected_artifact(
-        video: VideoFile,
-        artifact_kind: VideoArtifactKind,
-    ) -> bool:
-        if artifact_kind == VideoArtifactKind.PROCESSED:
-            processed_file = getattr(video, "processed_file", None)
-            return _field_file_has_name(processed_file)
-        return bool(getattr(video, "has_raw", False))
-
-    def _assert_video_access_allowed(
-        self, *, request: Request, video: VideoFile
-    ) -> None:
-        self.check_object_permissions(request, video)
-
-    def get(
-        self,
-        request: Request,
-        video_id: int | str | None = None,
-        frame_number: int | str | None = None,
-    ) -> HttpResponseBase:
-        if video_id is None or frame_number is None:
-            raise Http404("video_id and frame_number are required")
-
-        video_id_int = _parse_int_path_value(video_id, name="video_id")
-        frame_number_int = _parse_int_path_value(frame_number, name="frame_number")
-
-        try:
-            video = VideoFile.objects.get(pk=video_id_int)
-        except VideoFile.DoesNotExist:
-            raise Http404(f"Video {video_id_int} not found")
-        self._assert_video_access_allowed(request=request, video=video)
-
-        _validate_frame_number_for_video(
-            video=video,
-            video_id=video_id_int,
-            frame_number=frame_number_int,
-        )
-
-        artifact_kind, parse_error = self._parse_file_type(request)
-        if parse_error is not None:
-            return parse_error
-        assert artifact_kind is not None
-
-        if artifact_kind == VideoArtifactKind.PROCESSED:
-            assert_anonymized_center_scope_allowed(
-                request=request,
-                obj=video,
-                not_found_message="Video not found",
-            )
-        else:
-            assert_center_scope_allowed(
-                request=request,
-                obj=video,
-                not_found_message="Video not found",
-            )
-
-        if not self._video_has_selected_artifact(video, artifact_kind):
-            raise Http404(
-                f"{artifact_kind.value.title()} video artifact is not available"
-            )
-
-        try:
-            sample = read_video_file_frame_jpeg(
-                video,
-                frame_number=frame_number_int,
-                file_type=artifact_kind.value,
-            )
-        except FileNotFoundError as exc:
-            raise Http404(str(exc)) from exc
-        except Exception as exc:
-            logger.warning(
-                "Decoded frame stream failed for video %s frame %s type=%s: %s",
-                video_id_int,
-                frame_number_int,
-                artifact_kind.value,
-                exc,
-                exc_info=True,
-            )
-            return Response(
-                {
-                    "status": "frame_decode_failed",
-                    "video_id": video_id_int,
-                    "frame_number": frame_number_int,
-                    "file_type": artifact_kind.value,
-                    "error": str(exc),
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        response = HttpResponse(sample.image_bytes, content_type=sample.content_type)
-        response["Content-Disposition"] = (
-            f'inline; filename="video_{video_id_int}_frame_{frame_number_int:07d}.jpg"'
-        )
-        response["X-Frame-File-Type"] = artifact_kind.value
-        response["X-Frame-Number"] = str(sample.frame_number)
-        response["X-Frame-Timestamp"] = f"{sample.timestamp:.6f}"
-        response["Cache-Control"] = "no-store"
-
-        frontend_origin = resolve_response_origin(request)
-        return _add_cors_headers_if_configured(
-            response,
-            frontend_origin,
-        )
+        return add_cors_headers(response, frontend_origin)

@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-
-import logging
 import hashlib
-from collections.abc import Mapping
-from typing import Any, Protocol, cast
-from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -18,32 +11,15 @@ from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
     Examiner,
-    Frame,
-    ImageClassificationAnnotation,
-    LabelVideoSegment,
     NetworkNode,
-    PatientExaminationReport,
     PortalUserInfo,
-    RawPdfFile,
     TransferJob,
     VideoFile,
-    VideoState,
 )
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from tests.helpers.data_loader import load_gender_data
-
-
-class _ResponseLike(Protocol):
-    status_code: int
-    content: bytes
-
-    def json(self) -> dict[str, object]: ...
-
-
-class _StructuredEventRecord(Protocol):
-    structured_event: dict[str, object]
 
 
 @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
@@ -97,46 +73,25 @@ class HubTransferEndpointTests(TestCase):
 
     def _auth_headers(self) -> dict[str, str]:
         return {
-            "X-Network-Node-Key": self.source_node.node_key,
-            "X-Network-Node-Secret": self.source_secret,
-            "X-Client-Cert-Verified": "SUCCESS",
+            "HTTP_X_NETWORK_NODE_KEY": self.source_node.node_key,
+            "HTTP_X_NETWORK_NODE_SECRET": self.source_secret,
+            "HTTP_X_CLIENT_CERT_VERIFIED": "SUCCESS",
         }
 
     def _secure_post(
-        self,
-        path: str,
-        *,
-        data: Mapping[str, object] | None,
-        content_type: str | None = None,
-        headers: Mapping[str, str] | None = None,
-    ) -> _ResponseLike:
-        if content_type is None:
-            return cast(
-                _ResponseLike,
-                self.client.post(path, data=data, secure=True, headers=headers),
-            )
-        return cast(
-            _ResponseLike,
-            self.client.post(
-                path,
-                data=data,
-                secure=True,
-                content_type=content_type,
-                headers=headers,
-            ),
-        )
+        self, path: str, *, data, content_type: str | None = None, **extra
+    ):
+        request_kwargs = {
+            "data": data,
+            "secure": True,
+            **extra,
+        }
+        if content_type is not None:
+            request_kwargs["content_type"] = content_type
+        return self.client.post(path, **request_kwargs)
 
-    def _secure_get(
-        self,
-        path: str,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> _ResponseLike:
-        return cast(_ResponseLike, self.client.get(path, secure=True, headers=headers))
-
-    @staticmethod
-    def _structured_event(record: logging.LogRecord) -> dict[str, object]:
-        return cast(_StructuredEventRecord, record).structured_event
+    def _secure_get(self, path: str, **extra):
+        return self.client.get(path, secure=True, **extra)
 
     @staticmethod
     def _sha256(content: bytes) -> str:
@@ -152,25 +107,22 @@ class HubTransferEndpointTests(TestCase):
         sender_processing_success: bool = False,
         processed_video_hash: str | None = None,
         examination_date: str = "2026-03-20",
-    ) -> dict[str, Any]:
-        effective_processed_video_hash = processed_video_hash or self._sha256(
-            f"processed:{video_hash}".encode()
-        )
-        video_file_payload: dict[str, object] = {
+    ) -> dict:
+        video_file_payload = {
             "video_hash": video_hash,
-            "processed_video_hash": effective_processed_video_hash,
+            "original_file_name": "example.mp4",
             "suffix": ".mp4",
             "fps": 25.0,
             "duration": 12.5,
             "frame_count": 300,
             "width": 1280,
             "height": 720,
+            "meta": {"origin": "site-a"},
         }
-        patient_hash = self._sha256(b"site-a-patient")
-        examination_hash = self._sha256(
-            f"site-a-examination:{examination_date}".encode()
-        )
-        payload: dict[str, Any] = {
+        if processed_video_hash:
+            video_file_payload["processed_video_hash"] = processed_video_hash
+
+        return {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -181,20 +133,18 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "3.0",
             "resource_rows": {
                 "video_file": video_file_payload,
                 "sensitive_meta": {
-                    "patient_hash": patient_hash,
-                    "examination_hash": examination_hash,
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": "1990-01-01",
+                    "examination_date": examination_date,
                 },
                 "video_state": {
                     "processing_started": True,
                     "frames_extracted": True,
                     "sensitive_meta_processed": True,
-                    "anonymized": True,
-                    "anonymization_validated": True,
-                    "processed_file_sha256": effective_processed_video_hash,
                 },
                 "processing_history": {
                     "file_hash": video_hash,
@@ -205,7 +155,6 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
-        return payload
 
     def _report_transfer_payload(
         self,
@@ -215,9 +164,8 @@ class HubTransferEndpointTests(TestCase):
         transfer_mode: str = "metadata_only",
         processing_policy: str = "reprocess_if_missing_outputs",
         sender_processing_success: bool = False,
-        processed_file_sha256: str | None = None,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+    ) -> dict:
+        return {
             "transfer_key": transfer_key,
             "source_node_key": self.source_node.node_key,
             "target_node_key": self.target_node.node_key,
@@ -228,26 +176,21 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "3.0",
             "resource_rows": {
                 "raw_pdf_file": {
                     "pdf_hash": pdf_hash,
-                    "anonymized_text": "Anonymized clinical report",
+                    "text": "Clinical report",
                 },
                 "sensitive_meta": {
-                    "patient_hash": self._sha256(b"site-a-patient"),
-                    "examination_hash": self._sha256(b"site-a-examination:2026-03-20"),
+                    "patient_first_name": "Max",
+                    "patient_last_name": "Mustermann",
+                    "patient_dob": "1990-01-01",
+                    "examination_date": "2026-03-20",
                 },
                 "raw_pdf_state": {
                     "processing_started": True,
                     "text_meta_extracted": True,
                     "sensitive_meta_processed": True,
-                    "anonymized": True,
-                    "anonymization_validated": True,
-                    "processed_file_sha256": (
-                        processed_file_sha256
-                        or self._sha256(f"processed:{pdf_hash}".encode())
-                    ),
                 },
                 "processing_history": {
                     "file_hash": pdf_hash,
@@ -258,7 +201,6 @@ class HubTransferEndpointTests(TestCase):
                 "sender_processing_success": sender_processing_success,
             },
         }
-        return payload
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
@@ -274,7 +216,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 404, response.content
@@ -293,7 +235,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 404, response.content
@@ -312,25 +254,17 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
         body = response.json()
         assert body["transfer_status"] == "awaiting_media"
         assert body["processing_decision"] == "wait_for_missing_media"
-        assert (
-            body["processed_media_hash"]
-            == payload["resource_rows"]["video_file"]["processed_video_hash"]
-        )
 
         video = VideoFile.objects.get(video_hash="hash-1")
         assert video.center == self.center
-        assert video.original_file_name is None
-        assert video.sensitive_meta is not None
-        assert video.sensitive_meta.patient_first_name is None
-        assert video.sensitive_meta.patient_last_name is None
-        assert video.sensitive_meta.patient_dob is None
+        assert video.original_file_name == "example.mp4"
         assert video.state is not None
         assert video.state.processing_started is True
         assert ProcessingHistory.objects.get(file_hash="hash-1").success is True
@@ -349,398 +283,6 @@ class HubTransferEndpointTests(TestCase):
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_returns_typed_model_validation_details(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__model-validation",
-            video_hash="hash-model-validation",
-        )
-
-        with patch(
-            "endoreg_db.views.media.hub.transfers.create_or_reuse_transfer_job",
-            side_effect=DjangoValidationError(
-                {"resource_rows": ["Typed resource rows are inconsistent."]}
-            ),
-        ):
-            response = self._secure_post(
-                "/api/media/hub/transfers/",
-                data=payload,
-                content_type="application/json",
-                headers=self._auth_headers(),
-            )
-
-        assert response.status_code == 400, response.content
-        assert response.json() == {
-            "error": "Transfer payload validation failed",
-            "details": {"resource_rows": ["Typed resource rows are inconsistent."]},
-        }
-        assert not TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"]
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_metadata_validation_rolls_back_registration(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__metadata-validation",
-            video_hash="hash-metadata-validation",
-        )
-
-        with patch(
-            "endoreg_db.views.media.hub.transfers.apply_transfer_metadata",
-            side_effect=DjangoValidationError(
-                ["Transferred metadata violates the typed model contract."]
-            ),
-        ):
-            response = self._secure_post(
-                "/api/media/hub/transfers/",
-                data=payload,
-                content_type="application/json",
-                headers=self._auth_headers(),
-            )
-
-        assert response.status_code == 400, response.content
-        assert response.json() == {
-            "error": "Transfer payload validation failed",
-            "details": {
-                "non_field_errors": [
-                    "Transferred metadata violates the typed model contract."
-                ]
-            },
-        }
-        assert not TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"]
-        ).exists()
-        assert not VideoFile.objects.filter(
-            video_hash=payload["resource_hash"]
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_center_scope_uses_authenticated_node_not_django_user(self):
-        foreign_center = Center.objects.create(name="foreign-session-center")
-        session_user = User.objects.create_user(username="foreign-session-user")
-        portal_info = PortalUserInfo.objects.create(user=session_user)
-        portal_info.centers.add(foreign_center)
-        self.client.force_login(session_user)
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__node-scope",
-            video_hash="hash-node-scope",
-        )
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 201, response.content
-        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
-        assert (
-            cast(Any, transfer_job).source_center_id
-            == cast(Any, self.source_node).owning_center_id
-        )
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_direct_identity_fields(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__pii-rejected",
-            video_hash="hash-pii-rejected",
-        )
-        payload["resource_rows"]["sensitive_meta"]["patient_first_name"] = "Max"
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 400, response.content
-        assert "Direct identity fields are prohibited" in str(response.json())
-        assert not TransferJob.objects.filter(
-            transfer_key="site-a__video__pii-rejected"
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_raw_report_text(self):
-        payload = self._report_transfer_payload(
-            transfer_key="site-a__report__raw-text-rejected",
-            pdf_hash="hash-raw-text-rejected",
-        )
-        payload["resource_rows"]["raw_pdf_file"]["text"] = "Raw clinical text"
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 400, response.content
-        assert "Raw report text is prohibited" in str(response.json())
-        assert not TransferJob.objects.filter(
-            transfer_key="site-a__report__raw-text-rejected"
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_legacy_privacy_schema(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__legacy-schema-rejected",
-            video_hash="hash-legacy-schema-rejected",
-        )
-        payload["payload_schema_version"] = "1.0"
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 400, response.content
-        assert "privacy-preserving" in str(response.json())
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_video_transfer_imports_frame_annotations_and_related_reports(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__annotations",
-            video_hash="hash-annotations",
-        )
-        payload["resource_rows"]["frame_annotations"] = [
-            {
-                "annotation_id": 42,
-                "video_hash": "hash-annotations",
-                "frame_number": 5,
-                "frame_relative_path": "frames/frame_000005.jpg",
-                "frame_timestamp": 0.2,
-                "label_name": "lesion_visible",
-                "value": True,
-                "float_value": 0.91,
-                "information_source_name": "manual_annotation",
-            }
-        ]
-        payload["resource_rows"]["video_segments"] = [
-            {
-                "source_node_key": self.source_node.node_key,
-                "source_segment_id": 17,
-                "video_hash": "hash-annotations",
-                "start_frame_number": 4,
-                "end_frame_number_exclusive": 8,
-                "label_name": "lesion_visible",
-                "source_kind": "manual_annotation",
-                "validation_state": "validated",
-                "export_segment": True,
-                "anonymous_provenance": {
-                    "information_source_name": "manual_annotation"
-                },
-            }
-        ]
-        payload["resource_rows"]["video_state"]["segment_annotations_validated"] = True
-        payload["resource_rows"]["reports"] = [
-            {
-                "template_name": "star_upper_gi_main",
-                "template_version": "2026.1",
-                "template_hash": "template-hash",
-                "status": "final",
-                "version": 2,
-                "is_active": True,
-            }
-        ]
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 201, response.content
-
-        video = VideoFile.objects.get(video_hash="hash-annotations")
-        frame = Frame.objects.get(video=video, frame_number=5)
-        assert frame.relative_path == "frames/frame_000005.jpg"
-        assert frame.timestamp == 0.2
-
-        annotation = ImageClassificationAnnotation.objects.select_related(
-            "label",
-            "information_source",
-        ).get(frame=frame)
-        assert annotation.label.name == "lesion_visible"
-        assert annotation.information_source is not None
-        assert annotation.information_source.name == "manual_annotation"
-        assert annotation.annotator is None
-        assert annotation.value is True
-        assert annotation.float_value == 0.91
-        assert (
-            annotation.external_annotation_id
-            == f"hub_transfer:{self.source_node.node_key}:annotation:42"
-        )
-        assert video.state is not None
-        video.state.refresh_from_db()
-        assert video.state.frame_annotations_generated is True
-        assert video.state.segment_annotations_validated is True
-
-        segment = LabelVideoSegment.objects.select_related(
-            "state", "source", "label"
-        ).get(source_node_key=self.source_node.node_key, source_segment_id="17")
-        segment_pk = segment.pk
-        assert segment.video_file == video
-        assert segment.start_frame_number == 4
-        assert segment.end_frame_number == 8
-        assert segment.label is not None
-        assert segment.label.name == "lesion_visible"
-        assert segment.source is not None
-        assert segment.source.name == "manual_annotation"
-        assert segment.state.annotation is True
-        assert segment.state.prediction is False
-        assert segment.state.is_validated is True
-
-        replay_payload = self._video_transfer_payload(
-            transfer_key="site-a__video__annotations-replay",
-            video_hash="hash-annotations",
-        )
-        replay_payload["resource_rows"]["video_segments"] = [
-            {
-                **payload["resource_rows"]["video_segments"][0],
-                "start_frame_number": 5,
-                "end_frame_number_exclusive": 9,
-                "validation_state": "unvalidated",
-            }
-        ]
-        replay_payload["resource_rows"]["video_state"][
-            "segment_annotations_validated"
-        ] = False
-        replay_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=replay_payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert replay_response.status_code == 201, replay_response.content
-        assert (
-            LabelVideoSegment.objects.filter(
-                source_node_key=self.source_node.node_key,
-                source_segment_id="17",
-            ).count()
-            == 1
-        )
-        segment.refresh_from_db()
-        assert segment.pk == segment_pk
-        assert segment.start_frame_number == 5
-        assert segment.end_frame_number == 9
-        segment.state.refresh_from_db()
-        assert segment.state.is_validated is False
-        video.state.refresh_from_db()
-        assert video.state.segment_annotations_validated is False
-
-        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
-        report = PatientExaminationReport.objects.get(
-            patient_examination_id=transfer_job.linked_patient_examination_id,
-            template_name="star_upper_gi_main",
-            version=2,
-        )
-        assert report.status == PatientExaminationReport.Status.FINAL
-        assert report.title == ""
-        assert report.editor_payload == {}
-        assert report.rendered_text == ""
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_video_transfer_rejects_segment_beyond_transferred_frame_count(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__segment-out-of-bounds",
-            video_hash="hash-segment-out-of-bounds",
-        )
-        payload["resource_rows"]["video_segments"] = [
-            {
-                "source_node_key": self.source_node.node_key,
-                "source_segment_id": "outside",
-                "video_hash": "hash-segment-out-of-bounds",
-                "start_frame_number": 299,
-                "end_frame_number_exclusive": 301,
-                "label_name": "lesion_visible",
-                "source_kind": "manual_annotation",
-                "validation_state": "validated",
-                "export_segment": True,
-                "anonymous_provenance": {
-                    "information_source_name": "manual_annotation"
-                },
-            }
-        ]
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 400, response.content
-        assert "exceeds video frame_count" in str(response.json())
-        assert not VideoFile.objects.filter(
-            video_hash="hash-segment-out-of-bounds"
-        ).exists()
-        assert not LabelVideoSegment.objects.filter(
-            source_node_key=self.source_node.node_key,
-            source_segment_id="outside",
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_video_transfer_rolls_back_segments_before_validation_reconciliation(
-        self,
-    ):
-        video_state = VideoState.objects.create()
-        video = VideoFile.objects.create(
-            video_hash="hash-segment-rollback",
-            center=self.center,
-            state=video_state,
-        )
-        assert video.state is not None
-        assert video.state.segment_annotations_validated is False
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__segment-rollback",
-            video_hash=video.video_hash,
-        )
-        payload["resource_rows"]["video_segments"] = [
-            {
-                "source_node_key": self.source_node.node_key,
-                "source_segment_id": "rollback",
-                "video_hash": video.video_hash,
-                "start_frame_number": 4,
-                "end_frame_number_exclusive": 8,
-                "label_name": "lesion_visible",
-                "source_kind": "manual_annotation",
-                "validation_state": "validated",
-                "export_segment": True,
-                "anonymous_provenance": {
-                    "information_source_name": "manual_annotation"
-                },
-            }
-        ]
-        payload["resource_rows"]["video_state"]["segment_annotations_validated"] = True
-
-        with patch(
-            "endoreg_db.services.hub.transfers._apply_frame_annotation_rows",
-            side_effect=ValueError("frame annotation apply failed"),
-        ):
-            response = self._secure_post(
-                "/api/media/hub/transfers/",
-                data=payload,
-                content_type="application/json",
-                headers=self._auth_headers(),
-            )
-
-        assert response.status_code == 400, response.content
-        assert "frame annotation apply failed" in str(response.json())
-        assert not TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"]
-        ).exists()
-        assert not LabelVideoSegment.objects.filter(
-            source_node_key=self.source_node.node_key,
-            source_segment_id="rollback",
-        ).exists()
-        video.state.refresh_from_db()
-        assert video.state.segment_annotations_validated is False
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_matching_node_credentials(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__auth-fail",
@@ -751,11 +293,9 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers={
-                "X-Network-Node-Key": "wrong-node",
-                "X-Network-Node-Secret": self.source_secret,
-                "X-Client-Cert-Verified": "SUCCESS",
-            },
+            HTTP_X_NETWORK_NODE_KEY="wrong-node",
+            HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
+            HTTP_X_CLIENT_CERT_VERIFIED="SUCCESS",
         )
 
         assert response.status_code == 403, response.content
@@ -777,12 +317,11 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                headers=self._auth_headers(),
+                **self._auth_headers(),
             )
 
         assert response.status_code == 403, response.content
-        detail = cast(str, response.json()["detail"])
-        assert "Invalid network node credentials" in detail
+        assert "Invalid network node credentials" in response.json()["detail"]
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__missing-secret-hash"
         ).exists()
@@ -795,12 +334,11 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_does_not_allow_authenticated_user_to_bypass_node_auth(
         self,
     ):
-        user = User.objects.create(
+        user = User.objects.create_superuser(
             username="hub-admin",
             email="hub-admin@example.org",
+            password="secret",
         )
-        user.set_password("secret")
-        user.save(update_fields=["password"])
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__user-bypass-denied",
@@ -814,21 +352,19 @@ class HubTransferEndpointTests(TestCase):
         )
 
         assert response.status_code == 403, response.content
-        detail = cast(str, response.json()["detail"])
-        assert "Invalid network node credentials" in detail
+        assert "Invalid network node credentials" in response.json()["detail"]
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__user-bypass-denied"
         ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_node_authenticated_transfer_ignores_missing_user_center_scope(
+    def test_transfer_registration_rejects_authenticated_user_without_center_scope(
         self,
     ):
-        user = User.objects.create(
+        user = User.objects.create_user(
             username="unscoped-transfer-user",
+            password="secret",
         )
-        user.set_password("secret")
-        user.save(update_fields=["password"])
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__unscoped-user",
@@ -839,14 +375,11 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
-        assert response.status_code == 201, response.content
-        assert TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"],
-            source_center=self.center,
-        ).exists()
+        assert response.status_code == 403, response.content
+        assert "do not have access" in response.json()["detail"]
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_secure_transport(self):
@@ -863,13 +396,12 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                headers=self._auth_headers(),
+                **self._auth_headers(),
             )
 
         assert response.status_code == 403, response.content
-        detail = cast(str, response.json()["detail"])
-        assert "requires HTTPS" in detail
-        event = self._structured_event(transfer_logs.records[-1])
+        assert "requires HTTPS" in response.json()["detail"]
+        event = transfer_logs.records[-1].structured_event
         assert event["event"] == "hub.transfer_secure_transport_failed"
         assert event["reason"] == "insecure_request"
         assert self.source_secret not in "\n".join(transfer_logs.output)
@@ -889,7 +421,8 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers={**self._auth_headers(), "X-Forwarded-Proto": "https"},
+            HTTP_X_FORWARDED_PROTO="https",
+            **self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -915,16 +448,13 @@ class HubTransferEndpointTests(TestCase):
                 "/api/media/hub/transfers/",
                 data=payload,
                 content_type="application/json",
-                headers={
-                    "X-Network-Node-Key": self.source_node.node_key,
-                    "X-Network-Node-Secret": self.source_secret,
-                },
+                HTTP_X_NETWORK_NODE_KEY=self.source_node.node_key,
+                HTTP_X_NETWORK_NODE_SECRET=self.source_secret,
             )
 
         assert response.status_code == 403, response.content
-        detail = cast(str, response.json()["detail"])
-        assert "mutual TLS" in detail
-        event = self._structured_event(transfer_logs.records[-1])
+        assert "mutual TLS" in response.json()["detail"]
+        event = transfer_logs.records[-1].structured_event
         assert event["event"] == "hub.transfer_mtls_check_failed"
         assert event["reason"] == "mtls_proxy_verification_failed"
         assert event["mtls_actual_value_present"] is False
@@ -942,13 +472,13 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         second = self._secure_post(
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert first.status_code == 201, first.content
@@ -958,230 +488,6 @@ class HubTransferEndpointTests(TestCase):
             TransferJob.objects.filter(transfer_key=payload["transfer_key"]).count()
             == 1
         )
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_changed_canonical_replay_payload(self):
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__changed-replay",
-            video_hash="hash-changed-replay",
-        )
-
-        first = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        payload["resource_rows"]["video_file"]["fps"] = 30.0
-        second = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert first.status_code == 201, first.content
-        assert second.status_code == 409, second.content
-        assert "different transfer payload" in str(second.json())
-        video = VideoFile.objects.get(video_hash="hash-changed-replay")
-        assert video.fps == 25.0
-        assert (
-            TransferJob.objects.filter(transfer_key=payload["transfer_key"]).count()
-            == 1
-        )
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_source_center_outside_node_ownership(
-        self,
-    ):
-        other_center = Center.objects.create(
-            name="other-transfer-center",
-            display_name="Other Transfer Center",
-        )
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__foreign-center",
-            video_hash="hash-foreign-center",
-        )
-        payload["source_center_key"] = other_center.center_key
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 400, response.content
-        assert "must match the authenticated source node owning center" in str(
-            response.json()
-        )
-        assert not TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"]
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_registration_rejects_source_node_without_owning_center(self):
-        unowned_node = NetworkNode.objects.create(
-            display_name="Unowned Site Node",
-            node_key="unowned-site-node",
-            role=NetworkNode.Role.SITE_NODE,
-        )
-        unowned_secret = "unowned-site-secret"
-        unowned_node.set_shared_secret(unowned_secret)
-        unowned_node.save(update_fields=["shared_secret_hash"])
-        payload = self._video_transfer_payload(
-            transfer_key="unowned__video__center-claim",
-            video_hash="hash-unowned-center-claim",
-        )
-        payload["source_node_key"] = unowned_node.node_key
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers={
-                "X-Network-Node-Key": unowned_node.node_key,
-                "X-Network-Node-Secret": unowned_secret,
-                "X-Client-Cert-Verified": "SUCCESS",
-            },
-        )
-
-        assert response.status_code == 400, response.content
-        assert "must have an owning center" in str(response.json())
-        assert not TransferJob.objects.filter(
-            transfer_key=payload["transfer_key"]
-        ).exists()
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_cross_node_hash_collision_is_persistently_inconsistent_and_immutable(
-        self,
-    ):
-        first_payload = self._video_transfer_payload(
-            transfer_key="site-a__video__owned-hash",
-            video_hash="owned-hash",
-        )
-        first_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=first_payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert first_response.status_code == 201, first_response.content
-
-        video = VideoFile.objects.get(video_hash="owned-hash")
-        video.fps = 12.0
-        video.save(update_fields=["fps"])
-
-        second_node = NetworkNode.objects.create(
-            display_name="Site A Secondary Node",
-            node_key="site-a-secondary-node",
-            role=NetworkNode.Role.SITE_NODE,
-            owning_center=self.center,
-        )
-        second_secret = "site-a-secondary-secret"
-        second_node.set_shared_secret(second_secret)
-        second_node.save(update_fields=["shared_secret_hash"])
-        processed_content = b"second-node-processed-video"
-        processed_hash = self._sha256(processed_content)
-        second_payload = self._video_transfer_payload(
-            transfer_key="site-a-secondary__video__owned-hash",
-            video_hash="owned-hash",
-            transfer_mode="metadata_and_processed_media",
-            processed_video_hash=processed_hash,
-        )
-        second_payload["source_node_key"] = second_node.node_key
-        second_headers = {
-            "X-Network-Node-Key": second_node.node_key,
-            "X-Network-Node-Secret": second_secret,
-            "X-Client-Cert-Verified": "SUCCESS",
-        }
-
-        second_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=second_payload,
-            content_type="application/json",
-            headers=second_headers,
-        )
-
-        assert second_response.status_code == 201, second_response.content
-        assert second_response.json()["transfer_status"] == "inconsistent"
-        assert second_response.json()["processing_decision"] == "mark_inconsistent"
-        collision_job = TransferJob.objects.get(
-            transfer_key=second_payload["transfer_key"]
-        )
-        assert collision_job.target_object_id is None
-        video.refresh_from_db()
-        assert video.center == self.center
-        assert video.fps == 12.0
-
-        upload_response = self._secure_post(
-            f"/api/media/hub/transfers/{second_payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_content,
-                    content_type="video/mp4",
-                ),
-            },
-            headers=second_headers,
-        )
-        assert upload_response.status_code == 400, upload_response.content
-        assert "inconsistent or rejected transfer" in str(upload_response.json())
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_cross_node_report_hash_collision_does_not_overwrite_report(self):
-        first_payload = self._report_transfer_payload(
-            transfer_key="site-a__report__owned-hash",
-            pdf_hash="owned-report-hash",
-        )
-        first_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=first_payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert first_response.status_code == 201, first_response.content
-
-        report = RawPdfFile.objects.get(pdf_hash="owned-report-hash")
-        report.anonymized_text = "Receiver-preserved anonymized report"
-        report.save(update_fields=["anonymized_text"])
-
-        second_node = NetworkNode.objects.create(
-            display_name="Site A Report Node",
-            node_key="site-a-report-node",
-            role=NetworkNode.Role.SITE_NODE,
-            owning_center=self.center,
-        )
-        second_secret = "site-a-report-secret"
-        second_node.set_shared_secret(second_secret)
-        second_node.save(update_fields=["shared_secret_hash"])
-        second_payload = self._report_transfer_payload(
-            transfer_key="site-a-report__report__owned-hash",
-            pdf_hash="owned-report-hash",
-        )
-        second_payload["source_node_key"] = second_node.node_key
-
-        second_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=second_payload,
-            content_type="application/json",
-            headers={
-                "X-Network-Node-Key": second_node.node_key,
-                "X-Network-Node-Secret": second_secret,
-                "X-Client-Cert-Verified": "SUCCESS",
-            },
-        )
-
-        assert second_response.status_code == 201, second_response.content
-        assert second_response.json()["transfer_status"] == "inconsistent"
-        collision_job = TransferJob.objects.get(
-            transfer_key=second_payload["transfer_key"]
-        )
-        assert collision_job.target_object_id is None
-        report.refresh_from_db()
-        assert report.center == self.center
-        assert report.anonymized_text == "Receiver-preserved anonymized report"
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_skips_reprocessing_when_local_success_exists(self):
@@ -1205,7 +511,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 201, response.content
@@ -1215,7 +521,7 @@ class HubTransferEndpointTests(TestCase):
 
         status_response = self._secure_get(
             f"/api/media/hub/transfers/{payload['transfer_key']}/status/",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert status_response.status_code == 200, status_response.content
         assert (
@@ -1239,13 +545,13 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=first_payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         second_response = self._secure_post(
             "/api/media/hub/transfers/",
             data=second_payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert first_response.status_code == 201, first_response.content
@@ -1278,47 +584,11 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 400, response.content
         assert "Raw media transfer is not permitted" in str(response.json())
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_report_transfer_imports_safe_final_report_rows(self):
-        payload = self._report_transfer_payload(
-            transfer_key="site-a__report__lx-report",
-            pdf_hash="hash-lx-report",
-        )
-        payload["resource_rows"]["reports"] = [
-            {
-                "template_name": "star_colonoscopy_main",
-                "template_version": "2026.1",
-                "template_hash": "report-template-hash",
-                "status": "final",
-                "version": 1,
-                "is_active": True,
-            }
-        ]
-
-        response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-
-        assert response.status_code == 201, response.content
-
-        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
-        report = PatientExaminationReport.objects.get(
-            patient_examination_id=transfer_job.linked_patient_examination_id,
-            template_name="star_colonoscopy_main",
-        )
-        assert report.status == PatientExaminationReport.Status.FINAL
-        assert report.title == ""
-        assert report.editor_payload == {}
-        assert report.rendered_text == ""
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_requires_anonymized_status(self):
@@ -1335,13 +605,11 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert response.status_code == 400, response.content
-        assert "only allowed for anonymized data that was explicitly validated" in str(
-            response.json()
-        )
+        assert "only allowed for anonymized data" in str(response.json())
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_video_upload_is_rejected(self):
@@ -1356,7 +624,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -1374,56 +642,19 @@ class HubTransferEndpointTests(TestCase):
                         content_type="video/mp4",
                     ),
                 },
-                headers=self._auth_headers(),
+                **self._auth_headers(),
             )
 
         assert upload_response.status_code == 400, upload_response.content
         assert "Only anonymized processed media may be uploaded" in str(
             upload_response.json()
         )
-        event = self._structured_event(transfer_logs.records[-1])
+        event = transfer_logs.records[-1].structured_event
         assert event["event"] == "hub.transfer_media_upload_validation_failed"
         assert event["error_fields"] == ["media_role"]
         log_output = "\n".join(transfer_logs.output)
         assert "raw-video-bytes" not in log_output
         assert "source.mp4" not in log_output
-
-    @override_settings(
-        ENDOREG_DEPLOYMENT_ROLE="central_hub",
-        ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES=4,
-    )
-    def test_processed_video_upload_enforces_configured_size_limit(self):
-        processed_bytes = b"processed-video"
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__oversized-upload",
-            video_hash="oversized-video-hash",
-            transfer_mode="metadata_and_processed_media",
-            sender_processing_success=True,
-            processed_video_hash=self._sha256(processed_bytes),
-        )
-        create_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert create_response.status_code == 201, create_response.content
-
-        upload_response = self._secure_post(
-            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_bytes,
-                    content_type="video/mp4",
-                ),
-            },
-            headers=self._auth_headers(),
-        )
-
-        assert upload_response.status_code == 400, upload_response.content
-        assert "configured size limit" in str(upload_response.json())
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_media_upload_requires_multipart_file(self):
@@ -1440,64 +671,18 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
             data={"media_role": "processed"},
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert upload_response.status_code == 400, upload_response.content
         assert "multipart file upload is required" in str(upload_response.json())
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_media_upload_returns_typed_model_validation_details(self):
-        processed_bytes = b"processed-video"
-        processed_hash = self._sha256(processed_bytes)
-        payload = self._video_transfer_payload(
-            transfer_key="site-a__video__media-model-validation",
-            video_hash="hash-media-model-validation",
-            transfer_mode="metadata_and_processed_media",
-            sender_processing_success=True,
-            processed_video_hash=processed_hash,
-        )
-        create_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert create_response.status_code == 201, create_response.content
-
-        with patch(
-            "endoreg_db.views.media.hub.transfers.attach_transfer_media",
-            side_effect=DjangoValidationError(
-                {"processed_file": ["Processed artifact state is inconsistent."]}
-            ),
-        ):
-            upload_response = self._secure_post(
-                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-                data={
-                    "media_role": "processed",
-                    "file": SimpleUploadedFile(
-                        "processed.mp4",
-                        processed_bytes,
-                        content_type="video/mp4",
-                    ),
-                },
-                headers=self._auth_headers(),
-            )
-
-        assert upload_response.status_code == 400, upload_response.content
-        assert upload_response.json() == {
-            "error": "Media attachment validation failed",
-            "details": {
-                "processed_file": ["Processed artifact state is inconsistent."]
-            },
-        }
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_video_upload_preserves_sender_state(self):
@@ -1517,7 +702,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -1531,68 +716,17 @@ class HubTransferEndpointTests(TestCase):
                     content_type="video/mp4",
                 ),
             },
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert upload_response.status_code == 200, upload_response.content
         body = upload_response.json()
         assert body["transfer_status"] == "applied"
         assert body["processing_decision"] == "skip_processing_preserved_state"
-        assert body["transfer_key"] == payload["transfer_key"]
-        assert body["resource_hash"] == payload["resource_hash"]
-        assert body["processed_media_hash"] == processed_hash
 
         video = VideoFile.objects.get(video_hash=raw_hash)
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_processed_report_upload_verifies_and_persists_anonymized_hash(self):
-        processed_bytes = b"%PDF-1.4\nanonymized\n%%EOF\n"
-        processed_hash = self._sha256(processed_bytes)
-        payload = self._report_transfer_payload(
-            transfer_key="site-a__report__processed-upload",
-            pdf_hash=self._sha256(b"raw-report"),
-            transfer_mode="metadata_and_processed_media",
-            processing_policy="preserve_processing_state",
-            sender_processing_success=True,
-            processed_file_sha256=processed_hash,
-        )
-
-        create_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert create_response.status_code == 201, create_response.content
-
-        upload_response = self._secure_post(
-            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "patient-name-report.pdf",
-                    processed_bytes,
-                    content_type="application/pdf",
-                ),
-            },
-            headers=self._auth_headers(),
-        )
-
-        assert upload_response.status_code == 200, upload_response.content
-        response_body = upload_response.json()
-        assert response_body["transfer_key"] == payload["transfer_key"]
-        assert response_body["resource_hash"] == payload["resource_hash"]
-        assert response_body["processed_media_hash"] == processed_hash
-        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
-        report = RawPdfFile.objects.get(pdf_hash=payload["resource_hash"])
-        assert report.state is not None
-        assert report.state.processed_file_sha256 == processed_hash
-        assert str(report.processed_file.name or "").endswith(f"{processed_hash}.pdf")
-        media_upload = transfer_job.provenance["media_uploads"][-1]
-        assert media_upload["uploaded_name"] == f"{processed_hash}.pdf"
-        assert "patient-name" not in str(transfer_job.provenance)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_report_upload_is_rejected(self):
@@ -1607,7 +741,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -1621,7 +755,7 @@ class HubTransferEndpointTests(TestCase):
                     content_type="application/pdf",
                 ),
             },
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert upload_response.status_code == 400, upload_response.content
@@ -1630,7 +764,7 @@ class HubTransferEndpointTests(TestCase):
         )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_media_upload_uses_node_scope_not_user_scope(self):
+    def test_transfer_media_upload_is_center_scoped_for_authenticated_users(self):
         other_center = Center.objects.create(
             name="center-b",
             display_name="Center B",
@@ -1641,11 +775,10 @@ class HubTransferEndpointTests(TestCase):
             hash="scoped-transfer-user-hash",
             center=other_center,
         )
-        user = User.objects.create(
+        user = User.objects.create_user(
             username="scoped-transfer-user",
+            password="secret",
         )
-        user.set_password("secret")
-        user.save(update_fields=["password"])
         PortalUserInfo.objects.create(user=user, examiner=examiner)
 
         processed_bytes = b"processed-video"
@@ -1663,7 +796,7 @@ class HubTransferEndpointTests(TestCase):
             "/api/media/hub/transfers/",
             data=payload,
             content_type="application/json",
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
 
@@ -1678,36 +811,7 @@ class HubTransferEndpointTests(TestCase):
                     content_type="video/mp4",
                 ),
             },
-            headers=self._auth_headers(),
-        )
-
-        assert upload_response.status_code == 200, upload_response.content
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_status_returns_404_for_unknown_transfer(self) -> None:
-        status_response = self._secure_get(
-            "/api/media/hub/transfers/does-not-exist/status/",
-            headers=self._auth_headers(),
-        )
-
-        assert status_response.status_code == 404, status_response.content
-        status_json = status_response.json()
-        assert status_json["detail"] == "Transfer job not found"
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_media_upload_returns_404_for_unknown_transfer_key(self) -> None:
-        upload_response = self._secure_post(
-            "/api/media/hub/transfers/does-not-exist/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    b"processed-video",
-                    content_type="video/mp4",
-                ),
-            },
-            headers=self._auth_headers(),
+            **self._auth_headers(),
         )
 
         assert upload_response.status_code == 404, upload_response.content
-        assert upload_response.json()["detail"] == "Transfer job not found"

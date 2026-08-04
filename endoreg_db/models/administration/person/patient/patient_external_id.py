@@ -1,11 +1,11 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models  # Add this import
 
 if TYPE_CHECKING:
-    pass
+    from endoreg_db.models import (
+        Patient,
+    )
 
 
 class PatientExternalID(models.Model):
@@ -15,13 +15,13 @@ class PatientExternalID(models.Model):
         external_id (str): The external ID value.
     """
 
-    external_id: models.CharField[Any, Any] = models.CharField(max_length=255)
-    patient: models.ForeignKey[Any] = models.ForeignKey(
+    external_id: models.CharField = models.CharField(max_length=255)
+    patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         related_name="external_ids",
     )
-    origin: models.CharField[Any, Any] = models.CharField(max_length=255)
+    origin = models.CharField(max_length=255)
 
     class Meta:
         constraints = [
@@ -32,4 +32,5 @@ class PatientExternalID(models.Model):
         ]
 
     if TYPE_CHECKING:
-        pass
+        patient: models.ForeignKey["Patient"]
+        origin: models.CharField[str, str]

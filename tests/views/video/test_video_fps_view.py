@@ -1,8 +1,8 @@
 from unittest.mock import patch
-from django.http.response import HttpResponse
+
 from django.test import TestCase
 from rest_framework.test import APIRequestFactory
-import json
+
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.views.video.video_fps import VideoFpsView
 
@@ -26,41 +26,35 @@ class VideoFpsViewTest(TestCase):
 
         response = self.view(request, pk=self.video.pk)
 
-        data = json.loads(response.content.decode())
-
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["video_id"], self.video.pk)
-        self.assertEqual(data["fps"], 25.0)
+        self.assertEqual(response.data["video_id"], self.video.pk)
+        self.assertEqual(response.data["fps"], 25.0)
 
-    def test_uses_persisted_video_fps_without_media_probe(self):
+    def test_uses_video_fps_service(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/fps/")
 
         with patch(
-            "endoreg_db.views.video.video_fps.require_persisted_video_fps",
+            "endoreg_db.views.video.video_fps.get_video_fps",
             return_value=29.97,
-        ) as mocked_require_persisted_video_fps:
+        ) as mocked_get_video_fps:
             response = self.view(request, pk=self.video.pk)
-        assert isinstance(response, HttpResponse)
-        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["fps"], 29.97)
-        mocked_require_persisted_video_fps.assert_called_once_with(self.video)
+        self.assertEqual(response.data["fps"], 29.97)
+        mocked_get_video_fps.assert_called_once()
 
     def test_returns_422_when_fps_missing(self):
         request = self.factory.get(f"/api/media/videos/{self.video.pk}/fps/")
 
         with patch(
-            "endoreg_db.views.video.video_fps.require_persisted_video_fps",
+            "endoreg_db.views.video.video_fps.get_video_fps",
             side_effect=ValueError("fps unavailable"),
         ):
             response = self.view(request, pk=self.video.pk)
-        data = json.loads(response.content.decode())
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(
-            data["error"],
+            response.data["error"],
             "Could not determine fps for the requested video.",
         )
-
-        self.assertEqual(data["details"]["video_id"], self.video.pk)
+        self.assertEqual(response.data["details"]["video_id"], self.video.pk)

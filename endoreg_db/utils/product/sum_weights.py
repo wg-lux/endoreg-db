@@ -1,35 +1,20 @@
-from __future__ import annotations
-
-from collections.abc import Iterable
-from types import NoneType
-from typing import Protocol, TYPE_CHECKING, TypeAlias, cast
-
-if TYPE_CHECKING:
-    from endoreg_db.models.administration.product.product_material import (
-        ProductMaterial,
-    )
-    from endoreg_db.models.other.unit import Unit
-
-NoProductMaterialValue: TypeAlias = NoneType
-ProductMaterialMetric: TypeAlias = tuple[float, "Unit | NoProductMaterialValue"]
+from endoreg_db.models.administration.product.product_material import ProductMaterial
 
 
-class _ProductMaterialWeightSource(Protocol):
-    unit: "Unit"
-    quantity: float
+from typing import List
 
 
-def sum_weights(
-    product_materials: Iterable["ProductMaterial"],
-) -> ProductMaterialMetric:
+def sum_weights(product_materials: List["ProductMaterial"]):
+    # sum up the weights
     weight = 0.0
-    reference_unit: Unit | NoProductMaterialValue = None
+    reference_unit = None
     for product_material in product_materials:
-        material = cast(_ProductMaterialWeightSource, product_material)
         if not reference_unit:
-            reference_unit = material.unit
+            reference_unit = product_material.unit
         else:
-            assert reference_unit == material.unit, "ProductMaterial units do not match"
-        weight += material.quantity
+            assert reference_unit == product_material.unit, (
+                "ProductMaterial units do not match"
+            )
+        weight += product_material.quantity
 
     return weight, reference_unit

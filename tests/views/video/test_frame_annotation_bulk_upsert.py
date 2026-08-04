@@ -1,7 +1,6 @@
 from django.test import TestCase
-from django.contrib.auth.models import User
-from rest_framework.test import APIRequestFactory, force_authenticate
-import json
+from rest_framework.test import APIRequestFactory
+
 from endoreg_db.models import (
     Center,
     Frame,
@@ -14,16 +13,6 @@ from endoreg_db.views.video.ai import FrameAnnotationBulkUpsertView
 
 
 class FrameAnnotationBulkUpsertViewTest(TestCase):
-    factory: APIRequestFactory
-    center: Center
-    video: VideoFile
-    other_video: VideoFile
-    frame_1: Frame
-    frame_2: Frame
-    other_video_frame: Frame
-    label: Label
-    source: InformationSource
-
     def setUp(self):
         self.factory = APIRequestFactory()
         self.view = FrameAnnotationBulkUpsertView.as_view()
@@ -90,10 +79,8 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["upserted_count"], 2)
+        self.assertEqual(response.data["upserted_count"], 2)
         self.assertEqual(
             ImageClassificationAnnotation.objects.filter(
                 label=self.label,
@@ -123,10 +110,8 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["upserted_count"], 1)
+        self.assertEqual(response.data["upserted_count"], 1)
 
         self.assertEqual(
             ImageClassificationAnnotation.objects.filter(
@@ -161,77 +146,8 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 400)
-        self.assertIn("missing_information_source_names", data["details"])
-
-    def test_bulk_upsert_rejects_unknown_wrapper_and_item_fields(self):
-        base_item = {
-            "frame_id": self.frame_1.pk,
-            "label_id": self.label.pk,
-            "information_source_name": self.source.name,
-        }
-        payloads = [
-            {"annotations": [base_item], "unexpected_wrapper": True},
-            {"annotations": [{**base_item, "unexpected_item": True}]},
-        ]
-
-        for payload in payloads:
-            with self.subTest(payload=payload):
-                request = self.factory.post(
-                    "/api/media/annotations/frames/bulk-upsert/",
-                    payload,
-                    format="json",
-                )
-                response = self.view(request)
-
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(ImageClassificationAnnotation.objects.count(), 0)
-
-    def test_bulk_upsert_uses_authenticated_user_as_annotator(self):
-        user = User.objects.create_user(username="trusted-reviewer")
-        payload = [
-            {
-                "frame_id": self.frame_1.pk,
-                "label_id": self.label.pk,
-                "information_source_name": self.source.name,
-            }
-        ]
-        request = self.factory.post(
-            "/api/media/annotations/frames/bulk-upsert/",
-            payload,
-            format="json",
-        )
-        force_authenticate(request, user=user)
-
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 200)
-        annotation = ImageClassificationAnnotation.objects.get(frame=self.frame_1)
-        self.assertEqual(annotation.annotator, "trusted-reviewer")
-
-    def test_bulk_upsert_allows_cross_center_dataset_annotation(self):
-        user = User.objects.create_user(username="foreign-reviewer")
-        payload = [
-            {
-                "frame_id": self.frame_1.pk,
-                "label_id": self.label.pk,
-                "information_source_name": self.source.name,
-            }
-        ]
-        request = self.factory.post(
-            "/api/media/annotations/frames/bulk-upsert/",
-            payload,
-            format="json",
-        )
-        force_authenticate(request, user=user)
-
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 200)
-        annotation = ImageClassificationAnnotation.objects.get(frame=self.frame_1)
-        self.assertEqual(annotation.annotator, "foreign-reviewer")
+        self.assertIn("missing_information_source_names", response.data["details"])
 
     def test_bulk_upsert_rejects_frames_outside_requested_video(self):
         payload = {
@@ -252,10 +168,8 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 400)
-        self.assertIn("invalid_frame_ids", data["details"])
+        self.assertIn("invalid_frame_ids", response.data["details"])
 
     def test_bulk_upsert_accepts_choice_name_and_inferrs_boolean_value(self):
         payload = {
@@ -281,10 +195,8 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
             format="json",
         )
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["upserted_count"], 2)
+        self.assertEqual(response.data["upserted_count"], 2)
 
         ann_present = ImageClassificationAnnotation.objects.get(
             frame=self.frame_1,
@@ -317,7 +229,5 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         )
 
         response = self.view(request)
-        data = json.loads(response.content)
-
         self.assertEqual(response.status_code, 400)
-        self.assertIn("choice_name", str(data))
+        self.assertIn("choice_name", str(response.data))

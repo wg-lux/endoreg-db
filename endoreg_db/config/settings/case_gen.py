@@ -22,7 +22,7 @@ _db_config = {
 DATABASES = {"default": _db_config}
 
 # Configure cache with explicit TIMEOUT for tests
-globals()["CACHES"] = {
+CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "endoreg-casegen-cache",

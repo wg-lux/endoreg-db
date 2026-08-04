@@ -1,6 +1,3 @@
-from typing import TypedDict
-
-from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -11,22 +8,8 @@ from endoreg_db.models.medical.examination.examination_indication import (
 )
 
 
-class _IndicationChoiceRow(TypedDict):
-    id: int
-    name: str
-    classification_ids: list[int]
-
-
-def _int_pk(value: object) -> int:
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        return int(value)
-    raise ValueError(f"Expected integer primary key, got {type(value).__name__}.")
-
-
 @api_view(["GET"])
-def get_indications_for_examination(request: HttpRequest, exam_id: int) -> Response:
+def get_indications_for_examination(request, exam_id):
     """
     Retrieve indication options for a given examination.
 
@@ -37,9 +20,9 @@ def get_indications_for_examination(request: HttpRequest, exam_id: int) -> Respo
     indications = exam.indications.all().order_by("name", "id")
     payload = [
         {
-            "id": _int_pk(getattr(indication, "pk")),
-            "name": str(getattr(indication, "name", "")),
-            "description": str(getattr(indication, "description", "") or ""),
+            "id": indication.id,
+            "name": indication.name,
+            "description": indication.description or "",
         }
         for indication in indications
     ]
@@ -47,7 +30,7 @@ def get_indications_for_examination(request: HttpRequest, exam_id: int) -> Respo
 
 
 @api_view(["GET"])
-def get_indication_choices(request: HttpRequest, indication_id: int) -> Response:
+def get_indication_choices(request, indication_id):
     """
     Retrieve all possible classification choices for a specific indication.
 
@@ -62,25 +45,24 @@ def get_indication_choices(request: HttpRequest, indication_id: int) -> Response
         id=indication_id,
     )
 
-    choices_by_id: dict[int, _IndicationChoiceRow] = {}
+    choices_by_id: dict[int, dict[str, object]] = {}
     for classification in indication.classifications.all():
         for choice in classification.choices.all():
-            choice_id = _int_pk(getattr(choice, "pk"))
             row = choices_by_id.setdefault(
-                choice_id,
+                choice.id,
                 {
-                    "id": choice_id,
-                    "name": str(getattr(choice, "name", "")),
+                    "id": choice.id,
+                    "name": choice.name,
                     "classification_ids": [],
                 },
             )
-            row["classification_ids"].append(_int_pk(getattr(classification, "pk")))
+            row["classification_ids"].append(classification.id)
 
     payload: list[dict[str, object]] = []
     for row in sorted(
         choices_by_id.values(), key=lambda item: (str(item["name"]), int(item["id"]))
     ):
-        classification_ids = sorted(set(row["classification_ids"]))
+        classification_ids = sorted({int(v) for v in row["classification_ids"]})
         payload.append(
             {
                 "id": int(row["id"]),

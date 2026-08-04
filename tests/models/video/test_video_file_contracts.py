@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Protocol, cast
 from unittest.mock import Mock, patch
 
 import pytest
-from django.core.files.base import ContentFile, File
+from django.core.files.base import ContentFile
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
@@ -19,32 +17,29 @@ from endoreg_db.services.video_files import (
 )
 
 
-class _WritableFieldFile(Protocol):
-    def save(self, name: str, content: File[Any], save: bool = True) -> None: ...
-
-
-class _VideoStateLike(Protocol):
-    pk: int | None
-
-
-def _field_file(field: object) -> _WritableFieldFile:
-    return cast(_WritableFieldFile, field)
-
-
 @pytest.fixture
 def video_center() -> Center:
     return Center.objects.create(name="video-contracts", display_name="Video Contracts")
 
 
 @pytest.mark.django_db
-def test_video_queryset_next_after_orders_by_primary_key(video_center: Center) -> None:
+def test_video_queryset_next_after_orders_by_primary_key(video_center: Center):
     first = VideoFile.objects.create(center=video_center, video_hash="query-first")
     second = VideoFile.objects.create(center=video_center, video_hash="query-second")
 
-    video_manager = cast(Any, VideoFile.objects)
-    assert video_manager.next_after() == first
-    assert video_manager.next_after(first.pk) == second
-    assert video_manager.next_after("not-an-int") is None
+    assert VideoFile.objects.next_after() == first
+    assert VideoFile.objects.next_after(first.pk) == second
+    assert VideoFile.objects.next_after("not-an-int") is None
+
+
+@pytest.mark.django_db
+def test_video_file_hash_lookup_helpers(video_center: Center):
+    video = VideoFile.objects.create(center=video_center, video_hash="known-hash")
+
+    assert VideoFile.check_hash_exists("known-hash") is True
+    assert VideoFile.check_hash_exists("missing-hash") is False
+    assert VideoFile.get_video_by_pk(video.pk) == video
+    assert VideoFile.get_video_by_content_hash("known-hash") == video
 
 
 @pytest.mark.django_db
@@ -66,8 +61,8 @@ def test_video_file_import_context_names_prefer_video_processor(
 
     assert get_video_import_processor(video) == canonical_processor
     assert get_video_import_context_names(video) == (
-        cast(str, getattr(video_center, "name")),
-        cast(str, getattr(canonical_processor, "name")),
+        video_center.name,
+        canonical_processor.name,
     )
 
 
@@ -88,16 +83,16 @@ def test_video_file_import_context_names_fall_back_to_video_meta_processor(
 
     assert get_video_import_processor(video) == legacy_processor
     assert get_video_import_context_names(video) == (
-        cast(str, getattr(video_center, "name")),
-        cast(str, getattr(legacy_processor, "name")),
+        video_center.name,
+        legacy_processor.name,
     )
 
 
 @pytest.mark.django_db
 def test_video_file_active_file_prefers_processed_over_raw(video_center: Center):
     video = VideoFile.objects.create(center=video_center, video_hash="active-file")
-    _field_file(video.raw_file).save("raw/active.mp4", ContentFile(b"raw"), save=True)
-    _field_file(video.processed_file).save(
+    video.raw_file.save("raw/active.mp4", ContentFile(b"raw"), save=True)
+    video.processed_file.save(
         "processed/active.mp4", ContentFile(b"processed"), save=True
     )
 
@@ -123,8 +118,8 @@ def test_video_file_active_file_raises_when_no_media_is_available(video_center: 
 
 @pytest.mark.django_db
 def test_video_file_active_file_path_uses_processed_stream_path(
-    video_center: Center, tmp_path: Path
-) -> None:
+    video_center: Center, tmp_path
+):
     processed_path = tmp_path / "processed.mp4"
     processed_path.write_bytes(b"processed")
     video = VideoFile.objects.create(center=video_center, video_hash="active-path")
@@ -142,16 +137,25 @@ def test_video_file_active_file_path_uses_processed_stream_path(
 
 
 @pytest.mark.django_db
-def test_video_file_raw_playback_url_is_not_exposed(video_center: Center):
+def test_video_file_protected_urls_require_streamable_paths(video_center: Center):
     video = VideoFile.objects.create(
         center=video_center,
         video_hash="stream-url",
         storage_mode=VideoStorageMode.STREAMABLE.value,
     )
     video.raw_file.name = "raw/source.mp4"
-    video.raw_streamable_relative_path = "streamable/raw/source.mp4"
 
     assert video.active_raw_file_url is None
+
+    video.raw_streamable_relative_path = "streamable/raw/source.mp4"
+    with patch(
+        "endoreg_db.services.video_files.streaming.reverse",
+        return_value=f"/api/media/videos/{video.pk}/stream/",
+    ):
+        raw_url = video.active_raw_file_url
+
+    assert raw_url is not None
+    assert raw_url.endswith(f"/api/media/videos/{video.pk}/stream/")
 
 
 @pytest.mark.django_db
@@ -166,29 +170,16 @@ def test_video_file_active_file_url_prefers_processed_stream(video_center: Cente
     video.raw_streamable_relative_path = "streamable/raw/source.mp4"
     video.processed_streamable_relative_path = "streamable/processed/source.mp4"
 
-    active_file_url = video.active_file_url
+    with patch(
+        "endoreg_db.services.video_files.streaming.reverse",
+        return_value=f"/api/media/videos/{video.pk}/stream/",
+    ):
+        active_file_url = video.active_file_url
 
     assert active_file_url is not None
     assert active_file_url.endswith(
-        f"/endoreg-api/media/videos/{video.pk}/stream/?type=processed"
+        f"/api/media/videos/{video.pk}/stream/?type=processed"
     )
-
-
-@pytest.mark.django_db
-def test_video_file_active_file_url_keeps_legacy_url_for_raw_only_video(
-    video_center: Center,
-) -> None:
-    video = VideoFile.objects.create(
-        center=video_center,
-        video_hash="raw-only-url",
-        storage_mode=VideoStorageMode.ENCRYPTED.value,
-    )
-    video.raw_file.name = "raw/source.mp4"
-
-    active_file_url = video.active_file_url
-
-    assert active_file_url is not None
-    assert active_file_url.endswith(f"/endoreg-api/media/videos/{video.pk}/stream/")
 
 
 @pytest.mark.django_db
@@ -205,8 +196,8 @@ def test_video_file_stream_relative_paths_reject_unsafe_values(video_center: Cen
 @pytest.mark.django_db
 def test_video_file_can_offload_stream_only_in_streamable_mode(
     video_center: Center,
-    tmp_path: Path,
-) -> None:
+    tmp_path,
+):
     video = VideoFile.objects.create(
         center=video_center,
         video_hash="can-offload",
@@ -229,8 +220,8 @@ def test_video_file_can_offload_stream_only_in_streamable_mode(
 @pytest.mark.django_db
 def test_video_file_resolve_processed_stream_source_prefers_streamable_path(
     video_center: Center,
-    tmp_path: Path,
-) -> None:
+    tmp_path,
+):
     stream_path = tmp_path / "streamable-processed.mp4"
     stream_path.write_bytes(b"processed")
     video = VideoFile.objects.create(
@@ -248,8 +239,8 @@ def test_video_file_resolve_processed_stream_source_prefers_streamable_path(
 @pytest.mark.django_db
 def test_video_file_resolve_raw_stream_source_materializes_when_requested(
     video_center: Center,
-    tmp_path: Path,
-) -> None:
+    tmp_path,
+):
     stream_path = tmp_path / "streamable-raw.mp4"
     stream_path.write_bytes(b"raw")
     video = VideoFile.objects.create(center=video_center, video_hash="resolve-raw")
@@ -295,13 +286,12 @@ def test_video_file_resolve_stream_source_raises_when_media_missing(
 def test_video_file_get_or_create_state_persists_relation(video_center: Center):
     video = VideoFile.objects.create(center=video_center, video_hash="stateful")
 
-    state = cast(_VideoStateLike, video.get_or_create_state())
+    state = video.get_or_create_state()
     video.refresh_from_db()
 
     assert state.pk is not None
-    video_state = cast(_VideoStateLike, getattr(video, "state"))
-    assert video_state.pk == state.pk
-    assert cast(_VideoStateLike, video.get_or_create_state()).pk == state.pk
+    assert video.state == state
+    assert video.get_or_create_state() == state
 
 
 @pytest.mark.django_db
@@ -310,7 +300,7 @@ def test_video_file_ensure_default_fps_persists_once(video_center: Center):
 
     assert video.ensure_default_fps() == VideoFile.default_fps
     video.refresh_from_db()
-    assert cast(float | None, getattr(video, "fps")) == VideoFile.default_fps
+    assert video.fps == VideoFile.default_fps
 
     with patch.object(video, "save", side_effect=AssertionError("must not save twice")):
         assert video.ensure_default_fps() == VideoFile.default_fps
@@ -325,7 +315,7 @@ def test_video_file_get_fps_defaults_to_50_when_missing(video_center: Center):
     assert video.get_fps() == DEFAULT_VIDEO_FPS
 
     video.refresh_from_db()
-    assert cast(float | None, getattr(video, "fps")) == DEFAULT_VIDEO_FPS
+    assert video.fps == DEFAULT_VIDEO_FPS
 
 
 @pytest.mark.django_db

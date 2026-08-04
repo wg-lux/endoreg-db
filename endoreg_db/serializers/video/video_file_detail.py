@@ -1,41 +1,15 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
-from datetime import date, datetime
-from typing import Protocol, cast
+from rest_framework import serializers
+from django.conf import settings
 from pathlib import Path
 
-from django.conf import settings
-from rest_framework import serializers
-
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.models.state.video_segment_validation import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from ...utils.calc_duration_seconds import _calc_duration_vf
-
-
-class _VideoStateLike(Protocol):
-    outside_segments_removed: bool
-    anonymization_status: object
-    processing_error: bool
-
-
-class _SensitiveMetaLike(Protocol):
-    patient_first_name: str | None
-    patient_last_name: str | None
-    patient_dob: date | datetime | None
-    examination_date: date | datetime | None
-
-
-class _VideoDetailLike(Protocol):
-    processed_file: object
-    raw_file: object
-    duration: float | None
-    sensitive_meta: _SensitiveMetaLike | None
-    state: _VideoStateLike | None
-    meta: dict[str, object] | None
+from ...utils.video.calc_duration_seconds import _calc_duration_vf
 
 
 class VideoDetailSerializer(VideoBriefSerializer):
@@ -61,7 +35,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
     integrity_error = serializers.SerializerMethodField()
 
     class Meta(VideoBriefSerializer.Meta):
-        fields = list(VideoBriefSerializer.Meta.fields) + [
+        fields = VideoBriefSerializer.Meta.fields + [
             "file",
             "full_path",
             "patient_first_name",
@@ -80,19 +54,15 @@ class VideoDetailSerializer(VideoBriefSerializer):
         ]
 
     # ---------- helpers ---------- #
-    def get_file(self, obj: _VideoDetailLike) -> str | None:
+    def get_file(self, obj):
         f = obj.processed_file or obj.raw_file
-        return cast(str, getattr(f, "name", None)) if f else None
+        return f.name if f else None
 
-    def get_full_path(self, obj: _VideoDetailLike) -> str | None:
+    def get_full_path(self, obj):
         f = obj.processed_file or obj.raw_file
-        return (
-            str(Path(settings.MEDIA_ROOT) / cast(str, getattr(f, "name", "")))
-            if f
-            else None
-        )
+        return str(Path(settings.MEDIA_ROOT) / f.name) if f else None
 
-    def get_duration(self, obj: VideoFile) -> float | None:
+    def get_duration(self, obj: VideoFile):
         """
         Return the duration of the video, using the stored value if available or calculating it if not.
 
@@ -116,23 +86,19 @@ class VideoDetailSerializer(VideoBriefSerializer):
             return False
         return bool(getattr(state, "outside_segments_removed", False))
 
-    def get_post_validation_rebuild(self, obj: VideoFile) -> object:
+    def get_post_validation_rebuild(self, obj: VideoFile) -> dict | None:
         return post_validation_rebuild_summary(obj)
 
-    def get_anonymization_status(self, obj: _VideoDetailLike) -> str:
+    def get_anonymization_status(self, obj: VideoFile) -> str:
         state = getattr(obj, "state", None)
         if state is None:
             return "not_started"
         status = getattr(state, "anonymization_status", "not_started")
         return getattr(status, "value", str(status))
 
-    def get_integrity_status(self, obj: _VideoDetailLike) -> str:
+    def get_integrity_status(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = (
-            cast(dict[str, object], payload_obj)
-            if isinstance(payload_obj, dict)
-            else {}
-        )
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
         status = str(payload.get("integrity_status") or "").strip()
         if status:
             return status
@@ -141,33 +107,31 @@ class VideoDetailSerializer(VideoBriefSerializer):
             return "lost"
         return ""
 
-    def get_integrity_error(self, obj: _VideoDetailLike) -> str:
+    def get_integrity_error(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = (
-            cast(dict[str, object], payload_obj)
-            if isinstance(payload_obj, dict)
-            else {}
-        )
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
         return str(payload.get("integrity_error") or "").strip()
 
-    def get_patient_dob(self, obj: _VideoDetailLike) -> date | None:
+    def get_patient_dob(self, obj):
         """
         Returns the patient's date of birth as a date object if available, or None if not present.
 
         Extracts the date part from the patient's date of birth field in the sensitive metadata, handling both datetime and date types.
         """
         if obj.sensitive_meta and obj.sensitive_meta.patient_dob:
+            # If it's a datetime, extract the date part
             dob = obj.sensitive_meta.patient_dob
-            return dob.date() if isinstance(dob, datetime) else dob
+            return dob.date() if hasattr(dob, "date") else dob
         return None
 
-    def get_examination_date(self, obj: _VideoDetailLike) -> date | None:
+    def get_examination_date(self, obj):
         """
         Returns the examination date as a date object from the sensitive metadata, or None if unavailable.
 
         If the examination date is a datetime, only the date part is returned.
         """
         if obj.sensitive_meta and obj.sensitive_meta.examination_date:
+            # If it's a datetime, extract the date part
             exam_date = obj.sensitive_meta.examination_date
-            return exam_date.date() if isinstance(exam_date, datetime) else exam_date
+            return exam_date.date() if hasattr(exam_date, "date") else exam_date
         return None

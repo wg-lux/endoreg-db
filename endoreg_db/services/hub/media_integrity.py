@@ -49,43 +49,6 @@ class MediaIntegrityError(RuntimeError):
         )
 
 
-_REPROCESSABLE_VIDEO_FAILURE_STATUSES: frozenset[MediaIntegrityStatus] = frozenset(
-    {
-        MediaIntegrityStatus.ARTIFACT_MISSING,
-        MediaIntegrityStatus.ARTIFACT_UNREADABLE,
-        MediaIntegrityStatus.STATE_MISSING,
-        MediaIntegrityStatus.STATE_NOT_VALIDATED,
-    }
-)
-_VIDEO_REPROCESSING_REQUIRED_ARTIFACTS: frozenset[str] = frozenset(
-    {
-        "content_hash",
-        "raw_file",
-        "video_file",
-        "video_hash",
-    }
-)
-
-
-def video_integrity_failure_allows_existing_video_reprocessing(
-    result: MediaIntegrityResult,
-) -> bool:
-    """
-    Return whether a reimport can repair the existing VideoFile in place.
-
-    Processed artifacts and validation state can be rebuilt from the canonical raw
-    file. If the raw file or media row is not usable, the import layer must fall
-    back to its normal create-or-recreate path instead of reusing the instance.
-    """
-    if result.ok:
-        return False
-    if result.status not in _REPROCESSABLE_VIDEO_FAILURE_STATUSES:
-        return False
-    return not _VIDEO_REPROCESSING_REQUIRED_ARTIFACTS.intersection(
-        result.missing_artifacts
-    )
-
-
 def _ok_result(
     *,
     content_hash: str,
@@ -291,14 +254,15 @@ def _expectation_for_upload_job(
 ) -> MediaIntegrityExpectation | None:
     content_type = (upload_job.content_type or "").split(";", maxsplit=1)[0].strip()
     provenance = upload_job.processing_provenance
+    provenance_dict = provenance if isinstance(provenance, dict) else {}
 
     if content_type in {"application/pdf", "export/txt", "text/plain"}:
         return MediaIntegrityExpectation.REPORT
 
     if content_type.startswith("video/"):
         if (
-            upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_PREANONYMIZED.value
-            or provenance.get("ingest_variant") == "preanonymized"
+            upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_PREANONYMIZED
+            or provenance_dict.get("ingest_variant") == "preanonymized"
             or upload_job.source_system == "watcher_preanonymized"
         ):
             return MediaIntegrityExpectation.PREANONYMIZED_VIDEO

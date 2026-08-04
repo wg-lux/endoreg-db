@@ -1,52 +1,38 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Literal, Any
-
 from django.db import models
 from django.utils import timezone
 
-if TYPE_CHECKING:
-    pass
-
-
-type FrameExtractionStatus = Literal["pending", "running", "success", "failure"]
-
 
 class FrameExtractionRequest(models.Model):
-    STATUS_PENDING: ClassVar[Literal["pending"]] = "pending"
-    STATUS_RUNNING: ClassVar[Literal["running"]] = "running"
-    STATUS_SUCCESS: ClassVar[Literal["success"]] = "success"
-    STATUS_FAILURE: ClassVar[Literal["failure"]] = "failure"
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILURE = "failure"
 
-    STATUS_CHOICES: ClassVar[tuple[tuple[FrameExtractionStatus, str], ...]] = (
+    STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
         (STATUS_RUNNING, "Running"),
         (STATUS_SUCCESS, "Success"),
         (STATUS_FAILURE, "Failure"),
-    )
+    ]
 
-    video: models.ForeignKey[Any] = models.ForeignKey(
+    video = models.ForeignKey(
         "endoreg_db.VideoFile",
         on_delete=models.CASCADE,
         related_name="frame_extraction_requests",
     )
-    frame_number: models.IntegerField[Any, Any] = models.IntegerField()
-    status: models.CharField[Any, Any] = models.CharField(
+    frame_number = models.IntegerField()
+    status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING,
     )
-    task_id: models.CharField[Any, Any] = models.CharField(max_length=100, blank=True)
-    error_message: models.TextField[Any, Any] = models.TextField(blank=True)
-    requested_at: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now_add=True
-    )
-    started_at: models.DateTimeField[Any, Any] = models.DateTimeField(
-        null=True, blank=True
-    )
-    completed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
-        null=True, blank=True
-    )
+    task_id = models.CharField(max_length=100, blank=True)
+    error_message = models.TextField(blank=True)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "frame_extraction_request"

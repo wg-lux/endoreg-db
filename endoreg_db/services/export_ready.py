@@ -1,42 +1,51 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import Any
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
-from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.services.center_access import resolve_allowed_center_ids
-from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.models.state.video_segment_validation import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
+from endoreg_db.services.hub import resolve_allowed_center_id
+from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import ensure_within_protected_media_root
-from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
-
-if TYPE_CHECKING:
-    from endoreg_db.models.state.video import VideoState
+from endoreg_db.utils.filesystem.paths import ensure_within_protected_media_root
 
 logger = logging.getLogger(__name__)
-
-
-class _CenterIdentity(Protocol):
-    pk: int
 
 
 class ReadyForExportError(ValueError):
     def __init__(self, message: str, *, status_code: int = 400) -> None:
         super().__init__(message)
         self.status_code = status_code
+
+
+@dataclass(frozen=True, slots=True)
+class ReadyForExportResult:
+    video_id: int
+    ready_for_export: bool
+    ready_for_export_at: str | None
+    ready_for_export_by: str
+    processed_file_sha256: str
+
+    def to_dict(self) -> dict[str, object | None]:
+        return {
+            "video_id": self.video_id,
+            "ready_for_export": self.ready_for_export,
+            "ready_for_export_at": self.ready_for_export_at,
+            "ready_for_export_by": self.ready_for_export_by,
+            "processed_file_sha256": self.processed_file_sha256,
+        }
 
 
 def _user_identifier(user: Any) -> str:
@@ -69,37 +78,36 @@ def _resolve_center(center_key: str | None) -> Center:
 
 
 def _verify_center_scope(*, user: Any, video: VideoFile, center: Center) -> None:
-    center_pk = cast(_CenterIdentity, center).pk
-    if video.center_id != center_pk:
+    if video.center_id != center.id:
         raise ReadyForExportError(
             "center_key does not match the video center.",
             status_code=403,
         )
 
-    allowed_center_ids = resolve_allowed_center_ids(user)
-    if allowed_center_ids == frozenset():
+    allowed_center_id = resolve_allowed_center_id(user)
+    if allowed_center_id == -1:
         raise ReadyForExportError(
             "Authenticated user is not assigned to a center.",
             status_code=403,
         )
-    if allowed_center_ids is not None and center_pk not in allowed_center_ids:
+    if allowed_center_id is not None and allowed_center_id != center.id:
         raise ReadyForExportError(
             "Video center is outside the authenticated scope.",
             status_code=403,
         )
 
 
-def _processed_file(video: VideoFile) -> FieldFile:
+def _processed_file(video: VideoFile):
     processed_file = getattr(video, "processed_file", None)
     if not processed_file or not getattr(processed_file, "name", None):
         raise ReadyForExportError(
             "Video has no managed processed_file artifact.",
             status_code=409,
         )
-    return cast(FieldFile, processed_file)
+    return processed_file
 
 
-def _verify_processed_path(processed_file: FieldFile) -> Path:
+def _verify_processed_path(processed_file) -> Path:
     try:
         path = Path(processed_file.path).resolve(strict=True)
     except (AttributeError, NotImplementedError, OSError, ValueError) as exc:
@@ -203,7 +211,7 @@ def mark_video_ready_for_export(
             status_code=409,
         )
 
-    state: VideoState = get_or_create_video_state(video)
+    state = get_or_create_video_state(video)
     ready_by = _user_identifier(user)
     state.mark_ready_for_export(
         processed_file_sha256=processed_file_sha256,
@@ -224,16 +232,14 @@ def mark_video_ready_for_export(
         request_user=user,
     )
 
-    state_ready_for_export_at = cast(datetime | None, state.ready_for_export_at)
-    ready_for_export_at: str | None
-    if state_ready_for_export_at is not None:
-        ready_for_export_at = state_ready_for_export_at.isoformat()
-    else:
-        ready_for_export_at = None
     return ReadyForExportResult(
         video_id=video.pk,
         ready_for_export=state.ready_for_export,
-        ready_for_export_at=ready_for_export_at,
+        ready_for_export_at=(
+            state.ready_for_export_at.isoformat()
+            if state.ready_for_export_at is not None
+            else None
+        ),
         ready_for_export_by=state.ready_for_export_by,
         processed_file_sha256=state.processed_file_sha256,
     )

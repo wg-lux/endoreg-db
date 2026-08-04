@@ -1,21 +1,12 @@
 # endoreg_db/serializers/video/video_file_list.py
-from __future__ import annotations
-
-from typing import Literal, cast, TYPE_CHECKING
+from typing import Literal
 import logging
 
 from rest_framework import serializers
 
-if TYPE_CHECKING:
-    _ModelSerializerMeta = serializers.ModelSerializer.Meta
-else:
-    _ModelSerializerMeta = object
-
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.frame_annotation_workflow import (
-    validated_annotators_for_video,
-)
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.models.state.frame_annotation import validated_annotators_for_video
+from endoreg_db.models.state.video_segment_validation import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,
@@ -23,14 +14,11 @@ from endoreg_db.services.video_segment_validation_workflow import (
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
-from lx_dtypes.models.contracts.video_segment_validation import (
-    PostValidationRebuildSummaryData,
-)
 
 logger = logging.getLogger(__name__)
 
 
-class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
+class VideoFileListSerializer(serializers.ModelSerializer):
     """
     Minimal serializer to return only basic video information
     for the video selection dropdown in Vue.js.
@@ -54,16 +42,12 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     segments = LabelVideoSegmentTimelineSerializer(
         many=True, read_only=True, source="label_video_segments"
     )
-    center_key = serializers.CharField(source="center.center_key", read_only=True)
-    center_name = serializers.CharField(source="center.display_name", read_only=True)
 
-    class Meta(_ModelSerializerMeta):
-        model = VideoFile  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = VideoFile
         fields = [
             "id",
             "original_file_name",
-            "center_key",
-            "center_name",
             "status",
             "assigned_user",
             "anonymized",
@@ -163,11 +147,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
 
     def get_integrity_status(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = (
-            cast(dict[str, object], payload_obj)
-            if isinstance(payload_obj, dict)
-            else {}
-        )
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
         status = str(payload.get("integrity_status") or "").strip()
         if status:
             return status
@@ -178,11 +158,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
 
     def get_integrity_error(self, obj: VideoFile) -> str:
         payload_obj = getattr(obj, "meta", None)
-        payload = (
-            cast(dict[str, object], payload_obj)
-            if isinstance(payload_obj, dict)
-            else {}
-        )
+        payload = payload_obj if isinstance(payload_obj, dict) else {}
         return str(payload.get("integrity_error") or "").strip()
 
     def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
@@ -220,9 +196,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
             return False
         return bool(getattr(state, "outside_segments_removed", False))
 
-    def get_post_validation_rebuild(
-        self, obj: VideoFile
-    ) -> PostValidationRebuildSummaryData | None:
+    def get_post_validation_rebuild(self, obj: VideoFile) -> dict | None:
         try:
             return post_validation_rebuild_summary(obj)
         except Exception as exc:
@@ -244,22 +218,3 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
             return []
 
         return validated_annotators_for_video(obj)
-
-
-class CrossCenterProcessedVideoSerializer(VideoFileListSerializer):
-    """Pseudonymous discovery payload for the central-hub exception."""
-
-    duration = serializers.FloatField(read_only=True)
-
-    class Meta(VideoFileListSerializer.Meta):
-        fields = [
-            "id",
-            "center_key",
-            "center_name",
-            "duration",
-            "status",
-            "anonymized",
-            "segment_annotations_validated",
-            "segment_annotation_status",
-            "segments",
-        ]

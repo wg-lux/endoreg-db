@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .finding import Finding
 from .finding_type import FindingType
 

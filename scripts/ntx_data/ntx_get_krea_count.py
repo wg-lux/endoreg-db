@@ -1,6 +1,5 @@
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Any, Callable, TypedDict, cast
+from typing import TypedDict, cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -11,15 +10,9 @@ from endoreg_db.utils.file_operations import atomic_write_file
 
 lab_data_path = processed_data_dir / "lab_df_with_transplant_id.jsonl"
 readout_data_path = processed_data_dir / "readout_with_distances.jsonl"
-readout_df_excel_export_path = (
-    processed_data_dir / "readout_with_distances_and_lab_counts.xlsx"
-)
-readout_df_csv_export_path = (
-    processed_data_dir / "readout_with_distances_and_lab_counts.csv"
-)
-readout_df_jsonl_export_path = (
-    processed_data_dir / "readout_with_distances_and_lab_counts.jsonl"
-)
+readout_df_excel_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.xlsx"
+readout_df_csv_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.csv"
+readout_df_jsonl_export_path = processed_data_dir / "readout_with_distances_and_lab_counts.jsonl"
 readout_data_list: list[ReadoutData] = []
 
 lab_value_name = "Creatinin"
@@ -66,11 +59,6 @@ class TransplantLabSummary(TypedDict):
     labs_by_fu_year: dict[str, list[LabData]]
 
 
-def write_dataframe_to_excel(df: pd.DataFrame, path: Path) -> None:
-    to_excel = cast(Callable[..., None], getattr(df, "to_excel"))
-    to_excel(path, index=False)
-
-
 def create_fu_years_dict(
     transplant_date: str,
     fu_years: list[int],
@@ -84,13 +72,8 @@ def create_fu_years_dict(
     fu_years_dict: dict[str, FollowUpYearWindow] = {}
     for year in fu_years:
         year_start_date = transplant_date_dt + timedelta(days=365 * (year - 1))
-        year_end_date = (
-            transplant_date_dt + timedelta(days=365 * year) - timedelta(days=1)
-        )
-        fu_years_dict[str(year)] = {
-            "start_date": year_start_date,
-            "end_date": year_end_date,
-        }
+        year_end_date = transplant_date_dt + timedelta(days=365 * year) - timedelta(days=1)
+        fu_years_dict[str(year)] = {"start_date": year_start_date, "end_date": year_end_date}
     return fu_years_dict
 
 
@@ -163,7 +146,7 @@ for key, value in summary_dict.items():
     }
 
     for year in fu_years:
-        labs = value["labs_by_fu_year"][str(year)]
+        labs = cast(list[LabData], value["labs_by_fu_year"][str(year)])
         record[f"lab_count_year_{year}"] = len(labs)
         record[f"unique_case_ids_year_{year}"] = len({lab.case_id_ukw for lab in labs})
 
@@ -171,7 +154,7 @@ for key, value in summary_dict.items():
 
     # create pandas dataframe from readout and summary, merge by transplant_id
 
-readout_records: list[dict[str, Any]] = []
+readout_records = []
 for readout_data in readout_data_list:
     record = readout_data.model_dump()
     readout_records.append(record)
@@ -184,9 +167,11 @@ merged_df = pd.merge(readout_df, summary_df, on="transplant_id", how="left")
 # write summary to jsonl
 atomic_write_file(
     destination=readout_df_jsonl_export_path,
-    content=(f"{row.to_json()}\n".encode("utf-8") for _, row in merged_df.iterrows()),
+    content=(
+        f"{row.to_json()}\n".encode("utf-8") for _, row in merged_df.iterrows()
+    ),
 )
 
 # export to excel and csv
-write_dataframe_to_excel(merged_df, readout_df_excel_export_path)
+merged_df.to_excel(readout_df_excel_export_path, index=False)
 merged_df.to_csv(readout_df_csv_export_path, index=False)

@@ -19,10 +19,8 @@ def _is_undefined_processor_name(processor_name: str | None) -> bool:
 
 
 def get_default_video_processor_name() -> str | None:
-    from endoreg_db.models.medical.hardware.endoscopy_processor import (
-        EndoscopyProcessor,
-    )
-    from endoreg_db.utils.set_default_center import get_default_processor
+    from endoreg_db.models.medical.hardware import EndoscopyProcessor
+    from endoreg_db.utils.defaults.set_default_center import get_default_processor
 
     configured_processor = get_default_processor()
     configured_name = getattr(configured_processor, "name", None)

@@ -1,17 +1,8 @@
 # libs/endoreg-db/endoreg_db/authz/views_auth.py
 
-from __future__ import annotations
-
-from collections.abc import Iterable
-from typing import Protocol, TypedDict, cast
-
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.request import Request
 from rest_framework.response import Response
-
-from lx_dtypes.models.contracts.authz import validate_authz_route_lookup
-from endoreg_db.services.annotation_access import can_override_annotation_principal
 
 from .policy import satisfies, get_needed_role
 
@@ -20,24 +11,7 @@ from .policy import satisfies, get_needed_role
 # Route names come from your router registration, e.g.:
 #   router.register(r'patients', PatientViewSet, basename='patient')
 # => "patient-list", "patient-detail"
-type PageCapabilityRouteMap = dict[str, tuple[str, str]]
-
-
-class CapabilityFlags(TypedDict):
-    read: bool
-    write: bool
-
-
-class _UserGroupManager(Protocol):
-    def values_list(self, field_name: str, flat: bool) -> Iterable[str]: ...
-
-
-class _BootstrapUser(Protocol):
-    username: str
-    groups: _UserGroupManager
-
-
-PAGE_CAPS: PageCapabilityRouteMap = {
+PAGE_CAPS = {
     # Vue route /patienten
     "page.patients.view": ("patient-list", "GET"),
     # You can extend later, e.g.:
@@ -48,31 +22,26 @@ PAGE_CAPS: PageCapabilityRouteMap = {
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def auth_bootstrap(request: Request) -> Response:
+def auth_bootstrap(request):
     """
     Return auth context for the frontend:
       - current user (username, basic info)
       - roles (Django groups, synced from Keycloak)
       - capabilities (what parts of UI the user may access)
     """
-    user = cast(_BootstrapUser, request.user)
+    user = request.user
 
     # Roles = Django group names = Keycloak roles synced from Keycloak
-    roles: set[str] = set(user.groups.values_list("name", flat=True))
+    roles = set(user.groups.values_list("name", flat=True))
 
-    capabilities: dict[str, CapabilityFlags] = {}
+    capabilities = {}
 
     for cap_key, (route_name, method) in PAGE_CAPS.items():
-        lookup = validate_authz_route_lookup(
-            {
-                "route_name": route_name,
-                "method": method,
-            }
-        )
+        method = method.upper()
 
         # Look up which role is needed for this route/method
         # needed = REQUIRED_ROLES.get(route_name) or DEFAULT_ROLE_BY_METHOD.get(method)
-        needed = get_needed_role(lookup.route_name, lookup.method)
+        needed = get_needed_role(route_name, method)
 
         if not needed:
             # No role mapping defined → secure default: deny
@@ -94,9 +63,6 @@ def auth_bootstrap(request: Request) -> Response:
             "user": {
                 "username": user.username,
                 "roles": sorted(roles),
-                "can_override_annotation_principal": (
-                    can_override_annotation_principal(user)
-                ),
             },
             "roles": sorted(roles),
             "capabilities": capabilities,

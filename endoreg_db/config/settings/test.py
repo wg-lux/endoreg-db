@@ -1,30 +1,19 @@
 import os
-import sys
 from pathlib import Path
-from types import NoneType
+from typing import Any
 
 from endoreg_db.config.env import env_bool, env_str
 
 from .base import *  # noqa: F401,F403
 from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
 
-type DatabaseOptions = dict[str, int]
-type DatabaseConfigValue = str | DatabaseOptions
-
 TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
 TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
 
-
-def _running_under_pytest() -> bool:
-    return "PYTEST_CURRENT_TEST" in os.environ or any(
-        "pytest" in Path(arg).name for arg in sys.argv[:2]
-    )
-
-
-# Pytest uses an isolated SQLite file per process by default. Normal management
-# commands using test settings reuse a stable test DB so `migrate` and a later
-# profiled command open the same schema.
-TEST_DB_REUSE = env_bool("TEST_DB_REUSE", not _running_under_pytest())
+# Use an isolated SQLite file per pytest process by default. Shared file-backed
+# databases interact badly with --reuse-db after interrupted runs because stale
+# pytest processes can keep WAL/SHM locks open for the next session.
+TEST_DB_REUSE = env_bool("TEST_DB_REUSE", False)
 TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
 REUSED_TEST_DB_NAME = (
     f"test_db_{TEST_DB_WORKER}.sqlite3"
@@ -74,7 +63,7 @@ DB_HOST = env_str("TEST_DB_HOST", "")
 DB_PORT = env_str("TEST_DB_PORT", "")
 
 # Build DB config without redundant conditionals and avoid passing empty creds
-_db_config: dict[str, DatabaseConfigValue] = {
+_db_config: dict[str, Any] = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
@@ -94,7 +83,7 @@ if not DB_ENGINE.endswith("sqlite3"):
 DATABASES = {"default": _db_config}
 
 # Configure cache with explicit TIMEOUT for tests
-globals()["CACHES"] = {
+CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "endoreg-test-cache",
@@ -103,7 +92,7 @@ globals()["CACHES"] = {
 }
 
 # Tests exercise watcher-local import behavior without requiring a live broker.
-globals()["WATCHER_CELERY_INLINE_FALLBACK_ENABLED"] = env_bool(
+WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
     "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     True,
 )
@@ -115,14 +104,15 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
     class DisableMigrations:
-        def __contains__(self, item: str) -> bool:
+        def __contains__(self, item):
             return True
 
-        def __getitem__(self, item: str) -> NoneType:
+        def __getitem__(self, item):
             return None
 
     # MIGRATION_MODULES = DisableMigrations()
 
-globals()["INSTALLED_APPS"] = BASE_INSTALLED_APPS + [
+INSTALLED_APPS = BASE_INSTALLED_APPS + [
+    "django.contrib.admin",
     "django_extensions",
 ]

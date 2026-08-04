@@ -1,37 +1,35 @@
-from __future__ import annotations
-
-from collections.abc import Iterable
-from typing import TypedDict, cast
-
-from django.contrib import admin
-from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import path
-from django.urls.resolvers import URLPattern
-
-from endoreg_db.models.administration.app_settings import ApplicationSettings
-from endoreg_db.models.administration.person.patient.patient import Patient
-from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.finding.finding import Finding
-from endoreg_db.models.medical.finding.finding_classification import (
+from django.contrib import admin
+from django.http import JsonResponse
+from endoreg_db.models import (
+    ApplicationSettings,
+    Patient,
+    Examination,
+    # PatientExamination,
+    Finding,
     FindingClassification,
     FindingClassificationChoice,
-)
-from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
-from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    FindingIntervention,  #  Import Finding Interventions
     PatientFindingIntervention,
 )
 
+# from endoreg_db.forms.patient_finding_intervention_form import (
+#     PatientFindingInterventionForm,
+# )
+from endoreg_db.forms.patient_form import PatientForm
 
-class FindingClassificationChoiceAdminJson(TypedDict):
-    id: int
-    name: str
 
-
-type FindingClassificationChoiceDbRow = tuple[int, str]
+@admin.register(Patient)
+class PatientAdmin(admin.ModelAdmin):
+    form = PatientForm
+    list_display = ("id", "first_name", "last_name", "dob", "center")
+    search_fields = ("first_name", "last_name", "email", "phone")
+    list_filter = ("dob", "center")
+    ordering = ("last_name",)
 
 
 @admin.register(Examination)
-class ExaminationAdmin(admin.ModelAdmin[Examination]):
+class ExaminationAdmin(admin.ModelAdmin):
     list_display = ("id", "name")
     search_fields = ("name",)
     list_filter = ("name",)
@@ -39,7 +37,7 @@ class ExaminationAdmin(admin.ModelAdmin[Examination]):
 
 
 @admin.register(ApplicationSettings)
-class ApplicationSettingsAdmin(admin.ModelAdmin[ApplicationSettings]):
+class ApplicationSettingsAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "center",
@@ -48,32 +46,22 @@ class ApplicationSettingsAdmin(admin.ModelAdmin[ApplicationSettings]):
         "report_template_name",
         "updated_at",
     )
-    fields = (
-        "center",
-        "processor",
-        "annotator_name",
-        "report_template_name",
-    )
+    fields = ("center", "processor", "annotator_name", "report_template_name")
 
-    def has_add_permission(self, request: HttpRequest) -> bool:
+    def has_add_permission(self, request):
         if ApplicationSettings.objects.exists():
             return False
         return super().has_add_permission(request)
 
 
-@admin.register(PatientFindingIntervention)
-class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingIntervention]):
+class PatientFindingInterventionAdmin(admin.ModelAdmin):
     change_list_template = "admin/patient_finding_intervention.html"
 
-    def changelist_view(
-        self,
-        request: HttpRequest,
-        extra_context: dict[str, object] | None = None,
-    ) -> HttpResponse:
+    def changelist_view(self, request, extra_context=None):
         """
         Overrides the admin changelist view to provide additional context data for the template, including all patients, examinations, findings, classifications, and interventions relevant to patient finding interventions.
         """
-        admin_context = {
+        extra_context = {
             "patients": Patient.objects.all(),
             "examinations": Examination.objects.all(),
             "findings": Finding.objects.all(),
@@ -87,9 +75,9 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingInterventio
             "morphology_choices": FindingClassificationChoice.objects.none(),
             "finding_interventions": FindingIntervention.objects.all(),
         }
-        return super().changelist_view(request, extra_context=admin_context)
+        return super().changelist_view(request, extra_context=extra_context)
 
-    def get_location_choices_json(self, request: HttpRequest) -> JsonResponse:
+    def get_location_choices_json(self, request):
         """
         Handles AJAX requests to retrieve location classification choices as JSON.
 
@@ -100,27 +88,19 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingInterventio
             return JsonResponse({"error": "Location ID is required"}, status=400)
 
         try:
-            choice_rows = cast(
-                Iterable[FindingClassificationChoiceDbRow],
+            choices = list(
                 FindingClassificationChoice.objects.filter(
                     classifications__id=location_id,
                     classifications__classification_types__name__iexact="location",
-                ).values_list("id", "name"),
+                ).values("id", "name")
             )
-            choices: list[FindingClassificationChoiceAdminJson] = [
-                {
-                    "id": choice_id,
-                    "name": choice_name,
-                }
-                for choice_id, choice_name in choice_rows
-            ]
             if not choices:
                 return JsonResponse([], safe=False)
             return JsonResponse(choices, safe=False)
-        except Exception as exc:
-            return JsonResponse({"error": str(exc)}, status=500)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
 
-    def get_urls(self) -> list[URLPattern]:
+    def get_urls(self):
         """Register JSON endpoint inside Django Admin"""
         urls = super().get_urls()
         custom_urls = [
@@ -131,3 +111,6 @@ class PatientFindingInterventionAdmin(admin.ModelAdmin[PatientFindingInterventio
             ),
         ]
         return custom_urls + urls
+
+
+admin.site.register(PatientFindingIntervention, PatientFindingInterventionAdmin)

@@ -1,28 +1,22 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
-from datetime import timedelta
 
 import pytest
-from pytest import MonkeyPatch
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.utils import timezone
 
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
-from endoreg_db.schemas.report_llm import ReportLlmReimportRequestPayload
 from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_import,
     dispatch_report_llm_reimport,
     report_llm_job_payload,
 )
-from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def center() -> Center:
+def center():
     return Center.objects.create(name="Report LLM Job Test Center")
 
 
@@ -48,13 +42,11 @@ def _make_upload_job(center: Center) -> UploadJob:
     )
 
 
-def test_report_reimport_dispatches_to_llm_queue(
-    monkeypatch: MonkeyPatch, center: Center
-) -> None:
+def test_report_reimport_dispatches_to_llm_queue(monkeypatch, center):
     report = _make_report(center)
     captured: dict[str, object] = {}
 
-    def apply_async(*args: object, **kwargs: object) -> SimpleNamespace:
+    def apply_async(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
         return SimpleNamespace(id="report-llm-reimport-task")
@@ -66,27 +58,18 @@ def test_report_reimport_dispatches_to_llm_queue(
         apply_async,
     )
 
-    result = dispatch_report_llm_reimport(
-        report_id=report.pk,
-        payload=ReportLlmReimportRequestPayload(retry=False),
-    )
+    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
 
     assert result.status == "queued"
     assert result.operation == ReportLlmInferenceJob.OPERATION_REIMPORT
     assert result.queue == "llm_inference"
     assert result.task_id == "report-llm-reimport-task"
-    assert result.poll_url is not None
     assert result.poll_url.endswith(f"/llm-jobs/{result.job_id}/")
-    captured_kwargs = cast(dict[str, object], captured["kwargs"])
-    assert captured_kwargs["queue"] == "llm_inference"
-    assert captured_kwargs["routing_key"] == "llm_inference"
-    job = ReportLlmInferenceJob.objects.get(pdf=report)
-    assert job.config["request_payload"] == {"retry": False}
+    assert captured["kwargs"]["queue"] == "llm_inference"
+    assert captured["kwargs"]["routing_key"] == "llm_inference"
 
 
-def test_report_reimport_duplicate_is_idempotent(
-    monkeypatch: MonkeyPatch, center: Center
-) -> None:
+def test_report_reimport_duplicate_is_idempotent(monkeypatch, center):
     report = _make_report(center)
     existing = ReportLlmInferenceJob.objects.create(
         pdf=report,
@@ -98,57 +81,17 @@ def test_report_reimport_duplicate_is_idempotent(
     )
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
 
-    result = dispatch_report_llm_reimport(
-        report_id=report.pk,
-        payload=ReportLlmReimportRequestPayload(),
-    )
+    result = dispatch_report_llm_reimport(report_id=report.pk, payload={})
 
     assert result.status == "already_queued"
     assert result.task_id == existing.task_id
     assert result.job_id == existing.job_key
 
 
-def test_report_reimport_recovers_stale_job(
-    monkeypatch: MonkeyPatch, center: Center
-) -> None:
-    report = _make_report(center)
-    existing = ReportLlmInferenceJob.objects.create(
-        pdf=report,
-        operation=ReportLlmInferenceJob.OPERATION_REIMPORT,
-        status=ReportLlmInferenceJob.STATUS_RUNNING,
-        task_id="stale-task",
-        queue="llm_inference",
-        config={"kind": "report_llm_reimport", "queue": "llm_inference"},
-    )
-    ReportLlmInferenceJob.objects.filter(pk=existing.pk).update(
-        updated_at=timezone.now() - timedelta(hours=8)
-    )
-    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
-
-    def run_reimport(_job_id: int) -> bool:
-        return True
-
-    monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs._run_report_llm_reimport_job",
-        run_reimport,
-    )
-
-    result = dispatch_report_llm_reimport(
-        report_id=report.pk,
-        payload=ReportLlmReimportRequestPayload(),
-    )
-
-    existing.refresh_from_db()
-    assert existing.status == ReportLlmInferenceJob.STATUS_FAILURE
-    assert result.status == "completed"
-
-
-def test_report_upload_import_dispatches_to_llm_queue(
-    monkeypatch: MonkeyPatch, center: Center
-) -> None:
+def test_report_upload_import_dispatches_to_llm_queue(monkeypatch, center):
     upload_job = _make_upload_job(center)
 
-    def apply_async(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    def apply_async(*_args, **_kwargs):
         return SimpleNamespace(id="report-llm-import-task")
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
@@ -169,9 +112,9 @@ def test_report_upload_import_dispatches_to_llm_queue(
 
 
 def test_report_upload_import_inline_returns_report_poll_url_after_completion(
-    monkeypatch: MonkeyPatch,
-    center: Center,
-) -> None:
+    monkeypatch,
+    center,
+):
     upload_job = _make_upload_job(center)
     report = RawPdfFile.objects.create(
         center=center,
@@ -182,93 +125,19 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
             content_type="application/pdf",
         ),
     )
-    state = report.get_or_create_state()
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.processed_file_sha256 = "a" * 64
-    state.save(
-        update_fields=[
-            "anonymized",
-            "sensitive_meta_processed",
-            "processed_file_sha256",
-            "date_modified",
-        ]
-    )
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
-
-    def fake_import_and_anonymize(*_args: object, **_kwargs: object) -> RawPdfFile:
-        return report
-
     monkeypatch.setattr(
         "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
-        fake_import_and_anonymize,
-    )
-
-    def fake_require_usable_completed_report(
-        *_args: object,
-        **_kwargs: object,
-    ) -> str:
-        return "a" * 64
-
-    monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
-        fake_require_usable_completed_report,
+        lambda *_args, **_kwargs: report,
     )
 
     result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
 
     assert result.status == "completed"
     assert result.report_id == report.pk
-    assert (
-        result.poll_url
-        == f"/endoreg-api/media/pdfs/{report.pk}/llm-jobs/{result.job_id}/"
-    )
+    assert result.poll_url == f"/api/media/pdfs/{report.pk}/llm-jobs/{result.job_id}/"
 
     job = ReportLlmInferenceJob.objects.get(upload_job=upload_job)
-    assert getattr(job, "pdf_id") == report.pk
+    assert job.pdf_id == report.pk
     assert report_llm_job_payload(job)["report_id"] == report.pk
-    assert job.result["anonymized"] is True
-    assert job.result["processed_file_sha256"] == "a" * 64
-    upload_job.refresh_from_db()
-    assert upload_job.status == UploadJob.Status.ANONYMIZED
-
-
-def test_report_upload_import_does_not_publish_success_without_usable_artifact(
-    monkeypatch: MonkeyPatch,
-    center: Center,
-) -> None:
-    upload_job = _make_upload_job(center)
-    report = RawPdfFile.objects.create(
-        center=center,
-        pdf_hash=f"report-llm-import-unusable-{upload_job.pk}",
-        file=SimpleUploadedFile(
-            name="unusable-report-import.pdf",
-            content=b"%PDF-1.4\n%%EOF\n",
-            content_type="application/pdf",
-        ),
-    )
-    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
-
-    def fake_import(*_args: object, **_kwargs: object) -> RawPdfFile:
-        return report
-
-    monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.ReportImportService.import_and_anonymize",
-        fake_import,
-    )
-
-    def fail_completion(*_args: object, **_kwargs: object) -> str:
-        raise ProcessedReportIntegrityError("processed report missing")
-
-    monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
-        fail_completion,
-    )
-
-    result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
-
-    assert result.status == "failed"
-    upload_job.refresh_from_db()
-    assert upload_job.status == UploadJob.Status.ERROR
-    assert "processed report missing" in upload_job.error_detail

@@ -29,7 +29,7 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
     sha256_file,
 )
-from endoreg_db.utils.paths import data_paths
+from endoreg_db.utils.filesystem.paths import data_paths
 from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class ReconciliationService:
 
         recovered = 0
         sensitive_dir = Path(data_paths["sensitive_video"])
-        unresolved: list[VideoFile] = []
+        unresolved = []
         claimed_hashes: set[str] = set()
 
         for video in VideoFile.objects.filter(raw_file__isnull=False).exclude(
@@ -279,9 +279,11 @@ class ReconciliationService:
         sensitive_dir: Path,
         hashed_candidates: dict[str, list[Path]],
     ) -> Path | None:
-        raw_name, canonical_path = self._raw_candidate_names(
-            video=video,
-            sensitive_dir=sensitive_dir,
+        raw_file_name = getattr(video.raw_file, "name", None)
+        raw_name = Path(raw_file_name).name if raw_file_name else None
+        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
+        canonical_path = (
+            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
         )
         content_matches = hashed_candidates.get(str(video.video_hash), [])
         competing_content_matches = [
@@ -290,80 +292,33 @@ class ReconciliationService:
             if canonical_path is None or path != canonical_path
         ]
 
-        if canonical_path is not None and canonical_path.is_file():
-            return self._resolve_existing_canonical_candidate(
-                video=video,
-                raw_name=raw_name,
-                canonical_path=canonical_path,
-                competing_content_matches=competing_content_matches,
-            )
-        deterministic_candidate = self._first_deterministic_raw_candidate(
-            raw_name=raw_name,
-            canonical_path=canonical_path,
-            sensitive_dir=sensitive_dir,
-        )
-        if deterministic_candidate is not None:
-            return deterministic_candidate
-        return self._unique_content_hash_candidate(video, content_matches)
-
-    def _raw_candidate_names(
-        self,
-        *,
-        video: VideoFile,
-        sensitive_dir: Path,
-    ) -> tuple[str | None, Path | None]:
-        raw_file_name = getattr(video.raw_file, "name", None)
-        raw_name = Path(raw_file_name).name if raw_file_name else None
-        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
-        canonical_path = (
-            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
-        )
-        return raw_name, canonical_path
-
-    def _resolve_existing_canonical_candidate(
-        self,
-        *,
-        video: VideoFile,
-        raw_name: str | None,
-        canonical_path: Path,
-        competing_content_matches: list[Path],
-    ) -> Path | None:
-        if raw_name == canonical_path.name:
+        if canonical_path and canonical_path.is_file():
+            if raw_name == canonical_path.name:
+                return canonical_path
+            if competing_content_matches:
+                logger.warning(
+                    "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
+                    video.video_hash,
+                    canonical_path,
+                    [str(path) for path in competing_content_matches],
+                )
+                return None
             return canonical_path
-        if not competing_content_matches:
-            return canonical_path
-        logger.warning(
-            "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
-            video.video_hash,
-            canonical_path,
-            [str(path) for path in competing_content_matches],
-        )
-        return None
 
-    def _first_deterministic_raw_candidate(
-        self,
-        *,
-        raw_name: str | None,
-        canonical_path: Path | None,
-        sensitive_dir: Path,
-    ) -> Path | None:
-        candidates = [canonical_path] if canonical_path is not None else []
+        deterministic_candidates: list[Path] = []
+        if canonical_path:
+            deterministic_candidates.append(canonical_path)
         if raw_name:
-            candidates.append(sensitive_dir / raw_name)
-        seen: set[Path] = set()
-        for candidate in candidates:
+            deterministic_candidates.append(sensitive_dir / raw_name)
+
+        seen = set()
+        for candidate in deterministic_candidates:
             if candidate in seen:
                 continue
             seen.add(candidate)
             if candidate.is_file():
                 return candidate
-        return None
 
-    def _unique_content_hash_candidate(
-        self,
-        video: VideoFile,
-        content_matches: list[Path],
-    ) -> Path | None:
         if len(content_matches) == 1:
             return content_matches[0]
         if len(content_matches) > 1:
@@ -524,16 +479,16 @@ class ReconciliationService:
 class _exclusive_lock:
     def __init__(self, path: Path):
         self.path = path
-        self.fd: int | None = None
+        self.fd = None
 
-    def __enter__(self) -> "_exclusive_lock":
+    def __enter__(self):
         self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.write(self.fd, str(os.getpid()).encode("ascii"))
         os.close(self.fd)
         self.fd = None
         return self
 
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+    def __exit__(self, exc_type, exc, tb):
         if self.fd is not None:
             os.close(self.fd)
         safe_unlink_file(self.path, missing_ok=True)

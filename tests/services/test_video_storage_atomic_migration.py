@@ -18,7 +18,7 @@ from endoreg_db.services.video_storage.contracts import (
 )
 from endoreg_db.services.video_storage.validation import validate_normalized_output
 from endoreg_db.utils import file_operations as legacy_file_operations
-from endoreg_db.utils.filesystem import file_operations as canonical_file_operations
+from endoreg_db.utils import file_operations as canonical_file_operations
 
 pytestmark = pytest.mark.unit
 

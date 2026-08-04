@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
@@ -6,24 +5,20 @@ import shutil
 import uuid
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
+from typing import TYPE_CHECKING, Optional, Type
 
-from endoreg_db.config.env import get_ffmpeg_transcode_quality_mode
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_storage_normalization import (
-    ensure_video_file_profile,
-)
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
-    ensure_directory,
     ensure_disk_capacity,
+    ensure_directory,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     IMPORT_VIDEO_DIR,
     SENSITIVE_VIDEO_DIR,
 )
@@ -32,28 +27,16 @@ from endoreg_db.utils.storage import field_file_is_readable, save_local_file
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
-import endoreg_db.utils.paths as path_utils
-from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
+import endoreg_db.utils.filesystem.paths as path_utils
+
+from endoreg_db.utils.video.ffmpeg_wrapper import (
+    get_stream_info,
+    transcode_videofile_if_required,
+)
 
 logger = logging.getLogger(__name__)
 
 TRANSCODING_DIR = path_utils.data_paths["transcoding"]
-
-
-class _VideoStreamInfo(TypedDict, total=False):
-    codec_type: str
-
-
-class _StreamProbeInfo(TypedDict, total=False):
-    streams: list[_VideoStreamInfo]
-
-
-class _PathMapping(Protocol):
-    def __getitem__(self, key: str) -> Path | str: ...
-
-
-class _ProcessorForImport(Protocol):
-    name: str
 
 
 def _verify_completed_file(path: Path) -> None:
@@ -63,10 +46,13 @@ def _verify_completed_file(path: Path) -> None:
         raise RuntimeError(f"Expected output path is not a file: {path}")
     if path.stat().st_size <= 0:
         raise RuntimeError(f"Expected output file is empty: {path}")
-    stream_info = cast(_StreamProbeInfo | None, get_stream_info(path))
-    streams = stream_info.get("streams", []) if stream_info else []
+    stream_info = get_stream_info(path)
     video_stream = next(
-        (stream for stream in streams if stream.get("codec_type") == "video"),
+        (
+            stream
+            for stream in (stream_info or {}).get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
         None,
     )
     if video_stream is None:
@@ -100,7 +86,6 @@ def check_storage_capacity(
 ) -> None:
     src_path = Path(src_path)
     dst_root = Path(dst_root)
-    src_size = 0
 
     try:
         src_size = src_path.stat().st_size
@@ -205,18 +190,18 @@ def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
         raise
 
 
-def _get_data_paths() -> _PathMapping:
+def _get_data_paths():
     """Return current data_paths mapping, including patched instances in tests."""
     utils_module = import_module("endoreg_db.utils")
-    return cast(_PathMapping, getattr(utils_module, "data_paths"))
+    return getattr(utils_module, "data_paths")
 
 
-def _get_path(mapping: _PathMapping | None, key: str, default: Path) -> Path:
+def _get_path(mapping, key, default):
     """Access mapping by key using __getitem__ so MagicMocks with side effects work."""
     if mapping is None:
         return default
     try:
-        return Path(mapping[key])
+        return mapping[key]
     except (KeyError, TypeError):
         return default
 
@@ -245,134 +230,6 @@ def _cleanup_legacy_sensitive_part_artifacts(staging_video_dir: Path) -> None:
         )
 
 
-def _prepare_import_staging(
-    *,
-    file_path: Path,
-    video_hash: str,
-    original_suffix: str,
-    video_dir: Path,
-) -> tuple[Path, Path, str]:
-    data_paths = _get_data_paths()
-    staging_video_dir = _get_path(data_paths, "sensitive_video", video_dir)
-    ensure_directory(staging_video_dir)
-    _cleanup_legacy_sensitive_part_artifacts(staging_video_dir)
-
-    transcoding_staging_dir = _get_path(
-        data_paths,
-        "transcoding",
-        TRANSCODING_DIR,
-    )
-    ensure_directory(transcoding_staging_dir)
-
-    storage_root = _get_path(data_paths, "storage", staging_video_dir.parent)
-    ensure_directory(storage_root)
-    check_storage_capacity(file_path, storage_root)
-
-    storage_name = f"{video_hash}{original_suffix}"
-    temp_output_path = _attempt_temp_media_path(
-        transcoding_staging_dir / storage_name,
-        "part",
-    )
-    ensure_directory(temp_output_path.parent)
-
-    logger.debug("Checking transcoding requirement for %s", file_path)
-    try:
-        ensure_video_file_profile(
-            input_path=file_path,
-            output_path=temp_output_path,
-            reference_path=file_path,
-            quality_mode=get_ffmpeg_transcode_quality_mode(),
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            "Video standardization failed; refusing to promote the original file "
-            f"into canonical raw storage for {file_path}."
-        ) from exc
-
-    logger.debug("Standardized video candidate: %s", temp_output_path)
-    return temp_output_path, temp_output_path, storage_name
-
-
-def _existing_readable_video(
-    *,
-    cls_model: Type["VideoFile"],
-    video_hash: str,
-    file_path: Path,
-    transcoded_file_path: Path,
-    temp_output_path: Path,
-) -> "VideoFile | None":
-    existing_video = cls_model.objects.filter(video_hash=video_hash).first()
-    if existing_video is None:
-        return None
-
-    logger.warning(
-        "Video with hash %s already exists; checking canonical raw_file readability.",
-        video_hash,
-    )
-    if field_file_is_readable(existing_video.raw_file):
-        logger.warning(
-            "Video with hash %s already exists and raw_file is readable. "
-            "Returning existing instance.",
-            video_hash,
-        )
-        if transcoded_file_path != file_path:
-            _safe_unlink_local(
-                transcoded_file_path,
-                label="duplicate transcoded file",
-            )
-        if temp_output_path != transcoded_file_path:
-            _safe_unlink_local(temp_output_path, label="duplicate temp output")
-        return existing_video
-
-    logger.warning(
-        "Video with hash %s exists but raw_file is missing/unreadable. "
-        "Deleting orphaned record.",
-        video_hash,
-    )
-    existing_video.delete()
-    return None
-
-
-def _prepare_canonical_source(
-    *,
-    transcoded_file_path: Path,
-    temp_output_path: Path,
-) -> Path:
-    try:
-        if transcoded_file_path != temp_output_path:
-            logger.debug(
-                "Copying standardized file %s to local staging destination %s",
-                transcoded_file_path,
-                temp_output_path,
-            )
-            atomic_copy_with_fallback(transcoded_file_path, temp_output_path)
-        _verify_completed_file(temp_output_path)
-        return temp_output_path
-    except InsufficientStorageError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to prepare standardized file for storage: {exc}"
-        ) from exc
-
-
-def _cleanup_failed_import(
-    *,
-    file_path: Path,
-    temp_output_path: Path | None,
-    transcoded_file_path: Path | None,
-) -> None:
-    _safe_unlink_local(temp_output_path, label="temp output after failure")
-    if transcoded_file_path is not None and transcoded_file_path not in {
-        file_path,
-        temp_output_path,
-    }:
-        _safe_unlink_local(
-            transcoded_file_path,
-            label="transcoded file after failure",
-        )
-
-
 def _create_from_file(
     cls_model: Type["VideoFile"],
     file_path: Path,
@@ -381,6 +238,7 @@ def _create_from_file(
     video_hash: str,
     video_dir: Path = IMPORT_VIDEO_DIR,
     save: bool = True,
+    **kwargs,
 ) -> "VideoFile":
     """
     Create a VideoFile from a local source path.
@@ -393,9 +251,7 @@ def _create_from_file(
     - storage_name: logical FieldFile name, not necessarily a direct filesystem path
     """
     from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.medical.hardware.endoscopy_processor import (
-        EndoscopyProcessor,
-    )
+    from endoreg_db.models.medical.hardware import EndoscopyProcessor
 
     file_path = Path(file_path)
 
@@ -407,26 +263,109 @@ def _create_from_file(
     canonical_source_path: Path | None = None
 
     try:
-        temp_output_path, transcoded_file_path, storage_name = _prepare_import_staging(
-            file_path=file_path,
-            video_hash=video_hash,
-            original_suffix=original_suffix,
-            video_dir=video_dir,
-        )
-        existing_video = _existing_readable_video(
-            cls_model=cls_model,
-            video_hash=video_hash,
-            file_path=file_path,
-            transcoded_file_path=transcoded_file_path,
-            temp_output_path=temp_output_path,
-        )
-        if existing_video is not None:
-            return existing_video
+        data_paths = _get_data_paths()
 
-        canonical_source_path = _prepare_canonical_source(
-            transcoded_file_path=transcoded_file_path,
-            temp_output_path=temp_output_path,
+        resolved_video_dir = _get_path(data_paths, "sensitive_video", video_dir)
+        staging_video_dir = Path(resolved_video_dir)
+        ensure_directory(staging_video_dir)
+        _cleanup_legacy_sensitive_part_artifacts(staging_video_dir)
+
+        resolved_transcoding_dir = _get_path(
+            data_paths,
+            "transcoding",
+            TRANSCODING_DIR,
         )
+        transcoding_staging_dir = Path(resolved_transcoding_dir)
+        ensure_directory(transcoding_staging_dir)
+
+        storage_root_default = staging_video_dir.parent
+        resolved_storage_root = _get_path(data_paths, "storage", storage_root_default)
+        storage_root = Path(resolved_storage_root)
+        ensure_directory(storage_root)
+
+        check_storage_capacity(file_path, storage_root)
+
+        storage_name = f"{video_hash}{original_suffix}"
+
+        # This is a local staging path only. It is not the canonical final storage path.
+        temp_output_path = _attempt_temp_media_path(
+            transcoding_staging_dir / storage_name,
+            "part",
+        )
+        ensure_directory(temp_output_path.parent)
+
+        logger.debug("Checking transcoding requirement for %s", file_path)
+
+        try:
+            transcoded_file_path = transcode_videofile_if_required(
+                input_path=file_path,
+                output_path=temp_output_path,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Video standardization failed; refusing to promote the original file "
+                f"into canonical raw storage for {file_path}."
+            ) from exc
+
+        if transcoded_file_path is None:
+            raise RuntimeError(
+                "Video standardization did not produce a compliant output; refusing "
+                f"to promote the original file into canonical raw storage for {file_path}."
+            )
+
+        transcoded_file_path = Path(transcoded_file_path)
+        logger.debug("Standardized video candidate: %s", transcoded_file_path)
+
+        existing_video = cls_model.objects.filter(video_hash=video_hash).first()
+        if existing_video is not None:
+            logger.warning(
+                "Video with hash %s already exists; checking canonical raw_file readability.",
+                video_hash,
+            )
+
+            if field_file_is_readable(existing_video.raw_file):
+                logger.warning(
+                    "Video with hash %s already exists and raw_file is readable. "
+                    "Returning existing instance.",
+                    video_hash,
+                )
+
+                if transcoded_file_path != file_path:
+                    _safe_unlink_local(
+                        transcoded_file_path, label="duplicate transcoded file"
+                    )
+
+                if temp_output_path != transcoded_file_path:
+                    _safe_unlink_local(temp_output_path, label="duplicate temp output")
+
+                return existing_video
+
+            logger.warning(
+                "Video with hash %s exists but raw_file is missing/unreadable. "
+                "Deleting orphaned record.",
+                video_hash,
+            )
+            existing_video.delete()
+
+        try:
+            if transcoded_file_path == temp_output_path:
+                _verify_completed_file(temp_output_path)
+                canonical_source_path = temp_output_path
+            else:
+                logger.debug(
+                    "Copying standardized file %s to local staging destination %s",
+                    transcoded_file_path,
+                    temp_output_path,
+                )
+                atomic_copy_with_fallback(transcoded_file_path, temp_output_path)
+                _verify_completed_file(temp_output_path)
+                canonical_source_path = temp_output_path
+        except InsufficientStorageError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to prepare standardized file for storage: {exc}"
+            ) from exc
 
         try:
             center = Center.objects.get(name=center_name)
@@ -437,12 +376,10 @@ def _create_from_file(
                 else None
             )
 
-            typed_processor = cast(_ProcessorForImport | None, processor)
-            processor_name_for_log = typed_processor.name if typed_processor else "None"
             logger.debug(
                 "Found Center: %s, Processor: %s",
                 center.name,
-                processor_name_for_log,
+                processor.name if processor else "None",
             )
         except Center.DoesNotExist as exc:
             raise ValueError(f"Center '{center_name}' not found.") from exc
@@ -460,6 +397,7 @@ def _create_from_file(
             processed_video_hash=None,
             suffix=original_suffix,
             fps=None,
+            **kwargs,
         )
 
         _verify_completed_file(canonical_source_path)
@@ -479,7 +417,7 @@ def _create_from_file(
 
         _safe_unlink_local(canonical_source_path, label="canonical source staging file")
 
-        if transcoded_file_path not in {
+        if transcoded_file_path is not None and transcoded_file_path not in {
             file_path,
             canonical_source_path,
         }:
@@ -493,11 +431,16 @@ def _create_from_file(
         return video
 
     except (InsufficientStorageError, ValueError):
-        _cleanup_failed_import(
-            file_path=file_path,
-            temp_output_path=temp_output_path,
-            transcoded_file_path=transcoded_file_path,
-        )
+        _safe_unlink_local(temp_output_path, label="temp output after failure")
+
+        if transcoded_file_path is not None and transcoded_file_path not in {
+            file_path,
+            temp_output_path,
+        }:
+            _safe_unlink_local(
+                transcoded_file_path, label="transcoded file after failure"
+            )
+
         raise
 
     except Exception as exc:
@@ -509,9 +452,14 @@ def _create_from_file(
             exc_info=True,
         )
 
-        _cleanup_failed_import(
-            file_path=file_path,
-            temp_output_path=temp_output_path,
-            transcoded_file_path=transcoded_file_path,
-        )
+        _safe_unlink_local(temp_output_path, label="temp output after failure")
+
+        if transcoded_file_path is not None and transcoded_file_path not in {
+            file_path,
+            temp_output_path,
+        }:
+            _safe_unlink_local(
+                transcoded_file_path, label="transcoded file after failure"
+            )
+
         raise RuntimeError(f"Video processing failed: {exc}") from exc

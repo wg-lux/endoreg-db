@@ -1,42 +1,23 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
 
 from django.core.exceptions import ValidationError
-from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
-from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
-from endoreg_db.schemas.report_llm import ReportLlmReimportRequestPayload
-from endoreg_db.utils.pydantic_drf import drf_validation_error_response
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
 
+from ...models import RawPdfFile, ReportLlmInferenceJob
 from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_reimport,
     report_llm_job_payload,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _pdf_hash(pdf: RawPdfFile) -> str:
-    return str(cast(object, getattr(pdf, "pdf_hash", "")))
-
-
-def _pdf_has_source_file(pdf: RawPdfFile) -> bool:
-    file_field = cast(object, getattr(pdf, "file", None))
-    return bool(file_field and getattr(file_field, "name", None))
-
-
-def _pdf_center(pdf: RawPdfFile) -> object | None:
-    return cast(object | None, getattr(pdf, "center", None))
 
 
 class ReportReimportView(APIView):
@@ -46,18 +27,17 @@ class ReportReimportView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def post(self, request: Request, pk: object) -> Response:
-        if not isinstance(pk, int) or pk <= 0:
+    def post(self, request, pk):
+        pdf_id = pk
+        if not pdf_id or not isinstance(pdf_id, int):
             return Response(
                 {"error": "Invalid report ID provided."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        pdf_id = pk
 
         try:
             pdf = RawPdfFile.objects.get(id=pdf_id)
-            pdf_hash = _pdf_hash(pdf)
-            logger.info("Found report %s (ID: %s) for re-import", pdf_hash, pdf_id)
+            logger.info("Found report %s (ID: %s) for re-import", pdf.pdf_hash, pdf_id)
         except RawPdfFile.DoesNotExist:
             logger.warning("Report with ID %s not found", pdf_id)
             return Response(
@@ -71,10 +51,10 @@ class ReportReimportView(APIView):
             not_found_message="Report not found",
         )
 
-        if not _pdf_has_source_file(pdf):
+        if not pdf.file or not getattr(pdf.file, "name", None):
             logger.error(
                 "Raw report file not found for hash %s: missing storage file",
-                pdf_hash,
+                pdf.pdf_hash,
             )
             return Response(
                 {
@@ -88,35 +68,28 @@ class ReportReimportView(APIView):
                     "error_type": "missing_source",
                     "report_id": pdf_id,
                     "pdf_id": pdf_id,
-                    "pdf_hash": pdf_hash,
+                    "pdf_hash": str(pdf.pdf_hash),
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if _pdf_center(pdf) is None:
-            logger.warning("Report %s has no associated center", pdf_hash)
+        if not pdf.center:
+            logger.warning("Report %s has no associated center", pdf.pdf_hash)
             return Response(
                 {"error": "Report has no associated center."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        try:
-            payload = ReportLlmReimportRequestPayload.model_validate(
-                cast(object, request.data)
-            )
-        except PydanticValidationError as exc:
-            return drf_validation_error_response(
-                exc,
-                message="Invalid report re-import payload.",
-            )
+        request_data = getattr(request, "data", {})
+        payload = request_data if hasattr(request_data, "get") else {}
         dispatch_result = dispatch_report_llm_reimport(
             report_id=pdf_id,
             payload=payload,
         )
-        response_payload: dict[str, Any] = {
+        response_payload = {
             **dispatch_result.to_dict(),
             "pdf_id": pdf_id,
-            "pdf_hash": pdf_hash,
+            "pdf_hash": str(pdf.pdf_hash),
         }
 
         if dispatch_result.status == "lost":
@@ -168,7 +141,7 @@ class ReportLlmJobStatusView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request: Request, pk: int, job_id: str) -> Response:
+    def get(self, request, pk: int, job_id: str):
         try:
             job = ReportLlmInferenceJob.objects.select_related(
                 "pdf",

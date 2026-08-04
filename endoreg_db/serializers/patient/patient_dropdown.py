@@ -1,24 +1,15 @@
-from __future__ import annotations
-
-from typing import Protocol
-
-from rest_framework import serializers
-
 from endoreg_db.models.administration.person.patient.patient import Patient
 
 
-class _PatientDropdownLike(Protocol):
-    patient_hash: str | None
-    first_name: str
-    last_name: str
+from rest_framework import serializers
 
 
-class PatientDropdownSerializer(serializers.ModelSerializer[Patient]):
+class PatientDropdownSerializer(serializers.ModelSerializer):
     """Serializer für Patient-Dropdown"""
 
     display_name = serializers.SerializerMethodField()
 
-    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+    class Meta:
         model = Patient
         fields = [
             "id",
@@ -29,7 +20,7 @@ class PatientDropdownSerializer(serializers.ModelSerializer[Patient]):
             "dob",
         ]
 
-    def get_display_name(self, obj: _PatientDropdownLike) -> str:
+    def get_display_name(self, obj):
         """
         Returns a user-friendly display string for a patient, combining their first and last name with a shortened patient hash or a placeholder if the hash is missing.
 

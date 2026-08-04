@@ -58,8 +58,9 @@ def test_ffmpeg_stream_throttle_state_json_output_is_stable() -> None:
         "checked_at",
         "expired_leases",
         "mode",
+        "next_stream_lease_expiry",
     }
     assert payload["mode"] == FFMPEG_STREAM_THROTTLE_NORMAL
     assert payload["active_stream_leases"] == 0
     assert payload["expired_leases"] == 0
-    assert "next_stream_lease_expiry" not in payload
+    assert payload["next_stream_lease_expiry"] is None

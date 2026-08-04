@@ -1,7 +1,7 @@
 # endoreg_db/authz/middleware.py
 #
 # Purpose:
-#   - For *browser requests* that hit protected routes, make sure the user
+#   - For *browser requests* that hit protected API URLs (e.g., /api/...), make sure the user
 #     is authenticated via Keycloak. If not, redirect them to the OIDC login view and remember
 #     the original URL in ?next= so they come back to the same endpoint after login.
 #   - For *API clients* sending a Bearer token, DO NOT redirect (that would break API usage).
@@ -16,23 +16,15 @@
 #   - We only redirect *browser* requests (no Authorization header) that target protected prefixes.
 #   - We attach the original URL as ?next=<relative-path>. mozilla-django-oidc will read this
 #     and redirect back after a successful login.
-#   - A future hardening step may sanitize/validate the next parameter to avoid open redirects,
+#   - Optional: you can sanitize/validate the next parameter to avoid open redirects,
 #     though using a relative path from request.get_full_path() is already safe.
 
-from __future__ import annotations
-
-from collections.abc import Callable
-from urllib.parse import urlencode
-
-from django.conf import settings
-from django.http import HttpRequest
-from django.http.response import HttpResponseBase
 from django.shortcuts import redirect
 
-# Every URL path that starts with one of these prefixes is considered "protected" for browser UX.
+# Any URL path that starts with one of these prefixes is considered "protected" for browser UX.
 # You can add more prefixes if you want the same login-redirect behavior elsewhere
-# (e.g., PROTECTED_PREFIXES = ("/endoreg-api/", "/reports/", "/dashboard/")).
-# PROTECTED_PREFIXES = ("/endoreg-api/",)
+# (e.g., PROTECTED_PREFIXES = ("/api/", "/reports/", "/dashboard/")).
+# PROTECTED_PREFIXES = ("/api/",)
 
 # Protect the SPA shell too (everything except static/assets/oidc)
 PROTECTED_PREFIXES = ("/",)  # catch-all; we'll skip known public paths below
@@ -46,26 +38,6 @@ PUBLIC_PREFIXES = (
     "/__vite",  # if Vite dev assets ever used
 )
 
-# These machine-to-machine endpoints authenticate the source NetworkNode in
-# the DRF view and must reach that view without an interactive OIDC redirect.
-# Keep the paths separate from PUBLIC_PREFIXES: they are not public, and the
-# downstream view remains responsible for HTTPS/mTLS, shared-secret, and
-# owning-center enforcement.
-NODE_AUTHENTICATED_PATH_PREFIXES = (
-    "/api/media/hub/transfers",
-    "/endoreg-api/media/hub/transfers",
-)
-
-
-type GetResponse = Callable[[HttpRequest], HttpResponseBase]
-
-
-def _is_node_authenticated_path(path: str) -> bool:
-    return any(
-        path == prefix or path.startswith(f"{prefix}/")
-        for prefix in NODE_AUTHENTICATED_PATH_PREFIXES
-    )
-
 
 class LoginRequiredForAPIsMiddleware:
     """
@@ -78,22 +50,25 @@ class LoginRequiredForAPIsMiddleware:
 
     """
 
-    get_response: GetResponse
-
-    def __init__(self, get_response: GetResponse) -> None:
+    def __init__(self, get_response):
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponseBase:
-        # request.path is the URL path without scheme/host/query.
+    def __call__(self, request):
+        # request.path is the URL path without scheme/host/query (e.g., "/api/patients/").
         # If for any reason it's None/empty, coerce to empty string so startswith won’t explode.
         path = request.path or ""
         # --- Exclusions so we don't block assets, HMR, OIDC endpoints, favicon, etc.
         # Allow static, assets, vite HMR, favicon, and OIDC endpoints without redirect
         # Skip public stuff
-        if path.startswith(PUBLIC_PREFIXES):
+        hub_transfer_prefixes = (
+            "/api/media/hub/transfers/",
+            "/endoreg-api/media/hub/transfers/",
+        )
+
+        if request.path_info.startswith(hub_transfer_prefixes):
             return self.get_response(request)
 
-        if _is_node_authenticated_path(path):
+        if path.startswith(PUBLIC_PREFIXES):
             return self.get_response(request)
 
         # If not protected, pass through (shouldn’t happen with PROTECTED_PREFIXES=('/' ,))
@@ -101,13 +76,15 @@ class LoginRequiredForAPIsMiddleware:
             return self.get_response(request)
 
         # API/token clients never get redirected
-        raw_auth_header = request.META.get("HTTP_AUTHORIZATION", "")
-        auth_header = raw_auth_header if isinstance(raw_auth_header, str) else ""
-        if auth_header.startswith("Bearer "):
+        auth = request.META.get("HTTP_AUTHORIZATION", "")
+        if auth.startswith("Bearer "):
             return self.get_response(request)
 
         # 3) Browser without session → redirect to OIDC
         if not request.user.is_authenticated:
+            from django.conf import settings
+            from urllib.parse import urlencode
+
             params = urlencode({"next": request.get_full_path()})
             return redirect(f"{settings.LOGIN_URL}?{params}")
 

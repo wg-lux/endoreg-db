@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import posixpath
 from pathlib import Path
-from typing import BinaryIO, Literal, Protocol, cast
 
 from django.core.files.storage import default_storage
 
@@ -10,10 +9,6 @@ from endoreg_db.models import ModelMeta
 from endoreg_db.utils.file_operations import atomic_write_file
 
 MANAGED_STUB_WEIGHT_PAYLOAD = b"stub-weights"
-
-
-class _BinaryReadableStorage(Protocol):
-    def open(self, name: str, mode: Literal["rb"]) -> BinaryIO: ...
 
 
 def is_managed_stub_weight_name(weights_name: str | None) -> bool:
@@ -60,8 +55,7 @@ def cleanup_managed_stub_weight_collisions(weights_name: str) -> None:
             continue
 
         try:
-            storage = cast(_BinaryReadableStorage, default_storage)
-            with storage.open(candidate_path, "rb") as handle:
+            with default_storage.open(candidate_path, "rb") as handle:
                 if handle.read() != MANAGED_STUB_WEIGHT_PAYLOAD:
                     continue
             default_storage.delete(candidate_path)

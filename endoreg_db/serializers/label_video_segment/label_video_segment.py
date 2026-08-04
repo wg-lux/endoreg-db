@@ -1,15 +1,11 @@
-from __future__ import annotations
-
-import logging
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Protocol, cast
-
-from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Prefetch
-from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers
+from django.core.exceptions import ObjectDoesNotExist
+from pathlib import Path
+from typing import Any, Literal
+import logging
+from django.db.models import Prefetch
+from django.db import models
+from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -18,161 +14,24 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
-from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.serializers.label_video_segment.image_classification_annotation import (
     ImageClassificationAnnotationSerializer,
 )
-from endoreg_db.services.video_files import (
-    video_frame_number_to_seconds,
-    video_seconds_to_frame_number,
-)
-from endoreg_db.utils.media_urls import (
+from endoreg_db.services.segment_contracts import SegmentAnnotationInput
+from endoreg_db.services.video_files import get_video_fps, video_frame_number_to_seconds
+from endoreg_db.utils.web.media_urls import (
     build_absolute_media_url,
     build_video_frame_stream_path,
 )
-from lx_dtypes.models.contracts.label_video_segment_serializer import (
-    LabelVideoSegmentFrameClassificationPayload,
-    LabelVideoSegmentTimeSegmentPayload,
-)
-from lx_dtypes.models.contracts.video_segments import SegmentAnnotationInput
 
 logger = logging.getLogger(__name__)
 
 
-class RequestLike(Protocol):
-    def get(self, key: str, default: object = ...) -> object: ...
+class LabelVideoSegmentTimelineSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for timeline rendering."""
 
-
-class ContextLike(Protocol):
-    def get(self, key: str, default: object = ...) -> object: ...
-
-
-class LabelLike(Protocol):
-    id: int
-    name: str
-
-
-class SourceLike(Protocol):
-    name: str
-
-
-class VideoLike(Protocol):
-    id: int
-
-    @property
-    def original_file_name(self) -> str | None: ...
-
-    def frame_number_to_s(self, frame_number: int) -> float: ...
-
-
-class LabelFileLike(Protocol):
-    id: int
-    name: str
-
-
-class _SerializerDataLike(Protocol):
-    @property
-    def data(self) -> Sequence[Mapping[str, object]]: ...
-
-
-def _serializer_rows(serializer: object) -> list[dict[str, object]]:
-    return [dict(item) for item in cast(_SerializerDataLike, serializer).data]
-
-
-def _segment_frame_number(segment: object, field_name: str) -> int:
-    value = getattr(segment, field_name, None)
-    if not isinstance(value, int):
-        raise serializers.ValidationError(f"{field_name} must be an integer.")
-    return value
-
-
-@dataclass(frozen=True)
-class _SegmentBoundaries:
-    start_time: object
-    end_time: object
-    start_frame: object
-    end_frame: object
-    effective_start_time: object
-    effective_end_time: object
-
-    @property
-    def has_time(self) -> bool:
-        return self.start_time is not None and self.end_time is not None
-
-    @property
-    def has_frames(self) -> bool:
-        return self.start_frame is not None and self.end_frame is not None
-
-    @property
-    def has_effective_time(self) -> bool:
-        return (
-            self.effective_start_time is not None
-            and self.effective_end_time is not None
-        )
-
-
-def _effective_time_boundary(
-    submitted_value: object,
-    *,
-    was_submitted: bool,
-    persisted_value: object,
-) -> object:
-    if submitted_value is None and not was_submitted:
-        return persisted_value
-    return submitted_value
-
-
-def _effective_frame_boundary(
-    submitted_value: object,
-    persisted_value: int,
-) -> object:
-    if submitted_value is None:
-        return persisted_value
-    return submitted_value
-
-
-def _integer_frame_boundaries(
-    boundaries: _SegmentBoundaries,
-) -> tuple[int, int] | None:
-    if not isinstance(boundaries.start_frame, int):
-        return None
-    if not isinstance(boundaries.end_frame, int):
-        return None
-    return boundaries.start_frame, boundaries.end_frame
-
-
-class FrameLike(Protocol):
-    pk: int
-    video_id: int
-    frame_number: int
-    file_path: Path
-    image_classification_annotations: Sequence[ImageClassificationAnnotation]
-
-
-class LabelVideoSegmentLike(Protocol):
-    pk: int
-    label: LabelLike | None
-    source: SourceLike | None
-    prediction_meta_id: int | None
-    video_file: object
-    start_frame_number: int
-    end_frame_number: int
-    start_time: float | None
-    end_time: float | None
-    export_segment: bool
-    frames: Sequence[FrameLike]
-    manual_frame_annotations: Sequence[ImageClassificationAnnotation]
-    frame_predictions: Sequence[ImageClassificationAnnotation]
-    video_file_id: int
-
-    def save(self) -> None: ...
-
-
-class LabelVideoSegmentTimelineSerializer(
-    serializers.ModelSerializer[LabelVideoSegment]
-):
     label_id = serializers.SerializerMethodField()
     label_name = serializers.SerializerMethodField()
     source_name = serializers.SerializerMethodField()
@@ -181,8 +40,8 @@ class LabelVideoSegmentTimelineSerializer(
     start_time = serializers.SerializerMethodField()
     end_time = serializers.SerializerMethodField()
 
-    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = LabelVideoSegment  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = LabelVideoSegment
         fields = [
             "id",
             "label_id",
@@ -197,46 +56,56 @@ class LabelVideoSegmentTimelineSerializer(
             "export_segment",
         ]
 
-    def _frame_to_seconds(
-        self, obj: LabelVideoSegmentLike, frame_number: int
-    ) -> float | None:
-        video = cast(VideoLike | None, obj.video_file)
-        if video is None:
+    def _frame_to_seconds(self, obj: LabelVideoSegment, frame_number: int):
+        video = getattr(obj, "video_file", None)
+        if not video:
             return None
-        return video_frame_number_to_seconds(cast(VideoFile, video), frame_number)
+        try:
+            return video_frame_number_to_seconds(video, frame_number)
+        except Exception:
+            return None
 
-    def get_label_id(self, obj: LabelVideoSegmentLike) -> int | None:
-        label = cast(LabelFileLike | None, obj.label)
-        return None if label is None else label.id
+    def get_label_id(self, obj: LabelVideoSegment):
+        label = getattr(obj, "label", None)
+        return getattr(label, "id", None)
 
-    def get_label_name(self, obj: LabelVideoSegmentLike) -> str | None:
-        label = cast(LabelFileLike | None, obj.label)
-        return None if label is None else label.name
+    def get_label_name(self, obj: LabelVideoSegment):
+        label = getattr(obj, "label", None)
+        return getattr(label, "name", None)
 
-    def get_source_name(self, obj: LabelVideoSegmentLike) -> str | None:
-        return None if obj.source is None else obj.source.name
+    def get_source_name(self, obj: LabelVideoSegment):
+        source = getattr(obj, "source", None)
+        return getattr(source, "name", None)
 
-    def get_segment_origin(self, obj: LabelVideoSegmentLike) -> str:
+    def get_segment_origin(self, obj: LabelVideoSegment):
         source_name = self.get_source_name(obj)
-        if obj.prediction_meta_id is not None or source_name == "prediction":
+        if (
+            getattr(obj, "prediction_meta_id", None) is not None
+            or source_name == "prediction"
+        ):
             return "prediction"
         return "manual"
 
-    def get_prediction_meta_id(self, obj: LabelVideoSegmentLike) -> int | None:
-        return obj.prediction_meta_id
+    def get_prediction_meta_id(self, obj: LabelVideoSegment):
+        return getattr(obj, "prediction_meta_id", None)
 
-    def get_start_time(self, obj: LabelVideoSegmentLike) -> float | None:
+    def get_start_time(self, obj: LabelVideoSegment):
         return self._frame_to_seconds(obj, obj.start_frame_number)
 
-    def get_end_time(self, obj: LabelVideoSegmentLike) -> float | None:
+    def get_end_time(self, obj: LabelVideoSegment):
         return self._frame_to_seconds(obj, obj.end_frame_number)
 
 
-class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]):
+class LabelVideoSegmentSerializer(serializers.ModelSerializer):
+    """Serializer for creating, retrieving, and updating LabelVideoSegment instances."""
+
+    # Write-only fields for Input (Frontend sends seconds)
     start_time = serializers.FloatField(
         write_only=True, required=False, allow_null=True
     )
     end_time = serializers.FloatField(write_only=True, required=False, allow_null=True)
+
+    # Input fields
     video_id = serializers.IntegerField(required=False, help_text="Video file ID")
     label_id = serializers.IntegerField(
         required=False, allow_null=True, help_text="Label ID"
@@ -244,6 +113,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
     label_name = serializers.CharField(
         write_only=True, required=False, allow_null=True, help_text="Label name"
     )
+
+    # Read-only fields for Output
     video_name = serializers.SerializerMethodField(read_only=True)
     source_name = serializers.SerializerMethodField(read_only=True)
     segment_origin = serializers.SerializerMethodField(read_only=True)
@@ -252,8 +123,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
     manual_frame_annotations = serializers.SerializerMethodField(read_only=True)
     time_segments = serializers.SerializerMethodField(read_only=True)
 
-    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = LabelVideoSegment  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = LabelVideoSegment
         fields = [
             "id",
             "video_file",
@@ -284,40 +155,66 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         }
 
     def _include_annotation_payload(self) -> bool:
-        context = cast(ContextLike, getattr(self, "context", {}))
+        """
+        Toggle expensive nested payloads (frame annotations + frame lists).
+
+        Defaults to True to preserve serializer behavior unless explicitly disabled
+        by a caller (list endpoints use this to avoid heavy ASGI request handling).
+        """
+        context = getattr(self, "context", None) or {}
         return bool(context.get("include_annotation_payload", True))
 
-    def _get_video_file(self, video_id: int) -> VideoFile:
-        context = cast(ContextLike, getattr(self, "context", {}))
-        context_video = context.get("video_file")
-        if isinstance(context_video, VideoFile) and context_video.pk == video_id:
-            return context_video
+    # --- Internal Helpers ---
 
+    def _get_video_file(self, video_id) -> VideoFile:
         try:
             return VideoFile.objects.get(id=video_id)
-        except ObjectDoesNotExist as exc:
+        except ObjectDoesNotExist:
             raise serializers.ValidationError(
                 f"VideoFile with id {video_id} does not exist"
-            ) from exc
+            )
 
-    def _get_label(self, label_id: int | None, label_name: str | None) -> Label | None:
-        if label_id is not None:
+    def get_source_name(self, obj: LabelVideoSegment):
+        source = getattr(obj, "source", None)
+        return getattr(source, "name", None)
+
+    def get_segment_origin(self, obj: LabelVideoSegment):
+        source_name = self.get_source_name(obj)
+        if (
+            getattr(obj, "prediction_meta_id", None) is not None
+            or source_name == "prediction"
+        ):
+            return "prediction"
+        return "manual"
+
+    def _get_label(self, label_id, label_name):
+        if label_id:
             try:
                 return Label.objects.get(id=label_id)
-            except ObjectDoesNotExist as exc:
+            except ObjectDoesNotExist:
                 raise serializers.ValidationError(
                     f"Label with id {label_id} does not exist"
-                ) from exc
-        if label_name is not None:
+                )
+        elif label_name:
             label, _ = Label.get_or_create_from_name(label_name)
+            if not label:
+                raise serializers.ValidationError(
+                    f"Failed to create or retrieve label with name {label_name}"
+                )
             return label
         return None
 
-    def _convert_time_to_frame(self, video_file: VideoFile, time_val: float) -> int:
-        try:
-            return video_seconds_to_frame_number(video_file, time_val)
-        except ValueError as exc:
-            raise serializers.ValidationError(str(exc)) from exc
+    def _validate_fps(self, video_file) -> float:
+        """Helper to get valid FPS from video file."""
+        fps = get_video_fps(video_file)
+        if not fps or fps <= 0:
+            raise serializers.ValidationError(
+                "Video file must have a defined, positive FPS to calculate frames."
+            )
+        return float(fps)
+
+    def _convert_time_to_frame(self, time_val, fps):
+        return int(round(float(time_val) * fps))
 
     def _get_information_source(self) -> InformationSource:
         source_name = "manual_annotation"
@@ -331,6 +228,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
                     source_name,
                 )
             return sources[0]
+
         return InformationSource.objects.create(
             name=source_name,
             description="Manually created label segments via web interface",
@@ -339,10 +237,6 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
     def _validate_segment_contract(
         self, video_id: int, start_time: float, end_time: float
     ) -> None:
-        if end_time <= start_time:
-            raise serializers.ValidationError(
-                {"end_time": "end_time must be greater than start_time."}
-            )
         try:
             SegmentAnnotationInput.model_validate(
                 {
@@ -358,144 +252,144 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             for error in exc.errors():
                 location = error.get("loc", ())
                 message = str(error.get("msg", "Invalid value"))
-                if not location and "end_time" in message:
-                    field = "end_time"
-                else:
-                    field = (
-                        str(location[-1])
-                        if location
-                        and str(location[-1]) in {"video_id", "start_time", "end_time"}
-                        else "non_field_errors"
-                    )
+                field = (
+                    str(location[-1])
+                    if location
+                    and str(location[-1]) in {"video_id", "start_time", "end_time"}
+                    else "non_field_errors"
+                )
+                if field == "non_field_errors":
+                    if "end_time" in message:
+                        field = "end_time"
+                    elif "start_time" in message:
+                        field = "start_time"
+                    elif "video_id" in message:
+                        field = "video_id"
                 errors.setdefault(field, []).append(message)
-            raise serializers.ValidationError(errors) from exc
+            raise serializers.ValidationError(errors)
 
-    def to_internal_value(self, data: Mapping[str, object]) -> dict[str, object]:
-        payload = dict(data)
-        if "video_file" in payload:
-            payload["video_id"] = payload["video_file"]
-        if "label" in payload:
-            payload["label_id"] = payload["label"]
-        return super().to_internal_value(payload)
+    # --- DRF Overrides ---
 
-    def _segment_boundaries(self, attrs: Mapping[str, object]) -> _SegmentBoundaries:
+    def to_internal_value(self, data) -> Any:
+        """Normalize input data keys."""
+        # Frontend might send video_file or video_id, label or label_id
+        if "video_file" in data:
+            data["video_id"] = data["video_file"]
+        if "label" in data:
+            data["label_id"] = data["label"]
+        return super().to_internal_value(data)
+
+    def validate(self, attrs) -> Any:
+        """
+        Validate logical consistency:
+        1. Ensure we have Video reference.
+        2. Ensure we have EITHER (start_time, end_time) OR (start_frame, end_frame).
+        3. Ensure Start < End.
+        """
+        # 1. Time vs Frame Check
         start_time = attrs.get("start_time")
         end_time = attrs.get("end_time")
         start_frame = attrs.get("start_frame_number")
         end_frame = attrs.get("end_frame_number")
+        effective_start_time = start_time
+        effective_end_time = end_time
 
-        if self.instance is None:
-            return _SegmentBoundaries(
-                start_time=start_time,
-                end_time=end_time,
-                start_frame=start_frame,
-                end_frame=end_frame,
-                effective_start_time=start_time,
-                effective_end_time=end_time,
-            )
+        # If updating, fallback to instance values
+        if self.instance:
+            if start_time is None and "start_time" not in attrs:
+                effective_start_time = self.instance.start_time
+            if end_time is None and "end_time" not in attrs:
+                effective_end_time = self.instance.end_time
+            if start_frame is None:
+                start_frame = self.instance.start_frame_number
+            if end_frame is None:
+                end_frame = self.instance.end_frame_number
 
-        instance = cast(LabelVideoSegmentLike, self.instance)
-        return _SegmentBoundaries(
-            start_time=start_time,
-            end_time=end_time,
-            start_frame=_effective_frame_boundary(
-                start_frame, instance.start_frame_number
-            ),
-            end_frame=_effective_frame_boundary(end_frame, instance.end_frame_number),
-            effective_start_time=_effective_time_boundary(
-                start_time,
-                was_submitted="start_time" in attrs,
-                persisted_value=instance.start_time,
-            ),
-            effective_end_time=_effective_time_boundary(
-                end_time,
-                was_submitted="end_time" in attrs,
-                persisted_value=instance.end_time,
-            ),
+        has_time = start_time is not None and end_time is not None
+        has_frames = start_frame is not None and end_frame is not None
+        has_effective_time = (
+            effective_start_time is not None and effective_end_time is not None
         )
 
-    def _validate_boundary_presence(self, boundaries: _SegmentBoundaries) -> None:
-        if (
-            self.instance is None
-            and not boundaries.has_time
-            and not boundaries.has_frames
-        ):
-            raise serializers.ValidationError(
-                "Either (start_time, end_time) OR (start_frame_number, end_frame_number) must be provided."
+        if not has_time and not has_frames:
+            # If creating, strictly require one set
+            if not self.instance:
+                raise serializers.ValidationError(
+                    "Either (start_time, end_time) OR (start_frame_number, end_frame_number) must be provided."
+                )
+
+        # 2. Logical Constraints
+        if has_effective_time:
+            effective_video_id = attrs.get("video_id") or self.initial_data.get(
+                "video_id"
+            )
+            if self.instance and not effective_video_id:
+                effective_video_id = self.instance.video_file_id
+            if not effective_video_id:
+                raise serializers.ValidationError(
+                    {"video_id": "This field is required."}
+                )
+            self._validate_segment_contract(
+                int(effective_video_id),
+                float(effective_start_time),
+                float(effective_end_time),
             )
 
-    def _validate_effective_time(
-        self,
-        attrs: Mapping[str, object],
-        boundaries: _SegmentBoundaries,
-    ) -> None:
-        if not boundaries.has_effective_time:
-            return
+        if has_frames:
+            if start_frame < 0:
+                raise serializers.ValidationError(
+                    {"start_frame_number": "Must be non-negative."}
+                )
+            if end_frame <= start_frame:
+                raise serializers.ValidationError(
+                    {"end_frame_number": "Must be greater than start_frame_number."}
+                )
 
-        effective_video_id = attrs.get("video_id")
-        if self.instance is not None and effective_video_id is None:
-            effective_video_id = cast(
-                LabelVideoSegmentLike, self.instance
-            ).video_file_id
-        if effective_video_id is None:
-            raise serializers.ValidationError({"video_id": "This field is required."})
-        self._validate_segment_contract(
-            int(cast(int, effective_video_id)),
-            float(cast(float, boundaries.effective_start_time)),
-            float(cast(float, boundaries.effective_end_time)),
-        )
-
-    @staticmethod
-    def _validate_frame_boundaries(boundaries: _SegmentBoundaries) -> None:
-        if not boundaries.has_frames:
-            return
-        frame_boundaries = _integer_frame_boundaries(boundaries)
-        if frame_boundaries is None:
-            return
-        start_frame, end_frame = frame_boundaries
-        if start_frame < 0:
-            raise serializers.ValidationError(
-                {"start_frame_number": "Must be non-negative."}
-            )
-        if end_frame <= start_frame:
-            raise serializers.ValidationError(
-                {"end_frame_number": "Must be greater than start_frame_number."}
-            )
-
-    def _validate_video_reference(self, attrs: Mapping[str, object]) -> None:
+        # 3. Video Check (after payload-shape/frame consistency checks for better errors)
         video_id = attrs.get("video_id") or self.initial_data.get("video_id")
-        if not video_id and self.instance is None:
+        if not video_id and not self.instance:
             raise serializers.ValidationError("video_id is required.")
 
-    def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        boundaries = self._segment_boundaries(attrs)
-        self._validate_boundary_presence(boundaries)
-        self._validate_effective_time(attrs, boundaries)
-        self._validate_frame_boundaries(boundaries)
-        self._validate_video_reference(attrs)
         return attrs
 
-    def create(self, validated_data: dict[str, object]) -> LabelVideoSegment:
+    def create(self, validated_data) -> LabelVideoSegment:
+        """
+        Create logic:
+        1. Extract ID/Name/Time data.
+        2. Resolve Objects (Video, Label).
+        3. Convert Time -> Frames.
+        4. Save.
+        """
         try:
-            video_id = int(cast(int, validated_data.pop("video_id")))
-            label_id = cast(int | None, validated_data.pop("label_id", None))
-            label_name = cast(str | None, validated_data.pop("label_name", None))
-            export_segment = bool(validated_data.pop("export_segment", False))
-            start_time = cast(float | None, validated_data.pop("start_time", None))
-            end_time = cast(float | None, validated_data.pop("end_time", None))
+            # Extract basic data
+            video_id = validated_data.pop("video_id")
+            label_id = validated_data.pop("label_id", None)
+            label_name = validated_data.pop("label_name", None)
+            export_segment = validated_data.pop("export_segment", None)
 
+            # Extract time data (might be None if frames were passed directly)
+            start_time = validated_data.pop("start_time", None)
+            end_time = validated_data.pop("end_time", None)
+
+            # Resolve Objects
             video_file = self._get_video_file(video_id)
             label = self._get_label(label_id, label_name)
-            source = self._get_information_source()
+            try:
+                source = self._get_information_source()
+            except Exception:
+                source = None
 
+            # Calculate Frames if time is provided
             if start_time is not None and end_time is not None:
+                fps = self._validate_fps(video_file)
                 validated_data["start_frame_number"] = self._convert_time_to_frame(
-                    video_file, start_time
+                    start_time, fps
                 )
                 validated_data["end_frame_number"] = self._convert_time_to_frame(
-                    video_file, end_time
+                    end_time, fps
                 )
 
+            # Final check to ensure we have frames (in case validation slipped or logic failed)
             if (
                 "start_frame_number" not in validated_data
                 or "end_frame_number" not in validated_data
@@ -504,152 +398,124 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
                     "Could not determine frame numbers. Please provide start_time/end_time."
                 )
 
+            # Create
             segment = LabelVideoSegment.safe_create(
                 video_file=video_file,
                 label=label,
                 source=source,
-                start_frame_number=int(cast(int, validated_data["start_frame_number"])),
-                end_frame_number=int(cast(int, validated_data["end_frame_number"])),
+                start_frame_number=validated_data["start_frame_number"],
+                end_frame_number=validated_data["end_frame_number"],
                 prediction_meta=None,
-                export_segment=export_segment,
-            )  # this function handles segment.save()
-            return segment
-        except Exception as exc:
-            logger.error("Error creating segment: %s", exc)
-            raise serializers.ValidationError(str(exc)) from exc
+                export_segment=export_segment if export_segment is not None else False,
+            )
+            segment.save()
 
-    def update(
-        self, instance: LabelVideoSegment, validated_data: dict[str, object]
-    ) -> LabelVideoSegment:
+            logger.info(f"Created segment {segment.pk} for video {video_id}")
+            return segment
+
+        except Exception as e:
+            logger.error(f"Error creating segment: {e}")
+            raise serializers.ValidationError(str(e))
+
+    def update(self, instance, validated_data) -> Any:
+        """
+        Update logic:
+        1. Check if Video changed (affects FPS).
+        2. Check if Label changed.
+        3. Check if Time changed -> Recalculate Frames.
+        """
         try:
+            # Pop fields
             label_id_present = "label_id" in validated_data
             label_name_present = "label_name" in validated_data
-            video_id = cast(int | None, validated_data.pop("video_id", None))
-            label_id = cast(int | None, validated_data.pop("label_id", None))
-            label_name = cast(str | None, validated_data.pop("label_name", None))
-            start_time = cast(float | None, validated_data.pop("start_time", None))
-            end_time = cast(float | None, validated_data.pop("end_time", None))
+            video_id = validated_data.pop("video_id", None)
+            label_id = validated_data.pop("label_id", None)
+            label_name = validated_data.pop("label_name", None)
+            start_time = validated_data.pop("start_time", None)
+            end_time = validated_data.pop("end_time", None)
             export_segment = validated_data.pop("export_segment", None)
 
-            current_video = cast(VideoLike | None, instance.video_file)
-            if (
-                video_id is not None
-                and current_video is not None
-                and cast(int, getattr(current_video, "id")) != video_id
-            ):
+            # 1. Update Video?
+            current_video = instance.video_file
+            if video_id and current_video.id != video_id:
                 current_video = self._get_video_file(video_id)
                 instance.video_file = current_video
 
+            # 2. Update Label?
             if label_id_present or label_name_present:
-                instance.label = self._get_label(label_id, label_name)
+                if label_id or label_name:
+                    instance.label = self._get_label(label_id, label_name)
+                else:
+                    instance.label = None
 
+            # 3. Update Frames (from Time or direct Frames)
+            # We need FPS if we are using time
+            fps = None
             if start_time is not None or end_time is not None:
-                if current_video is None:
-                    raise serializers.ValidationError(
-                        {"video_id": "This field is required."}
-                    )
+                fps = self._validate_fps(current_video)
 
             if start_time is not None:
                 instance.start_frame_number = self._convert_time_to_frame(
-                    cast(VideoFile, current_video), start_time
+                    start_time, fps
                 )
             elif "start_frame_number" in validated_data:
-                instance.start_frame_number = int(
-                    cast(int, validated_data["start_frame_number"])
-                )
+                instance.start_frame_number = validated_data["start_frame_number"]
 
             if end_time is not None:
-                instance.end_frame_number = self._convert_time_to_frame(
-                    cast(VideoFile, current_video), end_time
-                )
+                instance.end_frame_number = self._convert_time_to_frame(end_time, fps)
             elif "end_frame_number" in validated_data:
-                instance.end_frame_number = int(
-                    cast(int, validated_data["end_frame_number"])
-                )
+                instance.end_frame_number = validated_data["end_frame_number"]
 
             if export_segment is not None:
                 instance.export_segment = bool(export_segment)
 
-            start_frame_number = _segment_frame_number(instance, "start_frame_number")
-            end_frame_number = _segment_frame_number(instance, "end_frame_number")
-            if start_frame_number >= end_frame_number:
+            # Final Frame Safety Check
+            if instance.start_frame_number >= instance.end_frame_number:
                 raise serializers.ValidationError(
                     "start_time/frame must be strictly less than end_time/frame"
                 )
 
             instance.save()
+            logger.info(f"Updated segment {instance.pk}")
             return instance
-        except Exception as exc:
-            logger.error("Error updating segment %s: %s", instance.pk, exc)
-            raise serializers.ValidationError(str(exc)) from exc
 
-    def to_representation(self, instance: LabelVideoSegment) -> dict[str, object]:
+        except Exception as e:
+            logger.error(f"Error updating segment {instance.pk}: {e}")
+            raise serializers.ValidationError(str(e))
+
+    # --- Read/Representation Methods (Already existed) ---
+
+    def to_representation(self, instance) -> dict[str, Any]:
+        """Inject calculated seconds and IDs for frontend convenience."""
         data = super().to_representation(instance)
-        video = cast(VideoLike | None, instance.video_file)
-        if video is not None:
-            start_frame_number = _segment_frame_number(instance, "start_frame_number")
-            end_frame_number = _segment_frame_number(instance, "end_frame_number")
-            data["start_time"] = video_frame_number_to_seconds(
-                cast(VideoFile, video), start_frame_number
-            )
-            data["end_time"] = video_frame_number_to_seconds(
-                cast(VideoFile, video), end_frame_number
-            )
-            data["video_id"] = cast(int, getattr(instance.video_file, "id"))
-        label = cast(LabelFileLike | None, instance.label)
-        if label is not None:
-            data["label_name"] = label.name
-            data["label_id"] = label.id
+
+        video = instance.video_file
+        if video:
+            data["start_time"] = video.frame_number_to_s(instance.start_frame_number)
+            data["end_time"] = video.frame_number_to_s(instance.end_frame_number)
+            data["video_id"] = video.id
+
+        if instance.label:
+            data["label_name"] = instance.label.name
+            data["label_id"] = instance.label.id
         else:
             data["label_name"] = None
             data["label_id"] = None
+
         return data
 
-    def get_source_name(self, obj: LabelVideoSegmentLike) -> str | None:
-        return None if obj.source is None else obj.source.name
-
-    def get_segment_origin(self, obj: LabelVideoSegmentLike) -> str:
-        source_name = self.get_source_name(obj)
-        if obj.prediction_meta_id is not None or source_name == "prediction":
-            return "prediction"
-        return "manual"
-
-    def get_prediction_meta_id(self, obj: LabelVideoSegmentLike) -> int | None:
-        return obj.prediction_meta_id
-
-    def _segment_frames(self, obj: LabelVideoSegmentLike) -> list[FrameLike]:
-        queryset = (
-            Frame.objects.filter(
-                video_id=obj.video_file_id,
-                frame_number__gte=obj.start_frame_number,
-                frame_number__lt=obj.end_frame_number,
-            )
-            .select_related("video")
-            .order_by("frame_number")
-            .prefetch_related(
-                Prefetch(
-                    "image_classification_annotations",
-                    queryset=ImageClassificationAnnotation.objects.select_related(
-                        "label",
-                        "information_source",
-                    ),
-                )
-            )
-        )
-        return [cast(FrameLike, frame) for frame in queryset]
-
-    def get_time_segments(self, obj: LabelVideoSegmentLike) -> dict[str, object]:
+    def get_time_segments(self, obj: LabelVideoSegment) -> dict[str, Any]:
         if not self._include_annotation_payload():
             start_time = None
             end_time = None
-            video = cast(VideoLike | None, obj.video_file)
+            video = getattr(obj, "video_file", None)
             if video is not None:
-                start_time = video_frame_number_to_seconds(
-                    cast(VideoFile, video), obj.start_frame_number
-                )
-                end_time = video_frame_number_to_seconds(
-                    cast(VideoFile, video), obj.end_frame_number
-                )
+                try:
+                    start_time = video.frame_number_to_s(obj.start_frame_number)
+                    end_time = video.frame_number_to_s(obj.end_frame_number)
+                except Exception:
+                    start_time = None
+                    end_time = None
             return {
                 "segment_id": obj.pk,
                 "segment_start": obj.start_frame_number,
@@ -659,78 +525,68 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
                 "frames": [],
             }
 
-        frames = self._segment_frames(obj)
-        frames_payload: list[LabelVideoSegmentFrameClassificationPayload] = []
-
-        request = cast(
-            RequestLike | None,
-            self.context.get("request") if hasattr(self, "context") else None,
+        annotations_prefetch = Prefetch(
+            "image_classification_annotations",
+            queryset=ImageClassificationAnnotation.objects.select_related("label"),
         )
+        assert isinstance(obj, LabelVideoSegment)
+        assert isinstance(obj.frames, models.QuerySet)
+        frames = obj.frames.prefetch_related(annotations_prefetch)
+        frames_payload: list[dict[str, Any]] = []
+        time_segments: dict[str, Any] = {
+            "segment_id": obj.pk,
+            "segment_start": obj.start_frame_number,
+            "segment_end": obj.end_frame_number,
+            "start_time": obj.start_time,
+            "end_time": obj.end_time,
+            "frames": frames_payload,
+        }
+
+        request = self.context.get("request") if hasattr(self, "context") else None
 
         for frame in frames:
-            all_classifications = _serializer_rows(
-                ImageClassificationAnnotationSerializer(
-                    frame.image_classification_annotations, many=True
-                )
-            )
+            # Optimization: Use annotations if available to avoid N+1 queries
+            all_classifications = ImageClassificationAnnotationSerializer(
+                frame.image_classification_annotations.all(), many=True
+            ).data
+
+            rel = Path(str(frame.file_path)).name
             url = build_absolute_media_url(
                 request,
                 build_video_frame_stream_path(frame.video_id, frame.frame_number),
             )
-            frames_payload.append(
-                LabelVideoSegmentFrameClassificationPayload(
-                    frame_filename=Path(str(frame.file_path)).name,
-                    frame_file_path=Path(str(frame.file_path)).name,
-                    frame_url=url,
-                    all_classifications=all_classifications,
-                    frame_id=frame.pk,
-                )
-            )
 
-        time_segments = LabelVideoSegmentTimeSegmentPayload(
-            segment_id=obj.pk,
-            segment_start=obj.start_frame_number,
-            segment_end=obj.end_frame_number,
-            start_time=obj.start_time,
-            end_time=obj.end_time,
-            frames=frames_payload,
-        )
-        return time_segments.model_dump(mode="python")
+            frame_data = {
+                "frame_filename": Path(str(frame.file_path)).name,
+                "frame_file_path": rel,
+                "frame_url": url,
+                "all_classifications": all_classifications,
+                "frame_id": frame.pk,
+            }
+            frames_payload.append(frame_data)
 
-    def get_label_name(self, obj: LabelVideoSegmentLike) -> str:
-        label = cast(LabelFileLike | None, obj.label)
-        return label.name if label is not None else "Unknown"
+        return time_segments
 
-    def get_manual_frame_annotations(
-        self, obj: LabelVideoSegmentLike
-    ) -> list[dict[str, object]]:
+    def get_label_name(self, obj) -> Any | Literal["Unknown"]:
+        return obj.label.name if obj.label else "Unknown"
+
+    def get_manual_frame_annotations(self, obj: LabelVideoSegment) -> Any:
         if not self._include_annotation_payload():
             return []
-        return _serializer_rows(
-            ImageClassificationAnnotationSerializer(
-                obj.manual_frame_annotations, many=True
-            )
-        )
+        return ImageClassificationAnnotationSerializer(
+            obj.manual_frame_annotations, many=True
+        ).data
 
-    def get_frame_predictions(
-        self, obj: LabelVideoSegmentLike
-    ) -> list[dict[str, object]]:
+    def get_frame_predictions(self, obj: LabelVideoSegment) -> Any:
         if not self._include_annotation_payload():
             return []
-        return _serializer_rows(
-            ImageClassificationAnnotationSerializer(obj.frame_predictions, many=True)
-        )
+        return ImageClassificationAnnotationSerializer(
+            obj.frame_predictions, many=True
+        ).data
 
-    def get_video_name(self, obj: LabelVideoSegmentLike) -> str:
+    def get_video_name(self, obj) -> Any | str:
         try:
-            video = cast(VideoLike | None, obj.video_file)
-            if video is None:
-                return "Unknown Video"
-            original_file_name = cast(
-                str | None, getattr(obj.video_file, "original_file_name", None)
-            )
-            if original_file_name is not None:
-                return original_file_name
-            return f"Video {cast(int, getattr(obj.video_file, 'id'))}"
+            video = obj.video_file
+            return getattr(video, "original_file_name", f"Video {video.id}")
         except (AttributeError, ObjectDoesNotExist):
             return "Unknown Video"

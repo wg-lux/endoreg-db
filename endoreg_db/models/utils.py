@@ -1,18 +1,12 @@
-from __future__ import annotations
 import io
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator, Tuple
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 from django.core.files import File
 from django.core.files.storage import FileSystemStorage
-from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 
 from endoreg_db.utils.file_operations import atomic_write_file
-from endoreg_db.utils.media.frame_file_permissions import (
-    FRAME_CACHE_DIR_MODE,
-    FRAME_FILE_MODE,
-)
 
 from ..utils import DJANGO_NAME_SALT, data_paths
 
@@ -31,11 +25,11 @@ WEIGHTS_DIR = data_paths["weights"]
 REPORT_DIR = data_paths["import_report"]
 DOCUMENT_DIR = data_paths["documents"]
 ANONYM_VIDEO_DIR = data_paths["anonym_video"]
-_TEST_RUN_ENV = os.environ.get("TEST_RUN", "False")
-TEST_RUN = _TEST_RUN_ENV.lower() == "true"
+TEST_RUN = os.environ.get("TEST_RUN", "False")
+TEST_RUN = TEST_RUN.lower() == "true"
 
 
-def prepare_bulk_frames(frame_paths: list[Path]) -> Iterator[tuple[int, File[bytes]]]:
+def prepare_bulk_frames(frame_paths: List[Path]):
     """
     Reads the frame paths into memory as Django File objects.
     This avoids 'seek of closed file' errors by using BytesIO for each frame.
@@ -44,7 +38,7 @@ def prepare_bulk_frames(frame_paths: list[Path]) -> Iterator[tuple[int, File[byt
         frame_number = int(path.stem.split("_")[1])
         with open(path, "rb") as f:
             content = f.read()
-        file_obj: File[bytes] = File(io.BytesIO(content), name=path.name)
+        file_obj = File(io.BytesIO(content), name=path.name)
         yield frame_number, file_obj
 
 
@@ -78,11 +72,9 @@ def find_segments_in_prediction_array(prediction_array: Any, min_frame_len: int)
 def anonymize_frame(
     raw_frame_path: Path,
     target_frame_path: Path,
-    endo_roi: RoiBoxCore,
+    endo_roi,
     all_black: bool = False,
-    censor_color: Tuple[int, int, int] = (0, 0, 0),
-    file_mode: int = FRAME_FILE_MODE,
-    dir_mode: int = FRAME_CACHE_DIR_MODE,
+    censor_color: Tuple[int, int, int] = (0, 0, 0),  # Added censor_color param
 ):
     """
     Anonymize the frame by blacking out pixels outside the endoscope ROI or making the whole frame black.
@@ -99,10 +91,17 @@ def anonymize_frame(
     new_frame = np.zeros_like(frame)
 
     if not all_black:
-        x = endo_roi.x
-        y = endo_roi.y
-        width = endo_roi.width
-        height = endo_roi.height
+        # Validate ROI dictionary keys
+        required_keys = {"x", "y", "width", "height"}
+        if not required_keys.issubset(endo_roi):
+            raise ValueError(
+                f"Invalid endo_roi dictionary provided: {endo_roi}. Missing keys."
+            )
+
+        x = endo_roi["x"]
+        y = endo_roi["y"]
+        width = endo_roi["width"]
+        height = endo_roi["height"]
 
         # Add boundary checks for ROI coordinates
         h_orig, w_orig, _ = frame.shape
@@ -129,8 +128,6 @@ def anonymize_frame(
         destination=target_frame_path,
         content=[encoded.tobytes()],
         required_bytes=int(encoded.nbytes),
-        file_mode=file_mode,
-        dir_mode=dir_mode,
     )
 
 

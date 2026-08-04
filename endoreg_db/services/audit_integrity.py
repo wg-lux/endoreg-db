@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
-from endoreg_db.utils.structured_logging import (
+from endoreg_db.utils.observability.structured_logging import (
     emit_structured_event,
     safe_log_value,
 )

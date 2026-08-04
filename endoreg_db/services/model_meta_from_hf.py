@@ -1,69 +1,27 @@
 # endoreg_db/services/model_meta_from_hf.py
 
-from importlib import import_module
-from pathlib import Path
 from logging import getLogger
-from typing import Any, Protocol, cast
+from pathlib import Path
 
-from django.core.files.base import ContentFile
-from django.core.files.storage import Storage
 from django.db import IntegrityError, transaction
+from huggingface_hub import hf_hub_download
 
-from endoreg_db.models.utils import WEIGHTS_DIR
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-)
-from lx_dtypes.models.contracts.huggingface_model_meta import (
-    HuggingFaceModelMetaCommandPayload,
+    ensure_directory,
 )
 
 logger = getLogger(__name__)
 
 
-class _HfHubDownload(Protocol):
-    def __call__(
-        self, *, repo_id: str, filename: str, local_dir: str | Path
-    ) -> str: ...
-
-
-class _StorageSave(Protocol):
-    def __call__(
-        self, name: str, content: Any, max_length: int | None = None
-    ) -> str: ...
-
-
-class _WeightsFieldFile(Protocol):
-    name: str
-    path: str
-    storage: Storage
-
-
-def hf_hub_download(
-    *,
-    repo_id: str,
-    filename: str,
-    local_dir: str | Path,
-) -> str:
-    hf_hub_download_typed = cast(
-        _HfHubDownload,
-        getattr(import_module("huggingface_hub"), "hf_hub_download"),
-    )
-    return hf_hub_download_typed(
-        repo_id=repo_id,
-        filename=filename,
-        local_dir=local_dir,
-    )
-
-
 def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
     if not model_meta.weights:
         return False
-    weights = cast(_WeightsFieldFile, model_meta.weights)
     try:
-        return Path(weights.path).exists()
+        return Path(model_meta.weights.path).exists()
     except (OSError, ValueError):
         return False
 
@@ -72,31 +30,20 @@ def _store_downloaded_weights(
     *,
     model_meta: ModelMeta,
     weights_path: Path,
+    model_name: str,
+    meta_version: str,
 ) -> None:
-    weights = cast(_WeightsFieldFile, model_meta.weights)
-    relative_name = ""
-    if weights.name:
-        relative_name = str(weights.name)
-
+    relative_name = str(model_meta.weights.name or "").strip()
     if not relative_name:
-        relative_name = (
-            f"{WEIGHTS_DIR.name}/{model_meta.name}_v{model_meta.version}.safetensors"
-        )
+        upload_to = str(model_meta.weights.field.upload_to).strip("/")
+        filename = f"{model_name}_v{meta_version}.safetensors"
+        relative_name = f"{upload_to}/{filename}" if upload_to else filename
 
-    try:
-        destination = Path(weights.storage.path(relative_name))
-        atomic_copy_file(source=weights_path, destination=destination)
-        weights.name = relative_name
-        model_meta.save(update_fields=["weights"])
-    except TypeError:
-        with weights_path.open("rb") as source_file:
-            storage_save = cast(_StorageSave, weights.storage.save)
-            saved_name = storage_save(
-                relative_name,
-                ContentFile(source_file.read()),
-            )
-            weights.name = saved_name
-            model_meta.save(update_fields=["weights"])
+    destination = Path(model_meta.weights.storage.path(relative_name))
+    ensure_directory(destination.parent)
+    atomic_copy_file(source=weights_path, destination=destination)
+    model_meta.weights = relative_name
+    model_meta.save(update_fields=["weights"])
 
 
 def _get_or_create_ai_model(*, model_name: str, model_id: str) -> AiModel:
@@ -179,19 +126,7 @@ def ensure_model_meta_from_hf(
     Download weights from Hugging Face (if needed) and ensure a ModelMeta
     exists for the given configuration. Returns the ModelMeta.
     """
-    payload = HuggingFaceModelMetaCommandPayload.model_validate(
-        {
-            "model_id": model_id,
-            "model_name": model_name,
-            "labelset_name": labelset_name,
-            "meta_version": str(meta_version),
-            "labelset_version": labelset_version,
-        }
-    )
-    meta_version = payload.meta_version
-    model_id = payload.model_id
-    model_name = payload.model_name
-    labelset_name = payload.labelset_name
+    meta_version = str(meta_version)
 
     # Download the model weights
     weights_path = hf_hub_download(
@@ -229,10 +164,12 @@ def ensure_model_meta_from_hf(
         _store_downloaded_weights(
             model_meta=model_meta,
             weights_path=Path(weights_path).resolve(),
+            model_name=model_name,
+            meta_version=meta_version,
         )
 
     # Set as active meta
-    if ai_model.active_meta is None or ai_model.active_meta.pk != model_meta.pk:
+    if ai_model.active_meta_id != model_meta.pk:
         ai_model.active_meta = model_meta
         ai_model.save(update_fields=["active_meta"])
 

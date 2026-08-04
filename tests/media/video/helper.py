@@ -8,7 +8,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-from endoreg_db.utils.video_names import get_video_key_regex_by_examination_alias
+from endoreg_db.utils.video.names import get_video_key_regex_by_examination_alias
 
 from django.conf import settings
 
@@ -112,3 +112,6 @@ def get_random_video_path_by_examination_alias(
         raise ValueError(
             f"No valid video files found for the given criteria. Available keys: {list(TEST_VIDEOS.keys())}"
         )
+
+
+TEST_VIDEOS = {key: value for key, value in TEST_VIDEOS.items() if value.exists()}

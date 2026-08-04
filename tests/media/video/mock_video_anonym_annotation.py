@@ -1,183 +1,57 @@
-from __future__ import annotations
+from typing import TYPE_CHECKING
 
-from typing import Protocol, cast
-
-from endoreg_db.models import Label, LabelVideoSegment
+from endoreg_db.models import LabelVideoSegment
 from endoreg_db.models.media.video.video_file import VideoFile
 
-
-class _AssertTrueLike(Protocol):
-    def assertTrue(self, value: object, message: str = "") -> None: ...
-
-
-class _AssertIsNotNoneLike(Protocol):
-    def assertIsNotNone(self, value: object, message: str = "") -> None: ...
+if TYPE_CHECKING:
+    from tests.media.video.test_video_file_extracted import VideoFileModelExtractedTest
 
 
-class _VideoFileCarrierLike(Protocol):
-    video_file: object
-
-
-class _ManualValidationLike(Protocol):
-    def simulate_manual_validation(self) -> bool: ...
-
-
-class _LabelManagerLike(Protocol):
-    def resolve_by_name(
-        self,
-        name: str,
-        *,
-        case_insensitive: bool = False,
-    ) -> Label | None: ...
-
-
-class _SensitiveMetaStateLike(Protocol):
-    dob_verified: bool
-    names_verified: bool
-    is_verified: bool
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _SensitiveMetaLike(Protocol):
-    state: _SensitiveMetaStateLike
-
-    def get_or_create_state(self) -> _SensitiveMetaStateLike: ...
-
-
-class _VideoFileWithSensitiveMeta(Protocol):
-    sensitive_meta: _SensitiveMetaLike | None
-
-    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
-
-
-def _assert_true(subject: object, value: bool, message: str) -> None:
-    if hasattr(subject, "assertTrue"):
-        cast(_AssertTrueLike, subject).assertTrue(value, message)
-        return
-    if not value:
-        raise AssertionError(message)
-
-
-def _assert_is_not_none(
-    subject: object,
-    value: object | None,
-    message: str,
-) -> None:
-    if hasattr(subject, "assertIsNotNone"):
-        cast(_AssertIsNotNoneLike, subject).assertIsNotNone(value, message)
-        return
-    if value is None:
-        raise AssertionError(message)
-
-
-def _resolve_video_file(subject: object) -> object:
-    if hasattr(subject, "video_file"):
-        return cast(_VideoFileCarrierLike, subject).video_file
-    return subject
-
-
-def _simulate_manual_validation(video_file: object) -> bool:
-    if not isinstance(video_file, VideoFile):
-        if hasattr(video_file, "simulate_manual_validation"):
-            return bool(
-                cast(_ManualValidationLike, video_file).simulate_manual_validation()
-            )
-        return True
-
-    video_file_typed = cast(_VideoFileWithSensitiveMeta, video_file)
-
-    outside_label = cast(_LabelManagerLike, Label.objects).resolve_by_name(
-        "outside",
-        case_insensitive=True,
-    )
-    if outside_label is None:
-        return False
-
-    outside_segment = LabelVideoSegment.objects.create(
-        video_file=video_file,
-        label=outside_label,
-        start_frame_number=0,
-        end_frame_number=100,
-        prediction_meta=None,
-    )
-    segment_state, _created = outside_segment.get_or_create_state()
-    segment_state.is_validated = True
-    segment_state.save()
-
-    if video_file_typed.sensitive_meta is None:
-        from endoreg_db.import_files.context.default_sensitive_meta import (
-            default_sensitive_meta,
-        )
-
-        sensitive_meta = default_sensitive_meta(video_file)
-        if sensitive_meta is None:
-            return False
-        video_file_typed.refresh_from_db()
-
-    sensitive_meta = video_file_typed.sensitive_meta
-    if sensitive_meta is None:
-        return False
-
-    sensitive_state = sensitive_meta.get_or_create_state()
-    sensitive_state.dob_verified = True
-    sensitive_state.names_verified = True
-    sensitive_state.save()
-
-    return True
-
-
-def mock_video_manual_validation(subject: object) -> None:
-    video_file = _resolve_video_file(subject)
-    success = _simulate_manual_validation(video_file)
-    _assert_true(
-        subject,
+def mock_video_anonym_annotation(test: "VideoFileModelExtractedTest"):
+    # This simulates validation, e.g., verifying sensitive meta
+    video_file = test.video_file
+    success = video_file.test_after_pipe_1()
+    test.assertTrue(
         success,
-        "Manual validation simulation failed.",
+        "test_after_pipe_1 failed: Simulating Post-Validation Processing failed.",
     )
 
-    if not isinstance(video_file, VideoFile):
-        _assert_true(
-            subject,
-            success,
-            "Manual validation simulation failed.",
-        )
-        return
-
+    # --- Assertions after test_after_pipe_1 ---
     video_file.refresh_from_db()
-    sensitive_meta = cast(_VideoFileWithSensitiveMeta, video_file).sensitive_meta
-    if sensitive_meta is not None:
-        sensitive_meta_state = sensitive_meta.state
-        _assert_is_not_none(
-            subject,
-            sensitive_meta_state,
-            "SensitiveMetaState should exist after manual validation",
-        )
-        assert sensitive_meta_state is not None
-        sensitive_meta_state.refresh_from_db()
-        _assert_true(
-            subject,
-            sensitive_meta_state.dob_verified,
-            "SensitiveMetaState.dob_verified should be True",
-        )
-        _assert_true(
-            subject,
-            sensitive_meta_state.names_verified,
-            "SensitiveMetaState.names_verified should be True",
-        )
-        _assert_true(
-            subject,
-            sensitive_meta_state.is_verified,
-            "SensitiveMetaState.is_verified should be True",
-        )
+    test.assertIsNotNone(
+        video_file.sensitive_meta,
+        "SensitiveMeta should still exist after test_after_pipe_1",
+    )
+    sensitive_meta = video_file.sensitive_meta
+    assert sensitive_meta is not None
+    sensitive_meta_state = sensitive_meta.state
+    test.assertIsNotNone(
+        sensitive_meta_state, "SensitiveMetaState should exist after test_after_pipe_1"
+    )
+    assert sensitive_meta_state is not None
+    sensitive_meta_state.refresh_from_db()
+    # Check if the specific function _test_after_pipe_1 sets these flags
+    test.assertTrue(
+        sensitive_meta_state.dob_verified,
+        "SensitiveMetaState.dob_verified should be True",
+    )
+    test.assertTrue(
+        sensitive_meta_state.names_verified,
+        "SensitiveMetaState.names_verified should be True",
+    )
+    test.assertTrue(
+        sensitive_meta_state.is_verified,
+        "SensitiveMetaState.is_verified should be True",
+    )
 
-    # For real video files, do the actual database query.
-    lvs_exists = LabelVideoSegment.objects.filter(video_file=video_file).exists()
+    # Check Label Video Segments are still present - handle mock vs real objects
+    if not isinstance(video_file, VideoFile):
+        # For mock objects, we simulate that LabelVideoSegments exist
+        lvs_exists = True  # Simulate that segments exist for mock testing
+    else:
+        # For real video files, do the actual database query
+        lvs_exists = LabelVideoSegment.objects.filter(video_file=video_file).exists()
 
-    _assert_true(
-        subject,
-        lvs_exists,
-        "LabelVideoSegments should still exist after manual validation",
+    test.assertTrue(
+        lvs_exists, "LabelVideoSegments should still exist after test_after_pipe_1"
     )

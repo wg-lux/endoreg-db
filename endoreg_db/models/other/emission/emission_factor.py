@@ -1,5 +1,4 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, List, cast
 
 from django.db import models
 
@@ -7,13 +6,13 @@ if TYPE_CHECKING:
     from ...administration import ReferenceProduct
 
 
-class EmissionFactorManager(models.Manager["EmissionFactor"]):
+class EmissionFactorManager(models.Manager):
     """
     Manager for EmissionFactor with custom query methods.
     """
 
     def get_by_natural_key(self, name: str) -> "EmissionFactor":
-        return self.get(name=name)
+        return cast("EmissionFactor", self.get(name=name))
 
 
 # get debug from settings
@@ -33,11 +32,9 @@ class EmissionFactor(models.Model):
 
     objects = EmissionFactorManager()
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
-    unit: models.ForeignKey[Any] = models.ForeignKey(
-        "Unit", on_delete=models.SET_NULL, null=True
-    )
-    value: models.FloatField[Any, Any] = models.FloatField()
+    name = models.CharField(max_length=255)
+    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    value = models.FloatField()
 
     if TYPE_CHECKING:
         pass
@@ -51,14 +48,14 @@ class EmissionFactor(models.Model):
         @property
         def reference_product_product(self) -> models.QuerySet["ReferenceProduct"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self) -> tuple:
         """
         Returns the natural key for the emission factor.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (str(self.name),)
+        return (self.name,)
 
     def __str__(self, verbose: bool = False) -> str:
         """
@@ -78,7 +75,7 @@ class EmissionFactor(models.Model):
 
         return result
 
-    def get_reference_products(self) -> list["ReferenceProduct"]:
+    def get_reference_products(self) -> List["ReferenceProduct"]:
         """
         Retrieves all reference products associated with the emission factor.
 
@@ -100,13 +97,13 @@ class EmissionFactor(models.Model):
 
         return reference_products
 
-    def sources(self) -> list["ReferenceProduct"]:
+    def sources(self) -> List:
         """
         Retrieves all sources related to the emission factor.
 
         Returns:
             list: A list of sources related to the emission factor.
         """
-        sources: list["ReferenceProduct"] = []
+        sources = []
         sources.extend(self.get_reference_products())
         return sources

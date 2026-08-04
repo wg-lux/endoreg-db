@@ -2,14 +2,12 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 from pathlib import Path
-from uuid import uuid4
+from typing import Optional, Union
 
+from endoreg_db.import_files.context import content_hash_lock, file_lock
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.import_files.context.report_lock import (
-    report_content_hash_lock,
-    report_source_lock,
-)
 from endoreg_db.import_files.context.validate_directories import validate_directories
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.create_report_file import (
@@ -20,33 +18,21 @@ from endoreg_db.import_files.file_storage.state_management import (
     finalize_report_success,
     mark_instance_processing_started,
 )
-from endoreg_db.import_files.file_storage.storage import (
-    create_sensitive_report_snapshot,
-)
+from endoreg_db.import_files.file_storage.storage import create_sensitive_copy
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     ReportAnonymizer,
 )
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.media import RawPdfFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.raw_pdf_files import (
-    ProcessedReportIntegrityError,
     get_or_create_raw_pdf_state,
     get_raw_pdf_by_content_hash,
-    require_usable_completed_report,
 )
-from endoreg_db.services.report_import_fencing import (
-    ReportImportFence,
-    StaleReportImportAttemptError,
-    acquire_report_import_fence,
-    mark_report_import_fence_failed,
-    renew_report_import_fence,
-    report_import_finalization_guard,
-)
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.rust_backend import (
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.filesystem import paths as path_utils
+from endoreg_db.utils.system.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
 )
 
@@ -62,6 +48,17 @@ def _sensitive_report_dir() -> Path:
 
 def _import_report_dir() -> Path:
     return path_utils.EndoregPathsModel.from_environment().import_report
+
+
+def _report_lock_root() -> Path:
+    return (
+        path_utils.EndoregPathsModel.from_environment().staging_migration
+        / "report_locks"
+    )
+
+
+def _hash_lock_dir() -> Path:
+    return _report_lock_root() / "report_content"
 
 
 class ReportImportService:
@@ -80,8 +77,8 @@ class ReportImportService:
     def __init__(self) -> None:
         self.logger = logger
         self.anonymizer = ReportAnonymizer()
-        self.processing_context: ImportContext | None = None
-        self.current_report: RawPdfFile | None = None
+        self.processing_context: Optional[ImportContext] = None
+        self.current_report: Optional[RawPdfFile] = None
 
         validate_directories()
 
@@ -154,234 +151,150 @@ class ReportImportService:
         pdf_bytes = self._render_single_page_pdf(
             f"txt_sha256:{txt_hash}\n{txt_content}"
         )
-        destination = _sensitive_report_dir() / f"txt-conversion-{uuid4().hex}.pdf"
-        atomic_write_file(
-            destination=destination,
-            content=(pdf_bytes,),
-            required_bytes=len(pdf_bytes),
-        )
-        return destination
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp.flush()
+            return Path(tmp.name)
 
     def _cleanup_path(self, file_path: Path, log_prefix: str) -> None:
         safe_cleanup_staging_file(file_path, label=log_prefix, missing_ok=False)
 
     def import_and_anonymize(
         self,
-        file_path: Path | str,
+        file_path: Union[Path, str],
         center_name: str,
         retry: bool = False,
     ) -> "RawPdfFile | None":
         """
         Public entrypoint: wrap import_and_anonymize logic.
         """
-        ctx = self._create_import_context(file_path, center_name)
-        temp_pdf_path: Path | None = None
-        try:
-            if ctx.file_path.suffix.lower() == ".txt":
-                temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
-                ctx.file_path = temp_pdf_path
-
-            lock_path = self._report_source_lock_path(ctx, temp_pdf_path)
-            return self._import_with_source_lock(ctx, lock_path, retry)
-        finally:
-            if temp_pdf_path is not None:
-                self._cleanup_path(
-                    temp_pdf_path, "Cleaned temporary txt-converted pdf:"
-                )
-
-    def _create_import_context(
-        self,
-        file_path: Path | str,
-        center_name: str,
-    ) -> ImportContext:
-        """Validate the source and initialize its mutable import context."""
+        # First, initialize import context. this will be updated during import and keep track of current paths, file type and center and processor.
         ctx = ImportContext(
             file_path=Path(file_path),
             center_name=center_name,
             file_type="report",
             original_path=Path(file_path),
         )
+        temp_pdf_path: Optional[Path] = None
+        is_txt_input = False
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Report file not found: {file_path}")
-        if ctx.file_path.suffix.lower() not in {".pdf", ".txt"}:
-            raise ValueError("Report import only accepts PDF or TXT files.")
-        return ctx
 
-    @staticmethod
-    def _report_source_lock_path(
-        ctx: ImportContext,
-        temp_pdf_path: Path | None,
-    ) -> Path:
-        """Keep TXT conversion protected by the lock for its original source."""
-        if temp_pdf_path is None:
-            return ctx.file_path
-        if not isinstance(ctx.original_path, Path):
-            raise ValueError("TXT report import requires an original source path.")
-        return ctx.original_path
-
-    def _import_with_source_lock(
-        self,
-        ctx: ImportContext,
-        lock_path: Path,
-        retry: bool,
-    ) -> RawPdfFile | None:
-        with report_source_lock(lock_path):
-            logger.info("Acquired file lock for %s", lock_path)
-            snapshot = create_sensitive_report_snapshot(
-                ctx.file_path,
-                _sensitive_report_dir(),
-            )
-            ctx.sensitive_path = snapshot.path
-            ctx.file_path = snapshot.path
-            ctx.file_hash = snapshot.sha256
-            try:
-                return self._import_with_content_hash_lock(
-                    ctx,
-                    retry,
-                    snapshot.sha256,
-                )
-            except Exception:
-                safe_cleanup_staging_file(
-                    ctx.sensitive_path,
-                    label="failed report sensitive snapshot",
-                    allowed_roots=[_sensitive_report_dir().resolve()],
-                    missing_ok=True,
-                )
-                raise
-
-    def _import_with_content_hash_lock(
-        self,
-        ctx: ImportContext,
-        retry: bool,
-        file_hash: str,
-    ) -> RawPdfFile | None:
-        with report_content_hash_lock(file_hash):
-            logger.info("Acquired content-hash lock for %s", file_hash)
-            existing_completed_report = self._get_existing_completed_report(ctx)
-            if existing_completed_report is not None and not retry:
-                ctx.current_report = existing_completed_report
-                self._cleanup_duplicate_staging(ctx)
-                return existing_completed_report
-
-            fence = acquire_report_import_fence(file_hash)
-            try:
-                return self._process_owned_import(ctx, fence, retry)
-            except StaleReportImportAttemptError:
-                logger.exception(
-                    "Refusing state changes from a stale report import attempt for %s.",
-                    ctx.file_hash,
-                )
-                raise
-            except Exception as exc:
-                logger.exception(
-                    "Report import/anonymization failed for %s: %s",
-                    ctx.file_path,
-                    exc,
-                )
-                self._finalize_owned_failure(ctx, fence)
-                raise
-
-    def _process_owned_import(
-        self,
-        ctx: ImportContext,
-        fence: ReportImportFence,
-        retry: bool,
-    ) -> RawPdfFile | None:
-        ctx.current_report, processed, needs_processing = (
-            create_or_retrieve_report_file(ctx)
-        )
-        get_or_create_raw_pdf_state(ctx.current_report)
-        if ctx.current_report.state is None:
-            raise ValueError("Could not create state for report.")
-
-        if processed or retry:
-            ctx.retry = True
-
-        if not needs_processing and not ctx.retry:
-            self._cleanup_duplicate_staging(ctx)
-            mark_report_import_fence_failed(fence)
-            return ctx.current_report
-        if ctx.retry:
-            self._prepare_retry(ctx, fence)
-
-        renew_report_import_fence(fence)
-        mark_instance_processing_started(ctx.current_report, ctx)
-        ctx = self._anonymize_with_retry(ctx)
-
-        renew_report_import_fence(fence)
-        with report_import_finalization_guard(fence):
-            finalize_report_success(ctx)
-        return ctx.current_report
-
-    @staticmethod
-    def _prepare_retry(ctx: ImportContext, fence: ReportImportFence) -> None:
-        renew_report_import_fence(fence)
-        finalize_failure(
-            ctx,
-            preserve_sensitive_staging=True,
-        )
-        ctx.current_report, _processed, needs_processing = (
-            create_or_retrieve_report_file(ctx)
-        )
-        if needs_processing is not True:
-            raise ValueError(f"File already processed: {ctx.original_path}")
-
-    def _anonymize_with_retry(self, ctx: ImportContext) -> ImportContext:
         try:
-            ctx = self.anonymizer.anonymize_report(ctx)
-            logger.info(
-                "Primary report anonymization succeeded for %s",
-                ctx.file_path,
-            )
-            return ctx
-        except Exception as primary_exc:
-            logger.exception(
-                "Primary report anonymization failed for %s: %s "
-                "- trying basic anonymization",
-                ctx.file_path,
-                primary_exc,
-            )
-            try:
-                ctx = self.anonymizer.anonymize_report(ctx)
-            except Exception as exc:
-                logger.error(f"report Extraction failed for the second time. {exc}")
-                raise
+            if ctx.file_path.suffix.lower() == ".txt":
+                is_txt_input = True
+                temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
+                ctx.file_path = temp_pdf_path
+                ctx.file_hash = sha256_file(ctx.file_path)
 
-            logger.info(
-                "Basic report anonymization succeeded for %s",
-                ctx.file_path,
-            )
-            return ctx
+            lock_path = ctx.original_path if is_txt_input else ctx.file_path
+            if lock_path is None:
+                raise ValueError(f"failed to lock {ctx.original_path}")
 
-    def _finalize_owned_failure(
-        self,
-        ctx: ImportContext,
-        fence: ReportImportFence,
-    ) -> None:
-        """Reset failed state only while this attempt still owns the fence."""
-        try:
-            renew_report_import_fence(fence)
-        except StaleReportImportAttemptError:
-            self.logger.error(
-                "Skipping failure finalization for superseded report import "
-                "(content_hash=%s, token=%s).",
-                fence.content_hash,
-                fence.fencing_token,
-            )
-            return
-        try:
-            if isinstance(ctx.current_report, RawPdfFile):
-                finalize_failure(ctx)
-        except Exception:
-            self.logger.exception(
-                "Failed to persist report failure state while releasing fence "
-                "(content_hash=%s, token=%s).",
-                fence.content_hash,
-                fence.fencing_token,
-            )
+            with file_lock(lock_path):
+                logger.info("Acquired file lock for %s", lock_path)
+                if not isinstance(ctx.file_hash, str):
+                    ctx.file_hash = str(ctx.file_hash)
+                with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
+                    logger.info("Acquired content-hash lock for %s", ctx.file_hash)
+                    existing_completed_report = self._get_existing_completed_report(ctx)
+                    if existing_completed_report is not None and not retry:
+                        ctx.current_report = existing_completed_report
+                        self._cleanup_duplicate_staging(ctx)
+                        return existing_completed_report
+
+                    sensitive_src = ctx.original_path if is_txt_input else ctx.file_path
+                    if sensitive_src is None:
+                        raise ValueError("Could not set any source for file.")
+                    ctx.sensitive_path = create_sensitive_copy(
+                        sensitive_src, _sensitive_report_dir(), ctx
+                    )
+
+                    # create or retrieve RawPdfFile + update history
+                    ctx.current_report, processed, needs_processing = (
+                        create_or_retrieve_report_file(ctx)
+                    )
+                    get_or_create_raw_pdf_state(ctx.current_report)
+                    if ctx.current_report.state is None:
+                        raise ValueError("Could not create state for video.")
+                    ctx.current_report = ctx.current_report
+
+                    if processed or retry:
+                        ctx.retry = True
+
+                    # Retry is a forced overwrite of needs processing - therefore the retry will cause full deletion of processed files using finalize failure.
+                    try:
+                        if (
+                            ctx.retry
+                            and needs_processing
+                            and ctx.current_report.state
+                            and not ctx.current_report.state.anonymization_validated
+                        ):
+                            finalize_failure(ctx)
+                            ctx.current_report, processed, needs_processing = (
+                                create_or_retrieve_report_file(ctx)
+                            )
+                            if needs_processing is not True:
+                                raise ValueError(
+                                    f"File already processed: {ctx.original_path}"
+                                )
+                        elif not needs_processing and not ctx.retry:
+                            self._cleanup_duplicate_staging(ctx)
+                            return ctx.current_report
+                        else:
+                            finalize_failure(ctx)
+                            ctx.current_report, processed, needs_processing = (
+                                create_or_retrieve_report_file(ctx)
+                            )
+                            if needs_processing is not True:
+                                raise ValueError("File already processed.")
+
+                        mark_instance_processing_started(ctx.current_report, ctx)
+                        try:
+                            ctx = self.anonymizer.anonymize_report(ctx)
+                            logger.info(
+                                "Primary report anonymization succeeded for %s",
+                                ctx.file_path,
+                            )
+                        except Exception as primary_exc:
+                            logger.exception(
+                                "Primary report anonymization failed for %s: %s "
+                                "- trying basic anonymization",
+                                ctx.file_path,
+                                primary_exc,
+                            )
+                            try:
+                                ctx = self.anonymizer.anonymize_report(ctx)
+                            except Exception as e:
+                                logger.error(
+                                    f"report Extraction failed for the second time. {e}"
+                                )
+                                raise
+
+                            logger.info(
+                                "Basic report anonymization succeeded for %s",
+                                ctx.file_path,
+                            )
+
+                        # --- Finalize success: history + move anonymized file ---
+                        finalize_report_success(ctx)
+
+                        return ctx.current_report
+
+                    except Exception as exc:
+                        logger.exception(
+                            "Report import/anonymization failed for %s: %s",
+                            ctx.file_path,
+                            exc,
+                        )
+                        finalize_failure(ctx)
+                        raise
         finally:
-            mark_report_import_fence_failed(fence)
+            if temp_pdf_path is not None:
+                self._cleanup_path(
+                    temp_pdf_path, "Cleaned temporary txt-converted pdf:"
+                )
 
     def _get_existing_completed_report(self, ctx: ImportContext) -> RawPdfFile | None:
         """
@@ -406,22 +319,6 @@ class ReportImportService:
             logger.warning(
                 "Successful processing history exists for %s but no RawPdfFile was found.",
                 file_hash,
-            )
-            return None
-
-        try:
-            require_usable_completed_report(
-                existing_report,
-                source_sha256=file_hash,
-            )
-        except ProcessedReportIntegrityError as exc:
-            ctx.current_report = existing_report
-            logger.warning(
-                "Successful processing history exists for %s but the completed "
-                "report is unusable: %s. Continuing import so the processed PDF "
-                "can be repaired.",
-                file_hash,
-                exc,
             )
             return None
 

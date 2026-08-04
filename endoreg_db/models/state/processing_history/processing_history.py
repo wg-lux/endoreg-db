@@ -1,5 +1,4 @@
-from __future__ import annotations
-from typing import Optional, cast, Any
+from typing import Optional
 from logging import getLogger
 from pathlib import Path
 from django.db import models
@@ -19,21 +18,19 @@ class ProcessingHistory(models.Model):
     (content_type, object_id), but the logical identity is file_hash.
     """
 
-    file_hash: models.CharField[Any, Any] = models.CharField(
+    file_hash = models.CharField(
         max_length=64,
         primary_key=True,
         help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
         blank=True,
     )
 
-    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
-    success: models.BooleanField[Any, Any] = models.BooleanField(
-        default=False, blank=True
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    success = models.BooleanField(default=False, blank=True)
 
-    object_id: models.PositiveBigIntegerField[int | None, Any] = (
-        models.PositiveBigIntegerField(null=True, blank=True)
-    )
+    object_id = models.PositiveBigIntegerField(null=True, blank=True)
+
+    objects: models.Manager["ProcessingHistory"]
 
     class Meta:
         ordering = ["-created_at"]
@@ -74,7 +71,7 @@ class ProcessingHistory(models.Model):
 
         if obj is not None:
             if ph.object_id != obj.pk:
-                ph.object_id = cast(int, obj.pk)
+                ph.object_id = obj.pk
                 changed.append("object_id")
 
         if success is not None and ph.success != success:
@@ -88,7 +85,7 @@ class ProcessingHistory(models.Model):
             logger.info(
                 "Created ProcessingHistory for hash=%s (success=%s).",
                 file_hash,
-                bool(ph.success),
+                ph.success,
             )
 
         return ph

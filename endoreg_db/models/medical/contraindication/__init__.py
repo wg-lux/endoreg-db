@@ -1,24 +1,16 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 
-if TYPE_CHECKING:
-    from lx_dtypes.models.contracts.contraindication import ContraindicationCore
-
-
-class ContraindicationManager(models.Manager["Contraindication"]):
-    def get_by_natural_key(self, name: str) -> "Contraindication":
+class ContraindicationManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class Contraindication(models.Model):
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(
-        blank=True,
-        null=True,
-    )
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
 
     objects = ContraindicationManager()
 
@@ -30,10 +22,8 @@ class Contraindication(models.Model):
             self,
         ) -> "models.Manager[FindingIntervention]": ...
 
-        def to_core_concept(self) -> "ContraindicationCore": ...
+    def natural_key(self):
+        return (self.name,)
 
-    def natural_key(self) -> tuple[str]:
-        return (str(self.name),)
-
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)

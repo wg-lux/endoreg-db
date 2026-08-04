@@ -1,66 +1,27 @@
-from __future__ import annotations
-
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
-# Removed icecream import (was used in old save sensitive_meta_logic)
-from datetime import date
-from typing import TYPE_CHECKING, ClassVar, Protocol, Type, cast, Any
+# Removed icecream import (was used in old save logic)
+from typing import TYPE_CHECKING, Any, Dict, Type
 
 from django.db import models
-from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
-from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
 
 
 # Import models needed for type hints and FKs
 from ..state import SensitiveMetaState  # Needed for post-save state check
 
-# Import sensitive_meta_logic functions
-from . import sensitive_meta_logic
+# Import logic functions
+from . import sensitive_meta_logic as logic
 
 if TYPE_CHECKING:
     from ..administration import (
         Examiner,  # Keep for type hinting if needed
     )
-    from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.administration.person.patient.patient import Patient
-    from endoreg_db.models.administration.person.patient.patient_external_id import (
-        PatientExternalID,
-    )
-    from endoreg_db.models.other.gender import Gender
-    from endoreg_db.models.other.tag import Tag
-    from endoreg_db.models.medical.patient.patient_examination import PatientExamination
     # from ..state import SensitiveMetaState # Already imported above
-
-
-class _ExternalIdLike(Protocol):
-    origin: str
-
-
-class _SensitiveMetaStateLike(Protocol):
-    is_verified: bool
-
-    def mark_dob_verified(self) -> None: ...
-
-    def mark_names_verified(self) -> None: ...
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _ExaminersRelationLike(Protocol):
-    def first(self) -> "Examiner | None": ...
-
-    def all(self) -> object: ...
-
-    def filter(self, *args: object, **kwargs: object) -> object: ...
-
-    def add(self, *objs: object) -> None: ...
-
 
 logger = logging.getLogger(__name__)  # Add logger instance
 
-# SECRET_SALT moved to sensitive_meta_logic
+# SECRET_SALT moved to logic
 
 
 class SensitiveMeta(models.Model):
@@ -69,118 +30,71 @@ class SensitiveMeta(models.Model):
     Logic for creation, hashing, pseudo-anonymization, and saving is in sensitive_meta_logic.py.
     """
 
-    objects: ClassVar[models.Manager["SensitiveMeta"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
-
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        first_name = kwargs.pop("first_name", None)
-        if first_name is not None and "patient_first_name" not in kwargs:
-            kwargs["patient_first_name"] = first_name
-
-        last_name = kwargs.pop("last_name", None)
-        if last_name is not None and "patient_last_name" not in kwargs:
-            kwargs["patient_last_name"] = last_name
-
-        dob = kwargs.pop("dob", None)
-        if dob is not None and "patient_dob" not in kwargs:
-            kwargs["patient_dob"] = dob
-
-        center = kwargs.get("center")
-        if isinstance(center, str):
-            from endoreg_db.models.administration.center.center import Center
-
-            kwargs["center"] = Center(name=center)
-
-        super().__init__(*args, **kwargs)
+    objects = models.Manager()
 
     # --- Examination and Patient Info ---
-    examination_date: models.DateField[Any, Any] = models.DateField(
-        blank=True, null=True
-    )
-    examination_time: models.TimeField[Any, Any] = models.TimeField(
-        blank=True, null=True
-    )
-    casenumber: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
-    file_path: models.CharField[Any, Any] = models.CharField(
-        max_length=1024, blank=True, null=True
-    )
+    examination_date = models.DateField(blank=True, null=True)
+    examination_time = models.TimeField(blank=True, null=True)
+    casenumber = models.CharField(max_length=255, blank=True, null=True)
+    file_path = models.CharField(max_length=1024, blank=True, null=True)
 
     # --- Core FKs ---
-    pseudo_patient: models.ForeignKey["Patient | None"] = models.ForeignKey(
+    pseudo_patient = models.ForeignKey(
         "Patient",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         help_text="FK to the pseudo-anonymized Patient record.",
     )
-    pseudo_examination: models.ForeignKey["PatientExamination | None"] = (
-        models.ForeignKey(
-            "PatientExamination",
-            on_delete=models.CASCADE,
-            blank=True,
-            null=True,
-            help_text="FK to the pseudo-anonymized PatientExamination record.",
-        )
+    pseudo_examination = models.ForeignKey(
+        "PatientExamination",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        help_text="FK to the pseudo-anonymized PatientExamination record.",
     )
-    patient_gender: models.ForeignKey["Gender | None"] = models.ForeignKey(
+    patient_gender = models.ForeignKey(
         "Gender", on_delete=models.CASCADE, blank=True, null=True
     )
     if TYPE_CHECKING:
-        examiners: models.ManyToManyField["Examiner", "Examiner"]
+        examiners: models.ManyToManyField[Examiner, Examiner]
 
-    examiners: models.ManyToManyField["Examiner", "Examiner"] = models.ManyToManyField(
+    examiners = models.ManyToManyField(
         "Examiner", blank=True, help_text="Pseudo-anonymized examiner(s)"
     )
-    tags: models.ManyToManyField["Tag", "Tag"] = models.ManyToManyField(
-        "Tag", blank=True, help_text="Validation tags"
-    )
-    center: models.ForeignKey["Center | None"] = models.ForeignKey(
+    tags = models.ManyToManyField("Tag", blank=True, help_text="Validation tags")
+    center = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
 
-    if TYPE_CHECKING:
-        pseudo_patient_id: int | None
-        pseudo_examination_id: int | None
-        patient_gender_id: int | None
-        center_id: int | None
-
     # --- Names and DOB ---
-    patient_first_name: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
-    patient_last_name: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
-    patient_dob: models.DateTimeField[Any, Any] = models.DateTimeField(
+    patient_first_name = models.CharField(max_length=255, blank=True, null=True)
+    patient_last_name = models.CharField(max_length=255, blank=True, null=True)
+    patient_dob = models.DateTimeField(
         blank=True, null=True, help_text="Date of birth (can be auto-generated)."
     )
 
-    examiner_first_name: models.CharField[Any, Any] = models.CharField(
+    examiner_first_name = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
-    examiner_last_name: models.CharField[Any, Any] = models.CharField(
+    examiner_last_name = models.CharField(
         max_length=255, blank=True, null=True, editable=False
     )
 
     # --- Hashes ---
-    patient_hash: models.CharField[Any, Any] = models.CharField(
+    patient_hash = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
-    examination_hash: models.CharField[Any, Any] = models.CharField(
+    examination_hash = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
     )
 
     # --- Endoscope Info ---
-    endoscope_type: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
-    endoscope_sn: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
+    endoscope_type = models.CharField(max_length=255, blank=True, null=True)
+    endoscope_sn = models.CharField(max_length=255, blank=True, null=True)
 
     # --- External patient ID ---
-    external_id: models.ForeignKey["PatientExternalID | None"] = models.ForeignKey(
+    external_id = models.ForeignKey(
         "PatientExternalID", on_delete=models.CASCADE, blank=True, null=True
     )
 
@@ -191,37 +105,23 @@ class SensitiveMeta(models.Model):
     def external_id_origin(self) -> str | None:
         """Returns the origin system from the linked external ID, if available."""
         if self.external_id:
-            return cast(_ExternalIdLike, self.external_id).origin
+            return self.external_id.origin
         return None
 
     # --- Text Fields ---
-    text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    anonymized_text: models.TextField[Any, Any] = models.TextField(
-        blank=True, null=True
-    )
-    validation_comment: models.TextField[Any, Any] = models.TextField(
-        blank=True, default=""
-    )
-    direct_identifiers_cleared_at: models.DateTimeField[Any, Any] = (
-        models.DateTimeField(blank=True, null=True)
-    )
-    direct_identifier_policy: models.CharField[Any, Any] = models.CharField(
+    text = models.TextField(blank=True, null=True)
+    anonymized_text = models.TextField(blank=True, null=True)
+    validation_comment = models.TextField(blank=True, default="")
+    direct_identifiers_cleared_at = models.DateTimeField(blank=True, null=True)
+    direct_identifier_policy = models.CharField(
         max_length=64,
         blank=True,
         default="",
     )
-    direct_identifier_tombstone: models.JSONField[dict[str, object]] = models.JSONField(
-        default=dict, blank=True
-    )
-
-    def clean(self) -> None:
-        super().clean()
-        self.direct_identifier_tombstone = normalize_direct_identifier_tombstone(
-            self.direct_identifier_tombstone
-        )
+    direct_identifier_tombstone = models.JSONField(default=dict, blank=True)
 
     # --- Anonymization helper method ---
-    create_anonymized_record = sensitive_meta_logic._create_anonymized_record
+    create_anonymized_record = logic._create_anonymized_record
 
     # --- State ---
     @property
@@ -235,22 +135,20 @@ class SensitiveMeta(models.Model):
         return None
 
     @staticmethod
-    def _generate_random_dob() -> date:
-        # Delegate to sensitive_meta_logic
-        return sensitive_meta_logic.generate_random_dob()
+    def _generate_random_dob():
+        # Delegate to logic
+        return logic.generate_random_dob()
 
     @staticmethod
-    def _generate_random_examination_date() -> date:
-        # Delegate to sensitive_meta_logic
-        return sensitive_meta_logic.generate_random_examination_date()
+    def _generate_random_examination_date():
+        # Delegate to logic
+        return logic.generate_random_examination_date()
 
     @classmethod
-    def create_from_dict(
-        cls: Type["SensitiveMeta"], data: dict[str, Any]
-    ) -> "SensitiveMeta":
-        """Creates a SensitiveMeta instance from a dictionary using external sensitive_meta_logic."""
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.create_sensitive_meta_from_dict(cls, data)
+    def create_from_dict(cls: Type["SensitiveMeta"], data: Dict[str, Any]):
+        """Creates a SensitiveMeta instance from a dictionary using external logic."""
+        # Delegate to logic function
+        return logic.create_sensitive_meta_from_dict(cls, data)
 
     def get_pseudo_examiner(self) -> "Examiner | None":
         """Returns the linked pseudo examiner, if one exists."""
@@ -258,48 +156,17 @@ class SensitiveMeta(models.Model):
             return self.examiners.first()
         return None  # Cannot determine before saving and linking
 
-    # --- Update method delegates to sensitive_meta_logic ---
-    def update_from_dict(self, data: dict[str, Any]) -> "SensitiveMeta":
-        """Updates the instance from a dictionary using external sensitive_meta_logic."""
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.update_sensitive_meta_from_dict(self, data)
-
-    def update_from_lx_sensitive_meta(
-        self, sensitive_meta: LxSensitiveMeta
-    ) -> "SensitiveMeta":
-        """Updates this instance from the lx_dtypes SensitiveMeta contract."""
-        data = sensitive_meta.to_dict()
-        payload: dict[str, Any] = {
-            "file_path": data.get("file_path"),
-            "patient_first_name": data.get("first_name"),
-            "patient_last_name": data.get("last_name"),
-            "patient_dob": data.get("dob"),
-            "casenumber": data.get("casenumber"),
-            "examination_date": data.get("examination_date"),
-            "examination_time": data.get("examination_time"),
-            "examiner_first_name": data.get("examiner_first_name"),
-            "examiner_last_name": data.get("examiner_last_name"),
-            "text": data.get("text"),
-            "anonymized_text": data.get("anonymized_text"),
-            "endoscope_type": data.get("endoscope_type"),
-            "endoscope_sn": data.get("endoscope_sn"),
-            "patient_gender": data.get("gender"),
-            "center_name": data.get("center"),
-        }
-        return self.update_from_dict(
-            {
-                key: value
-                for key, value in payload.items()
-                if value not in (None, "", [])
-            }
-        )
+    # --- Update method delegates to logic ---
+    def update_from_dict(self, data: Dict[str, Any]):
+        """Updates the instance from a dictionary using external logic."""
+        # Delegate to logic function
+        return logic.update_sensitive_meta_from_dict(self, data)
 
     # --- String representation ---
-    def __str__(self) -> str:
+    def __str__(self):
         # Keep this method for basic representation, ensure fields are accessed safely
-        center_name = str(getattr(self.center, "name", "None"))
-        gender = getattr(self, "patient_gender", None)
-        gender_str = str(gender) if gender else "None"
+        center_name = self.center.name if self.center else "None"
+        gender_str = str(self.patient_gender) if self.patient_gender else "None"
         dob_str = (
             str(self.patient_dob.date()) if self.patient_dob else "None"
         )  # Show only date part
@@ -341,7 +208,7 @@ class SensitiveMeta(models.Model):
         return state
 
     @property
-    def is_verified(self) -> bool:
+    def is_verified(self):
         """
         Checks if the instance is verified based on the related state object.
         """
@@ -394,38 +261,35 @@ class SensitiveMeta(models.Model):
                     "Cannot get or create state for an unsaved SensitiveMeta instance."
                 )
 
-    def __repr__(self) -> str:
+    def __repr__(self):
         return self.__str__()
 
-    # --- Hashing methods delegate to sensitive_meta_logic ---
-    def get_patient_hash(self, salt: str | None = None) -> str:
-        """Calculates the patient hash using external sensitive_meta_logic."""
-        # Use default salt from sensitive_meta_logic if None is passed
-        salt_to_use = salt if salt is not None else sensitive_meta_logic.SECRET_SALT
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.calculate_patient_hash(self, salt=salt_to_use)
+    # --- Hashing methods delegate to logic ---
+    def get_patient_hash(self, salt=None):
+        """Calculates the patient hash using external logic."""
+        # Use default salt from logic if None is passed
+        salt_to_use = salt if salt is not None else logic.SECRET_SALT
+        # Delegate to logic function
+        return logic.calculate_patient_hash(self, salt=salt_to_use)
 
-    def get_patient_examination_hash(self, salt: str | None = None) -> str:
-        """Calculates the examination hash using external sensitive_meta_logic."""
-        salt_to_use = salt if salt is not None else sensitive_meta_logic.SECRET_SALT
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.calculate_examination_hash(self, salt=salt_to_use)
+    def get_patient_examination_hash(self, salt=None):
+        """Calculates the examination hash using external logic."""
+        salt_to_use = salt if salt is not None else logic.SECRET_SALT
+        # Delegate to logic function
+        return logic.calculate_examination_hash(self, salt=salt_to_use)
 
-    # --- Save method orchestrates calls to sensitive_meta_logic ---
-    def save(self, *args: object, **kwargs: object) -> None:
+    # --- Save method orchestrates calls to logic ---
+    def save(self, *args, **kwargs):
         """
-        Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external sensitive_meta_logic.
+        Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external logic.
 
-        This method performs pre-save operations via external sensitive_meta_logic, persists the instance, ensures the related SensitiveMetaState exists, and links the appropriate examiner to the instance.
+        This method performs pre-save operations via external logic, persists the instance, ensures the related SensitiveMetaState exists, and links the appropriate examiner to the instance.
         """
-        # 1. Call the main sensitive_meta_logic function to perform pre-save checks, data generation,
+        # 1. Call the main logic function to perform pre-save checks, data generation,
         #    and creation/linking of pseudo patient/examination FKs.
         #    This function modifies the instance fields (hashes, FKs, dates).
         #    It returns the examiner instance to be linked *after* saving.
-        self.clean()
-        examiner_to_link = sensitive_meta_logic.perform_save_logic(
-            self
-        )  # Pass only self
+        examiner_to_link = logic.perform_save_logic(self)  # Pass only self
 
         # 2. Call the original Django save method to save the instance itself
         #    (including updated FKs, hashes, dates).
@@ -454,14 +318,14 @@ class SensitiveMeta(models.Model):
             self.examiners.add(examiner_to_link)
             # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
-    def mark_dob_verified(self) -> None:
+    def mark_dob_verified(self):
         """
         Mark the associated date of birth as verified in the related SensitiveMetaState.
         """
         state = self.get_or_create_state()
         state.mark_dob_verified()
 
-    def mark_names_verified(self) -> None:
+    def mark_names_verified(self):
         """
         Mark the patient's names as verified in the associated verification state.
 
@@ -471,11 +335,11 @@ class SensitiveMeta(models.Model):
         state.mark_names_verified()
 
     @classmethod
-    def _update_name_db(cls, first_name: str, last_name: str) -> None:
-        # Delegate to sensitive_meta_logic
+    def _update_name_db(cls, first_name, last_name):
+        # Delegate to logic
         """
-        Update the name database with the provided first and last names using external sensitive_meta_logic.
+        Update the name database with the provided first and last names using external logic.
 
-        This method delegates the update operation to the external sensitive_meta_logic module responsible for managing name data.
+        This method delegates the update operation to the external logic module responsible for managing name data.
         """
-        sensitive_meta_logic.update_name_db(first_name, last_name)
+        logic.update_name_db(first_name, last_name)

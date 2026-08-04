@@ -1,4 +1,3 @@
-from __future__ import annotations
 from django.utils.functional import SimpleLazyObject
 
 from endoreg_db.models import Medication, MedicationIndication, MedicationIntakeTime

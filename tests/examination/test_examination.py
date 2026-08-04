@@ -1,6 +1,3 @@
-from collections.abc import Mapping, Sequence
-from typing import Protocol, cast
-
 from endoreg_db.models import Examination, Finding
 from endoreg_db.serializers.examination.base import ExaminationSerializer
 from django.test import TestCase
@@ -8,11 +5,6 @@ from ..helpers.data_loader import load_data
 
 EXAMINATION_COLONOSCOPY_NAME = "colonoscopy"
 FINDING_COLON_POLYP_NAME = "colon_polyp"
-
-
-class _SerializerData(Protocol):
-    @property
-    def data(self) -> Mapping[str, object]: ...
 
 
 class ExaminationTest(TestCase):
@@ -60,10 +52,10 @@ class ExaminationTest(TestCase):
 
     def test_examination_serializer(self):
         serializer = ExaminationSerializer(instance=self.examination_colonoscopy)
-        data = cast(_SerializerData, serializer).data
+        data = serializer.data
 
         self.assertIn("findings", data)
-        serialized_findings = cast(Sequence[Mapping[str, object]], data["findings"])
+        serialized_findings = data["findings"]
         serialized_finding_names = [finding["name"] for finding in serialized_findings]
         self.assertIn(
             FINDING_COLON_POLYP_NAME,

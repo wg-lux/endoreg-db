@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from os import PathLike, fspath
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeGuard, cast
+from typing import TYPE_CHECKING, TypeGuard
 
 from django.db.models.fields.files import FieldFile
+from django.urls import reverse
 
 from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
@@ -12,11 +12,9 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.media_urls import build_video_stream_path
-from endoreg_db.utils.paths import normalize_protected_media_relative_path
-from endoreg_db.utils.rust_backend import is_lx_encrypted_file
+from endoreg_db.utils.filesystem.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.storage import file_exists
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
 from .io import (
     get_processed_video_file_path,
@@ -51,17 +49,10 @@ def _legacy_fake_local_path(video: "VideoFile", method_name: str) -> Path | None
     method = vars(video).get(method_name)
     if not callable(method):
         return None
-    path_like = method()
-    if path_like is None:
+    path = method()
+    if path is None:
         return None
-    if isinstance(path_like, Path):
-        return path_like if path_like.exists() else None
-    if isinstance(path_like, str):
-        path = Path(path_like)
-    elif isinstance(path_like, PathLike):
-        path = Path(fspath(cast(PathLike[str], path_like)))
-    else:
-        return None
+    path = Path(path)
     if path.exists():
         return path
     return None
@@ -126,14 +117,30 @@ def get_protected_video_stream_url(
 ) -> str | None:
     if getattr(video, "pk", None) is None:
         return None
-    if artifact_kind == VideoArtifactKind.RAW:
-        return None
     if artifact_kind == VideoArtifactKind.PROCESSED and not _field_has_name(
         getattr(video, "processed_file", None)
     ):
         return None
+    if artifact_kind == VideoArtifactKind.RAW:
+        try:
+            get_active_raw_video_file(video)
+        except ValueError:
+            return None
 
-    return build_video_stream_path(int(video.pk), file_type="processed")
+    try:
+        storage_mode = coerce_video_storage_mode(getattr(video, "storage_mode", None))
+    except ValueError:
+        return None
+
+    if storage_mode == VideoStorageMode.STREAMABLE:
+        relative_path = get_video_stream_relative_path(video, artifact_kind)
+        if relative_path is None:
+            return None
+
+    url = reverse("api:video-stream", kwargs={"pk": video.pk})
+    if artifact_kind == VideoArtifactKind.PROCESSED:
+        return f"{url}?type=processed"
+    return url
 
 
 def get_active_raw_video_file_url(video: "VideoFile") -> str | None:
@@ -148,13 +155,7 @@ def get_active_video_file_url(video: "VideoFile") -> str | None:
         )
         if processed_url is not None:
             return processed_url
-    if getattr(video, "pk", None) is None:
-        return None
-    if _field_has_name(getattr(video, "raw_file", None)) or _field_has_name(
-        vars(video).get("active_raw_file")
-    ):
-        return build_video_stream_path(int(video.pk))
-    return None
+    return get_protected_video_stream_url(video, artifact_kind=VideoArtifactKind.RAW)
 
 
 def get_raw_video_stream_relative_path(video: "VideoFile") -> str | None:
@@ -182,141 +183,98 @@ def get_video_stream_relative_path(
     return get_raw_video_stream_relative_path(video)
 
 
-def _artifact_field_file(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-) -> FieldFile:
-    if artifact_kind == VideoArtifactKind.RAW:
-        return get_active_raw_video_file(video)
-    field_file = getattr(video, "processed_file", None)
-    if not _field_has_name(field_file):
-        raise FileNotFoundError("No processed file")
-    return field_file
-
-
-def _artifact_stream_path(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-) -> Path | None:
-    if artifact_kind == VideoArtifactKind.PROCESSED:
-        return _legacy_fake_local_path(
-            video,
-            "get_processed_stream_path",
-        ) or get_processed_video_stream_path(video)
-    return _legacy_fake_local_path(
-        video,
-        "get_raw_stream_path",
-    ) or get_raw_video_stream_path(video)
-
-
-def _materialize_streamable_artifact(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-) -> None:
-    sync_video_streamable_artifacts(
-        video,
-        include_raw=artifact_kind == VideoArtifactKind.RAW,
-        include_processed=artifact_kind == VideoArtifactKind.PROCESSED,
-        save=True,
-    )
-
-
-def _existing_artifact_stream_path(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-) -> Path | None:
-    stream_path = _artifact_stream_path(video, artifact_kind)
-    if stream_path is None or not stream_path.exists():
-        return None
-    return stream_path
-
-
-def _resolve_streamable_artifact_path(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-    *,
-    materialize_if_missing: bool,
-) -> Path | None:
-    stream_path = _existing_artifact_stream_path(video, artifact_kind)
-    if stream_path is not None:
-        return stream_path
-    if not materialize_if_missing:
-        return None
-    _materialize_streamable_artifact(video, artifact_kind)
-    return _existing_artifact_stream_path(video, artifact_kind)
-
-
-def _field_file_direct_path(field_file: FieldFile) -> Path | None:
-    direct_path = getattr(field_file, "path", None)
-    if not direct_path:
-        return None
-    path = Path(direct_path)
-    return path if path.exists() else None
-
-
-def _artifact_legacy_file_path(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-) -> Path | None:
-    method_name = (
-        "get_processed_file_path"
-        if artifact_kind == VideoArtifactKind.PROCESSED
-        else "get_raw_file_path"
-    )
-    return _legacy_fake_local_path(video, method_name)
-
-
-def _resolve_local_artifact_path(
-    video: "VideoFile",
-    artifact_kind: VideoArtifactKind,
-    *,
-    field_file: FieldFile,
-) -> Path | None:
-    local_path = maybe_local_plaintext_path(field_file)
-    if local_path is not None:
-        return local_path
-    direct_path = _field_file_direct_path(field_file)
-    if direct_path is not None:
-        return direct_path
-    return _artifact_legacy_file_path(video, artifact_kind)
-
-
-def _field_file_is_streamable(field_file: FieldFile) -> bool:
-    return file_exists(field_file) or _field_storage_can_stream(field_file)
-
-
-def _missing_artifact_message(artifact_kind: VideoArtifactKind) -> str:
-    return (
-        "Processed video file is not available"
-        if artifact_kind == VideoArtifactKind.PROCESSED
-        else "Raw video file is not available"
-    )
-
-
 def resolve_video_stream_source(
     video: "VideoFile",
     artifact_kind: VideoArtifactKind,
     *,
     materialize_if_missing: bool = False,
 ) -> tuple[FieldFile, Path | None]:
-    field_file = _artifact_field_file(video, artifact_kind)
-    stream_path = _resolve_streamable_artifact_path(
-        video,
-        artifact_kind,
-        materialize_if_missing=materialize_if_missing,
-    )
-    if stream_path is not None:
+    if artifact_kind == VideoArtifactKind.PROCESSED:
+        field_file = getattr(video, "processed_file", None)
+        if not _field_has_name(field_file):
+            raise FileNotFoundError("No processed file")
+
+        stream_path = _legacy_fake_local_path(video, "get_processed_stream_path")
+        if stream_path is None:
+            stream_path = get_processed_video_stream_path(video)
+        if stream_path is not None and stream_path.exists():
+            return field_file, stream_path
+
+        if materialize_if_missing:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=False,
+                include_processed=True,
+                save=True,
+            )
+            stream_path = _legacy_fake_local_path(video, "get_processed_stream_path")
+            if stream_path is None:
+                stream_path = get_processed_video_stream_path(video)
+            if stream_path is not None and stream_path.exists():
+                return field_file, stream_path
+
+        local_path = maybe_local_plaintext_path(field_file)
+        if local_path is not None:
+            return field_file, local_path
+
+        direct_path = getattr(field_file, "path", None)
+        if direct_path and Path(direct_path).exists():
+            return field_file, Path(direct_path)
+
+        fallback_path = _legacy_fake_local_path(video, "get_processed_file_path")
+        if fallback_path is not None:
+            return field_file, fallback_path
+
+        if file_exists(field_file):
+            return field_file, None
+
+        if _field_storage_can_stream(field_file):
+            return field_file, None
+
+        raise FileNotFoundError("Processed video file is not available")
+
+    field_file = get_active_raw_video_file(video)
+    if not _field_has_name(field_file):
+        raise FileNotFoundError("No raw file")
+
+    stream_path = _legacy_fake_local_path(video, "get_raw_stream_path")
+    if stream_path is None:
+        stream_path = get_raw_video_stream_path(video)
+    if stream_path is not None and stream_path.exists():
         return field_file, stream_path
-    local_path = _resolve_local_artifact_path(
-        video,
-        artifact_kind,
-        field_file=field_file,
-    )
+
+    if materialize_if_missing:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=True,
+            include_processed=False,
+            save=True,
+        )
+        stream_path = _legacy_fake_local_path(video, "get_raw_stream_path")
+        if stream_path is None:
+            stream_path = get_raw_video_stream_path(video)
+        if stream_path is not None and stream_path.exists():
+            return field_file, stream_path
+
+    local_path = maybe_local_plaintext_path(field_file)
     if local_path is not None:
         return field_file, local_path
-    if _field_file_is_streamable(field_file):
+
+    direct_path = getattr(field_file, "path", None)
+    if direct_path and Path(direct_path).exists():
+        return field_file, Path(direct_path)
+
+    fallback_path = _legacy_fake_local_path(video, "get_raw_file_path")
+    if fallback_path is not None:
+        return field_file, fallback_path
+
+    if file_exists(field_file):
         return field_file, None
-    raise FileNotFoundError(_missing_artifact_message(artifact_kind))
+
+    if _field_storage_can_stream(field_file):
+        return field_file, None
+
+    raise FileNotFoundError("Raw video file is not available")
 
 
 def can_offload_video_stream(
@@ -350,9 +308,6 @@ def can_offload_video_stream(
 def is_encrypted_streamable_video_path(path: Path | None) -> bool:
     if path is None:
         return False
-    rust_result = is_lx_encrypted_file(path)
-    if rust_result is not None:
-        return rust_result
     try:
         with path.open("rb") as handle:
             return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC

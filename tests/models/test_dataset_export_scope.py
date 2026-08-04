@@ -4,13 +4,8 @@ from uuid import uuid4
 
 import pytest
 from django.test.utils import override_settings
-from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models import AIDataSet, Center
-from endoreg_db.services.aidataset_exports import (
-    AIDataSetExportPayload,
-    build_export_payload,
-)
 
 
 def _dataset() -> AIDataSet:
@@ -54,15 +49,3 @@ def test_dataset_export_rejects_unvalidated_local_study_server_export():
                 center_key=center.center_key,
                 only_validated=False,
             )
-
-
-@pytest.mark.django_db
-def test_dataset_export_contract_rejects_unknown_fields():
-    payload = build_export_payload(_dataset())
-    untrusted_payload = {
-        **payload.model_dump(mode="python"),
-        "protected_internal_note": "must not pass the export boundary",
-    }
-
-    with pytest.raises(PydanticValidationError, match="Extra inputs are not permitted"):
-        AIDataSetExportPayload.model_validate(untrusted_payload)

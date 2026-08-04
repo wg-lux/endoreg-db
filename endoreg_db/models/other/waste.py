@@ -1,31 +1,28 @@
-from __future__ import annotations
-from typing import ClassVar, Any
-
 from django.db import models
 
 
-class WasteManager(models.Manager["Waste"]):
-    def get_by_natural_key(self, name: str) -> "Waste":
+class WasteManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class Waste(models.Model):
-    objects: ClassVar[WasteManager] = WasteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects = WasteManager()
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    name = models.CharField(max_length=255)
     # emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """
         Return a tuple containing the unique natural key for this Waste instance.
 
         Returns:
             tuple: A single-element tuple with the waste's name, used for natural key serialization.
         """
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return the name of the waste as its string representation.
         """
-        return str(self.name)
+        return self.name

@@ -1,12 +1,8 @@
-# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from celery import shared_task
-
-if TYPE_CHECKING:
-    from celery import Task
 
 
 @shared_task(
@@ -18,13 +14,10 @@ if TYPE_CHECKING:
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
+def run_video_upload_import_task(_task, job_id: str) -> bool:
     from endoreg_db.services.hub.ingest import _run_video_upload_import_job
 
-    return _run_video_upload_import_job(
-        str(job_id),
-        lease_owner=str(_task.request.id),
-    )
+    return _run_video_upload_import_job(str(job_id))
 
 
 @shared_task(
@@ -37,12 +30,12 @@ def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     soft_time_limit=60 * 60 * 5,
 )
 def run_video_reimport_task(
-    _task: Task[[int, int | None], bool],
+    _task,
     video_id: int,
     history_id: int | None = None,
 ) -> bool:
+    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
-    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_reimport_jobs import _run_video_reimport_job
 
     try:
@@ -51,64 +44,11 @@ def run_video_reimport_task(
             history_id=int(history_id) if history_id is not None else None,
         )
     except MediaOperationDeferred as exc:
-        retry_deferred_media_operation(
-            retry=_task.retry,
-            error=exc,
-            job_name="video_reimport",
-            video_id=video_id,
-        )
-
-
-@shared_task(
-    name="endoreg_db.video_fps_normalization",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-    time_limit=60 * 60 * 6,
-    soft_time_limit=60 * 60 * 5,
-)
-def run_video_fps_normalization_task(
-    _task: Task[[int, int], bool],
-    video_id: int,
-    history_id: int,
-) -> bool:
-    from endoreg_db.services.jobs.video_fps_normalization_jobs import (
-        _run_video_fps_normalization,
-    )
-
-    return _run_video_fps_normalization(int(video_id), int(history_id))
-
-
-@shared_task(
-    name="endoreg_db.video_anonymization_correction",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-    time_limit=60 * 60 * 6,
-    soft_time_limit=60 * 60 * 5,
-)
-def run_video_anonymization_correction_task(
-    _task: Task[[int, int], dict[str, object]],
-    video_id: int,
-    history_id: int,
-) -> dict[str, object]:
-    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
-    from endoreg_db.services.jobs.video_correction_jobs import (
-        run_video_anonymization_correction,
-    )
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
-
-    try:
-        return run_video_anonymization_correction(int(video_id), int(history_id))
-    except MediaOperationDeferred as exc:
-        retry_deferred_media_operation(
-            retry=_task.retry,
-            error=exc,
-            job_name="video_anonymization_correction",
-            video_id=video_id,
-        )
+        raise _task.retry(
+            exc=exc,
+            countdown=max(get_video_post_validation_dispatch_delay_seconds(), 60),
+            max_retries=20,
+        ) from exc
 
 
 @shared_task(
@@ -119,7 +59,7 @@ def run_video_anonymization_correction_task(
     track_started=True,
 )
 def run_frame_extraction_request_task(
-    _task: Task[[int, int, int], bool],
+    _task,
     request_id: int,
     video_id: int,
     frame_number: int,
@@ -143,13 +83,13 @@ def run_frame_extraction_request_task(
     track_started=True,
 )
 def run_video_post_validation_rebuild_task(
-    _task: Task[[int, bool, int | None], bool],
+    _task,
     video_id: int,
     only_validated: bool = False,
     history_id: int | None = None,
 ) -> bool:
+    from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
     from endoreg_db.services.media_operation_gate import MediaOperationDeferred
-    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
     )
@@ -161,118 +101,11 @@ def run_video_post_validation_rebuild_task(
             history_id=int(history_id) if history_id is not None else None,
         )
     except MediaOperationDeferred as exc:
-        retry_deferred_media_operation(
-            retry=_task.retry,
-            error=exc,
-            job_name="video_post_validation_rebuild",
-            video_id=video_id,
-        )
-
-
-@shared_task(
-    name="endoreg_db.tasks.video_hls_materialization",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-    time_limit=60 * 60 * 6,
-    soft_time_limit=60 * 60 * 5,
-)
-def video_hls_materialization(
-    _task: Task[[int, str, bool], dict[str, object]],
-    video_id: int,
-    artifact_kind: str = "processed",
-    force: bool = False,
-) -> dict[str, object]:
-    import logging
-
-    from endoreg_db.exceptions import MediaOperationDeferred
-    from endoreg_db.services.hls_media import materialize_video_hls
-    from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
-    from endoreg_db.services.video_storage_normalization import (
-        VideoStorageNormalizationError,
-    )
-    from endoreg_db.utils.structured_logging import (
-        emit_structured_event,
-        hash_identifier,
-    )
-
-    try:
-        result = materialize_video_hls(
-            int(video_id),
-            artifact_kind=str(artifact_kind),
-            force=bool(force),
-        )
-    except MediaOperationDeferred as exc:
-        retry_deferred_media_operation(
-            retry=_task.retry,
-            error=exc,
-            job_name="video_hls_materialization",
-            video_id=video_id,
-        )
-    except VideoStorageNormalizationError as exc:
-        emit_structured_event(
-            logging.getLogger("endoreg_db.jobs"),
-            "job.failed_terminal",
-            level=logging.ERROR,
-            job_name="video_hls_materialization",
-            subject_id_sha256=hash_identifier(video_id),
-            error_code="video_storage_validation_failed",
-            error_type=type(exc).__name__,
-            retryable=False,
-        )
-        return {
-            "video_id": int(video_id),
-            "artifact_kind": str(artifact_kind),
-            "status": "failed_validation",
-            "retryable": False,
-        }
-    return result.as_dict()
-
-
-@shared_task(
-    name="endoreg_db.segment_annotation_expansion",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-    time_limit=60 * 60,
-    soft_time_limit=60 * 55,
-)
-def run_segment_annotation_expansion_task(
-    _task: Task[[int, list[int], str, str | None, bool, bool], dict[str, int]],
-    video_id: int,
-    segment_ids: list[int],
-    information_source_name: str = "manual_annotation",
-    annotator: str | None = None,
-    dispatch_post_validation_rebuild: bool = False,
-    mark_complete_without_rebuild: bool = False,
-) -> dict[str, int]:
-    from endoreg_db.services.segment_annotations import ensure_segment_annotations
-    from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.video_segment_validation_workflow import (
-        mark_segment_annotations_complete_without_cleanup,
-    )
-    from endoreg_db.services.jobs.video_post_validation_jobs import (
-        dispatch_video_post_validation_rebuild,
-    )
-
-    stats = ensure_segment_annotations(
-        video_ids=[int(video_id)] if not segment_ids else None,
-        segment_ids=[int(segment_id) for segment_id in segment_ids],
-        information_source_name=str(information_source_name),
-        annotator=annotator,
-        commit=True,
-    )
-    if dispatch_post_validation_rebuild:
-        dispatch_video_post_validation_rebuild(
-            video_id=int(video_id),
-            only_validated=True,
-        )
-    elif mark_complete_without_rebuild:
-        video = VideoFile.objects.get(pk=int(video_id))
-        mark_segment_annotations_complete_without_cleanup(video)
-    return stats
+        raise _task.retry(
+            exc=exc,
+            countdown=get_video_post_validation_dispatch_delay_seconds(),
+            max_retries=20,
+        ) from exc
 
 
 @shared_task(
@@ -283,22 +116,7 @@ def run_segment_annotation_expansion_task(
     track_started=True,
 )
 def run_video_temporal_inference_task(
-    _task: Task[
-        [
-            int,
-            int,
-            int | None,
-            bool,
-            bool,
-            float,
-            int,
-            dict[str, Any] | None,
-            bool,
-            int,
-            str | None,
-        ],
-        bool,
-    ],
+    _task,
     video_id: int,
     model_meta_id: int,
     history_id: int | None = None,
@@ -342,7 +160,7 @@ def run_video_temporal_inference_task(
     soft_time_limit=60 * 60 * 24 - 300,
 )
 def run_model_training_task(
-    _task: Task[[str, dict[str, Any]], bool],
+    _task,
     run_id: str,
     command_kwargs: dict[str, Any],
 ) -> bool:
@@ -365,7 +183,7 @@ def run_model_training_task(
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
+def run_report_llm_reimport_task(_task, job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_reimport_job
 
     return _run_report_llm_reimport_job(str(job_id))
@@ -380,7 +198,7 @@ def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
     time_limit=60 * 60 * 6,
     soft_time_limit=60 * 60 * 5,
 )
-def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
+def run_report_llm_import_task(_task, job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_import_job
 
     return _run_report_llm_import_job(str(job_id))
@@ -393,35 +211,10 @@ def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     reject_on_worker_lost=True,
     track_started=True,
 )
-def process_upload_job(_task: Task[[str], bool], job_id: str) -> bool:
+def process_upload_job(_task, job_id: str) -> bool:
     from endoreg_db.services.hub import process_upload_job as _process_upload_job
 
     return _process_upload_job(str(job_id))
-
-
-@shared_task(
-    name="endoreg_db.retry_due_upload_jobs",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-)
-def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int]:
-    from endoreg_db.services.hub.import_monitoring import (
-        dispatch_due_upload_job_retries,
-    )
-    from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
-
-    queue = queue_for_job_kind(HeavyJobKind.PIPELINE_INGEST)
-    result = dispatch_due_upload_job_retries(
-        dispatcher=process_upload_job,
-        queue=queue,
-    )
-    return {
-        "due_count": result.due_count,
-        "dispatched_count": result.dispatched_count,
-        "failed_count": result.failed_count,
-    }
 
 
 @shared_task(
@@ -431,9 +224,7 @@ def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int
     reject_on_worker_lost=True,
     track_started=True,
 )
-def refresh_audit_ledger_integrity_status_task(
-    _task: Task[[], dict[str, Any]],
-) -> dict[str, Any]:
+def refresh_audit_ledger_integrity_status_task(_task) -> dict[str, Any]:
     from endoreg_db.services.audit_integrity import (
         refresh_audit_ledger_integrity_status_once,
     )

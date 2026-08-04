@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .examination import Examination
 from .examination_indication import (
     ExaminationIndication,

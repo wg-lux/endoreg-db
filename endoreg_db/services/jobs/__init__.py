@@ -12,21 +12,11 @@ _JOB_MODULES = {
     "model_training_jobs": ".model_training_jobs",
     "report_llm_jobs": ".report_llm_jobs",
     "video_post_validation_jobs": ".video_post_validation_jobs",
-    "video_correction_jobs": ".video_correction_jobs",
     "video_reimport_jobs": ".video_reimport_jobs",
     "video_task_cleanup": ".video_task_cleanup",
 }
 
-__all__ = [
-    "frame_extraction_jobs",
-    "heavy_jobs",
-    "model_training_jobs",
-    "report_llm_jobs",
-    "video_post_validation_jobs",
-    "video_correction_jobs",
-    "video_reimport_jobs",
-    "video_task_cleanup",
-]
+__all__ = sorted(_JOB_MODULES)
 
 if TYPE_CHECKING:
     frame_extraction_jobs: ModuleType
@@ -34,7 +24,6 @@ if TYPE_CHECKING:
     model_training_jobs: ModuleType
     report_llm_jobs: ModuleType
     video_post_validation_jobs: ModuleType
-    video_correction_jobs: ModuleType
     video_reimport_jobs: ModuleType
     video_task_cleanup: ModuleType
 

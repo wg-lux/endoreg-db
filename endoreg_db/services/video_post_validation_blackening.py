@@ -8,27 +8,25 @@ from typing import TYPE_CHECKING
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
-from endoreg_db.models.label.label_video_segment.label_video_segment import (
-    LabelVideoSegment,
-)
+from endoreg_db.models.label.label_video_segment import LabelVideoSegment
 from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
-from endoreg_db.utils.ffmpeg_wrapper import blacken_video_frame_intervals
 from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.hashs import get_video_hash
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.security.hashs import get_video_hash
+from endoreg_db.utils.filesystem.paths import (
     ANONYM_VIDEO_DIR,
     data_paths,
     to_storage_relative,
 )
 from endoreg_db.utils.storage import save_local_file
+from endoreg_db.utils.video.ffmpeg_wrapper import blacken_video_frame_intervals
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile

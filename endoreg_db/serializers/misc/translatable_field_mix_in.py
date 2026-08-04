@@ -1,16 +1,10 @@
 from django.utils.translation import get_language
 
 
-class _TranslatableFieldLike:
-    def __getattr__(self, name: str) -> str | None: ...
-
-
 class TranslatableFieldMixin:
     """Mixin für automatische Sprachauswahl basierend auf Accept-Language"""
 
-    def get_localized_name(
-        self, obj: _TranslatableFieldLike, field_base: str = "name"
-    ) -> str:
+    def get_localized_name(self, obj, field_base="name"):
         """
         Retrieve a localized value for a specified field from an object, using language preference fallbacks.
 

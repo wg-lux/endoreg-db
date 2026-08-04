@@ -1,9 +1,5 @@
 # Local Study Server Deployment
 
-Der verbindliche Schutzumfang, die Qualitätsgrenzen, Reviewer-Schritte und das
-Fehler-/Korrekturszenario stehen im
-[Anonymisierungs- und Freigabe-Contract](anonymization_contract.md).
-
 `local_study_server` is a production profile for one encrypted host. It accepts
 center-scoped authenticated API uploads, external preanonymized imports, and
 explicit promotion of existing managed processed media into an export-ready
@@ -44,56 +40,6 @@ location ^~ /api/media/hub/transfers/ {
 
 Keep protected media serving on the local host boundary. Do not expose exported
 datasets over a public route.
-
-## HLS Manifest URI Contract
-
-Local same-origin HLS playlists are materialized with API-rooted relative URIs,
-for example `/endoreg-api/media/videos/{video_id}/hls/key/{key_id}/` and
-`/endoreg-api/media/videos/{video_id}/hls/segments/{key_id}/seg_000.ts`.
-The committed playlist must not embed a scheme or host, and the local deployment
-path serves that file as-is through Django `FileResponse` or nginx
-`X-Accel-Redirect`; do not add per-request manifest token rewriting for this
-path.
-
-Same-origin local HLS playback does not require CORS headers. If the frontend,
-API, and media endpoints are split across domains or subdomains later, HLS
-credentialed CORS must be configured with explicit origin allowlisting and must
-never emit wildcard `Access-Control-Allow-Origin: *` together with credentials.
-
-Production local HLS segment delivery requires nginx protected-media offload:
-
-```sh
-SERVE_WITH_NGINX=true
-NGINX_PROTECTED_MEDIA_URL=/protected_media/
-```
-
-`NGINX_PROTECTED_MEDIA_URL` must map to the same protected media storage tree
-that contains materialized HLS playlists and segments. The Django API performs
-authentication and authorization, then returns `X-Accel-Redirect`; nginx serves
-the segment bytes from protected storage.
-
-Store materialized HLS segment directories on SSD/NVMe-backed encrypted storage
-for concurrent playback. Capacity planning should account for both local NIC
-throughput and disk I/O: each active playback consumes sustained read bandwidth
-from protected media storage and outbound bandwidth on the host network
-interface. Size the host for expected concurrent viewers, HLS bitrate, and
-background materialization or audit jobs rather than only total disk capacity.
-
-HLS content keys are wrapped with the Lux Annotate master key. Never commit,
-log, bake into container or VM images, or store `LX_ANNOTATE_MASTER_KEY` in
-database backups. Prefer `LX_ANNOTATE_MASTER_KEY_FILE` pointing at a mounted
-secret or tmpfs file with restricted permissions. The database stores wrapped
-HLS content keys and nonces, not plaintext HLS content keys.
-
-Do not use a database migration to rewrite historical key or segment URIs. If an
-older materialized playlist contains absolute, stale, or host-bound URIs, handle
-it as an operational audit and regeneration task: identify affected playlists,
-confirm the processed source artifact is still permitted for outbound streaming,
-then run the regeneration command for each affected video ID:
-
-```sh
-manage.py materialize_video_hls --video-id <id> --artifact-kind processed --apply --inline --force
-```
 
 ## Managed Media Promotion
 
@@ -165,23 +111,17 @@ deployments should use the packaged Python environment or fixed venv path, not
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py check_system_health --json
 ```
 
-Quarantine cleanup is approval-gated. The dry run indexes current quarantine
-files and reports stale pending-review material. Confirmed deletion only removes
-files that have first been explicitly approved for deletion.
+Quarantine cleanup is dry-run unless confirmed:
 
 ```sh
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --dry-run --json
-/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --approve-stale --decision-reason "retention period elapsed" --json
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py reap_quarantine --older-than-days 30 --confirm --json
 ```
 
 Example systemd unit files live in `docs/ops/local_study_server/`. The health
 timer writes JSON to journald and exits non-zero on critical issues, including
 failed/lost upload jobs, stale quarantine, insufficient free storage, transfer
-API exposure, unverified audit ledger integrity, unresolved video/report
-anonymization failures, or video processing histories active for more than seven
-hours. The latter counters are emitted under
-`local_study_server.anonymization_processing`.
+API exposure, or unverified audit ledger integrity.
 
 V1 monitoring is systemd plus journald. Local mail can be wired by adding an
 `OnFailure=` notification unit that invokes `sendmail` with the failed unit

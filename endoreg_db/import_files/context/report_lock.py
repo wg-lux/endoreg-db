@@ -6,7 +6,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.filesystem.file_operations import advisory_file_lock
+from endoreg_db.utils.file_operations import advisory_file_lock
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 

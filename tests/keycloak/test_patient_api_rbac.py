@@ -29,43 +29,13 @@ These tests DO NOT require a real Keycloak server — they only check:
 If these fail → the API part of RBAC is broken and the frontend will not work properly.
 """
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractUser, Group
 from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from unittest.mock import patch
-from typing import Protocol, cast
-
 from endoreg_db.models import Patient
 
 User = get_user_model()
-
-
-class _UserManager(Protocol):
-    def create_user(
-        self,
-        username: str,
-        password: str | None = None,
-        **extra_fields: object,
-    ) -> AbstractUser: ...
-
-
-class _GroupRelation(Protocol):
-    def add(self, *objs: Group | int) -> None: ...
-
-
-class _UserWithGroups(Protocol):
-    groups: _GroupRelation
-
-
-def _create_user(username: str, password: str | None = None) -> AbstractUser:
-    return cast(_UserManager, User.objects).create_user(
-        username=username,
-        password=password,
-    )
-
-
-def _add_groups(user: AbstractUser, *groups: Group) -> None:
-    cast(_UserWithGroups, user).groups.add(*groups)
 
 
 class PatientApiRBACTests(TestCase):
@@ -93,8 +63,8 @@ class PatientApiRBACTests(TestCase):
         This should return HTTP 200 OK.
         """
 
-        user = _create_user(username="editor", password="pw")
-        _add_groups(user, self.data_read)
+        user = User.objects.create_user(username="editor", password="pw")
+        user.groups.add(self.data_read)
 
         # Simulate a logged-in user (session authentication)
         self.client.force_login(user)
@@ -115,7 +85,7 @@ class PatientApiRBACTests(TestCase):
 
         Depending on PolicyPermission config, this may be 403 or 401.
         """
-        user = _create_user(username="basic", password="pw")
+        user = User.objects.create_user(username="basic", password="pw")
         # No groups → no permissions
 
         self.client.force_login(user)

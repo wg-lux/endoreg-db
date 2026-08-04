@@ -14,7 +14,7 @@ from typing import NoReturn
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     advisory_file_lock,
     atomic_report_source_snapshot,
 )

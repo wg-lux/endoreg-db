@@ -1,49 +1,21 @@
 from pathlib import Path
-from typing import Any, cast
 
-from pytest import MonkeyPatch
 from django.core.management.base import BaseCommand
 
 from endoreg_db.models import InformationSourceType
-from endoreg_db.utils import dataloader
-
-
-def _dataloader_connection() -> Any:
-    return cast(Any, dataloader).connection
-
-
-def _recorded_warning_sink(
-    recorded: list[tuple[str, str]],
-):
-    def record_warning(
-        command: BaseCommand,
-        message: str,
-        verbose: bool,
-        context: str,
-    ) -> None:
-        _ = command
-        _ = verbose
-        recorded.append((context, message))
-
-    return record_warning
+from endoreg_db.utils.data_loading import dataloader
 
 
 def test_load_model_data_from_yaml_skips_when_model_table_is_missing(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch, tmp_path: Path
+):
     recorded: list[tuple[str, str]] = []
 
-    def no_tables() -> list[str]:
-        return []
-
-    monkeypatch.setattr(
-        _dataloader_connection().introspection, "table_names", no_tables
-    )
+    monkeypatch.setattr(dataloader.connection.introspection, "table_names", lambda: [])
     monkeypatch.setattr(
         dataloader,
         "_record_warning",
-        _recorded_warning_sink(recorded),
+        lambda command, message, verbose, context: recorded.append((context, message)),
     )
 
     dataloader.load_model_data_from_yaml(
@@ -68,21 +40,20 @@ def test_load_model_data_from_yaml_skips_when_model_table_is_missing(
 
 
 def test_load_model_data_from_yaml_skips_when_yaml_directory_is_missing(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch, tmp_path: Path
+):
     recorded: list[tuple[str, str]] = []
     missing_dir = tmp_path / "missing"
 
     monkeypatch.setattr(
-        _dataloader_connection().introspection,
+        dataloader.connection.introspection,
         "table_names",
-        lambda: [str(InformationSourceType._meta.db_table)],
+        lambda: [InformationSourceType._meta.db_table],
     )
     monkeypatch.setattr(
         dataloader,
         "_record_warning",
-        _recorded_warning_sink(recorded),
+        lambda command, message, verbose, context: recorded.append((context, message)),
     )
 
     dataloader.load_model_data_from_yaml(

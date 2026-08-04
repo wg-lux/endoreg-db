@@ -1,49 +1,41 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import Protocol, TypeAlias, cast, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 # models.py in your main app
 
-NoPortalUserInfoValue: TypeAlias = NoneType
-PortalUserInfoFlag: TypeAlias = bool | NoPortalUserInfoValue
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
 
+    from endoreg_db.models import Examiner
 
-class _PortalUserSource(Protocol):
-    username: str
+    from ..profession import Profession
 
 
 class PortalUserInfo(models.Model):
-    user: models.OneToOneField[Any, Any] = models.OneToOneField(
-        "auth.User", on_delete=models.CASCADE
-    )
-    profession: models.ForeignKey[Any, Any] = models.ForeignKey(
+    user = models.OneToOneField("auth.User", on_delete=models.CASCADE)
+    profession = models.ForeignKey(
         "endoreg_db.Profession",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="portal_user_infos",
     )
-    works_in_endoscopy: models.BooleanField[Any, Any] = models.BooleanField(
-        blank=True, null=True
-    )
+    works_in_endoscopy = models.BooleanField(blank=True, null=True)
     # Add other fields as needed
 
-    examiner: models.OneToOneField[Any, Any] = models.OneToOneField(
+    examiner = models.OneToOneField(
         "endoreg_db.Examiner",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="portal_user_info",
     )
-    centers: models.ManyToManyField[Any, Any] = models.ManyToManyField(
-        "endoreg_db.Center",
-        blank=True,
-        related_name="authorized_portal_user_infos",
-    )
 
-    def __str__(self) -> str:
-        user = cast(_PortalUserSource, self.user)
-        return user.username
+    if TYPE_CHECKING:
+        user: models.OneToOneField["User"]
+        profession: models.ForeignKey["Profession|None"]
+        examiner: models.OneToOneField["Examiner|None"]
+
+    def __str__(self):
+        return self.user.username

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import NoReturn
 
 import pytest
 
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.rust_backend import sha256_file_hex as rust_sha256_file_hex
+from endoreg_db.utils.system.rust_backend import sha256_file_hex as rust_sha256_file_hex
 
 
 def _python_sha256_file(path: Path, chunk_size: int) -> str:
@@ -19,10 +18,6 @@ def _python_sha256_file(path: Path, chunk_size: int) -> str:
                 break
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def raise_sha256_backend_error(*args: object, **kwargs: object) -> NoReturn:
-    raise RuntimeError("boom")
 
 
 @pytest.mark.parametrize("chunk_size", [1, 7, 4096, 1024 * 1024])
@@ -47,12 +42,12 @@ def test_sha256_rust_backend_returns_none_and_preserves_python_fallback(
     test_file = tmp_path / "sample.bin"
     test_file.write_bytes(b"abc123")
 
-    import endoreg_db.utils.rust_backend as rust_backend_module
+    import endoreg_db.utils.system.rust_backend as rust_backend_module
 
     monkeypatch.setattr(
         rust_backend_module,
         "_sha256_file_hex",
-        raise_sha256_backend_error,
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
     assert rust_backend_module.sha256_file_hex(test_file, 1024) is None

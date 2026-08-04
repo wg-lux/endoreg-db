@@ -1,15 +1,13 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import json
 import threading
 import traceback
 from collections import defaultdict
-from collections.abc import Mapping
-from datetime import datetime, timedelta
+from datetime import timedelta
 from io import StringIO
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Any
 from uuid import UUID, uuid4
 
 from django.conf import settings
@@ -21,7 +19,6 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -31,8 +28,6 @@ from endoreg_db.services.video_files._frames._manage_frame_range import (
 )
 from endoreg_db.schemas import (
     validate_ai_model_training_artifact_paths,
-    validate_ai_model_training_command_kwargs,
-    validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
 )
 from endoreg_db.services.video_files import (
@@ -55,50 +50,9 @@ MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path("/mnt/fast-nvme-cache/endoreg-training")
 
 
-def _validated_model_training_run_updates(
-    updates: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Canonicalize JSONField values before a direct queryset update.
-
-    QuerySet.update() intentionally bypasses AIModelTrainingRun.clean()/save().
-    Keep the asynchronous worker's atomic status updates while applying the same
-    persisted-JSON contracts whenever one of the model's JSON fields is present.
-    """
-    normalized = dict(updates)
-    if "request_payload" in normalized:
-        normalized["request_payload"] = validate_ai_model_training_request_payload(
-            normalized["request_payload"]
-        )
-    if "command_kwargs" in normalized:
-        normalized["command_kwargs"] = validate_ai_model_training_command_kwargs(
-            normalized["command_kwargs"]
-        )
-    if "result" in normalized:
-        normalized["result"] = validate_ai_model_training_result_payload(
-            normalized["result"]
-        )
-    if "artifact_paths" in normalized:
-        normalized["artifact_paths"] = validate_ai_model_training_artifact_paths(
-            normalized["artifact_paths"]
-        )
-    return normalized
-
-
-def _update_model_training_run(run_uuid: UUID, **updates: Any) -> int:
-    normalized = _validated_model_training_run_updates(updates)
-    return AIModelTrainingRun.objects.filter(run_id=run_uuid).update(**normalized)
-
-
-class _TrainingResult(TypedDict, total=False):
-    artifacts: list[object]
-
-
 def _coerce_uuid(value: str) -> UUID | None:
     try:
-        parsed = UUID(str(value))
-        if parsed.version != 4:
-            return None
-        return parsed
+        return UUID(str(value))
     except (TypeError, ValueError):
         return None
 
@@ -113,7 +67,7 @@ def _parse_model_training_result(output: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
         if isinstance(parsed, dict):
-            return cast(dict[str, Any], parsed)
+            return parsed
     return None
 
 
@@ -134,18 +88,13 @@ def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, s
             paths[key] = value
     training_result = result.get("training_result")
     if isinstance(training_result, dict):
-        training_result_typed = cast(_TrainingResult, training_result)
-        artifacts = training_result_typed.get("artifacts")
-        if artifacts is not None:
-            for artifact in artifacts:
-                if not isinstance(artifact, Mapping):
-                    continue
-                artifact_map = cast(Mapping[str, object], artifact)
-                raw_kind = artifact_map.get("kind")
-                kind = str(raw_kind or "").strip().lower()
-                path = artifact_map.get("path")
-                if kind and isinstance(path, str) and path:
-                    paths[f"{kind}_path"] = path
+        for artifact in training_result.get("artifacts", []):
+            if not isinstance(artifact, dict):
+                continue
+            kind = str(artifact.get("kind") or "").strip().lower()
+            path = artifact.get("path")
+            if kind and isinstance(path, str) and path:
+                paths[f"{kind}_path"] = path
     return paths
 
 
@@ -180,7 +129,7 @@ def _consecutive_ranges(frame_numbers: list[int]) -> list[tuple[int, int]]:
     return ranges
 
 
-def _assert_processed_video_training_ready(video: VideoFile) -> None:
+def _assert_processed_video_training_ready(video) -> None:
     state = get_or_create_video_state(video)
     missing_flags = [
         field_name
@@ -242,8 +191,7 @@ def _add_segment_training_frames(
     for segment in segments:
         if segment.start_frame_number >= segment.end_frame_number:
             continue
-        segment_video = segment.video_file
-        segments_by_video[int(segment_video.pk)].append(segment)
+        segments_by_video[segment.video_file_id].append(segment)
 
     for video_id, video_segments in segments_by_video.items():
         intervals = _merge_frame_intervals(
@@ -302,8 +250,7 @@ def _materialize_missing_multilabel_frames(
         )
         for annotation in annotations:
             frame = annotation.frame
-            frame_video = frame.video
-            frames_by_video[int(frame_video.pk)][frame.frame_number] = frame
+            frames_by_video[frame.video_id][frame.frame_number] = frame
 
     if uses_segment_annotations(source_scope):
         video_segments = list(
@@ -325,12 +272,10 @@ def _materialize_missing_multilabel_frames(
     existing_count = 0
     video_count = 0
     for frame_by_number in frames_by_video.values():
-        if not frame_by_number:
-            continue
         missing_numbers: list[int] = []
-        sample_frame = next(iter(frame_by_number.values()))
-        video = sample_frame.video
+        video = None
         for frame_number, frame in sorted(frame_by_number.items()):
+            video = frame.video
             if frame.file_path.is_file():
                 existing_count += 1
                 if not frame.is_extracted:
@@ -339,7 +284,7 @@ def _materialize_missing_multilabel_frames(
                 continue
             missing_numbers.append(frame_number)
 
-        if not missing_numbers:
+        if video is None or not missing_numbers:
             continue
 
         video_count += 1
@@ -439,12 +384,9 @@ def _mark_lost_model_training_runs() -> None:
 
 
 def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
-    request_payload = cast(dict[str, object], run.request_payload or {})
-    command_kwargs = cast(dict[str, object], run.command_kwargs or {})
-    training_target = cast(
-        str | None,
-        request_payload.get("training_target"),
-    )
+    request_payload = run.request_payload or {}
+    command_kwargs = run.command_kwargs or {}
+    training_target = request_payload.get("training_target")
     if training_target not in {
         MODEL_TRAINING_TARGET_IMAGE_MULTILABEL,
         MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
@@ -457,24 +399,17 @@ def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
 
     annotation_source_scope = None
     if training_target == MODEL_TRAINING_TARGET_IMAGE_MULTILABEL:
-        annotation_source_scope_raw = request_payload.get("annotation_source_scope")
-        if not isinstance(annotation_source_scope_raw, str):
-            annotation_source_scope_raw = command_kwargs.get("annotation_source_scope")
-            if not isinstance(annotation_source_scope_raw, str):
-                annotation_source_scope_raw = None
         annotation_source_scope = normalize_annotation_source_scope(
-            annotation_source_scope_raw
+            request_payload.get("annotation_source_scope")
+            or command_kwargs.get("annotation_source_scope")
         )
-
-    dataset = run.dataset
-    dataset_id = dataset.pk if dataset is not None else None
 
     return {
         "run_id": run.run_key,
         "training_target": training_target,
         "annotation_source_scope": annotation_source_scope,
         "status": run.status,
-        "dataset_id": dataset_id,
+        "dataset_id": run.dataset_id,
         "dataset_name": run.dataset_name,
         "dataset_type": run.dataset_type,
         "ai_model_type": run.ai_model_type,
@@ -497,7 +432,7 @@ def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
     }
 
 
-def _isoformat(value: datetime | None) -> str | None:
+def _isoformat(value) -> str | None:
     if value is None:
         return None
     return value.isoformat().replace("+00:00", "Z")
@@ -513,8 +448,7 @@ def _execute_model_training_run(
     if run_uuid is None:
         return
 
-    _update_model_training_run(
-        run_uuid,
+    AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
         status=AIModelTrainingRun.STATUS_RUNNING,
         started_at=timezone.now(),
         server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID,
@@ -547,8 +481,7 @@ def _execute_model_training_run(
         artifact_paths = validate_ai_model_training_artifact_paths(
             _model_training_artifact_paths(validated_result)
         )
-        _update_model_training_run(
-            run_uuid,
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
             status=AIModelTrainingRun.STATUS_COMPLETED,
             finished_at=timezone.now(),
             stdout=output,
@@ -564,8 +497,7 @@ def _execute_model_training_run(
         combined_output = "\n".join(
             chunk for chunk in (output, error_output, trace) if chunk
         ).strip()
-        _update_model_training_run(
-            run_uuid,
+        AIModelTrainingRun.objects.filter(run_id=run_uuid).update(
             status=AIModelTrainingRun.STATUS_FAILED,
             finished_at=timezone.now(),
             stdout=combined_output,
@@ -592,7 +524,7 @@ def _launch_model_training_run(
 
         ensure_secure_transport_for_job_kind(HeavyJobKind.MODEL_TRAINING)
         run_model_training_task.apply_async(
-            args=(run_id, command_kwargs),
+            args=[run_id, command_kwargs],
             queue=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
             routing_key=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
         )

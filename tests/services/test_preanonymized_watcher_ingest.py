@@ -1,28 +1,16 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-
 import json
 import hashlib
 import tempfile
-from typing import cast
-from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from django.test import TestCase, override_settings
 
-from endoreg_db.models import (
-    Center,
-    Gender,
-    PatientExternalID,
-    RawPdfFile,
-    SensitiveMeta,
-    UploadJob,
-)
+from endoreg_db.models import Center, Gender, PatientExternalID, RawPdfFile, UploadJob
 from endoreg_db.services.hub import process_preanonymized_watcher_file
-from endoreg_db.services.hub.watcher_handoff import WatcherFileNotReadyError
 
 
 class PreanonymizedWatcherIngestTests(TestCase):
@@ -134,125 +122,21 @@ class PreanonymizedWatcherIngestTests(TestCase):
             ):
                 upload_job = process_preanonymized_watcher_file(file_path=report_path)
 
-        upload_job.refresh_from_db()
-        report = RawPdfFile.objects.get()
+            upload_job.refresh_from_db()
+            report = RawPdfFile.objects.get()
 
         assert upload_job.status == UploadJob.Status.ANONYMIZED
         assert (
             upload_job.processing_provenance["source_center_key"]
             == self.center.center_key
         )
-        processing_provenance = upload_job.processing_provenance
-        assert isinstance(processing_provenance, Mapping)
-        sidecar_payload = cast(
-            Mapping[str, object],
-            processing_provenance["sidecar_payload"],
+        assert (
+            upload_job.processing_provenance["sidecar_payload"][
+                "human_anonymization_validated"
+            ]
+            is True
         )
-        assert isinstance(sidecar_payload, Mapping)
-        assert sidecar_payload["human_anonymization_validated"] is True
         assert report.get_or_create_state().anonymization_validated is True
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-    def test_local_study_server_unknown_sidecar_field_is_quarantined(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            drop_dir = temp_dir / "preanonymized_import"
-            quarantine_dir = temp_dir / "quarantine"
-            drop_dir.mkdir()
-            quarantine_dir.mkdir()
-            report_path = drop_dir / "incoming.pdf"
-            report_bytes = b"%PDF-1.4\n%%EOF\n"
-            report_path.write_bytes(report_bytes)
-            sidecar_path = report_path.with_suffix(".json")
-            sidecar_path.write_text(
-                json.dumps(
-                    {
-                        "center_key": self.center.center_key,
-                        "source_system": "lx-annotate",
-                        "file_sha256": hashlib.sha256(report_bytes).hexdigest(),
-                        "human_anonymization_validated": True,
-                        "validated_by": "operator-1",
-                        "validated_at": "2026-05-06T12:00:00+02:00",
-                        "unexpected_confirmation": True,
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with (
-                patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
-                ),
-                patch(
-                    "endoreg_db.services.hub.ingest._quarantine_dir",
-                    return_value=quarantine_dir,
-                ),
-                pytest.raises(ValueError, match="Invalid preanonymized sidecar"),
-            ):
-                process_preanonymized_watcher_file(file_path=report_path)
-
-            assert not report_path.exists()
-            assert not sidecar_path.exists()
-            assert (quarantine_dir / "incoming.pdf").exists()
-            assert (quarantine_dir / "incoming.json").exists()
-            assert UploadJob.objects.count() == 0
-
-    def test_generic_invalid_sidecars_are_quarantined_before_ingest_persistence(
-        self,
-    ) -> None:
-        invalid_payloads = {
-            "unknown field": {"unexpected_field": "value"},
-            "incomplete external ID pair": {"external_id": "ext-42"},
-            "invalid patient hash": {"patient_hash": "A" * 64},
-            "invalid examination hash": {"examination_hash": "g" * 64},
-        }
-
-        for case_name, sidecar_payload in invalid_payloads.items():
-            with (
-                self.subTest(case=case_name),
-                tempfile.TemporaryDirectory() as temp_dir_name,
-            ):
-                temp_dir = Path(temp_dir_name)
-                quarantine_dir = temp_dir / "quarantine"
-                quarantine_dir.mkdir()
-                report_path = temp_dir / "incoming.pdf"
-                report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
-                sidecar_path = report_path.with_suffix(".json")
-                sidecar_path.write_text(
-                    json.dumps(sidecar_payload),
-                    encoding="utf-8",
-                )
-
-                with (
-                    patch(
-                        "endoreg_db.services.hub.ingest._quarantine_dir",
-                        return_value=quarantine_dir,
-                    ),
-                    patch(
-                        "endoreg_db.services.hub.ingest.emit_hub_audit_event"
-                    ) as emit_audit_event,
-                    pytest.raises(
-                        ValueError,
-                        match="Invalid preanonymized sidecar",
-                    ),
-                ):
-                    process_preanonymized_watcher_file(file_path=report_path)
-
-                assert not report_path.exists()
-                assert not sidecar_path.exists()
-                assert (quarantine_dir / "incoming.pdf").exists()
-                assert (quarantine_dir / "incoming.json").exists()
-                assert UploadJob.objects.count() == 0
-                assert RawPdfFile.objects.count() == 0
-                assert SensitiveMeta.objects.count() == 0
-                assert PatientExternalID.objects.count() == 0
-                emit_audit_event.assert_called_once()
-                audit_call = emit_audit_event.call_args
-                assert audit_call.args == ("hub.preanonymized_drop_rejected",)
-                assert audit_call.kwargs["watched_path"] == str(report_path)
-                assert audit_call.kwargs["sidecar_path"] == str(sidecar_path)
-                assert "Invalid preanonymized sidecar" in audit_call.kwargs["reason"]
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_local_study_server_hash_mismatch_quarantines_media_and_sidecar(
@@ -298,59 +182,6 @@ class PreanonymizedWatcherIngestTests(TestCase):
             assert not sidecar_path.exists()
             assert (quarantine_dir / "incoming.pdf").exists()
             assert (quarantine_dir / "incoming.json").exists()
-            assert UploadJob.objects.count() == 0
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-    def test_local_study_server_not_ready_file_is_deferred_without_quarantine(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            drop_dir = temp_dir / "preanonymized_import"
-            quarantine_dir = temp_dir / "quarantine"
-            drop_dir.mkdir()
-            quarantine_dir.mkdir()
-            report_path = drop_dir / "incoming.pdf"
-            report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
-            sidecar_path = report_path.with_suffix(".json")
-            sidecar_path.write_text(
-                json.dumps(
-                    {
-                        "center_key": self.center.center_key,
-                        "source_system": "lx-annotate",
-                        "file_sha256": "0" * 64,
-                        "human_anonymization_validated": True,
-                        "validated_by": "operator-1",
-                        "validated_at": "2026-05-06T12:00:00+02:00",
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with (
-                patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
-                ),
-                patch(
-                    "endoreg_db.services.hub.ingest._quarantine_dir",
-                    return_value=quarantine_dir,
-                ),
-                patch(
-                    "endoreg_db.services.hub.ingest._wait_for_watcher_file_ready",
-                    side_effect=WatcherFileNotReadyError("not stable"),
-                ),
-                patch(
-                    "endoreg_db.services.hub.ingest.sha256_file",
-                    side_effect=AssertionError("must not hash before settle"),
-                ),
-                pytest.raises(WatcherFileNotReadyError, match="not stable"),
-            ):
-                process_preanonymized_watcher_file(file_path=report_path)
-
-            assert report_path.exists()
-            assert sidecar_path.exists()
-            assert list(quarantine_dir.iterdir()) == []
             assert UploadJob.objects.count() == 0
 
     def test_process_preanonymized_report_normalizes_sensitive_meta_strings(

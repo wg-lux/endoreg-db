@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 from django.conf import settings
-from lx_dtypes.models.contracts.application_settings import (
-    ApplicationSettingsDeploymentProfilePayload,
-    ApplicationSettingsDeploymentRole,
-)
 
 VALID_DEPLOYMENT_ROLES = (
     "standalone",
@@ -14,7 +10,7 @@ VALID_DEPLOYMENT_ROLES = (
 )
 
 
-def get_deployment_role() -> ApplicationSettingsDeploymentRole:
+def get_deployment_role() -> str:
     role = str(getattr(settings, "ENDOREG_DEPLOYMENT_ROLE", "standalone") or "").strip()
     normalized = role.lower() or "standalone"
     if normalized not in VALID_DEPLOYMENT_ROLES:
@@ -36,21 +32,27 @@ def transfer_api_enabled() -> bool:
     )
 
 
-def deployment_profile_payload() -> ApplicationSettingsDeploymentProfilePayload:
-    return ApplicationSettingsDeploymentProfilePayload(
-        deployment_role=get_deployment_role(),
-        hub_mode=hub_mode_enabled(),
-        enable_hub_transfers=bool(
+def deployment_profile_payload() -> dict[str, object]:
+    return {
+        "deployment_role": get_deployment_role(),
+        "hub_mode": hub_mode_enabled(),
+        "enable_hub_transfers": bool(
             getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)
         ),
-        transfer_api_enabled=transfer_api_enabled(),
-        transfer_require_secure_transport=bool(
+        "transfer_api_enabled": transfer_api_enabled(),
+        "transfer_require_secure_transport": bool(
             getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
         ),
-        transfer_require_mtls=bool(
+        "transfer_require_mtls": bool(
             getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)
         ),
-    )
+        "transfer_mtls_meta_key": str(
+            getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_KEY", "") or ""
+        ).strip(),
+        "transfer_mtls_meta_value": str(
+            getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE", "") or ""
+        ).strip(),
+    }
 
 
 __all__ = [

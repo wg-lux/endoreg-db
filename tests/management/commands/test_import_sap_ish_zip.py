@@ -13,7 +13,7 @@ from django.test import TestCase
 
 from endoreg_db.management.commands import import_sap_ish_zip as command_module
 from endoreg_db.models import Center
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.filesystem.paths import WATCHER_PREANONYMIZED_DROP_DIR
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:
@@ -30,15 +30,6 @@ def _build_zip_from_directory(source_dir: Path, archive_path: Path) -> None:
 
 
 class ImportSapIshZipCommandTests(TestCase):
-    def test_command_rejects_missing_zip_archive(self) -> None:
-        missing_archive = WATCHER_PREANONYMIZED_DROP_DIR / "missing-sap-export.zip"
-
-        with self.assertRaisesMessage(
-            CommandError,
-            f"Zip archive does not exist: {missing_archive}",
-        ):
-            call_command("import_sap_ish_zip", str(missing_archive))
-
     def test_command_reports_declared_center_resolution_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
@@ -119,48 +110,6 @@ class ImportSapIshZipCommandTests(TestCase):
                 )
                 self.assertIn("Processed 1 generated file(s)", output.getvalue())
 
-    def test_command_uses_default_center_for_immediate_processing(self) -> None:
-        center = Center.objects.create(
-            name="default-center",
-            display_name="Default Center",
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            source_dir = temp_dir / "source"
-            source_dir.mkdir()
-            archive_path = temp_dir / "sap_export.zip"
-            output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"cmd-test-{temp_dir.name}"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            _write_tsv(
-                source_dir / "briefe.txt",
-                header=["PatientNr", "FallNr", "dateErstellzeit", "strText"],
-                rows=[["2001", "3001", "2024-05-17 09:30:00", "Letter"]],
-            )
-            _build_zip_from_directory(source_dir, archive_path)
-
-            with (
-                patch.object(
-                    command_module,
-                    "_resolve_default_center",
-                    return_value=center,
-                ) as mocked_resolve_default,
-                patch.object(
-                    command_module,
-                    "_process_preanonymized_watcher_file",
-                ) as mocked_process,
-            ):
-                call_command(
-                    "import_sap_ish_zip",
-                    str(archive_path),
-                    output_dir=str(output_dir),
-                    process=True,
-                )
-
-            mocked_resolve_default.assert_called_once_with()
-            self.assertEqual(mocked_process.call_count, 1)
-            self.assertEqual(mocked_process.call_args.kwargs["center"], center)
-
     def test_command_skips_unsupported_files_and_reports_generated_pairs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
@@ -169,7 +118,6 @@ class ImportSapIshZipCommandTests(TestCase):
             archive_path = temp_dir / "sap_export.zip"
             output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"cmd-test-{temp_dir.name}"
             output_dir.mkdir(parents=True, exist_ok=True)
-            manifest_path = output_dir / "custom-manifest.json"
 
             _write_tsv(
                 source_dir / "briefe.txt",
@@ -196,7 +144,6 @@ class ImportSapIshZipCommandTests(TestCase):
                 str(archive_path),
                 output_dir=str(output_dir),
                 source_system="sap_ish_test",
-                manifest_path=str(manifest_path),
                 stdout=output,
             )
 
@@ -213,31 +160,4 @@ class ImportSapIshZipCommandTests(TestCase):
                 "Skipped unsupported table files: unsupported.txt",
                 output.getvalue(),
             )
-            self.assertIn(f"Manifest written to {manifest_path}", output.getvalue())
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(
-                set(manifest),
-                {
-                    "command",
-                    "created_at",
-                    "zip_path",
-                    "output_dir",
-                    "source_system",
-                    "center_name",
-                    "center_key",
-                    "process",
-                    "generated_files",
-                    "matched_source_files",
-                    "skipped_source_files",
-                },
-            )
-            self.assertEqual(manifest["command"], "import_sap_ish_zip")
-            self.assertEqual(manifest["zip_path"], str(archive_path.resolve()))
-            self.assertEqual(manifest["output_dir"], str(output_dir.resolve()))
-            self.assertEqual(manifest["source_system"], "sap_ish_test")
-            self.assertFalse(manifest["process"])
-            self.assertEqual(len(manifest["generated_files"]), 1)
-            self.assertEqual(
-                manifest["generated_files"][0]["carrier_path"],
-                str(generated_carrier),
-            )
+            self.assertIn("Manifest written to", output.getvalue())

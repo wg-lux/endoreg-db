@@ -42,11 +42,6 @@
 
 - model: endoreg_db.Label
   fields:
-    name: "bubbles"
-    label_type: "classification"
-
-- model: endoreg_db.Label
-  fields:
     name: "ileum"
     label_type: "classification"
 
@@ -94,16 +89,6 @@
 
 - model: endoreg_db.Label
   fields:
-    name: "smoke"
-    label_type: "classification"
-
-- model: endoreg_db.Label
-  fields:
-    name: "tissue_on_snare"
-    label_type: "classification"
-
-- model: endoreg_db.Label
-  fields:
     name: "cold_snare"
     label_type: "classification"
 
@@ -118,3 +103,4 @@
 - model: endoreg_db.Label
   field:
     name: "skin"  
+

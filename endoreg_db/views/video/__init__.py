@@ -12,14 +12,13 @@ from .video_stream import VideoStreamView
 from .video_examination_viewset import VideoExaminationViewSet
 from .video_fps import VideoFpsView
 from .video_metadata import VideoMetadataStatsView
-from .video_timeline import VideoFrameNeighborhoodView
+from .export_annotated import export_annotated_data
 
 
 from .segments_crud import (
     video_segments_collection,
     video_segments_by_video,
     video_segments_blacken_outside,
-    video_segments_normalize_fps,
     video_segments_bulk_mutation,
     video_segment_detail,
     video_segments_stats,
@@ -33,7 +32,6 @@ from .segments_crud import (
     ensure_prediction_segment_annotations_for_video,
 )
 from .ai.label import label_list
-from .export_annotated import export_annotated
 
 __all__ = [
     # Video Correction (Phase 1.1) - Implemented
@@ -42,7 +40,6 @@ __all__ = [
     "VideoRemoveFramesView",
     "VideoMetadataStatsView",
     "VideoFpsView",
-    "VideoFrameNeighborhoodView",
     "VideoMediaView",
     "VideoCorrectionView",
     # Reimport views
@@ -54,7 +51,6 @@ __all__ = [
     "video_segments_collection",
     "video_segments_by_video",
     "video_segments_blacken_outside",
-    "video_segments_normalize_fps",
     "video_segments_bulk_mutation",
     "video_segment_detail",
     "video_segments_stats",
@@ -67,5 +63,5 @@ __all__ = [
     "ensure_prediction_segment_annotations_bulk",
     "ensure_prediction_segment_annotations_for_video",
     "label_list",
-    "export_annotated",
+    "export_annotated_data",
 ]

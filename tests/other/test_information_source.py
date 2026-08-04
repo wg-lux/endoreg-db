@@ -1,5 +1,3 @@
-from typing import Any, cast
-
 from django.test import TestCase
 from django.core.management import call_command
 from endoreg_db.models import InformationSource, InformationSourceType
@@ -7,9 +5,6 @@ from ..helpers.data_loader import load_information_source_data
 
 
 class InformationSourceModelTest(TestCase):
-    information_source_type: InformationSourceType
-    information_source: InformationSource
-
     def setUp(self):
         load_information_source_data()
         self.information_source_type = InformationSourceType.objects.create(
@@ -21,7 +16,7 @@ class InformationSourceModelTest(TestCase):
             abbreviation="T",
             description="This is a Test Information Source",
         )
-        cast(Any, self.information_source).information_source_types.add(
+        self.information_source.information_source_types.add(
             self.information_source_type
         )
 

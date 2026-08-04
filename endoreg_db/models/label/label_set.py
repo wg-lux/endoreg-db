@@ -1,19 +1,12 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 if TYPE_CHECKING:
     from .label import Label
 
-NoLabelSetValue: TypeAlias = NoneType
-LabelSetDescription: TypeAlias = "str | NoLabelSetValue"
-LabelSetVersionLookup: TypeAlias = "int | str | NoLabelSetValue"
 
-
-class LabelSetManager(models.Manager["LabelSet"]):
+class LabelSetManager(models.Manager):
     """
     Manager class for handling LabelSet model operations.
     Methods
@@ -22,9 +15,7 @@ class LabelSetManager(models.Manager["LabelSet"]):
 
     """
 
-    def get_by_natural_key(
-        self, name: str, version: LabelSetVersionLookup = None
-    ) -> "LabelSet":
+    def get_by_natural_key(self, name, version=None):
         """Retrieves a LabelSet instance by its natural key (name[, version])."""
 
         queryset = self.filter(name=name)
@@ -33,7 +24,7 @@ class LabelSetManager(models.Manager["LabelSet"]):
 
         labelset = queryset.order_by("-version").first()
         if not labelset:
-            raise LabelSet.DoesNotExist(
+            raise self.model.DoesNotExist(
                 f"LabelSet with name='{name}' and version='{version}' not found"
             )
         return labelset
@@ -49,10 +40,10 @@ class LabelSet(models.Model):
 
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    version: models.IntegerField[Any, Any] = models.IntegerField()
-    labels: models.ManyToManyField[Label, Label] = models.ManyToManyField(
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    version = models.IntegerField()
+    labels: "models.ManyToManyField[Label, Label]" = models.ManyToManyField(
         "Label", related_name="label_sets"
     )
 
@@ -61,7 +52,7 @@ class LabelSet(models.Model):
     if TYPE_CHECKING:
         pass
 
-    def natural_key(self) -> tuple[str, int]:
+    def natural_key(self):
         """Return the natural key of this label set"""
         return (self.name, self.version)
 

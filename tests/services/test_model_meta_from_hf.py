@@ -1,28 +1,18 @@
-# pyright: reportUnknownMemberType=false
-
 from pathlib import Path
-from typing import Any
 
 import pytest
-from pytest import MonkeyPatch
-from django.conf import LazySettings
 from django.db import IntegrityError
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from endoreg_db.services import model_meta_from_hf
 
 
-def _fake_hf_download_factory(source_weights: Path) -> object:
-    def fake_hf_download(**_kwargs: object) -> str:
-        return source_weights.as_posix()
-
-    return fake_hf_download
-
-
 @pytest.mark.django_db
 def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
-    monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path
-) -> None:
+    monkeypatch,
+    settings,
+    tmp_path,
+):
     settings.MEDIA_ROOT = tmp_path
     source_weights = tmp_path / "downloaded.safetensors"
     source_weights.write_bytes(b"downloaded weights")
@@ -30,7 +20,7 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
     monkeypatch.setattr(
         model_meta_from_hf,
         "hf_hub_download",
-        _fake_hf_download_factory(source_weights),
+        lambda **_kwargs: source_weights.as_posix(),
     )
 
     labelset, _ = LabelSet.objects.get_or_create(
@@ -71,8 +61,10 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
 
 @pytest.mark.django_db
 def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(
-    monkeypatch: MonkeyPatch, settings: LazySettings, tmp_path: Path
-) -> None:
+    monkeypatch,
+    settings,
+    tmp_path,
+):
     settings.MEDIA_ROOT = tmp_path
     source_weights = tmp_path / "downloaded.safetensors"
     source_weights.write_bytes(b"downloaded weights")
@@ -80,7 +72,7 @@ def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(
     monkeypatch.setattr(
         model_meta_from_hf,
         "hf_hub_download",
-        _fake_hf_download_factory(source_weights),
+        lambda **_kwargs: source_weights.as_posix(),
     )
 
     labelset, _ = LabelSet.objects.get_or_create(
@@ -94,7 +86,7 @@ def test_ensure_model_meta_from_hf_reuses_ai_model_after_unique_race(
     original_get_or_create = AiModel.objects.get_or_create
     state = {"raised": False}
 
-    def raise_existing_name_once(*args: Any, **kwargs: Any) -> object:
+    def raise_existing_name_once(*args, **kwargs):
         if not state["raised"] and kwargs.get("name") == ai_model.name:
             state["raised"] = True
             raise IntegrityError("UNIQUE constraint failed: endoreg_db_aimodel.name")

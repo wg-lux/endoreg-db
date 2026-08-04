@@ -1,13 +1,11 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
+from typing import TYPE_CHECKING, Optional, Union
 
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.paths import IMPORT_VIDEO_DIR
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -18,12 +16,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
-
-
-class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
-    processor_name: str | None
-    video_hash: str | None
-    save: bool
 
 
 def _video_file_model():
@@ -37,9 +29,9 @@ def create_video_file_from_path(
     center_name: str,
     *,
     model_cls: type["VideoFile"] | None = None,
-    **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
+    **kwargs,
 ) -> Optional["VideoFile"]:
-    from endoreg_db.utils.hashs import get_video_hash
+    from endoreg_db.utils.security.hashs import get_video_hash
 
     from ._imports import _create_from_file
 
@@ -57,7 +49,6 @@ def create_video_file_from_path(
 
     processor_name = kwargs.pop("processor_name", None)
     video_hash = kwargs.pop("video_hash", None)
-    save = kwargs.pop("save", True)
     if not video_hash:
         video_hash = str(get_video_hash(file_path))
 
@@ -67,8 +58,7 @@ def create_video_file_from_path(
         center_name=center_name,
         processor_name=processor_name,
         video_hash=video_hash,
-        video_dir=IMPORT_VIDEO_DIR,
-        save=save,
+        **kwargs,
     )
 
 
@@ -79,7 +69,6 @@ def create_initialized_video_file_from_path(
     video_hash: str,
     *,
     save_video_file: bool = True,
-    initialize: bool = True,
     model_cls: type["VideoFile"] | None = None,
 ) -> "VideoFile":
     from ._imports import _create_from_file
@@ -88,23 +77,18 @@ def create_initialized_video_file_from_path(
         file_path = Path(file_path)
 
     video_file = _create_from_file(
-        model_cls or _video_file_model(),
-        file_path,
+        cls_model=model_cls or _video_file_model(),
+        file_path=file_path,
         center_name=center_name,
         processor_name=processor_name,
         video_hash=video_hash,
-        video_dir=IMPORT_VIDEO_DIR,
         save=save_video_file,
     )
-    if not initialize:
-        return video_file
     return initialize_video_file(video_file)
 
 
-def initialize_video_file(
-    video: "VideoFile", *, local_raw_path: Path | None = None
-) -> "VideoFile":
-    update_video_meta(video, save_instance=False, raw_video_path=local_raw_path)
+def initialize_video_file(video: "VideoFile") -> "VideoFile":
+    update_video_meta(video, save_instance=False)
     try:
         if video.has_raw and (
             video.fps is None
@@ -113,7 +97,7 @@ def initialize_video_file(
             or video.frame_count is None
             or video.duration is None
         ):
-            initialize_video_specs(video, use_raw=True, local_video_path=local_raw_path)
+            initialize_video_specs(video, use_raw=True)
         else:
             logger.debug(
                 "Skipping OpenCV video spec init for %s; specs already available or raw file missing.",
@@ -152,10 +136,4 @@ def initialize_video_file(
         )
 
     initialize_video_frames(video)
-    if local_raw_path is not None:
-        from endoreg_db.services.video_storage_normalization import (
-            persist_video_source_timeline,
-        )
-
-        persist_video_source_timeline(video, Path(local_raw_path))
     return video

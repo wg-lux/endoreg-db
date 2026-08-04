@@ -1,41 +1,17 @@
+from endoreg_db.models import SensitiveMeta
 import logging
-from datetime import date, datetime, timedelta
-from itertools import combinations
-from typing import Protocol, cast
+from datetime import timedelta
+from typing import Tuple
 
 from django.db.models import QuerySet
 
-from lx_dtypes.models.contracts.pseudonymization import (
-    KAnonymityResult,
-    QuasiIdentifierField,
-    QuasiIdentifierSubset,
-)
-
-from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from itertools import combinations
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
 
-QI_FLAGS: tuple[QuasiIdentifierField, ...] = (
-    "first_name",
-    "last_name",
-    "center",
-    "gender",
-    "dob_band",
-)
-
-
-class _RelatedIdentity(Protocol):
-    pk: int | None
-
-
-class _SensitiveMetaQuasiIdentifierRecord(Protocol):
-    pk: int | None
-    patient_first_name: str | None
-    patient_last_name: str | None
-    center: _RelatedIdentity | None
-    patient_gender: _RelatedIdentity | None
-    patient_dob: datetime | date | None
+QI_FLAGS = ["first_name", "last_name", "center", "gender", "dob_band"]
 
 
 def get_k_profile_for_instance(
@@ -43,7 +19,7 @@ def get_k_profile_for_instance(
     *,
     dob_year_tolerance: int = 1,
     include_self: bool = True,
-) -> dict[QuasiIdentifierSubset, int]:
+) -> Dict[Tuple[str, ...], int]:
     """
     For a given SensitiveMeta instance, compute k (equivalence class size)
     for all non-empty subsets of the quasi-identifiers defined in QI_FLAGS.
@@ -56,15 +32,15 @@ def get_k_profile_for_instance(
           ...
         }
     """
-    result: dict[QuasiIdentifierSubset, int] = {}
+    result: Dict[Tuple[str, ...], int] = {}
 
     for r in range(1, len(QI_FLAGS) + 1):
-        for qi_subset in combinations(QI_FLAGS, r):
-            use_first_name = "first_name" in qi_subset
-            use_last_name = "last_name" in qi_subset
-            use_center = "center" in qi_subset
-            use_gender = "gender" in qi_subset
-            use_dob_band = "dob_band" in qi_subset
+        for subset in combinations(QI_FLAGS, r):
+            use_first_name = "first_name" in subset
+            use_last_name = "last_name" in subset
+            use_center = "center" in subset
+            use_gender = "gender" in subset
+            use_dob_band = "dob_band" in subset
 
             qs = _build_sensitive_meta_qi_queryset(
                 instance,
@@ -78,12 +54,12 @@ def get_k_profile_for_instance(
             )
 
             k_value = qs.count()
-            result[qi_subset] = k_value
+            result[subset] = k_value
 
     return result
 
 
-def get_k_anonymity(pk: int, k: int = 3) -> tuple[int, bool]:
+def get_k_anonymity(pk, k=3):
     """
     How anonymized is a patient?
     Get the k value for how many patients can be matched to the current patients attributes.
@@ -122,66 +98,36 @@ def _build_sensitive_meta_qi_queryset(
     Returns:
         A Django QuerySet for further aggregation.
     """
-    qi_record = cast(_SensitiveMetaQuasiIdentifierRecord, instance)
     qs = SensitiveMeta.objects.all()
 
-    if use_first_name and qi_record.patient_first_name is not None:
-        qs = qs.filter(patient_first_name=qi_record.patient_first_name)
+    if use_first_name and instance.patient_first_name is not None:
+        qs = qs.filter(patient_first_name=instance.patient_first_name)
 
-    if use_last_name and qi_record.patient_last_name is not None:
-        qs = qs.filter(patient_last_name=qi_record.patient_last_name)
+    if use_last_name and instance.patient_last_name is not None:
+        qs = qs.filter(patient_last_name=instance.patient_last_name)
     # --- Center ---
-    if use_center and qi_record.center is not None:
-        center_pk = qi_record.center.pk
-        if center_pk is not None:
-            qs = qs.filter(center=center_pk)
+    if use_center and instance.center is not None:
+        if instance.center.pk is not None:
+            qs = qs.filter(center=instance.center.pk)
 
     # --- Gender ---
-    if use_gender and qi_record.patient_gender is not None:
-        patient_gender_pk = qi_record.patient_gender.pk
-        if patient_gender_pk is not None:
-            qs = qs.filter(patient_gender_id=patient_gender_pk)
+    if use_gender and instance.patient_gender is not None:
+        if instance.patient_gender.pk is not None:
+            qs = qs.filter(patient_gender_id=instance.patient_gender)
 
     # --- DOB (approximate ±N years using days) ---
-    if use_dob_band and qi_record.patient_dob is not None:
+    if use_dob_band and instance.patient_dob is not None:
         days = dob_year_tolerance * 365
-        ref_date = (
-            qi_record.patient_dob.date()
-            if isinstance(qi_record.patient_dob, datetime)
-            else qi_record.patient_dob
-        )
+        ref_date = instance.patient_dob.date()
         start = ref_date - timedelta(days=days)
         end = ref_date + timedelta(days=days)
         qs = qs.filter(patient_dob__date__range=(start, end))
 
     # --- Exclude self if requested ---
-    if not include_self and qi_record.pk is not None:
-        qs = qs.exclude(pk=qi_record.pk)
+    if not include_self and instance.pk is not None:
+        qs = qs.exclude(pk=instance.pk)
 
     return qs
-
-
-def build_sensitive_meta_qi_queryset(
-    instance: SensitiveMeta,
-    *,
-    dob_year_tolerance: int = 1,
-    include_self: bool = True,
-    use_first_name: bool = True,
-    use_last_name: bool = True,
-    use_center: bool = True,
-    use_gender: bool = True,
-    use_dob_band: bool = True,
-) -> QuerySet[SensitiveMeta]:
-    return _build_sensitive_meta_qi_queryset(
-        instance,
-        dob_year_tolerance=dob_year_tolerance,
-        include_self=include_self,
-        use_first_name=use_first_name,
-        use_last_name=use_last_name,
-        use_center=use_center,
-        use_gender=use_gender,
-        use_dob_band=use_dob_band,
-    )
 
 
 def get_k_anonymity_for_sensitive_meta(
@@ -189,7 +135,7 @@ def get_k_anonymity_for_sensitive_meta(
     *,
     k: int = 3,
     dob_year_tolerance: int = 1,
-) -> tuple[int, bool]:
+) -> Tuple[int, bool]:
     """
     Compute the k-anonymity (equivalence class size) for a SensitiveMeta record.
 
@@ -222,18 +168,14 @@ def get_k_anonymity_for_sensitive_meta(
     )
 
     k_value = qs.count()
-    result = KAnonymityResult(
-        k_value=k_value,
-        is_k_anonymous=k_value >= k,
-        threshold=k,
-    )
+    is_k_anon = k_value >= k
 
     logger.info(
         "k-anonymity for SensitiveMeta pk=%s -> k=%s (threshold=%s, dob_tol=%s years)",
         pk,
-        result.k_value,
+        k_value,
         k,
         dob_year_tolerance,
     )
 
-    return result.as_tuple()
+    return k_value, is_k_anon

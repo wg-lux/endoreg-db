@@ -8,9 +8,7 @@ Tests cover:
 - Edge cases and invalid formats
 """
 
-from collections.abc import Mapping
 from datetime import date
-from typing import Protocol, cast
 
 import pytest
 
@@ -20,16 +18,6 @@ from endoreg_db.models.metadata.sensitive_meta_logic import (
     parse_any_date,
 )
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
-
-
-class _SerializerErrors(Protocol):
-    errors: Mapping[str, object]
-
-
-def _serializer_errors(
-    serializer: SensitiveMetaValidateSerializer,
-) -> Mapping[str, object]:
-    return cast(_SerializerErrors, serializer).errors
 
 
 class TestDateParsingUtilities:
@@ -66,6 +54,11 @@ class TestDateParsingUtilities:
     def test_parse_empty_string(self):
         """Test parsing empty string returns None."""
         result = parse_any_date("")
+        assert result is None
+
+    def test_parse_none(self):
+        """Test parsing None returns None."""
+        result = parse_any_date(None)
         assert result is None
 
     def test_parse_whitespace_only(self):
@@ -212,7 +205,7 @@ class TestSensitiveMetaValidateSerializer:
 
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert not serializer.is_valid()
-        assert "patient_dob" in _serializer_errors(serializer)
+        assert "patient_dob" in serializer.errors
 
     def test_validate_dates_empty(self):
         """Test that validation does not accept empty patient DOB."""
@@ -233,7 +226,7 @@ class TestSensitiveMetaValidateSerializer:
 
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert not serializer.is_valid()
-        assert "examination_date" in _serializer_errors(serializer)
+        assert "examination_date" in serializer.errors
 
     def test_file_type_video(self):
         """Test file_type field accepts 'video'."""
@@ -277,7 +270,7 @@ class TestSensitiveMetaValidateSerializer:
 
         serializer = SensitiveMetaValidateSerializer(data=data)
         assert not serializer.is_valid()
-        assert "file_type" in _serializer_errors(serializer)
+        assert "file_type" in serializer.errors
 
     def test_all_fields_not_optional(self):
         """Test that all fields are optional."""

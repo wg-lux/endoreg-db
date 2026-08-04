@@ -3,27 +3,16 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import timedelta
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, cast
 
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.pdf.report_llm_job import (
-    ReportLlmInferenceJob,
-    ReportLlmJobJsonObject,
-    ReportLlmJobJsonValue,
-)
+from endoreg_db.models.media.pdf.report_llm_job import ReportLlmInferenceJob
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.schemas.report_llm import (
-    ReportLlmJobConfig,
-    ReportLlmReimportRequestPayload,
-    build_report_llm_job_config,
-    dump_report_llm_reimport_request_payload,
-)
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -31,8 +20,6 @@ from endoreg_db.services.jobs.heavy_jobs import (
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.raw_pdf_files import require_usable_completed_report
-from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
@@ -46,46 +33,18 @@ REPORT_LLM_IMPORT_OPERATION = cast(
 )
 REPORT_LLM_JOB_MODE_DEFAULT = "celery"
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
-REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
 
 
-JsonValue = ReportLlmJobJsonValue
+JsonValue = Any
 
 
-class _CenterLike(Protocol):
-    name: str
+class ReportLlmJobConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-
-class _RawPdfStateLike(Protocol):
-    anonymized: bool
-    processed_file_sha256: str
-
-
-class _RawPdfLike(Protocol):
-    pk: int
-    pdf_hash: str
-    center_id: int | None
-    center: _CenterLike | None
-    file: Any
-    sensitive_meta_id: int | None
-    sensitive_meta: SensitiveMeta | None
-    text: str | None
-    processed_file: Any
-    state: _RawPdfStateLike | None
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-    def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _UploadJobLike(Protocol):
-    pk: str
-    file: Any
-    source_center: _CenterLike | None
-
-    def mark_error(self, error_detail: str) -> None: ...
-    def mark_lost(self, error_detail: str) -> None: ...
-    def mark_processing(self) -> None: ...
-    def mark_completed(self, sensitive_meta: SensitiveMeta | None = None) -> None: ...
+    kind: Literal["report_llm_reimport", "report_llm_import"]
+    queue: str
+    retry: bool = True
+    request_payload: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class ReportLlmDispatchResult(BaseModel):
@@ -141,11 +100,27 @@ def get_report_llm_dispatch_delay_seconds() -> int:
     )
 
 
+def _json_safe(value: Any) -> JsonValue:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return str(value)
+
+
+def _json_safe_dict(payload: Any) -> dict[str, JsonValue]:
+    if not hasattr(payload, "items"):
+        return {}
+    return {str(key): _json_safe(value) for key, value in payload.items()}
+
+
 def _report_llm_poll_url(*, report_id: int, job_id: str) -> str:
-    return endoreg_api_path(f"media/pdfs/{int(report_id)}/llm-jobs/{job_id}/")
+    return f"/api/media/pdfs/{int(report_id)}/llm-jobs/{job_id}/"
 
 
-def _report_upload_jobs(pdf: _RawPdfLike):
+def _report_upload_jobs(pdf: RawPdfFile):
     queryset = UploadJob.objects.filter(
         content_hash=pdf.pdf_hash,
         content_type="application/pdf",
@@ -156,7 +131,7 @@ def _report_upload_jobs(pdf: _RawPdfLike):
     return queryset
 
 
-def _mark_report_upload_jobs_processing(pdf: _RawPdfLike) -> int:
+def _mark_report_upload_jobs_processing(pdf: RawPdfFile) -> int:
     return _report_upload_jobs(pdf).update(
         status=UploadJob.Status.PROCESSING,
         error_detail="",
@@ -164,7 +139,7 @@ def _mark_report_upload_jobs_processing(pdf: _RawPdfLike) -> int:
     )
 
 
-def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
+def _mark_report_upload_jobs_anonymized(pdf: RawPdfFile) -> int:
     return _report_upload_jobs(pdf).update(
         status=UploadJob.Status.ANONYMIZED,
         error_detail="",
@@ -173,7 +148,7 @@ def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
     )
 
 
-def _mark_report_upload_jobs_error(pdf: _RawPdfLike, error_detail: str) -> int:
+def _mark_report_upload_jobs_error(pdf: RawPdfFile, error_detail: str) -> int:
     return _report_upload_jobs(pdf).update(
         status=UploadJob.Status.ERROR,
         error_detail=error_detail,
@@ -181,7 +156,7 @@ def _mark_report_upload_jobs_error(pdf: _RawPdfLike, error_detail: str) -> int:
     )
 
 
-def _mark_report_upload_jobs_lost(pdf: _RawPdfLike, error_detail: str) -> int:
+def _mark_report_upload_jobs_lost(pdf: RawPdfFile, error_detail: str) -> int:
     return _report_upload_jobs(pdf).update(
         status=UploadJob.Status.LOST,
         error_detail=error_detail,
@@ -195,12 +170,15 @@ def _config_from_payload(
     queue: str,
     operation: ReportLlmOperation,
 ) -> ReportLlmJobConfig:
-    if not isinstance(payload, dict):
-        raise ValueError("Report LLM request payload must be a JSON object.")
-    return build_report_llm_job_config(
-        cast(dict[str, Any], payload),
+    safe_payload = _json_safe_dict(payload)
+    retry = safe_payload.get("retry")
+    return ReportLlmJobConfig(
+        kind=operation,
         queue=queue,
-        operation=operation,
+        retry=True
+        if retry is None
+        else str(retry).strip().lower() not in {"0", "false", "no"},
+        request_payload=safe_payload,
     )
 
 
@@ -214,16 +192,6 @@ def _active_report_llm_jobs(
         operation=operation,
         status__in=ReportLlmInferenceJob.ACTIVE_STATUSES,
     ).order_by("created_at", "id")
-
-
-def _recover_stale_report_llm_job(job: ReportLlmInferenceJob) -> bool:
-    if job.updated_at > timezone.now() - REPORT_LLM_STALE_TIMEOUT:
-        return False
-    job.mark_failure(
-        f"Recovered stale report LLM job after {REPORT_LLM_STALE_TIMEOUT}."
-    )
-    logger.warning("Recovered stale report LLM job: job=%s", job.job_key)
-    return True
 
 
 def _active_upload_report_llm_jobs(
@@ -253,7 +221,7 @@ def _reserve_report_llm_job(
             .select_for_update()
             .first()
         )
-        if active_job is not None and not _recover_stale_report_llm_job(active_job):
+        if active_job is not None:
             return active_job, "already_queued"
 
         job = ReportLlmInferenceJob.objects.create(
@@ -285,7 +253,7 @@ def _reserve_report_llm_import_job(
             .select_for_update()
             .first()
         )
-        if active_job is not None and not _recover_stale_report_llm_job(active_job):
+        if active_job is not None:
             return active_job, "already_queued"
 
         job = ReportLlmInferenceJob.objects.create(
@@ -307,11 +275,7 @@ def _set_report_llm_task_id(job: ReportLlmInferenceJob, task_id: str) -> None:
 
 
 def report_llm_job_payload(job: ReportLlmInferenceJob) -> dict[str, JsonValue]:
-    pdf = cast(_RawPdfLike | None, cast(Any, job).pdf)
-    if pdf is None:
-        report_id = None
-    else:
-        report_id = int(pdf.pk)
+    report_id = int(job.pdf_id) if job.pdf_id is not None else None
     payload: dict[str, JsonValue] = {
         "status": job.status,
         "operation": job.operation,
@@ -345,15 +309,17 @@ def _dispatch_result(
     message: str | None = None,
     reason: str | None = None,
 ) -> ReportLlmDispatchResult:
-    poll_url = None
-    if report_id is not None:
-        poll_url = _report_llm_poll_url(report_id=report_id, job_id=job_id)
+    poll_url = (
+        _report_llm_poll_url(report_id=int(report_id), job_id=job_id)
+        if report_id is not None
+        else None
+    )
     return ReportLlmDispatchResult(
         task_id=task_id,
         mode=mode,
         status=status,
         operation=operation,
-        report_id=report_id,
+        report_id=int(report_id) if report_id is not None else None,
         queue=queue,
         job_id=job_id,
         poll_url=poll_url,
@@ -371,13 +337,10 @@ def _get_report_llm_job(job_id: str) -> ReportLlmInferenceJob:
 
 
 def _job_report_id(job: ReportLlmInferenceJob) -> int | None:
-    pdf = cast(_RawPdfLike | None, cast(Any, job).pdf)
-    if pdf is None:
-        return None
-    return int(pdf.pk)
+    return int(job.pdf_id) if job.pdf_id is not None else None
 
 
-def _clear_existing_sensitive_meta(pdf: _RawPdfLike) -> int | None:
+def _clear_existing_sensitive_meta(pdf: RawPdfFile) -> int | None:
     old_meta_id = pdf.sensitive_meta_id
     if old_meta_id is None:
         return None
@@ -407,7 +370,7 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
         return True
 
     job.mark_running()
-    pdf = cast(_RawPdfLike | None, cast(Any, job).pdf)
+    pdf = job.pdf
     if pdf is None:
         error_detail = "Report LLM job has no associated report."
         job.mark_lost(error_detail)
@@ -453,28 +416,20 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
             )
 
         pdf.refresh_from_db()
-        processed_file_sha256 = require_usable_completed_report(
-            cast(RawPdfFile, pdf),
-            source_sha256=pdf.pdf_hash,
-        )
         anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
-        result: ReportLlmJobJsonObject = cast(
-            ReportLlmJobJsonObject,
-            {
-                "pdf_id": int(pdf.pk),
-                "pdf_hash": str(pdf.pdf_hash),
-                "sensitive_meta_created": pdf.sensitive_meta_id is not None,
-                "sensitive_meta_id": int(pdf.sensitive_meta_id)
-                if pdf.sensitive_meta_id is not None
-                else None,
-                "text_extracted": bool(pdf.text),
-                "anonymized": bool(pdf.state and pdf.state.anonymized),
-                "processed_file_sha256": processed_file_sha256,
-                "old_sensitive_meta_id": old_meta_id,
-                "processing_upload_jobs": int(processing_upload_jobs),
-                "anonymized_upload_jobs": int(anonymized_upload_jobs),
-            },
-        )
+        result = {
+            "pdf_id": int(pdf.pk),
+            "pdf_hash": str(pdf.pdf_hash),
+            "sensitive_meta_created": pdf.sensitive_meta_id is not None,
+            "sensitive_meta_id": int(pdf.sensitive_meta_id)
+            if pdf.sensitive_meta_id is not None
+            else None,
+            "text_extracted": bool(pdf.text),
+            "anonymized": bool(getattr(pdf, "anonymized", False)),
+            "old_sensitive_meta_id": old_meta_id,
+            "processing_upload_jobs": int(processing_upload_jobs),
+            "anonymized_upload_jobs": int(anonymized_upload_jobs),
+        }
         job.mark_success(result=result)
         logger.info(
             "Report LLM re-import job %s completed for report %s",
@@ -504,7 +459,7 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         return True
 
     job.mark_running()
-    upload_job = cast(_UploadJobLike | None, cast(Any, job).upload_job)
+    upload_job = job.upload_job
     if upload_job is None:
         error_detail = "Report LLM import job has no associated upload job."
         job.mark_lost(error_detail)
@@ -539,34 +494,24 @@ def _run_report_llm_import_job(job_id: str) -> bool:
                 center_name=center.name,
                 retry=config.retry,
             )
-        if not isinstance(report, RawPdfFile):
-            raise RuntimeError("Report import completed without a RawPdfFile result.")
-        typed_report = cast(_RawPdfLike, report)
-        processed_file_sha256 = require_usable_completed_report(
-            report,
-            source_sha256=typed_report.pdf_hash,
+        sensitive_meta = (
+            report.sensitive_meta if isinstance(report, RawPdfFile) else None
         )
-        sensitive_meta = typed_report.sensitive_meta
-        job.pdf = report
-        job.save(update_fields=["pdf", "updated_at"])
+        if isinstance(report, RawPdfFile):
+            job.pdf = report
+            job.save(update_fields=["pdf", "updated_at"])
         upload_job.mark_completed(sensitive_meta=sensitive_meta)
-        cleanup_upload_job_source(cast(UploadJob, upload_job))
-        result: ReportLlmJobJsonObject = cast(
-            ReportLlmJobJsonObject,
-            {
-                "upload_job_id": str(upload_job.pk),
-                "pdf_id": int(typed_report.pk),
-                "pdf_hash": str(typed_report.pdf_hash),
-                "sensitive_meta_id": (
-                    int(sensitive_meta.pk) if sensitive_meta is not None else None
-                ),
-                "text_extracted": bool(getattr(typed_report, "text", "")),
-                "anonymized": bool(
-                    typed_report.state and typed_report.state.anonymized
-                ),
-                "processed_file_sha256": processed_file_sha256,
-            },
-        )
+        cleanup_upload_job_source(upload_job)
+        result = {
+            "upload_job_id": str(upload_job.pk),
+            "pdf_id": int(report.pk) if isinstance(report, RawPdfFile) else None,
+            "pdf_hash": str(report.pdf_hash) if isinstance(report, RawPdfFile) else "",
+            "sensitive_meta_id": (
+                int(sensitive_meta.pk) if sensitive_meta is not None else None
+            ),
+            "text_extracted": bool(getattr(report, "text", "")),
+            "anonymized": bool(getattr(report, "anonymized", False)),
+        }
         job.mark_success(result=result)
         logger.info(
             "Report LLM import job %s completed for upload job %s",
@@ -593,18 +538,14 @@ def _run_report_llm_import_job(job_id: str) -> bool:
 def dispatch_report_llm_reimport(
     *,
     report_id: int,
-    payload: ReportLlmReimportRequestPayload,
+    payload: Any | None = None,
 ) -> ReportLlmDispatchResult:
     mode = get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
     queue = queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT)
     operation = REPORT_LLM_REIMPORT_OPERATION
     pdf = RawPdfFile.objects.get(pk=report_id)
-    config = _config_from_payload(
-        dump_report_llm_reimport_request_payload(payload),
-        queue=queue,
-        operation=operation,
-    )
+    config = _config_from_payload(payload or {}, queue=queue, operation=operation)
     job, reservation_status = _reserve_report_llm_job(
         pdf=pdf,
         task_id=task_id,

@@ -1,42 +1,28 @@
-from __future__ import annotations
-
 import os
-from typing import TypedDict, Unpack
 
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
+from django.core.management.base import BaseCommand
 
 from ...data import EXAMINATION_DATA_DIR
-from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.examination.examination_indication import (
+from ...models import (
+    Examination,
     ExaminationIndication,
-)
-from endoreg_db.models.medical.examination.examination_time import ExaminationTime
-from endoreg_db.models.medical.examination.examination_time_type import (
+    ExaminationTime,
     ExaminationTimeType,
+    ExaminationType,
+    Finding,
 )
-from endoreg_db.models.medical.examination.examination_type import ExaminationType
-from endoreg_db.models.medical.finding.finding import Finding
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 SOURCE_DIR = EXAMINATION_DATA_DIR
 
-
-class LoadExaminationCommandOptions(TypedDict):
-    verbose: bool
-
-
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
+IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     "ExaminationType",
     "ExaminationTimeType",
     "ExaminationTime",
     "Examination",
 ]
 
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
+IMPORT_METADATA = {
     "ExaminationType": {
         "dir": os.path.join(SOURCE_DIR, "type"),
         "model": ExaminationType,
@@ -78,19 +64,15 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: Unpack[LoadExaminationCommandOptions],
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
+    def handle(self, *args, **options):
+        verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+            _metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, _metadata, verbose)

@@ -17,9 +17,7 @@ def lab_data_etl() -> Tuple[pd.DataFrame, List[LabData]]:
             case_id_ukw=str(row["case_id_ukw"]),
             test_name=row["test_name"],
             test_value=row["test_value"],
-            test_datetime=row["test_datetime"].isoformat()
-            if not pd.isna(row["test_datetime"])
-            else "",
+            test_datetime=row["test_datetime"].isoformat() if not pd.isna(row["test_datetime"]) else "",
         )
         data_list.append(lab_data)
 

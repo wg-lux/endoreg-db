@@ -1,29 +1,17 @@
-# pyright: reportPrivateUsage=false
 from __future__ import annotations
-
-from pathlib import Path
-from typing import NoReturn
 
 import pytest
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.utils import paths as paths_module
-
-
-def _deny_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-    raise AssertionError("delete_associated_files must not nuke global transcoding")
-
-
-def _audio_only_stream_info(path: Path) -> dict[str, list[dict[str, str]]]:
-    return {"streams": [{"codec_type": "audio"}]}
+from endoreg_db.utils.filesystem import paths as paths_module
 
 
 @pytest.mark.django_db
 def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_fields(
-    tmp_path: Path,
-) -> None:
+    tmp_path,
+):
     center = Center.objects.create(
         name="state-storage-center",
         display_name="State Storage Center",
@@ -64,77 +52,12 @@ def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_f
     assert video.processed_streamable_relative_path == ""
 
 
-@pytest.mark.django_db
-def test_delete_associated_files_preserves_existing_video_artifacts_for_reimport(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    import endoreg_db.import_files.file_storage.cleanup as cleanup_module
-
-    center = Center.objects.create(
-        name="state-reimport-center",
-        display_name="State Re-import Center",
-    )
-    storage_root = paths_module.EndoregPathsModel.from_environment().storage
-    raw_stream = storage_root / "streamable_videos" / "raw" / "reimport-raw.mp4"
-    processed_stream = (
-        storage_root / "streamable_videos" / "processed" / "reimport-processed.mp4"
-    )
-    raw_stream.parent.mkdir(parents=True, exist_ok=True)
-    processed_stream.parent.mkdir(parents=True, exist_ok=True)
-    raw_stream.write_bytes(b"raw-stream")
-    processed_stream.write_bytes(b"processed-stream")
-
-    video = VideoFile.objects.create(
-        center=center,
-        video_hash="state-reimport-video",
-        raw_streamable_relative_path=raw_stream.relative_to(storage_root).as_posix(),
-        processed_streamable_relative_path=processed_stream.relative_to(
-            storage_root
-        ).as_posix(),
-    )
-    import_file = tmp_path / "import.mp4"
-    staged_output = tmp_path / "staged-reimport.mp4"
-    import_file.write_bytes(b"import")
-    staged_output.write_bytes(b"staged")
-    ctx = ImportContext(
-        file_path=import_file,
-        center_name=center.name,
-        file_type="video",
-    )
-    ctx.current_video = video
-    ctx.anonymized_path = staged_output
-
-    monkeypatch.setattr(
-        cleanup_module,
-        "staging_cleanup_roots",
-        lambda: (tmp_path,),
-        raising=True,
-    )
-
-    state_management.delete_associated_files(
-        ctx,
-        preserve_existing_video_artifacts=True,
-    )
-
-    video.refresh_from_db()
-    assert raw_stream.read_bytes() == b"raw-stream"
-    assert processed_stream.read_bytes() == b"processed-stream"
-    assert video.raw_streamable_relative_path != ""
-    assert video.processed_streamable_relative_path != ""
-    assert not staged_output.exists()
-    assert ctx.anonymized_path is None
-
-
 @pytest.mark.unit
 def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch,
+    tmp_path,
+):
     import endoreg_db.import_files.file_storage.cleanup as cleanup_module
-
-    def fake_staging_cleanup_roots() -> tuple[Path, ...]:
-        return (tmp_path,)
 
     import_file = tmp_path / "import.pdf"
     anonymized_path = tmp_path / "anon.pdf"
@@ -153,13 +76,15 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     monkeypatch.setattr(
         state_management,
         "nuke_transcoding_dir",
-        _deny_nuke_transcoding_dir,
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("delete_associated_files must not nuke global transcoding")
+        ),
         raising=True,
     )
     monkeypatch.setattr(
         cleanup_module,
         "staging_cleanup_roots",
-        fake_staging_cleanup_roots,
+        lambda: (tmp_path,),
         raising=True,
     )
 
@@ -172,41 +97,7 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
 
 
 @pytest.mark.unit
-def test_delete_associated_files_preserves_active_sensitive_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    import endoreg_db.import_files.file_storage.cleanup as cleanup_module
-
-    sensitive_path = tmp_path / "sensitive.pdf"
-    sensitive_path.write_bytes(b"sensitive")
-    ctx = ImportContext(
-        file_path=sensitive_path,
-        center_name="state-storage-center",
-        file_type="report",
-    )
-    ctx.sensitive_path = sensitive_path
-
-    monkeypatch.setattr(
-        cleanup_module,
-        "staging_cleanup_roots",
-        lambda: (tmp_path,),
-        raising=True,
-    )
-
-    state_management.delete_associated_files(
-        ctx,
-        preserve_sensitive_staging=True,
-    )
-
-    assert ctx.sensitive_path == sensitive_path
-    assert sensitive_path.read_bytes() == b"sensitive"
-
-
-@pytest.mark.unit
-def test_nuke_transcoding_dir_removes_files_symlinks_and_directories(
-    tmp_path: Path,
-) -> None:
+def test_nuke_transcoding_dir_removes_files_symlinks_and_directories(tmp_path):
     transcoding_dir = tmp_path / "transcoding"
     nested_dir = transcoding_dir / "nested"
     nested_dir.mkdir(parents=True)
@@ -225,7 +116,7 @@ def test_nuke_transcoding_dir_removes_files_symlinks_and_directories(
 
 
 @pytest.mark.unit
-def test_nuke_transcoding_dir_returns_false_for_file_path(tmp_path: Path) -> None:
+def test_nuke_transcoding_dir_returns_false_for_file_path(tmp_path):
     not_a_dir = tmp_path / "not-a-dir"
     not_a_dir.write_bytes(b"payload")
 
@@ -234,9 +125,7 @@ def test_nuke_transcoding_dir_returns_false_for_file_path(tmp_path: Path) -> Non
 
 
 @pytest.mark.unit
-def test_verify_final_video_output_rejects_missing_or_non_video_stream(
-    tmp_path: Path,
-) -> None:
+def test_verify_final_video_output_rejects_missing_or_non_video_stream(tmp_path):
     missing = tmp_path / "missing.mp4"
     with pytest.raises(RuntimeError, match="missing"):
         state_management._verify_final_video_output(missing)
@@ -248,7 +137,7 @@ def test_verify_final_video_output_rejects_missing_or_non_video_stream(
             monkeypatch.setattr(
                 state_management,
                 "get_stream_info",
-                _audio_only_stream_info,
+                lambda path: {"streams": [{"codec_type": "audio"}]},
                 raising=True,
             )
             state_management._verify_final_video_output(existing)

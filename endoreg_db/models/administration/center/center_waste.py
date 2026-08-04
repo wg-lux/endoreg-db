@@ -1,29 +1,31 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TypeAlias, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
-NoCenterWasteValue: TypeAlias = NoneType
+if TYPE_CHECKING:
+    from ...other.emission import EmissionFactor
+    from ...other.unit import Unit
+    from ...other.waste import Waste
+    from .center import Center
 
 
 class CenterWaste(models.Model):
-    center: models.ForeignKey[Any] = models.ForeignKey(
+    if TYPE_CHECKING:
+        center: models.ForeignKey[Center, Center]
+        waste: models.ForeignKey[Waste, Waste]
+        unit: models.ForeignKey[Unit | None, Unit | None]
+        emission_factor: models.ForeignKey[EmissionFactor | None, EmissionFactor | None]
+
+    center = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_wastes",
     )
-    year: models.IntegerField[Any, Any] = models.IntegerField()
-    waste: models.ForeignKey[Any] = models.ForeignKey(
-        "Waste",
-        on_delete=models.CASCADE,
-    )
-    quantity: models.FloatField[Any, Any] = models.FloatField()
-    unit: models.ForeignKey[Any] = models.ForeignKey(
-        "Unit", on_delete=models.SET_NULL, null=True
-    )
-    emission_factor: models.ForeignKey[Any] = models.ForeignKey(
+    year = models.IntegerField()
+    waste = models.ForeignKey("Waste", on_delete=models.CASCADE)
+    quantity = models.FloatField()
+    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    emission_factor = models.ForeignKey(
         "EmissionFactor", on_delete=models.SET_NULL, null=True
     )
 

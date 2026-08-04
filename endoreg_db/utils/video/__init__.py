@@ -1,61 +1,28 @@
-from __future__ import annotations
+from .names import (
+    get_video_key,
+    identify_video_key,
+    get_video_key_regex_by_examination_alias,
+)
 
-from typing import TYPE_CHECKING, Any
+# Add necessary functions from ffmpeg_wrapper
+from .ffmpeg_wrapper import (
+    get_stream_info,
+    assemble_video_from_frames,
+    transcode_video,
+    transcode_videofile_if_required,
+    extract_frames as ffmpeg_extract_frames,  # Alias to avoid potential name clash if 'extract_frames' was used elsewhere directly from __init__
+)
+
 
 __all__ = [
+    # Keep existing
     "get_video_key",
     "identify_video_key",
     "get_video_key_regex_by_examination_alias",
+    # Add from ffmpeg_wrapper
     "get_stream_info",
     "assemble_video_from_frames",
     "transcode_video",
     "transcode_videofile_if_required",
-    "ffmpeg_extract_frames",
+    "ffmpeg_extract_frames",  # Use the alias if needed
 ]
-
-if TYPE_CHECKING:
-    from endoreg_db.utils.ffmpeg_wrapper import (
-        assemble_video_from_frames as assemble_video_from_frames,
-        get_stream_info as get_stream_info,
-        transcode_video as transcode_video,
-        transcode_videofile_if_required as transcode_videofile_if_required,
-    )
-    from endoreg_db.utils.ffmpeg_wrapper import extract_frames as ffmpeg_extract_frames
-    from endoreg_db.utils.video_names import (
-        get_video_key as get_video_key,
-        get_video_key_regex_by_examination_alias as get_video_key_regex_by_examination_alias,
-        identify_video_key as identify_video_key,
-    )
-
-
-def __getattr__(name: str) -> Any:
-    if name in {
-        "get_video_key",
-        "identify_video_key",
-        "get_video_key_regex_by_examination_alias",
-    }:
-        from endoreg_db.utils import video_names
-
-        value = getattr(video_names, name)
-        globals()[name] = value
-        return value
-
-    if name == "ffmpeg_extract_frames":
-        from endoreg_db.utils.ffmpeg_wrapper import extract_frames
-
-        globals()[name] = extract_frames
-        return extract_frames
-
-    if name in {
-        "get_stream_info",
-        "assemble_video_from_frames",
-        "transcode_video",
-        "transcode_videofile_if_required",
-    }:
-        from endoreg_db.utils import ffmpeg_wrapper
-
-        value = getattr(ffmpeg_wrapper, name)
-        globals()[name] = value
-        return value
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

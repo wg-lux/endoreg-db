@@ -8,18 +8,15 @@ Supports two workflows:
 
 import logging
 import tempfile
-from collections.abc import Iterable, Mapping
-from importlib import import_module
 from pathlib import Path
-from typing import Protocol, TypedDict, cast
+from typing import Any, Dict, Iterable, List
 
 import yaml
-from django.core.management import BaseCommand, CommandError, CommandParser
+from django.core.management import BaseCommand, CommandError
+from huggingface_hub import hf_hub_download
 
 from endoreg_db.data import AI_MODEL_META_DATA_DIR
-from endoreg_db.models.administration.ai.ai_model import AiModel
-from endoreg_db.models.label.label_set import LabelSet
-from endoreg_db.models.metadata.model_meta import ModelMeta
+from endoreg_db.models import AiModel, LabelSet, ModelMeta
 
 logger = logging.getLogger(__name__)
 
@@ -30,69 +27,6 @@ DEFAULT_MODEL_PATH = (
     / "colo_segmentation_RegNetX800MF_6.safetensors"
 )
 
-type CommandOptionValue = bool | int | str | None
-type TemplateScalar = bool | int | float | str | None
-type TemplateValue = TemplateScalar | list[TemplateScalar] | dict[str, TemplateValue]
-type TemplateFields = dict[str, TemplateValue]
-
-
-class TemplateEntry(TypedDict, total=False):
-    fields: TemplateFields
-    setup_config: dict[str, TemplateValue]
-
-
-class ModelMetaKwargs(TypedDict, total=False):
-    activation: str
-    mean: str
-    std: str
-    size_x: int
-    size_y: int
-    axes: str
-    batchsize: int
-    num_workers: int
-    description: str
-
-
-class HfDownloadKwargs(TypedDict, total=False):
-    repo_id: str
-    filename: str
-    local_dir: str
-    local_dir_use_symlinks: bool
-    token: str
-
-
-class _HfHubDownload(Protocol):
-    def __call__(
-        self,
-        *,
-        repo_id: str,
-        filename: str,
-        local_dir: str,
-        local_dir_use_symlinks: bool,
-        token: str | None = None,
-    ) -> str: ...
-
-
-class _NamedLabelSet(Protocol):
-    name: str
-    version: int
-
-
-class _NamedModelMetaModel(Protocol):
-    name: str
-
-
-class _CommandModelMeta(Protocol):
-    name: str
-    version: str
-    model: _NamedModelMetaModel
-
-
-hf_hub_download = cast(
-    _HfHubDownload,
-    getattr(import_module("huggingface_hub"), "hf_hub_download"),
-)
-
 
 class Command(BaseCommand):
     help = (
@@ -100,7 +34,7 @@ class Command(BaseCommand):
         "either a local safetensor file or a YAML template with Hugging Face download support."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:  # noqa: D401 - inherited docstring is sufficient
+    def add_arguments(self, parser):  # noqa: D401 - inherited docstring is sufficient
         parser.add_argument(
             "--model_name",
             type=str,
@@ -134,7 +68,7 @@ class Command(BaseCommand):
             "--template_entry_name",
             type=str,
             default=None,
-            help="Entry selector when the template file defines multiple models.",
+            help="Optional entry selector when the template file defines multiple models.",
         )
         parser.add_argument(
             "--model_meta_version",
@@ -209,7 +143,7 @@ class Command(BaseCommand):
             "--description",
             type=str,
             default="",
-            help="Description to store on the ModelMeta record.",
+            help="Optional description to store on the ModelMeta record.",
         )
         parser.add_argument(
             "--bump_version",
@@ -220,14 +154,10 @@ class Command(BaseCommand):
             "--huggingface_token",
             type=str,
             default=None,
-            help="Hugging Face token for private repositories.",
+            help="Optional Hugging Face token for private repositories.",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: CommandOptionValue,
-    ) -> None:  # noqa: D401 - inherited docstring is sufficient
+    def handle(self, *args, **options):  # noqa: D401 - inherited docstring is sufficient
         use_template = options.get("template_path") or options.get("template_name")
 
         try:
@@ -242,48 +172,39 @@ class Command(BaseCommand):
             raise CommandError(str(exc)) from exc
 
         self.stdout.write(
-            self.style.SUCCESS(self._model_meta_success_message(model_meta))
+            self.style.SUCCESS(
+                f"ModelMeta ready: {model_meta.name} (v{model_meta.version}) for {model_meta.model.name}"
+            )
         )
 
-    def _create_from_local_file(
-        self,
-        options: Mapping[str, CommandOptionValue],
-    ) -> ModelMeta:
-        weights_path = (
-            Path(self._required_string_option(options, "model_path"))
-            .expanduser()
-            .resolve()
-        )
+    def _create_from_local_file(self, options: Dict[str, Any]) -> ModelMeta:
+        weights_path = Path(options["model_path"]).expanduser().resolve()
         self._validate_safetensors_path(weights_path)
 
-        model_name = self._required_string_option(options, "model_name")
+        model_name = options["model_name"]
         self._ensure_ai_model_exists(model_name)
 
         labelset = self._resolve_labelset(
-            self._required_string_option(options, "image_classification_labelset_name"),
+            options["image_classification_labelset_name"],
             options.get("image_classification_labelset_version"),
         )
-        typed_labelset = cast(_NamedLabelSet, labelset)
 
         requested_version = options.get("model_meta_version") or "1"
 
         model_meta = ModelMeta.create_from_file(
             meta_name=model_name,
             model_name=model_name,
-            labelset_name=typed_labelset.name,
-            labelset_version=typed_labelset.version,
+            labelset_name=labelset.name,
+            labelset_version=labelset.version,
             weights_file=weights_path.as_posix(),
             requested_version=str(requested_version),
-            bump_if_exists=self._bool_option(options, "bump_version"),
+            bump_if_exists=options.get("bump_version", False),
             **self._collect_local_kwargs(options),
         )
 
         return model_meta
 
-    def _create_from_template(
-        self,
-        options: Mapping[str, CommandOptionValue],
-    ) -> ModelMeta:
+    def _create_from_template(self, options: Dict[str, Any]) -> ModelMeta:
         template_path = self._resolve_template_path(options)
         entries = self._load_template_entries(template_path)
         entry = self._select_template_entry(entries, options)
@@ -292,17 +213,10 @@ class Command(BaseCommand):
         if not fields:
             raise CommandError("Template entry is missing a 'fields' section.")
 
-        meta_name = self._string_from_template_or_option(
-            fields, options, "name", "model_name"
-        )
-        model_name = self._string_from_template_or_option(
-            fields, options, "model", "model_name"
-        )
-        labelset_name = self._string_from_template_or_option(
-            fields,
-            options,
-            "labelset",
-            "image_classification_labelset_name",
+        meta_name = fields.get("name") or options["model_name"]
+        model_name = fields.get("model") or options["model_name"]
+        labelset_name = (
+            fields.get("labelset") or options["image_classification_labelset_name"]
         )
         labelset_version = fields.get(
             "labelset_version", options.get("image_classification_labelset_version")
@@ -310,7 +224,6 @@ class Command(BaseCommand):
 
         self._ensure_ai_model_exists(model_name)
         labelset = self._resolve_labelset(labelset_name, labelset_version)
-        typed_labelset = cast(_NamedLabelSet, labelset)
 
         requested_version = options.get("model_meta_version") or fields.get("version")
         if not requested_version:
@@ -318,9 +231,9 @@ class Command(BaseCommand):
                 "Provide --model_meta_version or include a 'version' in the template entry."
             )
 
-        hf_config = self._huggingface_fallback_config(entry)
-        repo_id = self._template_string(hf_config, "repo_id")
-        filename = self._template_string(hf_config, "filename")
+        hf_config = entry.get("setup_config", {}).get("huggingface_fallback", {})
+        repo_id = hf_config.get("repo_id")
+        filename = hf_config.get("filename")
 
         if not repo_id or not filename:
             raise CommandError(
@@ -335,38 +248,39 @@ class Command(BaseCommand):
         token = options.get("huggingface_token")
 
         with tempfile.TemporaryDirectory(prefix="hf-multilabel-") as download_dir:
-            weights_path = Path(
-                hf_hub_download(
-                    repo_id=repo_id,
-                    filename=filename,
-                    local_dir=download_dir,
-                    local_dir_use_symlinks=False,
-                    token=token if isinstance(token, str) and token else None,
-                )
-            ).resolve()
+            download_kwargs = {
+                "repo_id": repo_id,
+                "filename": filename,
+                "local_dir": download_dir,
+                "local_dir_use_symlinks": False,
+            }
+            if token:
+                download_kwargs["token"] = token
+
+            weights_path = Path(hf_hub_download(**download_kwargs)).resolve()
 
             self._validate_safetensors_path(weights_path)
 
             model_meta = ModelMeta.create_from_file(
                 meta_name=meta_name,
                 model_name=model_name,
-                labelset_name=typed_labelset.name,
-                labelset_version=typed_labelset.version,
+                labelset_name=labelset.name,
+                labelset_version=labelset.version,
                 weights_file=weights_path.as_posix(),
                 requested_version=str(requested_version),
-                bump_if_exists=self._bool_option(options, "bump_version"),
+                bump_if_exists=options.get("bump_version", False),
                 **self._collect_template_kwargs(fields, options),
             )
 
         return model_meta
 
-    def _resolve_template_path(self, options: Mapping[str, CommandOptionValue]) -> Path:
+    def _resolve_template_path(self, options: Dict[str, Any]) -> Path:
         template_path = options.get("template_path")
         template_name = options.get("template_name")
 
-        if isinstance(template_path, str) and template_path:
+        if template_path:
             resolved = Path(template_path).expanduser().resolve()
-        elif isinstance(template_name, str) and template_name:
+        elif template_name:
             resolved = (AI_MODEL_META_DATA_DIR / f"{template_name}.yaml").resolve()
         else:  # pragma: no cover - guarded by caller
             raise CommandError(
@@ -379,26 +293,22 @@ class Command(BaseCommand):
         return resolved
 
     @staticmethod
-    def _load_template_entries(template_path: Path) -> list[TemplateEntry]:
+    def _load_template_entries(template_path: Path) -> List[Dict[str, Any]]:
         with template_path.open("r", encoding="utf-8") as handle:
-            data = cast(TemplateValue, yaml.safe_load(handle) or [])
+            data = yaml.safe_load(handle) or []
 
         if isinstance(data, dict):
-            return [cast(TemplateEntry, data)]
+            return [data]
         if isinstance(data, list):
-            return [
-                cast(TemplateEntry, entry) for entry in data if isinstance(entry, dict)
-            ]
+            return [entry for entry in data if isinstance(entry, dict)]
 
         raise CommandError(
             f"Template {template_path} must define a mapping or list of mappings."
         )
 
     def _select_template_entry(
-        self,
-        entries: Iterable[TemplateEntry],
-        options: Mapping[str, CommandOptionValue],
-    ) -> TemplateEntry:
+        self, entries: Iterable[Dict[str, Any]], options: Dict[str, Any]
+    ) -> Dict[str, Any]:
         target = options.get("template_entry_name") or options.get("model_name")
 
         for entry in entries:
@@ -418,55 +328,54 @@ class Command(BaseCommand):
             "Unable to determine which template entry to use. Specify --template_entry_name to disambiguate."
         )
 
-    def _collect_local_kwargs(
-        self,
-        options: Mapping[str, CommandOptionValue],
-    ) -> ModelMetaKwargs:
+    def _collect_local_kwargs(self, options: Dict[str, Any]) -> Dict[str, Any]:
         return self._filter_none(
             {
-                "activation": self._string_option(options, "activation_function_name"),
-                "mean": self._string_option(options, "mean"),
-                "std": self._string_option(options, "std"),
-                "size_x": self._int_option(options, "size_x"),
-                "size_y": self._int_option(options, "size_y"),
-                "axes": self._string_option(options, "axes"),
-                "batchsize": self._int_option(options, "batchsize"),
-                "num_workers": self._int_option(options, "num_workers"),
-                "description": self._string_option(options, "description"),
+                "activation": options.get("activation_function_name"),
+                "mean": options.get("mean"),
+                "std": options.get("std"),
+                "size_x": options.get("size_x"),
+                "size_y": options.get("size_y"),
+                "axes": options.get("axes"),
+                "batchsize": options.get("batchsize"),
+                "num_workers": options.get("num_workers"),
+                "description": options.get("description"),
             }
         )
 
     def _collect_template_kwargs(
-        self,
-        fields: TemplateFields,
-        options: Mapping[str, CommandOptionValue],
-    ) -> ModelMetaKwargs:
+        self, fields: Dict[str, Any], options: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        def numeric(value):
+            return int(value) if value is not None else value
+
         return self._filter_none(
             {
-                "activation": self._template_or_option_string(
-                    fields, options, "activation", "activation_function_name"
-                ),
+                "activation": fields.get("activation")
+                or options.get("activation_function_name"),
                 "mean": self._normalise_sequence(fields.get("mean"))
-                or self._string_option(options, "mean"),
+                or options.get("mean"),
                 "std": self._normalise_sequence(fields.get("std"))
-                or self._string_option(options, "std"),
-                "size_x": self._template_or_option_int(fields, options, "size_x"),
-                "size_y": self._template_or_option_int(fields, options, "size_y"),
-                "axes": self._template_or_option_string(
-                    fields, options, "axes", "axes"
-                ),
-                "batchsize": self._template_or_option_int(fields, options, "batchsize"),
-                "num_workers": self._template_or_option_int(
-                    fields, options, "num_workers"
-                ),
-                "description": self._template_or_option_string(
-                    fields, options, "description", "description"
-                ),
+                or options.get("std"),
+                "size_x": numeric(fields.get("size_x"))
+                if fields.get("size_x") is not None
+                else options.get("size_x"),
+                "size_y": numeric(fields.get("size_y"))
+                if fields.get("size_y") is not None
+                else options.get("size_y"),
+                "axes": fields.get("axes") or options.get("axes"),
+                "batchsize": numeric(fields.get("batchsize"))
+                if fields.get("batchsize") is not None
+                else options.get("batchsize"),
+                "num_workers": numeric(fields.get("num_workers"))
+                if fields.get("num_workers") is not None
+                else options.get("num_workers"),
+                "description": fields.get("description") or options.get("description"),
             }
         )
 
     @staticmethod
-    def _normalise_sequence(value: TemplateValue) -> str | None:
+    def _normalise_sequence(value: Any) -> str | None:
         if value is None:
             return None
         if isinstance(value, str):
@@ -476,11 +385,8 @@ class Command(BaseCommand):
         return str(value)
 
     @staticmethod
-    def _filter_none(payload: ModelMetaKwargs) -> ModelMetaKwargs:
-        return cast(
-            ModelMetaKwargs,
-            {key: value for key, value in payload.items() if value not in (None, "")},
-        )
+    def _filter_none(payload: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: value for key, value in payload.items() if value not in (None, "")}
 
     @staticmethod
     def _validate_safetensors_path(path: Path) -> None:
@@ -497,9 +403,7 @@ class Command(BaseCommand):
             )
 
     @staticmethod
-    def _resolve_labelset(
-        name: str, version: CommandOptionValue | TemplateValue
-    ) -> LabelSet:
+    def _resolve_labelset(name: str, version: Any) -> LabelSet:
         queryset = LabelSet.objects.filter(name=name)
 
         if version in (None, -1):
@@ -513,107 +417,3 @@ class Command(BaseCommand):
             )
 
         return labelset
-
-    @staticmethod
-    def _required_string_option(
-        options: Mapping[str, CommandOptionValue],
-        name: str,
-    ) -> str:
-        value = options[name]
-        if not isinstance(value, str) or not value.strip():
-            raise CommandError(f"Option {name} must be a non-empty string.")
-        return value
-
-    @staticmethod
-    def _string_option(
-        options: Mapping[str, CommandOptionValue],
-        name: str,
-    ) -> str:
-        value = options.get(name, "")
-        if value is None:
-            return ""
-        if not isinstance(value, str):
-            raise CommandError(f"Option {name} must be a string.")
-        return value
-
-    @staticmethod
-    def _int_option(
-        options: Mapping[str, CommandOptionValue],
-        name: str,
-    ) -> int:
-        value = options.get(name)
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        raise CommandError(f"Option {name} must be an integer.")
-
-    @staticmethod
-    def _bool_option(
-        options: Mapping[str, CommandOptionValue],
-        name: str,
-    ) -> bool:
-        value = options.get(name, False)
-        if not isinstance(value, bool):
-            raise CommandError(f"Option {name} must be a boolean flag.")
-        return value
-
-    def _string_from_template_or_option(
-        self,
-        fields: TemplateFields,
-        options: Mapping[str, CommandOptionValue],
-        template_key: str,
-        option_key: str,
-    ) -> str:
-        value = fields.get(template_key)
-        if isinstance(value, str) and value.strip():
-            return value
-        return self._required_string_option(options, option_key)
-
-    @staticmethod
-    def _template_or_option_string(
-        fields: TemplateFields,
-        options: Mapping[str, CommandOptionValue],
-        template_key: str,
-        option_key: str,
-    ) -> str:
-        value = fields.get(template_key)
-        if isinstance(value, str):
-            return value
-        return Command._string_option(options, option_key)
-
-    @staticmethod
-    def _template_or_option_int(
-        fields: TemplateFields,
-        options: Mapping[str, CommandOptionValue],
-        key: str,
-    ) -> int:
-        value = fields.get(key)
-        if value is None:
-            return Command._int_option(options, key)
-        if isinstance(value, bool):
-            raise CommandError(f"Template value {key} must be an integer.")
-        if isinstance(value, (int, float, str)):
-            return int(value)
-        raise CommandError(f"Template value {key} must be an integer.")
-
-    @staticmethod
-    def _template_string(fields: Mapping[str, TemplateValue], name: str) -> str:
-        value = fields.get(name)
-        if not isinstance(value, str) or not value.strip():
-            raise CommandError(f"Template value {name} must be a non-empty string.")
-        return value
-
-    @staticmethod
-    def _huggingface_fallback_config(entry: TemplateEntry) -> dict[str, TemplateValue]:
-        setup_config = entry.get("setup_config", {})
-        fallback = setup_config.get("huggingface_fallback")
-        if not isinstance(fallback, dict):
-            return {}
-        return fallback
-
-    @staticmethod
-    def _model_meta_success_message(model_meta: ModelMeta) -> str:
-        typed_model_meta = cast(_CommandModelMeta, model_meta)
-        return (
-            f"ModelMeta ready: {typed_model_meta.name} "
-            f"(v{typed_model_meta.version}) for {typed_model_meta.model.name}"
-        )

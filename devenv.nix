@@ -57,12 +57,6 @@ let
     rustc
     rustfmt
     maturin
-    valgrind
-    kdePackages.kcachegrind     # Contains both kcachegrind and the pure Qt qcachegrind
-    graphviz        # Enables the call-graph visualization tab inside Cachegrind
-    python312
-    python312Packages.pyprof2calltree
-
   ];
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
@@ -94,7 +88,7 @@ in
 
   env = {
     # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
-    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages ++ [ pkgs.stdenv.cc.cc.lib ]) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
     PYO3_PYTHON = "${python}/bin/python";
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";
@@ -106,7 +100,7 @@ in
     uv = {
       enable = true;
       package = uvPackage;
-      sync.enable = false;
+      sync.enable = true;
     };
   };
 
@@ -220,6 +214,9 @@ in
     '';
     uvsnc.exec = ''
       sync_cmd="${SYNC_CMD}"
+      if [ -d "../lx-ai-core" ]; then
+        sync_cmd="$sync_cmd --group ai-local"
+      fi
       $sync_cmd
     '';
   };
@@ -244,6 +241,9 @@ in
       description = "Sync the Python environment for Codex/agent workflows";
       exec = ''
         sync_cmd="${SYNC_CMD}"
+        if [ -d "../lx-ai-core" ]; then
+          sync_cmd="$sync_cmd --group ai-local"
+        fi
         $sync_cmd
       '';
     };
@@ -262,42 +262,9 @@ in
         .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
       '';
     };
-    "rust:stubs" = {
-      description = "Regenerate Python stubs for the PyO3 Rust backend";
-      exec = ''
-        cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
-        cp rust/endoreg_rust_backend/endoreg_rust_backend.pyi endoreg_db/endoreg_rust_backend.pyi
-        rm rust/endoreg_rust_backend/endoreg_rust_backend.pyi
-      '';
-    };
-    "rust:report-runtime" = {
-      description = "Verify Rust report snapshot tests, stubs, capability, and wheel";
-      exec = "scripts/check_report_native_runtime.sh";
-    };
     "agent:pre-commit" = {
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";
-    };
-    "quality:dead-code" = {
-      description = "Reject new, stale, or expired reviewed dead-code findings";
-      exec = ".devenv/state/venv/bin/python scripts/check_dead_code.py";
-    };
-    "quality:boundaries" = {
-      description = "Reject unreviewed broad exceptions and type suppressions";
-      exec = ".devenv/state/venv/bin/python scripts/check_quality_boundaries.py";
-    };
-    "quality:type-safety-operational" = {
-      description = "Rehearse the persisted DICOM V2 JSON migration path";
-      exec = ".devenv/state/venv/bin/pytest tests/services/test_dicom_manifest_backfill.py -q";
-    };
-    "quality:code-regression" = {
-      description = "Run the versioned quality guards and fast regression lane";
-      exec = ''
-        .devenv/state/venv/bin/pyright
-        .devenv/state/venv/bin/python scripts/check_dead_code.py
-        .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
-        devenv tasks run test:fast
-      '';
     };
     "celery:check" = {
       description = "Validate Celery broker, queue, and secure transport settings";
@@ -432,9 +399,33 @@ in
 
   enterShell = ''
 
-    # Add the uv virtual environment directly to your PATH
-    export PATH="$PWD/.devenv/state/venv/bin:$PATH"
-    
+    export SYNC_CMD="${SYNC_CMD}"
+    if [ -d "../lx-ai-core" ]; then
+      export SYNC_CMD="$SYNC_CMD --group ai-local"
+    fi
+
+    # Ensure dependencies are synced using uv
+    # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.
+    if [ ! -d ".devenv/state/venv" ]; then
+       echo "Virtual environment not found. Running initial uv sync..."
+       $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
+    else
+       # Sync quietly if venv exists
+       echo "Syncing Python dependencies with uv..."
+       $SYNC_CMD --quiet || echo "Warning: uv sync failed. Environment might be outdated."
+    fi
+
+    # Activate Python virtual environment managed by uv
+    ACTIVATED=false
+    if [ -f ".devenv/state/venv/bin/activate" ]; then
+      source .devenv/state/venv/bin/activate
+      ACTIVATED=true
+      echo "Virtual environment activated."
+    else
+      echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
+    fi
+
+    env-setup
   '';
 
   enterTest = ''

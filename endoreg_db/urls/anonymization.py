@@ -1,7 +1,6 @@
 from django.urls import path
 from endoreg_db.views.anonymization import (
     AnonymizationOverviewView,
-    UploadJobRetryView,
     AnonymizationValidateView,
     start_anonymization,
     anonymization_current,
@@ -19,11 +18,6 @@ url_patterns = [
         "anonymization/items/overview/",
         AnonymizationOverviewView.as_view(),
         name="anonymization_items_overview",
-    ),
-    path(
-        "anonymization/upload-jobs/<uuid:job_id>/retry/",
-        UploadJobRetryView.as_view(),
-        name="anonymization_upload_job_retry",
     ),
     path(
         "anonymization/<int:file_id>/current/",

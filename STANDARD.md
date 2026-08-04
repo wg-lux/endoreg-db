@@ -14,4 +14,5 @@ Voraussetzungen (Validators) sind formalisierte Regeln, die definieren, unter we
 
 Behandlungen (Interventions) sind auf der Terminologieebene definierte Interventionsarten, die mit bestimmten Befundtypen verknüpft werden können. Auf der Instanzebene sind sie konkrete Maßnahmen, die im Zusammenhang mit einem patientenbezogenen Befund durchgeführt werden. Sie können in definierten Fällen Folge-Befunde oder weitere Dokumentationspflichten auslösen.
 
+
 Einheiten (Unit) sind Längen, Größen oder Mengenangaben, die eine Vergleichbarkeit ermöglichen. Sie dienen innerhalb von Validatoren als Endpunkte für Vergleiche sowie als Orientierungshilfen bei der Kategorisierung innerhalb von Klassifikationen (z.B. Nice, Paris Klassifikation)

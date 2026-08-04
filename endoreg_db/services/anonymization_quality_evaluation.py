@@ -2,22 +2,16 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
 from datetime import date, datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable, Literal, Mapping, Protocol, cast
+from typing import Any, Iterable, Literal, Mapping
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from lx_dtypes.models.contracts.anonymization_quality import (
-    AnonymizationQualityPayload,
-    AnonymizationQualityResult,
-    AnonymizationQualitySummary,
-    QualityEvaluationStatus,
-    SensitiveMetaHandlingPolicy,
-)
+from pydantic import BaseModel, Field
 
 from endoreg_db.import_files.file_storage.cleanup import staging_cleanup_roots
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
@@ -25,15 +19,13 @@ from endoreg_db.models.media.anonymization_metrics import AnonymizationValidatio
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
 from endoreg_db.services.anonymization_metrics import (
     MAX_PHI_REGION_MATCH_ANNOTATIONS,
     PHI_REGION_ANNOTATOR,
-    PHI_REGION_IOU_THRESHOLD,
     PHI_REGION_INFORMATION_SOURCE_NAME,
     PHI_REGION_LABEL_NAME,
-    annotation_box_rows,
-    matched_phi_region_count,
+    _annotation_box_rows,
+    _matched_phi_region_count,
 )
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.storage import file_exists
@@ -41,6 +33,21 @@ from endoreg_db.utils.storage import file_exists
 logger = logging.getLogger(__name__)
 
 MediaType = Literal["video", "pdf"]
+
+
+class SensitiveMetaHandlingPolicy(StrEnum):
+    RETAIN_FOR_GOVERNANCE = "retain_for_governance"
+    CLEAR_DIRECT_IDENTIFIERS = "clear_direct_identifiers"
+    DELETE_SENSITIVE_META = "delete_sensitive_meta"
+
+
+class QualityEvaluationStatus(StrEnum):
+    PASSED = "passed"
+    RESIDUAL_PHI_DETECTED = "residual_phi_detected"
+    NOT_VALIDATED = "not_validated"
+    FAILED_OR_LOST = "failed_or_lost"
+    NO_SENSITIVE_META = "no_sensitive_meta"
+    NOT_MEASURABLE = "not_measurable"
 
 
 DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
@@ -61,39 +68,34 @@ DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
 )
 
 
-@dataclass(frozen=True)
-class PhiRegionConfusionMatrix:
-    iou_threshold: float
-    proposal_count: int
-    human_annotation_count: int
-    true_positive_count: int | None
-    false_positive_count: int | None
-    false_negative_count: int | None
-    precision: float | None
-    recall: float | None
-    f1_score: float | None
-    matching_evaluated: bool
-    matching_annotation_count: int
-    max_matching_annotations: int
-    skip_reason: str
+class AnonymizationQualityResult(BaseModel):
+    media_type: MediaType
+    media_id: int
+    status: str
+    residual_phi_detected: bool
+    checked_fields: list[str] = Field(default_factory=list)
+    leaked_field_count: int = 0
+    missing_sensitive_meta_deletion_count: int = 0
+    raw_artifact_residual_count: int = 0
+    processed_artifact_sha256: str = ""
+    warnings: list[str] = Field(default_factory=list)
 
 
-class _ExaminerRelationManager(Protocol):
-    def exists(self) -> bool: ...
+class AnonymizationQualitySummary(BaseModel):
+    total: int
+    residual_phi_detected_count: int
+    leaked_field_count: int
+    missing_sensitive_meta_deletion_count: int
+    raw_artifact_residual_count: int
+    status_counts: dict[str, int]
 
-    def clear(self) -> None: ...
 
-
-class _SensitiveMetaIdentifierRecord(Protocol):
-    patient_hash: str | None
-    examination_hash: str | None
-    patient_first_name: str | None
-    patient_last_name: str | None
-    patient_dob: date | datetime | None
-    examination_date: date | datetime | None
-    casenumber: str | None
-    examiner_first_name: str | None
-    examiner_last_name: str | None
+class AnonymizationQualityPayload(BaseModel):
+    schema_version: str = "1.0"
+    sensitive_meta_policy: SensitiveMetaHandlingPolicy
+    policy_applied: bool
+    summary: AnonymizationQualitySummary
+    results: list[AnonymizationQualityResult]
 
 
 def evaluate_anonymization_quality(
@@ -257,11 +259,7 @@ def evaluate_media_object(
             allow_sensitive_meta_delete=allow_sensitive_meta_delete,
         )
     )
-    sensitive_meta_identifiers = cast(_SensitiveMetaIdentifierRecord, sensitive_meta)
-    if (
-        sensitive_meta_identifiers.patient_hash
-        or sensitive_meta_identifiers.examination_hash
-    ):
+    if sensitive_meta.patient_hash or sensitive_meta.examination_hash:
         warnings.append("pseudonym_hashes_retained_as_controlled_linkage")
 
     residual_phi_detected = bool(leaked_fields) or phi_region_false_negative_count > 0
@@ -370,10 +368,7 @@ def _media_failed_or_lost(media_obj: VideoFile | RawPdfFile) -> bool:
     if bool(getattr(state, "processing_error", False)):
         return True
     meta = getattr(media_obj, "meta", None)
-    if not isinstance(meta, Mapping):
-        return False
-    meta_payload = cast(Mapping[str, object], meta)
-    return meta_payload.get("integrity_status") == "lost"
+    return isinstance(meta, Mapping) and meta.get("integrity_status") == "lost"
 
 
 def _media_is_validated(media_obj: VideoFile | RawPdfFile) -> bool:
@@ -410,35 +405,28 @@ def _identifier_values(
     media_obj: VideoFile | RawPdfFile,
 ) -> dict[str, list[str]]:
     candidates: dict[str, list[str]] = {}
-    sensitive_meta_identifiers = cast(_SensitiveMetaIdentifierRecord, sensitive_meta)
     _append_identifier(
-        candidates,
-        "patient_first_name",
-        sensitive_meta_identifiers.patient_first_name,
+        candidates, "patient_first_name", sensitive_meta.patient_first_name
     )
     _append_identifier(
-        candidates,
-        "patient_last_name",
-        sensitive_meta_identifiers.patient_last_name,
+        candidates, "patient_last_name", sensitive_meta.patient_last_name
     )
-    _append_date_identifiers(
-        candidates, "patient_dob", sensitive_meta_identifiers.patient_dob
-    )
+    _append_date_identifiers(candidates, "patient_dob", sensitive_meta.patient_dob)
     _append_date_identifiers(
         candidates,
         "examination_date",
-        sensitive_meta_identifiers.examination_date,
+        sensitive_meta.examination_date,
     )
-    _append_identifier(candidates, "casenumber", sensitive_meta_identifiers.casenumber)
+    _append_identifier(candidates, "casenumber", sensitive_meta.casenumber)
     _append_identifier(
         candidates,
         "examiner_first_name",
-        sensitive_meta_identifiers.examiner_first_name,
+        sensitive_meta.examiner_first_name,
     )
     _append_identifier(
         candidates,
         "examiner_last_name",
-        sensitive_meta_identifiers.examiner_last_name,
+        sensitive_meta.examiner_last_name,
     )
     _append_identifier(
         candidates, "center_name", _center_name(media_obj, sensitive_meta)
@@ -510,9 +498,8 @@ def _residual_text_corpus(
     else:
         meta = getattr(media_obj, "meta", None)
         if isinstance(meta, Mapping):
-            meta_payload = cast(Mapping[str, object], meta)
             for key in ("anonymized_text", "processed_text", "residual_ocr_text"):
-                value = meta_payload.get(key)
+                value = meta.get(key)
                 if value:
                     values.append(str(value))
     return "\n".join(values)
@@ -548,19 +535,14 @@ def _contains_identifier(normalized_haystack: str, raw_needle: str) -> bool:
     return needle in normalized_haystack
 
 
-def evaluate_phi_region_confusion_matrix(
-    *,
-    video_ids: Iterable[int] = (),
-) -> PhiRegionConfusionMatrix:
-    selected_video_ids = tuple(video_ids)
+def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
+    if not isinstance(media_obj, VideoFile):
+        return 0
     qs = FrameBoxAnnotation.objects.select_related(
         "information_source",
         "label",
         "frame",
-    ).filter(label__name=PHI_REGION_LABEL_NAME)
-    if selected_video_ids:
-        qs = qs.filter(frame__video_id__in=selected_video_ids)
-
+    ).filter(frame__video=media_obj, label__name=PHI_REGION_LABEL_NAME)
     proposal_qs = qs.filter(
         information_source__name=PHI_REGION_INFORMATION_SOURCE_NAME,
         annotator=PHI_REGION_ANNOTATOR,
@@ -569,90 +551,15 @@ def evaluate_phi_region_confusion_matrix(
         information_source__name=PHI_REGION_INFORMATION_SOURCE_NAME,
         annotator=PHI_REGION_ANNOTATOR,
     )
-    proposal_count = proposal_qs.count()
     human_count = human_qs.count()
-    total_count = proposal_count + human_count
-    if not human_count:
-        return PhiRegionConfusionMatrix(
-            iou_threshold=PHI_REGION_IOU_THRESHOLD,
-            proposal_count=proposal_count,
-            human_annotation_count=human_count,
-            true_positive_count=None,
-            false_positive_count=None,
-            false_negative_count=None,
-            precision=None,
-            recall=None,
-            f1_score=None,
-            matching_evaluated=False,
-            matching_annotation_count=total_count,
-            max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
-            skip_reason="human_annotations_missing",
-        )
-    if total_count > MAX_PHI_REGION_MATCH_ANNOTATIONS:
-        return PhiRegionConfusionMatrix(
-            iou_threshold=PHI_REGION_IOU_THRESHOLD,
-            proposal_count=proposal_count,
-            human_annotation_count=human_count,
-            true_positive_count=None,
-            false_positive_count=None,
-            false_negative_count=None,
-            precision=None,
-            recall=None,
-            f1_score=None,
-            matching_evaluated=False,
-            matching_annotation_count=total_count,
-            max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
-            skip_reason="annotation_limit_exceeded",
-        )
-
-    true_positive_count = matched_phi_region_count(
-        annotation_box_rows(proposal_qs),
-        annotation_box_rows(human_qs),
-    )
-    false_positive_count = max(proposal_count - true_positive_count, 0)
-    false_negative_count = max(human_count - true_positive_count, 0)
-    precision = _safe_rate(true_positive_count, proposal_count)
-    recall = _safe_rate(true_positive_count, human_count)
-    f1_score = _f1_score(precision=precision, recall=recall)
-    return PhiRegionConfusionMatrix(
-        iou_threshold=PHI_REGION_IOU_THRESHOLD,
-        proposal_count=proposal_count,
-        human_annotation_count=human_count,
-        true_positive_count=true_positive_count,
-        false_positive_count=false_positive_count,
-        false_negative_count=false_negative_count,
-        precision=precision,
-        recall=recall,
-        f1_score=f1_score,
-        matching_evaluated=True,
-        matching_annotation_count=total_count,
-        max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
-        skip_reason="",
-    )
-
-
-def _safe_rate(numerator: int | None, denominator: int) -> float | None:
-    if numerator is None or denominator <= 0:
-        return None
-    return numerator / denominator
-
-
-def _f1_score(*, precision: float | None, recall: float | None) -> float | None:
-    if precision is None or recall is None:
-        return None
-    denominator = precision + recall
-    if denominator <= 0:
-        return 0.0
-    return 2 * precision * recall / denominator
-
-
-def _phi_region_false_negative_count(media_obj: VideoFile | RawPdfFile) -> int:
-    if not isinstance(media_obj, VideoFile):
+    total_count = proposal_qs.count() + human_count
+    if not human_count or total_count > MAX_PHI_REGION_MATCH_ANNOTATIONS:
         return 0
-    matrix = evaluate_phi_region_confusion_matrix(video_ids=(int(media_obj.pk or 0),))
-    if matrix.false_negative_count is None:
-        return 0
-    return matrix.false_negative_count
+    matched_count = _matched_phi_region_count(
+        _annotation_box_rows(proposal_qs),
+        _annotation_box_rows(human_qs),
+    )
+    return max(human_count - matched_count, 0)
 
 
 def _phi_region_measurement_warnings(media_obj: VideoFile | RawPdfFile) -> list[str]:
@@ -790,14 +697,12 @@ def _mark_sensitive_meta_policy(
 ) -> None:
     SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
         direct_identifier_policy=policy.value,
-        direct_identifier_tombstone=normalize_direct_identifier_tombstone(
-            {
-                "schema_version": "1.0",
-                "policy": policy.value,
-                "status": status,
-                "direct_values_retained": True,
-            }
-        ),
+        direct_identifier_tombstone={
+            "schema_version": "1.0",
+            "policy": policy.value,
+            "status": status,
+            "direct_values_retained": True,
+        },
     )
 
 
@@ -818,9 +723,8 @@ def _clear_sensitive_meta_direct_identifiers(
         cleared_fields.append(field_name)
 
     cleared_examiners = False
-    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
-    if sensitive_meta.pk and examiners.exists():
-        examiners.clear()
+    if sensitive_meta.pk and sensitive_meta.examiners.exists():
+        sensitive_meta.examiners.clear()
         cleared_examiners = True
 
     cleared_at = timezone.now()
@@ -828,23 +732,16 @@ def _clear_sensitive_meta_direct_identifiers(
         {
             "direct_identifiers_cleared_at": cleared_at,
             "direct_identifier_policy": policy.value,
-            "direct_identifier_tombstone": normalize_direct_identifier_tombstone(
-                {
-                    "schema_version": "1.0",
-                    "policy": policy.value,
-                    "cleared_at": cleared_at.isoformat(),
-                    "cleared_fields_count": len(cleared_fields),
-                    "cleared_examiners": cleared_examiners,
-                    "pseudonym_hashes_retained": bool(
-                        cast(
-                            _SensitiveMetaIdentifierRecord, sensitive_meta
-                        ).patient_hash
-                        or cast(
-                            _SensitiveMetaIdentifierRecord, sensitive_meta
-                        ).examination_hash
-                    ),
-                }
-            ),
+            "direct_identifier_tombstone": {
+                "schema_version": "1.0",
+                "policy": policy.value,
+                "cleared_at": cleared_at.isoformat(),
+                "cleared_fields_count": len(cleared_fields),
+                "cleared_examiners": cleared_examiners,
+                "pseudonym_hashes_retained": bool(
+                    sensitive_meta.patient_hash or sensitive_meta.examination_hash
+                ),
+            },
         }
     )
     if updates:
@@ -864,8 +761,7 @@ def _direct_identifier_residual_count(sensitive_meta: SensitiveMeta) -> int:
             getattr(sensitive_meta, field_name)
         ):
             count += 1
-    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
-    if sensitive_meta.pk and examiners.exists():
+    if sensitive_meta.pk and sensitive_meta.examiners.exists():
         count += 1
     return count
 

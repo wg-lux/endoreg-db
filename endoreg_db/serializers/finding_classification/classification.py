@@ -5,11 +5,9 @@ from endoreg_db.models.medical.finding.finding_classification import (
 from rest_framework import serializers
 
 
-class FindingClassificationSerializer(
-    serializers.ModelSerializer[FindingClassification]
-):
+class FindingClassificationSerializer(serializers.ModelSerializer):
     choices = FindingClassificationChoiceSerializer(many=True, read_only=True)
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:
         model = FindingClassification
         fields = ["id", "name", "description", "choices", "classification_types"]

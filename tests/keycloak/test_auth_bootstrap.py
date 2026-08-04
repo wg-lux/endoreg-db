@@ -30,41 +30,14 @@ page access logic) will also break — so this test suite protects the entire
 Keycloak → Django → frontend capability chain.
 """
 
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractUser, Group
+# libs/endoreg-db/tests/keycloak/test_auth_bootstrap.py
+
 from django.test import TestCase
-from typing import Protocol, cast
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 
 
 User = get_user_model()
-
-
-class _UserManager(Protocol):
-    def create_user(
-        self,
-        username: str,
-        password: str | None = None,
-        **extra_fields: object,
-    ) -> AbstractUser: ...
-
-
-class _GroupRelation(Protocol):
-    def add(self, *objs: Group | int) -> None: ...
-
-
-class _UserWithGroups(Protocol):
-    groups: _GroupRelation
-
-
-def _create_user(username: str, password: str | None = None) -> AbstractUser:
-    return cast(_UserManager, User.objects).create_user(
-        username=username,
-        password=password,
-    )
-
-
-def _add_groups(user: AbstractUser, *groups: Group) -> None:
-    cast(_UserWithGroups, user).groups.add(*groups)
 
 
 class AuthBootstrapTests(TestCase):
@@ -90,8 +63,8 @@ class AuthBootstrapTests(TestCase):
         """
 
         # Create a user and assign required groups
-        user = _create_user(username="editor", password="pw")
-        _add_groups(user, self.editors, self.data_read)
+        user = User.objects.create_user(username="editor", password="pw")
+        user.groups.add(self.editors, self.data_read)
 
         # Simulate that the user is logged-in (session-based auth)
         self.client.force_login(user)
@@ -120,7 +93,7 @@ class AuthBootstrapTests(TestCase):
         - Can open the route manually but will get 403 on API requests.
         """
 
-        user = _create_user(username="basic", password="pw")
+        user = User.objects.create_user(username="basic", password="pw")
         # No groups assigned → no permissions
         self.client.force_login(user)
 

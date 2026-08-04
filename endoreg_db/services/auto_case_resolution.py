@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Literal, Protocol, cast
+from typing import Literal
 
 from django.db import transaction
 
@@ -24,62 +23,43 @@ class AutoCaseResolutionResult:
     reason: str | None = None
 
 
-class _SavableModel(Protocol):
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-def _model_value(instance: object, field_name: str) -> object:
-    return getattr(instance, field_name)
-
-
-def _model_optional_int(instance: object, field_name: str) -> int | None:
-    value = _model_value(instance, field_name)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float | str):
-        return int(value)
-    raise TypeError(f"{field_name} must be numeric.")
-
-
-def _model_required_int(instance: object, field_name: str) -> int:
-    value = _model_optional_int(instance, field_name)
-    if value is None:
-        raise ValueError(f"{field_name} is required.")
-    return value
-
-
-def _model_optional_date(instance: object, field_name: str) -> date | None:
-    value = _model_value(instance, field_name)
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    raise TypeError(f"{field_name} must be a date.")
-
-
-def _model_save(instance: object, *, update_fields: list[str]) -> None:
-    cast(_SavableModel, instance).save(update_fields=update_fields)
-
-
-def _model_relation(instance: object, field_name: str) -> object:
-    return _model_value(instance, field_name)
-
-
 def _resolved_examination(
     media_obj: RawPdfFile | VideoFile,
 ) -> Examination | None:
-    sensitive_meta = _model_relation(media_obj, "sensitive_meta")
+    sensitive_meta = media_obj.sensitive_meta
     if sensitive_meta is None:
         return None
 
-    pseudo_examination = _model_relation(sensitive_meta, "pseudo_examination")
+    pseudo_examination = sensitive_meta.pseudo_examination
     if pseudo_examination is not None:
-        return cast(Examination, _model_relation(pseudo_examination, "examination"))
+        return pseudo_examination.examination
     return None
+
+
+def _link_video_primary_examination(
+    *, video: VideoFile, patient_examination: PatientExamination
+) -> None:
+    existing_primary = None
+    try:
+        existing_primary = video.patient_examination
+    except PatientExamination.DoesNotExist:
+        existing_primary = None
+
+    if (
+        patient_examination.video_id is not None
+        and patient_examination.video_id != video.pk
+    ):
+        raise ValueError(
+            "patient_examination is already linked to a different primary video"
+        )
+
+    if existing_primary is not None and existing_primary.pk != patient_examination.pk:
+        existing_primary.video = None
+        existing_primary.save(update_fields=["video"])
+
+    if patient_examination.video_id != video.pk:
+        patient_examination.video = video
+        patient_examination.save(update_fields=["video"])
 
 
 def link_media_to_patient_examination(
@@ -90,21 +70,21 @@ def link_media_to_patient_examination(
 ) -> None:
     update_fields: list[str] = []
 
-    if _model_optional_int(media_obj, "examination_id") != _model_required_int(
-        patient_examination,
-        "pk",
-    ):
-        setattr(media_obj, "examination", patient_examination)
+    if media_obj.examination_id != patient_examination.pk:
+        media_obj.examination = patient_examination
         update_fields.append("examination")
-    if _model_optional_int(media_obj, "patient_id") != _model_optional_int(
-        patient_examination,
-        "patient_id",
-    ):
-        setattr(media_obj, "patient", _model_relation(patient_examination, "patient"))
+    if media_obj.patient_id != patient_examination.patient_id:
+        media_obj.patient = patient_examination.patient
         update_fields.append("patient")
 
     if update_fields:
-        _model_save(media_obj, update_fields=update_fields)
+        media_obj.save(update_fields=update_fields)
+
+    if media_type == "video":
+        assert isinstance(media_obj, VideoFile)
+        _link_video_primary_examination(
+            video=media_obj, patient_examination=patient_examination
+        )
 
 
 def _hydrate_inferred_patient_examination(
@@ -112,38 +92,25 @@ def _hydrate_inferred_patient_examination(
     patient_examination: PatientExamination,
     media_obj: RawPdfFile | VideoFile,
 ) -> None:
-    sensitive_meta = _model_relation(media_obj, "sensitive_meta")
+    sensitive_meta = media_obj.sensitive_meta
     if sensitive_meta is None:
         return
 
     update_fields: list[str] = []
     inferred_examination = _resolved_examination(media_obj)
 
-    if _model_optional_int(
-        patient_examination, "patient_id"
-    ) is None and _model_optional_int(
-        sensitive_meta,
-        "pseudo_patient_id",
-    ):
-        setattr(
-            patient_examination,
-            "patient",
-            _model_relation(sensitive_meta, "pseudo_patient"),
-        )
+    if patient_examination.patient_id is None and sensitive_meta.pseudo_patient_id:
+        patient_examination.patient = sensitive_meta.pseudo_patient
         update_fields.append("patient")
-    if (
-        _model_optional_int(patient_examination, "examination_id") is None
-        and inferred_examination is not None
-    ):
-        setattr(patient_examination, "examination", inferred_examination)
+    if patient_examination.examination_id is None and inferred_examination is not None:
+        patient_examination.examination = inferred_examination
         update_fields.append("examination")
-    examination_date = _model_optional_date(sensitive_meta, "examination_date")
-    if _model_value(patient_examination, "date_start") is None and examination_date:
-        setattr(patient_examination, "date_start", examination_date)
+    if patient_examination.date_start is None and sensitive_meta.examination_date:
+        patient_examination.date_start = sensitive_meta.examination_date
         update_fields.append("date_start")
 
     if update_fields:
-        _model_save(patient_examination, update_fields=update_fields)
+        patient_examination.save(update_fields=update_fields)
 
 
 @transaction.atomic
@@ -152,11 +119,10 @@ def auto_resolve_media_case(
     media_type: Literal["video", "pdf"],
     media_obj: RawPdfFile | VideoFile,
 ) -> AutoCaseResolutionResult:
-    media_examination_id = _model_optional_int(media_obj, "examination_id")
-    if media_examination_id is not None:
+    if media_obj.examination_id is not None:
         patient_examination = (
             PatientExamination.objects.select_related("patient", "examination")
-            .filter(pk=media_examination_id)
+            .filter(pk=media_obj.examination_id)
             .first()
         )
         case_resolution_meta = get_case_resolution_meta(media_obj)
@@ -167,11 +133,8 @@ def auto_resolve_media_case(
         ):
             persist_auto_case_resolution_state(
                 media_obj=media_obj,
-                patient_examination_id=_model_required_int(
-                    patient_examination,
-                    "pk",
-                ),
-                patient_id=_model_required_int(patient_examination, "patient_id"),
+                patient_examination_id=patient_examination.pk,
+                patient_id=patient_examination.patient_id,
                 created=False,
             )
         return AutoCaseResolutionResult(
@@ -181,14 +144,14 @@ def auto_resolve_media_case(
             reason="already_linked",
         )
 
-    sensitive_meta = _model_relation(media_obj, "sensitive_meta")
+    sensitive_meta = media_obj.sensitive_meta
     if sensitive_meta is None:
         return AutoCaseResolutionResult(
             status="unresolved", reason="missing_sensitive_meta"
         )
 
-    patient_hash = str(_model_value(sensitive_meta, "patient_hash") or "")
-    examination_hash = str(_model_value(sensitive_meta, "examination_hash") or "")
+    patient_hash = sensitive_meta.patient_hash
+    examination_hash = sensitive_meta.examination_hash
     if not patient_hash or not examination_hash:
         return AutoCaseResolutionResult(status="unresolved", reason="missing_hashes")
 
@@ -213,8 +176,8 @@ def auto_resolve_media_case(
         )
         persist_auto_case_resolution_state(
             media_obj=media_obj,
-            patient_examination_id=_model_required_int(patient_examination, "pk"),
-            patient_id=_model_required_int(patient_examination, "patient_id"),
+            patient_examination_id=patient_examination.pk,
+            patient_id=patient_examination.patient_id,
             created=False,
         )
         return AutoCaseResolutionResult(
@@ -230,9 +193,7 @@ def auto_resolve_media_case(
             patient_hash=patient_hash,
             examination_hash=examination_hash,
             examination_name=(
-                str(_model_value(inferred_examination, "name"))
-                if inferred_examination is not None
-                else None
+                inferred_examination.name if inferred_examination is not None else None
             ),
         )
     )
@@ -247,8 +208,8 @@ def auto_resolve_media_case(
     )
     persist_auto_case_resolution_state(
         media_obj=media_obj,
-        patient_examination_id=_model_required_int(patient_examination, "pk"),
-        patient_id=_model_required_int(patient_examination, "patient_id"),
+        patient_examination_id=patient_examination.pk,
+        patient_id=patient_examination.patient_id,
         created=created,
     )
     return AutoCaseResolutionResult(

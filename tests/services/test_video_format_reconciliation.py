@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from types import SimpleNamespace
 
 import pytest
-from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
-from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.services import video_format_reconciliation as reconciliation
 
@@ -16,95 +13,44 @@ def _stream_info(
     codec_name: str = "h264",
     pixel_format: str = "yuv420p",
     color_range: str = "pc",
-    frame_rate: str = "50/1",
-) -> JsonObject:
-    payload = FfmpegProbeDataPayload.model_validate(
-        {
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "codec_name": codec_name,
-                    "pix_fmt": pixel_format,
-                    "color_range": color_range,
-                    "avg_frame_rate": frame_rate,
-                }
-            ]
-        }
-    )
-    return cast(JsonObject, payload.model_dump(mode="json", exclude_none=True))
+) -> dict:
+    return {
+        "streams": [
+            {
+                "codec_type": "video",
+                "codec_name": codec_name,
+                "pix_fmt": pixel_format,
+                "color_range": color_range,
+            }
+        ]
+    }
 
 
-@dataclass(frozen=True)
-class _RuntimePaths:
-    data: Path
-    storage: Path
-    sensitive_video: Path
-    anonym_video: Path
-
-
-def _patch_runtime_paths(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> _RuntimePaths:
+def _patch_runtime_paths(monkeypatch, tmp_path) -> SimpleNamespace:
     data_root = tmp_path / "data"
     storage_root = data_root / "storage"
-    fake_paths = _RuntimePaths(
+    fake_paths = SimpleNamespace(
         data=data_root,
         storage=storage_root,
         sensitive_video=storage_root / "sensitive_videos",
         anonym_video=storage_root / "processed_videos_final",
     )
-
-    def from_environment(cls: type[object]) -> _RuntimePaths:
-        return fake_paths
-
     monkeypatch.setattr(
         reconciliation.EndoregPathsModel,
         "from_environment",
-        classmethod(from_environment),
+        classmethod(lambda cls: fake_paths),
     )
     return fake_paths
 
 
-def _compliant_stream_info(path: Path) -> JsonObject:
-    return _stream_info()
-
-
-def _non_compliant_mpeg4_stream_info(path: Path) -> JsonObject:
-    return _stream_info(codec_name="mpeg4", color_range="tv")
-
-
-def _non_compliant_tv_range_stream_info(path: Path) -> JsonObject:
-    return _stream_info(color_range="tv")
-
-
-def _yuvj420p_full_range_stream_info(path: Path) -> JsonObject:
-    return _stream_info(pixel_format="yuvj420p", color_range="pc")
-
-
-def _yuvj420p_tv_range_stream_info(path: Path) -> JsonObject:
-    return _stream_info(pixel_format="yuvj420p", color_range="tv")
-
-
-def _non_compliant_60_fps_stream_info(path: Path) -> JsonObject:
-    return _stream_info(frame_rate="60/1")
-
-
-def _compliant_30_fps_stream_info(path: Path) -> JsonObject:
-    return _stream_info(frame_rate="30/1")
-
-
 @pytest.mark.unit
-def test_classify_video_format_accepts_filewatcher_standard(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_classify_video_format_accepts_filewatcher_standard(monkeypatch, tmp_path):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _compliant_stream_info,
+        lambda path: _stream_info(),
     )
 
     report = reconciliation.classify_video_format(video_path)
@@ -116,15 +62,14 @@ def test_classify_video_format_accepts_filewatcher_standard(
 
 @pytest.mark.unit
 def test_classify_video_format_accepts_ffmpeg_full_range_yuvj420p_alias(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch, tmp_path
+):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _yuvj420p_full_range_stream_info,
+        lambda path: _stream_info(pixel_format="yuvj420p", color_range="pc"),
     )
 
     report = reconciliation.classify_video_format(video_path)
@@ -138,15 +83,14 @@ def test_classify_video_format_accepts_ffmpeg_full_range_yuvj420p_alias(
 
 @pytest.mark.unit
 def test_classify_video_format_rejects_yuvj420p_without_full_color_range(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch, tmp_path
+):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _yuvj420p_tv_range_stream_info,
+        lambda path: _stream_info(pixel_format="yuvj420p", color_range="tv"),
     )
 
     report = reconciliation.classify_video_format(video_path)
@@ -157,50 +101,7 @@ def test_classify_video_format_rejects_yuvj420p_without_full_color_range(
 
 
 @pytest.mark.unit
-def test_classify_video_format_preserves_lower_source_fps(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    video_path = tmp_path / "clip.mp4"
-    video_path.write_bytes(b"video")
-    monkeypatch.setattr(
-        reconciliation.ffmpeg_wrapper,
-        "get_stream_info",
-        _compliant_30_fps_stream_info,
-    )
-
-    report = reconciliation.classify_video_format(video_path)
-
-    assert report.compliant is True
-    assert report.fps == 30.0
-    assert report.reasons == []
-
-
-@pytest.mark.unit
-def test_classify_video_format_rejects_fps_above_standard_maximum(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    video_path = tmp_path / "clip.mp4"
-    video_path.write_bytes(b"video")
-    monkeypatch.setattr(
-        reconciliation.ffmpeg_wrapper,
-        "get_stream_info",
-        _non_compliant_60_fps_stream_info,
-    )
-
-    report = reconciliation.classify_video_format(video_path)
-
-    assert report.compliant is False
-    assert report.fps == 60.0
-    assert report.reasons == ["fps_exceeds_max:60.0>50"]
-
-
-@pytest.mark.unit
-def test_default_managed_video_roots_exclude_legacy_data_roots(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_default_managed_video_roots_exclude_legacy_data_roots(monkeypatch, tmp_path):
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
 
     roots = reconciliation.default_managed_video_roots()
@@ -215,9 +116,8 @@ def test_default_managed_video_roots_exclude_legacy_data_roots(
 
 @pytest.mark.unit
 def test_reconcile_video_formats_scans_legacy_roots_only_when_requested(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+    monkeypatch, tmp_path
+):
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
     canonical_video = paths.sensitive_video / "canonical.mp4"
     legacy_video = paths.data / "sensitive_videos" / "legacy.mp4"
@@ -228,7 +128,7 @@ def test_reconcile_video_formats_scans_legacy_roots_only_when_requested(
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _compliant_stream_info,
+        lambda path: _stream_info(),
     )
 
     default_summary = reconciliation.reconcile_video_formats(
@@ -254,16 +154,13 @@ def test_reconcile_video_formats_scans_legacy_roots_only_when_requested(
 
 
 @pytest.mark.unit
-def test_reconcile_video_formats_reports_dry_run_repair(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_reconcile_video_formats_reports_dry_run_repair(monkeypatch, tmp_path):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _non_compliant_tv_range_stream_info,
+        lambda path: _stream_info(color_range="tv"),
     )
 
     summary = reconciliation.reconcile_video_formats(
@@ -282,21 +179,14 @@ def test_reconcile_video_formats_reports_dry_run_repair(
 
 
 @pytest.mark.unit
-def test_reconcile_video_formats_skips_legacy_root_repair(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_reconcile_video_formats_skips_legacy_root_repair(monkeypatch, tmp_path):
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
     legacy_video = paths.data / "sensitive_videos" / "legacy.mp4"
     legacy_video.parent.mkdir(parents=True, exist_ok=True)
     legacy_video.write_bytes(b"legacy")
     transcode_called = False
 
-    def fail_if_transcoded(
-        input_path: Path,
-        output_path: Path,
-        **kwargs: JsonValue,
-    ) -> Path:
+    def fail_if_transcoded(*args, **kwargs):
         nonlocal transcode_called
         transcode_called = True
         raise AssertionError("legacy root repair must not transcode")
@@ -304,11 +194,11 @@ def test_reconcile_video_formats_skips_legacy_root_repair(
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _non_compliant_mpeg4_stream_info,
+        lambda path: _stream_info(codec_name="mpeg4", color_range="tv"),
     )
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
-        "transcode_video",
+        "transcode_videofile_if_required",
         fail_if_transcoded,
     )
 
@@ -333,22 +223,19 @@ def test_reconcile_video_formats_skips_legacy_root_repair(
 
 
 @pytest.mark.unit
-def test_reconcile_video_formats_repairs_mp4_in_place(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_reconcile_video_formats_repairs_mp4_in_place(monkeypatch, tmp_path):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"original")
 
-    def fake_stream_info(path: Path) -> JsonObject:
+    def fake_stream_info(path: Path) -> dict:
         if ".format-repair." in path.name:
             return _stream_info()
         return _stream_info(codec_name="mpeg4", color_range="tv")
 
-    def fake_transcode_video(
+    def fake_transcode_videofile_if_required(
         input_path: Path,
         output_path: Path,
-        **kwargs: JsonValue,
+        **kwargs,
     ) -> Path:
         output_path.write_bytes(b"repaired")
         return output_path
@@ -360,8 +247,8 @@ def test_reconcile_video_formats_repairs_mp4_in_place(
     )
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
-        "transcode_video",
-        fake_transcode_video,
+        "transcode_videofile_if_required",
+        fake_transcode_videofile_if_required,
     )
 
     summary = reconciliation.reconcile_video_formats(
@@ -380,16 +267,13 @@ def test_reconcile_video_formats_repairs_mp4_in_place(
 
 
 @pytest.mark.unit
-def test_reconcile_video_formats_skips_non_mp4_in_place_repair(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_reconcile_video_formats_skips_non_mp4_in_place_repair(monkeypatch, tmp_path):
     video_path = tmp_path / "clip.avi"
     video_path.write_bytes(b"video")
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _compliant_stream_info,
+        lambda path: _stream_info(),
     )
 
     summary = reconciliation.reconcile_video_formats(

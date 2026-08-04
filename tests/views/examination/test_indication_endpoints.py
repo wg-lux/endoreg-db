@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false
-
 from uuid import uuid4
 
 from django.test import TestCase
@@ -64,7 +62,7 @@ class ExaminationIndicationEndpointTests(TestCase):
         classification_other.choices.add(self.choice_other_indication)
 
     def test_get_indications_for_examination_returns_linked_indications(self):
-        response = self.client.get(f"/api/examinations/{self.exam.pk}/indications/")
+        response = self.client.get(f"/api/examinations/{self.exam.id}/indications/")
 
         assert response.status_code == 200, response.content
         payload = response.json()
@@ -73,11 +71,11 @@ class ExaminationIndicationEndpointTests(TestCase):
             set(item.keys()) == {"id", "name", "description"} for item in payload
         )
         returned_ids = {item["id"] for item in payload}
-        assert returned_ids == {self.indication.pk, self.indication_secondary.pk}
+        assert returned_ids == {self.indication.id, self.indication_secondary.id}
 
     def test_get_indications_for_examination_returns_empty_list_when_unlinked(self):
         response = self.client.get(
-            f"/api/examinations/{self.exam_without_indications.pk}/indications/"
+            f"/api/examinations/{self.exam_without_indications.id}/indications/"
         )
 
         assert response.status_code == 200, response.content
@@ -90,26 +88,26 @@ class ExaminationIndicationEndpointTests(TestCase):
     def test_get_indication_choices_returns_distinct_choices_for_selected_indication(
         self,
     ):
-        response = self.client.get(f"/api/indications/{self.indication.pk}/choices/")
+        response = self.client.get(f"/api/indications/{self.indication.id}/choices/")
 
         assert response.status_code == 200, response.content
         payload = response.json()
         assert len(payload) == 2
         row_by_id = {item["id"]: item for item in payload}
 
-        assert row_by_id[self.choice_only_a.pk] == {
-            "id": self.choice_only_a.pk,
+        assert row_by_id[self.choice_only_a.id] == {
+            "id": self.choice_only_a.id,
             "name": self.choice_only_a.name,
-            "classification_ids": [self.classification_a.pk],
+            "classification_ids": [self.classification_a.id],
         }
-        assert row_by_id[self.choice_shared.pk] == {
-            "id": self.choice_shared.pk,
+        assert row_by_id[self.choice_shared.id] == {
+            "id": self.choice_shared.id,
             "name": self.choice_shared.name,
             "classification_ids": sorted(
-                [self.classification_a.pk, self.classification_b.pk]
+                [self.classification_a.id, self.classification_b.id]
             ),
         }
-        assert self.choice_other_indication.pk not in row_by_id
+        assert self.choice_other_indication.id not in row_by_id
 
     def test_get_indication_choices_returns_empty_list_for_indication_without_classifications(
         self,
@@ -120,7 +118,7 @@ class ExaminationIndicationEndpointTests(TestCase):
         )
 
         response = self.client.get(
-            f"/api/indications/{indication_without_choices.pk}/choices/"
+            f"/api/indications/{indication_without_choices.id}/choices/"
         )
         assert response.status_code == 200, response.content
         assert response.json() == []

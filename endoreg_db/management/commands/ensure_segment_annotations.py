@@ -1,32 +1,11 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import Sequence
-from typing import TypedDict, cast
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from lx_dtypes.models.contracts import validate_segment_annotation_ensure_payload
+from django.core.management.base import BaseCommand, CommandError
 
-from endoreg_db.management.commands._profiling import (
-    add_profiling_arguments,
-    command_profiling_config_from_options,
-    run_with_optional_profile,
-)
-from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models import VideoFile
 from endoreg_db.services.segment_annotations import ensure_segment_annotations
-
-
-type _CommandOption = NoneType | bool | int | list[int] | str
-type _IdSequence = NoneType | Sequence[int]
-
-
-class _SegmentAnnotationSummary(TypedDict):
-    total_segments: int
-    segments_processed: int
-    skipped_no_label: int
-    skipped_no_frames: int
-    annotations_needed: int
-    annotations_created: int
 
 
 class Command(BaseCommand):
@@ -35,20 +14,20 @@ class Command(BaseCommand):
         "currently have no annotations so that export pipelines see the segment labels."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         parser.add_argument(
             "--video-id",
             dest="video_ids",
             type=int,
             action="append",
-            help="Video ID to limit the migration. Can be passed multiple times.",
+            help="Optional video ID to limit the migration. Can be passed multiple times.",
         )
         parser.add_argument(
             "--segment-id",
             dest="segment_ids",
             type=int,
             action="append",
-            help="Segment ID to limit the migration. Can be passed multiple times.",
+            help="Optional segment ID to limit the migration. Can be passed multiple times.",
         )
         parser.add_argument(
             "--all-videos",
@@ -69,29 +48,11 @@ class Command(BaseCommand):
             dest="dry_run",
             help="Report how many annotations would be created without inserting rows.",
         )
-        add_profiling_arguments(parser)
 
-    def handle(self, *args: str, **options: _CommandOption) -> None:
-        profiling_config = command_profiling_config_from_options(options)
-        return run_with_optional_profile(
-            lambda: self._handle_unprofiled(*args, **options),
-            config=profiling_config,
-        )
-
-    def _handle_unprofiled(self, *args: str, **options: _CommandOption) -> None:
-        _ = args
-        all_videos = self._bool_option(options, "all_videos")
-        dry_run = self._bool_option(options, "dry_run")
-        payload = validate_segment_annotation_ensure_payload(
-            {
-                "video_ids": options.get("video_ids"),
-                "segment_ids": options.get("segment_ids"),
-                "information_source_name": options.get("information_source_name"),
-            },
-            default_information_source_name="manual_annotation",
-        )
-        video_ids: _IdSequence = payload.video_ids
-        segment_ids: _IdSequence = payload.segment_ids
+    def handle(self, *args, **options):
+        video_ids: Sequence[int] | None = options.get("video_ids")
+        segment_ids: Sequence[int] | None = options.get("segment_ids")
+        all_videos: bool = options.get("all_videos", False)
 
         if not all_videos and not video_ids and not segment_ids:
             raise CommandError(
@@ -101,19 +62,16 @@ class Command(BaseCommand):
         if all_videos:
             video_ids = list(VideoFile.objects.values_list("id", flat=True))
 
-        commit = not dry_run
+        commit = not options.get("dry_run", False)
 
-        summary = cast(
-            _SegmentAnnotationSummary,
-            ensure_segment_annotations(
-                video_ids=video_ids,
-                segment_ids=segment_ids,
-                information_source_name=payload.information_source_name,
-                commit=commit,
-            ),
+        summary = ensure_segment_annotations(
+            video_ids=video_ids,
+            segment_ids=segment_ids,
+            information_source_name=options["information_source_name"],
+            commit=commit,
         )
 
-        if dry_run:
+        if options.get("dry_run"):
             self.stdout.write(
                 self.style.NOTICE(
                     "Dry run: missing annotations would have been created for "
@@ -129,10 +87,3 @@ class Command(BaseCommand):
                     f"{summary['segments_processed']} segments."
                 )
             )
-
-    @staticmethod
-    def _bool_option(options: dict[str, _CommandOption], name: str) -> bool:
-        value = options.get(name, False)
-        if not isinstance(value, bool):
-            raise CommandError(f"Option {name} must be a boolean flag.")
-        return value

@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+# Class to represent findings of examinations
+from typing import TYPE_CHECKING, Optional
 
 from django.db import models
 
@@ -13,14 +12,14 @@ if TYPE_CHECKING:
     )
 
 
-class FindingManager(models.Manager["Finding"]):
-    def get_by_natural_key(self, name: str) -> "Finding":
+class FindingManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class Finding(models.Model):
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
     finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
         models.ManyToManyField("FindingType", blank=True, related_name="findings")
     )
@@ -39,21 +38,31 @@ class Finding(models.Model):
     objects = FindingManager()
 
     if TYPE_CHECKING:
-        from endoreg_db.models import FindingClassification
+        from endoreg_db.models import (
+            Examination,
+            FindingClassification,
+            FindingClassificationType,
+            FindingIntervention,
+            FindingType,
+            InformationSource,
+            PatientFindingClassification,
+        )
 
-    def natural_key(self) -> tuple[str]:
+        pass
+
+    def natural_key(self):
         """
         Return a tuple containing the unique natural key for this Finding instance.
 
         Returns:
             tuple: A single-element tuple with the Finding's name.
         """
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
-        return str(self.name)
+    def __str__(self):
+        return self.name
 
-    def get_finding_types(self) -> models.QuerySet["FindingType"]:
+    def get_finding_types(self):
         """
         Return all finding types associated with this finding.
 
@@ -63,7 +72,7 @@ class Finding(models.Model):
         return self.finding_types.all()
 
     def get_classifications(
-        self, classification_type: str = ""
+        self, classification_type: Optional[str] = None
     ) -> models.QuerySet["FindingClassification"]:
         """
         Retrieve all classifications associated with this finding, optionally filtered by classification type.
@@ -80,7 +89,7 @@ class Finding(models.Model):
             )
         return self.finding_classifications.all()
 
-    def get_location_classifications(self) -> models.QuerySet["FindingClassification"]:
+    def get_location_classifications(self):
         """
         Retrieve all related FindingClassification objects with classification type 'location'.
 
@@ -91,9 +100,7 @@ class Finding(models.Model):
             classification_types__name__iexact="location"
         )
 
-    def get_morphology_classifications(
-        self,
-    ) -> models.QuerySet["FindingClassification"]:
+    def get_morphology_classifications(self):
         """
         Retrieve all related FindingClassification objects with classification type 'morphology'.
 

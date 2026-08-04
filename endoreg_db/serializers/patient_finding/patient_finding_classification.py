@@ -1,32 +1,22 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
-from typing import cast, TYPE_CHECKING
-
 from endoreg_db.models.medical.patient.patient_finding_classification import (
     PatientFindingClassification,
 )
-from endoreg_db.serializers.misc.translatable_field_mix_in import (
-    TranslatableFieldMixin,
-    _TranslatableFieldLike,
-)
+from endoreg_db.serializers.misc.translatable_field_mix_in import TranslatableFieldMixin
+
 
 from rest_framework import serializers
 
-if TYPE_CHECKING:
-    _ModelSerializerMeta = serializers.ModelSerializer.Meta
-else:
-    _ModelSerializerMeta = object
-
 
 class PatientFindingClassificationSerializer(
-    serializers.ModelSerializer[PatientFindingClassification], TranslatableFieldMixin
+    serializers.ModelSerializer, TranslatableFieldMixin
 ):
     """Serializer für PatientFinding-Klassifikationen"""
 
     classification_name = serializers.SerializerMethodField()
     classification_choice_name = serializers.SerializerMethodField()
 
-    class Meta(_ModelSerializerMeta):
-        model = PatientFindingClassification  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = PatientFindingClassification
         fields = [
             "id",
             "classification",
@@ -44,7 +34,7 @@ class PatientFindingClassificationSerializer(
         Returns:
             str: The localized classification name.
         """
-        return self.get_localized_name(cast(_TranslatableFieldLike, obj.classification))
+        return self.get_localized_name(obj.classification)
 
     def get_classification_choice_name(self, obj: PatientFindingClassification):
         """
@@ -56,6 +46,4 @@ class PatientFindingClassificationSerializer(
         Returns:
             str: Localized name of the classification choice.
         """
-        return self.get_localized_name(
-            cast(_TranslatableFieldLike, obj.classification_choice)
-        )
+        return self.get_localized_name(obj.classification_choice)

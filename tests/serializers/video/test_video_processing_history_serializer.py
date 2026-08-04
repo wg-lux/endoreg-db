@@ -9,8 +9,6 @@ Tests cover:
 """
 
 import uuid
-from collections.abc import Mapping
-from typing import Protocol, cast
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -28,35 +26,17 @@ from endoreg_db.serializers.video.video_processing_history import (
 )
 
 
-class _CenterRelation(Protocol):
-    def add(self, *objs: Center | int) -> None: ...
-
-
-def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
-    cast(_CenterRelation, processor.centers).add(center)
-
-
-class _SerializerData(Protocol):
-    data: Mapping[str, object]
-
-
-def _serializer_data(
-    serializer: VideoProcessingHistorySerializer,
-) -> Mapping[str, object]:
-    return cast(_SerializerData, serializer).data
-
-
 @pytest.mark.django_db
 class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-methods
     """Test suite for VideoProcessingHistorySerializer."""
 
     @pytest.fixture
-    def center(self) -> Center:
+    def center(self):
         """Create a test center."""
         return Center.objects.create(name="test_center", display_name="Test Center")
 
     @pytest.fixture
-    def processor(self, center: Center) -> EndoscopyProcessor:
+    def processor(self, center):
         """Create a test processor."""
         processor = EndoscopyProcessor.objects.create(
             name="test_processor",
@@ -83,11 +63,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
             patient_dob_width=0,
             patient_dob_height=0,
         )
-        _add_center(processor, center)
+        processor.centers.add(center)
         return processor
 
     @pytest.fixture
-    def video_file(self, center: Center, processor: EndoscopyProcessor) -> VideoFile:
+    def video_file(self, center, processor):
         """Create a test video file."""
         raw_file = SimpleUploadedFile(
             name="test-video.mp4",
@@ -103,11 +83,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
     @pytest.fixture
-    def factory(self) -> APIRequestFactory:
+    def factory(self):
         """Create APIRequestFactory."""
         return APIRequestFactory()
 
-    def test_serialize_pending_operation(self, video_file: VideoFile) -> None:
+    def test_serialize_pending_operation(self, video_file):
         """Test serializing a pending operation."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -116,7 +96,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["operation"] == VideoProcessingHistory.OPERATION_MASKING
         assert data["operation_display"] == "Mask Overlay"
@@ -124,7 +104,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         assert data["status_display"] == "Pending"
         assert data["is_complete"] is False
 
-    def test_serialize_completed_operation(self, video_file: VideoFile) -> None:
+    def test_serialize_completed_operation(self, video_file):
         """Test serializing a completed operation."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -135,15 +115,13 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         history.mark_success()
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["status"] == VideoProcessingHistory.STATUS_SUCCESS
         assert data["is_complete"] is True
         assert data["output_file"] == "processed/video_123.mp4"
 
-    def test_get_download_url_with_success_and_output(
-        self, video_file: VideoFile, factory: APIRequestFactory
-    ) -> None:
+    def test_get_download_url_with_success_and_output(self, video_file, factory):
         """Test download URL generation for successful operation."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -156,14 +134,12 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         serializer = VideoProcessingHistorySerializer(
             history, context={"request": request}
         )
-        data = _serializer_data(serializer)
+        data = serializer.data
 
-        expected_url = f"/endoreg-api/media/videos/{int(video_file.pk)}/hls/playlist.m3u8?type=processed"
-        assert expected_url in cast(str, data["download_url"])
+        expected_url = f"/api/media/videos/{video_file.id}/stream/?type=processed"
+        assert expected_url in data["download_url"]
 
-    def test_get_download_url_without_output_file(
-        self, video_file: VideoFile, factory: APIRequestFactory
-    ) -> None:
+    def test_get_download_url_without_output_file(self, video_file, factory):
         """Test download URL is None without output file."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -175,13 +151,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         serializer = VideoProcessingHistorySerializer(
             history, context={"request": request}
         )
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["download_url"] is None
 
-    def test_get_download_url_for_non_success_status(
-        self, video_file: VideoFile, factory: APIRequestFactory
-    ) -> None:
+    def test_get_download_url_for_non_success_status(self, video_file, factory):
         """Test download URL is None for non-success status."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -194,13 +168,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         serializer = VideoProcessingHistorySerializer(
             history, context={"request": request}
         )
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["download_url"] is None
 
-    def test_get_download_url_without_request_context(
-        self, video_file: VideoFile
-    ) -> None:
+    def test_get_download_url_without_request_context(self, video_file):
         """Test download URL without request in context."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -210,12 +182,12 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
-        expected_url = f"/endoreg-api/media/videos/{int(video_file.pk)}/hls/playlist.m3u8?type=processed"
+        expected_url = f"/api/media/videos/{video_file.id}/stream/?type=processed"
         assert data["download_url"] == expected_url
 
-    def test_validate_operation_valid(self) -> None:
+    def test_validate_operation_valid(self):
         """Test validation accepts valid operations."""
         serializer = VideoProcessingHistorySerializer()
 
@@ -223,7 +195,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
             validated = serializer.validate_operation(op)
             assert validated == op
 
-    def test_validate_operation_invalid(self) -> None:
+    def test_validate_operation_invalid(self):
         """Test validation rejects invalid operation."""
         serializer = VideoProcessingHistorySerializer()
 
@@ -232,7 +204,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "Invalid operation" in str(exc_info.value)
 
-    def test_validate_status_valid(self) -> None:
+    def test_validate_status_valid(self):
         """Test validation accepts valid statuses."""
         serializer = VideoProcessingHistorySerializer()
 
@@ -240,7 +212,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
             validated = serializer.validate_status(status_val)
             assert validated == status_val
 
-    def test_validate_status_invalid(self) -> None:
+    def test_validate_status_invalid(self):
         """Test validation rejects invalid status."""
         serializer = VideoProcessingHistorySerializer()
 
@@ -249,7 +221,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "Invalid status" in str(exc_info.value)
 
-    def test_validate_config_not_dict(self) -> None:
+    def test_validate_config_not_dict(self):
         """Test config validation rejects non-dict values."""
         serializer = VideoProcessingHistorySerializer(
             data={
@@ -268,7 +240,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "dictionary" in str(exc_info.value)
 
-    def test_validate_config_masking_missing_mask_type(self) -> None:
+    def test_validate_config_masking_missing_mask_type(self):
         """Test masking config validation requires mask_type."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -280,7 +252,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "mask_type" in str(exc_info.value)
 
-    def test_validate_config_masking_device_missing_device_name(self) -> None:
+    def test_validate_config_masking_device_missing_device_name(self):
         """Test device mask requires device_name."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -292,7 +264,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "device_name" in str(exc_info.value)
 
-    def test_validate_config_masking_custom_missing_roi(self) -> None:
+    def test_validate_config_masking_custom_missing_roi(self):
         """Test custom mask requires roi coordinates."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -304,7 +276,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
 
         assert "roi" in str(exc_info.value)
 
-    def test_validate_config_masking_valid(self) -> None:
+    def test_validate_config_masking_valid(self):
         """Test valid masking config passes validation."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -320,7 +292,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         validated = serializer.validate_config(config)
         assert validated == config
 
-    def test_validate_config_frame_removal_missing_required(self) -> None:
+    def test_validate_config_frame_removal_missing_required(self):
         """Test frame removal requires frame_list or detection_method."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -333,7 +305,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         error_msg = str(exc_info.value)
         assert "frame_list" in error_msg or "detection_method" in error_msg
 
-    def test_validate_config_frame_removal_with_frame_list(self) -> None:
+    def test_validate_config_frame_removal_with_frame_list(self):
         """Test valid frame removal config with frame_list."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -344,7 +316,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         validated = serializer.validate_config(config)
         assert validated == config
 
-    def test_validate_config_frame_removal_with_detection_method(self) -> None:
+    def test_validate_config_frame_removal_with_detection_method(self):
         """Test valid frame removal config with detection_method."""
         serializer = VideoProcessingHistorySerializer()
         serializer.initial_data = {
@@ -355,7 +327,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         validated = serializer.validate_config(config)
         assert validated == config
 
-    def test_duration_field_serialization(self, video_file: VideoFile) -> None:
+    def test_duration_field_serialization(self, video_file):
         """Test duration field is properly serialized."""
         history = VideoProcessingHistory.objects.create(
             video=video_file, operation=VideoProcessingHistory.OPERATION_MASKING
@@ -368,13 +340,13 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         history.mark_success(output_file="test.mp4")
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert "duration" in data
         assert data["duration"] is not None
         assert isinstance(data["duration"], float)
 
-    def test_task_id_serialization(self, video_file: VideoFile) -> None:
+    def test_task_id_serialization(self, video_file):
         """Test Celery task_id is serialized."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -383,11 +355,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["task_id"] == "celery-task-xyz789"
 
-    def test_config_serialization_complex(self, video_file: VideoFile) -> None:
+    def test_config_serialization_complex(self, video_file):
         """Test complex config is properly serialized."""
         config = {
             "mask_type": "custom",
@@ -403,11 +375,11 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         assert data["config"] == config
 
-    def test_all_fields_present(self, video_file: VideoFile) -> None:
+    def test_all_fields_present(self, video_file):
         """Test all expected fields are in serialized data."""
         history = VideoProcessingHistory.objects.create(
             video=video_file,
@@ -416,7 +388,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         )
 
         serializer = VideoProcessingHistorySerializer(history)
-        data = _serializer_data(serializer)
+        data = serializer.data
 
         expected_fields = [
             "id",
@@ -439,7 +411,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         for field in expected_fields:
             assert field in data
 
-    def test_read_only_fields(self, video_file: VideoFile) -> None:
+    def test_read_only_fields(self, video_file):
         """Test read-only fields cannot be updated."""
         history = VideoProcessingHistory.objects.create(
             video=video_file, operation=VideoProcessingHistory.OPERATION_MASKING
@@ -458,5 +430,5 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
         if serializer.is_valid():
             updated = serializer.save()
             # Read-only fields should not change
-            assert int(updated.pk) == int(history.pk)
+            assert updated.id == history.id
             assert updated.created_at == history.created_at

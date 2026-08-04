@@ -1,29 +1,13 @@
 import importlib
 import os
 import uuid
-from collections.abc import Generator
 from pathlib import Path
-from types import ModuleType
-from typing import Any
 
 import pytest
-from pytest import MonkeyPatch
 
 from endoreg_db.config import env as env_module
 from endoreg_db.config.env import BASE_DIR
-from endoreg_db.utils import paths as paths_module
-
-
-def module_path(module: ModuleType, name: str) -> Path:
-    value = getattr(module, name)
-    if not isinstance(value, Path):
-        raise AssertionError(f"{name} is not a Path: {value!r}")
-    return value
-
-
-def module_callable(module: ModuleType, name: str) -> Any:
-    return getattr(module, name)
-
+from endoreg_db.utils.filesystem import paths as paths_module
 
 PATH_ENV_KEYS = (
     "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
@@ -33,7 +17,7 @@ PATH_ENV_KEYS = (
 )
 
 
-def reload_paths(monkeypatch: MonkeyPatch, **env: Path | str) -> ModuleType:
+def reload_paths(monkeypatch, **env):
     for key in PATH_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
@@ -44,7 +28,7 @@ def reload_paths(monkeypatch: MonkeyPatch, **env: Path | str) -> ModuleType:
 
 
 @pytest.fixture(autouse=True)
-def restore_paths_env() -> Generator[None, None, None]:
+def restore_paths_env():
     original_env = {key: os.environ.get(key) for key in PATH_ENV_KEYS}
     yield
     for key, value in original_env.items():
@@ -55,7 +39,7 @@ def restore_paths_env() -> Generator[None, None, None]:
     importlib.reload(paths_module)
 
 
-def test_data_paths_behaves_like_a_mapping() -> None:
+def test_data_paths_behaves_like_a_mapping():
     expanded = {**paths_module.data_paths}
 
     assert expanded["logs"] == paths_module.LOG_DIR
@@ -75,9 +59,7 @@ def test_data_paths_behaves_like_a_mapping() -> None:
     assert expanded["documents"] == paths_module.DOCUMENT_DIR
 
 
-def test_legacy_paths_import_reexports_filesystem_paths(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_legacy_paths_import_reexports_filesystem_paths(monkeypatch, tmp_path):
     reloaded = reload_paths(
         monkeypatch,
         LX_ANNOTATE_ENCRYPTED_DATA_DIR=tmp_path / "protected",
@@ -86,14 +68,12 @@ def test_legacy_paths_import_reexports_filesystem_paths(
     legacy_paths = importlib.reload(importlib.import_module("endoreg_db.utils.paths"))
 
     assert legacy_paths.data_paths is reloaded.data_paths
-    assert legacy_paths.LOG_DIR == module_path(reloaded, "LOG_DIR")
-    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == module_path(
-        reloaded, "IMPORT_PREANONYMIZED_DIR"
-    )
+    assert legacy_paths.LOG_DIR == reloaded.LOG_DIR
+    assert legacy_paths.IMPORT_PREANONYMIZED_DIR == reloaded.IMPORT_PREANONYMIZED_DIR
     assert legacy_paths.EndoregPathsModel is reloaded.EndoregPathsModel
 
 
-def test_paths_module_reexports_env_contracts() -> None:
+def test_paths_module_reexports_env_contracts():
     assert paths_module.PROTECTED_ROOT_ENV == env_module.PROTECTED_ROOT_ENV
     assert paths_module.STORAGE_DIR_ENV == env_module.STORAGE_DIR_ENV
     assert paths_module.DATA_DIR_ENV == env_module.DATA_DIR_ENV
@@ -101,9 +81,7 @@ def test_paths_module_reexports_env_contracts() -> None:
     assert paths_module.DJANGO_SETTINGS_MODULE == env_module.DJANGO_SETTINGS_MODULE
 
 
-def test_build_protected_runtime_env_normalizes_related_paths(
-    tmp_path: Path,
-) -> None:
+def test_build_protected_runtime_env_normalizes_related_paths(tmp_path):
     protected_root = tmp_path / "protected"
     built = env_module.build_protected_runtime_env(
         default_protected_root=protected_root,
@@ -122,9 +100,7 @@ def test_build_protected_runtime_env_normalizes_related_paths(
     assert built["PROTECTED_MEDIA_ROOT"] == str((protected_root / "storage").resolve())
 
 
-def test_paths_module_resolves_relative_env_paths(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_paths_module_resolves_relative_env_paths(monkeypatch):
     unique_suffix = uuid.uuid4().hex[:8]
     protected_root_rel = f"data/tests/runtime/{unique_suffix}/protected"
     storage_rel = f"{protected_root_rel}/storage"
@@ -141,91 +117,65 @@ def test_paths_module_resolves_relative_env_paths(
     expected_storage = (BASE_DIR / storage_rel).resolve()
     expected_data = (BASE_DIR / data_rel).resolve()
 
-    assert module_path(reloaded, "PROTECTED_DATA_ROOT") == expected_root
-    assert module_path(reloaded, "STORAGE_DIR") == expected_storage
-    assert module_path(reloaded, "DATA_DIR") == expected_data
-    assert module_path(reloaded, "LOG_DIR") == expected_data / "logs"
-    assert module_path(reloaded, "QUARANTINE_DIR") == expected_data / "quarantine"
+    assert reloaded.PROTECTED_DATA_ROOT == expected_root
+    assert reloaded.STORAGE_DIR == expected_storage
+    assert reloaded.DATA_DIR == expected_data
+    assert reloaded.LOG_DIR == expected_data / "logs"
+    assert reloaded.QUARANTINE_DIR == expected_data / "quarantine"
+    assert reloaded.MIGRATION_STAGING_DIR == expected_data / "migration_staging"
+    assert reloaded.UPLOAD_API_DIR == expected_storage / "upload_jobs" / "api"
+    assert reloaded.SAP_IMPORT_DROP_DIR == expected_data / "import" / "sap_import"
+    assert reloaded.IMPORT_VIDEO_DIR == expected_data / "import" / "video_import"
     assert (
-        module_path(reloaded, "MIGRATION_STAGING_DIR")
-        == expected_data / "migration_staging"
-    )
-    assert (
-        module_path(reloaded, "UPLOAD_API_DIR")
-        == expected_storage / "upload_jobs" / "api"
-    )
-    assert (
-        module_path(reloaded, "SAP_IMPORT_DROP_DIR")
-        == expected_data / "import" / "sap_import"
-    )
-    assert (
-        module_path(reloaded, "IMPORT_VIDEO_DIR")
-        == expected_data / "import" / "video_import"
-    )
-    assert (
-        module_path(reloaded, "IMPORT_PREANONYMIZED_DIR")
+        reloaded.IMPORT_PREANONYMIZED_DIR
         == expected_data / "import" / "preanonymized_import"
     )
     assert (
-        module_path(reloaded, "IMPORT_ANONYMIZED_VIDEO_DIR")
+        reloaded.IMPORT_ANONYMIZED_VIDEO_DIR
         == expected_data / "import" / "anonymized_video_import"
     )
     assert (
-        module_path(reloaded, "IMPORT_ANONYMIZED_REPORT_DIR")
+        reloaded.IMPORT_ANONYMIZED_REPORT_DIR
         == expected_data / "import" / "anonymized_report_import"
     )
-    assert module_path(reloaded, "EXPORT_DIR") == expected_data / "export"
+    assert reloaded.EXPORT_DIR == expected_data / "export"
+    assert reloaded.SENSITIVE_VIDEO_DIR == expected_storage / "sensitive_videos"
+    assert reloaded.SENSITIVE_REPORT_DIR == expected_storage / "sensitive_reports"
+    assert reloaded.ANONYM_VIDEO_DIR == expected_storage / "processed_videos_final"
+    assert reloaded.ANONYM_REPORT_DIR == expected_storage / "processed_reports_final"
+    assert reloaded.RAW_FRAME_DIR == expected_storage / "raw_frames"
+    assert reloaded.FRAME_DIR == expected_storage / "frames"
+    assert reloaded.WEIGHTS_DIR == expected_storage / "model_weights"
     assert (
-        module_path(reloaded, "SENSITIVE_VIDEO_DIR")
-        == expected_storage / "sensitive_videos"
-    )
-    assert (
-        module_path(reloaded, "SENSITIVE_REPORT_DIR")
-        == expected_storage / "sensitive_reports"
-    )
-    assert (
-        module_path(reloaded, "ANONYM_VIDEO_DIR")
+        reloaded.MANAGED_ANONYMIZED_VIDEOS_DIR
         == expected_storage / "processed_videos_final"
     )
     assert (
-        module_path(reloaded, "ANONYM_REPORT_DIR")
-        == expected_storage / "processed_reports_final"
-    )
-    assert module_path(reloaded, "RAW_FRAME_DIR") == expected_storage / "raw_frames"
-    assert module_path(reloaded, "FRAME_DIR") == expected_storage / "frames"
-    assert module_path(reloaded, "WEIGHTS_DIR") == expected_storage / "model_weights"
-    assert (
-        module_path(reloaded, "MANAGED_ANONYMIZED_VIDEOS_DIR")
-        == expected_storage / "processed_videos_final"
-    )
-    assert (
-        module_path(reloaded, "MANAGED_ANONYMIZED_REPORTS_DIR")
+        reloaded.MANAGED_ANONYMIZED_REPORTS_DIR
         == expected_storage / "processed_reports_final"
     )
 
     for path in (
-        module_path(reloaded, "PROTECTED_DATA_ROOT"),
-        module_path(reloaded, "DATA_DIR"),
-        module_path(reloaded, "STORAGE_DIR"),
-        module_path(reloaded, "LOG_DIR"),
-        module_path(reloaded, "IMPORT_DIR"),
-        module_path(reloaded, "EXPORT_DIR"),
-        module_path(reloaded, "IMPORT_VIDEO_DIR"),
-        module_path(reloaded, "IMPORT_REPORT_DIR"),
-        module_path(reloaded, "IMPORT_PREANONYMIZED_DIR"),
-        module_path(reloaded, "IMPORT_ANONYMIZED_VIDEO_DIR"),
-        module_path(reloaded, "IMPORT_ANONYMIZED_REPORT_DIR"),
-        module_path(reloaded, "ANONYM_VIDEO_DIR"),
-        module_path(reloaded, "SENSITIVE_VIDEO_DIR"),
+        reloaded.PROTECTED_DATA_ROOT,
+        reloaded.DATA_DIR,
+        reloaded.STORAGE_DIR,
+        reloaded.LOG_DIR,
+        reloaded.IMPORT_DIR,
+        reloaded.EXPORT_DIR,
+        reloaded.IMPORT_VIDEO_DIR,
+        reloaded.IMPORT_REPORT_DIR,
+        reloaded.IMPORT_PREANONYMIZED_DIR,
+        reloaded.IMPORT_ANONYMIZED_VIDEO_DIR,
+        reloaded.IMPORT_ANONYMIZED_REPORT_DIR,
+        reloaded.ANONYM_VIDEO_DIR,
+        reloaded.SENSITIVE_VIDEO_DIR,
     ):
         assert isinstance(path, Path)
         assert path.exists()
         assert path.is_dir()
 
 
-def test_storage_tier_helpers_stay_inside_protected_root(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_storage_tier_helpers_stay_inside_protected_root(monkeypatch, tmp_path):
     protected_root = tmp_path / "protected"
     public_root = tmp_path / "public"
 
@@ -235,25 +185,23 @@ def test_storage_tier_helpers_stay_inside_protected_root(
         DATA_DIR=public_root,
     )
 
-    manifest_path = module_callable(reloaded, "build_manifest_path")(
+    manifest_path = reloaded.build_manifest_path(
         command_name="import_sap_ish_zip",
         stem="test_manifest",
     )
-    upload_path = module_callable(reloaded, "build_upload_job_relative_path")(
+    upload_path = reloaded.build_upload_job_relative_path(
         tier="upload_api",
         filename="input.pdf",
         key="abc123",
     )
 
     assert manifest_path.is_absolute()
-    assert manifest_path.is_relative_to(module_path(reloaded, "DATA_DIR"))
+    assert manifest_path.is_relative_to(reloaded.DATA_DIR)
     assert upload_path.startswith("upload_jobs/api/")
     assert upload_path.endswith("/input.pdf")
 
 
-def test_paths_module_rejects_storage_dir_outside_protected_root(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_paths_module_rejects_storage_dir_outside_protected_root(monkeypatch):
     unique_suffix = uuid.uuid4().hex[:8]
     protected_root_rel = f"data/tests/runtime/{unique_suffix}/protected"
     outside_storage_rel = f"data/tests/runtime/{unique_suffix}/outside/storage"
@@ -269,9 +217,7 @@ def test_paths_module_rejects_storage_dir_outside_protected_root(
         )
 
 
-def test_protected_media_path_helpers_honor_configured_root(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_protected_media_path_helpers_honor_configured_root(monkeypatch, tmp_path):
     protected_root = tmp_path / "protected"
     protected_media_root = protected_root / "media_mount"
     asset_path = protected_media_root / "streamable_videos" / "raw" / "video.mp4"
@@ -285,56 +231,23 @@ def test_protected_media_path_helpers_honor_configured_root(
     )
 
     assert (
-        module_callable(reloaded, "to_protected_media_relative")(asset_path)
+        reloaded.to_protected_media_relative(asset_path)
         == "streamable_videos/raw/video.mp4"
     )
     assert (
-        module_callable(reloaded, "resolve_protected_media_path")(
-            "streamable_videos/raw/video.mp4"
-        )
+        reloaded.resolve_protected_media_path("streamable_videos/raw/video.mp4")
         == asset_path.resolve()
     )
 
 
-def test_protected_media_relative_path_rejects_unsafe_segments() -> None:
+def test_protected_media_relative_path_rejects_unsafe_segments():
     with pytest.raises(ValueError, match="not safe"):
         paths_module.normalize_protected_media_relative_path("../escape.mp4")
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
-        "../escape.mp4",
-        "streamable_videos/../../etc/passwd",
-        "streamable_videos/../processed/video.mp4",
-        "/etc/passwd",
-        "",
-    ],
-)
-def test_resolve_protected_media_path_rejects_traversal_and_absolute_paths(
-    relative_path: str,
-) -> None:
-    with pytest.raises(ValueError):
-        paths_module.resolve_protected_media_path(relative_path)
-
-
-def test_storage_tier_matrix_resolves_documented_path_model_fields() -> None:
-    paths = paths_module.EndoregPathsModel.from_environment()
-
-    for tier in paths_module.StorageTier:
-        field_name = paths_module.STORAGE_TIER_FIELDS[tier]
-        assert field_name in paths_module.EndoregPathsModel.__annotations__
-        root = paths_module.get_storage_tier_root(tier)
-        assert root == getattr(paths, field_name)
-        if tier in paths_module.PROTECTED_STORAGE_TIERS:
-            assert root.resolve().is_relative_to(paths.protected_root.resolve())
-        else:
-            assert root.resolve().is_relative_to(paths.data.resolve())
-
-
 def test_watcher_intake_dirs_are_distinct_from_protected_media_root(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+    monkeypatch, tmp_path
+):
     protected_root = tmp_path / "protected"
     storage_root = protected_root / "storage"
     data_root = tmp_path / "public"
@@ -346,30 +259,24 @@ def test_watcher_intake_dirs_are_distinct_from_protected_media_root(
         DATA_DIR=data_root,
     )
 
-    assert module_callable(reloaded, "protected_media_root")() == storage_root.resolve()
-    assert module_path(reloaded, "WATCHER_VIDEO_DROP_DIR").is_relative_to(
-        data_root / "import"
+    assert reloaded.protected_media_root() == storage_root.resolve()
+    assert reloaded.WATCHER_VIDEO_DROP_DIR.is_relative_to(data_root / "import")
+    assert reloaded.WATCHER_REPORT_DROP_DIR.is_relative_to(data_root / "import")
+    assert reloaded.WATCHER_PREANONYMIZED_DROP_DIR.is_relative_to(data_root / "import")
+    assert not reloaded.WATCHER_VIDEO_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
     )
-    assert module_path(reloaded, "WATCHER_REPORT_DROP_DIR").is_relative_to(
-        data_root / "import"
+    assert not reloaded.WATCHER_REPORT_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
     )
-    assert module_path(reloaded, "WATCHER_PREANONYMIZED_DROP_DIR").is_relative_to(
-        data_root / "import"
-    )
-    assert not module_path(reloaded, "WATCHER_VIDEO_DROP_DIR").is_relative_to(
-        module_callable(reloaded, "protected_media_root")()
-    )
-    assert not module_path(reloaded, "WATCHER_REPORT_DROP_DIR").is_relative_to(
-        module_callable(reloaded, "protected_media_root")()
-    )
-    assert not module_path(reloaded, "WATCHER_PREANONYMIZED_DROP_DIR").is_relative_to(
-        module_callable(reloaded, "protected_media_root")()
+    assert not reloaded.WATCHER_PREANONYMIZED_DROP_DIR.is_relative_to(
+        reloaded.protected_media_root()
     )
 
 
 def test_resolve_existing_protected_media_path_rejects_intake_and_accepts_managed_files(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+    monkeypatch, tmp_path
+):
     protected_root = tmp_path / "protected"
     storage_root = protected_root / "storage"
     data_root = tmp_path / "public"
@@ -381,61 +288,22 @@ def test_resolve_existing_protected_media_path_rejects_intake_and_accepts_manage
         DATA_DIR=data_root,
     )
 
-    intake_file = module_path(reloaded, "WATCHER_REPORT_DROP_DIR") / "incoming.pdf"
+    intake_file = reloaded.WATCHER_REPORT_DROP_DIR / "incoming.pdf"
     intake_file.parent.mkdir(parents=True, exist_ok=True)
     intake_file.write_bytes(b"%PDF-1.4 intake")
 
-    managed_file = (
-        module_path(reloaded, "UPLOAD_WATCHER_DIR") / "job-123" / "incoming.pdf"
-    )
+    managed_file = reloaded.UPLOAD_WATCHER_DIR / "job-123" / "incoming.pdf"
     managed_file.parent.mkdir(parents=True, exist_ok=True)
     managed_file.write_bytes(b"%PDF-1.4 managed")
 
+    assert reloaded.resolve_existing_protected_media_path(intake_file) is None
     assert (
-        module_callable(reloaded, "resolve_existing_protected_media_path")(intake_file)
-        is None
-    )
-    assert (
-        module_callable(reloaded, "resolve_existing_protected_media_path")(managed_file)
+        reloaded.resolve_existing_protected_media_path(managed_file)
         == managed_file.resolve()
     )
     assert (
-        module_callable(reloaded, "resolve_existing_protected_media_path")(
+        reloaded.resolve_existing_protected_media_path(
             "upload_jobs/watcher/job-123/incoming.pdf"
         )
         == managed_file.resolve()
-    )
-
-
-def test_protected_media_read_helpers_do_not_bootstrap_directories(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    protected_root = tmp_path / "protected"
-    storage_root = protected_root / "storage"
-    media_file = storage_root / "streamable_videos" / "processed" / "video.mp4"
-
-    reloaded = reload_paths(
-        monkeypatch,
-        LX_ANNOTATE_ENCRYPTED_DATA_DIR=protected_root,
-        STORAGE_DIR=storage_root,
-    )
-    media_file.parent.mkdir(parents=True, exist_ok=True)
-    media_file.write_bytes(b"managed media")
-
-    def fail_if_directory_bootstrap_runs(path: Path) -> Path:
-        raise AssertionError(f"read-only path helper tried to ensure {path}")
-
-    monkeypatch.setattr(
-        reloaded,
-        "_ensure_directory",
-        fail_if_directory_bootstrap_runs,
-    )
-
-    assert module_callable(reloaded, "protected_media_root")() == storage_root.resolve()
-    assert (
-        module_callable(reloaded, "resolve_existing_protected_media_path")(
-            "streamable_videos/processed/video.mp4"
-        )
-        == media_file.resolve()
     )

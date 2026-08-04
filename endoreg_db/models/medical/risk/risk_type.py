@@ -1,13 +1,12 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 # Deorecate ?
 
 
-class RiskTypeManager(models.Manager["RiskType"]):
-    def get_by_natural_key(self, name: str) -> "RiskType":
+class RiskTypeManager(models.Manager):
+    def get_by_natural_key(self, name):
         """
         Retrieves a RiskType instance using its natural key.
 
@@ -29,8 +28,8 @@ class RiskType(models.Model):
         description (str): A description of the risk type.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
 
     objects = RiskTypeManager()
 
@@ -39,16 +38,16 @@ class RiskType(models.Model):
 
         risks: models.QuerySet[Risk]
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """
         Return the natural key for this risk type.
 
         This method returns a tuple containing only the risk type's unique name, which is used
         to identify the instance naturally.
         """
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return the risk type's name as its string representation.
         """

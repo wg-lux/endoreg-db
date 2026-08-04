@@ -1,108 +1,124 @@
-from __future__ import annotations
+# libs/endoreg-db/tests/keycloak/test_policy_permission.py
+"""
+Tests for the low-level PolicyPermission class.
 
-from types import SimpleNamespace
-from typing import Any, Protocol, cast
+Goal:
+  - In NON-DEBUG mode (DEBUG=False), user with data:read
+    is allowed for "patient-list", and user without is denied.
+
+Important:
+  PolicyPermission has a DEBUG bypass:
+      if is_debug_mode(): return True
+
+  So we MUST force DEBUG = False in these tests, otherwise
+  everyone would be allowed and RBAC would never be exercised.
+"""
+
+from django.contrib.auth.models import Group
+
+# libs/endoreg-db/tests/keycloak/test_policy_permission.py
+"""
+Tests for the low-level PolicyPermission class.
+
+Goal:
+  - In "prod mode" (i.e. without the DEBUG bypass), verify that:
+      * user with data:read is ALLOWED for "patient-list"
+      * user without data:read is DENIED for "patient-list"
+
+Important:
+  PolicyPermission has a DEBUG bypass:
+
+      if is_debug_mode():
+          return True
+
+  In dev/tests, is_debug_mode() may still return True
+  (e.g. because of DJANGO_DEBUG env), so these tests
+  explicitly patch is_debug_mode() to return False.
+"""
+
 from unittest.mock import patch
 
+from django.test import TestCase, RequestFactory, override_settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractUser, Group
-from django.test import RequestFactory, TestCase, override_settings
-from rest_framework.request import Request
-from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 
-UserModel = get_user_model()
+User = get_user_model()
 
 
-class DummyView(APIView):
-    """Minimal APIView stand-in for permission testing."""
+class DummyView:
+    """Minimal stand-in view for permission testing."""
+
+    pass
 
 
-class _UserManager(Protocol):
-    def create_user(
-        self,
-        username: str,
-        password: str | None = None,
-        **extra_fields: object,
-    ) -> AbstractUser: ...
-
-
-class _GroupRelation(Protocol):
-    def add(self, *objs: Group | int) -> None: ...
-
-
-class _UserWithGroups(Protocol):
-    groups: _GroupRelation
-
-
-class _DrfRequestConstructor(Protocol):
-    def __call__(self, request: object) -> Request: ...
-
-
-def _create_user(username: str) -> AbstractUser:
-    return cast(_UserManager, UserModel.objects).create_user(username=username)
-
-
-def _add_groups(user: AbstractUser, *groups: Group) -> None:
-    cast(_UserWithGroups, user).groups.add(*groups)
-
-
-@override_settings(DEBUG=False)
+@override_settings(DEBUG=False)  # Ensure settings.DEBUG is False for this class
 class PolicyPermissionTests(TestCase):
     """
     Low-level unit tests for PolicyPermission.has_permission.
 
-    The tests force DEBUG mode off because PolicyPermission intentionally has
-    a debug bypass for local development.
+    Approach:
+      * Create fake requests with resolver_match.view_name = "patient-list"
+      * Patch is_debug_mode() to always return False
+      * Call PolicyPermission().has_permission(request, view)
     """
 
-    factory: RequestFactory
-    data_read: Group
-
-    def setUp(self) -> None:
+    def setUp(self):
         self.factory = RequestFactory()
+        # Role required by policy.py for "patient-list"
         self.data_read = Group.objects.create(name="data:read")
 
-    def _make_request(self, user: AbstractUser, view_name: str) -> Request:
+    def _make_request(self, user, view_name: str):
         """
-        Create a DRF Request with the same route metadata Django normally
-        provides via resolver_match.
+        Helper to create a fake request with resolver_match.view_name set.
+
+        This mimics what Django's resolver does for real requests.
         """
-        django_request = self.factory.get("/api/patients/")
-        drf_request = cast(_DrfRequestConstructor, Request)(django_request)
-        drf_request.user = user
+        request = self.factory.get("/api/patients/")
+        request.user = user
 
-        # DRF Request is dynamic and permits proxy attributes at runtime.
-        # Cast only this assignment to Any so the test can model resolver data
-        # without constructing a full URLConf.
-        cast(Any, drf_request).resolver_match = SimpleNamespace(
-            view_name=view_name,
-            url_name=view_name,
-        )
-        return drf_request
+        # Fake resolver_match with a given route name
+        request.resolver_match = type(
+            "RM",
+            (),
+            {
+                "view_name": view_name,  # e.g. "patient-list"
+                "url_name": view_name,
+            },
+        )()
+        return request
 
-    def test_patient_list_requires_data_read(self) -> None:
-        user = _create_user(username="editor")
-        _add_groups(user, self.data_read)
+    def test_patient_list_requires_data_read(self):
+        """
+        User with data:read should pass PolicyPermission for patient-list.
+        """
+        user = User.objects.create_user(username="editor")
+        user.groups.add(self.data_read)
 
         request = self._make_request(user, "patient-list")
 
+        # ⬇️ Patch debug mode OFF so RBAC is enforced
         with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
-            allowed = PolicyPermission().has_permission(request, DummyView())
+            perm = PolicyPermission()
+            allowed = perm.has_permission(request, DummyView())
 
         self.assertTrue(
             allowed,
             msg="User with data:read should be allowed for patient-list",
         )
 
-    def test_patient_list_denied_without_role(self) -> None:
-        user = _create_user(username="basic")
+    def test_patient_list_denied_without_role(self):
+        """
+        User without data:read should be denied for patient-list.
+        """
+        user = User.objects.create_user(username="basic")
 
         request = self._make_request(user, "patient-list")
 
+        # ⬇️ Patch debug mode OFF so RBAC is enforced
         with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
-            allowed = PolicyPermission().has_permission(request, DummyView())
+            perm = PolicyPermission()
+            allowed = perm.has_permission(request, DummyView())
 
         self.assertFalse(
             allowed,

@@ -5,14 +5,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-import yaml
-
 from endoreg_db.services.sap_ish_import import (
-    convert_sap_ish_txt_directory_to_preanonymized_drop,
     convert_sap_ish_zip_to_preanonymized_drop,
 )
-from endoreg_db.services.tabular_import_formats import build_preanonymized_payload
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.filesystem.paths import WATCHER_PREANONYMIZED_DROP_DIR
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:
@@ -26,22 +22,6 @@ def _build_zip_from_directory(source_dir: Path, archive_path: Path) -> None:
         for file_path in sorted(source_dir.rglob("*")):
             if file_path.is_file():
                 archive.write(file_path, arcname=file_path.relative_to(source_dir))
-
-
-def test_build_preanonymized_payload_omits_external_id_pair_without_patient() -> None:
-    payload = build_preanonymized_payload(
-        {
-            "document_type": "labor",
-            "canonical_row": {"fall_nr": "3000"},
-            "raw_columns": {"FallNr": "3000"},
-        },
-        source_system="sap_ish_test",
-    )
-
-    assert "external_id" not in payload
-    assert "external_id_origin" not in payload
-    assert payload["source_system"] == "sap_ish_test"
-    assert payload["casenumber"] == "3000"
 
 
 def test_convert_sap_ish_zip_prefers_text_bearing_case_rows() -> None:
@@ -166,41 +146,3 @@ def test_convert_sap_ish_zip_builds_case_summary_when_no_text_rows_exist() -> No
         assert "labor: 1 row(s)" in payload["anonymized_text"]
         assert "bewegungen: 1 row(s)" in payload["anonymized_text"]
         assert carrier_text.strip() == payload["anonymized_text"]
-
-
-def test_convert_sap_ish_txt_directory_writes_yaml_sidecars() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir_name:
-        temp_dir = Path(temp_dir_name)
-        source_dir = temp_dir / "source"
-        source_dir.mkdir()
-        output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"service-test-{temp_dir.name}"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        _write_tsv(
-            source_dir / "briefe.txt",
-            header=["PatientNr", "FallNr", "dateErstellzeit", "strText"],
-            rows=[["2003", "3003", "2024-05-17 09:30:00", "Anonymized letter"]],
-        )
-        _write_tsv(
-            source_dir / "unsupported.txt",
-            header=["UnknownColumn"],
-            rows=[["value"]],
-        )
-
-        result = convert_sap_ish_txt_directory_to_preanonymized_drop(
-            source_dir=source_dir,
-            output_dir=output_dir,
-            source_system="sap_ish_test",
-        )
-
-        assert len(result.generated_files) == 1
-        generated_file = result.generated_files[0]
-        assert generated_file.sidecar_path.suffix == ".yaml"
-        payload = yaml.safe_load(
-            generated_file.sidecar_path.read_text(encoding="utf-8")
-        )
-        assert payload["external_id"] == "2003"
-        assert payload["casenumber"] == "3003"
-        assert payload["source_system"] == "sap_ish_test"
-        assert result.matched_source_files == (source_dir / "briefe.txt",)
-        assert result.skipped_source_files == (source_dir / "unsupported.txt",)

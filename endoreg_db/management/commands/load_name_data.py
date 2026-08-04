@@ -1,16 +1,14 @@
 # endoreg_db/management/commands/generate_names.py
 
 import os
-
-from django.core.management.base import BaseCommand, CommandParser
-
+from django.core.management.base import BaseCommand
 from endoreg_db.utils import collect_center_names  # Import your function here
 
 
 class Command(BaseCommand):
     help = "Generate first_names.yaml and last_names.yaml from center data"
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         # Adding an argument for the input file path
         # parser.add_argument(
         #     '--input_file_path',
@@ -27,12 +25,12 @@ class Command(BaseCommand):
         # )
         pass
 
-    def handle(self, *args: str, **options: str) -> None:
+    def handle(self, *args, **options):
         # Run the function with the provided arguments
         try:
             collect_center_names()
             self.stdout.write(self.style.SUCCESS("Successfully generated YAML files."))
-        except Exception as exc:
-            self.stderr.write(self.style.ERROR(f"An error occurred: {exc}"))
+        except Exception as e:
+            self.stderr.write(self.style.ERROR(f"An error occurred: {e}"))
 
             self.stderr.write(self.style.ERROR(f"PWD: {os.getcwd()}"))

@@ -1,5 +1,4 @@
 from django.test import TestCase
-from typing import Protocol, cast
 
 from endoreg_db.models import (
     Center,
@@ -11,11 +10,6 @@ from endoreg_db.models import (
 
 
 class CenterResourceModelTest(TestCase):
-    center: Center
-    unit: Unit
-    ef: EmissionFactor
-    center_resource: CenterResource
-
     def setUp(self):
         # Create a Center instance for testing
         self.center = Center.objects.create(name="test_center")
@@ -33,31 +27,19 @@ class CenterResourceModelTest(TestCase):
         )
 
     def test_center_resource_display_str(self):
-        center_resource = cast(_CenterResourceLike, self.center_resource)
         expected_str = (
             f"{self.center_resource.name}:\n"
-            f"\tCenter\t-\t{center_resource.center}\n"
-            f"\tResource\t-\t{center_resource.resource}\n"
-            f"\tQuantity\t-\t{center_resource.quantity}\n"
-            f"\tYear\t-\t{center_resource.year}\n"
-            f"\tUnit\t-\t{center_resource.unit}\n"
-            f"\tUse Emission Factor\t-\t{center_resource.use_emission_factor}\n\n"
+            f"\tCenter\t-\t{self.center_resource.center}\n"
+            f"\tResource\t-\t{self.center_resource.resource}\n"
+            f"\tQuantity\t-\t{self.center_resource.quantity}\n"
+            f"\tYear\t-\t{self.center_resource.year}\n"
+            f"\tUnit\t-\t{self.center_resource.unit}\n"
+            f"\tUse Emission Factor\t-\t{self.center_resource.use_emission_factor}\n\n"
         )
         display_str = self.center_resource.display_str()
         self.assertEqual(display_str, expected_str)
 
     def test_center_resource_str(self):
         name = self.center_resource.name if self.center_resource.name else "No Name"
-        center_resource = cast(_CenterResourceLike, self.center_resource)
-        expected_str = f"CenterResource {center_resource.pk} - {name}"
+        expected_str = f"CenterResource {self.center_resource.pk} - {name}"
         self.assertEqual(str(self.center_resource), expected_str)
-
-
-class _CenterResourceLike(Protocol):
-    center: Center
-    resource: Resource
-    quantity: float
-    year: int
-    unit: Unit
-    use_emission_factor: EmissionFactor
-    pk: int | None

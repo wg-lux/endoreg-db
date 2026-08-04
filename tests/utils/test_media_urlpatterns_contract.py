@@ -9,11 +9,6 @@ RouteContract = tuple[str, str, str]
 
 EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
-        "media/studies/cohort-preview/",
-        "study-cohort-preview",
-        "endoreg_db.views.media.study_cohort.StudyCohortPreviewView",
-    ),
-    (
         "media/hub/transfers/",
         "hub-transfer-create",
         "endoreg_db.views.media.hub.transfers.HubTransferCreateView",
@@ -27,31 +22,6 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/hub/transfers/<str:transfer_key>/media/",
         "hub-transfer-media-upload",
         "endoreg_db.views.media.hub.transfers.HubTransferMediaUploadView",
-    ),
-    (
-        "media/quarantine/",
-        "quarantine-item-list",
-        "endoreg_db.views.media.hub.quarantine.QuarantineItemListView",
-    ),
-    (
-        "media/quarantine/sync/",
-        "quarantine-sync",
-        "endoreg_db.views.media.hub.quarantine.QuarantineSyncView",
-    ),
-    (
-        "media/quarantine/reap-approved/",
-        "quarantine-reap-approved",
-        "endoreg_db.views.media.hub.quarantine.QuarantineReapApprovedView",
-    ),
-    (
-        "media/quarantine/<uuid:item_id>/approve-deletion/",
-        "quarantine-approve-deletion",
-        "endoreg_db.views.media.hub.quarantine.QuarantineApproveDeletionView",
-    ),
-    (
-        "media/quarantine/<uuid:item_id>/retain/",
-        "quarantine-retain",
-        "endoreg_db.views.media.hub.quarantine.QuarantineRetainView",
     ),
     (
         "media/patients/<int:patient_id>/timeline/",
@@ -89,34 +59,9 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.video_stream.VideoStreamView",
     ),
     (
-        "media/videos/<int:pk>/hls/playlist.m3u8",
-        "video-hls-playlist-m3u8",
-        "endoreg_db.views.video.hls_stream.HLSPlaylistView",
-    ),
-    (
-        "media/videos/<int:pk>/hls/playlist/",
-        "video-hls-playlist",
-        "endoreg_db.views.video.hls_stream.HLSPlaylistView",
-    ),
-    (
-        "media/videos/<int:pk>/hls/key/<uuid:key_id>/",
-        "video-hls-key",
-        "endoreg_db.views.video.hls_stream.HLSKeyView",
-    ),
-    (
-        "media/videos/<int:pk>/hls/segments/<uuid:key_id>/<str:segment_name>",
-        "video-hls-segment",
-        "endoreg_db.views.video.hls_stream.HLSSegmentView",
-    ),
-    (
         "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
         "video-frame-stream",
         "endoreg_db.views.media.frame_media.FrameStreamView",
-    ),
-    (
-        "media/videos/<int:video_id>/frames/<int:frame_number>/decoded-stream/",
-        "video-frame-decoded-stream",
-        "endoreg_db.views.media.frame_media.DecodedFrameStreamView",
     ),
     (
         "media/videos/<int:pk>/reimport/",
@@ -131,22 +76,12 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
         "media/videos/export-annotated/",
         "video-annotated-export",
-        "endoreg_db.views.video.export_annotated.export_annotated",
+        "endoreg_db.views.video.export_annotated.export_annotated_data",
     ),
     (
         "media/videos/video-correction/<int:pk>",
         "video-correction",
         "endoreg_db.views.video.correction.VideoCorrectionView",
-    ),
-    (
-        "media/videos/video-correction/<int:pk>/anonymization/",
-        "video-anonymization-correction",
-        "endoreg_db.views.video.correction.VideoAnonymizationCorrectionView",
-    ),
-    (
-        "media/videos/<int:pk>/processing-history/",
-        "video-processing-history",
-        "endoreg_db.views.video.correction.VideoProcessingHistoryView",
     ),
     (
         "media/videos/<int:pk>/metadata/",
@@ -187,16 +122,6 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/<int:pk>/segments/rerun-predictions/",
         "video-segments-rerun-predictions",
         "endoreg_db.views.video.ai.label.rerun_prediction_segments",
-    ),
-    (
-        "media/videos/<int:pk>/segments/normalize-fps/",
-        "video-segments-normalize-fps",
-        "endoreg_db.views.video.segments_crud.video_segments_normalize_fps",
-    ),
-    (
-        "media/videos/<int:pk>/timeline/frame-neighborhood/",
-        "video-frame-neighborhood",
-        "endoreg_db.views.video.video_timeline.VideoFrameNeighborhoodView",
     ),
     (
         "media/videos/<int:pk>/segments/import-predictions/",
@@ -373,7 +298,6 @@ def _route_contract(pattern: URLPattern) -> RouteContract:
 def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
     assert media.urlpatterns == [
         *media.HUB_TRANSFER_URLPATTERNS,
-        *media.QUARANTINE_URLPATTERNS,
         *media.MEDIA_OVERVIEW_URLPATTERNS,
         *media.VIDEO_MEDIA_URLPATTERNS,
         *media.VIDEO_ANNOTATION_URLPATTERNS,

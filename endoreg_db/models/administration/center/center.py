@@ -1,11 +1,6 @@
-from __future__ import annotations
-
-from collections.abc import Iterable
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast, Any
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
-from django.db.models.base import ModelBase
 from django.utils.text import slugify
 
 if TYPE_CHECKING:
@@ -16,84 +11,67 @@ if TYPE_CHECKING:
     from ..person.names.last_name import LastName
 
 
-NoCenterSaveValue: TypeAlias = NoneType
-CenterForceInsert: TypeAlias = bool | tuple[ModelBase, ...]
-CenterUsing: TypeAlias = str | NoCenterSaveValue
-CenterUpdateFields: TypeAlias = Iterable[str] | NoCenterSaveValue
-CenterPk: TypeAlias = int | NoCenterSaveValue
-CenterSavePositional: TypeAlias = (
-    CenterForceInsert | bool | CenterUsing | CenterUpdateFields
-)
-
-
-class CenterManager(models.Manager["Center"]):
-    def get_by_natural_key(self, name: str) -> "Center":
-        return self.get(name=name)
+class CenterManager(models.Manager):
+    def get_by_natural_key(self, name) -> "Center":
+        return cast("Center", self.get(name=name))
 
     def get_by_center_key(self, center_key: str) -> "Center":
-        return self.get(center_key=center_key)
+        return cast("Center", self.get(center_key=center_key))
 
 
 class Center(models.Model):
     objects = CenterManager()
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
-    center_key: models.CharField[Any, Any] = models.CharField(
-        max_length=255,
-        unique=True,
-        blank=True,
-    )
-    display_name: models.CharField[Any, Any] = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-    )
+    name = models.CharField(max_length=255)
+    center_key = models.CharField(max_length=255, unique=True, blank=True)
+    display_name = models.CharField(max_length=255, blank=True, default="")
 
-    first_names: models.ManyToManyField[FirstName, FirstName] = models.ManyToManyField(
+    first_names = models.ManyToManyField(
         to="FirstName",
         related_name="centers",
     )
-    last_names: models.ManyToManyField[LastName, LastName] = models.ManyToManyField(
-        "LastName",
-        related_name="centers",
-    )
+    last_names = models.ManyToManyField("LastName", related_name="centers")
 
     if TYPE_CHECKING:
+        from django.db.models.manager import RelatedManager
+
+        first_names = cast(RelatedManager[FirstName], first_names)
+        last_names = cast(RelatedManager[LastName], last_names)
 
         @property
-        def center_products(self) -> models.Manager[CenterProduct]: ...
+        def center_products(self) -> RelatedManager[CenterProduct]: ...
 
         @property
-        def center_resources(self) -> models.Manager[CenterResource]: ...
+        def center_resources(self) -> RelatedManager[CenterResource]: ...
 
         @property
-        def center_wastes(self) -> models.Manager[CenterWaste]: ...
+        def center_wastes(self) -> RelatedManager[CenterWaste]: ...
 
         @property
-        def endoscopy_processors(self) -> models.Manager[EndoscopyProcessor]: ...
+        def endoscopy_processors(self) -> RelatedManager[EndoscopyProcessor]: ...
 
         @property
-        def endoscopes(self) -> models.Manager[Endoscope]: ...
+        def endoscopes(self) -> RelatedManager[Endoscope]: ...
 
         @property
         def anonymexaminationreport_set(
             self,
-        ) -> models.Manager[AnonymExaminationReport]: ...
+        ) -> RelatedManager[AnonymExaminationReport]: ...
 
         @property
         def anonymhistologyreport_set(
             self,
-        ) -> models.Manager[AnonymHistologyReport]: ...
+        ) -> RelatedManager[AnonymHistologyReport]: ...
 
     @classmethod
-    def get_by_name(cls, name: str) -> "Center":
+    def get_by_name(cls, name):
         return cls.objects.get(name=name)
 
     @classmethod
-    def get_by_center_key(cls, center_key: str) -> "Center":
+    def get_by_center_key(cls, center_key: str):
         return cls.objects.get(center_key=center_key)
 
     @classmethod
-    def resolve_identity(cls, identifier: str) -> "Center | NoCenterSaveValue":
+    def resolve_identity(cls, identifier: str):
         return (
             cls.objects.filter(center_key=identifier).first()
             or cls.objects.filter(name=identifier).first()
@@ -103,12 +81,7 @@ class Center(models.Model):
         return (self.name,)
 
     @classmethod
-    def build_center_key(
-        cls,
-        value: str,
-        *,
-        exclude_pk: CenterPk = None,
-    ) -> str:
+    def build_center_key(cls, value: str, *, exclude_pk: int | None = None) -> str:
         base = slugify(value or "") or "center"
         candidate = base
         suffix = 2
@@ -120,7 +93,7 @@ class Center(models.Model):
             suffix += 1
         return candidate
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args, **kwargs):
         if self.pk:
             existing_key = (
                 type(self)
@@ -135,7 +108,7 @@ class Center(models.Model):
             source_value = self.display_name or self.name
             self.center_key = self.build_center_key(
                 source_value,
-                exclude_pk=cast(CenterPk, self.pk),
+                exclude_pk=self.pk,
             )
         if not self.display_name:
             self.display_name = self.name
@@ -144,13 +117,13 @@ class Center(models.Model):
     def __str__(self) -> str:
         return str(self.display_name or self.name)
 
-    def get_first_names(self) -> models.QuerySet[FirstName]:
+    def get_first_names(self):
         return self.first_names.all()
 
-    def get_last_names(self) -> models.QuerySet[LastName]:
+    def get_last_names(self):
         return self.last_names.all()
 
-    def get_endoscopes(self) -> models.QuerySet[Endoscope]:
+    def get_endoscopes(self):
         """
         Returns all Endoscope instances associated with this center.
         """

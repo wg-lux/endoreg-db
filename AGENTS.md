@@ -1,11 +1,5 @@
 # Endoreg-db Agents.md
 
-The goal of this repository is to provide consistent, anonymous data and to keep it encrypted and safe. Import is handled by video_import_service.py or report_import_service.py.
-
-1. Ensure Import Always Works After Editing
-2. Ensure Data Is Streamable
-3. Ensure Concurrent Behaviour Is Given
-
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
 Before editing:
@@ -26,23 +20,9 @@ After implementation:
 2. Run broader integration checks if the change crosses module boundaries.
 3. Report what passed, what failed, and any residual risk.
 ## Tests
-
-Run tests intentionally from one foreground shell command so the process tree is
-auditable and easy to stop.
-
-- For focused verification, use the project venv directly:
-  `/home/admin/endoreg-db/.devenv/state/venv/bin/pytest <path-or-nodeid>`.
-- For broader lanes, prefer the repository tasks:
-  `devenv tasks run test:fast` or `devenv tasks run test:full`.
-- For code changes, run `/home/admin/endoreg-db/.devenv/state/venv/bin/pyright`
-  before pytest.
-- Do not start tests through editor coverage/test commands or extensions. In
-  particular, avoid VS Code coverage commands that launch `py.test --cov=.` in
-  the background; they can create many long-running coverage suites outside the
-  agent-visible shell.
-- Before starting a broad lane, check for existing pytest processes with
-  `pgrep -af 'pytest|py.test'` and report any unrelated running suites instead
-  of stacking another full run.
+Please run uv sync --extra dev before running pytest.
+This will use source /home/admin/endoreg-db/.devenv/state/venv/bin/activate in your shell before running pytest.
+If that doesnt work: run tests from the shortcuts devenv tasks run test:full or devenv tasks run test:fast
 
 ## Codex And Devenv Workflow
 
@@ -59,109 +39,10 @@ Preferred agent commands:
 - Fast pytest lane: `devenv tasks run test:fast`
 - Full pytest lane: `devenv tasks run test:full`
 
-## Feature Readiness Tracking
-
-`feature-tracking/` is the single source of truth for feature scope,
-Definition of Done, implementation maturity, and production-readiness evidence.
-Do not create or maintain parallel TODO, roadmap, implementation-status, or
-completion-tracking Markdown files.
-
-Before changing a tracked feature:
-
-1. Read its YAML definition in `feature-tracking/` and `policy.yml`.
-2. Acquire a feature lock before the first file edit with
-   `./feature-tracking/tracker.py lock acquire <feature_id> --owner <agent_id>`.
-   Prefer `--criterion <criterion_id>` and one or more `--file <repo_path>`
-   arguments when independent work can safely proceed in parallel. If the
-   command reports a conflict, do not edit the overlapping scope; inspect it
-   with `tracker.py lock status` and coordinate with the recorded owner.
-   Use the same stable `<agent_id>` for the entire Codex CLI process. Before
-   editing, read messages with
-   `./feature-tracking/tracker.py message inbox --owner <agent_id>`; lock
-   acquisition also prints unread messages. Acknowledge acted-on feedback with
-   `tracker.py message ack <message_id> --owner <agent_id>` and reply when the
-   manager needs a decision or verification result.
-3. Add or sharpen measurable acceptance criteria before implementing scope that
-   is not represented yet.
-4. Do not declare a criterion `verified` without stable evidence and an
-   identified assessor.
-
-Renew the lock before it expires and release it with
-`tracker.py lock release <lock_id> --owner <agent_id>` when the work ends,
-including after a failed implementation attempt. The bootstrap change that
-first introduces the lock command is the only exception to acquisition.
-
-After changing a tracked feature, run:
-
-- `./feature-tracking/tracker.py validate`
-- `./feature-tracking/tracker.py show <feature_id>`
-- `./feature-tracking/tracker.py check <feature_id>` when assessing production
-  readiness
-
-Use `tracker.py update` or `tracker.py verify --update` for status changes so
-the YAML remains schema-valid and writes are atomic. Markdown documents may
-remain as architecture, design, or operational references, but they must point
-to the corresponding feature YAML and must not carry an independent completion
-status.
-
-Agent messages are local operational coordination only. They may link to a
-feature, criterion, or file, but must not contain secrets, patient data, or an
-independent implementation/readiness status. Feature YAML remains authoritative.
-
 Use `rg` for search and `jq` for structured JSON inspection; both are part of
 the devenv shell for agent workflows. If tests require the activated uv virtual
 environment, prefer entering through direnv/devenv rather than invoking system
 Python.
-
-## LLM Programming Style Guide
-
-Use types as a primary safety rail. This project uses strict Pyright. For code changes, run Pyright before pytest and treat type failures as
-implementation failures, not cleanup. If a proposed diagnosis would imply a
-type error, ask whether the types should have caught it and tighten the type
-boundary where appropriate.
-
-Type expectations:
-
-- Wherever possible, typed files should live in lx_dtypes and use the existing knowledge_base.
-- Prefer explicit function signatures, return types, typed dataclasses, enums,
-  `TypedDict`, and Pydantic models over unstructured dictionaries.
-- Annotate class attributes in the class body when they are assigned later.
-- Avoid broadening types to make a failing test pass. Optional and union types
-  need a concrete domain reason.
-- Avoid `Any`. When interfacing with framework or external-library dynamic
-  data, validate or narrow it at the boundary and pass typed objects inward.
-- Use overloads or literal-discriminated helpers when inputs determine return
-  types.
-
-Boundary and invariant rules:
-
-- Convert external input at the edge: request payloads, files, YAML/JSON,
-  environment variables, command options, and third-party API responses should
-  be normalized once and then represented with one typed internal shape.
-- Define valid input invariants for non-trivial functions. Invalid input must
-  raise loudly rather than being silently ignored.
-- Prefer pure functions and returned values for transformation logic. Keep
-  database writes, filesystem writes, network calls, and object mutation at
-  explicit workflow boundaries.
-
-Exception handling:
-
-- Avoid broad `except Exception` outside request, command, job, or integration
-  boundaries.
-- Keep `try` blocks narrow, usually around one operation, and catch specific
-  exception classes.
-- Do not add silent fallbacks. If fallback behavior is explicitly required,
-  make it named, logged, tested, and safe for clinical/security invariants.
-
-Testing expectations:
-
-- Add parametrized tests for meaningful valid input variation.
-- Add invalid-input tests for invariants and boundary validation.
-- Prefer focused unit tests for pure logic and integration tests only where
-  contracts cross services, persistence, filesystem, or API boundaries.
-- For code changes, run `.devenv/state/venv/bin/pyright` before pytest.
-- Do not use one-off scripts as a substitute for reusable tests when the
-  behavior is important.
 
 ## System Directive: Security And Storage Architecture
 
@@ -169,64 +50,6 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 `lx-annotate` operating within the LuxNix environment. Enforce the following
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use /home/admin/lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
-
-## Mandatory Video Rules For All Agents
-
-These rules apply to every change involving video import, reimport,
-reanonymization, transcoding, storage, HTTP Live Streaming (HLS), frame
-extraction, timeline or segment coordinates, cleanup, migration, or export.
-Before changing any of these paths, read:
-
-- `docs/video_storage_normalization.md`, the canonical English operational and
-  architecture runbook;
-- `feature-tracking/VideoStorageNormalization.yml`, the only source of truth
-  for scope, approval state, and production-readiness evidence;
-- `docs/video_pts_fps_callsite_inventory.md` when frames per second (FPS),
-  presentation timestamps (PTS), frame indices, seeking, or segment boundaries
-  are involved.
-
-Do not use unexplained abbreviations in video code, documentation, logs,
-user-facing text, or feature-tracker evidence. Spell out a term at its first
-use and add durable video terminology to the runbook glossary.
-
-All agents must preserve these video invariants:
-
-- Exactly one canonical anonymized master generation is published. Raw media,
-  streamable MPEG-4 Part 14 (MP4), HLS, extracted frames, and transcode staging
-  files have distinct lifecycle roles and must not be treated as
-  interchangeable masters.
-- The versioned typed storage profile is mandatory. Media outside its
-  resolution, frame-rate, bitrate, byte-budget, codec, pixel-format, duration,
-  or timeline limits must fail loudly or enter an explicit quarantine process.
-  Stream copy, unbounded source-quality encoding, and upsampling are not safe
-  fallbacks.
-- Persisted presentation timestamps are authoritative for clinical segment and
-  frame identity. For variable-frame-rate (VFR) media, nominal frames per
-  second alone is never sufficient. Do not rewrite frame coordinates after
-  segment rows or extracted frames exist.
-- Storage normalization preserves the source timeline. The separate
-  `annotation_fps_resample_v1` workflow may convert videos above 50 frames per
-  second to exactly 50 frames per second only before the first segment or
-  extracted-frame coordinate is persisted.
-- Playlist, key, and segment access renews a media-operation lease. Transcoding,
-  HLS regeneration, generation replacement, and cleanup must defer while a
-  playback or segment-update lease is active and must publish one generation
-  atomically.
-- All video staging and publication stays inside the approved encrypted storage
-  boundary. Every filesystem mutation uses
-  `endoreg_db.utils.filesystem.file_operations`, atomic semantics, and
-  structured JavaScript Object Notation (JSON) logging. Raw media export is
-  prohibited.
-- Cleanup is fail-closed. Never delete the previous or only valid master before
-  target validation, hash and timeline checks, clinical-quality approval, HLS
-  generation matching, lease expiry, and database/filesystem reconciliation.
-- Destructive legacy migration remains disabled until the temporal and clinical
-  quality gates are verified and the required operations, storage, security,
-  and clinical approvals are recorded through the feature tracker.
-
-The canonical video runbook is maintained in English so it can be reviewed by
-all participating teams; this is an explicit exception to the general German
-report-language convention below.
 
 ### Report structure
 

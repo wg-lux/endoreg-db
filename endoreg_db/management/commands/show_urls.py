@@ -3,10 +3,6 @@ import io
 import json
 
 from django_extensions.management.commands import show_urls as django_show_urls
-from lx_dtypes.models.contracts.management_command import (
-    ShowUrlsCommandOptionsPayload,
-    ShowUrlsRoutesPayload,
-)
 
 django_show_urls.FMTR.setdefault(
     "csv",
@@ -20,27 +16,25 @@ class Command(django_show_urls.Command):
         "project URL contract tests."
     )
 
-    def handle(self, *args: object, **options: object) -> str:
-        options_payload = ShowUrlsCommandOptionsPayload.model_validate(options)
-        if options_payload.format_style != "csv":
+    def handle(self, *args, **options):
+        if options.get("format_style") != "csv":
             return super().handle(*args, **options)
 
-        json_options: dict[str, object] = dict(options)
+        json_options = dict(options)
         json_options["format_style"] = "json"
-        raw_rows: object = json.loads(super().handle(*args, **json_options))
-        rows = ShowUrlsRoutesPayload.model_validate({"routes": raw_rows}).routes
+        rows = json.loads(super().handle(*args, **json_options))
         output = io.StringIO()
         writer = csv.writer(output)
-        for row in sorted(rows, key=lambda item: item.url):
-            url = row.url
+        for row in sorted(rows, key=lambda item: str(item.get("url", ""))):
+            url = str(row.get("url", "") or "")
             if not url.startswith("/"):
                 url = f"/{url}"
             writer.writerow(
                 [
                     url,
-                    row.module,
-                    row.name,
-                    row.decorators,
+                    row.get("module", ""),
+                    row.get("name", ""),
+                    row.get("decorators", ""),
                 ]
             )
         return output.getvalue()

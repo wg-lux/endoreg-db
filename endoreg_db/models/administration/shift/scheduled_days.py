@@ -1,22 +1,15 @@
-from __future__ import annotations
-
-from datetime import date
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models.administration.center.center_shift import CenterShift
-
-NoScheduledDaysBooleanValue: TypeAlias = NoneType
-NoScheduledDaysDateValue: TypeAlias = NoneType
-ScheduledDaysBoolean: TypeAlias = "bool | NoScheduledDaysBooleanValue"
-ScheduledDaysDate: TypeAlias = "date | NoScheduledDaysDateValue"
+    from endoreg_db.models import (
+        CenterShift,
+    )
 
 
-class ScheduledDaysManager(models.Manager["ScheduledDays"]):
-    def get_by_natural_key(self, name: str) -> "ScheduledDays":
+class ScheduledDaysManager(models.Manager):
+    def get_by_natural_key(self, name):
         """
         Retrieves a ScheduledDays instance by its unique name.
 
@@ -34,35 +27,35 @@ class ScheduledDays(models.Model):
     Model representing scheduled days for a shift.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(
+    name = models.CharField(
         max_length=255,
         unique=True,
         help_text="Name of the scheduled days.",
     )
-    working_days: models.BooleanField[Any, Any] = models.BooleanField(
+    working_days = models.BooleanField(
         null=True,
         blank=True,
         default=True,
     )
 
-    non_working_days: models.BooleanField[Any, Any] = models.BooleanField(
+    non_working_days = models.BooleanField(
         null=True,
         blank=True,
         default=False,
     )
 
-    limited_time: models.BooleanField[Any, Any] = models.BooleanField(
+    limited_time = models.BooleanField(
         null=True,
         blank=True,
         default=False,
     )
 
-    start_date: models.DateField[Any, Any] = models.DateField(
+    start_date = models.DateField(
         null=True,
         blank=True,
     )
 
-    end_date: models.DateField[Any, Any] = models.DateField(
+    end_date = models.DateField(
         null=True,
         blank=True,
     )
@@ -72,7 +65,7 @@ class ScheduledDays(models.Model):
     if TYPE_CHECKING:
         center_shifts: models.QuerySet["CenterShift"]
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Returns a string representation of the scheduled day, including its name and date range.
         """

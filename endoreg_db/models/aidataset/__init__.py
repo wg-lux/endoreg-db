@@ -1,16 +1,21 @@
-from __future__ import annotations
-from endoreg_db.models.aidataset.aidataset import (
+from .aidataset import (
     AIDataSet,
-    AIDataSetActiveLearningSelectionContract,
+    AIDataSetActiveLearningCandidate,
+    AIDataSetActiveLearningConfig,
+    AIDataSetActiveLearningSelection,
     AIDataSetExportArtifact,
     AIDataSetFrameBucketDistribution,
+    AIDataSetScoredActiveLearningCandidate,
     AIModelTrainingRun,
 )
 
 __all__ = [
     "AIDataSet",
-    "AIDataSetActiveLearningSelectionContract",
+    "AIDataSetActiveLearningCandidate",
+    "AIDataSetActiveLearningConfig",
+    "AIDataSetActiveLearningSelection",
     "AIDataSetExportArtifact",
     "AIDataSetFrameBucketDistribution",
+    "AIDataSetScoredActiveLearningCandidate",
     "AIModelTrainingRun",
 ]

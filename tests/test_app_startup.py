@@ -1,20 +1,16 @@
 import builtins
 import importlib
 import sys
-from typing import Any
 
 import pytest
-from pytest import MonkeyPatch
 
 from endoreg_db.apps import EndoregDbConfig
 
 
 @pytest.mark.unit
-def test_app_ready_does_not_import_reconciliation_for_pytest(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_app_ready_does_not_import_reconciliation_for_pytest(monkeypatch):
     import endoreg_db.apps as apps_module
-    import endoreg_db.utils.paths as paths_module
+    import endoreg_db.utils.filesystem.paths as paths_module
 
     monkeypatch.setattr(apps_module, "ensure_keycloak_settings", lambda: None)
     monkeypatch.setattr(
@@ -29,7 +25,7 @@ def test_app_ready_does_not_import_reconciliation_for_pytest(
 
     original_import = builtins.__import__
 
-    def guarded_import(name: str, *args: Any, **kwargs: Any) -> Any:
+    def guarded_import(name, *args, **kwargs):
         if name == "endoreg_db.services.reconciliation":
             raise AssertionError(
                 "reconciliation must not be imported during pytest startup"

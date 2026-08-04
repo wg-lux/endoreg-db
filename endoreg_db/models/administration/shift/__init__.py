@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .shift import Shift
 from .shift_type import ShiftType
 from .scheduled_days import ScheduledDays

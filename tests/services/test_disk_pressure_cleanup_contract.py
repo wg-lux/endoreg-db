@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import pytest
-from pytest import MonkeyPatch
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.services.reconciliation import ReconciliationService
@@ -15,15 +14,15 @@ from endoreg_db.utils.file_operations import atomic_copy_file
 
 @pytest.mark.unit
 def test_atomic_copy_file_removes_partial_temp_artifact_on_enospc(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+    monkeypatch, tmp_path
+):
     source = tmp_path / "source.bin"
     destination = tmp_path / "dest" / "target.bin"
     source.write_bytes(b"payload")
 
     original_copy2 = __import__("shutil").copy2
 
-    def failing_copy2(src: str | Path, dst: str | Path) -> Path:
+    def failing_copy2(src: str, dst: str):
         Path(dst).write_bytes(b"partial")
         raise OSError(errno.ENOSPC, "No space left on device")
 
@@ -39,9 +38,7 @@ def test_atomic_copy_file_removes_partial_temp_artifact_on_enospc(
 
 
 @pytest.mark.unit
-def test_reconciliation_cleans_stale_streamable_temp_artifacts(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
+def test_reconciliation_cleans_stale_streamable_temp_artifacts(monkeypatch, tmp_path):
     import endoreg_db.services.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"

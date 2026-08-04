@@ -1,16 +1,10 @@
-# pyright: reportUnknownMemberType=false
-
-import json
 from datetime import date, datetime, time
-from typing import Any, cast
-from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from django.core.files.base import ContentFile
 from django.utils import timezone
 
 from endoreg_db.models import (
-    AIDataSet,
     Gender,
     Label,
     LabelSet,
@@ -22,7 +16,6 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
     VideoState,
-    Center,
 )
 from endoreg_db.services.lx_video_contracts import (
     build_lx_p_video_segment,
@@ -35,7 +28,7 @@ from endoreg_db.services.lx_video_contracts import (
 
 def _create_video(
     *,
-    center: Center,
+    center,
     video_hash: str,
     patient: Patient | None = None,
     patient_examination: PatientExamination | None = None,
@@ -60,9 +53,7 @@ def _create_video(
 
 
 @pytest.mark.django_db
-def test_build_lx_sensitive_meta_maps_django_fields(
-    base_db_data: object,
-) -> None:
+def test_build_lx_sensitive_meta_maps_django_fields(base_db_data) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -96,11 +87,7 @@ def test_build_lx_sensitive_meta_maps_django_fields(
         text="raw text",
         anonymized_text="anon text",
         external_id=external_id,
-        file_path="protected/sensitive/source.mp4",
     )
-    sensitive_meta.state_safe.dob_verified = True
-    sensitive_meta.state_safe.names_verified = True
-    sensitive_meta.state_safe.save(update_fields=["dob_verified", "names_verified"])
 
     lx_sensitive_meta = build_lx_sensitive_meta(sensitive_meta)
 
@@ -109,13 +96,6 @@ def test_build_lx_sensitive_meta_maps_django_fields(
     assert lx_sensitive_meta.last_name == "Miller"
     assert lx_sensitive_meta.gender == "female"
     assert lx_sensitive_meta.external_id == "ext-42"
-    assert lx_sensitive_meta.center == center.name
-    assert lx_sensitive_meta.file_path == "protected/sensitive/source.mp4"
-    assert str(lx_sensitive_meta.uuid) == str(
-        uuid5(NAMESPACE_URL, f"urn:endoreg-db:sensitive-meta:{sensitive_meta.pk}")
-    )
-    assert lx_sensitive_meta.state.dob_verified is True
-    assert lx_sensitive_meta.state.name_verified is True
     assert lx_sensitive_meta.pseudo_patient == str(sensitive_meta.pseudo_patient_id)
     assert lx_sensitive_meta.pseudo_examination == str(
         sensitive_meta.pseudo_examination_id
@@ -127,8 +107,8 @@ def test_build_lx_sensitive_meta_maps_django_fields(
 
 @pytest.mark.django_db
 def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
-    base_db_data: object,
-    unique_ai_model: Any,
+    base_db_data,
+    unique_ai_model,
     base_labelset: LabelSet,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
@@ -159,17 +139,10 @@ def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
     assert lx_segment.label == "lesion"
     assert lx_segment.labelset == base_labelset.name
     assert lx_segment.patient_video_file == str(video.uuid)
-    assert str(lx_segment.uuid) == str(
-        uuid5(NAMESPACE_URL, f"urn:endoreg-db:label-video-segment:{segment.pk}")
-    )
-    assert lx_segment.state.prediction is True
-    assert lx_segment.state.annotation is False
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_rejects_invalid_segments_without_omission(
-    base_db_data: object,
-) -> None:
+def test_build_lx_patient_video_file_skips_invalid_segments(base_db_data) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -214,11 +187,6 @@ def test_build_lx_patient_video_file_rejects_invalid_segments_without_omission(
         end_frame_number=12,
     )
 
-    with pytest.raises(ValueError, match="cannot be exported"):
-        build_lx_patient_video_file(video)
-
-    invalid_segment = video.label_video_segments.get(label__isnull=True)
-    invalid_segment.delete()
     lx_video = build_lx_patient_video_file(video)
 
     assert resolve_lx_anonymization_state(video).value == "validated"
@@ -233,14 +201,10 @@ def test_build_lx_patient_video_file_rejects_invalid_segments_without_omission(
     assert valid_segment.label is not None
     assert only_segment.label == valid_segment.label.name
     assert only_segment.labelset == labelset.name
-    assert only_segment.state.annotation is True
-    assert only_segment.state.prediction is False
 
 
 @pytest.mark.django_db
-def test_build_lx_patient_video_file_invalid_segment_raises_by_default(
-    base_db_data: object,
-) -> None:
+def test_build_lx_patient_video_file_strict_segments_raises(base_db_data) -> None:
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
@@ -252,100 +216,12 @@ def test_build_lx_patient_video_file_invalid_segment_raises_by_default(
     )
 
     with pytest.raises(ValueError, match="cannot be exported"):
-        build_lx_patient_video_file(video)
-
-
-@pytest.mark.django_db
-def test_build_lx_sensitive_meta_rejects_contradictory_dates(
-    base_db_data: object,
-) -> None:
-    from tests.helpers.default_objects import get_default_center
-
-    center = get_default_center()
-    sensitive_meta = SensitiveMeta.objects.create(
-        center=center,
-        patient_first_name="Date",
-        patient_last_name="Conflict",
-        patient_dob=timezone.make_aware(datetime(2025, 1, 1, 0, 0)),
-        examination_date=date(2024, 1, 1),
-    )
-
-    with pytest.raises(ValueError, match="examination_date before dob"):
-        build_lx_sensitive_meta(sensitive_meta)
-
-
-@pytest.mark.django_db
-def test_ai_dataset_json_export_omits_sensitive_meta(
-    base_db_data: object,
-) -> None:
-    from tests.helpers.default_objects import get_default_center
-
-    center = get_default_center()
-    gender = Gender.objects.get(name="female")
-    patient = Patient.objects.create(
-        first_name="Pseudonym",
-        last_name="ForExport",
-        dob=date(1980, 1, 1),
-        gender=gender,
-        center=center,
-    )
-    sensitive_meta = SensitiveMeta.objects.create(
-        center=center,
-        patient_gender=gender,
-        pseudo_patient=patient,
-        patient_first_name="ProtectedAlice",
-        patient_last_name="ProtectedMiller",
-        patient_dob=timezone.make_aware(datetime(1980, 1, 1, 0, 0)),
-        casenumber="protected-case-42",
-        external_id=PatientExternalID.objects.create(
-            patient=patient,
-            origin="hospital",
-            external_id="protected-external-id",
-        ),
-        text="protected raw report text",
-    )
-    video = _create_video(
-        center=center,
-        video_hash="safe-serialization-video",
-        sensitive_meta=sensitive_meta,
-    )
-    label = Label.objects.create(name="safe-export-label")
-    labelset = LabelSet.objects.create(name="safe_export_labelset", version=1)
-    labelset.labels.add(label)
-    segment = video.label_video_segments.create(
-        label=label,
-        start_frame_number=1,
-        end_frame_number=4,
-    )
-    dataset = AIDataSet.objects.create(
-        name="safe-serialization-dataset",
-        dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
-        ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
-    )
-    dataset.video_annotations.add(segment)
-
-    payload = dataset.export_to_standardized_structure()
-
-    patient_videos = payload["patient_videos"]
-    assert isinstance(patient_videos, dict)
-    exported_video = cast(dict[str, object], patient_videos[str(video.uuid)])
-    assert isinstance(exported_video, dict)
-    assert "sensitive_meta" not in exported_video
-    serialized = json.dumps(payload, sort_keys=True)
-    for protected_value in (
-        "ProtectedAlice",
-        "ProtectedMiller",
-        "1980-01-01",
-        "protected-case-42",
-        "protected-external-id",
-        "protected raw report text",
-    ):
-        assert protected_value not in serialized
+        build_lx_patient_video_file(video, strict_segments=True)
 
 
 @pytest.mark.django_db
 def test_resolve_segment_labelset_name_falls_back_to_label_membership(
-    base_db_data: object,
+    base_db_data,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
 
@@ -366,8 +242,8 @@ def test_resolve_segment_labelset_name_falls_back_to_label_membership(
 
 @pytest.mark.django_db
 def test_segment_resolve_labelset_name_falls_back_to_video_model_meta(
-    base_db_data: object,
-    unique_ai_model: Any,
+    base_db_data,
+    unique_ai_model,
 ) -> None:
     from tests.helpers.default_objects import get_default_center
 

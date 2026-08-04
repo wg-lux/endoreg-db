@@ -1,21 +1,17 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
 from pathlib import Path
-from collections.abc import Generator
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Iterator, Optional
 
-from django.db.models.fields.files import FieldFile
 from django.db import transaction
 
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.file_operations import safe_unlink_file
-from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import delete_field_file, ensure_local_file, file_exists
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -42,15 +38,11 @@ def _streamable_path_is_safe_plaintext(path: Path) -> bool:
         )
         return False
 
-    rust_result = is_lx_encrypted_file(path)
     try:
-        if rust_result is None:
-            with path.open("rb") as handle:
-                starts_with_magic = (
-                    handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-                )
-        else:
-            starts_with_magic = rust_result
+        with path.open("rb") as handle:
+            starts_with_magic = (
+                handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+            )
     except OSError as exc:
         logger.warning(
             "Refusing unreadable streamable video artifact: path=%s error=%s",
@@ -80,7 +72,7 @@ def _resolve_streamable_path(relative_path: str | None) -> Optional[Path]:
     return candidate if _streamable_path_is_safe_plaintext(candidate) else None
 
 
-def _field_file_exists(field_file: FieldFile | None) -> bool:
+def _field_file_exists(field_file) -> bool:
     return bool(
         field_file and getattr(field_file, "name", None) and file_exists(field_file)
     )
@@ -101,7 +93,7 @@ def _get_raw_file_path(video: "VideoFile") -> Optional[Path]:
 
 
 @contextmanager
-def _ensure_local_raw_file(video: "VideoFile") -> Generator[Path]:
+def _ensure_local_raw_file(video: "VideoFile") -> Iterator[Path]:
     """
     Yield a real local plaintext path for external tools.
 
@@ -150,7 +142,7 @@ def _get_processed_file_path(video: "VideoFile") -> Optional[Path]:
 
 
 @contextmanager
-def _ensure_local_processed_file(video: "VideoFile") -> Generator[Path]:
+def _ensure_local_processed_file(video: "VideoFile") -> Iterator[Path]:
     """
     Yield a real local plaintext path for external tools.
     """
@@ -194,15 +186,11 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
     Important: delete through storage, not via guessed paths.
     Streamable derived raw copy is cleaned separately.
     """
-    from endoreg_db.services.hls_media import delete_video_hls_artifacts
-
-    deleted = delete_video_hls_artifacts(video, artifact_kind="raw")
     raw_field = getattr(video, "raw_file", None)
+    deleted = False
 
     if raw_field and raw_field.name:
-        deleted = (
-            delete_field_file(video, "raw_file", missing_ok=True, save=True) or deleted
-        )
+        deleted = delete_field_file(video, "raw_file", missing_ok=True, save=True)
     else:
         raw_path = _get_raw_file_path(video)
         if raw_path is not None and raw_path.exists():
@@ -212,7 +200,6 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
     raw_stream_path = _get_raw_stream_path(video)
     if raw_stream_path and raw_stream_path.exists():
         safe_unlink_file(raw_stream_path, missing_ok=True)
-        deleted = True
 
     if getattr(video, "raw_streamable_relative_path", ""):
         video.raw_streamable_relative_path = ""
@@ -224,11 +211,7 @@ def _delete_raw_file_after_validation(video: "VideoFile") -> bool:
 
 
 @transaction.atomic
-def _delete_with_file(
-    video: "VideoFile",
-    using: str | None = None,
-    keep_parents: bool = False,
-) -> tuple[int, dict[str, int]]:
+def _delete_with_file(video: "VideoFile", *args, **kwargs):
     """
     Delete VideoFile and owned artifacts.
 
@@ -268,17 +251,17 @@ def _delete_with_file(
     if processed_stream_path and processed_stream_path.exists():
         safe_unlink_file(processed_stream_path, missing_ok=True)
 
-    deleted = super(type(video), video).delete(
-        using=using,
-        keep_parents=keep_parents,
-    )
+    super(type(video), video).delete(*args, **kwargs)
 
     logger.info(
         "Deleted VideoFile database record PK %s UUID %s.",
         video.pk,
         video.video_hash,
     )
-    return deleted
+    return (
+        f"Successfully deleted VideoFile {video.video_hash} "
+        "and attempted owned artifact cleanup."
+    )
 
 
 def _get_base_frame_dir(video: "VideoFile") -> Path:

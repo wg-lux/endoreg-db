@@ -14,7 +14,7 @@ The main orchestration entrypoints are:
 
 ## Video Import Execution Order
 
-The file watcher observes `data/import/video_import`. Once a file is stable, it calls `VideoImportService.import_and_anonymize(...)`. Producers must not stream bytes directly into a watched final filename such as `*.mp4`; direct writers use a temporary handoff name first and atomically rename only after the file is closed and flushed.
+The file watcher observes `data/import/video_import`. Once a file is stable, it calls `VideoImportService.import_and_anonymize(...)`.
 
 The current intended flow is:
 
@@ -31,26 +31,12 @@ The current intended flow is:
    It is also written to a `.part` path first and atomically promoted into place.
 10. The transient sensitive working copy is deleted after successful finalization.
 
-## Producer Atomic Handoff Contract
-
-External producers and uploaders that bypass the lx-annotate file watcher must use an atomic handoff pattern:
-
-1. Write into a name outside the watched final pattern, for example `exam.mp4.part` or `exam.mp4.tmp`.
-2. Finish writing, call `flush()` and `fsync()` on the file descriptor, close the file, and fsync the containing directory when the platform allows it. Producers in Python should use `endoreg_db.utils.file_operations.atomic_handoff_file(...)`.
-3. Promote the completed file with an atomic same-filesystem rename to the final watched name, for example `exam.mp4`.
-4. Never append to or rewrite the final watched `*.mp4` after rename.
-
-The hub ingest service defensively ignores in-progress suffixes such as `.tmp`, `.part`, `.partial`, `.crdownload`, and `.download`, including marker names such as `.tmp.` and `.part.`. It also performs its own settle check before hashing and before persisting a watcher `UploadJob`, so direct service callers get deferred/retry behavior instead of capturing a partially written file.
-
-The video import pipeline uses one verified local raw materialization for the VideoMeta/ffprobe validation immediately preceding anonymization and for the `FrameCleaner.clean_video(...)` input. The anonymizer logs the exact absolute path, byte size, hash, and stream dimensions. If this exact input no longer matches the validated metadata source, processing aborts and the mismatched input is copied to quarantine.
-
 ## Filewatcher Operation Ledger
 
-The filesystem watcher lives in `lx-annotate` at
-`lx_annotate/file_watcher.py` and calls the hub ingest service in this
-repository. The watcher keeps filesystem-based dropoff ingestion available for
-trusted local workflows and delegates concrete processing to the same import
-services used elsewhere:
+The management command at `endoreg_db/management/commands/start_filewatcher.py`
+loads `scripts/file_watcher.py` from this repository. The watcher keeps
+filesystem-based dropoff ingestion available for trusted local workflows and
+delegates concrete processing to the same import services used elsewhere:
 
 - `VideoImportService.import_and_anonymize(...)`
 - `ReportImportService.import_and_anonymize(...)`
@@ -94,23 +80,24 @@ After that, the anonymizer writes one more full anonymized output file.
 
 For one report dropped into `data/import/report_import`, the current pipeline performs these file operations:
 
-Raw report ingestion accepts PDF input only. Plain `.txt` input is rejected because
-raw text cannot be treated as anonymized output; genuinely preanonymized input uses
-the separate validated-sidecar workflow.
-
-1. Sensitive staging copy of the original payload.
+1. Optional txt-to-pdf materialization.
+   If the watched file ends in `.txt`, `_create_temp_pdf_from_txt(...)` renders a temporary single-page PDF in the system temp directory.
+2. Sensitive staging copy of the original payload.
    `create_sensitive_copy(...)` copies the original report source into `SENSITIVE_REPORT_DIR` under the original filename.
-2. Canonical raw report save into Django-managed storage.
+   For `.txt` inputs this copies the original `.txt`, not the temporary PDF.
+3. Canonical raw report save into Django-managed storage.
    `RawPdfFile.create_from_file_initialized(...)` opens `ctx.file_path` and saves it through Django storage using a generated content-hash-based filename.
-3. Optional restoration copy for pre-existing records.
+   For PDF input, this means the imported PDF is copied from the watched location into managed raw storage.
+   For TXT input, this means the temporary rendered PDF is copied from `/tmp/...pdf` into managed raw storage.
+4. Optional restoration copy for pre-existing records.
    If a `RawPdfFile` record already exists but its stored file is missing, `create_from_file(...)` re-saves the source file into storage from the current import path.
-4. Anonymized report write.
+5. Anonymized report write.
    `ReportAnonymizer.anonymize_report(...)` asks `lx_anonymizer.ReportReader.process_report(...)` to write `ANONYM_REPORT_DIR/<pdf_hash>.pdf`.
-5. Finalization and integrity verification.
+6. Final move safety net.
    `finalize_report_success(...)` moves `ctx.anonymized_path` into `ANONYM_REPORT_DIR/<pdf_hash>.pdf` only if the anonymizer wrote somewhere else.
-   It then verifies the stored PDF and persists its plaintext SHA-256 before publishing successful state/history.
-6. Cleanup of transient files.
+7. Cleanup of transient files.
    Success cleanup deletes the original-name sensitive staging copy if it is not the canonical raw file.
+   TXT imports also delete the original `.txt` once the managed record exists and delete the temporary rendered PDF in the `finally` block.
 
 There is no report transcoding step in the current report import path. The only format conversion is `.txt` -> temporary generated `.pdf`.
 

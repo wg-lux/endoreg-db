@@ -1,23 +1,14 @@
-from __future__ import annotations
+from django.core.management.base import BaseCommand
 
-from typing import TypedDict, Unpack
-
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from endoreg_db.models.medical.finding.finding import Finding
-from endoreg_db.models.medical.finding.finding_classification import (
+from endoreg_db.models import (
+    Finding,
     FindingClassification,
     FindingClassificationChoice,
     FindingClassificationType,
-)
-from endoreg_db.models.medical.finding.finding_intervention import (
     FindingIntervention,
     FindingInterventionType,
+    FindingType,
 )
-from endoreg_db.models.medical.finding.finding_type import FindingType
 
 from ...data import (
     FINDING_CLASSIFICATION_CHOICE_DATA_DIR,
@@ -29,14 +20,8 @@ from ...data import (
     FINIDNG_INTERVENTION_TYPE_DATA_DIR,
 )
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
 
-
-class LoadFindingCommandOptions(TypedDict):
-    verbose: bool
-
-
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
+IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     FindingInterventionType.__name__,
     FindingIntervention.__name__,
     FindingType.__name__,
@@ -46,7 +31,7 @@ IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_MET
     Finding.__name__,
 ]
 
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
+IMPORT_METADATA = {
     FindingType.__name__: {
         "dir": FINDING_TYPE_DATA_DIR,
         "model": FindingType,
@@ -116,19 +101,15 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser):
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: Unpack[LoadFindingCommandOptions],
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
+    def handle(self, *args, **options):
+        verbose = options["verbose"]
         for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+            _metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, _metadata, verbose)

@@ -1,22 +1,13 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TypeAlias, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from django.db import models
 from django.db.models import CheckConstraint, Q
 
 if TYPE_CHECKING:
-    from endoreg_db.models.metadata.model_meta import ModelMeta
-    from endoreg_db.models.other.information_source import InformationSource
-
-NoFrameBoxAnnotationValue: TypeAlias = NoneType
-FrameBoxAnnotationFloat: TypeAlias = "float | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationText: TypeAlias = "str | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationModelMeta: TypeAlias = "ModelMeta | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationInformationSource: TypeAlias = (
-    "InformationSource | NoFrameBoxAnnotationValue"
-)
+    from ...label import Label
+    from ...media.frame import Frame
+    from ...metadata import ModelMeta
+    from ...other.information_source import InformationSource
 
 
 class FrameBoxAnnotation(models.Model):
@@ -27,38 +18,36 @@ class FrameBoxAnnotation(models.Model):
     captured alongside the box so clients can render annotations after scaling.
     """
 
-    frame: models.ForeignKey[Any] = models.ForeignKey(
+    frame = models.ForeignKey(
         "Frame",
         on_delete=models.CASCADE,
         related_name="box_annotations",
         blank=False,
         null=False,
     )
-    label: models.ForeignKey[Any] = models.ForeignKey(
+    label = models.ForeignKey(
         "Label",
         on_delete=models.CASCADE,
         related_name="frame_box_annotations",
         blank=False,
         null=False,
     )
-    x: models.FloatField[Any, Any] = models.FloatField()
-    y: models.FloatField[Any, Any] = models.FloatField()
-    width: models.FloatField[Any, Any] = models.FloatField()
-    height: models.FloatField[Any, Any] = models.FloatField()
-    image_width: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
-    image_height: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField()
-    value: models.BooleanField[Any, Any] = models.BooleanField(default=True)
-    float_value: models.FloatField[Any, Any] = models.FloatField(blank=True, null=True)
-    annotator: models.CharField[Any, Any] = models.CharField(
-        max_length=255, blank=True, null=True
-    )
-    external_annotation_id: models.CharField[str, Any] = models.CharField(
+    x = models.FloatField()
+    y = models.FloatField()
+    width = models.FloatField()
+    height = models.FloatField()
+    image_width = models.PositiveIntegerField()
+    image_height = models.PositiveIntegerField()
+    value = models.BooleanField(default=True)
+    float_value = models.FloatField(blank=True, null=True)
+    annotator = models.CharField(max_length=255, blank=True, null=True)
+    external_annotation_id = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         db_index=True,
     )
-    model_meta: models.ForeignKey["ModelMeta | None"] = models.ForeignKey(
+    model_meta = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
         related_name="frame_box_annotations",
@@ -66,9 +55,7 @@ class FrameBoxAnnotation(models.Model):
         null=True,
         blank=True,
     )
-    information_source: models.ForeignKey[
-        FrameBoxAnnotationInformationSource | None
-    ] = models.ForeignKey(
+    information_source = models.ForeignKey(
         "InformationSource",
         on_delete=models.SET_NULL,
         related_name="frame_box_annotations",
@@ -76,13 +63,14 @@ class FrameBoxAnnotation(models.Model):
         null=True,
         blank=True,
     )
-    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now_add=True
-    )
-    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    date_created = models.DateTimeField(auto_now_add=True)
+    date_modified = models.DateTimeField(auto_now=True)
 
     if TYPE_CHECKING:
-        frame_id: int
+        frame: models.ForeignKey["Frame"]
+        label: models.ForeignKey["Label"]
+        information_source: models.ForeignKey["InformationSource|None"]
+        model_meta: models.ForeignKey["ModelMeta|None"]
 
     class Meta:
         indexes = [
@@ -112,5 +100,5 @@ class FrameBoxAnnotation(models.Model):
         ]
 
     def __str__(self) -> str:
-        label_name = self.label.name
+        label_name = self.label.name if self.label else "No Label"
         return f"{self.frame_id} - {label_name} - ({self.x}, {self.y}, {self.width}, {self.height})"

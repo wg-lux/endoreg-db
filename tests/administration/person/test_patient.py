@@ -1,7 +1,4 @@
-from django.core.files.storage import Storage
-from typing import Protocol, cast
 import random
-from datetime import date
 from logging import getLogger
 
 from django.test import TestCase
@@ -9,32 +6,9 @@ from django.test import TestCase
 from endoreg_db.models import (
     Center,  # Import Center
     Patient,
-    Examination,
     PatientExamination,
     PatientLabSample,
 )
-
-
-class _StoredFileLike(Protocol):
-    name: str
-    storage: Storage
-
-
-class _PatientLike(Protocol):
-    center: Center
-    first_name: str
-    last_name: str
-    dob: date
-
-
-class _SampleTypeLike(Protocol):
-    name: str
-
-
-class _LabSampleLike(Protocol):
-    sample_type: _SampleTypeLike
-    patient: Patient
-
 
 logger = getLogger(__name__)
 
@@ -50,42 +24,31 @@ from ...helpers.data_loader import (
     load_unit_data,
 )
 from ...helpers.default_objects import (
+    generate_patient,
     get_default_egd_pdf,
     get_random_default_examination,
     get_random_gender,
 )
 
 
-def _as_center(center: Center | str | None) -> Center:
-    if isinstance(center, Center):
-        return center
-    if center is None:
-        raise ValueError("Patient center is required for this test setup.")
-    return Center.objects.get(name=center)
-
-
 class PatientModelTest(TestCase):
-    patient: Patient
-
     def setUp(self):
         load_center_data()
         load_gender_data()
-        self.patient = Patient.objects.create(
+        self.patient = generate_patient(
             first_name="John",
             last_name="Doe",
-            dob=date(1990, 1, 1),
-            center=_as_center("university_hospital_wuerzburg"),
-            gender=get_random_gender(),
+            birth_date="1990-01-01",
         )
+        self.patient.save()
 
     def test_patient_creation(self):
         """Test if the patient is created correctly."""
-        patient = cast(_PatientLike, self.patient)
         self.assertIsInstance(self.patient, Patient)
-        self.assertEqual(patient.first_name, patient.first_name)
-        self.assertEqual(patient.last_name, patient.last_name)
-        self.assertEqual(patient.dob, patient.dob)
-        self.assertEqual(patient.center, patient.center)
+        self.assertEqual(self.patient.first_name, self.patient.first_name)
+        self.assertEqual(self.patient.last_name, self.patient.last_name)
+        self.assertEqual(self.patient.dob, self.patient.dob)
+        self.assertEqual(self.patient.center, self.patient.center)
 
     def test_get_dob(self):
         """Test if the get_dob method returns the correct date of birth."""
@@ -94,10 +57,6 @@ class PatientModelTest(TestCase):
 
 
 class PatientModelWithExaminationTest(TestCase):
-    patient: Patient
-    patient_examination: PatientExamination
-    sample_examination_object: Examination
-
     def setUp(self):
         load_center_data()
         # Ensure the default center for create_generic exists
@@ -106,13 +65,11 @@ class PatientModelWithExaminationTest(TestCase):
         load_examination_data()
         load_examination_indication_data()
 
-        self.patient = Patient.objects.create(
-            first_name="John",
-            last_name="Doe",
-            dob=date(1985, 1, 1),
-            center=_as_center("university_hospital_wuerzburg"),
-            gender=get_random_gender(),
+        self.patient = generate_patient(
+            gender="male",
+            center="university_hospital_wuerzburg",
         )
+        self.patient.save()
 
         self.sample_examination_object = get_random_default_examination()
         self.patient_examination = self.patient.create_examination(
@@ -144,10 +101,7 @@ class PatientModelWithExaminationTest(TestCase):
         # make sure the pdf file exists
         files = sample_examination_3.raw_pdf_files.all()
         self.assertEqual(len(files), 1)
-        stored_file = cast(_StoredFileLike, files[0].file)
-        raw_file_name = stored_file.name
-        self.assertTrue(raw_file_name)
-        self.assertTrue(stored_file.storage.exists(raw_file_name))
+        self.assertTrue(files[0].file.storage.exists(files[0].file.name))
 
     def test_get_random_age(self):
         """Test if the get_random_age method returns a valid age."""
@@ -157,7 +111,7 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertLessEqual(age, 100)
 
     def test_get_random_dob(self):
-        center = _as_center(cast(_PatientLike, self.patient).center)
+        center = self.patient.center
 
         age = Patient.get_random_age()
         dob = Patient.get_dob_from_age(age)
@@ -180,12 +134,13 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertIsNotNone(patient.last_name)
         self.assertIsNotNone(patient.dob)
         # Assert the correct center is assigned
-        patient_center = _as_center(cast(_PatientLike, patient).center)
-        self.assertEqual(patient_center.name, "gplay_case_generator")
+        self.assertIsNotNone(patient.center)
+        if patient.center is not None:
+            self.assertEqual(patient.center.name, "gplay_case_generator")
 
     def test_get_or_create_pseudo_patient_by_hash(self):
         """Test if the get_or_create_pseudo_patient_by_hash method creates a patient with a random name and dob."""
-        center = _as_center(cast(_PatientLike, self.patient).center)
+        center = self.patient.center
 
         gender = get_random_gender()
         patient_hash = "test_hash"
@@ -225,9 +180,8 @@ class PatientModelWithExaminationTest(TestCase):
             sample_type="generic",
         )
         self.assertIsInstance(lab_sample, PatientLabSample)
-        lab_sample_like = cast(_LabSampleLike, lab_sample)
-        self.assertEqual(lab_sample_like.sample_type.name, "generic")
-        self.assertEqual(lab_sample_like.patient, self.patient)
+        self.assertEqual(lab_sample.sample_type.name, "generic")
+        self.assertEqual(lab_sample.patient, self.patient)
 
     # After each test, we need to make sure that we delete the RawPdfObject
     # def tearDown(self):

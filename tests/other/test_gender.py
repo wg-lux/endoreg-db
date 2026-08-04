@@ -13,8 +13,6 @@ required_gender_names = [
 
 
 class GenderModelTest(TestCase):
-    gender: Gender
-
     def setUp(self):
         # Create a Unit instance for testing
         self.gender = Gender.objects.create(

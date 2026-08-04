@@ -45,7 +45,7 @@ OIDC_OP_DISCOVERY_ENDPOINT = env_str(
 # DJANGO LOGIN/LOGOUT ROUTES
 # -----------------------------
 
-# Built-in mozilla-django-oidc login entry point. Browser requests without a session redirect here.
+# Built-in mozilla-django-oidc login entry point. We redirect browsers here when they hit /api/* without a session.
 LOGIN_URL = "/oidc/authenticate/"
 
 # Where Django should send the user after a successful login (if there is no ?next=... parameter).
@@ -63,7 +63,7 @@ EXTRA_INSTALLED_APPS = [
     "mozilla_django_oidc",  # provides /oidc/authenticate/ and /oidc/callback/ routes
 ]
 
-# Extra middleware to protect browser routes (redirect to OIDC if no session).
+# Extra middleware to protect /api/* for browsers (redirect to OIDC if no session).
 # Your custom middleware should come AFTER AuthenticationMiddleware (already in base.py).
 EXTRA_MIDDLEWARE = [
     "endoreg_db.authz.middleware.LoginRequiredForAPIsMiddleware",

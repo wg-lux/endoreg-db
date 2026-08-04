@@ -1,9 +1,5 @@
 # Repository Alignment TODO
 
-> Status tracking was migrated to `feature-tracking/StorageSecurity.yml`. This
-> document is retained as architecture context and must not carry an independent
-> completion status.
-
 ## Goal
 
 Re-align `endoreg-db`, `lx-annotate`, and LuxNix so the protected-media model is consistent again:
@@ -58,7 +54,7 @@ Re-align `endoreg-db`, `lx-annotate`, and LuxNix so the protected-media model is
 - Add the `EncryptedStorage` equivalent to `endoreg-db`, or extract a shared package used by both repos.
 - Configure Django default storage in `endoreg-db` to use encrypted storage for managed non-video payloads.
 - Audit all direct `FileSystemStorage` usage in `endoreg-db`, especially:
-  - [`endoreg_db/models/utils.py`](../endoreg_db/models/utils.py)
+  - [`endoreg_db/models/utils.py`](/home/admin/endoreg-db/endoreg_db/models/utils.py)
 - Remove hardcoded storage instantiations that bypass the configured default storage backend.
 - Ensure all affected models and file operations remain compatible with:
   - chunked reads
@@ -70,7 +66,8 @@ Re-align `endoreg-db`, `lx-annotate`, and LuxNix so the protected-media model is
 
 - Remove direct protected-media serving via `/media/` in `endoreg-db` production paths.
 - Audit and patch:
-  - [`endoreg_db/root_urls.py`](../endoreg_db/root_urls.py)
+  - [`wsgi.py`](/home/admin/endoreg-db/wsgi.py)
+  - [`endoreg_db/root_urls.py`](/home/admin/endoreg-db/endoreg_db/root_urls.py)
   - any other `static(..., document_root=settings.MEDIA_ROOT)` usage
 - Ensure protected binaries are only accessible through:
   - authenticated Django API endpoints

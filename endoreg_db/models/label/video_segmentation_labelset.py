@@ -1,40 +1,28 @@
-from __future__ import annotations
-
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from .video_segmentation_label import VideoSegmentationLabel
-
-NoVideoSegmentationLabelSetValue: TypeAlias = NoneType
-VideoSegmentationLabelSetDescription: TypeAlias = (
-    "str | NoVideoSegmentationLabelSetValue"
-)
+    from endoreg_db.models import VideoSegmentationLabel
 
 
-class VideoSegmentationLabelSetManager(models.Manager["VideoSegmentationLabelSet"]):
-    def get_by_natural_key(self, name: str) -> "VideoSegmentationLabelSet":
+class VideoSegmentationLabelSetManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class VideoSegmentationLabelSet(models.Model):
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
-    description: models.TextField[VideoSegmentationLabelSetDescription, Any] = (
-        models.TextField(blank=True, null=True)
-    )
-    labels: models.ManyToManyField[VideoSegmentationLabel, VideoSegmentationLabel] = (
-        models.ManyToManyField("VideoSegmentationLabel", related_name="labelsets")
-    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    labels = models.ManyToManyField("VideoSegmentationLabel", related_name="labelsets")
 
     objects = VideoSegmentationLabelSetManager()
 
     if TYPE_CHECKING:
-        pass
+        labels = cast(models.manager.RelatedManager["VideoSegmentationLabel"], labels)
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)

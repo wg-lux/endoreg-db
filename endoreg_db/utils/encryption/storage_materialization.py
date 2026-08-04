@@ -3,12 +3,12 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Generator
+from typing import Iterator
 
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.file_operations import safe_unlink_file
-from endoreg_db.utils.storage_streaming import field_file_size, iter_field_file_bytes
+from endoreg_db.utils.storage.streaming import field_file_size, iter_field_file_bytes
 
 
 @contextmanager
@@ -17,7 +17,7 @@ def materialized_plaintext_field_file(
     *,
     suffix: str = "",
     prefix: str = "endoreg-fieldfile-",
-) -> Generator[Path]:
+) -> Iterator[Path]:
     size = field_file_size(field_file)
 
     with NamedTemporaryFile(

@@ -2,7 +2,6 @@
 #     Examination,
 #     FindingClassificationChoice,
 # )
-from rest_framework.request import Request
 from rest_framework.response import Response
 
 # from django.shortcuts import get_object_or_404
@@ -10,7 +9,7 @@ from rest_framework.decorators import api_view
 
 
 @api_view(["GET"])
-def get_instruments_for_examination(request: Request, exam_id: int):
+def get_instruments_for_examination(request, exam_id):
     # Placeholder if you plan to link instruments to exams
     """
     Returns an empty list of instruments for the specified examination.

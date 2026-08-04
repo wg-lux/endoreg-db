@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any
 
 from django.utils import timezone
 from lx_dtypes.models.contracts import CaseResolutionRequest
@@ -17,18 +17,18 @@ def _meta_field_name(media_obj: RawPdfFile | VideoFile) -> str:
     return "meta"
 
 
-def get_media_meta(media_obj: RawPdfFile | VideoFile) -> dict[str, object]:
+def get_media_meta(media_obj: RawPdfFile | VideoFile) -> dict[str, Any]:
     meta = getattr(media_obj, _meta_field_name(media_obj), None)
     if isinstance(meta, dict):
-        return cast(dict[str, object], meta).copy()
+        return dict(meta)
     return {}
 
 
-def get_case_resolution_meta(media_obj: RawPdfFile | VideoFile) -> dict[str, object]:
+def get_case_resolution_meta(media_obj: RawPdfFile | VideoFile) -> dict[str, Any]:
     media_meta = get_media_meta(media_obj)
     case_resolution_meta = media_meta.get(CASE_RESOLUTION_META_KEY)
     if isinstance(case_resolution_meta, dict):
-        return cast(dict[str, object], case_resolution_meta).copy()
+        return dict(case_resolution_meta)
     return {}
 
 

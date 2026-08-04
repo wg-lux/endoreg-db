@@ -4,8 +4,6 @@ from endoreg_db.models import Unit
 
 
 class UnitModelTest(TestCase):
-    unit: Unit
-
     def setUp(self):
         # Create a Unit instance for testing
         self.unit = Unit.objects.create(

@@ -60,10 +60,6 @@ class MigrationMarkEligibleCommandTests(TestCase):
         self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.ELIGIBLE)
         self.assertTrue(upload_job.source_file_persisted)
         self.assertEqual(upload_job.status, UploadJob.Status.LOST)
-        self.assertEqual(
-            upload_job.error_code,
-            UploadJob.ErrorCode.PROCESSING_FAILED,
-        )
         self.assertIsNotNone(upload_job.source_file_delete_eligible_at)
         self.assertIn("abandoned during data recovery", upload_job.error_detail)
 
@@ -86,10 +82,6 @@ class MigrationMarkEligibleCommandTests(TestCase):
         self.assertEqual(payload["selected_rows"], 0)
         self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.ELIGIBLE)
         self.assertEqual(upload_job.status, UploadJob.Status.LOST)
-        self.assertEqual(
-            upload_job.error_code,
-            UploadJob.ErrorCode.PROCESSING_FAILED,
-        )
         self.assertEqual(upload_job.error_detail, first_error_detail)
         self.assertEqual(upload_job.source_file_delete_eligible_at, first_eligible_at)
 
@@ -105,6 +97,5 @@ class MigrationMarkEligibleCommandTests(TestCase):
         self.assertFalse(upload_job.source_file_persisted)
         self.assertEqual(upload_job.file.name, "")
         self.assertEqual(upload_job.status, UploadJob.Status.LOST)
-        self.assertEqual(upload_job.error_code, UploadJob.ErrorCode.SOURCE_MISSING)
         self.assertIsNotNone(upload_job.source_file_delete_eligible_at)
         self.assertIn("Migration source file missing", upload_job.error_detail)

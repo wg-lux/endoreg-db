@@ -1,19 +1,12 @@
-from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, List, cast
 
-from django.core.exceptions import ValidationError
 from django.db import models
-
-from endoreg_db.schemas.classification_choice import (
-    ClassificationChoiceJSONValidationError,
-    validate_classification_choice_json_fields,
-)
 
 if TYPE_CHECKING:
     from endoreg_db.models import PatientEvent
 
 
-class EventManager(models.Manager["Event"]):
+class EventManager(models.Manager):
     """
     Manager for Event with custom query methods.
     """
@@ -32,7 +25,7 @@ class EventManager(models.Manager["Event"]):
         Returns:
             The Event object corresponding to the given name.
         """
-        return self.get(name=name)
+        return cast("Event", self.get(name=name))
 
 
 class Event(models.Model):
@@ -44,30 +37,26 @@ class Event(models.Model):
         description (str): A description of the event.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True, null=True)
 
     objects = EventManager()
 
     if TYPE_CHECKING:
+        patient_events: models.ForeignKey["PatientEvent"]
 
         @property
-        def patient_events(self) -> models.Manager["PatientEvent"]: ...
+        def event_classifications(self) -> models.QuerySet["EventClassification"]: ...
 
-        @property
-        def event_classifications(
-            self,
-        ) -> models.QuerySet["EventClassification"]: ...
-
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """
         Returns a tuple representing the natural key for this instance.
 
         The natural key consists of the instance's unique name.
         """
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return a string representation of the instance's name.
 
@@ -77,10 +66,10 @@ class Event(models.Model):
         return str(self.name)
 
 
-class EventClassificationManager(models.Manager["EventClassification"]):
+class EventClassificationManager(models.Manager):
     """Manager for EventClassification with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "EventClassification":
+    def get_by_natural_key(self, name):
         """Retrieves an EventClassification instance by its natural key (name)."""
         return self.get(name=name)
 
@@ -90,40 +79,44 @@ class EventClassification(models.Model):
     Represents a classification system for events (e.g., TNM staging for cancer).
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    name = models.CharField(max_length=255, unique=True)
 
     objects = EventClassificationManager()
 
-    event: models.ForeignKey[Any] = models.ForeignKey(
+    event = models.ForeignKey(
         Event,
         on_delete=models.CASCADE,
         related_name="event_classifications",
     )
 
     if TYPE_CHECKING:
+        pass
 
         @property
         def event_classification_choices(
             self,
         ) -> models.QuerySet["EventClassificationChoice"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the classification."""
         return str(self.name)
 
-    def get_choices(self) -> list["EventClassificationChoice"]:
+    def get_choices(self) -> List["EventClassificationChoice"]:
         """Retrieves all choices associated with this classification."""
-        return [choice for choice in self.event_classification_choices.all()]
+        choices: List[EventClassificationChoice] = [
+            _ for _ in self.event_classification_choices.all()
+        ]
+        return choices
 
 
-class EventClassificationChoiceManager(models.Manager["EventClassificationChoice"]):
+class EventClassificationChoiceManager(models.Manager):
     """Manager for EventClassificationChoice with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "EventClassificationChoice":
+    def get_by_natural_key(self, name):
         """Retrieves an EventClassificationChoice instance by its natural key (name)."""
         return self.get(name=name)
 
@@ -135,11 +128,11 @@ class EventClassificationChoice(models.Model):
     Can define associated subcategories and numerical descriptors.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
-    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    name = models.CharField(max_length=255, unique=True)
+    subcategories = models.JSONField(default=dict)
+    numerical_descriptors = models.JSONField(default=dict)
 
-    event_classification: models.ForeignKey[Any] = models.ForeignKey(
+    event_classification = models.ForeignKey(
         EventClassification,
         on_delete=models.CASCADE,
         related_name="event_classification_choices",
@@ -147,26 +140,15 @@ class EventClassificationChoice(models.Model):
 
     objects = EventClassificationChoiceManager()
 
-    def clean(self) -> None:
-        super().clean()
-        try:
-            validate_classification_choice_json_fields(self)
-        except ClassificationChoiceJSONValidationError as exc:
-            raise ValidationError({exc.field_name: str(exc)}) from exc
-
-    def save(self, *args: object, **kwargs: object) -> None:
-        self.clean()
-        super().save(*args, **kwargs)
-
     @property
-    def event(self) -> Event:
+    def event(self):
         """Returns the associated Event instance."""
         return self.event_classification.event
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the classification choice."""
         return str(self.name)

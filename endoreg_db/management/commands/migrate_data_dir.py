@@ -3,27 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import StrEnum
 from pathlib import Path
-from types import NoneType
-from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.core.files import File
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db.models.fields.files import FieldFile
+from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
-from lx_dtypes.models.contracts.migrate_data_dir import (
-    MigrateDataDirCommandOptionsPayload,
-    MigrateDataDirManifestEntryPayload,
-    MigrateDataDirManifestPayload,
-)
 
-from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models import RawPdfFile, UploadJob, VideoFile
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -31,7 +19,7 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     sha256_file,
 )
-from endoreg_db.utils.paths import (
+from endoreg_db.utils.filesystem.paths import (
     DOCUMENT_DIR,
     FRAME_DIR,
     FRAME_IMPORT_DIR,
@@ -57,65 +45,13 @@ from endoreg_db.utils.paths import (
     ensure_within_protected_root,
     to_storage_relative,
 )
-from endoreg_db.utils.storage_profile import (
+from endoreg_db.utils.storage.profile import (
     PayloadKind,
     requires_app_encrypted_storage,
 )
 from endoreg_db.utils.storage import save_local_file
 
 logger = logging.getLogger(__name__)
-
-
-class MigrateDataDirCommandOptions(TypedDict):
-    source_root: str
-    dry_run: bool
-    manifest_path: str
-
-
-def _migrate_data_dir_command_options_payload(
-    options: dict[str, object],
-) -> MigrateDataDirCommandOptionsPayload:
-    return MigrateDataDirCommandOptionsPayload.model_validate(
-        {
-            "source_root": options.get("source_root"),
-            "dry_run": options.get("dry_run"),
-            "manifest_path": options.get("manifest_path", ""),
-        }
-    )
-
-
-class PersistedMigrationModel(Protocol):
-    id: int
-    pk: int
-
-    def save(self, *, update_fields: Sequence[str]) -> None: ...
-
-
-class _MigrationStorage(Protocol):
-    def exists(self, name: str) -> bool: ...
-
-
-class _MigrationEncryptedStorage(_MigrationStorage, Protocol):
-    def is_encrypted(self, name: str) -> bool: ...
-
-
-class _MigrationFileField(Protocol):
-    upload_to: str
-
-    def generate_filename(
-        self, instance: PersistedMigrationModel, filename: str
-    ) -> str: ...
-
-
-class _MigrationFieldFile(Protocol):
-    name: str
-    storage: _MigrationStorage
-    field: _MigrationFileField
-
-
-NoMigrationValue: TypeAlias = NoneType
-MigrationFieldValue: TypeAlias = str | VideoStorageMode
-MigrationExtensions: TypeAlias = tuple[str, ...] | NoMigrationValue
 
 
 def _ensure_within_runtime_root(path: Path) -> Path:
@@ -168,18 +104,7 @@ class MigrationRule:
     retention_policy: str
     source_file_persisted: bool
     cleanup_status: str
-    allowed_extensions: MigrationExtensions = None
-
-
-class _MigrationDisposition(StrEnum):
-    MIGRATED = "migrated"
-    SKIPPED = "skipped"
-
-
-@dataclass(frozen=True, slots=True)
-class _MigrationOutcome:
-    disposition: _MigrationDisposition
-    entry: MigrateDataDirManifestEntryPayload
+    allowed_extensions: tuple[str, ...] | None = None
 
 
 VIDEO_FILE_EXTENSIONS = (".mp4", ".webm", ".avi", ".mkv", ".mov", ".m4v")
@@ -561,7 +486,7 @@ class Command(BaseCommand):
         "LX_ANNOTATE_ENCRYPTED_DATA_DIR and emit a JSON manifest."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser) -> None:
         parser.add_argument(
             "source_root",
             type=str,
@@ -576,257 +501,146 @@ class Command(BaseCommand):
             "--manifest-path",
             type=str,
             default="",
-            help="Manifest path inside the protected manifest tier.",
+            help="Optional manifest path inside the protected manifest tier.",
         )
 
-    def handle(
-        self,
-        *args: str,
-        **options: Unpack[MigrateDataDirCommandOptions],
-    ) -> None:
-        options_payload = _migrate_data_dir_command_options_payload(
-            cast(dict[str, object], options)
-        )
-        source_root = self._validated_source_root(options_payload.source_root)
-        manifest_path = self._resolve_manifest_path(
-            raw_path=options_payload.manifest_path.strip(),
-            source_root=source_root,
-        )
-        migrated_entries, skipped_entries = self._migrate_entries(
-            source_root=source_root,
-            dry_run=options_payload.dry_run,
-        )
-        self._write_manifest(
-            source_root=source_root,
-            manifest_path=manifest_path,
-            dry_run=options_payload.dry_run,
-            migrated_entries=migrated_entries,
-            skipped_entries=skipped_entries,
-        )
-
-    @staticmethod
-    def _validated_source_root(raw_source_root: str) -> Path:
-        source_root = Path(raw_source_root).expanduser().resolve()
+    def handle(self, *args, **options) -> None:
+        source_root = Path(options["source_root"]).expanduser().resolve()
         if not source_root.exists() or not source_root.is_dir():
             raise CommandError(f"Legacy source root does not exist: {source_root}")
-        return source_root
 
-    def _migrate_entries(
-        self,
-        *,
-        source_root: Path,
-        dry_run: bool,
-    ) -> tuple[
-        list[MigrateDataDirManifestEntryPayload],
-        list[MigrateDataDirManifestEntryPayload],
-    ]:
-        migrated_entries: list[MigrateDataDirManifestEntryPayload] = []
-        skipped_entries: list[MigrateDataDirManifestEntryPayload] = []
+        dry_run = bool(options["dry_run"])
+        manifest_path = self._resolve_manifest_path(
+            raw_path=str(options.get("manifest_path") or "").strip(),
+            source_root=source_root,
+        )
+
+        migrated_entries: list[dict[str, object]] = []
+        skipped_entries: list[dict[str, object]] = []
+
         for rule in MIGRATION_RULES:
-            for source_path in self._rule_source_paths(source_root, rule):
-                outcome = self._migrate_source_path(
-                    source_root=source_root,
-                    source_path=source_path,
-                    rule=rule,
-                    dry_run=dry_run,
-                )
-                if outcome is None:
+            legacy_dir = source_root / rule.legacy_relative
+            if not legacy_dir.exists():
+                continue
+            for source_path in sorted(legacy_dir.rglob("*")):
+                if not source_path.is_file():
                     continue
-                if outcome.disposition is _MigrationDisposition.MIGRATED:
-                    migrated_entries.append(outcome.entry)
+                destination_path = _ensure_within_runtime_root(
+                    rule.target_root / source_path.relative_to(legacy_dir)
+                )
+                entry = {
+                    "source_path": str(source_path),
+                    "destination_path": str(destination_path),
+                    "storage_class": rule.storage_class,
+                    "storage_tier": rule.storage_tier,
+                    "retention_policy": rule.retention_policy,
+                    "create_upload_job": rule.create_upload_job,
+                }
+                # FIX 1: Ignore lock files
+                if source_path.suffix.lower() == ".lock":
+                    logger.warning(f"Skipping lock file: {source_path}")
+                    continue
+
+                # FIX 2: Ignore non-media junk (Optional, but highly recommended)
+                allowed_extensions = rule.allowed_extensions
+                if (
+                    allowed_extensions is not None
+                    and source_path.suffix.lower() not in allowed_extensions
+                ):
+                    logger.warning(f"Skipping unsupported file type: {source_path}")
+                    continue
+
+                if self._raw_streamable_disabled(rule):
+                    skipped_entries.append(
+                        {**entry, "reason": "raw_streamable_disabled_by_policy"}
+                    )
+                    logger.warning(
+                        "Skipping raw streamable migration because raw video policy "
+                        "requires application-encrypted storage: source=%s "
+                        "destination=%s",
+                        source_path,
+                        destination_path,
+                    )
+                    continue
+
+                if dry_run:
+                    migrated_entries.append(
+                        {
+                            **entry,
+                            "dry_run": True,
+                            "destination_exists": destination_path.exists(),
+                        }
+                    )
+                    continue
+
+                # 2. If it already exists at the destination, run the "Database Sync" logic
+                if destination_path.exists():
+                    source_hash = sha256_file(source_path)
+                    destination_hash = sha256_file(destination_path)
+                    if source_hash != destination_hash:
+                        logger.error(
+                            "Refusing to sync migration destination with mismatched "
+                            "content hash: source=%s destination=%s source_sha256=%s "
+                            "destination_sha256=%s",
+                            source_path,
+                            destination_path,
+                            source_hash,
+                            destination_hash,
+                        )
+                        skipped_entries.append(
+                            {
+                                **entry,
+                                "reason": "destination_exists_hash_mismatch",
+                                "source_sha256": source_hash,
+                                "destination_sha256": destination_hash,
+                            }
+                        )
+                        continue
+
+                    synced = self.sync_db(destination_path, source_path, rule)
+                    skipped_entries.append(
+                        {
+                            **entry,
+                            "reason": (
+                                "destination_exists_and_synced"
+                                if synced
+                                else "destination_exists_unchanged"
+                            ),
+                        }
+                    )
+                    continue
+
+                atomic_copy_file(
+                    source=source_path,
+                    destination=destination_path,
+                    preserve_metadata=True,
+                )
+                job_id = None
+                if rule.create_upload_job:
+                    job = self._create_or_reuse_migration_upload_job(
+                        migrated_file=destination_path,
+                        source_path=source_path,
+                        rule=rule,
+                    )
+                    job_id = str(job.id)
+                if self.sync_db(destination_path, source_path, rule):
+                    logger.info(
+                        f"synced db path of {destination_path} to {source_path}"
+                    )
                 else:
-                    skipped_entries.append(outcome.entry)
-        return migrated_entries, skipped_entries
+                    logger.info(
+                        f"No existing DB records found for {source_path.name} to sync."
+                    )
+                migrated_entries.append({**entry, "upload_job_id": job_id})
 
-    @staticmethod
-    def _rule_source_paths(
-        source_root: Path,
-        rule: MigrationRule,
-    ) -> Iterator[Path]:
-        legacy_dir = source_root / rule.legacy_relative
-        if not legacy_dir.exists():
-            return
-        for source_path in sorted(legacy_dir.rglob("*")):
-            if source_path.is_file():
-                yield source_path
-
-    def _migrate_source_path(
-        self,
-        *,
-        source_root: Path,
-        source_path: Path,
-        rule: MigrationRule,
-        dry_run: bool,
-    ) -> _MigrationOutcome | None:
-        legacy_dir = source_root / rule.legacy_relative
-        destination_path = _ensure_within_runtime_root(
-            rule.target_root / source_path.relative_to(legacy_dir)
-        )
-        entry = MigrateDataDirManifestEntryPayload(
-            source_path=str(source_path),
-            destination_path=str(destination_path),
-            storage_class=rule.storage_class,
-            storage_tier=rule.storage_tier,
-            retention_policy=rule.retention_policy,
-            create_upload_job=rule.create_upload_job,
-        )
-        if self._source_path_is_ignored(source_path, rule):
-            return None
-        if self._raw_streamable_disabled(rule):
-            return self._raw_streamable_disabled_outcome(
-                entry=entry,
-                source_path=source_path,
-                destination_path=destination_path,
-            )
-        if dry_run:
-            return _MigrationOutcome(
-                disposition=_MigrationDisposition.MIGRATED,
-                entry=entry.model_copy(
-                    update={
-                        "dry_run": True,
-                        "destination_exists": destination_path.exists(),
-                    }
-                ),
-            )
-        if destination_path.exists():
-            return self._existing_destination_outcome(
-                entry=entry,
-                source_path=source_path,
-                destination_path=destination_path,
-                rule=rule,
-            )
-        return self._new_destination_outcome(
-            entry=entry,
-            source_path=source_path,
-            destination_path=destination_path,
-            rule=rule,
-        )
-
-    @staticmethod
-    def _source_path_is_ignored(source_path: Path, rule: MigrationRule) -> bool:
-        if source_path.suffix.lower() == ".lock":
-            logger.warning("Skipping lock file: %s", source_path)
-            return True
-        allowed_extensions = rule.allowed_extensions
-        if (
-            allowed_extensions is not None
-            and source_path.suffix.lower() not in allowed_extensions
-        ):
-            logger.warning("Skipping unsupported file type: %s", source_path)
-            return True
-        return False
-
-    @staticmethod
-    def _raw_streamable_disabled_outcome(
-        *,
-        entry: MigrateDataDirManifestEntryPayload,
-        source_path: Path,
-        destination_path: Path,
-    ) -> _MigrationOutcome:
-        logger.warning(
-            "Skipping raw streamable migration because raw video policy "
-            "requires application-encrypted storage: source=%s destination=%s",
-            source_path,
-            destination_path,
-        )
-        return _MigrationOutcome(
-            disposition=_MigrationDisposition.SKIPPED,
-            entry=entry.model_copy(
-                update={"reason": "raw_streamable_disabled_by_policy"}
-            ),
-        )
-
-    def _existing_destination_outcome(
-        self,
-        *,
-        entry: MigrateDataDirManifestEntryPayload,
-        source_path: Path,
-        destination_path: Path,
-        rule: MigrationRule,
-    ) -> _MigrationOutcome:
-        source_hash = sha256_file(source_path)
-        destination_hash = sha256_file(destination_path)
-        if source_hash != destination_hash:
-            logger.error(
-                "Refusing to sync migration destination with mismatched content "
-                "hash: source=%s destination=%s source_sha256=%s "
-                "destination_sha256=%s",
-                source_path,
-                destination_path,
-                source_hash,
-                destination_hash,
-            )
-            return _MigrationOutcome(
-                disposition=_MigrationDisposition.SKIPPED,
-                entry=entry.model_copy(
-                    update={
-                        "reason": "destination_exists_hash_mismatch",
-                        "source_sha256": source_hash,
-                        "destination_sha256": destination_hash,
-                    }
-                ),
-            )
-
-        synced = self.sync_db(destination_path, source_path, rule)
-        reason = (
-            "destination_exists_and_synced"
-            if synced
-            else "destination_exists_unchanged"
-        )
-        return _MigrationOutcome(
-            disposition=_MigrationDisposition.SKIPPED,
-            entry=entry.model_copy(update={"reason": reason}),
-        )
-
-    def _new_destination_outcome(
-        self,
-        *,
-        entry: MigrateDataDirManifestEntryPayload,
-        source_path: Path,
-        destination_path: Path,
-        rule: MigrationRule,
-    ) -> _MigrationOutcome:
-        atomic_copy_file(
-            source=source_path,
-            destination=destination_path,
-            preserve_metadata=True,
-        )
-        job_id = None
-        if rule.create_upload_job:
-            job = self._create_or_reuse_migration_upload_job(
-                migrated_file=destination_path,
-                source_path=source_path,
-                rule=rule,
-            )
-            job_id = str(cast("PersistedMigrationModel", job).id)
-        if self.sync_db(destination_path, source_path, rule):
-            logger.info("synced db path of %s to %s", destination_path, source_path)
-        else:
-            logger.info(
-                "No existing DB records found for %s to sync.", source_path.name
-            )
-        return _MigrationOutcome(
-            disposition=_MigrationDisposition.MIGRATED,
-            entry=entry.model_copy(update={"upload_job_id": job_id}),
-        )
-
-    def _write_manifest(
-        self,
-        *,
-        source_root: Path,
-        manifest_path: Path,
-        dry_run: bool,
-        migrated_entries: list[MigrateDataDirManifestEntryPayload],
-        skipped_entries: list[MigrateDataDirManifestEntryPayload],
-    ) -> None:
-        manifest = MigrateDataDirManifestPayload(
-            command="migrate_data_dir",
-            created_at=datetime.now(timezone.utc).isoformat(),
-            source_root=str(source_root),
-            dry_run=dry_run,
-            migrated_entries=migrated_entries,
-            skipped_entries=skipped_entries,
-        ).to_manifest_data()
+        manifest = {
+            "command": "migrate_data_dir",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source_root": str(source_root),
+            "dry_run": dry_run,
+            "migrated_entries": migrated_entries,
+            "skipped_entries": skipped_entries,
+        }
         ensure_directory(manifest_path.parent)
         manifest_payload = json.dumps(manifest, indent=2, sort_keys=True).encode(
             "utf-8"
@@ -851,30 +665,85 @@ class Command(BaseCommand):
         )
 
         # Calculate content hash and derive the canonical hash stem from the filename.
-        # Processed media is typically named after the raw media hash, not the
+        # Processed media is typically named after the raw object hash, not the
         # processed bytes hash, so we use both signals and fail closed on ambiguity.
         content_hash = sha256_file(destination_path)
         stem_hash = self._canonical_hash_stem(destination_path)
         rel_path = to_storage_relative(destination_path)
+        updated_count = 0
+        # Re-point existing Video records
         if rule.target_root in {
             MANAGED_ANONYMIZED_VIDEOS_DIR,
             IMPORT_ANONYMIZED_VIDEO_DIR,
         }:
-            updated_count = self._sync_processed_video(
+            video = self._resolve_unique_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                relative_name=rel_path,
+                include_processed_hash=True,
                 source_path=source_path,
                 destination_path=destination_path,
             )
+            if video is not None:
+                processed_video_hash = getattr(video, "processed_video_hash", None)
+                processed_hash_mismatch = bool(
+                    processed_video_hash and processed_video_hash != content_hash
+                )
+                file_changed = self._store_file_field_if_needed(
+                    instance=video,
+                    field_name="processed_file",
+                    relative_name=rel_path,
+                    source_path=source_path,
+                    payload_kind=PayloadKind.VIDEO_PROCESSED,
+                    force_upload_to=processed_hash_mismatch,
+                )
+                video_update_fields: dict[str, object] = {}
+                if not processed_video_hash:
+                    video_update_fields["processed_video_hash"] = content_hash
+                elif processed_hash_mismatch:
+                    logger.warning(
+                        "Processed video hash mismatch during migration sync for "
+                        "video=%s source=%s destination=%s existing=%s incoming=%s. "
+                        "Leaving processed_video_hash unchanged.",
+                        video.pk,
+                        source_path,
+                        destination_path,
+                        processed_video_hash,
+                        content_hash,
+                    )
+                extra_changed = self._changed_fields(video, video_update_fields)
+                for field_name, desired_value in extra_changed.items():
+                    setattr(video, field_name, desired_value)
+                if file_changed or extra_changed:
+                    video.save(
+                        update_fields=list(
+                            dict.fromkeys(
+                                [
+                                    *(["processed_file"] if file_changed else []),
+                                    *extra_changed.keys(),
+                                ]
+                            )
+                        )
+                    )
+                    updated_count = 1
         elif rule.target_root == SENSITIVE_VIDEO_DIR:
-            updated_count = self._sync_raw_video(
+            video = self._resolve_unique_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                relative_name=rel_path,
+                include_processed_hash=False,
                 source_path=source_path,
                 destination_path=destination_path,
             )
+            if video is not None:
+                changed = self._store_file_field_if_needed(
+                    instance=video,
+                    field_name="raw_file",
+                    relative_name=rel_path,
+                    source_path=source_path,
+                    payload_kind=PayloadKind.VIDEO_RAW,
+                )
+                if changed:
+                    video.save(update_fields=["raw_file"])
+                    updated_count = 1
         elif rule.target_root == _streamable_raw_video_root():
             if self._raw_streamable_disabled(rule):
                 logger.warning(
@@ -884,48 +753,79 @@ class Command(BaseCommand):
                     destination_path,
                 )
                 return False
-            updated_count = self._sync_streamable_video(
+            video = self._resolve_unique_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
                 include_processed_hash=False,
-                relative_field_name="raw_streamable_relative_path",
-                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
+            if video is not None:
+                updated_count = self._update_video_if_changed(
+                    video,
+                    raw_streamable_relative_path=rel_path,
+                    storage_mode=VideoStorageMode.STREAMABLE,
+                )
         elif rule.target_root == _streamable_processed_video_root():
-            updated_count = self._sync_streamable_video(
+            video = self._resolve_unique_video(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
                 include_processed_hash=True,
-                relative_field_name="processed_streamable_relative_path",
-                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
+            if video is not None:
+                updated_count = self._update_video_if_changed(
+                    video,
+                    processed_streamable_relative_path=rel_path,
+                    storage_mode=VideoStorageMode.STREAMABLE,
+                )
+
+        # Re-point existing Report records
         elif rule.target_root in {
             MANAGED_ANONYMIZED_REPORTS_DIR,
             IMPORT_ANONYMIZED_REPORT_DIR,
         }:
-            updated_count = self._sync_report_file(
+            report = self._resolve_unique_report(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                field_name="processed_file",
-                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
+            if report is not None:
+                processed_changed = self._store_file_field_if_needed(
+                    instance=report,
+                    field_name="processed_file",
+                    relative_name=rel_path,
+                    source_path=source_path,
+                    payload_kind=PayloadKind.REPORT_PDF,
+                )
+                if processed_changed:
+                    update_fields = []
+                    if processed_changed:
+                        update_fields.append("processed_file")
+                    report.save(
+                        update_fields=list(dict.fromkeys(update_fields)),
+                    )
+                    updated_count = 1
         elif rule.target_root == SENSITIVE_REPORT_DIR:
-            updated_count = self._sync_report_file(
+            report = self._resolve_unique_report(
                 content_hash=content_hash,
                 stem_hash=stem_hash,
-                field_name="file",
-                relative_name=rel_path,
                 source_path=source_path,
                 destination_path=destination_path,
             )
-        else:
-            updated_count = 0
+            if report is not None:
+                changed = self._store_file_field_if_needed(
+                    instance=report,
+                    field_name="file",
+                    relative_name=rel_path,
+                    source_path=source_path,
+                    payload_kind=PayloadKind.REPORT_PDF,
+                )
+                if changed:
+                    report.save(update_fields=["file"])
+                    updated_count = 1
 
         if updated_count > 0:
             self.stdout.write(
@@ -936,154 +836,6 @@ class Command(BaseCommand):
             return True
         return False
 
-    def _sync_processed_video(
-        self,
-        *,
-        content_hash: str,
-        stem_hash: str | NoMigrationValue,
-        relative_name: str,
-        source_path: Path,
-        destination_path: Path,
-    ) -> int:
-        video = self._resolve_unique_video(
-            content_hash=content_hash,
-            stem_hash=stem_hash,
-            include_processed_hash=True,
-            source_path=source_path,
-            destination_path=destination_path,
-        )
-        if video is None:
-            return 0
-
-        processed_video_hash = video.processed_video_hash
-        processed_hash_mismatch = bool(
-            processed_video_hash and processed_video_hash != content_hash
-        )
-        file_changed = self._store_file_field_if_needed(
-            instance=cast(PersistedMigrationModel, video),
-            field_name="processed_file",
-            relative_name=relative_name,
-            source_path=source_path,
-            payload_kind=PayloadKind.VIDEO_PROCESSED,
-            force_upload_to=processed_hash_mismatch,
-        )
-        desired_fields: dict[str, MigrationFieldValue] = {}
-        if not processed_video_hash:
-            desired_fields["processed_video_hash"] = content_hash
-        elif processed_hash_mismatch:
-            logger.warning(
-                "Processed video hash mismatch during migration sync for "
-                "video=%s source=%s destination=%s existing=%s incoming=%s. "
-                "Leaving processed_video_hash unchanged.",
-                video.pk,
-                source_path,
-                destination_path,
-                processed_video_hash,
-                content_hash,
-            )
-
-        changed_fields = self._changed_fields(
-            cast(PersistedMigrationModel, video), desired_fields
-        )
-        for field_name, desired_value in changed_fields.items():
-            setattr(video, field_name, desired_value)
-        update_fields = [
-            *(["processed_file"] if file_changed else []),
-            *changed_fields.keys(),
-        ]
-        if not update_fields:
-            return 0
-        cast("PersistedMigrationModel", video).save(update_fields=update_fields)
-        return 1
-
-    def _sync_raw_video(
-        self,
-        *,
-        content_hash: str,
-        stem_hash: str | NoMigrationValue,
-        relative_name: str,
-        source_path: Path,
-        destination_path: Path,
-    ) -> int:
-        video = self._resolve_unique_video(
-            content_hash=content_hash,
-            stem_hash=stem_hash,
-            include_processed_hash=False,
-            source_path=source_path,
-            destination_path=destination_path,
-        )
-        if video is None:
-            return 0
-        changed = self._store_file_field_if_needed(
-            instance=cast(PersistedMigrationModel, video),
-            field_name="raw_file",
-            relative_name=relative_name,
-            source_path=source_path,
-            payload_kind=PayloadKind.VIDEO_RAW,
-        )
-        if not changed:
-            return 0
-        cast("PersistedMigrationModel", video).save(update_fields=["raw_file"])
-        return 1
-
-    def _sync_streamable_video(
-        self,
-        *,
-        content_hash: str,
-        stem_hash: str | NoMigrationValue,
-        include_processed_hash: bool,
-        relative_field_name: str,
-        relative_name: str,
-        source_path: Path,
-        destination_path: Path,
-    ) -> int:
-        video = self._resolve_unique_video(
-            content_hash=content_hash,
-            stem_hash=stem_hash,
-            include_processed_hash=include_processed_hash,
-            source_path=source_path,
-            destination_path=destination_path,
-        )
-        if video is None:
-            return 0
-        return self._update_video_if_changed(
-            video,
-            **{
-                relative_field_name: relative_name,
-                "storage_mode": VideoStorageMode.STREAMABLE,
-            },
-        )
-
-    def _sync_report_file(
-        self,
-        *,
-        content_hash: str,
-        stem_hash: str | NoMigrationValue,
-        field_name: str,
-        relative_name: str,
-        source_path: Path,
-        destination_path: Path,
-    ) -> int:
-        report = self._resolve_unique_report(
-            content_hash=content_hash,
-            stem_hash=stem_hash,
-            source_path=source_path,
-            destination_path=destination_path,
-        )
-        if report is None:
-            return 0
-        changed = self._store_file_field_if_needed(
-            instance=cast(PersistedMigrationModel, report),
-            field_name=field_name,
-            relative_name=relative_name,
-            source_path=source_path,
-            payload_kind=PayloadKind.REPORT_PDF,
-        )
-        if not changed:
-            return 0
-        cast("PersistedMigrationModel", report).save(update_fields=[field_name])
-        return 1
-
     @staticmethod
     def _raw_streamable_disabled(rule: MigrationRule) -> bool:
         return rule.target_root == _streamable_raw_video_root() and (
@@ -1091,28 +843,21 @@ class Command(BaseCommand):
         )
 
     @staticmethod
-    def _current_field_value(
-        instance: PersistedMigrationModel, field_name: str
-    ) -> MigrationFieldValue:
+    def _current_field_value(instance: object, field_name: str) -> object:
         value = getattr(instance, field_name)
-        if hasattr(value, "name"):
-            return cast(MigrationFieldValue, cast(_MigrationFieldFile, value).name)
-        return cast(MigrationFieldValue, value)
+        return getattr(value, "name", value)
 
     @staticmethod
-    def _field_file_is_valid_encrypted(
-        field_file: _MigrationFieldFile, relative_name: str
-    ) -> bool:
-        storage = field_file.storage
-        if not field_file.name:
+    def _field_file_is_valid_encrypted(field_file: object, relative_name: str) -> bool:
+        storage = getattr(field_file, "storage", None)
+        if storage is None or not getattr(field_file, "name", None):
             return False
         try:
             if not storage.exists(relative_name):
                 return False
-            if hasattr(storage, "is_encrypted"):
-                return cast(_MigrationEncryptedStorage, storage).is_encrypted(
-                    relative_name
-                )
+            is_encrypted = getattr(storage, "is_encrypted", None)
+            if callable(is_encrypted):
+                return bool(is_encrypted(relative_name))
             return True
         except Exception as exc:
             logger.warning(
@@ -1126,21 +871,21 @@ class Command(BaseCommand):
     def _store_file_field_if_needed(
         cls,
         *,
-        instance: PersistedMigrationModel,
+        instance: object,
         field_name: str,
         relative_name: str,
         source_path: Path,
         payload_kind: PayloadKind,
         force_upload_to: bool = False,
     ) -> bool:
-        field_file = cast(_MigrationFieldFile, getattr(instance, field_name))
+        field_file = getattr(instance, field_name)
         save_name, storage_name = cls._field_storage_names(
             instance=instance,
             field_file=field_file,
             relative_name=relative_name,
             force_upload_to=force_upload_to,
         )
-        current_name = field_file.name
+        current_name = getattr(field_file, "name", None)
         if requires_app_encrypted_storage(payload_kind):
             if current_name == storage_name and cls._field_file_is_valid_encrypted(
                 field_file,
@@ -1148,7 +893,7 @@ class Command(BaseCommand):
             ):
                 return False
             save_local_file(
-                cast(FieldFile, field_file),
+                field_file,
                 source_path,
                 name=save_name,
                 save=False,
@@ -1164,14 +909,15 @@ class Command(BaseCommand):
     @staticmethod
     def _field_storage_names(
         *,
-        instance: PersistedMigrationModel,
-        field_file: _MigrationFieldFile,
+        instance: object,
+        field_file: object,
         relative_name: str,
         force_upload_to: bool = False,
     ) -> tuple[str, str]:
         requested_name = Path(relative_name).as_posix()
-        field = field_file.field
-        upload_prefix = Path(field.upload_to).as_posix().strip("/")
+        field = getattr(field_file, "field", None)
+        upload_to = getattr(field, "upload_to", "") if field is not None else ""
+        upload_prefix = Path(str(upload_to)).as_posix().strip("/")
 
         save_name = requested_name
         if upload_prefix:
@@ -1181,7 +927,7 @@ class Command(BaseCommand):
             elif requested_name.startswith(prefix):
                 save_name = requested_name[len(prefix) :]
 
-        if force_upload_to:
+        if force_upload_to and field is not None:
             try:
                 storage_name = field.generate_filename(instance, save_name)
             except Exception as exc:
@@ -1195,7 +941,7 @@ class Command(BaseCommand):
             normalized_storage_name = Path(storage_name).as_posix()
             return normalized_storage_name, normalized_storage_name
 
-        if "/" in save_name or "\\" in save_name:
+        if field is None or "/" in save_name or "\\" in save_name:
             return save_name, save_name
 
         try:
@@ -1213,10 +959,10 @@ class Command(BaseCommand):
     @classmethod
     def _changed_fields(
         cls,
-        instance: PersistedMigrationModel,
-        fields: dict[str, MigrationFieldValue],
-    ) -> dict[str, MigrationFieldValue]:
-        changed: dict[str, MigrationFieldValue] = {}
+        instance: object,
+        fields: dict[str, object],
+    ) -> dict[str, object]:
+        changed: dict[str, object] = {}
         for field_name, desired_value in fields.items():
             current_value = cls._current_field_value(instance, field_name)
             if current_value != desired_value:
@@ -1224,25 +970,21 @@ class Command(BaseCommand):
         return changed
 
     @classmethod
-    def _update_video_if_changed(
-        cls, video: VideoFile, **fields: MigrationFieldValue
-    ) -> int:
-        changed = cls._changed_fields(cast(PersistedMigrationModel, video), fields)
+    def _update_video_if_changed(cls, video: VideoFile, **fields: object) -> int:
+        changed = cls._changed_fields(video, fields)
         if not changed:
             return 0
         return VideoFile.objects.filter(pk=video.pk).update(**changed)
 
     @classmethod
-    def _update_report_if_changed(
-        cls, report: RawPdfFile, **fields: MigrationFieldValue
-    ) -> int:
-        changed = cls._changed_fields(cast(PersistedMigrationModel, report), fields)
+    def _update_report_if_changed(cls, report: RawPdfFile, **fields: object) -> int:
+        changed = cls._changed_fields(report, fields)
         if not changed:
             return 0
         return RawPdfFile.objects.filter(pk=report.pk).update(**changed)
 
     @staticmethod
-    def _canonical_hash_stem(path: Path) -> str | NoMigrationValue:
+    def _canonical_hash_stem(path: Path) -> str | None:
         stem = path.stem.strip()
         return stem or None
 
@@ -1250,11 +992,11 @@ class Command(BaseCommand):
         self,
         *,
         content_hash: str,
-        stem_hash: str | NoMigrationValue,
+        stem_hash: str | None,
         include_processed_hash: bool,
         source_path: Path,
         destination_path: Path,
-    ) -> VideoFile | NoMigrationValue:
+    ) -> VideoFile | None:
         query = Q(video_hash=content_hash)
         if include_processed_hash:
             query |= Q(processed_video_hash=content_hash)
@@ -1285,10 +1027,10 @@ class Command(BaseCommand):
         self,
         *,
         content_hash: str,
-        stem_hash: str | NoMigrationValue,
+        stem_hash: str | None,
         source_path: Path,
         destination_path: Path,
-    ) -> RawPdfFile | NoMigrationValue:
+    ) -> RawPdfFile | None:
         query = Q(pdf_hash=content_hash)
         if stem_hash:
             query |= Q(pdf_hash=stem_hash)

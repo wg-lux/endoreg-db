@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-
 from unittest.mock import Mock, patch
-from typing import Any, cast
 
 import pytest
 from django.conf import settings
@@ -28,7 +25,7 @@ from endoreg_db.tasks import (
 
 
 @pytest.fixture(autouse=True)
-def clear_integrity_cache() -> object:
+def clear_integrity_cache():
     cache.delete(AUDIT_LEDGER_INTEGRITY_CACHE_KEY)
     cache.delete(AUDIT_LEDGER_INTEGRITY_LOCK_KEY)
     yield
@@ -206,12 +203,9 @@ def test_video_post_validation_task_delegates_to_runner():
         "endoreg_db.services.jobs.video_post_validation_jobs._run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
-        result = cast(
-            bool,
-            cast(Any, run_video_post_validation_rebuild_task.run)(
-                "42",
-                only_validated=1,
-            ),
+        result = run_video_post_validation_rebuild_task.run(
+            "42",
+            only_validated=1,
         )
 
     assert result is True
@@ -223,20 +217,17 @@ def test_video_temporal_inference_task_delegates_to_runner():
         "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
         return_value=True,
     ) as runner:
-        result = cast(
-            bool,
-            cast(Any, run_video_temporal_inference_task.run)(
-                "42",
-                "7",
-                history_id="3",
-                replace_prediction_segments=1,
-                delete_frames_after=0,
-                ocr_frame_fraction="0.25",
-                ocr_cap="4",
-                temporal_options={"temporal_model": "markov"},
-                test_run=1,
-                n_test_frames="12",
-            ),
+        result = run_video_temporal_inference_task.run(
+            "42",
+            "7",
+            history_id="3",
+            replace_prediction_segments=1,
+            delete_frames_after=0,
+            ocr_frame_fraction="0.25",
+            ocr_cap="4",
+            temporal_options={"temporal_model": "markov"},
+            test_run=1,
+            n_test_frames="12",
         )
 
     assert result is True
@@ -277,7 +268,7 @@ def test_upload_processing_task_delegates_to_hub_service():
         "endoreg_db.services.hub.process_upload_job",
         return_value=True,
     ) as processor:
-        result = process_upload_job.run("123")
+        result = process_upload_job.run(123)
 
     assert result is True
     processor.assert_called_once_with("123")

@@ -1,54 +1,20 @@
-from __future__ import annotations
-
-from datetime import date, datetime
-from typing import Any, Protocol, cast
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Count, Q
-from rest_framework.request import Request
 import logging
 
-from endoreg_db.models.label.label_video_segment.label_video_segment import (
+from ...models import (
+    VideoFile,
     LabelVideoSegment,
+    Examination,
+    SensitiveMeta,
+    PatientExamination,
 )
-from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
 
 logger = logging.getLogger(__name__)
-
-
-class _PatientNameLike(Protocol):
-    first_name: str | None
-    last_name: str | None
-
-
-class _ExaminationTypeLike(Protocol):
-    name: str | None
-
-
-class _PatientExaminationLike(Protocol):
-    id: int
-    patient: _PatientNameLike | None
-    examination: _ExaminationTypeLike | None
-    date_start: datetime | date | None
-
-
-class _SensitiveMetaLike(Protocol):
-    id: int
-    patient_first_name: str | None
-    patient_last_name: str | None
-    examination_date: datetime | date | None
-    center: "_CenterLike | None"
-
-
-class _CenterLike(Protocol):
-    name: str | None
 
 
 class ExaminationStatsView(APIView):
@@ -59,40 +25,36 @@ class ExaminationStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request: Request) -> Response:
+    def get(self, request):
         try:
             # Examination-basierte Statistiken
             total_examinations = Examination.objects.count()
             patient_examinations_count = PatientExamination.objects.count()
 
             # Examination-Typ Verteilung
-            examination_types = list(
+            examination_types = (
                 Examination.objects.values("name")
                 .annotate(count=Count("id"))
                 .order_by("-count")[:10]
             )
 
             # Recent examinations
-            recent_examinations: list[PatientExamination] = list(
-                PatientExamination.objects.select_related(
-                    "patient", "examination"
-                ).order_by("-date_start")[:5]
-            )
+            recent_examinations = PatientExamination.objects.select_related(
+                "patient", "examination"
+            ).order_by("-date_start")[:5]
 
-            recent_data: list[dict[str, Any]] = []
-            for exam_obj in recent_examinations:
-                exam = cast(_PatientExaminationLike, exam_obj)
+            recent_data = []
+            for exam in recent_examinations:
                 patient = exam.patient
-                if patient is None:
+                if not patient:
                     logger.warning(f"Patient not found for examination ID {exam.id}")
                     continue
-                patient_name = (
-                    f"{patient.first_name or ''} {patient.last_name or ''}".strip()
-                )
                 recent_data.append(
                     {
                         "id": exam.id,
-                        "patient_name": patient_name if patient_name else "Unknown",
+                        "patient_name": f"{patient.first_name} {patient.last_name}".strip()
+                        if patient.first_name or patient.last_name
+                        else "Unknown",
                         "examination_type": exam.examination.name
                         if exam.examination
                         else "Unknown",
@@ -128,7 +90,7 @@ class VideoSegmentStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request: Request) -> Response:
+    def get(self, request):
         try:
             # Video-Segment Statistiken
             total_segments = LabelVideoSegment.objects.count()
@@ -177,7 +139,7 @@ class SensitiveMetaStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request: Request) -> Response:
+    def get(self, request):
         try:
             # SensitiveMeta Statistiken
             total_sensitive_meta = SensitiveMeta.objects.count()
@@ -206,17 +168,13 @@ class SensitiveMetaStatsView(APIView):
             recent_meta = SensitiveMeta.objects.select_related("center").order_by(
                 "-id"
             )[:5]
-            recent_data: list[dict[str, Any]] = []
-            for meta_obj in recent_meta:
-                meta = cast(_SensitiveMetaLike, meta_obj)
-                center = meta.center
+            recent_data = []
+            for meta in recent_meta:
                 recent_data.append(
                     {
                         "id": meta.id,
                         "patient_name": f"{meta.patient_first_name or 'Unknown'} {meta.patient_last_name or 'Unknown'}",
-                        "center": center.name
-                        if center is not None and center.name is not None
-                        else "Unknown",
+                        "center": meta.center.name if meta.center else "Unknown",
                         "examination_date": meta.examination_date.isoformat()
                         if meta.examination_date
                         else None,
@@ -251,7 +209,7 @@ class GeneralStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request: Request) -> Response:
+    def get(self, request):
         try:
             # Allgemeine Übersicht
             total_videos = VideoFile.objects.count()

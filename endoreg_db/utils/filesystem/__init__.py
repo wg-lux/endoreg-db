@@ -1,5 +1,5 @@
-"""Canonical typed filesystem-operation import surface."""
+"""Filesystem paths and typed file operation wrappers."""
 
-from .file_operations import atomic_move_file, safe_unlink_file
+from . import paths
 
-__all__ = ["atomic_move_file", "safe_unlink_file"]
+__all__ = ["paths"]

@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 from django.db import models
 from django.urls import reverse
 
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.security.hashs import get_pdf_hash
+from endoreg_db.utils.filesystem import paths as path_utils
 from endoreg_db.utils.storage import delete_field_file, save_local_file
-from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
-from endoreg_db.utils.structured_logging import emit_structured_event
+from endoreg_db.utils.storage.streaming import maybe_local_plaintext_path
+from endoreg_db.utils.observability.structured_logging import emit_structured_event
 
 from .types import ReportPdfArtifactKind
 
@@ -33,29 +33,17 @@ def _emit_report_file_event(
     storage_name: str | None = None,
     detail: str = "",
 ) -> None:
-    if source is not None:
-        emit_structured_event(
-            logger,
-            event,
-            status=status,
-            report_id=report.pk,
-            pdf_hash=report.pdf_hash,
-            artifact_kind=artifact_kind.value,
-            source_path=source.as_posix(),
-            storage_name=storage_name,
-            detail=detail,
-        )
-    else:
-        emit_structured_event(
-            logger,
-            event,
-            status=status,
-            report_id=report.pk,
-            pdf_hash=report.pdf_hash,
-            artifact_kind=artifact_kind.value,
-            storage_name=storage_name,
-            detail=detail,
-        )
+    emit_structured_event(
+        logger,
+        event,
+        status=status,
+        report_id=report.pk,
+        pdf_hash=report.pdf_hash,
+        artifact_kind=artifact_kind.value,
+        source_path=source,
+        storage_name=storage_name,
+        detail=detail,
+    )
 
 
 def get_raw_pdf_plaintext_path(report: "RawPdfFile") -> Path | None:
@@ -157,7 +145,7 @@ def verify_existing_raw_pdf_file(
     fallback_path = Path(fallback_file)
 
     field_file = report.file
-    file_name = field_file.name
+    file_name = field_file.name if field_file is not None else None
     if not file_name:
         raise FileNotFoundError("Raw report file field is empty.")
 
@@ -191,13 +179,26 @@ def verify_existing_raw_pdf_file(
         logger.error("Error during verify_existing_file for %s: %s", file_name, exc)
 
 
-def delete_raw_pdf_raw_file(
+def delete_raw_pdf_owned_files(
     report: "RawPdfFile",
     *,
     save: bool = False,
-) -> bool:
+) -> tuple[bool, bool]:
     raw_name = report.file.name if report.file and report.file.name else None
+    processed_name = (
+        report.processed_file.name
+        if report.processed_file and report.processed_file.name
+        else None
+    )
+
     raw_deleted = delete_field_file(report, "file", missing_ok=True, save=save)
+    processed_deleted = delete_field_file(
+        report,
+        "processed_file",
+        missing_ok=True,
+        save=save,
+    )
+
     if raw_deleted:
         _emit_report_file_event(
             "raw_pdf.file_deleted",
@@ -206,28 +207,6 @@ def delete_raw_pdf_raw_file(
             status="ok",
             storage_name=raw_name,
         )
-    return raw_deleted
-
-
-def delete_raw_pdf_owned_files(
-    report: "RawPdfFile",
-    *,
-    save: bool = False,
-) -> tuple[bool, bool]:
-    processed_name = (
-        report.processed_file.name
-        if report.processed_file and report.processed_file.name
-        else None
-    )
-
-    raw_deleted = delete_raw_pdf_raw_file(report, save=save)
-    processed_deleted = delete_field_file(
-        report,
-        "processed_file",
-        missing_ok=True,
-        save=save,
-    )
-
     if processed_deleted:
         _emit_report_file_event(
             "raw_pdf.file_deleted",
@@ -240,11 +219,7 @@ def delete_raw_pdf_owned_files(
     return raw_deleted, processed_deleted
 
 
-def delete_raw_pdf_with_owned_files(
-    report: "RawPdfFile",
-    using: str | None = None,
-    keep_parents: bool = False,
-) -> tuple[int, dict[str, int]]:
+def delete_raw_pdf_with_owned_files(report: "RawPdfFile", *args, **kwargs):
     raw_name = report.file.name if report.file and report.file.name else None
     processed_name = (
         report.processed_file.name
@@ -258,12 +233,12 @@ def delete_raw_pdf_with_owned_files(
     if processed_deleted:
         logger.info("Anonymized file removed from storage: %s", processed_name)
 
-    return models.Model.delete(report, using=using, keep_parents=keep_parents)
+    return models.Model.delete(report, *args, **kwargs)
 
 
 def get_raw_pdf_file_url(report: "RawPdfFile") -> str | None:
     try:
-        if not report.file or not report.file.name:
+        if not report.file or not report.file.name or report.pk is None:
             return None
         return reverse("api:pdf-stream", kwargs={"pk": report.pk})
     except (ValueError, AttributeError):
@@ -272,7 +247,11 @@ def get_raw_pdf_file_url(report: "RawPdfFile") -> str | None:
 
 def get_processed_pdf_file_url(report: "RawPdfFile") -> str | None:
     try:
-        if not report.processed_file or not report.processed_file.name:
+        if (
+            not report.processed_file
+            or not report.processed_file.name
+            or report.pk is None
+        ):
             return None
         stream_url = reverse("api:pdf-stream", kwargs={"pk": report.pk})
         return f"{stream_url}?type=processed"
@@ -286,4 +265,6 @@ def select_report_field_file(
 ) -> "FieldFile":
     if artifact_kind == ReportPdfArtifactKind.PROCESSED:
         return report.processed_file
-    return report.file
+    if artifact_kind == ReportPdfArtifactKind.RAW:
+        return report.file
+    raise ValueError(f"Unsupported report artifact kind: {artifact_kind}")

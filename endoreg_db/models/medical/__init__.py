@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
 from .event import Event, EventClassification, EventClassificationChoice
 
@@ -23,8 +22,6 @@ from .finding import (
     FindingInterventionType,
 )
 
-FindingMorphologyClassification = FindingClassification
-
 from .patient import (
     PatientExamination,
     PatientFinding,
@@ -38,7 +35,6 @@ from .patient import (
     PatientLabValue,
     PatientMedication,
     PatientMedicationSchedule,
-    MedicalLedgerWriteReceipt,
 )
 
 from .risk import (
@@ -117,7 +113,6 @@ __all__ = [
     ## Medication
     "PatientMedication",
     "PatientMedicationSchedule",
-    "MedicalLedgerWriteReceipt",
     # Organ
     "Organ",
     # Risk

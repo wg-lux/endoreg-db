@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Protocol, cast
+from typing import Any
 
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from lx_dtypes.models.contracts import ReportContext
-from lx_dtypes.models.contracts.json_types import JsonObject
 
-from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_file import (
     AnonymExaminationReport,
@@ -20,42 +17,6 @@ DOCUMENT_TYPE_VALUES = [
     DocumentTypeContract.histology_draft.value,
     DocumentTypeContract.histology_final.value,
 ]
-
-
-def _positive_id(value: int, *, field_name: str) -> int:
-    normalized = int(value)
-    if normalized <= 0:
-        raise ValueError(f"{field_name} must be a positive integer")
-    return normalized
-
-
-def _required_text(value: str, *, field_name: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError(f"{field_name} must not be empty")
-    return normalized
-
-
-class _SensitiveMetaLike(Protocol):
-    anonymized_text: str | None
-    patient_hash: str
-    examination_hash: str
-    pseudo_examination_id: int | None
-    pseudo_patient_id: int | None
-    center: Center | None
-
-
-class _AnonymExaminationReportLike(Protocol):
-    pk: int | None
-    patient: object | None
-    patient_examination: object | None
-    center: Center | None
-    sensitive_meta: object | None
-    type: object | None
-    text: str | None
-    meta: dict[str, object] | None
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
 
 
 def document_type_description(name: str) -> str:
@@ -73,37 +34,24 @@ def ensure_document_types() -> dict[str, DocumentTypeModel]:
     return document_types
 
 
-def resolve_report_text(
-    pdf: RawPdfFile,
-    payload: Mapping[str, object] | None = None,
-    *,
-    allow_empty: bool = False,
-) -> str:
+def resolve_report_text(pdf: RawPdfFile, payload: dict[str, Any] | None = None) -> str:
     payload_obj = payload or {}
 
-    anonymized_text = pdf.anonymized_text
-    if anonymized_text and anonymized_text.strip():
-        return anonymized_text
+    if isinstance(pdf.anonymized_text, str) and pdf.anonymized_text.strip():
+        return pdf.anonymized_text
 
     payload_text = payload_obj.get("anonymized_text")
     if isinstance(payload_text, str) and payload_text.strip():
         return payload_text
 
     sensitive_meta = pdf.sensitive_meta
-    if sensitive_meta is not None:
-        sensitive_meta_ref = cast(_SensitiveMetaLike, sensitive_meta)
-        if (
-            sensitive_meta_ref.anonymized_text
-            and sensitive_meta_ref.anonymized_text.strip()
-        ):
-            return sensitive_meta_ref.anonymized_text
+    if sensitive_meta and isinstance(sensitive_meta.anonymized_text, str):
+        if sensitive_meta.anonymized_text.strip():
+            return sensitive_meta.anonymized_text
 
-    if allow_empty:
-        return ""
-
-    raise ValueError(
-        "Cannot materialize a structured report without non-empty anonymized text"
-    )
+    if isinstance(pdf.text, str):
+        return pdf.text
+    return ""
 
 
 def resolve_pdf_document_type_name(
@@ -114,11 +62,7 @@ def resolve_pdf_document_type_name(
             return document_type_name.value
         return document_type_name
 
-    raw_meta: JsonObject
-    if isinstance(pdf.raw_meta, dict):
-        raw_meta = cast(JsonObject, pdf.raw_meta)
-    else:
-        raw_meta = cast(JsonObject, {})
+    raw_meta = pdf.raw_meta if isinstance(pdf.raw_meta, dict) else {}
     candidate = raw_meta.get("document_type")
     if isinstance(candidate, str) and candidate in DOCUMENT_TYPE_VALUES:
         return candidate
@@ -132,60 +76,47 @@ def resolve_pdf_document_type_name(
 def build_report_context_from_pdf(
     *,
     pdf: RawPdfFile,
-    payload: Mapping[str, object] | None = None,
+    payload: dict[str, Any] | None = None,
     document_type_name: str | DocumentTypeContract | None = None,
-    allow_empty_text: bool = False,
 ) -> ReportContext:
     if pdf.examination is None:
         raise ValueError(
             "pdf.examination must be explicitly resolved before report materialization"
         )
     patient = pdf.examination.patient
+    if patient is None:
+        raise ValueError(
+            "pdf.examination.patient must be resolved before report materialization"
+        )
     if pdf.examination_id is None:
         raise ValueError(
             "pdf.examination_id must be resolved before report materialization"
         )
 
-    if pdf.sensitive_meta is None:
-        raise ValueError(
-            "pdf.sensitive_meta must be resolved before report materialization"
-        )
-    sensitive_meta = cast(_SensitiveMetaLike, pdf.sensitive_meta)
+    sensitive_meta = pdf.sensitive_meta
     document_type = DocumentTypeContract(
         resolve_pdf_document_type_name(pdf, document_type_name=document_type_name)
     )
     return ReportContext(
-        patient_examination_id=_positive_id(
-            pdf.examination_id, field_name="pdf.examination_id"
-        ),
-        patient_id=_positive_id(patient.pk, field_name="patient.pk"),
+        patient_examination_id=pdf.examination_id,
+        patient_id=patient.pk,
         document_type=document_type,
-        anonymized_text=resolve_report_text(
-            pdf,
-            payload,
-            allow_empty=allow_empty_text,
-        ),
-        patient_hash=_required_text(
-            sensitive_meta.patient_hash,
-            field_name="sensitive_meta.patient_hash",
-        ),
-        examination_hash=_required_text(
-            sensitive_meta.examination_hash,
-            field_name="sensitive_meta.examination_hash",
-        ),
-        source_pdf_id=_positive_id(pdf.pk, field_name="pdf.pk"),
+        anonymized_text=resolve_report_text(pdf, payload),
+        patient_hash=getattr(sensitive_meta, "patient_hash", None),
+        examination_hash=getattr(sensitive_meta, "examination_hash", None),
+        source_pdf_id=pdf.pk,
     )
 
 
 def build_report_context_from_validation(
     *,
     pdf: RawPdfFile,
-    payload: Mapping[str, object] | None = None,
+    payload: dict[str, Any] | None = None,
     document_type_name: str | DocumentTypeContract,
 ) -> ReportContext:
-    if pdf.sensitive_meta is None:
+    sensitive_meta = pdf.sensitive_meta
+    if sensitive_meta is None:
         raise ValueError("pdf.sensitive_meta is required for validation context")
-    sensitive_meta = cast(_SensitiveMetaLike, pdf.sensitive_meta)
     if sensitive_meta.pseudo_examination_id is None:
         raise ValueError(
             "sensitive_meta.pseudo_examination_id is required for validation context"
@@ -199,52 +130,39 @@ def build_report_context_from_validation(
         resolve_pdf_document_type_name(pdf, document_type_name=document_type_name)
     )
     return ReportContext(
-        patient_examination_id=_positive_id(
-            sensitive_meta.pseudo_examination_id,
-            field_name="sensitive_meta.pseudo_examination_id",
-        ),
-        patient_id=_positive_id(
-            sensitive_meta.pseudo_patient_id,
-            field_name="sensitive_meta.pseudo_patient_id",
-        ),
+        patient_examination_id=sensitive_meta.pseudo_examination_id,
+        patient_id=sensitive_meta.pseudo_patient_id,
         document_type=document_type,
         anonymized_text=resolve_report_text(pdf, payload),
-        patient_hash=_required_text(
-            sensitive_meta.patient_hash,
-            field_name="sensitive_meta.patient_hash",
-        ),
-        examination_hash=_required_text(
-            sensitive_meta.examination_hash,
-            field_name="sensitive_meta.examination_hash",
-        ),
-        source_pdf_id=_positive_id(pdf.pk, field_name="pdf.pk"),
+        patient_hash=sensitive_meta.patient_hash,
+        examination_hash=sensitive_meta.examination_hash,
+        source_pdf_id=pdf.pk,
     )
 
 
 def upsert_anonym_examination_report_from_pdf(
     *,
     pdf: RawPdfFile,
-    payload: Mapping[str, object] | None = None,
+    payload: dict[str, Any] | None = None,
     document_type_name: str | None = None,
     validated_at_iso: str | None = None,
     source: str = "case_resolution",
-    allow_empty_text: bool = False,
 ) -> tuple[AnonymExaminationReport, bool]:
     report_context = build_report_context_from_pdf(
         pdf=pdf,
         payload=payload,
         document_type_name=document_type_name,
-        allow_empty_text=allow_empty_text,
     )
     document_type = ensure_document_types()[report_context.document_type.value]
+    sensitive_meta = pdf.sensitive_meta
+
     patient_examination = pdf.examination
     assert patient_examination is not None
     patient = patient_examination.patient
 
     center = pdf.center
-    sensitive_meta = pdf.sensitive_meta
     if center is None and sensitive_meta is not None:
-        center = cast(_SensitiveMetaLike, sensitive_meta).center
+        center = sensitive_meta.center
 
     report_obj = pdf.anonym_examination_report
     created = False
@@ -254,16 +172,18 @@ def upsert_anonym_examination_report_from_pdf(
 
     resolved_text = report_context.anonymized_text
 
-    report_obj_ref = cast(_AnonymExaminationReportLike, report_obj)
+    report_obj.patient = patient
+    report_obj.patient_examination = patient_examination
+    report_obj.center = center
+    report_obj.sensitive_meta = sensitive_meta
+    report_obj.type = document_type
+    report_obj.text = resolved_text
 
-    report_obj_ref.patient = patient
-    report_obj_ref.patient_examination = patient_examination
-    report_obj_ref.center = center
-    report_obj_ref.sensitive_meta = sensitive_meta
-    report_obj_ref.type = document_type
-    report_obj_ref.text = resolved_text
-
-    meta_obj = dict(report_obj_ref.meta or {})
+    meta_obj: dict[str, Any]
+    if isinstance(report_obj.meta, dict):
+        meta_obj = dict(report_obj.meta)
+    else:
+        meta_obj = {}
     meta_obj.update(
         {
             "source": source,
@@ -273,11 +193,11 @@ def upsert_anonym_examination_report_from_pdf(
     )
     if validated_at_iso is not None:
         meta_obj["validated_at"] = validated_at_iso
-    report_obj_ref.meta = meta_obj
-    report_obj_ref.save()
+    report_obj.meta = meta_obj
+    report_obj.save()
 
     update_fields: list[str] = []
-    if pdf.anonym_examination_report_id != report_obj_ref.pk:
+    if pdf.anonym_examination_report_id != report_obj.id:
         pdf.anonym_examination_report = report_obj
         update_fields.append("anonym_examination_report")
     if getattr(pdf, "anonymized_text", None) != resolved_text:

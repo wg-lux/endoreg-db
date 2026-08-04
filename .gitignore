@@ -1,8 +1,6 @@
 result
 result/
 *result
-results/
-.snakemake/
 .ruff_cache/
 .devenv
 untracked_notes.md
@@ -21,7 +19,6 @@ staticfiles/
 /lx-report-generator/*
 .lx-terminology-editor/
 /lx-terminology-editor/*
-*.safetensors
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -85,7 +82,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-profile/
+
 # Translations
 *.mo
 *.pot
@@ -210,12 +207,3 @@ lx-ai-core/
 lx-report-generator/
 lx-terminology-editor/
 tools/report_pdf_renderer_rust/
-*.safetensors
-
-*.bak
-
-# Runtime-only feature coordination leases
-/feature-tracking/.locks/
-/feature-tracking/.messages/
-
-*callgrind.out.*

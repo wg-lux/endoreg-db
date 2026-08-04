@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
@@ -8,15 +6,15 @@ if TYPE_CHECKING:
     from endoreg_db.models import ReportReaderConfig
 
 
-class ReportReaderFlagManager(models.Manager["ReportReaderFlag"]):
-    def get_by_natural_key(self, name: str) -> "ReportReaderFlag":
+class ReportReaderFlagManager(models.Manager):
+    def get_by_natural_key(self, name):
         return self.get(name=name)
 
 
 class ReportReaderFlag(models.Model):
     objects = ReportReaderFlagManager()
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    value: models.CharField[Any, Any] = models.CharField(max_length=255)
+    name = models.CharField(max_length=255, unique=True)
+    value = models.CharField(max_length=255)
 
     if TYPE_CHECKING:
 
@@ -41,8 +39,8 @@ class ReportReaderFlag(models.Model):
             self,
         ) -> models.QuerySet["ReportReaderConfig"]: ...
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return self.name

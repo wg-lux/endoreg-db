@@ -1,19 +1,44 @@
 from django.urls import path
-from endoreg_db.views.examination.get_indications import (
-    get_indication_choices,
+from endoreg_db.views import (
+    get_findings_for_examination,
+    get_classifications_for_finding,
+    get_classification_choices,
+    get_classifications_for_examination,
     get_indications_for_examination,
-)
-from endoreg_db.views.examination.get_interventions import (
+    get_indication_choices,
     get_interventions_for_examination,
     get_interventions_for_finding,
-)
-from endoreg_db.views import (
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
 )
 
-urlpatterns = [
+urlpatterns = [  # URL patterns for ExaminationForm.vue API calls
+    path(
+        "examinations/<int:examination_id>/findings/",
+        get_findings_for_examination,
+        name="get_findings_for_examination",
+    ),
+    path(
+        "findings/<int:finding_id>/classifications/",
+        get_classifications_for_finding,
+        name="get_classifications_for_finding",
+    ),
+    path(
+        "classifications/<int:classification_id>/choices/",
+        get_classification_choices,
+        name="get_choices_for_classification",
+    ),
+    path(
+        "examinations/<int:exam_id>/indications/",
+        get_indications_for_examination,
+        name="get_indications_for_examination",
+    ),
+    path(
+        "indications/<int:indication_id>/choices/",
+        get_indication_choices,
+        name="get_indication_choices",
+    ),
     # TODO: Clearly Distinguish between Examination (the template) and PatientExamination (the instance).
     # The views below handle PatientExamination instances, which represent a specific examination performed on a patient.
     # The URL names are updated to reflect this, using the 'patient_examination_*' prefix for clarity.
@@ -33,24 +58,25 @@ urlpatterns = [
         PatientExaminationListView.as_view(),
         name="patient_examination_list",
     ),
+    # NEW ENDPOINTS FOR RESTRUCTURED FRONTEND
     path(
-        "examinations/<int:exam_id>/indications/",
-        get_indications_for_examination,
-        name="examination_indications",
+        "patient-examinations/<int:exam_id>/classifications/",
+        get_classifications_for_examination,
+        name="get_classifications_for_examination",
     ),
     path(
-        "indications/<int:indication_id>/choices/",
-        get_indication_choices,
-        name="indication_choices",
+        "patient-examinations/<int:examination_id>/findings/",
+        get_findings_for_examination,
+        name="get_patient_examination_findings",
     ),
     path(
         "examinations/<int:exam_id>/interventions/",
         get_interventions_for_examination,
-        name="examination_interventions",
+        name="get_interventions_for_examination",
     ),
     path(
         "examinations/<int:exam_id>/findings/<int:finding_id>/interventions/",
         get_interventions_for_finding,
-        name="examination_finding_interventions",
+        name="get_interventions_for_finding",
     ),
 ]

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-# pyright: reportUnknownVariableType=false
-
 import threading
 import uuid
 from datetime import timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
-from typing import Any, cast
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
@@ -20,9 +17,8 @@ from endoreg_db.models import (
     RawPdfFile,
     UploadJob,
 )
-from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.services.hub.ingest import (
-    _run_video_upload_import_job,  # pyright: ignore[reportPrivateUsage]
+    _run_video_upload_import_job,
     create_or_reuse_upload_job,
     process_preanonymized_watcher_file,
     process_watcher_file,
@@ -37,11 +33,6 @@ from endoreg_db.utils.file_operations import (
 @override_settings(MEDIA_ROOT=(Path(__file__).parent / "test_media").as_posix())
 class IngestIdempotencyQuarantineTests(TransactionTestCase):
     test_media_dir: Path
-    center: Center
-    pdf_content: bytes
-    video_content: bytes
-    quarantine_dir: Path
-    quarantine_patch: object
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -248,7 +239,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         )
         self.assertEqual(job_reingest.status, UploadJob.Status.PENDING)
 
-    def test_process_upload_job_retains_video_and_schedules_retry_on_failure(self):
+    def test_process_upload_job_quarantines_video_on_failure(self):
         filename = "failed_upload.mp4"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
@@ -273,7 +264,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+                "endoreg_db.services.hub.ingest.VideoImportService.import_and_anonymize",
                 side_effect=ValueError("Test processing error"),
             ),
         ):
@@ -282,63 +273,18 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertFalse(result)
 
         upload_job.refresh_from_db()
-        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
-        self.assertTrue(upload_job.retryable)
-        self.assertEqual(upload_job.retry_count, 1)
-        self.assertIsNotNone(upload_job.next_retry_at)
+        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Test processing error", upload_job.error_detail)
-        self.assertTrue(upload_job.source_file_persisted)
-        self.assertTrue(temp_file_path.exists())
-        self.assertFalse((self.quarantine_dir / filename).exists())
-        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
 
-    def test_insufficient_storage_retains_source_and_schedules_retry(self):
-        filename = "storage_blocked_upload.mp4"
-        temp_file_path = self._create_temp_file(filename, self.video_content)
-        upload_job = UploadJob.objects.create(
-            file=SimpleUploadedFile(
-                name=filename,
-                content=self.video_content,
-                content_type="video/mp4",
-            ),
-            content_type="video/mp4",
-            source_center=self.center,
-            source_system="test",
-            original_filename=filename,
+        quarantined_path = self.quarantine_dir / filename
+        self.assertTrue(quarantined_path.exists())
+        self.assertFalse(temp_file_path.exists())
+        self.assertEqual(quarantined_path.read_bytes(), self.pdf_content)
+        self.assertIn("quarantined_path", upload_job.processing_provenance)
+        self.assertEqual(
+            upload_job.processing_provenance["quarantined_path"],
+            str(quarantined_path),
         )
-        upload_job.file.name = temp_file_path.relative_to(
-            self.test_media_dir
-        ).as_posix()
-        upload_job.save()
-
-        with (
-            patch(
-                "endoreg_db.services.hub.ingest._default_processor_name",
-                return_value="processor",
-            ),
-            patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
-                side_effect=InsufficientStorageError(
-                    "Insufficient pipeline storage. Required: 11.1 GB, "
-                    "Available: 2.8 GB",
-                    required_space=11_100_000_000,
-                    available_space=2_800_000_000,
-                ),
-            ),
-        ):
-            result = _run_video_upload_import_job(str(upload_job.id))
-
-        self.assertFalse(result)
-        upload_job.refresh_from_db()
-        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
-        self.assertTrue(upload_job.retryable)
-        self.assertEqual(upload_job.retry_count, 1)
-        self.assertGreaterEqual(upload_job.max_retries, 96)
-        self.assertIsNotNone(upload_job.next_retry_at)
-        self.assertTrue(upload_job.source_file_persisted)
-        self.assertTrue(temp_file_path.exists())
-        self.assertFalse((self.quarantine_dir / filename).exists())
-        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
 
     def test_process_watcher_file_queues_processing_and_removes_watched_source(self):
         filename = "successful_watcher_report.pdf"
@@ -367,11 +313,10 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         filename = "fallback_watcher_report.pdf"
         temp_file_path = self._create_temp_file(filename, self.pdf_content)
 
-        def _inline_fallback(**kwargs: Any) -> UploadJob:
-            upload_job = cast(UploadJob, kwargs["upload_job"])
-            watched_path = cast(Path, kwargs["watched_path"])
+        def _inline_fallback(**kwargs):
+            upload_job = kwargs["upload_job"]
             upload_job.mark_completed()
-            safe_unlink_file(watched_path, missing_ok=True)
+            safe_unlink_file(kwargs["watched_path"], missing_ok=True)
             return upload_job
 
         with (
@@ -409,28 +354,23 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 "endoreg_db.services.hub.ingest._run_watcher_upload_job_inline",
                 side_effect=AssertionError("inline fallback must be disabled"),
             ),
+            self.assertRaises(ConnectionRefusedError),
         ):
-            upload_job = process_watcher_file(
+            process_watcher_file(
                 file_path=temp_file_path,
                 file_type="report",
                 center=self.center,
             )
 
-        upload_job.refresh_from_db()
-        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
-        self.assertEqual(
-            upload_job.error_code,
-            UploadJob.ErrorCode.DISPATCH_UNAVAILABLE,
-        )
-        self.assertTrue(upload_job.retryable)
-        self.assertEqual(upload_job.retry_count, 1)
-        self.assertIsNotNone(upload_job.next_retry_at)
+        upload_job = UploadJob.objects.order_by("-created_at").first()
+        self.assertIsNotNone(upload_job)
+        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
+        self.assertIn("broker down", upload_job.error_detail)
         quarantined_path = self.quarantine_dir / filename
-        self.assertFalse(quarantined_path.exists())
+        self.assertTrue(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
-        self.assertTrue(upload_job.file)
 
-    def test_process_watcher_file_retains_managed_source_on_handoff_failure(self):
+    def test_process_watcher_file_quarantines_on_failure(self):
         filename = "failed_watcher_video.mp4"
         temp_file_path = self._create_temp_file(filename, self.video_content)
         EndoscopyProcessor.objects.create(name="test_processor")
@@ -462,20 +402,21 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
-        assert upload_job is not None
-        self.assertEqual(upload_job.status, UploadJob.Status.RETRYING)
-        self.assertTrue(upload_job.retryable)
-        self.assertEqual(upload_job.retry_count, 1)
-        self.assertIsNotNone(upload_job.next_retry_at)
+        self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Watcher dispatch error", upload_job.error_detail)
 
         quarantined_path = self.quarantine_dir / filename
-        self.assertFalse(quarantined_path.exists())
+        self.assertTrue(quarantined_path.exists())
         self.assertFalse(temp_file_path.exists())
-        self.assertNotIn("quarantined_path", upload_job.processing_provenance)
-        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.PENDING)
-        self.assertTrue(upload_job.source_file_persisted)
-        self.assertTrue(upload_job.file.name)
+        self.assertEqual(quarantined_path.read_bytes(), self.video_content)
+        self.assertIn("quarantined_path", upload_job.processing_provenance)
+        self.assertEqual(
+            upload_job.processing_provenance["quarantined_path"],
+            str(quarantined_path),
+        )
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
+        self.assertFalse(upload_job.source_file_persisted)
+        self.assertEqual(upload_job.file.name, "")
 
     def test_process_preanonymized_watcher_file_quarantines_on_failure(self):
         filename = "failed_preanonymized.mp4"
@@ -483,7 +424,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         video_path = self._create_temp_file(filename, self.video_content)
         sidecar_path = self._create_temp_file(
             sidecar_filename,
-            b'{"patient_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+            b'{"patient_hash": "test"}',
         )
 
         with (
@@ -512,7 +453,6 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         upload_job = UploadJob.objects.order_by("-created_at").first()
         self.assertIsNotNone(upload_job)
-        assert upload_job is not None
         self.assertEqual(upload_job.status, UploadJob.Status.ERROR)
         self.assertIn("Preanonymized processing error", upload_job.error_detail)
 
@@ -532,7 +472,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.assertFalse(sidecar_path.exists())
         self.assertEqual(
             quarantined_sidecar_path.read_bytes(),
-            b'{"patient_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
+            b'{"patient_hash": "test"}',
         )
         self.assertIn("quarantined_sidecar_path", upload_job.processing_provenance)
         self.assertEqual(
@@ -606,10 +546,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         filename = "concurrent_upload.pdf"
         uploaded_file_content = b"concurrent_pdf_data"
 
-        def create_job_in_thread(
-            thread_id: int,
-            results_list: list[tuple[uuid.UUID | str, bool]],
-        ) -> None:
+        def create_job_in_thread(thread_id, results_list):
             thread_uploaded_file = SimpleUploadedFile(
                 name=f"{filename}_{thread_id}",
                 content=uploaded_file_content,
@@ -630,8 +567,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 results_list.append((f"Error: {e}", False))
 
         num_threads = 5
-        results: list[tuple[uuid.UUID | str, bool]] = []
-        threads: list[threading.Thread] = []
+        results = []
+        threads = []
         for i in range(num_threads):
             thread = threading.Thread(target=create_job_in_thread, args=(i, results))
             threads.append(thread)
@@ -640,7 +577,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         for thread in threads:
             thread.join()
 
-        successful_jobs: list[tuple[uuid.UUID, bool]] = [
+        successful_jobs = [
             (job_id, created)
             for job_id, created in results
             if isinstance(job_id, uuid.UUID)

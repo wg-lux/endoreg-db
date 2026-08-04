@@ -1,6 +1,5 @@
 from django.test import TestCase
 from logging import getLogger
-from typing import Protocol, cast
 
 from endoreg_db.models import (
     Label,
@@ -12,13 +11,6 @@ logger.debug("Starting test for Patient model")
 
 
 class LabelModelTest(TestCase):
-    label_type: LabelType
-    outside_label: Label
-    low_quality_label: Label
-
-    class _LabelLike(Protocol):
-        label_type: LabelType
-
     @classmethod
     def setUpTestData(cls):
         cls.label_type = LabelType.objects.create(name="classification")
@@ -54,8 +46,7 @@ class LabelModelTest(TestCase):
         ).order_by("name")
         for label in labels:
             self.assertIsInstance(label, Label)
-            typed_label = cast(LabelModelTest._LabelLike, label)
-            self.assertIsInstance(typed_label.label_type, LabelType)
+            self.assertIsInstance(label.label_type, LabelType)
 
 
 class LabelSetModelTest(TestCase):

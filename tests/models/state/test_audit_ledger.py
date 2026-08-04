@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from django.core.exceptions import ValidationError
 
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
 
@@ -30,44 +29,6 @@ def test_audit_ledger_first_insert_initializes_head_from_zero_hash():
     assert head.current_hash == entry.hash
     assert head.last_entry == entry
     assert AuditLedger.verify_chain() is True
-
-
-@pytest.mark.django_db
-def test_audit_ledger_canonicalizes_nested_json_on_direct_save():
-    entry = AuditLedger.objects.create(
-        object_type="SensitiveMeta",
-        object_pk="case-1",
-        action="identity_committed",
-        data={"nested": {"ok": True}, "items": [1, None, "value"]},
-    )
-
-    assert entry.data == {
-        "nested": {"ok": True},
-        "items": [1, None, "value"],
-    }
-    entry.refresh_from_db()
-    assert entry.data == {
-        "nested": {"ok": True},
-        "items": [1, None, "value"],
-    }
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    "invalid_data",
-    [None, ["not-an-object"], {"bad": (1, 2)}, {"bad": float("nan")}, {1: "bad"}],
-)
-def test_audit_ledger_rejects_invalid_data_on_direct_save(invalid_data: object):
-    with pytest.raises(ValidationError) as exc_info:
-        AuditLedger.objects.create(
-            object_type="SensitiveMeta",
-            object_pk="case-1",
-            action="identity_committed",
-            data=invalid_data,
-        )
-
-    assert "data" in exc_info.value.message_dict
-    assert AuditLedger.objects.count() == 0
 
 
 @pytest.mark.django_db

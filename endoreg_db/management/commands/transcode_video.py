@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import json
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from pydantic import ValidationError
+from django.core.management.base import BaseCommand, CommandError
 
 from endoreg_db.services.video_format_reconciliation import VIDEO_EXTENSIONS
 from endoreg_db.services.video_transcoding import transcode_video_directory
-from lx_dtypes.models.contracts.management_command import (
-    TranscodeVideoCommandOptionsPayload,
-)
 
 
 class Command(BaseCommand):
@@ -18,7 +14,7 @@ class Command(BaseCommand):
         "the configured system video standard."
     )
 
-    def add_arguments(self, parser: CommandParser) -> None:
+    def add_arguments(self, parser) -> None:
         parser.add_argument(
             "--input-dir",
             required=True,
@@ -94,34 +90,25 @@ class Command(BaseCommand):
             help="Emit the summary as JSON.",
         )
 
-    def handle(self, *args: object, **options: object) -> None:
-        try:
-            options_payload = TranscodeVideoCommandOptionsPayload.model_validate(
-                options
-            )
-        except ValidationError as exc:
-            raise CommandError(str(exc)) from exc
-
-        filename = options_payload.filename or None
-        extensions = options_payload.extension or tuple(VIDEO_EXTENSIONS)
+    def handle(self, *args, **options) -> None:
         try:
             summary = transcode_video_directory(
-                input_dir=options_payload.input_dir,
-                output_dir=options_payload.output_dir,
-                filename=filename,
-                recursive=options_payload.recursive,
-                overwrite=options_payload.overwrite,
-                dry_run=options_payload.dry_run,
-                allow_unmanaged_output=options_payload.allow_unmanaged_output,
-                force_cpu=options_payload.force_cpu,
-                quality_mode=options_payload.quality_mode,
-                extensions=extensions,
+                input_dir=options["input_dir"],
+                output_dir=options["output_dir"],
+                filename=options["filename"],
+                recursive=bool(options["recursive"]),
+                overwrite=bool(options["overwrite"]),
+                dry_run=bool(options["dry_run"]),
+                allow_unmanaged_output=bool(options["allow_unmanaged_output"]),
+                force_cpu=bool(options["force_cpu"]),
+                quality_mode=str(options["quality_mode"]),
+                extensions=tuple(options["extension"] or VIDEO_EXTENSIONS),
             )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc
 
         payload = summary.as_dict()
-        if options_payload.json_output:
+        if options["json"]:
             self.stdout.write(json.dumps(payload, indent=2, sort_keys=True))
         else:
             self.stdout.write(
@@ -139,7 +126,7 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Video transcode failed for {summary.failed_files} file(s)."
             )
-        if options_payload.fail_on_skipped and summary.skipped_files:
+        if options["fail_on_skipped"] and summary.skipped_files:
             raise CommandError(
                 f"Video transcode skipped {summary.skipped_files} selected file(s)."
             )

@@ -8,16 +8,11 @@ future disk-backed cache can slot in without rewriting callers.
 
 from __future__ import annotations
 
-# pyright: reportConstantRedefinition=false
-
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import wraps
 from threading import RLock
 from typing import Any, Callable, Dict, Hashable, Iterator, Optional
-
-from _pytest.config import Config
-from _pytest.terminal import TerminalReporter
 
 import logging
 import os
@@ -177,11 +172,7 @@ def get_global_cache_manager() -> Optional[CacheManager]:
     return GLOBAL_CACHE_MANAGER
 
 
-def pytest_terminal_summary(
-    terminalreporter: TerminalReporter,
-    exitstatus: int,
-    config: Config,
-) -> None:
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
     manager = GLOBAL_CACHE_MANAGER
     if manager is None:
         return

@@ -4,7 +4,7 @@ import importlib.metadata
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Iterable, Literal, Mapping, Sequence, cast
+from typing import Any, Iterable, Literal, Mapping, Sequence
 
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import (
@@ -22,20 +22,9 @@ from django.db.models import (
     When,
     Window,
 )
-from django.db.models.query import QuerySet
 from django.db.models.functions import RowNumber
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from lx_dtypes.models.contracts.anonymization_metrics import (
-    AnonymizationFieldQualityPayload,
-    AnonymizationMetricsFiltersPayload,
-    AnonymizationMetricsPayload,
-    AnonymizationMetricsQueryBoundsPayload,
-    AnonymizationPhiRegionMetricsPayload,
-    AnonymizationQualityMetricsPayload,
-    AnonymizationWorkflowMetricsPayload,
-)
-from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
@@ -51,16 +40,9 @@ from endoreg_db.models.state.video import VideoState
 from endoreg_db.models.state.anonymization import AnonymizationState
 
 MediaType = Literal["video", "pdf"]
-ValidationMetricQuerySet = QuerySet[AnonymizationValidationMetric]
-FieldMetricQuerySet = QuerySet[AnonymizationFieldMetric]
-VideoFileQuerySet = QuerySet[VideoFile]
-RawPdfFileQuerySet = QuerySet[RawPdfFile]
-FrameBoxAnnotationQuerySet = QuerySet[FrameBoxAnnotation]
-UploadJobQuerySet = QuerySet[UploadJob]
 PHI_REGION_LABEL_NAME = "phi_region"
 PHI_REGION_INFORMATION_SOURCE_NAME = "lx_anonymizer_phi_detector"
 PHI_REGION_ANNOTATOR = "system:lx_anonymizer"
-PHI_REGION_IOU_THRESHOLD = 0.3
 MAX_METRICS_WINDOW_DAYS = 31
 MAX_PHI_REGION_MATCH_ANNOTATIONS = 5000
 
@@ -138,21 +120,21 @@ def parse_metrics_filters(query_params: Mapping[str, Any]) -> MetricsFilters:
     )
 
 
-def build_anonymization_metrics_payload(filters: MetricsFilters) -> JsonObject:
+def build_anonymization_metrics_payload(filters: MetricsFilters) -> dict[str, Any]:
     _validate_metrics_window(date_from=filters.date_from, date_to=filters.date_to)
     validation_qs = _filtered_validation_metrics(filters)
-    return AnonymizationMetricsPayload(
-        schema_version="1.0",
-        filters=_serialize_filters(filters),
-        query_bounds=AnonymizationMetricsQueryBoundsPayload(
-            max_window_days=MAX_METRICS_WINDOW_DAYS,
-            max_phi_region_match_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
-        ),
-        workflow=_workflow_payload(filters=filters, validation_qs=validation_qs),
-        field_quality=_field_quality_payload(validation_qs),
-        phi_regions=_phi_region_payload(filters),
-        quality=_quality_payload(validation_qs),
-    ).to_json_object()
+    return {
+        "schema_version": "1.0",
+        "filters": _serialize_filters(filters),
+        "query_bounds": {
+            "max_window_days": MAX_METRICS_WINDOW_DAYS,
+            "max_phi_region_match_annotations": MAX_PHI_REGION_MATCH_ANNOTATIONS,
+        },
+        "workflow": _workflow_payload(filters=filters, validation_qs=validation_qs),
+        "field_quality": _field_quality_payload(validation_qs),
+        "phi_regions": _phi_region_payload(filters),
+        "quality": _quality_payload(validation_qs),
+    }
 
 
 def capture_sensitive_meta_metric_values(
@@ -244,20 +226,18 @@ def _validate_metrics_window(
         )
 
 
-def _serialize_filters(filters: MetricsFilters) -> AnonymizationMetricsFiltersPayload:
-    if filters.date_from is None or filters.date_to is None:
-        raise ValueError("date_from and date_to are required for metrics payloads.")
-    return AnonymizationMetricsFiltersPayload(
-        date_from=filters.date_from,
-        date_to=filters.date_to,
-        media_type=filters.media_type,
-        center_id=filters.center_id,
-        document_type=filters.document_type or None,
-        source_system=filters.source_system or None,
-    )
+def _serialize_filters(filters: MetricsFilters) -> dict[str, Any]:
+    return {
+        "date_from": filters.date_from.isoformat() if filters.date_from else None,
+        "date_to": filters.date_to.isoformat() if filters.date_to else None,
+        "media_type": filters.media_type,
+        "center_id": filters.center_id,
+        "document_type": filters.document_type or None,
+        "source_system": filters.source_system or None,
+    }
 
 
-def _filtered_validation_metrics(filters: MetricsFilters) -> ValidationMetricQuerySet:
+def _filtered_validation_metrics(filters: MetricsFilters):
     qs = AnonymizationValidationMetric.objects.all()
     if filters.date_from is not None:
         qs = qs.filter(validated_at__gte=filters.date_from)
@@ -274,9 +254,7 @@ def _filtered_validation_metrics(filters: MetricsFilters) -> ValidationMetricQue
     return qs
 
 
-def _workflow_payload(
-    *, filters: MetricsFilters, validation_qs: ValidationMetricQuerySet
-) -> AnonymizationWorkflowMetricsPayload:
+def _workflow_payload(*, filters: MetricsFilters, validation_qs) -> dict[str, Any]:
     status_counts = {state.value: 0 for state in AnonymizationState}
     if not filters.media_type or filters.media_type == "video":
         _merge_status_counts(
@@ -299,51 +277,38 @@ def _workflow_payload(
         )
 
     lost_uploads = _filtered_lost_upload_jobs(filters).count()
-    validation_aggregates = cast(
-        Mapping[str, object],
-        validation_qs.aggregate(
-            validation_event_count=Count("id"),
-            avg_seconds_to_validation=Avg("seconds_to_validation"),
-            min_seconds_to_validation=Min("seconds_to_validation"),
-            max_seconds_to_validation=Max("seconds_to_validation"),
-        ),
+    validation_aggregates = validation_qs.aggregate(
+        validation_event_count=Count("id"),
+        avg_seconds_to_validation=Avg("seconds_to_validation"),
+        min_seconds_to_validation=Min("seconds_to_validation"),
+        max_seconds_to_validation=Max("seconds_to_validation"),
     )
-    return AnonymizationWorkflowMetricsPayload(
-        status_counts=status_counts,
-        pending_validation_count=status_counts.get(
+    return {
+        "status_counts": status_counts,
+        "pending_validation_count": status_counts.get(
             AnonymizationState.DONE_PROCESSING_ANONYMIZATION.value,
             0,
         ),
-        failed_count=status_counts.get(AnonymizationState.FAILED.value, 0),
-        lost_count=lost_uploads,
-        failed_or_lost_count=status_counts.get(
+        "failed_count": status_counts.get(AnonymizationState.FAILED.value, 0),
+        "lost_count": lost_uploads,
+        "failed_or_lost_count": status_counts.get(
             AnonymizationState.FAILED.value,
             0,
         )
         + lost_uploads,
-        validation_event_count=_int_from_mapping(
-            validation_aggregates,
-            "validation_event_count",
+        "validation_event_count": int(
+            validation_aggregates["validation_event_count"] or 0
         ),
-        avg_seconds_to_validation=_optional_float_from_mapping(
-            validation_aggregates,
-            "avg_seconds_to_validation",
-        ),
-        min_seconds_to_validation=_optional_float_from_mapping(
-            validation_aggregates,
-            "min_seconds_to_validation",
-        ),
-        max_seconds_to_validation=_optional_float_from_mapping(
-            validation_aggregates,
-            "max_seconds_to_validation",
-        ),
-        median_seconds_to_validation=_database_median_seconds_to_validation(
+        "avg_seconds_to_validation": validation_aggregates["avg_seconds_to_validation"],
+        "min_seconds_to_validation": validation_aggregates["min_seconds_to_validation"],
+        "max_seconds_to_validation": validation_aggregates["max_seconds_to_validation"],
+        "median_seconds_to_validation": _database_median_seconds_to_validation(
             validation_qs
         ),
-    )
+    }
 
 
-def _filtered_video_queryset(filters: MetricsFilters) -> VideoFileQuerySet:
+def _filtered_video_queryset(filters: MetricsFilters):
     qs = VideoFile.objects.select_related("state", "center", "sensitive_meta")
     if filters.center_id is not None:
         qs = qs.filter(center_id=filters.center_id)
@@ -358,7 +323,7 @@ def _filtered_video_queryset(filters: MetricsFilters) -> VideoFileQuerySet:
     return qs
 
 
-def _filtered_pdf_queryset(filters: MetricsFilters) -> RawPdfFileQuerySet:
+def _filtered_pdf_queryset(filters: MetricsFilters):
     qs = RawPdfFile.objects.select_related(
         "state",
         "center",
@@ -399,7 +364,7 @@ def _source_media_filter(
 
 
 def _aggregate_media_status_counts(
-    queryset: VideoFileQuerySet | RawPdfFileQuerySet, *, status_case: Case
+    queryset: Any, *, status_case: Case
 ) -> dict[str, int]:
     return {
         str(row["anonymization_status"]): int(row["total"] or 0)
@@ -456,7 +421,7 @@ def _pdf_status_case() -> Case:
     )
 
 
-def _filtered_lost_upload_jobs(filters: MetricsFilters) -> UploadJobQuerySet:
+def _filtered_lost_upload_jobs(filters: MetricsFilters):
     qs = UploadJob.objects.filter(status=UploadJob.Status.LOST)
     if filters.center_id is not None:
         qs = qs.filter(source_center_id=filters.center_id)
@@ -469,10 +434,8 @@ def _filtered_lost_upload_jobs(filters: MetricsFilters) -> UploadJobQuerySet:
     return qs
 
 
-def _field_quality_payload(
-    validation_qs: ValidationMetricQuerySet,
-) -> list[AnonymizationFieldQualityPayload]:
-    field_qs: FieldMetricQuerySet = AnonymizationFieldMetric.objects.filter(
+def _field_quality_payload(validation_qs) -> list[dict[str, Any]]:
+    field_qs = AnonymizationFieldMetric.objects.filter(
         validation_metric__in=validation_qs
     )
     aggregates_by_field = {
@@ -488,56 +451,44 @@ def _field_quality_payload(
             mean_similarity=Avg("similarity_score"),
         )
     }
-    payload: list[AnonymizationFieldQualityPayload] = []
+    payload: list[dict[str, Any]] = []
     for field_name in EVALUATED_FIELDS:
-        aggregates = cast(
-            Mapping[str, object],
-            aggregates_by_field.get(field_name, {}),
-        )
-        support = _int_from_mapping(aggregates, "support")
-        changed_count = _int_from_mapping(aggregates, "changed_count")
-        exact_match_count = _int_from_mapping(aggregates, "exact_match_count")
+        aggregates = aggregates_by_field.get(field_name, {})
+        support = int(aggregates.get("support") or 0)
+        changed_count = int(aggregates.get("changed_count") or 0)
+        exact_match_count = int(aggregates.get("exact_match_count") or 0)
         payload.append(
-            AnonymizationFieldQualityPayload(
-                field_name=field_name,
-                support=support,
-                changed_count=changed_count,
-                changed_rate=_safe_rate(changed_count, support),
-                exact_match_count=exact_match_count,
-                exact_match_rate=_safe_rate(exact_match_count, support),
-                mean_similarity=_optional_float_from_mapping(
-                    aggregates,
-                    "mean_similarity",
+            {
+                "field_name": field_name,
+                "support": support,
+                "changed_count": changed_count,
+                "changed_rate": _safe_rate(changed_count, support),
+                "exact_match_count": exact_match_count,
+                "exact_match_rate": _safe_rate(exact_match_count, support),
+                "mean_similarity": aggregates.get("mean_similarity"),
+                "missing_after_validation_count": int(
+                    aggregates.get("missing_after_validation_count") or 0
                 ),
-                missing_after_validation_count=_int_from_mapping(
-                    aggregates,
-                    "missing_after_validation_count",
-                ),
-            )
+            }
         )
     return payload
 
 
-def _quality_payload(
-    validation_qs: ValidationMetricQuerySet,
-) -> AnonymizationQualityMetricsPayload:
-    aggregates = cast(
-        Mapping[str, object],
-        validation_qs.aggregate(
-            evaluated_event_count=Count(
-                "id",
-                filter=~Q(sensitive_meta_deletion_status=""),
-            ),
-            residual_phi_detected_count=Count(
-                "id",
-                filter=Q(residual_phi_detected=True),
-            ),
-            residual_ocr_match_count=Sum("residual_ocr_match_count"),
-            phi_region_false_negative_count=Sum("phi_region_false_negative_count"),
-            raw_artifact_residual_count=Sum("raw_artifact_residual_count"),
-            missing_sensitive_meta_deletion_count=Sum(
-                "missing_sensitive_meta_deletion_count"
-            ),
+def _quality_payload(validation_qs) -> dict[str, Any]:
+    aggregates = validation_qs.aggregate(
+        evaluated_event_count=Count(
+            "id",
+            filter=~Q(sensitive_meta_deletion_status=""),
+        ),
+        residual_phi_detected_count=Count(
+            "id",
+            filter=Q(residual_phi_detected=True),
+        ),
+        residual_ocr_match_count=Sum("residual_ocr_match_count"),
+        phi_region_false_negative_count=Sum("phi_region_false_negative_count"),
+        raw_artifact_residual_count=Sum("raw_artifact_residual_count"),
+        missing_sensitive_meta_deletion_count=Sum(
+            "missing_sensitive_meta_deletion_count"
         ),
     )
     status_counts = {
@@ -556,47 +507,38 @@ def _quality_payload(
             .annotate(total=Count("id"))
         )
     }
-    return AnonymizationQualityMetricsPayload(
-        evaluated_event_count=_int_from_mapping(aggregates, "evaluated_event_count"),
-        residual_phi_detected_count=_int_from_mapping(
-            aggregates,
-            "residual_phi_detected_count",
+    return {
+        "evaluated_event_count": int(aggregates["evaluated_event_count"] or 0),
+        "residual_phi_detected_count": int(
+            aggregates["residual_phi_detected_count"] or 0
         ),
-        residual_ocr_match_count=_int_from_mapping(
-            aggregates,
-            "residual_ocr_match_count",
+        "residual_ocr_match_count": int(aggregates["residual_ocr_match_count"] or 0),
+        "phi_region_false_negative_count": int(
+            aggregates["phi_region_false_negative_count"] or 0
         ),
-        phi_region_false_negative_count=_int_from_mapping(
-            aggregates,
-            "phi_region_false_negative_count",
+        "raw_artifact_residual_count": int(
+            aggregates["raw_artifact_residual_count"] or 0
         ),
-        raw_artifact_residual_count=_int_from_mapping(
-            aggregates,
-            "raw_artifact_residual_count",
+        "missing_sensitive_meta_deletion_count": int(
+            aggregates["missing_sensitive_meta_deletion_count"] or 0
         ),
-        missing_sensitive_meta_deletion_count=_int_from_mapping(
-            aggregates,
-            "missing_sensitive_meta_deletion_count",
-        ),
-        sensitive_meta_deletion_status_counts=status_counts,
-        sensitive_meta_policy_counts=policy_counts,
-    )
+        "sensitive_meta_deletion_status_counts": status_counts,
+        "sensitive_meta_policy_counts": policy_counts,
+    }
 
 
-def _phi_region_payload(
-    filters: MetricsFilters,
-) -> AnonymizationPhiRegionMetricsPayload:
+def _phi_region_payload(filters: MetricsFilters) -> dict[str, Any]:
     if filters.media_type == "pdf":
-        return AnonymizationPhiRegionMetricsPayload(
-            proposal_count=0,
-            human_annotation_count=0,
-            matched_count=0,
-            precision=None,
-            recall=None,
-            matching_evaluated=False,
-            matching_annotation_count=0,
-            max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
-        )
+        return {
+            "proposal_count": 0,
+            "human_annotation_count": 0,
+            "matched_count": 0,
+            "precision": None,
+            "recall": None,
+            "matching_evaluated": False,
+            "matching_annotation_count": 0,
+            "max_matching_annotations": MAX_PHI_REGION_MATCH_ANNOTATIONS,
+        }
 
     qs = FrameBoxAnnotation.objects.select_related(
         "frame__video",
@@ -640,48 +582,37 @@ def _phi_region_payload(
             if human_count
             else 0
         )
-    return AnonymizationPhiRegionMetricsPayload(
-        proposal_count=proposal_count,
-        human_annotation_count=human_count,
-        matched_count=matched_count,
-        precision=(
+    return {
+        "proposal_count": proposal_count,
+        "human_annotation_count": human_count,
+        "matched_count": matched_count,
+        "precision": (
             _safe_rate(matched_count, proposal_count)
             if human_count and matched_count is not None
             else None
         ),
-        recall=(
+        "recall": (
             _safe_rate(matched_count, human_count)
             if human_count and matched_count is not None
             else None
         ),
-        matching_evaluated=matching_evaluated,
-        matching_annotation_count=matching_annotation_count,
-        max_matching_annotations=MAX_PHI_REGION_MATCH_ANNOTATIONS,
+        "matching_evaluated": matching_evaluated,
+        "matching_annotation_count": matching_annotation_count,
+        "max_matching_annotations": MAX_PHI_REGION_MATCH_ANNOTATIONS,
+    }
+
+
+def _annotation_box_rows(queryset: Any) -> list[dict[str, Any]]:
+    return list(
+        queryset.order_by("frame_id", "id").values(
+            "id",
+            "frame_id",
+            "x",
+            "y",
+            "width",
+            "height",
+        )[:MAX_PHI_REGION_MATCH_ANNOTATIONS]
     )
-
-
-def _annotation_box_rows(
-    queryset: FrameBoxAnnotationQuerySet,
-) -> list[Mapping[str, object]]:
-    return cast(
-        list[Mapping[str, object]],
-        list(
-            queryset.order_by("frame_id", "id").values(
-                "id",
-                "frame_id",
-                "x",
-                "y",
-                "width",
-                "height",
-            )[:MAX_PHI_REGION_MATCH_ANNOTATIONS]
-        ),
-    )
-
-
-def annotation_box_rows(
-    queryset: FrameBoxAnnotationQuerySet,
-) -> list[Mapping[str, object]]:
-    return _annotation_box_rows(queryset)
 
 
 def _matched_phi_region_count(
@@ -708,17 +639,10 @@ def _matched_phi_region_count(
             if iou > best_iou:
                 best_candidate = candidate
                 best_iou = iou
-        if best_candidate is not None and best_iou >= PHI_REGION_IOU_THRESHOLD:
+        if best_candidate is not None and best_iou >= 0.3:
             matched_human_ids.add(int(best_candidate["id"]))
             matched_count += 1
     return matched_count
-
-
-def matched_phi_region_count(
-    proposals: Sequence[Mapping[str, object]],
-    human_annotations: Sequence[Mapping[str, object]],
-) -> int:
-    return _matched_phi_region_count(proposals, human_annotations)
 
 
 def _box_iou(left: Mapping[str, Any], right: Mapping[str, Any]) -> float:
@@ -753,55 +677,23 @@ def _safe_rate(numerator: int, denominator: int) -> float | None:
     return float(numerator / denominator)
 
 
-def _int_from_mapping(payload: Mapping[str, object], key: str) -> int:
-    value = payload.get(key)
-    if value is None:
-        return 0
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float | str):
-        return int(value)
-    raise TypeError(f"{key} must be numeric.")
-
-
-def _optional_float_from_mapping(
-    payload: Mapping[str, object],
-    key: str,
-) -> float | None:
-    value = payload.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return float(value)
-    if isinstance(value, int | float | str):
-        return float(value)
-    raise TypeError(f"{key} must be numeric.")
-
-
-def _database_median_seconds_to_validation(
-    validation_qs: ValidationMetricQuerySet,
-) -> float | None:
+def _database_median_seconds_to_validation(validation_qs) -> float | None:
     seconds_qs = validation_qs.exclude(seconds_to_validation__isnull=True)
-    seconds_count = int(seconds_qs.count())
+    seconds_count = seconds_qs.count()
     if seconds_count == 0:
         return None
     lower_position = (seconds_count + 1) // 2
     upper_position = (seconds_count + 2) // 2
-    median_values = cast(
-        list[float],
-        list(
-            seconds_qs.annotate(
-                row_number=Window(
-                    expression=RowNumber(),
-                    order_by=F("seconds_to_validation").asc(),
-                )
+    median_values = list(
+        seconds_qs.annotate(
+            row_number=Window(
+                expression=RowNumber(),
+                order_by=F("seconds_to_validation").asc(),
             )
-            .filter(row_number__in=[lower_position, upper_position])
-            .order_by("row_number")
-            .values_list("seconds_to_validation", flat=True)[:2]
-        ),
+        )
+        .filter(row_number__in=[lower_position, upper_position])
+        .order_by("row_number")
+        .values_list("seconds_to_validation", flat=True)[:2]
     )
     if not median_values:
         return None
@@ -854,11 +746,14 @@ def record_validation_metrics(
     mean_similarity = (
         sum(similarity_values) / len(similarity_values) if similarity_values else None
     )
-    if media_type == "video":
-        video_media = cast(VideoFile, media_obj)
+    if isinstance(media_obj, VideoFile):
+        video_media = media_obj
         pdf_media = None
+    elif isinstance(media_obj, RawPdfFile):
+        pdf_media = media_obj
+        video_media = None
     else:
-        pdf_media = cast(RawPdfFile, media_obj)
+        pdf_media = None
         video_media = None
 
     validation_metric = AnonymizationValidationMetric.objects.create(
@@ -998,9 +893,8 @@ def _document_type_value(media_obj: VideoFile | RawPdfFile) -> str | None:
     if report_type_name:
         return str(report_type_name)
     raw_meta = getattr(media_obj, "raw_meta", None)
-    if isinstance(raw_meta, Mapping):
-        raw_meta_payload = cast(Mapping[str, object], raw_meta)
-        document_type = raw_meta_payload.get("document_type")
+    if isinstance(raw_meta, dict):
+        document_type = raw_meta.get("document_type")
         if document_type:
             return str(document_type)
     return None
@@ -1065,8 +959,8 @@ def _resolve_provenance(
     version = _provenance_version_from_media(media_obj)
     if not version and upload_job is not None:
         provenance = getattr(upload_job, "processing_provenance", None)
-        if isinstance(provenance, Mapping):
-            version = _version_from_provenance(cast(Mapping[str, object], provenance))
+        if isinstance(provenance, dict):
+            version = _version_from_provenance(provenance)
     if not version:
         try:
             version = importlib.metadata.version("lx-anonymizer")
@@ -1100,25 +994,24 @@ def _find_upload_job(
 
 def _provenance_version_from_media(media_obj: VideoFile | RawPdfFile) -> str:
     raw_meta = getattr(media_obj, "raw_meta", None)
-    if isinstance(raw_meta, Mapping):
-        return _version_from_provenance(cast(Mapping[str, object], raw_meta))
+    if isinstance(raw_meta, dict):
+        return _version_from_provenance(raw_meta)
     meta = getattr(media_obj, "meta", None)
-    if isinstance(meta, Mapping):
-        return _version_from_provenance(cast(Mapping[str, object], meta))
+    if isinstance(meta, dict):
+        return _version_from_provenance(meta)
     return ""
 
 
-def _version_from_provenance(payload: Mapping[str, object]) -> str:
-    candidates: tuple[object, object, Mapping[str, object]] = (
+def _version_from_provenance(payload: Mapping[str, Any]) -> str:
+    candidates = [
         payload.get("anonymizer_provenance"),
         payload.get("lx_anonymizer_provenance"),
         payload,
-    )
+    ]
     for candidate in candidates:
         if not isinstance(candidate, Mapping):
             continue
-        provenance_candidate = cast(Mapping[str, object], candidate)
-        version = provenance_candidate.get("anonymizer_version")
+        version = candidate.get("anonymizer_version")
         if version:
             return str(version)
     return ""

@@ -1,5 +1,4 @@
-from typing import Protocol
-
+from typing import Optional
 from rest_framework import serializers
 
 
@@ -8,19 +7,7 @@ from endoreg_db.models.label.annotation.image_classification import (
 )
 
 
-class _LabelLike(Protocol):
-    name: str
-
-
-class _ImageClassificationAnnotationLike(Protocol):
-    float_value: float | None
-    label: _LabelLike | None
-    frame: object
-
-
-class ImageClassificationAnnotationSerializer(
-    serializers.ModelSerializer[ImageClassificationAnnotation]
-):
+class ImageClassificationAnnotationSerializer(serializers.ModelSerializer):
     """
     Serializer for ImageClassificationAnnotation model.
     This serializer is used to represent image classification annotations in the API.
@@ -30,8 +17,8 @@ class ImageClassificationAnnotationSerializer(
     confidence = serializers.SerializerMethodField()
     frame_number = serializers.IntegerField(source="frame.frame_number", read_only=True)
 
-    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = ImageClassificationAnnotation  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = ImageClassificationAnnotation
         fields = [
             "id",
             "label",
@@ -43,7 +30,7 @@ class ImageClassificationAnnotationSerializer(
             "label_name",
         ]
 
-    def get_confidence(self, obj: _ImageClassificationAnnotationLike) -> float | None:
+    def get_confidence(self, obj: ImageClassificationAnnotation) -> Optional[float]:
         """
         Retrieve the confidence score associated with the annotation.
 
@@ -54,16 +41,13 @@ class ImageClassificationAnnotationSerializer(
             return obj.float_value
         return None
 
-    def get_label_name(self, obj: _ImageClassificationAnnotationLike) -> str:
+    def get_label_name(self, obj: ImageClassificationAnnotation) -> str:
         """
         Returns the name of the label associated with the annotation, or "No Label" if no label is set.
         """
-        label = obj.label
-        return label.name if label is not None else "No Label"
+        return obj.label.name if obj.label else "No Label"
 
-    def to_representation(
-        self, instance: ImageClassificationAnnotation
-    ) -> dict[str, object]:
+    def to_representation(self, instance: ImageClassificationAnnotation) -> dict:
         """
         Return the serialized representation of an ImageClassificationAnnotation instance.
 
@@ -75,4 +59,6 @@ class ImageClassificationAnnotationSerializer(
         Returns:
             dict: The serialized data for the annotation.
         """
-        return super().to_representation(instance)
+        representation = super().to_representation(instance)
+        # Add any additional fields or transformations here if needed
+        return representation

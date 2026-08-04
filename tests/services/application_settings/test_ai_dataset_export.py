@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
-
 import json
 from pathlib import Path
-from typing import Protocol, cast
 from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractBaseUser
 from django.test.utils import override_settings
 
 from endoreg_db.models import AIDataSet, AIDataSetExportArtifact
@@ -23,15 +18,6 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
 from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 
 
-class _UserManager(Protocol):
-    def create_user(
-        self,
-        username: str,
-        password: str | None = None,
-        **extra_fields: object,
-    ) -> AbstractBaseUser: ...
-
-
 def _dataset() -> AIDataSet:
     return AIDataSet.objects.create(
         name=f"dataset-export-{uuid4().hex[:8]}",
@@ -41,7 +27,7 @@ def _dataset() -> AIDataSet:
 
 
 @pytest.mark.django_db
-def test_create_ai_dataset_export_writes_json_artifact(tmp_path: Path) -> None:
+def test_create_ai_dataset_export_writes_json_artifact(tmp_path):
     dataset = _dataset()
     export_payload = {
         "schema_version": "1.0",
@@ -71,13 +57,7 @@ def test_create_ai_dataset_export_writes_json_artifact(tmp_path: Path) -> None:
     assert json.loads(output_path.read_text(encoding="utf-8")) == export_payload
     assert payload["sha256"] == sha256_file(output_path)
     assert payload["byte_size"] == output_path.stat().st_size
-    assert payload["summary"] == {
-        "image_annotation_count": 0,
-        "video_annotation_count": 0,
-        "frame_count": 0,
-        "video_count": 0,
-        "label_count": 0,
-    }
+    assert payload["summary"] == export_payload["summary"]
     assert exporter.call_args.kwargs == {
         "center_key": None,
         "all_centers": False,
@@ -86,82 +66,11 @@ def test_create_ai_dataset_export_writes_json_artifact(tmp_path: Path) -> None:
 
     artifact = AIDataSetExportArtifact.objects.get(artifact_id=payload["artifact_id"])
     assert artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
-    assert artifact.request_payload == {
-        "schema_version": "1.0",
-        "dataset_id": dataset.pk,
-        "all_centers": False,
-        "only_validated": True,
-    }
+    assert artifact.request_payload == {"dataset_id": dataset.pk}
 
 
 @pytest.mark.django_db
-def test_create_ai_dataset_export_rejects_unknown_request_fields(
-    tmp_path: Path,
-) -> None:
-    result = create_ai_dataset_export(
-        {"dataset_id": 1, "unexpected": "value"},
-        user=None,
-        export_root=tmp_path,
-    )
-
-    assert result.status_code == 400
-    assert result.payload == {
-        "errors": {"unexpected": "Extra inputs are not permitted."}
-    }
-    assert AIDataSetExportArtifact.objects.count() == 0
-
-
-@pytest.mark.django_db
-def test_ai_dataset_export_artifact_canonicalizes_direct_json_writes() -> None:
-    dataset = _dataset()
-
-    artifact = AIDataSetExportArtifact.objects.create(
-        dataset=dataset,
-        request_payload={"dataset_id": str(dataset.pk)},
-        summary={"image_annotation_count": 3},
-    )
-
-    assert artifact.request_payload == {
-        "schema_version": "1.0",
-        "dataset_id": dataset.pk,
-        "all_centers": False,
-        "only_validated": True,
-    }
-    assert artifact.summary == {
-        "image_annotation_count": 3,
-        "video_annotation_count": 0,
-        "frame_count": 0,
-        "video_count": 0,
-        "label_count": 0,
-    }
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("field_name", "value"),
-    [
-        ("request_payload", {"dataset_id": 1, "unexpected": "value"}),
-        ("summary", {"unexpected": 1}),
-    ],
-)
-def test_ai_dataset_export_artifact_rejects_invalid_direct_json_writes(
-    field_name: str,
-    value: dict[str, object],
-) -> None:
-    kwargs: dict[str, object] = {
-        "request_payload": {},
-        "summary": {},
-        field_name: value,
-    }
-
-    with pytest.raises(DjangoValidationError) as exc_info:
-        AIDataSetExportArtifact.objects.create(**kwargs)
-
-    assert field_name in exc_info.value.message_dict
-
-
-@pytest.mark.django_db
-def test_create_ai_dataset_export_returns_validation_errors(tmp_path: Path) -> None:
+def test_create_ai_dataset_export_returns_validation_errors(tmp_path):
     result = create_ai_dataset_export(
         {"dataset_id": "not-an-int"},
         user=None,
@@ -176,9 +85,7 @@ def test_create_ai_dataset_export_returns_validation_errors(tmp_path: Path) -> N
 
 
 @pytest.mark.django_db
-def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(
-    tmp_path: Path,
-) -> None:
+def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(tmp_path):
     dataset = _dataset()
 
     with patch.object(
@@ -206,14 +113,10 @@ def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(
 
 @pytest.mark.django_db
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
-def test_create_ai_dataset_export_enforces_local_scope_before_artifact(
-    tmp_path: Path,
-) -> None:
+def test_create_ai_dataset_export_enforces_local_scope_before_artifact(tmp_path):
     dataset = _dataset()
     user_model = get_user_model()
-    user = cast(_UserManager, user_model.objects).create_user(
-        username="dataset-export-user",
-    )
+    user = user_model.objects.create_user(username="dataset-export-user")
 
     result = create_ai_dataset_export(
         {
@@ -233,9 +136,7 @@ def test_create_ai_dataset_export_enforces_local_scope_before_artifact(
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_returns_file_metadata(
-    tmp_path: Path,
-) -> None:
+def test_prepare_ai_dataset_export_download_returns_file_metadata(tmp_path):
     dataset = _dataset()
     output_path = tmp_path / "ai_datasets" / "export.json"
     content = b'{"summary": {}}\n'
@@ -270,9 +171,7 @@ def test_prepare_ai_dataset_export_download_returns_file_metadata(
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_marks_missing_file_failed(
-    tmp_path: Path,
-) -> None:
+def test_prepare_ai_dataset_export_download_marks_missing_file_failed(tmp_path):
     dataset = _dataset()
     artifact = AIDataSetExportArtifact.objects.create(
         dataset=dataset,
@@ -302,9 +201,7 @@ def test_prepare_ai_dataset_export_download_marks_missing_file_failed(
 
 
 @pytest.mark.django_db
-def test_prepare_ai_dataset_export_download_rejects_paths_outside_export_root(
-    tmp_path: Path,
-) -> None:
+def test_prepare_ai_dataset_export_download_rejects_paths_outside_export_root(tmp_path):
     dataset = _dataset()
     export_root = tmp_path / "export_root"
     outside_path = tmp_path / "outside.json"
@@ -337,6 +234,6 @@ def test_prepare_ai_dataset_export_download_rejects_paths_outside_export_root(
     assert artifact.status == AIDataSetExportArtifact.STATUS_FAILED
 
 
-def test_sanitize_export_token_is_filesystem_safe() -> None:
+def test_sanitize_export_token_is_filesystem_safe():
     assert sanitize_export_token(" Dataset-01_Raw ") == "dataset-01_raw"
     assert sanitize_export_token("   ") == "dataset"

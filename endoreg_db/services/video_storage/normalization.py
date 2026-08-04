@@ -15,7 +15,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageProfile,
 )
 from endoreg_db.utils import ffmpeg_wrapper
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     safe_unlink_file,

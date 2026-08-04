@@ -8,7 +8,6 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterator
-from collections.abc import Buffer
 
 MAGIC = b"LXENC01\n"
 HEADER_LENGTH_STRUCT = struct.Struct(">I")
@@ -110,17 +109,6 @@ class EncryptedChunkIndexEntry:
     ciphertext_length: int
     plaintext_offset: int
     plaintext_length: int
-
-
-@dataclass(frozen=True)
-class EncryptedFileLayout:
-    """Constant-time description of the chunked encrypted file layout."""
-
-    header: EncryptedFileHeader
-    header_bytes: bytes
-    data_offset: int
-    plaintext_size: int
-    chunk_count: int
 
 
 def build_file_header(
@@ -255,61 +243,6 @@ def build_chunk_index(
         counter += 1
 
 
-def inspect_encrypted_file_layout(source: BinaryIO) -> EncryptedFileLayout:
-    """Inspect size and chunk geometry without walking every encrypted chunk."""
-    header, header_bytes = read_header(source)
-    if header.chunk_size <= 0:
-        raise ValueError("Encrypted file chunk size must be positive")
-
-    data_offset = source.tell()
-    source.seek(0, io.SEEK_END)
-    encrypted_size = source.tell()
-    payload_size = encrypted_size - data_offset
-    if payload_size < 0:
-        raise ValueError("Encrypted file payload size is invalid")
-    if payload_size == 0:
-        return EncryptedFileLayout(
-            header=header,
-            header_bytes=header_bytes,
-            data_offset=data_offset,
-            plaintext_size=0,
-            chunk_count=0,
-        )
-
-    authentication_tag_size = 16
-    full_ciphertext_size = header.chunk_size + authentication_tag_size
-    full_record_size = CHUNK_LENGTH_STRUCT.size + full_ciphertext_size
-    full_chunk_count, final_record_size = divmod(payload_size, full_record_size)
-    plaintext_size = full_chunk_count * header.chunk_size
-    chunk_count = full_chunk_count
-
-    if final_record_size:
-        minimum_record_size = CHUNK_LENGTH_STRUCT.size + authentication_tag_size
-        if final_record_size < minimum_record_size:
-            raise ValueError("Encrypted final chunk record is truncated")
-        final_record_offset = data_offset + full_chunk_count * full_record_size
-        source.seek(final_record_offset)
-        length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
-        if len(length_bytes) != CHUNK_LENGTH_STRUCT.size:
-            raise ValueError("Encrypted final chunk length is truncated")
-        (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(length_bytes)
-        if ciphertext_length + CHUNK_LENGTH_STRUCT.size != final_record_size:
-            raise ValueError("Encrypted final chunk length does not match file size")
-        final_plaintext_size = ciphertext_length - authentication_tag_size
-        if final_plaintext_size < 0 or final_plaintext_size > header.chunk_size:
-            raise ValueError("Encrypted final chunk payload is invalid")
-        plaintext_size += final_plaintext_size
-        chunk_count += 1
-
-    return EncryptedFileLayout(
-        header=header,
-        header_bytes=header_bytes,
-        data_offset=data_offset,
-        plaintext_size=plaintext_size,
-        chunk_count=chunk_count,
-    )
-
-
 def iter_decrypted_byte_range(
     source: BinaryIO,
     *,
@@ -317,55 +250,37 @@ def iter_decrypted_byte_range(
     start: int,
     end: int,
     output_chunk_size: int = 64 * 1024,
-    layout: EncryptedFileLayout | None = None,
 ) -> Iterator[bytes]:
     if start < 0 or end < start:
         raise ValueError(f"Invalid byte range: {start}-{end}")
 
     AESGCM = _require_cryptography()
-    if output_chunk_size <= 0:
-        raise ValueError("output_chunk_size must be positive")
-
-    file_layout = layout or inspect_encrypted_file_layout(source)
-    if end >= file_layout.plaintext_size:
+    header, header_bytes, index, plaintext_size = build_chunk_index(source)
+    if end >= plaintext_size:
         raise ValueError(
-            f"Requested byte range {start}-{end} exceeds plaintext size "
-            f"{file_layout.plaintext_size}"
+            f"Requested byte range {start}-{end} exceeds plaintext size {plaintext_size}"
         )
 
-    header = file_layout.header
-    header_bytes = file_layout.header_bytes
     dek = unwrap_file_dek(header, master_key)
     cipher = AESGCM(dek)
-    authentication_tag_size = 16
-    full_ciphertext_size = header.chunk_size + authentication_tag_size
-    full_record_size = CHUNK_LENGTH_STRUCT.size + full_ciphertext_size
-    first_counter = start // header.chunk_size
-    last_counter = end // header.chunk_size
 
-    for counter in range(first_counter, last_counter + 1):
-        plaintext_offset = counter * header.chunk_size
-        plaintext_length = min(
-            header.chunk_size,
-            file_layout.plaintext_size - plaintext_offset,
-        )
-        expected_ciphertext_length = plaintext_length + authentication_tag_size
-        record_offset = file_layout.data_offset + counter * full_record_size
-        source.seek(record_offset)
-        length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
-        if len(length_bytes) != CHUNK_LENGTH_STRUCT.size:
-            raise ValueError("Encrypted chunk length is truncated")
-        (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(length_bytes)
-        if ciphertext_length != expected_ciphertext_length:
-            raise ValueError("Encrypted chunk length does not match chunk geometry")
-        ciphertext = source.read(ciphertext_length)
-        if len(ciphertext) != ciphertext_length:
+    for entry in index:
+        chunk_start = entry.plaintext_offset
+        chunk_end = entry.plaintext_offset + entry.plaintext_length - 1
+        if chunk_end < start:
+            continue
+        if chunk_start > end:
+            break
+
+        source.seek(entry.ciphertext_offset)
+        ciphertext = source.read(entry.ciphertext_length)
+        if len(ciphertext) != entry.ciphertext_length:
             raise ValueError("Encrypted chunk payload is truncated")
-        nonce = header.nonce_prefix + counter.to_bytes(CHUNK_COUNTER_SIZE, "big")
+        nonce = header.nonce_prefix + entry.counter.to_bytes(CHUNK_COUNTER_SIZE, "big")
         plaintext = cipher.decrypt(nonce, ciphertext, header_bytes)
 
-        slice_start = max(start - plaintext_offset, 0)
-        slice_end = min(end - plaintext_offset + 1, plaintext_length)
+        slice_start = max(start - chunk_start, 0)
+        slice_end = min(end - chunk_start + 1, entry.plaintext_length)
         selected = plaintext[slice_start:slice_end]
         for offset in range(0, len(selected), output_chunk_size):
             yield selected[offset : offset + output_chunk_size]
@@ -388,7 +303,7 @@ class DecryptedStream(io.RawIOBase):
         self._source.close()
         super().close()
 
-    def readinto(self, b: Buffer) -> int | None:
+    def readinto(self, b) -> int | None:
         if self._closed:
             return 0
         target = memoryview(b)

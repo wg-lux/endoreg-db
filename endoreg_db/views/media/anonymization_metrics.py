@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import cast
-
 from rest_framework import status
-from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -13,7 +9,7 @@ from endoreg_db.services.anonymization_metrics import (
     build_anonymization_metrics_payload,
     parse_metrics_filters,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.utils.web.permissions import EnvironmentAwarePermission
 
 
 class AnonymizationMetricsView(APIView):
@@ -25,15 +21,9 @@ class AnonymizationMetricsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
-    def get(self, request: Request) -> Response:
-        query_params = cast(object, request.query_params)
-        filters_payload: Mapping[str, object] = (
-            cast(Mapping[str, object], query_params)
-            if isinstance(query_params, Mapping)
-            else {}
-        )
+    def get(self, request):
         try:
-            filters = parse_metrics_filters(filters_payload)
+            filters = parse_metrics_filters(request.query_params)
         except ValueError as exc:
             return Response(
                 {"error": str(exc)},

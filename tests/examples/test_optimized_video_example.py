@@ -4,10 +4,7 @@ Example optimized test case showing how to use the new fixtures and performance 
 This demonstrates converting a typical video test to use the optimized approach.
 """
 
-from __future__ import annotations
-
 import os
-from typing import Protocol, cast
 
 import pytest
 from django.test import TestCase
@@ -19,28 +16,6 @@ from tests.helpers.optimized_video_fixtures import (
 )
 
 
-class _OptimizedVideoLike(Protocol):
-    video_hash: str | None
-    center: object
-    processor: object
-    video_meta: object
-    is_processed: bool
-
-    def materialize_prediction_segments(
-        self,
-        *,
-        delete_frames_after: bool = True,
-    ) -> bool: ...
-
-    def anonymize(self, *, delete_original_raw: bool = False) -> bool: ...
-
-
-class _OptimizedVideoTestMixin(Protocol):
-    def get_cached_video_file(self, cache_key: str) -> _OptimizedVideoLike: ...
-
-    def get_mock_video_file(self) -> _OptimizedVideoLike: ...
-
-
 class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
     """
     Example test case showing optimized video testing patterns.
@@ -49,16 +24,13 @@ class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
     while maintaining the same test interface and coverage.
     """
 
-    def _optimized_video_mixin(self) -> _OptimizedVideoTestMixin:
-        return cast(_OptimizedVideoTestMixin, self)
-
-    def test_video_file_creation_optimized(self) -> None:
+    def test_video_file_creation_optimized(self):
         """Test video file creation using optimized fixtures."""
 
-        video_file = self._optimized_video_mixin().get_cached_video_file(
-            "test_creation"
-        )
+        # Use optimized video file (mock in fast mode, real if needed)
+        video_file = self.get_cached_video_file("test_creation")
 
+        # Test basic properties
         self.assertIsNotNone(video_file)
         self.assertIsNotNone(video_file.video_hash)
         self.assertIsNotNone(video_file.center)
@@ -69,42 +41,45 @@ class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
         and os.environ["SKIP_EXPENSIVE_TESTS"].lower() == "true",
         reason="Skipping expensive test in fast mode",
     )
-    def test_video_metadata_extraction(self) -> None:
+    def test_video_metadata_extraction(self):
         """Test video metadata extraction (only in full test mode)."""
 
         with PerformanceTimer("video_metadata_extraction"):
-            video_file = self._optimized_video_mixin().get_cached_video_file(
-                "test_metadata"
-            )
+            video_file = self.get_cached_video_file("test_metadata")
 
+            # Test metadata properties
             self.assertIsNotNone(video_file.video_meta)
             self.assertTrue(hasattr(video_file.video_meta, "duration"))
 
-    def test_video_processing_pipeline_mocked(self) -> None:
+    def test_video_processing_pipeline_mocked(self):
         """Test video processing pipeline with mocked expensive operations."""
 
-        video_file = self._optimized_video_mixin().get_mock_video_file()
+        video_file = self.get_mock_video_file()
 
-        result = video_file.materialize_prediction_segments()
+        # Test pipeline without actual processing
+        result = video_file.pipe_1()
         self.assertTrue(result)
 
+        # Mock video files don't need to verify mock calls since they're self-contained
+
     @measure_test_performance
-    def test_video_batch_processing(self) -> None:
+    def test_video_batch_processing(self):
         """Test batch video processing with performance measurement."""
 
-        videos: list[_OptimizedVideoLike] = []
-        mixin = self._optimized_video_mixin()
-        for _ in range(5):
-            video = mixin.get_mock_video_file()
+        videos = []
+        for i in range(5):
+            video = self.get_mock_video_file()
             videos.append(video)
 
+        # Process batch
         for video in videos:
-            video.materialize_prediction_segments()
-            video.anonymize(delete_original_raw=True)
+            video.pipe_1()
+            video.pipe_2()
 
         self.assertEqual(len(videos), 5)
 
 
+# Apply fixtures automatically - Use smart caching instead of basic mocks
 pytestmark = [
     pytest.mark.usefixtures("smart_video_mocks", "mock_ai_inference"),
     pytest.mark.usefixtures("base_db_data"),
@@ -118,10 +93,7 @@ class LegacyVideoTestComparison(TestCase, OptimizedVideoTestCase):
     This demonstrates the performance difference between old and new approaches.
     """
 
-    def _optimized_video_mixin(self) -> _OptimizedVideoTestMixin:
-        return cast(_OptimizedVideoTestMixin, self)
-
-    def test_optimized_approach_fast(self) -> None:
+    def test_optimized_approach_fast(self):
         """
         AFTER: Optimized approach - fast operations with same coverage.
 
@@ -131,11 +103,15 @@ class LegacyVideoTestComparison(TestCase, OptimizedVideoTestCase):
         - Mocked expensive operations
         - Intelligent cleanup
         """
-        video_file = self._optimized_video_mixin().get_mock_video_file()
+        # Database data loaded once per session (base_db_data fixture)
+        # Video file from cache or mock (optimized_video_file fixture)
+        video_file = self.get_mock_video_file()
 
-        video_file.materialize_prediction_segments()
-        video_file.anonymize(delete_original_raw=True)
+        # Fast: mocked operations
+        video_file.pipe_1()  # Mock AI inference
+        video_file.pipe_2()  # Mock video processing
 
+        # Fast: no actual file cleanup needed
         self.assertTrue(video_file.is_processed)
 
 
@@ -148,20 +124,18 @@ class RealVideoProcessingTest(TestCase, OptimizedVideoTestCase):
     These only run when RUN_VIDEO_TESTS=true and SKIP_EXPENSIVE_TESTS=false.
     """
 
-    def _optimized_video_mixin(self) -> _OptimizedVideoTestMixin:
-        return cast(_OptimizedVideoTestMixin, self)
+    def test_real_video_pipeline(self):
+        """Test with real video file (session-scoped fixture)."""
 
-    def test_real_video_pipeline(self) -> None:
-        """Test with real video file."""
+        # This uses the mock video file for testing (since we're in OptimizedVideoTestCase)
+        video_file = self.get_mock_video_file()
 
-        video_file = self._optimized_video_mixin().get_mock_video_file()
-
-        with PerformanceTimer("mock_pipeline_processing"):
-            result1 = video_file.materialize_prediction_segments(
-                delete_frames_after=False
-            )
-            result2 = video_file.anonymize(delete_original_raw=True)
-            self.assertTrue(result1)
-            self.assertTrue(result2)
+        # Mock operations (always available)
+        if hasattr(video_file, "pipe_1"):  # MockVideoFile
+            with PerformanceTimer("mock_pipeline_processing"):
+                result1 = video_file.pipe_1(delete_frames_after=False)
+                result2 = video_file.pipe_2()
+                self.assertTrue(result1)
+                self.assertTrue(result2)
 
         self.assertTrue(hasattr(video_file, "video_meta"))

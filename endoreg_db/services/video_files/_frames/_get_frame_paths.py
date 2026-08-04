@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List

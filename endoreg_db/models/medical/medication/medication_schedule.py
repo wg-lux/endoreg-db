@@ -1,21 +1,17 @@
-from __future__ import annotations
-
 """Model for the medication schedule."""
 
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, List
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models.medical.medication.medication_intake_time import (
-        MedicationIntakeTime,
-    )
+    from endoreg_db.models import MedicationIntakeTime
 
 
-class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
+class MedicationScheduleManager(models.Manager):
     """Manager for the medication schedule model."""
 
-    def get_by_natural_key(self, name: str) -> "MedicationSchedule":
+    def get_by_natural_key(self, name):
         """
         Retrieve a MedicationSchedule instance by its name.
 
@@ -31,31 +27,28 @@ class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
 class MedicationSchedule(models.Model):
     """Model representing a medication schedule."""
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
-    medication: models.ForeignKey[Any] = models.ForeignKey(
-        "Medication", on_delete=models.CASCADE
-    )
-    unit: models.ForeignKey[Any] = models.ForeignKey("Unit", on_delete=models.CASCADE)
-    therapy_duration_d: models.FloatField[Any, Any] = models.FloatField(
-        blank=True, null=True
-    )
-    dose: models.FloatField[Any, Any] = models.FloatField()
-    intake_times: models.ManyToManyField[
-        "MedicationIntakeTime", "MedicationIntakeTime"
-    ] = models.ManyToManyField("MedicationIntakeTime")
-
-    objects: ClassVar[MedicationScheduleManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        MedicationScheduleManager()
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, null=True)
+    medication = models.ForeignKey("Medication", on_delete=models.CASCADE)
+    unit = models.ForeignKey("Unit", on_delete=models.CASCADE)
+    therapy_duration_d = models.FloatField(blank=True, null=True)
+    dose = models.FloatField()
+    intake_times: "models.ManyToManyField[MedicationIntakeTime, MedicationIntakeTime]" = models.ManyToManyField(
+        "MedicationIntakeTime",
     )
 
-    def natural_key(self) -> tuple[str]:
+    objects = MedicationScheduleManager()
+
+    if TYPE_CHECKING:
+        pass
+
+    def natural_key(self):
         """Return the natural key for the medication schedule."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return str(self.name)
 
-    def get_intake_times(self) -> list["MedicationIntakeTime"]:
+    def get_intake_times(self) -> List["MedicationIntakeTime"]:
         """Return a list of all intake times for this medication schedule."""
-        return list(self.intake_times.all())
+        return [_ for _ in self.intake_times.all()]

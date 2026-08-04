@@ -65,7 +65,7 @@ from endoreg_db.services.video_storage_normalization import (
     validate_proven_resampled_hls_equivalence,
 )
 from endoreg_db.utils.encryption.encryption import load_master_key
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
     ensure_disk_capacity,

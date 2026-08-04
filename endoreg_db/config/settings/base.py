@@ -5,10 +5,9 @@ from kombu import Exchange, Queue
 
 from endoreg_db.config.env import (
     ENDOREG_DEPLOYMENT_ROLE_VALUES,
-    allow_insecure_protected_media_serving,
+    build_base_rest_framework_settings,
+    build_default_cache_settings,
     get_asset_dir,
-    get_cache_location,
-    get_cache_timeout_seconds,
     get_celery_broker_url,
     get_celery_default_queue,
     get_celery_ffmpeg_media_queue,
@@ -18,13 +17,10 @@ from endoreg_db.config.env import (
     get_celery_maintenance_queue,
     get_celery_pipeline_queue,
     get_celery_training_queue,
-    get_drf_throttle_anon_rate,
-    get_drf_throttle_user_rate,
     celery_audit_ledger_integrity_beat_enabled,
     get_celery_audit_ledger_integrity_interval_seconds,
     get_enable_hub_transfers,
     get_endoreg_deployment_role,
-    get_ffmpeg_transcode_quality_mode,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
     get_hub_transfer_require_mtls,
@@ -52,16 +48,6 @@ from endoreg_db.config.env import (
     run_video_tests_enabled,
     watcher_celery_inline_fallback_enabled,
 )
-from lx_dtypes.models.contracts.django_settings import (
-    DjangoBeatScheduleEntryPayload,
-    DjangoBeatScheduleOptionsPayload,
-    DjangoCacheConfigPayload,
-    DjangoCacheSettingsPayload,
-    DjangoRestFrameworkSettingsPayload,
-    DjangoThrottleRatesPayload,
-    DjangoTemplateConfigPayload,
-    DjangoTemplateOptionsPayload,
-)
 
 django_stubs_ext.monkeypatch()
 
@@ -71,7 +57,6 @@ BASE_DIR = Path(__file__).parent.parent.parent.resolve()
 # Test assets directory (used in tests and utilities)
 ASSET_DIR = get_asset_dir()
 RUN_VIDEO_TESTS = run_video_tests_enabled()
-FFMPEG_TRANSCODE_QUALITY_MODE = get_ffmpeg_transcode_quality_mode()
 ENDOREG_DEPLOYMENT_ROLE = get_endoreg_deployment_role()
 ENDOREG_ENABLE_HUB_TRANSFERS = get_enable_hub_transfers()
 ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT = (
@@ -178,10 +163,6 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_FFMPEG_MEDIA_QUEUE,
         "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
-    "endoreg_db.tasks.video_hls_materialization": {
-        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
-        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
-    },
     "endoreg_db.video_temporal_inference": {
         "queue": CELERY_INFERENCE_QUEUE,
         "routing_key": CELERY_INFERENCE_QUEUE,
@@ -202,10 +183,6 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
     },
-    "endoreg_db.retry_due_upload_jobs": {
-        "queue": CELERY_MAINTENANCE_QUEUE,
-        "routing_key": CELERY_MAINTENANCE_QUEUE,
-    },
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TRACK_STARTED = True
@@ -214,28 +191,17 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
-CELERY_BEAT_SCHEDULE["retry-due-upload-jobs"] = DjangoBeatScheduleEntryPayload(
-    task="endoreg_db.retry_due_upload_jobs",
-    schedule=60,
-    options=DjangoBeatScheduleOptionsPayload(
-        queue=CELERY_MAINTENANCE_QUEUE,
-        routing_key=CELERY_MAINTENANCE_QUEUE,
-        expires=55,
-    ),
-).model_dump(by_alias=True, mode="python")
 WATCHER_CELERY_INLINE_FALLBACK_ENABLED = watcher_celery_inline_fallback_enabled()
 if celery_audit_ledger_integrity_beat_enabled():
-    CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = (
-        DjangoBeatScheduleEntryPayload(
-            task="endoreg_db.refresh_audit_ledger_integrity_status",
-            schedule=get_celery_audit_ledger_integrity_interval_seconds(),
-            options=DjangoBeatScheduleOptionsPayload(
-                queue=CELERY_MAINTENANCE_QUEUE,
-                routing_key=CELERY_MAINTENANCE_QUEUE,
-                expires=get_celery_audit_ledger_integrity_interval_seconds(),
-            ),
-        ).model_dump(by_alias=True, mode="python")
-    )
+    CELERY_BEAT_SCHEDULE["audit-ledger-integrity-refresh"] = {
+        "task": "endoreg_db.refresh_audit_ledger_integrity_status",
+        "schedule": get_celery_audit_ledger_integrity_interval_seconds(),
+        "options": {
+            "queue": CELERY_MAINTENANCE_QUEUE,
+            "routing_key": CELERY_MAINTENANCE_QUEUE,
+            "expires": get_celery_audit_ledger_integrity_interval_seconds(),
+        },
+    }
 
 # Internationalization
 LANGUAGE_CODE = "de"
@@ -255,7 +221,6 @@ LANGUAGES = [
 INSTALLED_APPS = [
     "endoreg_db.apps.EndoregDbConfig",
     "lx_dtypes.django.apps.LxDtypesDjangoConfig",
-    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -275,7 +240,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Use a distinct module name to avoid ambiguity and mount API surfaces centrally.
+# Use a distinct module name to avoid ambiguity and mount API under /api/
 ROOT_URLCONF = "endoreg_db.root_urls"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TIME_ZONE = get_time_zone()
@@ -286,7 +251,6 @@ STATIC_ROOT = get_static_root()
 # Protected media is served through the LuxNix/Nginx contract by default.
 PROTECTED_MEDIA_URL = get_protected_media_url()
 PROTECTED_MEDIA_ROOT = get_protected_media_root()
-ALLOW_INSECURE_PROTECTED_MEDIA = allow_insecure_protected_media_serving()
 
 # Keep Django's media settings aligned with the protected-media contract so any
 # remaining FileField.url consumers resolve to the protected prefix rather than
@@ -296,39 +260,24 @@ MEDIA_ROOT = get_media_root()
 VIDEO_DEFAULT_FPS = get_video_default_fps()
 
 # Caching: provide a default LocMem cache with explicit TIMEOUT for consistency
-CACHES = DjangoCacheSettingsPayload(
-    default=DjangoCacheConfigPayload(
-        BACKEND="django.core.cache.backends.locmem.LocMemCache",
-        LOCATION=get_cache_location(),
-        TIMEOUT=get_cache_timeout_seconds(),
-    ),
-).model_dump(by_alias=True, mode="python")
+CACHES = build_default_cache_settings()
 
-REST_FRAMEWORK = DjangoRestFrameworkSettingsPayload(
-    DEFAULT_THROTTLE_CLASSES=(
-        "rest_framework.throttling.UserRateThrottle",
-        "rest_framework.throttling.AnonRateThrottle",
-    ),
-    DEFAULT_THROTTLE_RATES=DjangoThrottleRatesPayload(
-        user=get_drf_throttle_user_rate(),
-        anon=get_drf_throttle_anon_rate(),
-    ),
-).model_dump(by_alias=True, mode="python")
+REST_FRAMEWORK = build_base_rest_framework_settings()
 
 TEMPLATES = [
-    DjangoTemplateConfigPayload(
-        BACKEND="django.template.backends.django.DjangoTemplates",
-        DIRS=(),
-        APP_DIRS=True,
-        OPTIONS=DjangoTemplateOptionsPayload(
-            context_processors=(
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
                 "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-            )
-        ),
-    ).model_dump(by_alias=True, mode="python")
+            ],
+        },
+    },
 ]
 
 TEST_LOGGER_NAMES = [
@@ -338,9 +287,11 @@ TEST_LOGGER_NAMES = [
     "patient",
     "default_objects",
     "ffmpeg_wrapper",
-    # Video processing modules
+    # Video-pipeline modules
     "endoreg_db.models.media.video.video_file",
     "endoreg_db.services.video_files._anonymization",
+    "endoreg_db.services.video_files._pipeline_1",
+    "endoreg_db.services.video_files._pipeline_2",
     "endoreg_db.models.metadata.sensitive_meta",
 ]
 
@@ -354,7 +305,6 @@ __all__ = [
     "BASE_DIR",
     "ASSET_DIR",
     "RUN_VIDEO_TESTS",
-    "FFMPEG_TRANSCODE_QUALITY_MODE",
     "ENDOREG_DEPLOYMENT_ROLE",
     "ENDOREG_ENABLE_HUB_TRANSFERS",
     "ENDOREG_DEPLOYMENT_ROLE_VALUES",
@@ -406,7 +356,6 @@ __all__ = [
     "STATIC_ROOT",
     "PROTECTED_MEDIA_URL",
     "PROTECTED_MEDIA_ROOT",
-    "ALLOW_INSECURE_PROTECTED_MEDIA",
     "MEDIA_URL",
     "MEDIA_ROOT",
     "CACHES",

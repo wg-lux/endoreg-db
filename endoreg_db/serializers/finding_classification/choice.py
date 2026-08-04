@@ -1,19 +1,10 @@
 from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassificationChoice,
 )
-from typing import TYPE_CHECKING
-
 from rest_framework import serializers
 
-if TYPE_CHECKING:
-    _ModelSerializerMeta = serializers.ModelSerializer.Meta
-else:
-    _ModelSerializerMeta = object
 
-
-class FindingClassificationChoiceSerializer(
-    serializers.ModelSerializer[FindingClassificationChoice]
-):
+class FindingClassificationChoiceSerializer(serializers.ModelSerializer):
     """
     Serializer for the FindingClassificationChoice model.
 
@@ -25,6 +16,6 @@ class FindingClassificationChoiceSerializer(
         - numerical_descriptors: Associated numerical descriptors for the classification choice.
     """
 
-    class Meta(_ModelSerializerMeta):
-        model = FindingClassificationChoice  # pyright: ignore[reportAssignmentType]
+    class Meta:
+        model = FindingClassificationChoice
         fields = ["id", "name", "description", "subcategories", "numerical_descriptors"]

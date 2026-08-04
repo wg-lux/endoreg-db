@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .center import Center
 from .center_product import CenterProduct
 from .center_resource import CenterResource

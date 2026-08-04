@@ -1,4 +1,3 @@
-from __future__ import annotations
 from .portal_user_information import PortalUserInfo
 
 __all__ = [

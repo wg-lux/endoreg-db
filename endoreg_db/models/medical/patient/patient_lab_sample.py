@@ -1,26 +1,20 @@
-from __future__ import annotations
 from datetime import datetime as dt
 from datetime import timezone
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        LabValue,
-        Patient,
-        PatientLabSampleType,
-        PatientLabValue,
-    )
+    from endoreg_db.models import LabValue, PatientLabValue
     from endoreg_db.utils.links import ModelLinks  # Added import
 
 DEFAULT_PATIENT_LAB_SAMPLE_TYPE_NAME = "generic"
 
 
-class PatientLabSampleTypeManager(models.Manager["PatientLabSampleType"]):
+class PatientLabSampleTypeManager(models.Manager):
     """Manager for PatientLabSampleType with natural key support."""
 
-    def get_by_natural_key(self, name: str) -> "PatientLabSampleType":
+    def get_by_natural_key(self, name):
         """Retrieves a PatientLabSampleType instance by its natural key (name)."""
         return self.get(name=name)
 
@@ -34,23 +28,21 @@ class PatientLabSampleType(models.Model):
         description (str): A description of the patient lab sample type.
     """
 
-    name: models.CharField[Any, Any] = models.CharField(max_length=255)
-    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
 
-    objects: ClassVar[PatientLabSampleTypeManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        PatientLabSampleTypeManager()
-    )
+    objects = PatientLabSampleTypeManager()
 
-    def natural_key(self) -> tuple[str]:
+    def natural_key(self):
         """Returns the natural key (name) as a tuple."""
-        return (str(self.name),)
+        return (self.name,)
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns the name of the sample type."""
         return str(self.name)
 
     @classmethod
-    def get_default_sample_type(cls) -> "PatientLabSampleType":
+    def get_default_sample_type(cls):
         """Gets or creates the default patient lab sample type ('default')."""
         return cls.objects.get_or_create(name="default")[0]
 
@@ -68,25 +60,23 @@ class PatientLabSample(models.Model):
         values (PatientLabValue; One2Many): The value of the lab sample.
     """
 
-    patient: models.ForeignKey[Any] = models.ForeignKey(
+    patient = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="lab_samples"
     )
-    sample_type: models.ForeignKey[Any] = models.ForeignKey(
-        "PatientLabSampleType", on_delete=models.CASCADE
-    )
-    date: models.DateTimeField[Any, Any] = models.DateTimeField()
+    sample_type = models.ForeignKey("PatientLabSampleType", on_delete=models.CASCADE)
+    date = models.DateTimeField()
 
     if TYPE_CHECKING:
 
         @property
         def values(self) -> models.Manager["PatientLabValue"]: ...
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Returns a string representation including patient, type, and date."""
         formatted_datetime = self.date.strftime("%Y-%m-%d %H:%M")
         return f"{self.patient} - {self.sample_type} - {formatted_datetime} ()"
 
-    def get_values(self) -> models.QuerySet["PatientLabValue"]:
+    def get_values(self):
         """Returns all PatientLabValue instances associated with this sample."""
         return self.values.all()
 
@@ -102,21 +92,13 @@ class PatientLabSample(models.Model):
 
         patient_lab_values = list(self.values.all())
 
-        return ModelLinks.model_validate(
-            {
-                "patient_lab_values": patient_lab_values,
-                "patient_lab_samples": [self],
-            }
+        return ModelLinks(
+            patient_lab_values=patient_lab_values,
+            patient_lab_samples=[self],  # Include the sample itself
         )
 
     @classmethod
-    def create_by_patient(
-        cls,
-        patient: "Patient | None" = None,
-        sample_type: "PatientLabSampleType | str | None" = None,
-        date: dt | None = None,
-        save: bool = True,
-    ) -> "PatientLabSample | None":
+    def create_by_patient(cls, patient=None, sample_type=None, date=None, save=True):
         """
         Creates a new patient lab sample for a given patient.
 
@@ -138,7 +120,7 @@ class PatientLabSample(models.Model):
             return None
         if not sample_type:
             sample_type = PatientLabSampleType.get_default_sample_type()
-        elif isinstance(sample_type, str):
+        else:
             sample_type = PatientLabSampleType.objects.get(name=sample_type)
         if not date:
             date = dt.now(timezone.utc)
@@ -152,15 +134,17 @@ class PatientLabSample(models.Model):
 
         return patient_lab_sample
 
-    def add_empty_value(self, lab_value: "LabValue") -> "PatientLabValue":
+    def add_empty_value(self, lab_value: "LabValue"):
         """
         Adds an empty PatientLabValue for the given lab value to this sample.
 
         Args:
             lab_value (LabValue): The lab value to add.
         """
-        from endoreg_db.models import PatientLabValue
+        from endoreg_db.models import LabValue, PatientLabValue
 
+        if not isinstance(lab_value, LabValue):
+            raise ValueError("lab_value must be an instance of LabValue.")
         patient_lab_value = PatientLabValue.create_lab_value_by_sample(
             sample=self,
             lab_value_name=lab_value.name,

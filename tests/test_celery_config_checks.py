@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator
-
 import pytest
-from pytest import MonkeyPatch
 from django.test import override_settings
 
 from endoreg_db.checks import check_celery_runtime_configuration
@@ -23,12 +20,11 @@ CELERY_MODE_ENV_KEYS = (
 
 
 @pytest.fixture(autouse=True)
-def clear_celery_mode_env(monkeypatch: MonkeyPatch) -> Generator[None, None, None]:
+def clear_celery_mode_env(monkeypatch):
     for key in CELERY_MODE_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.delenv("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", raising=False)
     monkeypatch.delenv("CELERY_REQUIRE_SECURE_TRANSPORT", raising=False)
-    yield
 
 
 @override_settings(
@@ -39,7 +35,7 @@ def clear_celery_mode_env(monkeypatch: MonkeyPatch) -> Generator[None, None, Non
     WATCHER_CELERY_INLINE_FALLBACK_ENABLED=False,
     MODEL_TRAINING_JOB_MODE="celery",
 )
-def test_celery_check_errors_without_broker_in_strict_profile() -> None:
+def test_celery_check_errors_without_broker_in_strict_profile():
     messages = check_celery_runtime_configuration()
 
     assert [message.id for message in messages] == ["endoreg_db.E001"]
@@ -54,7 +50,7 @@ def test_celery_check_errors_without_broker_in_strict_profile() -> None:
     WATCHER_CELERY_INLINE_FALLBACK_ENABLED=True,
     MODEL_TRAINING_JOB_MODE="celery",
 )
-def test_celery_check_warns_without_broker_in_non_strict_profile() -> None:
+def test_celery_check_warns_without_broker_in_non_strict_profile():
     messages = check_celery_runtime_configuration()
 
     assert [message.id for message in messages] == ["endoreg_db.W001"]
@@ -68,7 +64,7 @@ def test_celery_check_warns_without_broker_in_non_strict_profile() -> None:
     WATCHER_CELERY_INLINE_FALLBACK_ENABLED=False,
     MODEL_TRAINING_JOB_MODE="celery",
 )
-def test_celery_check_errors_on_insecure_broker_in_strict_profile() -> None:
+def test_celery_check_errors_on_insecure_broker_in_strict_profile():
     messages = check_celery_runtime_configuration()
 
     assert [message.id for message in messages] == ["endoreg_db.E002"]
@@ -83,9 +79,7 @@ def test_celery_check_errors_on_insecure_broker_in_strict_profile() -> None:
     WATCHER_CELERY_INLINE_FALLBACK_ENABLED=False,
     MODEL_TRAINING_JOB_MODE="celery",
 )
-def test_celery_check_allows_confirmed_external_secure_transport(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_celery_check_allows_confirmed_external_secure_transport(monkeypatch):
     monkeypatch.setenv("CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED", "1")
 
     assert check_celery_runtime_configuration() == []
@@ -99,16 +93,14 @@ def test_celery_check_allows_confirmed_external_secure_transport(
     WATCHER_CELERY_INLINE_FALLBACK_ENABLED=True,
     MODEL_TRAINING_JOB_MODE="celery",
 )
-def test_celery_check_rejects_watcher_inline_fallback_in_strict_profile() -> None:
+def test_celery_check_rejects_watcher_inline_fallback_in_strict_profile():
     messages = check_celery_runtime_configuration()
 
     assert [message.id for message in messages] == ["endoreg_db.E003"]
     assert "WATCHER_CELERY_INLINE_FALLBACK_ENABLED" in messages[0].msg
 
 
-def test_generic_secure_transport_gate_covers_non_ffmpeg_queues(
-    monkeypatch: MonkeyPatch,
-) -> None:
+def test_generic_secure_transport_gate_covers_non_ffmpeg_queues(monkeypatch):
     monkeypatch.setenv("CELERY_REQUIRE_SECURE_TRANSPORT", "1")
     monkeypatch.setenv("CELERY_BROKER_URL", "redis://broker.local/0")
 

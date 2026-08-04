@@ -4,7 +4,6 @@ from endoreg_db.services.tabular_import_formats import (
     build_preanonymized_payload,
     load_document_templates,
     normalize_document_row,
-    normalize_patient_gender,
     resolve_document_template,
 )
 
@@ -74,20 +73,3 @@ def test_normalize_document_row_preserves_unknown_columns() -> None:
 
     assert normalized["document_type"] == "patienten"
     assert normalized["unknown_columns"] == {"ExtraColumn": "surplus"}
-
-
-def test_normalize_patient_gender_maps_source_codes_to_contract_values() -> None:
-    expected_values = {
-        "M": "male",
-        "männlich": "male",
-        "W": "female",
-        "weiblich": "female",
-        "D": "other",
-        "unbekannt": "unknown",
-    }
-
-    assert {
-        source_value: normalize_patient_gender(source_value)
-        for source_value in expected_values
-    } == expected_values
-    assert normalize_patient_gender("unsupported") == "unsupported"

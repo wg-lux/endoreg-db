@@ -3,10 +3,8 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import timedelta
 
 from django.db import transaction
-from django.utils import timezone
 
 from endoreg_db.config.env import (
     celery_broker_transport_error,
@@ -32,7 +30,6 @@ ACTIVE_REQUEST_STATUSES = {
     FrameExtractionRequest.STATUS_PENDING,
     FrameExtractionRequest.STATUS_RUNNING,
 }
-FRAME_EXTRACTION_STALE_TIMEOUT = timedelta(hours=7)
 
 
 @dataclass(frozen=True)
@@ -128,22 +125,6 @@ def request_frame_extraction(
         )
 
         if not created:
-            stale_at = timezone.now() - FRAME_EXTRACTION_STALE_TIMEOUT
-            active_since = (
-                request.started_at or request.requested_at
-                if request.status == FrameExtractionRequest.STATUS_RUNNING
-                else request.requested_at
-            )
-            recovered_stale_request = False
-            if request.status in ACTIVE_REQUEST_STATUSES and active_since < stale_at:
-                logger.warning(
-                    "Recovering stale frame extraction request: request=%s video=%s frame=%s",
-                    request.pk,
-                    video.pk,
-                    frame_number,
-                )
-                request.mark_pending(task_id=task_id)
-                recovered_stale_request = True
             if request.status == FrameExtractionRequest.STATUS_FAILURE:
                 return FrameExtractionDispatchResult(
                     request_id=request.pk,
@@ -160,10 +141,7 @@ def request_frame_extraction(
                     video_id=video.pk,
                     frame_number=frame_number,
                 )
-            if (
-                request.status in ACTIVE_REQUEST_STATUSES
-                and not recovered_stale_request
-            ):
+            if request.status in ACTIVE_REQUEST_STATUSES:
                 return FrameExtractionDispatchResult(
                     request_id=request.pk,
                     task_id=request.task_id,
@@ -219,18 +197,8 @@ def run_frame_extraction_request(
     video_id: int,
     frame_number: int,
 ) -> bool:
-    with transaction.atomic():
-        request = FrameExtractionRequest.objects.select_for_update().get(pk=request_id)
-        if request.status == FrameExtractionRequest.STATUS_SUCCESS:
-            return True
-        if request.status != FrameExtractionRequest.STATUS_PENDING:
-            logger.info(
-                "Skipping duplicate frame extraction task: request=%s status=%s",
-                request.pk,
-                request.status,
-            )
-            return False
-        request.mark_running()
+    request = FrameExtractionRequest.objects.get(pk=request_id)
+    request.mark_running()
     try:
         video = VideoFile.objects.get(pk=video_id)
         frame = get_or_create_frame_record(video=video, frame_number=frame_number)

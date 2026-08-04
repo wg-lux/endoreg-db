@@ -1,37 +1,7 @@
-"""Compatibility wrapper for Django's DEBUG-only static URL helper."""
+"""Compatibility imports for :mod:`endoreg_db.utils.web.django_static`."""
 
 from __future__ import annotations
 
-import re
-from typing import Any, Callable
-from urllib.parse import urlsplit
+from endoreg_db.utils._compat import reexport_public_module
 
-try:
-    from django.conf.urls.static import static as _django_static
-except ImportError:
-    from django.core.exceptions import ImproperlyConfigured
-    from django.http.response import HttpResponseBase
-    from django.urls import URLPattern
-    from django.urls import re_path
-    from django.views.static import serve
-
-    def static(
-        prefix: str,
-        view: Callable[..., HttpResponseBase] = serve,
-        **kwargs: Any,
-    ) -> list[URLPattern]:
-        if not prefix:
-            raise ImproperlyConfigured("Empty static prefix not permitted")
-
-        if urlsplit(prefix).netloc:
-            return []
-
-        return [
-            re_path(
-                r"^%s(?P<path>.*)$" % re.escape(prefix.lstrip("/")),
-                view,
-                kwargs=kwargs,
-            ),
-        ]
-else:
-    static = _django_static
+reexport_public_module("endoreg_db.utils.web.django_static", globals())

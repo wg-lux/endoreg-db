@@ -7,16 +7,16 @@ Testet die Logik ohne Django-Setup
 import sys
 from datetime import datetime, date, timedelta
 from hashlib import sha256
+
 import pytest
 
 from endoreg_db.models.metadata import sensitive_meta_logic
-from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 # Add the endoreg-db directory to the path
 # sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
 
 
-def generate_random_dob() -> datetime:
+def generate_random_dob():
     """Generates a random timezone-aware datetime between 1920-01-01 and 2000-12-31."""
     import random
     import pytz  # type: ignore
@@ -32,7 +32,7 @@ def generate_random_dob() -> datetime:
     return pytz.UTC.localize(random_datetime)
 
 
-def generate_random_examination_date() -> date:
+def generate_random_examination_date():
     """Generates a random date within the last 20 years."""
     import random
 
@@ -45,38 +45,21 @@ def generate_random_examination_date() -> date:
     return random_date
 
 
-def get_patient_hash(
-    first_name: str,
-    last_name: str,
-    dob: date | datetime,
-    center: str,
-    salt: str,
-) -> str:
+def get_patient_hash(first_name, last_name, dob, center, salt):
     """Mock implementation of patient hash generation"""
     hash_input = f"{first_name}|{last_name}|{dob}|{center}|{salt}"
     return hash_input
 
 
 def get_patient_examination_hash(
-    first_name: str,
-    last_name: str,
-    dob: date | datetime,
-    examination_date: date | datetime,
-    center: str,
-    salt: str,
-) -> str:
+    first_name, last_name, dob, examination_date, center, salt
+):
     """Mock implementation of patient examination hash generation"""
     hash_input = f"{first_name}|{last_name}|{dob}|{examination_date}|{center}|{salt}"
     return hash_input
 
 
-def calculate_patient_hash_simple(
-    first_name: str,
-    last_name: str,
-    dob: date | datetime,
-    center: str,
-    salt: str = "test_salt",
-) -> str:
+def calculate_patient_hash_simple(first_name, last_name, dob, center, salt="test_salt"):
     """Simplified patient hash calculation for testing"""
     hash_str = get_patient_hash(
         first_name=first_name,
@@ -89,13 +72,8 @@ def calculate_patient_hash_simple(
 
 
 def calculate_examination_hash_simple(
-    first_name: str,
-    last_name: str,
-    dob: date | datetime,
-    examination_date: date | datetime,
-    center: str,
-    salt: str = "test_salt",
-) -> str:
+    first_name, last_name, dob, examination_date, center, salt="test_salt"
+):
     """Simplified examination hash calculation for testing"""
     hash_str = get_patient_examination_hash(
         first_name=first_name,
@@ -113,7 +91,7 @@ def test_date_generation():
     print("🧪 Testing date generation...")
 
     # Test multiple DOB generations
-    dobs: list[date] = []
+    dobs = []
     for i in range(5):
         # Create a simple DOB without Django timezone
         import random
@@ -132,7 +110,7 @@ def test_date_generation():
         assert 1920 <= dob.year <= 2000, f"DOB year {dob.year} not in expected range"
 
     # Test examination date generation
-    exam_dates: list[date] = []
+    exam_dates = []
     today = date.today()
     twenty_years_ago = today - timedelta(days=20 * 365)
 
@@ -194,13 +172,19 @@ def test_date_conversion():
 
     test_date = date(1990, 5, 15)
 
-    # Convert date to datetime at the start of the day.
-    aware_datetime = datetime.combine(test_date, datetime.min.time())
-    print(f"✅ Date {test_date} converted to datetime: {aware_datetime}")
+    # Simulate the conversion logic from the actual code
+    if isinstance(test_date, date) and not isinstance(test_date, datetime):
+        # Convert date to datetime at the start of the day
+        aware_datetime = datetime.combine(test_date, datetime.min.time())
+        print(f"✅ Date {test_date} converted to datetime: {aware_datetime}")
 
-    assert aware_datetime.hour == 0, "Converted datetime should be at start of day"
-    assert aware_datetime.minute == 0, "Converted datetime should be at start of day"
-    assert aware_datetime.second == 0, "Converted datetime should be at start of day"
+        assert aware_datetime.hour == 0, "Converted datetime should be at start of day"
+        assert aware_datetime.minute == 0, (
+            "Converted datetime should be at start of day"
+        )
+        assert aware_datetime.second == 0, (
+            "Converted datetime should be at start of day"
+        )
 
 
 def test_name_processing():
@@ -243,13 +227,18 @@ def test_sensitive_meta_logic_parse_any_date_prefers_german_and_iso_formats():
 
 @pytest.mark.unit
 def test_sensitive_meta_logic_hashes_validate_required_fields():
-    instance = SensitiveMeta(
-        first_name="Ada",
-        last_name="Lovelace",
-        dob=date(1990, 1, 2),
-        examination_date=date(2024, 3, 4),
-        center="center-a",
-    )
+    center = type("CenterStub", (), {"name": "center-a"})()
+    instance = type(
+        "SensitiveMetaStub",
+        (),
+        {
+            "patient_first_name": "Ada",
+            "patient_last_name": "Lovelace",
+            "patient_dob": date(1990, 1, 2),
+            "examination_date": date(2024, 3, 4),
+            "center": center,
+        },
+    )()
 
     patient_hash = sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")
     examination_hash = sensitive_meta_logic.calculate_examination_hash(
@@ -259,7 +248,6 @@ def test_sensitive_meta_logic_hashes_validate_required_fields():
 
     assert len(patient_hash) == 64
     assert len(examination_hash) == 64
-
     instance.center = None
     with pytest.raises(ValueError, match="Center is required"):
         sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")

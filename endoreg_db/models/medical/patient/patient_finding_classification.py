@@ -1,35 +1,19 @@
-from __future__ import annotations
-
 import random
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy as np
-from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
-    PatientFindingClassificationNumericalDescriptorPayload,
-)
 
-from endoreg_db.schemas import (
-    build_patient_finding_numerical_descriptors,
-    build_patient_finding_subcategories,
-    validate_patient_finding_numerical_descriptors,
-    validate_patient_finding_subcategories,
-)
-
+# Corrected imports for type hints
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        FindingClassification,
-        FindingClassificationChoice,
-        PatientFinding,
+    from lx_dtypes.models.ledger.p_finding_classification_choice_descriptor import (
+        PFindingClassificationChoiceDescriptorDataDict,
     )
-    from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
-        PatientFindingClassificationNumericalDescriptorsData,
-        PatientFindingClassificationSubcategoriesData,
-    )
-    from lx_dtypes.models.contracts.finding_classification import (
-        PatientFindingClassificationCore,
-    )
+
+    JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
+    DescriptorValueMap: TypeAlias = dict[
+        str, PFindingClassificationChoiceDescriptorDataDict | dict[str, Any]
+    ]
 
 
 class PatientFindingClassification(models.Model):
@@ -37,119 +21,85 @@ class PatientFindingClassification(models.Model):
     Links a PatientFinding to a specific classification and choice, with optional subcategory values.
     """
 
-    finding: models.ForeignKey["PatientFinding"] = models.ForeignKey(
+    finding = models.ForeignKey(
         "PatientFinding", on_delete=models.CASCADE, related_name="classifications"
     )
-    classification: models.ForeignKey["FindingClassification"] = models.ForeignKey(
+    classification = models.ForeignKey(
         "FindingClassification",
         on_delete=models.CASCADE,
         related_name="patient_finding_classifications",
     )
-    classification_choice: models.ForeignKey["FindingClassificationChoice"] = (
-        models.ForeignKey(
-            "FindingClassificationChoice",
-            on_delete=models.CASCADE,
-            related_name="patient_finding_classifications",
-        )
+    classification_choice = models.ForeignKey(
+        "FindingClassificationChoice",
+        on_delete=models.CASCADE,
+        related_name="patient_finding_classifications",
     )
 
-    is_active: models.BooleanField[Any, Any] = models.BooleanField(
+    is_active = models.BooleanField(
         default=True, help_text="Indicates if the classification is currently active."
     )
-    subcategories: models.JSONField[
-        PatientFindingClassificationSubcategoriesData | None
-    ] = models.JSONField(
-        blank=True,
-        null=True,
-        default=dict,
-    )
-    numerical_descriptors: models.JSONField[
-        PatientFindingClassificationNumericalDescriptorsData | None
-    ] = models.JSONField(
-        blank=True,
-        null=True,
-        default=dict,
-    )
+    subcategories = models.JSONField(blank=True, null=True)
+    numerical_descriptors = models.JSONField(blank=True, null=True)
 
     if TYPE_CHECKING:
-
-        @property
-        def contract(self) -> PatientFindingClassificationCore: ...
+        pass
 
     class Meta:
         verbose_name = "Patient Finding Classification"
         verbose_name_plural = "Patient Finding Classifications"
         ordering = ["finding", "classification", "classification_choice"]
 
-    def __str__(self) -> str:
+    def __str__(self):
         """
         Return a string representation combining the finding, classification, and classification choice.
         """
         return f"{self.finding} - {self.classification} - {self.classification_choice}"
 
-    def clean(self) -> None:
-        super().clean()
-        errors: dict[str, str] = {}
-        if self.classification_choice not in self.classification.choices.all():
-            errors["classification_choice"] = (
-                "classification_choice must be in classification.choices"
-            )
-
-        if not self.subcategories:
-            self.subcategories = build_patient_finding_subcategories(
-                self.classification_choice.subcategories
-            )
-        if not self.numerical_descriptors:
-            self.numerical_descriptors = build_patient_finding_numerical_descriptors(
-                self.classification_choice.numerical_descriptors
-            )
-
-        for field_name, validator in (
-            ("subcategories", validate_patient_finding_subcategories),
-            ("numerical_descriptors", validate_patient_finding_numerical_descriptors),
-        ):
-            try:
-                setattr(self, field_name, validator(getattr(self, field_name)))
-            except ValueError as exc:
-                errors[field_name] = str(exc)
-        if errors:
-            raise ValidationError(errors)
-
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args, **kwargs):
         """
         Saves the model instance after validating and initializing classification-related fields.
 
         Ensures that the selected classification choice is valid for the associated classification. If subcategories or numerical descriptors are unset, initializes them from the classification choice before saving.
         """
-        self.clean()
+        if self.classification_choice not in self.classification.choices.all():
+            raise ValueError("classification_choice must be in classification.choices")
+
+        if not self.subcategories:
+            self.subcategories = self.classification_choice.subcategories
+
+        if not self.numerical_descriptors:
+            self.numerical_descriptors = (
+                self.classification_choice.numerical_descriptors
+            )
+
         super().save(*args, **kwargs)
 
-    def initialize_and_get_subcategories(
-        self,
-    ) -> PatientFindingClassificationSubcategoriesData:
+    def initialize_and_get_subcategories(self) -> "JsonObjectMap":
         """
         Ensure the subcategories field is initialized and return its dictionary.
 
         Returns:
             dict: The subcategories associated with this classification.
         """
+        if not self.subcategories:
+            self.save()
         assert self.subcategories is not None
         return self.subcategories
 
-    def initialize_and_get_descriptors(
-        self,
-    ) -> PatientFindingClassificationNumericalDescriptorsData:
+    def initialize_and_get_descriptors(self) -> "DescriptorValueMap":
         """
         Return the numerical descriptors dictionary, initializing it if necessary.
 
         If the `numerical_descriptors` field is empty or uninitialized, the method triggers model initialization and returns the resulting dictionary.
         """
+        if not self.numerical_descriptors:
+            self.save()
         assert self.numerical_descriptors is not None
         return self.numerical_descriptors
 
     def set_subcategory(
-        self, subcategory_name: str, subcategory_value: dict[str, object]
-    ) -> dict[str, object]:
+        self, subcategory_name: str, subcategory_value: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Update the value of a specified subcategory and save the classification.
 
@@ -169,7 +119,7 @@ class PatientFindingClassification(models.Model):
 
         return self.subcategories[subcategory_name]
 
-    def set_random_subcategories(self) -> PatientFindingClassificationSubcategoriesData:
+    def set_random_subcategories(self) -> "JsonObjectMap":
         """
         Assign random values to all required subcategories that do not already have a value.
 
@@ -186,10 +136,8 @@ class PatientFindingClassification(models.Model):
         assert self.subcategories is not None, "Subcategories must be initialized."
 
         for subcategory_name, subcategory_dict in self.subcategories.items():
-            if subcategory_dict["required"] and not subcategory_dict.get("value"):
-                subcategory_choice = random.choice(
-                    cast(list[str], subcategory_dict["choices"])
-                )
+            if subcategory_dict["required"] and not subcategory_dict.get("value", None):
+                subcategory_choice = random.choice(subcategory_dict["choices"])
                 self.subcategories[subcategory_name]["value"] = subcategory_choice
 
         self.save()
@@ -216,17 +164,12 @@ class PatientFindingClassification(models.Model):
             "Descriptor must be in numerical descriptors."
         )
         descriptor = self.numerical_descriptors[descriptor_name]
-        descriptor_payload = (
-            PatientFindingClassificationNumericalDescriptorPayload.model_validate(
-                descriptor
-            )
-        )
-        min_val = descriptor_payload.min
-        max_val = descriptor_payload.max
-        distribution = descriptor_payload.distribution
+        min_val = descriptor.get("min", 0)
+        max_val = descriptor.get("max", 1)
+        distribution = descriptor.get("distribution", "normal")
         if distribution == "normal":
-            mean = descriptor_payload.mean
-            std = descriptor_payload.std
+            mean = descriptor.get("mean", 0.5)
+            std = descriptor.get("std", 0.1)
             value = np.random.normal(mean, std)
             # clip value to min and max
             value = np.clip(value, min_val, max_val)
@@ -235,11 +178,11 @@ class PatientFindingClassification(models.Model):
         else:
             raise ValueError("Distribution not supported")
 
-        return float(value)
+        return value
 
     def set_random_numerical_descriptor(
         self, descriptor_name: str, save: bool = True
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """
         Assigns a random value to the specified numerical descriptor and optionally saves the model.
 
@@ -253,6 +196,8 @@ class PatientFindingClassification(models.Model):
         Raises:
             ValueError: If the descriptor name is not present in the numerical descriptors.
         """
+        if self.numerical_descriptors is None:
+            self.save()
         assert self.numerical_descriptors is not None, (
             "Numerical descriptors must be initialized."
         )
@@ -266,9 +211,7 @@ class PatientFindingClassification(models.Model):
 
         return self.numerical_descriptors[descriptor_name]
 
-    def set_random_numerical_descriptors(
-        self,
-    ) -> PatientFindingClassificationNumericalDescriptorsData:
+    def set_random_numerical_descriptors(self) -> "DescriptorValueMap":
         """
         Assigns random values to all numerical descriptors and saves the model.
 

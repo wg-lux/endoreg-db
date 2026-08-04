@@ -1,19 +1,14 @@
-from __future__ import annotations
 import logging
-from typing import TYPE_CHECKING, List, Optional, Protocol, Tuple, cast
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import numpy as np
 
-from endoreg_db.models.label.label_video_segment.label_video_segment import (
-    LabelVideoSegment,
-)
-from endoreg_db.services.video_files.metadata import get_video_fps
+from endoreg_db.services.video_files import get_video_fps
+
+from ..label.label_video_segment import LabelVideoSegment
 
 # Import necessary models and utils used by the logic
 from ..utils import find_segments_in_prediction_array
-from lx_dtypes.models.contracts.video_prediction_logic import (
-    PredictionSegmentCreatePayload,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +17,8 @@ DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN = 1.5
 DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S = 1.0
 
 if TYPE_CHECKING:
-    from endoreg_db.models.label.label import Label
+    from ..label import Label
     from .video_prediction_meta import VideoPredictionMeta
-
-
-class _InformationSourceManagerLike(Protocol):
-    def get_or_create_by_name(self, name: str) -> tuple[object, bool]: ...
 
 
 def apply_running_mean_logic(
@@ -41,7 +32,7 @@ def apply_running_mean_logic(
     video_obj = instance.get_video()
     fps = get_video_fps(video_obj)
 
-    if fps <= 0:
+    if fps is None or fps <= 0:
         logger.warning(
             f"Invalid FPS ({fps}) for {video_obj}. Cannot apply running mean. Returning original array."
         )
@@ -85,9 +76,7 @@ def calculate_prediction_array_logic(
     Fetches predictions, applies smoothing, and returns the binary prediction array.
     Does not save the array itself.
     """
-    from endoreg_db.models.label.annotation.image_classification import (
-        ImageClassificationAnnotation,
-    )
+    from ..label import ImageClassificationAnnotation
 
     video_obj = instance.get_video()
     model_meta = instance.model_meta
@@ -152,25 +141,23 @@ def create_video_segments_for_label_logic(
     """
     Creates LabelVideoSegment instances for the given label and segments.
     """
-    from endoreg_db.models.other.information_source import InformationSource
+    from ..other import InformationSource
 
     video_obj = instance.get_video()
-    information_source, _ = cast(
-        _InformationSourceManagerLike, InformationSource.objects
-    ).get_or_create_by_name("prediction")
+    information_source, _ = InformationSource.objects.get_or_create_by_name(
+        "prediction"
+    )
 
-    segments_to_create: list[LabelVideoSegment] = []
+    segments_to_create = []
     for start_frame, end_frame in segments:
-        segment_data = PredictionSegmentCreatePayload.model_validate(
-            {
-                "start_frame_number": start_frame,
-                "end_frame_number": end_frame,
-                "source": information_source,
-                "label": label,
-                "prediction_meta": instance,
-                "video_file": video_obj,
-            }
-        )
+        segment_data = {
+            "start_frame_number": start_frame,
+            "end_frame_number": end_frame,
+            "source": information_source,
+            "label": label,
+            "prediction_meta": instance,
+            "video_file": video_obj,
+        }
         # Check for existence before creating the object instance
         if not LabelVideoSegment.objects.filter(
             video_file=video_obj,
@@ -179,9 +166,7 @@ def create_video_segments_for_label_logic(
             start_frame_number=start_frame,
             end_frame_number=end_frame,
         ).exists():
-            segments_to_create.append(
-                LabelVideoSegment(**segment_data.model_dump(mode="python"))
-            )
+            segments_to_create.append(LabelVideoSegment(**segment_data))
 
     if segments_to_create:
         LabelVideoSegment.objects.bulk_create(segments_to_create)
@@ -207,7 +192,7 @@ def create_video_segments_logic(
     video_obj = instance.get_video()
     fps = get_video_fps(video_obj)
 
-    if fps <= 0:
+    if fps is None or fps <= 0:
         logger.warning(
             f"Cannot create video segments for {video_obj} with invalid FPS ({fps})."
         )
