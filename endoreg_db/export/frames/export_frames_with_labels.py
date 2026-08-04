@@ -1122,15 +1122,17 @@ def _extract_and_move_transcoded_frames(
             missing_requested_frames = [
                 frame
                 for frame in requested_frames
-                if overwrite or not (frame_dir / _frame_pk_filename(frame.pk, ext)).exists()
-
+                if overwrite
+                or not (frame_dir / _frame_pk_filename(frame.pk, ext)).exists()
             ]
 
             total_db_frames = video.frames.count()
             requested_count = len(requested_frames)
             missing_count = len(missing_requested_frames)
-            
-            frame_numbers = [int(frame.frame_number) for frame in missing_requested_frames]
+
+            frame_numbers = [
+                int(frame.frame_number) for frame in missing_requested_frames
+            ]
             duplicate_frame_numbers = len(frame_numbers) != len(set(frame_numbers))
 
             print(

@@ -1,0 +1,193 @@
+schema_version: '1.0'
+id: anonymization
+name: Anonymisierung
+description: Fail-closed Anonymisierung und Qualitätsfreigabe klinischer Videos, Frames und Berichte.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/anonymization_contract.md
+  disposition: reference
+  note: Schutzumfang, Qualitätsgrenzen, Zustandsmodell und rollengetrennte Abläufe.
+- path: docs/configurable_ai_setup.md
+  disposition: reference
+  note: Konfiguration der eingesetzten KI-Komponenten.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Schutzumfang und Freigabegrenzen sind eindeutig definiert
+  acceptance:
+  - Sensible Merkmale, unterstützte Medientypen und Qualitätsgrenzen sind dokumentiert.
+  - Unvollständige oder inkonsistente Zustände führen zu keiner Freigabe.
+  required: true
+  verification:
+    kind: manual
+    instructions: Threat Model, Qualitätsmetriken und Zustandsmaschine gemeinsam prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: docs/configurable_ai_setup.md
+    - kind: review
+      reference: docs/anonymization_contract.md
+    note: Schutzumfang, unterstützte Medientypen, fail-closed Freigabegrenzen, Qualitätsgrenzen und Zustandsmaschine
+      wurden gegen Services, State-Logik und Sicherheitsgrenzen geprüft.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:43:47.535094Z'
+- id: media_workflow
+  category: functionality
+  title: Video-, Frame- und Berichtsanonymisierung folgen einem expliziten Workflow
+  acceptance:
+  - Verarbeitung ist idempotent und jeder Übergang wird serverseitig validiert.
+  - Korrektur und erneute Verarbeitung überschreiben keine ungeprüfte Historie.
+  - Nach der Validierung werden alle extrahierten Frames validierter Outside-Segmente atomar vollständig
+    geschwärzt und vor der Freigabe verifiziert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_video_anonymization.py
+    - tests/views/anonymization/test_validate_view.py
+    - tests/services/test_video_post_validation_jobs.py
+    - tests/views/video/test_segments_crud.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_anonymization.py tests/views/anonymization/test_validate_view.py
+        tests/services/test_video_post_validation_jobs.py tests/views/video/test_segments_crud.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T13:02:02.649207Z'
+- id: automated_tests
+  category: testing
+  title: Anonymisierung, Validierung und Qualitätsmetriken sind regressionsgetestet
+  acceptance:
+  - Positive, negative und Grenzfälle für Video und Bericht laufen reproduzierbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_anonymization_quality_evaluation.py
+    - tests/views/anonymization
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
+        tests/views/anonymization -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-17T12:50:03.120066Z'
+- id: privacy_controls
+  category: security
+  title: Nicht freigegebene Rohdaten können den lokalen Schutzbereich nicht verlassen
+  acceptance:
+  - Export ist nur für anonymisierte, validierte Medien möglich.
+  - Master-Key und direkte Identifikatoren gelangen weder in Payloads noch Konfiguration.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_export_frames_contract.py
+    - tests/services/test_transfer_job_contract.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/utils/test_structured_logging.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
+        tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
+        tests/utils/test_structured_logging.py -q
+    note: 'Manuelle Codeprüfung: Export verlangt human validation und processed_file; Hub-Transfer verwirft
+      Rohmedien, Rohtext und direkte Identitätsfelder; Master-Key bleibt in lokaler Secret-/Datei-Ladung.
+      Ergänzend 52 fokussierte Regressionstests bestanden.'
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:35:18.012030Z'
+- id: quality_evidence
+  category: data_integrity
+  title: Freigabe beruht auf persistierten, nachvollziehbaren Qualitätsnachweisen
+  acceptance:
+  - Qualitätsmetriken, Modellversion und menschliche Validierung bleiben auditierbar.
+  - Fehlende Evidenz verhindert die Freigabe.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_anonymization_quality_evaluation.py
+    - tests/views/media/test_anonymization_metrics.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
+        tests/views/media/test_anonymization_metrics.py -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-17T12:51:01.915535Z'
+- id: operational_readiness
+  category: operations
+  title: Fehler, Korrektur, Wiederanlauf und Monitoring sind betriebssicher
+  acceptance:
+  - Betreiber erkennen hängende oder fehlgeschlagene Verarbeitung ohne Ad-hoc-Datenbankzugriff.
+  - Wiederanlauf ist idempotent und erhält Audit- und Qualitätsdaten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fehler- und Korrekturszenario im produktionsnahen Profil durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/local_study_server_deployment.md
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
+        tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
+        -q
+    note: Health-Check meldet unresolved Video-/Berichtsfehler und länger als sieben Stunden aktive Processing-Historien
+      fail-closed; Healthy-, Failed- und Stale-Fälle sind getestet. Ausstehend ist der Lauf im produktionsnahen
+      Deploymentprofil.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:43:48.369989Z'
+- id: operator_documentation
+  category: documentation
+  title: Schutzmodell, Qualitätsschwellen und Bedienabläufe sind aktuell
+  acceptance:
+  - Entwickler, Reviewer und Betreiber haben getrennte, konsistente Anleitungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation mit Security, Betrieb und klinischem Reviewer abnehmen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/local_study_server_deployment.md
+    - kind: review
+      reference: docs/anonymization_contract.md
+    note: Rollengetrennte Entwickler-, klinische Reviewer- und Betreiberanleitungen sind konsolidiert.
+      Ausstehend ist die gemeinsame formale Abnahme durch Security, Betrieb und klinischen Reviewer.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:43:49.189799Z'

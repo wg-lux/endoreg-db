@@ -37,41 +37,54 @@ class Command(BaseCommand):
         parser.add_argument("--source-node-secret-file", required=True)
         parser.add_argument("--target-node-key", required=True)
         parser.add_argument("--source-center-key", default="")
-        parser.add_argument("--resource-kind", choices=["video", "report"], required=True)
+        parser.add_argument(
+            "--resource-kind", choices=["video", "report"], required=True
+        )
         parser.add_argument("--object-id", type=int, required=True)
         parser.add_argument("--transfer-key", default="")
         parser.add_argument("--metadata-only", action="store_true")
-        parser.add_argument("--ca-file", default="", help=(
+        parser.add_argument(
+            "--ca-file",
+            default="",
+            help=(
                 "CA bundle used to verify the receiver TLS certificate. "
                 "When omitted, the system CA store is used."
             ),
         )
-        parser.add_argument( "--client-certificate-file", default="", help="PEM client certificate used for mutual TLS.",)
-        parser.add_argument("--client-key-file", default="", help="PEM private key matching the mTLS client certificate.",)
+        parser.add_argument(
+            "--client-certificate-file",
+            default="",
+            help="PEM client certificate used for mutual TLS.",
+        )
+        parser.add_argument(
+            "--client-key-file",
+            default="",
+            help="PEM private key matching the mTLS client certificate.",
+        )
         parser.add_argument("--insecure-skip-tls-verify", action="store_true")
 
     def handle(self, *args, **options):
         section("SENDER INITIALIZATION", "🚀")
-    
+
         secret_path = Path(options["source_node_secret_file"]).expanduser().resolve()
         ca_path = (
             Path(options["ca_file"]).expanduser().resolve()
             if options["ca_file"].strip()
             else None
         )
-        
+
         client_certificate_path = (
             Path(options["client_certificate_file"]).expanduser().resolve()
             if options["client_certificate_file"].strip()
             else None
         )
-        
+
         client_key_path = (
             Path(options["client_key_file"]).expanduser().resolve()
             if options["client_key_file"].strip()
             else None
         )
-    
+
         step(1, "Validate sender configuration")
         kv("Target URL", options["target_url"])
         kv("Source node key", options["source_node_key"])
@@ -80,8 +93,14 @@ class Command(BaseCommand):
         kv("Resource kind", options["resource_kind"])
         kv("Source object ID", options["object_id"])
         kv("Metadata only", options["metadata_only"])
-        kv("TLS verification enabled", not options["insecure_skip_tls_verify"],)
-        kv("Custom receiver CA configured",ca_path is not None,)
+        kv(
+            "TLS verification enabled",
+            not options["insecure_skip_tls_verify"],
+        )
+        kv(
+            "Custom receiver CA configured",
+            ca_path is not None,
+        )
         kv(
             "mTLS client certificate configured",
             client_certificate_path is not None,
@@ -113,35 +132,27 @@ class Command(BaseCommand):
                 path=client_key_path,
                 check_exists=True,
             )
-    
+
         if not options["source_node_secret_file"].strip():
             error("The --source-node-secret-file argument is empty")
             raise CommandError(
                 "--source-node-secret-file must contain a valid file path"
             )
-        
+
         if not secret_path.exists():
             error(f"Secret file path does not exist: {secret_path}")
-            raise CommandError(
-                f"Secret file path does not exist: {secret_path}"
-            )
-        
+            raise CommandError(f"Secret file path does not exist: {secret_path}")
+
         if secret_path.is_dir():
             error(f"Secret file path points to a directory: {secret_path}")
             raise CommandError(
                 f"Secret file path must be a file, not a directory: {secret_path}"
             )
-        
+
         if not secret_path.is_file():
             error(f"Secret path is not a regular file: {secret_path}")
-            raise CommandError(
-                f"Secret path is not a regular file: {secret_path}"
-            )
-        if (
-            client_certificate_path is None
-        ) != (
-            client_key_path is None
-        ):
+            raise CommandError(f"Secret path is not a regular file: {secret_path}")
+        if (client_certificate_path is None) != (client_key_path is None):
             raise CommandError(
                 "--client-certificate-file and --client-key-file "
                 "must be provided together"
@@ -153,43 +164,40 @@ class Command(BaseCommand):
             ("mTLS client private key", client_key_path),
         ):
             if configured_path is not None and not configured_path.is_file():
-                raise CommandError(
-                    f"{label} not found: {configured_path}"
-                )
-    
+                raise CommandError(f"{label} not found: {configured_path}")
+
         node_secret = secret_path.read_text(encoding="utf-8").strip()
         if not node_secret:
             error("Node secret file is empty")
             raise CommandError("Node secret file is empty")
-    
+
         success("Node secret file is present and non-empty")
         info("The node secret itself will not be printed")
-    
+
         resource_kind = options["resource_kind"]
         object_id = options["object_id"]
         transfer_key = (
-            options["transfer_key"]
-            or f"{resource_kind}-{object_id}-{uuid4().hex}"
+            options["transfer_key"] or f"{resource_kind}-{object_id}-{uuid4().hex}"
         )
-    
+
         step(2, "Load source database object")
-    
+
         if resource_kind == "video":
             video = VideoFile.objects.filter(pk=object_id).first()
-    
+
             if video is None:
                 error(f"VideoFile not found: {object_id}")
                 raise CommandError(f"VideoFile not found: {object_id}")
-    
+
             state = getattr(video, "state", None)
-    
+
             model_identity(
                 model_name="Source VideoFile",
                 local_id=video.pk,
                 portable_hash=str(video.video_hash or ""),
                 node_key=options["source_node_key"],
             )
-    
+
             kv("Center ID", video.center_id)
             kv(
                 "Center key",
@@ -211,7 +219,7 @@ class Command(BaseCommand):
                 getattr(state, "anonymization_validated", False),
             )
             kv("Processing error", getattr(state, "processing_error", False))
-    
+
             payload, media_path, content_type = build_video_transfer_payload(
                 video=video,
                 transfer_key=transfer_key,
@@ -220,21 +228,21 @@ class Command(BaseCommand):
                 source_center_key=options["source_center_key"] or None,
                 metadata_only=options["metadata_only"],
             )
-    
+
         else:
             report = RawPdfFile.objects.filter(pk=object_id).first()
-    
+
             if report is None:
                 error(f"RawPdfFile not found: {object_id}")
                 raise CommandError(f"RawPdfFile not found: {object_id}")
-    
+
             model_identity(
                 model_name="Source RawPdfFile",
                 local_id=report.pk,
                 portable_hash=str(getattr(report, "pdf_hash", "") or ""),
                 node_key=options["source_node_key"],
             )
-    
+
             payload, media_path, content_type = build_report_transfer_payload(
                 report=report,
                 transfer_key=transfer_key,
@@ -243,9 +251,9 @@ class Command(BaseCommand):
                 source_center_key=options["source_center_key"] or None,
                 metadata_only=options["metadata_only"],
             )
-    
+
         step(3, "Inspect generated transfer payload")
-    
+
         transfer_summary(
             transfer_key=transfer_key,
             resource_kind=payload["resource_kind"],
@@ -254,18 +262,18 @@ class Command(BaseCommand):
             resource_hash=payload["resource_hash"],
             transfer_mode=payload["transfer_mode"],
         )
-    
+
         json_block("Outgoing transfer payload", payload)
-    
+
         path_info(
             label="Processed media source path",
             path=media_path,
             check_exists=True,
         )
         kv("Upload content type", content_type or "<metadata-only>")
-    
+
         step(4, "Initialize HTTP transfer client")
-    
+
         if options["insecure_skip_tls_verify"]:
             verify_tls: bool | str = False
         elif ca_path is not None:
@@ -281,14 +289,16 @@ class Command(BaseCommand):
             client_certificate_file=client_certificate_path,
             client_key_file=client_key_path,
         )
-    
+
         success("HTTP transfer client initialized")
-        info("Authentication secret is attached to request headers but is not displayed")
-    
+        info(
+            "Authentication secret is attached to request headers but is not displayed"
+        )
+
         step(5, "Create transfer record on receiver")
-    
+
         self.stdout.write(f"Creating transfer: {transfer_key}")
-    
+
         try:
             created = client.create_transfer(payload)
         except Exception as exc:
@@ -296,20 +306,20 @@ class Command(BaseCommand):
             kv("Exception type", type(exc).__name__)
             kv("Exception", str(exc))
             raise
-    
+
         json_block("Receiver transfer-create response", created)
         success("Receiver accepted transfer metadata")
-    
+
         if media_path is not None and content_type is not None:
             step(6, "Upload processed media")
-    
+
             path_info(
                 label="Media file being uploaded",
                 path=media_path,
                 check_exists=True,
             )
             kv("Media content type", content_type)
-    
+
             try:
                 uploaded = client.upload_processed_media(
                     transfer_key=transfer_key,
@@ -321,14 +331,14 @@ class Command(BaseCommand):
                 kv("Exception type", type(exc).__name__)
                 kv("Exception", str(exc))
                 raise
-    
+
             json_block("Receiver media-upload response", uploaded)
             success("Processed media uploaded successfully")
         else:
             warning("Metadata-only mode: no MP4/PDF bytes were uploaded")
-    
+
         step(7, "Retrieve final transfer status")
-    
+
         try:
             status = client.get_status(transfer_key)
         except Exception as exc:
@@ -336,14 +346,14 @@ class Command(BaseCommand):
             kv("Exception type", type(exc).__name__)
             kv("Exception", str(exc))
             raise
-    
+
         json_block("Final receiver transfer status", status)
-    
+
         decision("TRANSFER RESULT")
         kv("Transfer key", transfer_key)
         kv("Receiver status", status.get("transfer_status"))
         kv("Receiver object ID", status.get("target_object_id"))
         kv("Processing decision", status.get("processing_decision"))
         kv("Status detail", status.get("status_detail"))
-    
+
         success("Transfer command completed")

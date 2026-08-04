@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
     DescriptorValueMap: TypeAlias = dict[
-        str, "PFindingClassificationChoiceDescriptorDataDict" | dict[str, Any]
+        str, PFindingClassificationChoiceDescriptorDataDict | dict[str, Any]
     ]
 
 

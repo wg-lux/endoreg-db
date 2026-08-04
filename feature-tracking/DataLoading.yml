@@ -1,0 +1,95 @@
+schema_version: "1.0"
+id: data_loading
+name: YAML-Datenladen
+description: Deterministisches, typisiertes und idempotentes Laden der fachlichen Basisdaten aus YAML.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+source_documents:
+  - path: docs/wiki/dataloader_layers_and_naming.md
+    disposition: migrated
+    note: Der bisherige Migrationsplan ist jetzt Teil der verbindlichen DoD.
+  - path: docs/wiki/dataloader_yaml_authoring.md
+    disposition: reference
+    note: Autorenvertrag für YAML-Basisdaten.
+  - path: docs/supported_formats_csv.md
+    disposition: reference
+    note: Vertrag der unterstützten CSV-Importformate.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Engine, Orchestrierung und Namenskonvention sind getrennt definiert
+    acceptance:
+      - YAML-zu-ORM-Engine und Command-Orchestrierung haben eindeutige Verantwortlichkeiten.
+      - Kanonische Importpfade und Legacy-Kompatibilität sind festgelegt.
+    required: true
+    verification:
+      kind: manual
+      instructions: Modulgrenzen gegen Dokumentation und alle Importaufrufe prüfen.
+    assessment: &not_assessed
+      status: not_assessed
+  - id: deterministic_loading
+    category: functionality
+    title: Basisdaten werden in stabiler Reihenfolge idempotent geladen
+    acceptance:
+      - Wiederholtes load_base_db_data erzeugt denselben fachlichen Zustand ohne Duplikate.
+      - Abhängigkeiten werden explizit aufgelöst und ungültige YAML-Daten laut abgelehnt.
+    required: true
+    verification:
+      kind: manual
+      instructions: Leere Datenbank zweimal laden und Zustände sowie natürliche Schlüssel vergleichen.
+    assessment: *not_assessed
+  - id: schema_validation
+    category: data_integrity
+    title: YAML wird vor ORM-Mutation in eine typisierte interne Form überführt
+    acceptance:
+      - Erforderliche Felder, Enums, Referenzen und Duplikate werden vor Persistenz validiert.
+      - Teilfehler hinterlassen keinen still akzeptierten Mischzustand.
+    required: true
+    verification:
+      kind: manual
+      instructions: Gültige und absichtlich ungültige YAML-Beispiele am Loader-Rand prüfen.
+    assessment: *not_assessed
+  - id: automated_tests
+    category: testing
+    title: Loader, Abhängigkeiten und Idempotenz sind automatisiert getestet
+    acceptance:
+      - Repräsentative gültige Varianten und alle wichtigen Boundary-Fehler haben Tests.
+    required: true
+    verification:
+      kind: command
+      command: [.devenv/state/venv/bin/pytest, tests/dataloader, -q]
+      timeout_seconds: 900
+    assessment: *not_assessed
+  - id: safe_inputs
+    category: security
+    title: YAML-Laden führt keinen Code aus und überschreitet keine Datenquelle
+    acceptance:
+      - Ausschließlich sichere YAML-Parser und freigegebene Datenroots werden verwendet.
+      - Eingaben können weder beliebige Imports noch Dateizugriffe auslösen.
+    required: true
+    verification:
+      kind: manual
+      instructions: Parser, Pfadauflösung und dynamische Importgrenzen sicherheitstechnisch reviewen.
+    assessment: *not_assessed
+  - id: operational_readiness
+    category: operations
+    title: Ladefehler und Wiederholung sind für Betreiber beherrschbar
+    acceptance:
+      - Command-Ausgabe benennt Datei, Entität und Ursache; Wiederholung ist sicher.
+      - Backup-, Migrations- und Rollbackanforderungen sind dokumentiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Fehler in einer abhängigen YAML-Datei provozieren und Wiederanlauf prüfen.
+    assessment: *not_assessed
+  - id: author_documentation
+    category: documentation
+    title: YAML-Autorinnen und Entwickler haben einen aktuellen Vertrag
+    acceptance:
+      - Layer, Namen, Schema, Referenzen, Beispiele und Validierungsfehler sind dokumentiert.
+    required: true
+    verification:
+      kind: manual
+      instructions: Neue Basiskonfiguration ausschließlich anhand der Dokumentation erstellen und laden.
+    assessment: *not_assessed

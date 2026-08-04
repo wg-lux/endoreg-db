@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import os
 import shutil
@@ -67,6 +68,10 @@ def _resolve_ffmpeg_executable() -> Optional[str]:
     return None
 
 
+def resolve_ffmpeg_executable() -> Optional[str]:
+    return _resolve_ffmpeg_executable()
+
+
 @lru_cache(maxsize=1)
 def _resolve_ffprobe_executable() -> Optional[str]:
     """Locate ffprobe, preferring the same directory as the selected ffmpeg."""
@@ -85,6 +90,10 @@ def _resolve_ffprobe_executable() -> Optional[str]:
             return str(fallback)
 
     return None
+
+
+def resolve_ffprobe_executable() -> Optional[str]:
+    return _resolve_ffprobe_executable()
 
 
 def is_ffmpeg_available() -> bool:

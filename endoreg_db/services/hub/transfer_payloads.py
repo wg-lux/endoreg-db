@@ -82,8 +82,7 @@ def build_video_transfer_payload(
     )
     kv(
         "Original filename",
-        video.original_file_name
-        or Path(video.processed_file.name).name,
+        video.original_file_name or Path(video.processed_file.name).name,
     )
 
     if not processed_path.is_file():
@@ -96,9 +95,7 @@ def build_video_transfer_payload(
     processed_hash = str(video.processed_video_hash or "").strip()
 
     if processed_hash:
-        info(
-            "Using processed_video_hash stored in the source VideoFile database row"
-        )
+        info("Using processed_video_hash stored in the source VideoFile database row")
     else:
         warning(
             "VideoFile.processed_video_hash is empty; calculating SHA-256 "
@@ -142,8 +139,7 @@ def build_video_transfer_payload(
     step(4, "Read transferable VideoFile metadata")
 
     original_file_name = (
-        video.original_file_name
-        or Path(video.processed_file.name).name
+        video.original_file_name or Path(video.processed_file.name).name
     )
     suffix = getattr(video, "suffix", "") or ".mp4"
     fps = getattr(video, "fps", None)
@@ -171,9 +167,7 @@ def build_video_transfer_payload(
         "resource_kind": "video",
         "resource_hash": video_hash,
         "transfer_mode": (
-            "metadata_only"
-            if metadata_only
-            else "metadata_and_processed_media"
+            "metadata_only" if metadata_only else "metadata_and_processed_media"
         ),
         "processing_policy": "preserve_processing_state",
         "processing_intent": "sender_requests_state_preservation",
@@ -266,9 +260,7 @@ def build_video_transfer_payload(
         warning("Only JSON metadata will be transmitted")
         kv("Returned media path", None)
     else:
-        success(
-            "Processed media will be uploaded after receiver metadata creation"
-        )
+        success("Processed media will be uploaded after receiver metadata creation")
         path_info(
             label="Returned media path",
             path=processed_path,
@@ -317,9 +309,7 @@ def build_report_transfer_payload(
     )
 
     if not processed_field:
-        raise ValueError(
-            f"RawPdfFile {report.pk} has no processed/file field"
-        )
+        raise ValueError(f"RawPdfFile {report.pk} has no processed/file field")
 
     processed_path = Path(processed_field.path).resolve()
 
@@ -334,9 +324,7 @@ def build_report_transfer_payload(
     )
 
     if not processed_path.is_file():
-        raise FileNotFoundError(
-            f"Processed report missing: {processed_path}"
-        )
+        raise FileNotFoundError(f"Processed report missing: {processed_path}")
 
     success("Processed report file exists and is readable")
 
@@ -388,9 +376,7 @@ def build_report_transfer_payload(
         "resource_kind": "report",
         "resource_hash": pdf_hash,
         "transfer_mode": (
-            "metadata_only"
-            if metadata_only
-            else "metadata_and_processed_media"
+            "metadata_only" if metadata_only else "metadata_and_processed_media"
         ),
         "processing_policy": "preserve_processing_state",
         "processing_intent": "sender_requests_state_preservation",
@@ -401,9 +387,7 @@ def build_report_transfer_payload(
                 # Sender-local database IDs must not be included here.
                 "pdf_hash": pdf_hash,
                 "text": getattr(report, "text", "") or "",
-                "anonymized_text": (
-                    getattr(report, "anonymized_text", "") or ""
-                ),
+                "anonymized_text": (getattr(report, "anonymized_text", "") or ""),
                 "raw_meta": getattr(report, "raw_meta", None),
                 "state_report_processing_required": getattr(
                     report,
@@ -487,9 +471,7 @@ def build_report_transfer_payload(
         warning("Only report JSON metadata will be transmitted")
         kv("Returned media path", None)
     else:
-        success(
-            "Processed report media will be uploaded after metadata creation"
-        )
+        success("Processed report media will be uploaded after metadata creation")
         path_info(
             label="Returned media path",
             path=processed_path,
@@ -502,4 +484,3 @@ def build_report_transfer_payload(
         None if metadata_only else processed_path,
         "application/pdf",
     )
-

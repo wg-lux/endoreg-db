@@ -11,7 +11,6 @@ from endoreg_db.export.frames.export_frames_with_labels import (
 from endoreg_db.models import ImageClassificationAnnotation, VideoFile
 
 
- 
 def materialize_frames_for_annotation_ids(
     *,
     annotation_ids: list[int],
@@ -34,7 +33,7 @@ def materialize_frames_for_annotation_ids(
     )
 
     ann_count = annotations.count()
-    
+
     print(f"[ENDOREG FRAME MATERIALIZATION] annotation rows={ann_count}", flush=True)
     print(f"[ENDOREG FRAME MATERIALIZATION] output_root={output_root}", flush=True)
     print(
@@ -99,7 +98,10 @@ def materialize_frames_for_annotation_ids(
             flush=True,
         )
 
-    print("[ENDOREG FRAME MATERIALIZATION] starting endoreg-db transcode logic", flush=True)
+    print(
+        "[ENDOREG FRAME MATERIALIZATION] starting endoreg-db transcode logic",
+        flush=True,
+    )
 
     transcode_videos_for_annotations(
         annotations,
@@ -120,11 +122,7 @@ def materialize_frames_for_annotation_ids(
             continue
 
         expected_path = (
-
-            output_root
-            / f"video_{frame.video.pk}"
-            / _frame_pk_filename(frame.pk, ext)
-
+            output_root / f"video_{frame.video.pk}" / _frame_pk_filename(frame.pk, ext)
         )
 
         if not expected_path.exists():
@@ -140,4 +138,3 @@ def materialize_frames_for_annotation_ids(
 
     print(f"[ENDOREG FRAME MATERIALIZATION] verified frames={len(result)}", flush=True)
     return result
-

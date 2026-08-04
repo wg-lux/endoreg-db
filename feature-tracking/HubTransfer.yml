@@ -1,0 +1,490 @@
+schema_version: '1.0'
+id: hub_transfer
+name: Multi-Center Hub Transfer
+description: Production-readiness criteria for attributable, authenticated, integrity-checked outbound
+  transfer of anonymized processed media from lx-annotate site nodes to an endoreg_db central hub.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Defines the current receiver protocol, replay, ownership, and integrity boundary that the sender
+    must satisfy.
+- path: docs/deployment_note_hub_contract.md
+  disposition: reference
+  note: Defines deployment roles and the fail-closed mTLS boundary shared by sender and receiver.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Provides the existing ingest operations model that outbound transfer operations must complement.
+definition_of_done:
+- id: documented_transfer_scope
+  category: requirements
+  title: Sender roles, transfer scope, approval semantics, and phase boundaries are explicit
+  acceptance:
+  - Only anonymized processed video and report artifacts are in scope; raw-media export remains prohibited.
+  - The contracts distinguish operator marking, queueing, registration, media upload, verified hub apply,
+    and local cleanup as separate states.
+  - Phase 1 uses mTLS and the local encrypted storage boundary; standalone blobs remain blocked until
+    envelope encryption is implemented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review lx-annotate sender documentation and code against the endoreg_db receiver contract
+      and deployment roles.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/hub_ingest_current_state.md
+    - kind: document
+      reference: docs/deployment_note_hub_contract.md
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
+    - kind: review
+      reference: 'PR #312 und lx-annotate Sender-/endoreg-db Receiver-Vertrag am 2026-08-03 gemeinsam
+        geprüft; Raw-Media bleibt verboten, Zustände sind getrennt, Phase 1 erzwingt mTLS und Phase 2
+        bleibt an Envelope Encryption gebunden.'
+    note: 'Sender- und Receiver-Verträge wurden gemeinsam gegen PR #312 und die aktuellen Ownership-Grenzen
+      geprüft. Ausschließlich anonymisierte verarbeitete Video-/Report-Artefakte sind zulässig; Markierung,
+      Queueing, Registrierung, Upload, verifizierte Anwendung und Cleanup bleiben getrennte Zustände.
+      Die aktuelle Phase 1 ist fail-closed an HTTPS/mTLS und den geschützten lokalen Speicher gebunden;
+      eigenständige Blob-Transfers bleiben bis zur Envelope-Encryption-Phase gesperrt.'
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T10:55:25.563881Z'
+- id: operator_verification_and_attribution
+  category: functionality
+  title: Every transfer intent is visibly verified and attributable to an authenticated operator
+  acceptance:
+  - The export overview identifies the authenticated operator, selected target, selected resource count,
+    configuration readiness, and privacy-verification outcome without accepting a client-supplied actor.
+  - The server persists the authenticated request user for a newly marked transfer and exposes sufficient
+    historical attribution for an operator to identify who marked each resource and when.
+  - Marking and unmarking are reversible only while the transfer state permits it, and bulk requests are
+    atomic or return per-resource results that cannot be mistaken for full success.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise the export overview with two authenticated users and verify UI identity, persisted
+      marked_by/marked_at, history visibility, state-dependent reversal, and partial-failure behavior.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/views/hub_export.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_jobs.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_contracts.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
+        13.66s, 2026-08-03)
+    - kind: command
+      reference: devenv shell -- pyright lx_annotate/views/hub_export.py lx_annotate/hub/hub_export_jobs.py
+        lx_annotate/hub/hub_export_contracts.py tests/hub/test_hub_export_api.py tests/hub/test_hub_export_end_to_end.py
+        (0 errors, 2026-08-03)
+    - kind: command
+      reference: 'frontend: npm run test:unit -- --run HubExportOverviewComponent.test.ts hubExportStore.spec.ts
+        (10 passed) and npm run type-check:component-tests (passed, 2026-08-03)'
+    note: Alle Operator-Endpunkte erzwingen Session-Authentifizierung unabhängig vom Debug-Modus. Markierungen
+      ignorieren clientseitige Akteurangaben, persistieren den authentifizierten Benutzer und Zeitpunkt
+      und exponieren beides in API und UI. Bulk-Markierung und -Unmarkierung sind atomar; Unmarkierung
+      bleibt auf den Zustand MARKED begrenzt. Tests decken zwei Benutzer, anonymen Zugriff, Actor-Spoofing,
+      Rollback und Zustandsgrenzen ab.
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T11:08:15.424252Z'
+- id: authenticated_fail_closed_transport
+  category: security
+  title: Transport, node identity, center ownership, and export authorization fail closed
+  acceptance:
+  - Production sender profiles cannot register or upload when required mTLS certificate, key, CA trust,
+    HTTPS target, node identity, or center ownership is missing or inconsistent.
+  - Receiver registration, status, and processed-media upload authorize center scope from the authenticated
+    NetworkNode and its owning_center; these node-authenticated endpoints do not require or trust a Django
+    user session.
+  - NetworkNode.shared_secret is used only for request authentication and never for payload encryption.
+  - The long-lived master key is neither transmitted nor stored in lx-annotate configuration, payloads,
+    logs, or transfer records.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review production settings and inject missing, expired, mismatched, and wrong-center
+      credentials; confirm every sender path fails before payload or media disclosure.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/views/media/hub/transfers.py
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+        tests/services/test_transfer_job_contract.py -q (51 passed)
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/tests/hub/test_hub_export_mtls_integration.py (real TLS
+        handshake: valid mTLS succeeds; expired client and wrong CA disclose no HTTP body)'
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (75 passed in
+        8.97s, 2026-08-03)
+    - kind: command
+      reference: devenv shell -- pyright tests/hub/test_hub_export_mtls_integration.py lx_annotate/hub/hub_export_worker.py
+        (0 errors, 2026-08-03)
+    - kind: command
+      reference: endoreg-db receiver/contract/middleware suite with freshly compiled native backend (62
+        passed in 29.29s, 2026-08-03)
+    - kind: code
+      reference: deployment/nginx/hub-transfer.conf
+    - kind: test
+      reference: tests/deployment/test_hub_transfer_nginx.py
+    - kind: command
+      reference: 'real Nginx 1.28 integration: 3 consecutive passes with optional-certificate location
+        guard; invalid clients rejected pre-upstream, spoofed headers replaced, staged CA overlap and
+        bounded old-worker retirement verified (2026-08-03)'
+    - kind: code
+      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix
+    - kind: command
+      reference: '/home/admin/luxnix: focused generated Nix config pytest passed (1 passed in 23.82s);
+        nix build .#checks.x86_64-linux.nixtests passed (2026-08-03)'
+    - kind: code
+      reference: /home/admin/luxnix/ansible/inventory/host_vars/gc-02.yml
+    - kind: code
+      reference: /home/admin/luxnix/ansible/inventory/host_vars/gs-02.yml
+    - kind: command
+      reference: '/home/admin/luxnix: inventory autoconf render for gc-02 and gs-02 plus nix-instantiate
+        --parse passed; isolated NixOS module evaluation confirmed outbound=true, AppRole/Hub-PKI, worker
+        certificate/provisioning requirements, Vault Raft 172.16.255.22:8200, CA path, backup and tun0
+        port 8200 (2026-08-03)'
+    note: Fail-closed Transport ist am echten Nginx, in der erzeugten LuxNix-Konfiguration und in der
+      deklarativen gc-02-zu-gs-02-Inventory-Quelle belegt. Requests ohne gültige Clientidentität sowie
+      Requests mit falscher oder nicht freigegebener Identität erreichen den Upstream nicht; gespoofte
+      Proxy-Header werden überschrieben. Vault-AppRole, kurzlebige Client-PKI, getrenntes Node-Secret,
+      Hub-CA-Publikation, Raft, VPN-Port und beidseitige NetworkNode-Provisionierung evaluieren mit vollständigen
+      Worker-Abhängigkeiten. Die gestufte CA-Rotation validiert das Überlappungsfenster und begrenzte
+      alte Worker. Weder Master-Key noch shared_secret werden zur Payload-Verschlüsselung verwendet.
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T12:21:16.553872Z'
+- id: transfer_integrity_and_replay
+  category: data_integrity
+  title: Registration, media upload, acknowledgement, and replay preserve one canonical transfer
+  acceptance:
+  - The sender validates typed payload schema, immutable transfer identity, source ownership, processed-media
+    hash, and resource rows before network transmission.
+  - Timeouts and retries reuse the same transfer key; changed canonical payloads and ownership collisions
+    fail as INCONSISTENT rather than creating or mutating unrelated resources.
+  - Completion and cleanup eligibility require a receiver acknowledgement tied to the same transfer, artifact
+    hash, and verified apply outcome.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run cross-repository registration, upload, exact replay, changed replay, hash mismatch,
+      ownership collision, and lost-acknowledgement scenarios and compare both ledgers.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/serializers/hub/transfer_job.py; endoreg_db/services/hub/transfers.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_payloads.py;
+        /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py
+    - kind: command
+      reference: 'lx-annotate: devenv shell -- .devenv/state/venv/bin/pytest tests/hub -q (65 passed)'
+    - kind: command
+      reference: endoreg-db receiver and contract suite (51 passed)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py (actual video/report
+        sender payload accepted by endoreg_db TransferJobCreateSerializer)
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
+        9.68s, 2026-08-03)
+    - kind: command
+      reference: devenv shell -- pyright tests/hub/test_hub_export_end_to_end.py lx_annotate/hub/hub_export_payloads.py
+        (0 errors, 2026-08-03)
+    - kind: command
+      reference: endoreg-db receiver/contract/middleware suite with freshly compiled native backend (62
+        passed in 29.29s, 2026-08-03)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py::HubExportEndToEndTests::test_report_worker_reaches_real_receiver_and_both_ledgers_complete
+        (real sender worker, authenticated Django receiver registration and Multipart upload, hash/persistence
+        path, and correlated sender/receiver completion)
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (76 passed in 10.66s, 2026-08-03)
+    - kind: command
+      reference: pyright tests/hub/test_hub_export_end_to_end.py (0 errors, 2026-08-03)
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (HTTP 409 is terminal
+        integrity_inconsistency; it is never reclassified as an exact replay)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py::HubExportEndToEndTests::test_report_worker_recovers_lost_ack_and_rejects_changed_replay
+        (real registration/upload, lost upload acknowledgement, exact replay recovery, changed canonical
+        replay rejection, pre-network processed-hash mismatch rejection, cross-node ownership collision,
+        and immutable receiver artifacts and ledgers)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_rejects_canonical_replay_conflict_on_409
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (76 passed in 11.08s, 2026-08-03)
+    - kind: command
+      reference: pyright lx_annotate/hub/hub_export_worker.py tests/hub/test_hub_export_worker.py tests/hub/test_hub_export_end_to_end.py
+        (0 errors, 2026-08-03)
+    note: 'Verifiziert durch den echten lx-annotate Sender-Worker gegen Serializer und Django-Receiver-Endpunkte:
+      Registrierung, Processed-Media-Upload, korrelierte Acknowledgements, Lost-Acknowledgement mit exaktem
+      Replay, terminaler Changed-Replay, Pre-Network-Hash-Mismatch und Cross-Node-Ownership-Kollision
+      sind über beide Ledger abgedeckt. HTTP 409 wird fail-closed als integrity_inconsistency behandelt.
+      Receiver-Artefakte und bestehende Transfers bleiben bei Konflikten unverändert. Nur die physische
+      Trennung der Artefaktablage wird im In-Process-Test emuliert, weil beide Anwendungen dieselbe Testdatenbank
+      und denselben Medienpfad verwenden.'
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T11:54:39.647608Z'
+- id: automated_boundary_tests
+  category: testing
+  title: Sender, receiver, UI, authorization, retry, and negative integrity paths are regression tested
+  acceptance:
+  - Tests cover authenticated user attribution, overview verification information, permission denial,
+    ineligible resources, mixed bulk outcomes, and state-dependent unmarking.
+  - Tests cover mTLS fail-closed behavior, no raw export, canonical replay equality, hash mismatch, cross-center
+    collision, retry exhaustion, worker restart, and verified acknowledgement.
+  - Receiver tests prove that valid node-only requests succeed without a Django user and that missing,
+    mismatched, inactive, or wrong-center node identity fails before transfer metadata or media disclosure.
+  - A cross-repository compatibility check pins and tests the same canonical payload schema on both sides.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/services/test_transfer_job_contract.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'endoreg-db: receiver and transfer contract suite (51 passed)'
+    - kind: command
+      reference: 'lx-annotate: tests/hub (65 passed)'
+    - kind: command
+      reference: 'lx-annotate frontend: HubExportOverviewComponent and hubExportStore (9 passed)'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+        tests/services/test_transfer_job_contract.py -q (51 passed in 46.12s, 2026-08-03)
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in
+        11.92s, 2026-08-03)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q
+        (7 passed in 4.43s, 2026-08-03; uncommitted reviewed middleware change)
+    - kind: review
+      reference: 'GitHub PR #312 review thread r3703197736 and merge-tree review against prototype at
+        65bb109f: direct merge rejected because the stale branch conflicts across more than 60 files;
+        current contract and tests require NetworkNode.owning_center scope independent of Django session
+        scope.'
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
+        13.66s, 2026-08-03; includes authenticated operator attribution, atomic bulk rollback, state-dependent
+        unmarking, mTLS, replay, recovery and acknowledgements)
+    - kind: command
+      reference: 'frontend: HubExportOverviewComponent and hubExportStore focused suite (10 passed) plus
+        component-test vue-tsc (passed, 2026-08-03)'
+    - kind: review
+      reference: 'GitHub PR #312 unresolved threads PRRT_kwDOLRB6E86V8G9y, PRRT_kwDOLRB6E86V8efa and PRRT_kwDOLRB6E86V8ffB
+        reviewed 2026-08-03: session-center request conflicts with NetworkNode scope; stale branch transfer_payloads.py
+        includes unsafe raw report text and unbounded metadata. Direct merge remains rejected; current
+        lx-annotate sender emits only schema-validated anonymized_text and current receiver rejects raw
+        text.'
+    note: 'Receiver-, Sender-, Operator-, Datenschutz- und UI-Verträge sind reproduzierbar grün. PR #312
+      bleibt absichtlich unintegriert: Er ist nicht mergefähig, verletzt die aktuelle Sender-Ownership
+      und enthält einen unsicheren Rohtextpfad. Der aktuelle lx-annotate-Sender überträgt ausschließlich
+      streng validierte anonymisierte Payloads; der Receiver bindet Center-Scope ausschließlich an NetworkNode.owning_center.'
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T11:08:35.315157Z'
+- id: recovery_cleanup_and_capacity
+  category: operations
+  title: Recovery, retry exhaustion, cleanup, and capacity handling are production-ready
+  acceptance:
+  - Stale jobs are reconciled idempotently, exhausted retries remain visible, and inconsistent state fails
+    loudly without unsafe automatic recovery.
+  - Local processed media is retained until verified hub apply; cleanup uses typed atomic filesystem wrappers
+    and emits structured JSON logs.
+  - Operators can handle storage pressure, hub outage, certificate rotation, worker restart, and database/media
+    restore without losing transfer provenance.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a production-like outage, restart, retry-exhaustion, capacity, cleanup, certificate-rotation,
+      and backup/restore exercise across a site node and central hub.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_reconciliation.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_cleanup.py;
+        /home/admin/dev/lx-annotate/lx_annotate/management/commands/dispatch_hub_export_recovery.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_recovery_command.py;
+        tests/hub/test_hub_export_cleanup_policy.py
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in
+        10.20s, 2026-08-03)
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md sections Cleanup und Quarantäne, Monitoring/Kapazität,
+        Backup/Restore and Incident-Ablauf
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures
+        become terminal before disclosure or stuck in-flight state)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_records_unreadable_processed_media
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
+        10.33s, 2026-08-03)
+    - kind: command
+      reference: devenv shell -- pyright lx_annotate/hub/hub_export_worker.py lx_annotate/hub/hub_export_reconciliation.py
+        tests/hub/test_hub_export_worker.py (0 errors, 2026-08-03)
+    - kind: code
+      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix; /home/admin/luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix
+    - kind: test
+      reference: /home/admin/luxnix/tests/lx-annotate/test_lx_annotate_production_readiness_contract.py::test_hub_backup_publishes_database_and_media_as_one_restore_point
+    - kind: command
+      reference: '/home/admin/luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests
+        passed in 22.22s; nix build .#checks.x86_64-linux.nixtests --no-link passed (2026-08-03)'
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md section Backup und Restore (coupled LuxNix PostgreSQL/media
+        restore point and operator validation)
+    - kind: test
+      reference: '/home/admin/luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM:
+        root-protected PostgreSQL dump via systemd LoadCredential, coupled media publication, checksum
+        validation, corrupt next dump rejected without replacing latest)'
+    - kind: command
+      reference: nix build /nix/store/8fz5h24d857w3q3m2p7kyb2m9b788fv3-nixtest-vm-systemd-credential-couples-database-and-media-restore-point.drv^*
+        --no-link (passed, real QEMU/NixOS systemd VM, 2026-08-03)
+    - kind: code
+      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/options.nix (typed hub.backup.minimumFreeBytes);
+        /home/admin/luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix (pre/post staging
+        reserve gates)
+    - kind: test
+      reference: /home/admin/luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM additionally
+        rejects impossible free-space reserve before staging, preserves latest, and records classified
+        journal reason)
+    - kind: command
+      reference: nix build /nix/store/dd23rq6qqazjy7w2mrq9dbvwfiw93xas-nixtest-vm-systemd-credential-couples-database-and-media-restore-point.drv^*
+        --no-link (passed with systemd credential, corrupt dump, checksum and capacity-reserve scenarios,
+        2026-08-03)
+    - kind: command
+      reference: '/home/admin/luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest:
+        4 passed in 54.80s (2026-08-03)'
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md sections Monitoring, Kapazität und Alarmierung sowie Backup
+        und Restore (typed LuxNix reserve and operator commands)
+    note: Automatisiert bestätigt sind idempotente Reconciliation, Wiederanlauf verlorener Queue-/In-Flight-Jobs,
+      sichtbare Retry-Erschöpfung, fail-closed Acknowledgement-Integrität und Cleanup-Freigabe erst nach
+      verifiziertem applied. LuxNix koppelt PostgreSQL-Dump und geschützten Medien-Snapshot über eine
+      private systemd-Credential atomar. Eine frische NixOS-VM bestätigt Berechtigungsgrenze, gemeinsame
+      Prüfsummen/Publikation, Ablehnung beschädigter Dumps und die konfigurierbare Mindestfreiraumreserve
+      vor und nach Staging; jeder Fehler lässt den letzten gültigen Restore-Punkt unverändert. Offen bleiben
+      produktionsnahe Übungen für Hub-Ausfall, Zertifikatsrotation und die vollständige gemeinsame Datenbank-/Medien-Wiederherstellung
+      durch einen Operator.
+    assessed_by: codex-review-data-transfer-mtls
+    assessed_at: '2026-08-03T14:22:21.794179Z'
+- id: transfer_observability
+  category: observability
+  title: Operators can correlate user intent, sender work, receiver decisions, and cleanup
+  acceptance:
+  - Structured events correlate authenticated user, outbound job, transfer key, resource, source center,
+    source node, target node, receiver transfer ID, attempt, acknowledgement, and cleanup decision.
+  - Dashboards and alerts distinguish configuration rejection, authorization denial, integrity inconsistency,
+    transient retry, terminal failure, completed transfer, and verified apply without exposing secrets
+    or raw media.
+  required: true
+  verification:
+    kind: manual
+    instructions: Reconstruct one successful transfer and each terminal failure class using only persisted
+      ledgers, structured logs, metrics, and alerts.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_audit.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_health.py;
+        /home/admin/dev/lx-annotate/lx_annotate/management/commands/check_hub_export_health.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue;
+        /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_health.py; tests/hub/test_hub_export_audit.py;
+        tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_worker.py
+    - kind: command
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (87 passed in 15.13s, 2026-08-03);
+        focused final audit/health/reconciliation verification (11 passed in 4.61s)
+    - kind: command
+      reference: devenv shell -- pyright (0 errors, 2026-08-03); frontend focused component/store suite
+        (10 passed) and component-test type check passed
+    - kind: command
+      reference: '/home/admin/luxnix: focused Nix evaluation contract (2 passed) and nix build .#checks.x86_64-linux.nixtests
+        passed (2026-08-03)'
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md section Monitoring, Kapazität und Alarmierung
+    note: Sender- und Receiver-Ereignisse korrelieren Operator, lokalen Auftrag, Transfer-Key, pseudonymisierte
+      Ressource, Center, Quell-/Zielnode, Remote-ID, Versuch, Acknowledgement und Cleanup. Die persistierte
+      Fehlerklasse unterscheidet configuration_rejection, authorization_denial, integrity_inconsistency
+      und transient_retry; HTTP 401/403 endet terminal ohne Retry. Die UI zeigt Klassen sowie aktive,
+      abgeschlossene und aufmerksamkeitsbedürftige Transfers. Der kompakte Health-Check unterscheidet
+      terminale Klassen, Retry-Erschöpfung und unklassifizierte Fehler, enthält weder Fehlertext noch
+      Secrets/Rohmedien/Pfade und erzeugt über den persistenten LuxNix-systemd-Timer einen lokalen fehlgeschlagenen
+      Unit-/Journal-Alarmzustand. Erfolgreicher verified apply und Completion bleiben separat sichtbar.
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T12:36:05.874456Z'
+- id: operator_runbook
+  category: documentation
+  title: Deployment, approval, transfer, incident, and recovery procedures are executable
+  acceptance:
+  - Documentation explains operator identity and approval, roles, mTLS provisioning and rotation, supported
+    transfer mode, retry/replay, verification, cleanup, monitoring, and incident preservation.
+  - The runbook explicitly documents current Phase 1 limitations and the Phase 2 envelope-encryption prerequisite
+    for standalone artifact transfer.
+  required: true
+  verification:
+    kind: manual
+    instructions: Have an operator execute the sender-to-hub deployment and incident runbook in a fresh
+      production-like environment and record deviations.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/hub_transfer_typed_contract.md; docs/hub_transfer_typed_contract.en.md
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md
+    - kind: runbook
+      reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py (227/131/24/230
+        entries; 0 errors, 0 warnings, 2026-08-03)
+    - kind: command
+      reference: DJANGO_SETTINGS_MODULE=lx_annotate.settings.settings_test python manage.py help dispatch_hub_export_recovery
+        (command registered with --source-node-key, 2026-08-03)
+    - kind: review
+      reference: Deutsch/englische Vertragsbeispiele durch codex-review-data-transfer-mtls gegen lx_dtypes
+        validiert; anschließend von codex-hub-transfer-ready gegen lx_dtypes, Sender-Payloadvalidator
+        und Receiver-Serializer geprüft.
+    - kind: review
+      reference: 'Unabhängiger Review durch codex-review-data-transfer-mtls: echter Nginx-Test der gestuften
+        CA-Rotation einschließlich begrenztem Retirement alter Worker erneut bestanden (1 passed in 1.45s,
+        2026-08-03); zusätzlich 111 relevante Receiver-Boundary-Tests bestanden.'
+    note: Die deutsch/englische Vertrags- und Portierungsanleitung dokumentiert Wire-Vertrag 3.0; das
+      Hub-Betriebshandbuch deckt Proxy, mTLS-Rotation, Cleanup, klassifiziertes Monitoring/Alarmierung,
+      Kapazität, Restore und Incident ab. Die echte Nginx-CA-Rotation einschließlich begrenztem Retirement
+      alter Worker wurde unabhängig erneut verifiziert; Sender-, Receiver-, UI-, Health- und Deployment-Verträge
+      sind automatisiert grün. Ausstehend bleibt die laut Kriterium vorgeschriebene vollständige Durchführung
+      des Deployment-, Incident- und Restore-Runbooks durch einen Operator in einer frischen produktionsnahen
+      Umgebung; eine Konfigurationsevaluation ersetzt diesen Lauf nicht.
+    assessed_by: codex-hub-transfer-ready
+    assessed_at: '2026-08-03T12:37:29.998864Z'

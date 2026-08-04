@@ -1,0 +1,380 @@
+schema_version: '1.0'
+id: annotation
+name: Annotation
+description: Konsistente Erstellung, Bearbeitung, Validierung und Export von Frame- und Segmentannotationen.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-17T12:36:20.999264Z'
+    note: Alle sieben Definition-of-Done-Kriterien sind mit Backend-, Frontend-, Security-, Reconciliation-
+      und isolierter Operations-Evidenz verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T06:52:22.406745Z'
+    note: Add isolated prediction-correction provenance without replacing manual or prediction tracks.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T07:20:50.961952Z'
+    note: Die KI-Segmentgenerierung, der isolierte atomare Korrekturimport, die kanonische Zeitachsenabbildung
+      und der asynchrone Frontend-Joblebenszyklus sind implementiert; alle acht Pflichtkriterien sind
+      verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T13:40:25.636640Z'
+    note: PTS-sicheren nativen Dataset-Export mit exaktem Integer-Präsentationszeitstempel, rationaler
+      Timebase und typisiertem Frontend-Vertrag implementieren.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T14:07:07.765997Z'
+    note: PTS-sicherer nativer Dataset-Export, exakte Timeline-Persistenz, sparse Processed-Media-Extraktion
+      und typisierter lx-annotate-Vertrag sind mit lx-dtypes 0.2.5 verifiziert.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-21T14:10:26.908016Z'
+    note: Seekable verschlüsselten Processed-Media-Pfad in die finale Export-Evidenz aufnehmen.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-21T14:10:28.822123Z'
+    note: PTS-sicherer nativer Dataset-Export einschließlich seekable Range-Decoding ist mit lx-dtypes
+      0.2.5 vollständig verifiziert.
+source_documents:
+- path: docs/wiki/frame_annotation_current_support.md
+  disposition: reference
+  note: Aktueller Funktionsvertrag; Status wird ausschließlich hier bewertet.
+- path: docs/annotation_export_guide.md
+  disposition: reference
+  note: Nutzer- und Exportdokumentation.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Unterstützte Annotationstypen und Zustandsübergänge sind definiert
+  acceptance:
+  - Frame-, Box-, Klassifikations- und Segmentannotation haben eindeutige Invarianten.
+  - Herkunft, Reviewer-Scope und Finalisierungsregeln sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Funktionsvertrag gegen Modelle, Services, Views und Export prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/frame_annotation_current_support.md
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:03:00.183410Z'
+- id: annotation_workflow
+  category: functionality
+  title: CRUD, Bulk-Upsert, Ableitung und Finalisierung sind konsistent
+  acceptance:
+  - Wiederholte Operationen sind idempotent und erhalten Provenienz.
+  - Korrigierte KI-Segmente werden in einem eigenen Prediction-Correction-Track persistiert; ein erneuter
+    Import ersetzt ausschließlich diesen Korrektur-Track und erhält sowohl ursprüngliche Predictions als
+    auch gewöhnliche manuelle Annotationen.
+  - Ungültige Zeitsegmente und unfertige Annotationen werden abgelehnt.
+  - Das Speichern von Frame-Boxen erzeugt einen eindeutigen positiven oder negativen Review-Zustand und
+    wechselt erst nach erfolgreicher Persistenz zur nächsten Aufgabe.
+  - Vorab geladene Frame-Aufgaben enthalten innerhalb einer Queue-Generation keine doppelten Frame-IDs.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_segment_annotation_flow.py
+    - tests/views/video/test_frame_annotation_bulk_upsert.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_segment_annotation_flow.py tests/views/video/test_frame_annotation_bulk_upsert.py
+        -q
+      note: Exit-Code 0
+    - kind: command
+      reference: PATH=/home/admin/dev/lx-annotate/.devenv/profile/bin:$PATH npm run test:unit -- --run
+        src/views/__tests__/FrameAnnotationPage.test.ts src/views/__tests__/FrameAnnotationPage.usability.test.ts
+        src/stores/__tests__/annotationQueue.test.ts
+      note: 28 Tests bestanden; positive und negative Box-Reviews, Fortschaltung und Queue-Deduplizierung
+        sind abgedeckt.
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/video/test_segments_crud.py
+        -q (32 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/video/test_segments_crud.py
+        -q (33 passed)
+    note: Prediction corrections use an isolated source track; replacement is atomic and preserves ordinary
+      manual and prediction rows.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T07:01:46.259701Z'
+- id: automated_tests
+  category: testing
+  title: Service-, API- und Reconciliation-Pfade sind regressionsgetestet
+  acceptance:
+  - Annotationserstellung, zeitliche Ableitung, Export und Reparatur haben positive und negative Tests.
+  - Die Video-Segmentansicht lädt Metadaten und Segmente pro Auswahl höchstens einmal, übernimmt eine
+    bereits vom Normalisierungsstatus validierte Bildrate ohne zweiten FPS-Aufruf, koalesziert paralleles
+    Status-Polling und beendet Timer beim Verlassen der Ansicht.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_segment_annotation_flow.py
+    - tests/views/video/test_frame_annotation_task_endpoints.py
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_segment_annotation_flow.py tests/views/video/test_frame_annotation_task_endpoints.py
+        tests/management/commands/test_reconcile_frame_segment_annotations.py -q
+      note: Exit-Code 0
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts;
+        /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/VideoStoreOptimization.spec.ts;
+        /home/admin/dev/lx-annotate/frontend/tests/components/VideoExaminationAnnotation.functionality.spec.ts
+    - kind: command
+      reference: 'lx-annotate: devenv tasks run vue:test'
+      note: Produktions-Typecheck, komponentenspezifischer Test-Typecheck und vollständige Vitest-Suite bestanden.
+    note: Die Segmentansicht besitzt Regressionstests gegen doppelte Metadaten-, Segment- und FPS-Aufrufe,
+      wiederholtes Label-Laden, unkoalesziertes Polling und nach Unmount weiterlaufende Timer.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:10:28.383538Z'
+- id: ai_segment_acceptance
+  category: testing
+  title: KI-Segmentgenerierung, Korrekturimport und Frontend-Lebenszyklus sind fail-closed abgesichert
+  acceptance:
+  - 'Aufgabe Backend-Persistenz: Wenn auch nur ein von der temporalen Inferenz geliefertes Label oder
+    Segment nicht materialisiert werden kann, schlägt der gesamte Lauf fehl; es werden weder Teilsegmente
+    persistiert noch der Verarbeitungslauf als erfolgreich markiert.'
+  - 'Aufgabe atomarer Korrekturimport: Ein ungültiges Element in einer Importliste bewirkt einen vollständigen
+    Rollback; bestehende Prediction-Correction-, Prediction- und gewöhnliche manuelle Tracks bleiben unverändert.'
+  - 'Aufgabe Zeitachsenintegrität: Importierte oder im Frontend korrigierte Segmentgrenzen werden bei
+    Validierung ausschließlich über den kanonischen Präsentationszeitstempel-Resolver auf Frames abgebildet;
+    eine Umrechnung mit nominalen Bildern pro Sekunde ist auch bei variabler Bildrate unzulässig.'
+  - 'Aufgabe Frontend-Joblebenszyklus: Eine Antwort mit queued, already_queued oder pending_after_rebuild
+    wird als laufender Hintergrundjob angezeigt; alte Segmente werden nicht als neues Ergebnis gemeldet
+    und erst nach nachgewiesenem completed-Status neu geladen. failed und busy werden mit ihrer Backendmeldung
+    dargestellt.'
+  - Die Akzeptanztests liegen in tests/acceptance/test_ai_segment_workflow_acceptance.py und im lx-annotate-Frontend
+    unter frontend/tests/components/VideoPredictionSegments.acceptance.spec.ts. Erwartete-Fehler-Markierungen
+    werden im Rahmen der jeweiligen Aufgabe entfernt; erst danach darf dieses Kriterium verifiziert werden.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - devenv shell -- .devenv/state/venv/bin/pytest tests/acceptance/test_ai_segment_workflow_acceptance.py
+      -q && cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/acceptance/test_ai_segment_workflow_acceptance.py (3 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/acceptance/test_ai_segment_workflow_acceptance.py
+        tests/services/test_video_temporal_inference.py tests/views/video/test_segments_crud.py -q (63
+        passed)
+    - kind: command
+      reference: npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
+        src/stores/__tests__/VideoStoreOptimization.spec.ts tests/components/VideoExaminationAnnotation.functionality.spec.ts
+        src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts (29 passed)
+    - kind: command
+      reference: npm run type-check (exit 0)
+    note: Fail-closed und atomare Materialisierung, transaktionaler Korrekturimport, präsentationszeitstempelbasierte
+      Frame-Abbildung sowie asynchrones Frontend-Polling sind implementiert und durch fokussierte Backend-
+      und Frontend-Tests nachgewiesen.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T07:20:34.143734Z'
+- id: security_controls
+  category: security
+  title: Annotationen sind authentifiziert, dataset-übergreifend und quellengebunden
+  acceptance:
+  - Frame-Queues, Frame- und Box-Schreibpfade dürfen center-übergreifende Datasets bearbeiten; ausschließlich
+    die Ansicht des Raw-Video-Streams bleibt center-bezogen.
+  - Normale Nutzer annotieren unter ihrer serverseitig authentifizierten Identität; ein abweichender Annotator-Scope
+    erfordert Staff-, Superuser- oder center_scope:admin-Rechte.
+  - Interaktive Frame- und Box-Endpunkte akzeptieren ausschließlich manuelle Informationsquellen und können
+    keine Prediction-Provenienz erzeugen.
+  - Direkt aus Rohvideo dekodierte Frames werden nur innerhalb des Center-Scopes des authentifizierten
+    Nutzers ausgeliefert; verarbeitete Frames bleiben gemäß dem center-übergreifenden Annotationsvertrag
+    verfügbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_annotation_access.py
+    - tests/services/test_segment_annotation_flow.py
+    - tests/views/video/test_frame_annotation_bulk_upsert.py
+    - tests/views/video/test_frame_annotation_task_endpoints.py
+    - tests/views/video/test_frame_box_annotation.py
+    - tests/views/video/test_annotation_access_controls.py
+    - tests/views/media/test_frame_stream.py
+    - tests/views/video/test_hls_stream.py::test_hls_playlist_rejects_video_outside_user_center_scope
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - tests/views/misc/test_export_annotated_contract.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_annotation_access.py
+        tests/services/test_segment_annotation_flow.py tests/views/video/test_frame_annotation_bulk_upsert.py
+        tests/views/video/test_frame_annotation_task_endpoints.py tests/views/video/test_frame_box_annotation.py
+        tests/views/video/test_annotation_access_controls.py tests/management/commands/test_reconcile_frame_segment_annotations.py
+        tests/views/misc/test_export_annotated_contract.py -q (73 passed)
+    - kind: command
+      reference: tests/views/video/test_hls_stream.py::test_hls_playlist_rejects_video_outside_user_center_scope
+        (passed)
+    - kind: command
+      reference: devenv shell bash -lc '.devenv/state/venv/bin/pytest tests/views/media/test_frame_stream.py
+        tests/views/video/test_frame_annotation_task_endpoints.py tests/views/video/test_frame_annotation_bulk_upsert.py
+        tests/views/video/test_frame_box_annotation.py -q'
+      note: 46 Tests bestanden; fremde Raw-Frames liefern 404, verarbeitete Frames bleiben center-übergreifend
+        verfügbar.
+    note: Cross-center annotation and processed export are allowed; authenticated principal and manual
+      provenance remain enforced. Raw-stream foreign-center access returns privacy-preserving 404. The
+      separate same-center raw HLS test currently exposes an existing artifact materialization-state failure
+      and remains residual risk.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T13:46:44+02:00'
+- id: data_consistency
+  category: data_integrity
+  title: Frame- und Segmentzustand bleibt widerspruchsfrei
+  acceptance:
+  - Abgeleitete Segmentannotation ist reproduzierbar und Reconciliation meldet Abweichungen laut.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/management/commands/test_reconcile_frame_segment_annotations.py
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:10:51.006980Z'
+- id: operational_readiness
+  category: operations
+  title: Warteschlangen, Reparatur und Fehlerdiagnose sind betreibbar
+  acceptance:
+  - Hängende Jobs und inkonsistente Annotationen sind sichtbar und sicher korrigierbar.
+  - Reconciliation unterstützt Dry-Run und auditierbare Änderungen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_reconcile_frame_segment_annotations.py
+    - tests/views/video/test_segments_crud.py::VideoSegmentsBlackenOutsideRouteTest
+    - tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_history
+    - tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_reconcile_frame_segment_annotations.py
+        tests/views/video/test_segments_crud.py::VideoSegmentsBlackenOutsideRouteTest tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_history
+        tests/services/test_video_post_validation_jobs.py::test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames
+        -q (15 passed)
+    note: Isolated migrated Django operational profile verified JSON dry-run, scoped apply, visible failure
+      states, safe requeue, and stale-job recovery. Live shell rehearsals failed closed on missing migrations/broker
+      or local DB configuration and are documented as deployment prerequisites.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:36:08.924148Z'
+- id: pts_interoperable_annotation_export
+  category: interoperability
+  title: Dataset-Exporte erhalten die exakte Präsentationszeitachse
+  acceptance:
+  - Das versionierte Profil pts_dataset_v1 exportiert pro Annotation den exakten Integer-Präsentationszeitstempel,
+    Sekunden, rationale Stream-Timebase und die Timeline-Version des ausgewählten Video-Streams.
+  - Eindeutige Frames werden pro Video aufsteigend nach Präsentationszeitstempel sortiert und erhalten
+    einen deterministischen sequenziellen export_frame_index; mehrere Annotationen desselben Frames teilen
+    dieselbe Export-ID.
+  - Der Export leitet keine Framekoordinaten aus nominalen Bildern pro Sekunde ab und schlägt bei fehlendem
+    Integer-Präsentationszeitstempel, fehlender Timebase oder fehlendem Hash des verarbeiteten Artefakts
+    geschlossen fehl.
+  - Das lx-annotate-Frontend sendet einen typisierten, ausschließlich automatisch nach snake_case konvertierten
+    Request, verwendet sichere Frame-/Video-Defaults und zeigt das synchrone Exportergebnis an.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - devenv shell -- bash -lc 'PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
+      tests/views/misc/test_export_annotated_contract.py tests/services/test_video_storage_normalization.py
+      tests/utils/video/test_ffmpeg_wrapper.py::test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter
+      -q && cd /home/admin/dev/lx-annotate/frontend && npm run type-check && npm run test:unit -- --run
+      src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts'
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: lx-dtypes 0.2.5 installiert und Lockfile auf 0.2.5 fixiert
+    - kind: command
+      reference: 'Pyright: 0 Fehler'
+    - kind: command
+      reference: 41 Backend-Tests ohne PYTHONPATH-Override bestanden
+    - kind: command
+      reference: 6 lx-data-models Vertragstests bestanden
+    - kind: command
+      reference: Frontend-Typecheck und 2 Vitest-Tests bestanden
+    - kind: test
+      reference: tests/services/test_export_frames_contract.py
+    - kind: test
+      reference: tests/utils/video/test_ffmpeg_wrapper.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+    note: pts_dataset_v1 ist über lx-dtypes 0.2.5 installiert, reproduzierbar gepinnt und einschließlich
+      verschlüsseltem seekable Processed-Media-Pfad in Backend sowie Frontend verifiziert.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T14:10:27.855374Z'
+- id: user_documentation
+  category: documentation
+  title: Annotation und Export sind für Nutzer und Integratoren dokumentiert
+  acceptance:
+  - Unterstützte Frame-, Box-, Klassifikations- und Segmenttypen, Zustände, Sicherheitsgrenzen, API-Abläufe
+    und Exportformate entsprechen der Implementierung.
+  - Das lx-annotate-Frontend sendet denselben authentifizierten Annotator-Scope für Queue, Submit, Skip
+    und Box-Annotationen und zeigt Overrides nur berechtigten Nutzern.
+  required: true
+  verification:
+    kind: manual
+    instructions: Referenzdokumente mit aktuellem API- und Serviceverhalten abgleichen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/annotation_export_guide.md
+    note: Leitfaden beschreibt pts_dataset_v1, sichere Defaults, optionale Segmentfilter und sparse PTS-Extraktion.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T13:56:35.674773Z'

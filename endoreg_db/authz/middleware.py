@@ -67,7 +67,7 @@ class LoginRequiredForAPIsMiddleware:
 
         if request.path_info.startswith(hub_transfer_prefixes):
             return self.get_response(request)
-    
+
         if path.startswith(PUBLIC_PREFIXES):
             return self.get_response(request)
 

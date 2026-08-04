@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
@@ -116,14 +116,6 @@ class FindingClassificationChoice(models.Model):
 
     if TYPE_CHECKING:
         from endoreg_db.models import PatientFindingClassification
-        from lx_dtypes.models.knowledge_base.classification_choice_descriptor import (
-            ClassificationChoiceDescriptorDataDict,
-        )
-
-        DescriptorTemplateMap: TypeAlias = dict[
-            str, "ClassificationChoiceDescriptorDataDict"
-        ]
-        JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
 
         classifications: models.QuerySet["FindingClassification"]
         patient_finding_classifications: models.QuerySet["PatientFindingClassification"]

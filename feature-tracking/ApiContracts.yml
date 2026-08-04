@@ -1,0 +1,199 @@
+schema_version: '1.0'
+id: api_contracts
+name: API-Verträge
+description: Stabile, autorisierte und regressionsgetestete REST-Verträge für alle produktionskritischen
+  Endpunkte.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/api_route_test_matrix.md
+  disposition: migrated
+  note: Die Routenmatrix bleibt Coverage-Referenz; der Fertigstellungsstatus wird hier abgeleitet.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Kanonische und kompatible Routen sind vollständig inventarisiert
+  acceptance:
+  - Jede produktionskritische Route hat Zweck, Mount, Supportstatus und Eigentümer.
+  - Für lx-annotate sind /endoreg-api/ und /dtypes-api/ die kanonischen Mounts; /api/ und /base_api/ sind
+    ausschließlich dokumentierte Kompatibilitätsaliasse.
+  - Jeder Kompatibilitätsalias besitzt ein explizites Entfernungskriterium; neue Consumer verwenden ausschließlich
+    die kanonischen Mounts und zentralen URL-Helper.
+  required: true
+  verification:
+    kind: manual
+    instructions: URL-Konfiguration gegen Routenmatrix und Supportvertrag prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/urls/root_urls.py; endoreg_db/utils/api_urls.py; docs/api_route_test_matrix.md
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
+    note: Kanonische Mounts, technische Ownership, Supportvertrag und Entfernungsgates für /api/ und /base_api/
+      sind dokumentiert; die vorhandene Routenmatrix erfasst Hochrisikorouten, aber noch nicht jede produktionskritische
+      Route mit einzeln ausgewiesenem Owner und Supportstatus.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:33:12.416708Z'
+- id: route_contracts
+  category: functionality
+  title: Kanonische Routen und Payloadverträge stimmen mit der Implementierung überein
+  acceptance:
+  - Alle dokumentierten Routen lösen auf die erwarteten Views auf.
+  - Backend- und Wire-Verträge verwenden snake_case; die zentrale lx-annotate-Clientgrenze darf Requests
+    nach snake_case und Responses nach camelCase konvertieren, ohne endpoint-spezifische Sonderpfade.
+  - GET media/videos/{id}/fps/ und GET/POST media/videos/{id}/segments/normalize-fps/ validieren
+    die persistierte positive, endliche Bildrate ohne vollständiges Media-Staging. Fehlende oder ungültige
+    persistierte Werte liefern HTTP 422; dateibasierte Verifikation bleibt dem schweren Worker beziehungsweise
+    expliziten Integritätsworkflow vorbehalten.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/check_route_matrix.py
+    - --warn-on-missing-backend
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+      note: Exit-Code 0
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest
+        tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest -q
+      note: Metadatenbasierter FPS-/Normalisierungsstatus-Vertrag einschließlich HTTP-422-Fehlerpfad bestanden.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:17:33.541985Z'
+- id: route_coverage
+  category: testing
+  title: Jede Hochrisikoroute besitzt einen belastbaren Contract-Test
+  acceptance:
+  - Routenmatrix und Testdateien sind synchron.
+  - Authentifizierung, Autorisierung, Validierung und Fehlerfälle sind nicht nur Happy-Path-getestet.
+  - Hochrisiko-Medienstatusrouten besitzen einen Regressionstest, der vollständiges Entschlüsseln oder
+    Staging innerhalb des Webprozesses explizit fehlschlagen lässt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/docs/test_show_urls_contract.py
+    - tests/test_resolve.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/docs/test_show_urls_contract.py tests/test_resolve.py
+        -q
+      note: Exit-Code 0
+    - kind: test
+      reference: tests/services/test_video_fps_normalization_jobs.py::test_normalization_status_uses_persisted_fps_without_probing_media;
+        tests/views/video/test_video_fps_view.py::VideoFpsViewTest::test_uses_persisted_video_fps_without_media_probe
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:18:03.336332Z'
+- id: access_controls
+  category: security
+  title: Alle geschützten Routen erzwingen Authentifizierung und Scope
+  acceptance:
+  - Medien-, Berichts-, Upload- und Adminrouten erzwingen ihren dokumentierten Ressourcen-, Patienten-
+    und Center-Scope.
+  - Auf Site-Nodes wird Center-Zugriff als Keycloak-synchronisierte Mehrfachzuordnung modelliert; fehlende
+    oder unbekannte Center-Gruppen verweigern den Zugriff sicher.
+  - Auf dem Central Hub dürfen authentifizierte Leser anonymisierte Medien center-übergreifend lesen;
+    Raw-Medien bleiben auch dort center-bezogen und dürfen den lokalen Storage-Bereich nicht verlassen.
+  - Ausdrücklich center-übergreifende Annotationsrouten erzwingen stattdessen Dataset-, Annotator- und
+    Rollenberechtigungen; Raw-Video-Streams bleiben center-bezogen.
+  - DEBUG-Bypass kann in keinem Produktionsprofil aktiv sein.
+  required: true
+  verification:
+    kind: manual
+    instructions: Routenmatrix gegen Permission-Klassen und negative Authz-Tests prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: deprecation_control
+  category: maintainability
+  title: Legacy-Routen und Serializer-Shims haben ein kontrolliertes Ende
+  acceptance:
+  - /api/ und /base_api/ sowie jeder weitere Alias sind markiert, getestet und mit Entfernungsvoraussetzung
+    versehen.
+  - Neue lx-annotate-Aufrufer verwenden endoregApi() oder dtypesApi() statt direkter Legacy-Mounts.
+  - Tote oder ungetestete Kompatibilitätspfade sind entfernt.
+  required: true
+  verification:
+    kind: manual
+    instructions: URL- und Serializer-Shims inventarisieren und Supportstatus reviewen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/stores/annotationStats.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/annotationStats.test.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/apiPrefixContract.test.ts
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
+    note: Produktive lx-annotate-TypeScript-/Vue-Quellen werden nun repository-weit gegen direkte /api/-
+      und /base_api/-Stringliterale geprüft; der gefundene Runtime-Hardcode ist migriert. Offen bleiben
+      die kontrollierte Ablösung des r()-Wrappers sowie Deployment- und Reverse-Proxy-Nachweise vor Entfernung
+      der weiterhin unterstützten Aliasse.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:33:13.774895Z'
+- id: operational_readiness
+  category: operations
+  title: Vertragsbrüche werden vor Deployment erkannt
+  acceptance:
+  - Routenprüfung ist lokal und in CI reproduzierbar.
+  - Fehlerausgaben benennen Route, erwarteten Vertrag und fehlende Abdeckung.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/check_route_matrix.py
+    - --warn-on-missing-backend
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:18:03.368602Z'
+- id: api_documentation
+  category: documentation
+  title: API-Vertrag ist für Consumer aktuell und eindeutig
+  acceptance:
+  - Mounts, Versionierung, Authentifizierung, Payloads und Fehlerverhalten sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentierten Ablauf für je eine Medien-, Upload- und Berichtsroute nachvollziehen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Common Wire Contract'
+    note: Mounts, Ownership, Kompatibilitätsfenster, Versionierungsstrategie, snake_case-Wireformat, Authentifizierungs-/Autorisierungssemantik
+      und sichere Fehlerkonventionen sind zentral dokumentiert. Offen bleibt die vollständige routeweise
+      Payload- und Fehlerdokumentation für alle produktionskritischen Consumer.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:33:15.331420Z'

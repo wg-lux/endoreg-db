@@ -77,11 +77,7 @@ def _safe_request_context(request) -> dict[str, Any]:
 
     return {
         "request_method": str(getattr(request, "method", "") or ""),
-        "remote_addr_sha256": (
-            hash_identifier(remote_addr)
-            if remote_addr
-            else None
-        ),
+        "remote_addr_sha256": (hash_identifier(remote_addr) if remote_addr else None),
     }
 
 
@@ -127,9 +123,7 @@ def _log_transfer_validation_failure(
     """
     payload: dict[str, Any] = {
         **_safe_request_context(request),
-        "error_fields": sorted(
-            set(_validation_error_fields(errors))
-        ),
+        "error_fields": sorted(set(_validation_error_fields(errors))),
     }
 
     if transfer_key:
@@ -193,9 +187,7 @@ def _assert_secure_transfer_transport(request) -> None:
     )
 
     if not secure_transport_required:
-        warning(
-            "Secure-transport enforcement is disabled for this receiver process"
-        )
+        warning("Secure-transport enforcement is disabled for this receiver process")
         return
 
     if request.is_secure():
@@ -212,9 +204,7 @@ def _assert_secure_transfer_transport(request) -> None:
 
     error("Transfer rejected because the request is not considered secure")
 
-    raise PermissionDenied(
-        "Hub transfer requires HTTPS or equivalent secure transport"
-    )
+    raise PermissionDenied("Hub transfer requires HTTPS or equivalent secure transport")
 
 
 def _assert_transfer_mtls(request) -> None:
@@ -253,20 +243,13 @@ def _assert_transfer_mtls(request) -> None:
         or ""
     ).strip()
 
-    actual_value = str(
-        request.META.get(meta_key, "")
-        or ""
-    ).strip()
+    actual_value = str(request.META.get(meta_key, "") or "").strip()
 
     kv("mTLS metadata key configured", bool(meta_key))
     kv("mTLS expected value configured", bool(expected_value))
     kv("mTLS verification value present", bool(actual_value))
 
-    if (
-        meta_key
-        and expected_value
-        and actual_value == expected_value
-    ):
+    if meta_key and expected_value and actual_value == expected_value:
         success("Proxy-verified mutual TLS requirement passed")
         return
 
@@ -327,9 +310,7 @@ def _enforce_transfer_node_auth(
         bool(provided_secret),
     )
 
-    info(
-        "The X-Network-Node-Secret value is intentionally never printed"
-    )
+    info("The X-Network-Node-Secret value is intentionally never printed")
 
     authenticated_node = authenticate_network_node(
         source_node_key=source_node_key,
@@ -340,9 +321,7 @@ def _enforce_transfer_node_auth(
     if authenticated_node is None:
         error("Network-node authentication failed")
 
-        raise PermissionDenied(
-            "Invalid network node credentials for this transfer"
-        )
+        raise PermissionDenied("Invalid network node credentials for this transfer")
 
     kv("Authenticated node ID", authenticated_node.pk)
     kv("Authenticated node key", authenticated_node.node_key)
@@ -360,9 +339,7 @@ def _assert_transfer_center_scope(
     """
     Enforce authenticated user center scope when a scoped user is present.
     """
-    allowed_center_id = resolve_allowed_center_id(
-        getattr(request, "user", None)
-    )
+    allowed_center_id = resolve_allowed_center_id(getattr(request, "user", None))
 
     kv("Transfer source center ID", source_center_id)
     kv("Authenticated allowed center ID", allowed_center_id)
@@ -370,9 +347,7 @@ def _assert_transfer_center_scope(
     if allowed_center_id == -1:
         error("Authenticated user has no transfer-job access")
 
-        raise PermissionDenied(
-            "You do not have access to transfer jobs."
-        )
+        raise PermissionDenied("You do not have access to transfer jobs.")
 
     if (
         allowed_center_id is not None
@@ -553,9 +528,7 @@ class HubTransferCreateView(APIView):
         except DjangoValidationError as exc:
             details = _django_validation_details(exc)
 
-            error(
-                "TransferJob model validation failed while persisting the transfer"
-            )
+            error("TransferJob model validation failed while persisting the transfer")
             json_block(
                 "TransferJob model validation details",
                 details,
@@ -608,9 +581,7 @@ class HubTransferCreateView(APIView):
             step(7, "Apply portable resource metadata")
 
             try:
-                transfer_job = apply_transfer_metadata(
-                    transfer_job
-                )
+                transfer_job = apply_transfer_metadata(transfer_job)
 
             except DjangoValidationError as exc:
                 details = _django_validation_details(exc)
@@ -634,9 +605,7 @@ class HubTransferCreateView(APIView):
 
                 return Response(
                     {
-                        "error": (
-                            "Receiver could not apply transferred metadata"
-                        ),
+                        "error": ("Receiver could not apply transferred metadata"),
                         "details": details,
                     },
                     status=status.HTTP_400_BAD_REQUEST,
@@ -656,9 +625,7 @@ class HubTransferCreateView(APIView):
 
                 return Response(
                     {
-                        "error": (
-                            "Receiver could not apply transferred metadata"
-                        ),
+                        "error": ("Receiver could not apply transferred metadata"),
                         "details": {
                             "non_field_errors": [str(exc)],
                         },
@@ -705,9 +672,7 @@ class HubTransferCreateView(APIView):
 
         step(8, "Serialize receiver transfer status")
 
-        response_serializer = TransferJobStatusSerializer(
-            transfer_job
-        )
+        response_serializer = TransferJobStatusSerializer(transfer_job)
 
         json_block(
             "Receiver create-transfer response",
@@ -737,11 +702,7 @@ class HubTransferCreateView(APIView):
 
         return Response(
             response_serializer.data,
-            status=(
-                status.HTTP_201_CREATED
-                if created
-                else status.HTTP_200_OK
-            ),
+            status=(status.HTTP_201_CREATED if created else status.HTTP_200_OK),
         )
 
 
@@ -821,9 +782,7 @@ class HubTransferStatusView(APIView):
 
         step(5, "Serialize transfer status")
 
-        serializer = TransferJobStatusSerializer(
-            transfer_job
-        )
+        serializer = TransferJobStatusSerializer(transfer_job)
 
         json_block(
             "Transfer status response",
@@ -919,9 +878,7 @@ class HubTransferMediaUploadView(APIView):
         uploaded_file = request.FILES.get("file")
 
         if uploaded_file is None:
-            errors = {
-                "file": "A multipart file upload is required"
-            }
+            errors = {"file": "A multipart file upload is required"}
 
             error("Media upload did not include a file")
             json_block("Media upload errors", errors)
@@ -939,10 +896,7 @@ class HubTransferMediaUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        media_role = str(
-            request.data.get("media_role", "")
-            or ""
-        ).strip().lower()
+        media_role = str(request.data.get("media_role", "") or "").strip().lower()
 
         kv(
             "Uploaded original filename",
@@ -961,8 +915,7 @@ class HubTransferMediaUploadView(APIView):
         if media_role not in {"processed"}:
             errors = {
                 "media_role": (
-                    "Only anonymized processed media may be "
-                    "uploaded for transfers."
+                    "Only anonymized processed media may be uploaded for transfers."
                 )
             }
 
@@ -996,9 +949,7 @@ class HubTransferMediaUploadView(APIView):
         except DjangoValidationError as exc:
             details = _django_validation_details(exc)
 
-            error(
-                "Receiver model validation failed while attaching media"
-            )
+            error("Receiver model validation failed while attaching media")
             json_block(
                 "Media attachment validation details",
                 details,
@@ -1067,9 +1018,7 @@ class HubTransferMediaUploadView(APIView):
 
         step(7, "Serialize media-upload response")
 
-        serializer = TransferJobStatusSerializer(
-            transfer_job
-        )
+        serializer = TransferJobStatusSerializer(transfer_job)
 
         json_block(
             "Media upload response",

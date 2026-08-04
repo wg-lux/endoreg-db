@@ -271,6 +271,7 @@ def create_or_reuse_transfer_job(
     success("TransferJob persisted in receiver database")
     return transfer_job, True
 
+
 def authenticate_network_node(
     *,
     source_node_key: str,
@@ -602,6 +603,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     _log_video_transfer_mapping(transfer_job=transfer_job, video=video)
     return transfer_job
 
+
 def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     resource_rows = transfer_job.resource_rows or {}
     report_payload = resource_rows.get("raw_pdf_file") or {}
@@ -714,7 +716,10 @@ def _attach_video_transfer_media(
     kv("Portable resource hash", transfer_job.resource_hash)
     kv("Temporary upload path", temp_path)
     kv("Temporary file exists", temp_path.is_file())
-    kv("Temporary file bytes", temp_path.stat().st_size if temp_path.is_file() else None)
+    kv(
+        "Temporary file bytes",
+        temp_path.stat().st_size if temp_path.is_file() else None,
+    )
     kv("Uploaded original name", upload_name)
     kv("Normalized suffix", suffix)
 
@@ -851,6 +856,7 @@ def _attach_video_transfer_media(
     )
     _log_video_transfer_mapping(transfer_job=result, video=video)
     return result
+
 
 def _attach_report_transfer_media(
     *,
@@ -1168,7 +1174,6 @@ def _handle_report_processing_after_raw_upload(
     )
 
 
-
 def _log_field_file_storage(*, label: str, field_file: object) -> None:
     """Print storage-relative and local-path details without reading file content."""
     stored_name = getattr(field_file, "name", None)
@@ -1213,6 +1218,7 @@ def _log_video_transfer_mapping(
     kv("Status detail", transfer_job.status_detail)
     kv("Stored raw media path", getattr(video.raw_file, "name", None))
     kv("Stored processed media path", getattr(video.processed_file, "name", None))
+
 
 def _save_transfer_job_state(
     *,

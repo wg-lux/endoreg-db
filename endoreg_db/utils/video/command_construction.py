@@ -1,9 +1,15 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 logger = logging.getLogger("ffmpeg_wrapper")
+_COMMON_FFMPEG_ARGS = ("-nostdin", "-hide_banner")
+# stdin is disabled at subprocess boundary; ffprobe 8.1 rejects the ffmpeg-only
+# -nostdin option.
+_COMMON_FFPROBE_ARGS = ("-hide_banner",)
+_LOSSLESS_FRAME_EXTENSIONS = frozenset({"png"})
 
 
 class TimestampRepairMode(str, Enum):
@@ -11,6 +17,11 @@ class TimestampRepairMode(str, Enum):
     GENERATE_PTS = "generate_pts"
     IGNORE_DTS = "ignore_dts"
     RESET_TO_ZERO = "reset_to_zero"
+
+
+class FFprobeInputPolicy(str, Enum):
+    DEFAULT = "default"
+    TRUSTED_LOCAL_HLS = "trusted_local_hls"
 
 
 _TIMESTAMP_REPAIR_SEQUENCE = (
@@ -21,15 +32,23 @@ _TIMESTAMP_REPAIR_SEQUENCE = (
 
 
 def _timestamp_repair_input_args(mode: TimestampRepairMode) -> List[str]:
-    if mode == TimestampRepairMode.NONE:
-        return []
-    if mode == TimestampRepairMode.GENERATE_PTS:
-        return ["-fflags", "+genpts"]
-    if mode == TimestampRepairMode.IGNORE_DTS:
-        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
-    if mode == TimestampRepairMode.RESET_TO_ZERO:
-        return ["-fflags", "+genpts+igndts", "-err_detect", "ignore_err"]
-    raise ValueError(f"Unhandled timestamp repair mode: {mode}")
+    mapping: dict[TimestampRepairMode, list[str]] = {
+        TimestampRepairMode.NONE: [],
+        TimestampRepairMode.GENERATE_PTS: ["-fflags", "+genpts"],
+        TimestampRepairMode.IGNORE_DTS: [
+            "-fflags",
+            "+genpts+igndts",
+            "-err_detect",
+            "ignore_err",
+        ],
+        TimestampRepairMode.RESET_TO_ZERO: [
+            "-fflags",
+            "+genpts+igndts",
+            "-err_detect",
+            "ignore_err",
+        ],
+    }
+    return mapping[mode]
 
 
 def _timestamp_repair_output_args(mode: TimestampRepairMode) -> List[str]:
@@ -46,25 +65,31 @@ def _build_transcode_command(
     encoder_args: List[str],
     audio_codec: str,
     audio_bitrate: str,
-    extra_args: Optional[List[str]],
+    extra_args: List[str] | None,
     timestamp_repair_mode: TimestampRepairMode,
 ) -> List[str]:
+    # Retain the legacy parameters at the API boundary while enforcing the
+    # repository-wide invariant that generated media never contains audio.
+    _ = audio_codec, audio_bitrate
     command = [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         *_timestamp_repair_input_args(timestamp_repair_mode),
         "-i",
         str(input_path),
         *encoder_args,
-        "-c:a",
-        audio_codec,
-        "-b:a",
-        audio_bitrate,
-        *_timestamp_repair_output_args(timestamp_repair_mode),
-        "-y",
     ]
+
+    command.extend(
+        [
+            *_timestamp_repair_output_args(timestamp_repair_mode),
+            "-y",
+        ]
+    )
 
     if extra_args:
         command.extend(extra_args)
+    command.append("-an")
     command.append(str(output_path))
     return command
 
@@ -79,11 +104,13 @@ def _build_filter_transcode_command(
 ) -> List[str]:
     return [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(input_path),
         *encoder_args,
         *extra_args,
         "-y",
+        "-an",
         str(output_path),
     ]
 
@@ -92,14 +119,24 @@ def _build_ffprobe_stream_info_command(
     *,
     ffprobe_executable: str,
     file_path: Path,
+    input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
 ) -> List[str]:
+    input_args_by_policy = {
+        FFprobeInputPolicy.DEFAULT: [],
+        FFprobeInputPolicy.TRUSTED_LOCAL_HLS: ["-allowed_extensions", "ALL"],
+    }
+    input_args = input_args_by_policy[input_policy]
+
     return [
         ffprobe_executable,
+        *_COMMON_FFPROBE_ARGS,
         "-v",
         "quiet",
         "-print_format",
         "json",
         "-show_streams",
+        "-show_format",
+        *input_args,
         str(file_path),
     ]
 
@@ -110,21 +147,25 @@ def _build_extract_frames_command(
     video_path: Path,
     output_pattern: Path,
     quality: int,
-    fps: Optional[float],
+    fps: float | None,
+    ext: str,
 ) -> List[str]:
     cmd = [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(video_path),
-        "-qscale:v",
-        str(quality),
         "-start_number",
         "0",
+        "-an",
     ]
 
     if fps is not None:
         cmd.extend(["-vf", f"fps={fps}"])
+    else:
+        cmd.extend(["-fps_mode", "passthrough"])
 
+    cmd.extend(_frame_image_encoder_args(ext=ext, quality=quality))
     cmd.append(str(output_pattern))
     return cmd
 
@@ -137,21 +178,23 @@ def _build_extract_frame_range_command(
     start_frame: int,
     end_frame: int,
     quality: int,
+    ext: str,
 ) -> List[str]:
     select_filter = f"select='between(n,{start_frame},{end_frame - 1})'"
     return [
         ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
         "-i",
         str(video_path),
         "-vf",
         select_filter,
         "-vsync",
         "vfr",
-        "-qscale:v",
-        str(quality),
+        *_frame_image_encoder_args(ext=ext, quality=quality),
         "-copyts",
         "-start_number",
         str(start_frame),
+        "-an",
         str(output_pattern),
     ]
 
@@ -178,3 +221,10 @@ def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
             value,
         )
         args[value_index] = value
+
+
+def _frame_image_encoder_args(*, ext: str, quality: int) -> list[str]:
+    normalized_ext = ext.lower().lstrip(".")
+    if normalized_ext in _LOSSLESS_FRAME_EXTENSIONS:
+        return ["-compression_level", "0"]
+    return ["-qscale:v", str(quality)]

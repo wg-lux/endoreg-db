@@ -1,7 +1,8 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import cv2
 from tqdm import tqdm
@@ -14,19 +15,35 @@ from endoreg_db.utils.file_operations import (
 from .command_construction import (
     _build_extract_frame_range_command,
     _build_extract_frames_command,
+    _frame_image_encoder_args,
 )
 from .executable_discovery import _resolve_ffmpeg_executable
 
 logger = logging.getLogger("ffmpeg_wrapper")
 
 
+def _resolve_frame_dimensions(
+    width: int | None, height: int | None, frame_path: Path
+) -> tuple[int, int]:
+    if width is not None and height is not None:
+        return width, height
+    first_frame = cv2.imread(str(frame_path))
+    if first_frame is None:
+        raise IOError(f"Could not read first frame: {frame_path}")
+    resolved_width = int(first_frame.shape[1])
+    resolved_height = int(first_frame.shape[0])
+    if resolved_width <= 0 or resolved_height <= 0:
+        raise ValueError("frame dimensions must be > 0")
+    return resolved_width, resolved_height
+
+
 def assemble_video_from_frames(
     frame_paths: List[Path],
     output_path: Path,
     fps: float,
-    width: Optional[int] = None,
-    height: Optional[int] = None,
-) -> Optional[Path]:
+    width: int | None = None,
+    height: int | None = None,
+) -> Path | None:
     """
     Assembles a video from a list of frame image paths using cv2.VideoWriter.
     Determines dimensions from the first frame if not provided.
@@ -37,10 +54,7 @@ def assemble_video_from_frames(
 
     if width is None or height is None:
         try:
-            first_frame = cv2.imread(str(frame_paths[0]))
-            if first_frame is None:
-                raise IOError(f"Could not read first frame: {frame_paths[0]}")
-            height, width, _ = first_frame.shape
+            width, height = _resolve_frame_dimensions(width, height, frame_paths[0])
             logger.info(
                 "Determined video dimensions from first frame: %dx%d", width, height
             )
@@ -54,6 +68,8 @@ def assemble_video_from_frames(
 
     fourcc = cv2.VideoWriter.fourcc(*"mp4v")
     ensure_directory(output_path.parent)
+    assert width is not None
+    assert height is not None
     video_writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
     if not video_writer.isOpened():
@@ -88,7 +104,7 @@ def extract_frames(
     output_dir: Path,
     quality: int,
     ext: str = "jpg",
-    fps: Optional[float] = None,
+    fps: float | None = None,
 ) -> List[Path]:
     """
     Extracts frames from a video file using FFmpeg.
@@ -113,18 +129,25 @@ def extract_frames(
     ensure_directory(output_dir)
     output_pattern = output_dir / f"frame_%07d.{ext}"
 
-    cmd = _build_extract_frames_command(
+    cmd: list[str] = _build_extract_frames_command(
         ffmpeg_executable=ffmpeg_executable,
         video_path=video_path,
         output_pattern=output_pattern,
         quality=quality,
         fps=fps,
+        ext=ext,
     )
 
     logger.info("Running FFmpeg command: %s", " ".join(cmd))
     try:
         # Use subprocess.run for better error handling
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
         logger.debug("FFmpeg stdout:\n%s", result.stdout)
         logger.debug("FFmpeg stderr:\n%s", result.stderr)
         logger.info("FFmpeg frame extraction completed successfully.")
@@ -146,7 +169,7 @@ def extract_frames(
         return []
 
     # Collect paths of extracted frames
-    extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
+    extracted_files: List[Path] = sorted(output_dir.glob(f"frame_*.{ext}"))
     return extracted_files
 
 
@@ -207,11 +230,18 @@ def extract_frame_range(
         start_frame=start_frame,
         end_frame=end_frame,
         quality=quality,
+        ext=ext,
     )
 
     logger.info("Running FFmpeg command for frame range extraction: %s", " ".join(cmd))
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
         logger.debug("FFmpeg stdout:\n%s", result.stdout)
         logger.debug("FFmpeg stderr:\n%s", result.stderr)
         logger.info("FFmpeg frame range extraction completed successfully.")
@@ -252,7 +282,7 @@ def extract_frame_range(
     # Collect paths of extracted frames matching the pattern and expected range
     # FFmpeg might create files outside the exact range depending on version/flags,
     # so filter explicitly.
-    extracted_files = []
+    extracted_files: List[Path] = []
     for i in range(start_frame, end_frame):
         frame_file = output_dir / f"frame_{i:07d}.{ext}"
         if frame_file.exists():
@@ -270,4 +300,78 @@ def extract_frame_range(
         end_frame,
         video_path.name,
     )
+    return extracted_files
+
+
+def extract_frames_by_presentation_timestamp(
+    video_path: Path | str,
+    output_dir: Path,
+    presentation_timestamps: list[int],
+    time_base_num: int,
+    time_base_den: int,
+    quality: int,
+    ext: str = "jpg",
+) -> List[Path]:
+    """Extract sparse frames by exact video-stream presentation timestamp."""
+    timestamps = sorted(set(presentation_timestamps))
+    if not timestamps:
+        return []
+    if timestamps[0] < 0:
+        raise ValueError("presentation timestamps must be non-negative")
+    if time_base_num <= 0 or time_base_den <= 0:
+        raise ValueError("stream time base must be positive")
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+    ensure_directory(output_dir)
+    for index, presentation_timestamp in enumerate(timestamps):
+        seek_seconds = presentation_timestamp * time_base_num / time_base_den
+        output_path = output_dir / f"frame_{index:07d}.{ext}"
+        command = [
+            ffmpeg_executable,
+            "-nostdin",
+            "-hide_banner",
+            "-ss",
+            f"{seek_seconds:.9f}",
+            "-copyts",
+            "-i",
+            str(video_path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-sn",
+            "-dn",
+            "-vf",
+            f"select='eq(pts\\,{presentation_timestamp})'",
+            "-frames:v",
+            "1",
+            "-fps_mode",
+            "passthrough",
+            *_frame_image_encoder_args(ext=ext, quality=quality),
+            "-y",
+            str(output_path),
+        ]
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "FFmpeg presentation-timestamp extraction failed for "
+                f"{video_path} at PTS {presentation_timestamp}"
+            ) from exc
+
+    extracted_files = sorted(output_dir.glob(f"frame_*.{ext}"))
+    if len(extracted_files) != len(timestamps):
+        raise RuntimeError(
+            "Presentation-timestamp extraction did not produce every requested "
+            f"frame: expected={len(timestamps)} actual={len(extracted_files)}"
+        )
     return extracted_files

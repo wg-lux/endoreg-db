@@ -1,0 +1,314 @@
+schema_version: '1.0'
+# AGENT-MANAGER-NOTIZ (2026-07-31): Fuer Dead-Code-Audits keinen parallelen
+# Feature-Tracker wie `feature-tracking/DeletableCode.yml` anlegen. Scope,
+# Bewertung und Produktionsreife gehoeren in die bestehenden Kriterien
+# `dead_code_baseline` und `dead_code_reduction`; einzelne Funde und Entscheide
+# gehoeren in `quality/dead_code_baseline.yml`. Vor einer neuen Tracker-Datei
+# zuerst eine tatsaechlich fehlende, eigenstaendige Feature-Grenze nachweisen.
+id: code_quality
+name: Codequalität und Wartbarkeit
+description: Toten Code belastbar identifizieren und entfernen, Helper- und Klassengrenzen vereinheitlichen
+  sowie Exception-Behandlung zentral, typisiert und sicher gestalten.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert bestehende Modell-, Service-, Helper- und Importgrenzen.
+- path: docs/code_quality.md
+  disposition: reference
+  note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
+definition_of_done:
+- id: dead_code_baseline
+  category: requirements
+  title: Toter Code ist repositoryweit belastbar inventarisiert und klassifiziert
+  acceptance:
+  - Das Inventar erfasst ungenutzte Dateien, Symbole, Imports, Re-Exports, Kompatibilitätswrapper und
+    unerreichbare Zweige mit Fundstelle, Evidenz, Konfidenz und Entscheidung.
+  - Dynamische Django-Registrierung, String-Imports, Plugins, Management Commands, Signale, Migrationen
+    und generierter Code werden vor einer Löschung gesondert geprüft.
+  - Ausnahmen besitzen einen benannten Owner, eine überprüfbare Begründung und ein Ablauf- oder Reviewdatum.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:dead-code
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv tasks run quality:dead-code (35 reviewed Vulture findings; 15 confirmed deletion
+        candidates; 20 candidates total; no new, stale, or expired findings)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py -q
+        (5 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright scripts/check_dead_code.py tests/scripts/test_check_dead_code.py
+        (0 errors)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        (startup-smoke ok; 7 root URL patterns)
+    - kind: document
+      reference: quality/dead_code_baseline.yml
+    note: The existing baseline separates 35 reviewed Vulture contracts from 15 confirmed deletion candidates
+      and 5 compatibility candidates. Each candidate records path/lines, consumer evidence, risk, action,
+      owner, and review date; no application code has been removed.
+    assessed_by: Codex
+    assessed_at: '2026-07-31T10:28:39.427146Z'
+- id: dead_code_reduction
+  category: functionality
+  title: Bestätigter toter Code ist sicher entfernt oder kontrolliert deprecatet
+  acceptance:
+  - Hochkonfidente Funde werden in kleinen, nachvollziehbaren Kohorten entfernt und zugehörige Tests,
+    Exporte, Konfigurationen und Dokumentation werden mitbereinigt.
+  - Öffentliche oder repositoryübergreifend konsumierte Symbole erhalten vor der Entfernung einen dokumentierten
+    Deprecation- und Kompatibilitätspfad.
+  - Keine Löschung basiert ausschließlich auf einem statischen Toolfund; dynamische und externe Aufrufer
+    sind ausgeschlossen oder migriert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Entfernte Symbole gegen Inventar, Git-Diff, Importgraph, Paketexporte und alle bekannten
+      Verbraucher abgleichen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors after removing the ProcessingHistory if False
+        typing branch)
+    note: First high-confidence cohort removed one artificial unreachable branch without replacing it
+      with an ignore; broader symbol and compatibility cleanup remains.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T13:28:04.928186Z'
+- id: helper_class_boundaries
+  category: maintainability
+  title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
+  acceptance:
+  - Reine Transformationen leben in typisierten, seiteneffektfreien Funktionen; Datenbank-, Dateisystem-
+    und Netzwerkoperationen liegen an expliziten Servicegrenzen.
+  - Django-Modelle enthalten Persistenz, Constraints und dünne Zustandsübergänge, aber keine neue Workflow-Orchestrierung
+    oder Service-Rückimporte.
+  - Helper haben einen klaren fachlichen Owner, konkrete Ein- und Ausgabetypen und werden nicht als unspezifische
+    Sammelmodule oder konkurrierende Implementierungen geführt.
+  - Importzyklen, neue Barrel-Abhängigkeiten und mehrfach verantwortliche Klassen werden durch Architekturtests
+    verhindert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative Refactorings gegen Modellkarte, Import-Boundary-Tests, Seiteneffektgrenzen
+      und Typensignaturen reviewen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/app/test_model_import_boundaries.py
+        tests/models/metadata/file_import/test_create_video_file.py tests/models/metadata/file_import/test_create_report_file.py
+        -q (25 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    note: Existing model/service and barrel-import architecture guards pass after the first cleanup cohort;
+      systematic helper ownership refactoring remains.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T13:28:04.928186Z'
+- id: centralized_exception_contracts
+  category: functionality
+  title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
+  acceptance:
+  - Fachliche Fehler verwenden kleine, typisierte Exception-Hierarchien mit stabiler Semantik statt uneinheitlicher
+    ValueError-, RuntimeError- oder String-Verträge.
+  - HTTP-, Command-, Job- und Integrationsgrenzen übersetzen Exceptions jeweils an einer zentralen Stelle
+    in Status, Exit-Code, Retry-Entscheidung und strukturiertes Fehlerformat.
+  - Innere Domain- und Servicefunktionen fangen keine breiten Exceptions ab und unterdrücken keine Fehler;
+    Integrationsgrenzen fangen nur begründete konkrete Fehlerklassen.
+  - Fehlerursachen bleiben durch Exception-Chaining und strukturierte Logs nachvollziehbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exception-Flüsse für mindestens API, Management Command, Hintergrundjob und externe
+      Integration vom Ursprung bis zur Boundary verfolgen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    - kind: command
+      reference: pytest DICOM/FHIR services and interoperability response mapper (17 passed)
+    - kind: code
+      reference: endoreg_db/exceptions.py
+    - kind: code
+      reference: endoreg_db/views/interoperability_errors.py
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    - kind: command
+      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
+    note: DICOM/FHIR decken HTTP und Integration ab; der DICOM-Backfill besitzt nun eine sichere zentrale
+      Command-Übersetzung und MediaOperationDeferred eine einheitliche Celery-Retry-Policy mit strukturiertem
+      Audit. Weitere Altbestand-Commands und Jobs bleiben zu migrieren.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:49.850571Z'
+- id: quality_regression_guards
+  category: testing
+  title: Automatisierte Guards verhindern neue Qualitätsregressionen
+  acceptance:
+  - Pyright, Import-Boundary-Tests und fokussierte Runtime-Tests bestehen nach jeder Refactoring-Kohorte.
+  - Ein versionierter Dead-Code-Check meldet neue hochkonfidente Funde und verwendet nur begründete, reviewbare
+    Ausnahmen.
+  - Ein versionierter Boundary-Guard verhindert unreviewte breite Exception-Handler und Typunterdrückungen.
+  - Tests decken Exception-Mapping, Chaining, Retry-Klassifikation, unbekannte Fehler und rückwärtskompatible
+    öffentliche Importe ab.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:code-regression
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv tasks run quality:dead-code (38 reviewed findings; no new, stale, or expired entries)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/app/test_model_import_boundaries.py
+        tests/models/metadata/file_import/test_create_video_file.py tests/models/metadata/file_import/test_create_report_file.py
+        -q (25 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    - kind: command
+      reference: pytest DICOM/FHIR services and interoperability response mapper (17 passed)
+    - kind: command
+      reference: devenv tasks run quality:boundaries (463 broad handlers and 146 type suppressions reviewed;
+        clean)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
+        tests/scripts/test_check_dead_code.py -q (7 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 0 warnings)
+    - kind: document
+      reference: quality/quality_boundary_baseline.yml
+    - kind: command
+      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
+    note: Dead-Code- und Boundary-Guards bleiben sauber; die zweite Exception-Kohorte deckt Command-Exitcode,
+      Chaining, drei Retry-Pfade, Unknown-Error-Passthrough und Importkompatibilität ab. Der restliche
+      Altbestand bleibt schrittweise zu reduzieren.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:52.295400Z'
+- id: secure_failure_semantics
+  category: security
+  title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
+  acceptance:
+  - Klinische, Berechtigungs-, Kryptografie-, Storage- und Transferinvarianten schlagen laut und fail-closed
+    fehl.
+  - Fehlerantworten und Logs enthalten keine Secrets, Master Keys, direkten Patientenidentifikatoren oder
+    unminimierten Payloads.
+  - Privacy-preserving Nichtoffenlegung und unterscheidbare interne Auditursachen bleiben trotz zentraler
+    Übersetzung erhalten.
+  - Unbekannte Fehler werden nicht als Erfolg, leere Antwort oder unsicherer Fallback behandelt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative Security-, Privacy- und Storage-Fehler gegen API-Antwort, Auditlog und
+      Retry-Verhalten prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py::test_patient_examination_fhir_endpoint_maps_expected_export_error
+    - kind: test
+      reference: tests/services/test_dicom_interoperability.py::test_import_fails_closed_when_artifact_integrity_check_fails
+    - kind: test
+      reference: tests/services/test_dicom_manifest_backfill.py::test_command_maps_backfill_failure_to_safe_stable_contract
+    - kind: test
+      reference: tests/test_tasks.py::test_job_boundary_preserves_unknown_error_without_retry
+    note: Command-Ausgabe und Job-Logs der zweiten Kohorte sind datensparsam; interne Ursachen bleiben
+      verkettet, Objektidentitäten werden gehasht und unbekannte Fehler nicht automatisch erneut versucht.
+      Weitere Security- und Storage-Grenzen bleiben.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:54.821735Z'
+- id: incremental_rollout
+  category: operations
+  title: Qualitätsrefactorings besitzen einen kontrollierten Rollout- und Rollbackpfad
+  acceptance:
+  - Änderungen werden nach Domäne und Risiko in kleine Kohorten geschnitten; Baseline und Restbestand
+    werden pro Kohorte aktualisiert.
+  - Öffentliche Imports, Jobs, Commands, API-Fehlerformate und persistierte Fehlerzustände haben eine
+    dokumentierte Kompatibilitätsdauer.
+  - Für jede verhaltensändernde Kohorte sind Rollback, Beobachtbarkeit und Abbruchkriterien vor Deployment
+    definiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine repräsentative Kohorte einschließlich Baseline-Differenz, Deploymentprüfung und
+      Rollbackentscheidung nachvollziehen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md#exception-grenzen
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: document
+      reference: quality/quality_boundary_baseline.yml
+    - kind: test
+      reference: tests/test_tasks.py::test_media_tasks_share_retry_contract_when_media_busy
+    note: Die zweite Kohorte dokumentiert Command-Exitcode, zentralisierte Retry-Parameter, Kompatibilitätsimporte,
+      Auditfelder, Abbruchkriterien und Adapter-Rollback; Produktionsbeobachtung und weitere Domänenkohorten
+      bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:57.477090Z'
+- id: contributor_guidance
+  category: documentation
+  title: Entwickler können Qualitätsgrenzen konsistent anwenden
+  acceptance:
+  - Dokumentation beschreibt Dead-Code-Evidenz, Deprecation, Helper- und Klassenownership sowie die zulässigen
+    Exception-Schichten mit Beispielen.
+  - Eine Review-Checkliste verlangt Consumer-Suche, dynamische Registrierungsprüfung, Boundary-Wahl, Exception-Mapping
+    und relevante Tests.
+  - Architekturentscheidungen und zeitlich begrenzte Ausnahmen sind auffindbar und besitzen klare Verantwortliche.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine neue Bereinigung und eine neue Exception anhand der Dokumentation planen und alle
+      erforderlichen Layer und Prüfungen identifizieren.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: code
+      reference: endoreg_db/exceptions.py
+    - kind: code
+      reference: endoreg_db/views/interoperability_errors.py
+    - kind: document
+      reference: docs/code_quality.md#qualitäts-boundary-guard
+    - kind: document
+      reference: docs/code_quality.md#exception-grenzen
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    note: Die Dokumentation enthält nun neben HTTP/Integration ein vollständiges Command-/Job-Beispiel
+      mit Exitcode, Retry-Policy, Chaining, sicheren Logs, Kompatibilität und Rollback. Weitere Altbestandsmigrationen
+      bleiben.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:34:00.318493Z'

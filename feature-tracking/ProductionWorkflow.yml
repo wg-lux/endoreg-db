@@ -1,0 +1,203 @@
+schema_version: '1.0'
+id: production_workflow
+name: Produktionsworkflow
+description: Explizite, serverseitig erzwungene und beobachtbare Workflows für Medien, Berichte und Annotationen.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/production_workflow_hardening_plan.md
+  disposition: migrated
+  note: Phasen, Backlog und Done Criteria wurden in die verbindliche DoD übernommen.
+definition_of_done:
+- id: workflow_invariants
+  category: requirements
+  title: Kritische Workflowinvarianten sind explizit und zentral definiert
+  acceptance:
+  - Reportfinalisierung verlangt Untersuchung und aufgelösten Dokumenttyp.
+  - Segmentexport verlangt ein aufgelöstes Labelset und abgeschlossene Validierung.
+  - Anonymisierungsvalidierung und Segmentannotationsvalidierung sind getrennte Gates mit getrennten Zuständen
+    und Freigabewirkungen.
+  - Produktionspfade besitzen keine stillen Validator- oder Statusfallbacks.
+  required: true
+  verification:
+    kind: manual
+    instructions: Invariantenliste gegen alle Schreib-, Finalisierungs- und Exportpfade prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: canonical_state_machine
+  category: functionality
+  title: Medien- und Berichtsworkflows besitzen kanonische Zustandsmaschinen
+  acceptance:
+  - Gültige Übergänge, Vorbedingungen und Terminalzustände sind serverseitig erzwungen.
+  - Unmögliche Zustände schlagen laut fehl; LOST bleibt sichtbar und auditierbar.
+  - Ein anonymisiertes und freigegebenes Video darf downstream genutzt werden, ohne dadurch als segmentvalidiert
+    zu gelten; Segmentvalidierung sperrt die Bearbeitung nur gemäß dokumentiertem Override-Vertrag.
+  - Videoanonymisierung über die separate Segmentbereitschaft bis zum Segmentreview sowie PDF-Validierung
+    bis Materialisierung funktionieren end-to-end.
+  required: true
+  verification:
+    kind: manual
+    instructions: Zustandsdiagramme gegen Services, Jobs, Modelle und Endpunkte abgleichen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: hls_worker_deduplication
+  category: data_integrity
+  title: HLS-Worker besitzen einen eindeutigen, atomar geschützten Materialisierungsversuch
+  acceptance:
+  - Für neue und explizit eingereihte Artefakte besitzt genau ein Versuch das Publikationsrecht; aktive
+    Versuche werden auch bei Force nicht übernommen.
+  - Stale Queue- und Materialisierungsversuche werden kontrolliert ersetzt, ohne dauerhaft blockierte
+    Zustände zu hinterlassen.
+  - Verspätete Worker dürfen einen neueren Versuch weder READY noch FAILED schreiben.
+  - Ein fehlgeschlagener erzwungener Neuaufbau erhält das vorherige vollständige READY-Artefakt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hls_media.py
+    - tests/management/commands/test_materialize_video_hls.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/management/commands/test_materialize_video_hls.py
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T13:27:36.721716Z'
+- id: end_to_end_tests
+  category: testing
+  title: Kritische Workflows sind end-to-end und als API-Vertrag getestet
+  acceptance:
+  - PDF-Validierung, Case Resolution und Reportmaterialisierung sind gemeinsam getestet.
+  - Videoanonymisierungsfreigabe, Segmentbereitschaft und Segmentvalidierungsabschluss sind als getrennte
+    Zustände gemeinsam getestet.
+  - lx-annotate hält anonymisierte und bereits segmentvalidierte Videos zur Ansicht auswählbar und macht
+    segmentvalidierte Annotationen ohne berechtigten Override schreibgeschützt.
+  - Segment-CRUD und Reportsubmission haben explizite Contract-Tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_segment_annotation_flow.py
+    - tests/services/test_report_materialization_contracts.py
+    - tests/views/report/test_patient_examination_report_ninja_api.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: secure_fail_closed
+  category: security
+  title: Sicherheits- und Freigabeübergänge sind fail-closed
+  acceptance:
+  - Fehlende Identität, Center-Scope, sensible Metadaten oder Freigabeevidenz verhindern den Übergang.
+  - DEBUG- oder Legacyverhalten kann keine Produktionsinvariante umgehen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Negative Übergänge in einem produktionsnahen Settingsprofil prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: deterministic_imports
+  category: data_integrity
+  title: Import und Reimport sind deterministisch, idempotent und auditiert
+  acceptance:
+  - Duplikatpolicy ist definiert und mit Content- sowie fachlicher Identität getestet.
+  - Wiederholungen verlieren weder Provenienz noch historische Zustände.
+  required: true
+  verification:
+    kind: manual
+    instructions: Identischen und konfliktbehafteten Video- sowie PDF-Import wiederholen und prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: workflow_observability
+  category: observability
+  title: Workflows sind ohne Ad-hoc-Reproduktion diagnostizierbar
+  acceptance:
+  - Korrelations-ID, Ressource, alter und neuer Zustand sowie Fehlergrund werden strukturiert protokolliert.
+  - Stagnation, Retry und Terminalfehler erzeugen Betriebsmetriken.
+  required: true
+  verification:
+    kind: manual
+    instructions: Je einen erfolgreichen und fehlgeschlagenen Workflow nur anhand Logs und Status rekonstruieren.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: legacy_cleanup
+  category: maintainability
+  title: Legacy-Routen und Serializer-Shims sind kontrolliert reduziert
+  acceptance:
+  - Jeder verbleibende Kompatibilitätspfad hat Supportstatus und Entfernungskriterium.
+  - Tote oder ungetestete Pfade sind entfernt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Endpointinventar, Deprecation-Markierungen und Serializer-Shims reviewen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: operational_readiness
+  category: operations
+  title: Retry, Recovery und Incident-Abläufe sind produktionsreif
+  acceptance:
+  - Betreiber können fehlerhafte Jobs sicher identifizieren, wiederholen und beweissicher behandeln.
+  - Kein Recovery-Pfad verletzt kryptografische oder klinische Integrität.
+  - Gewöhnliche Status- und Metadatenabfragen dürfen kein vollständiges verschlüsseltes Video im Webprozess
+    materialisieren. Incident-Rekonstruktion unterscheidet automatische Ressourcenbeendigung, manuellen
+    Service-Restart, expliziten SIGKILL und Host-Shutdown anhand der Journale.
+  required: true
+  verification:
+    kind: manual
+    instructions: Workflowfehler, Retry und Recovery im produktionsnahen Profil üben.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: monitoring
+      reference: 'gc-10 journalctl 2026-07-23 10:57-12:23 CEST: Timeout normalize-fps; manueller systemctl
+        restart; expliziter SIGKILL; kein OOM-Kill'
+    - kind: code
+      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/services/jobs/video_fps_normalization_jobs.py;
+        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue
+    - kind: command
+      reference: 15 fokussierte Backend-Tests und lx-annotate devenv tasks run vue:test bestanden
+    note: Der gc-10-Incident vom 2026-07-23 ist anhand von Applikations-, Nginx- und systemd-Journalen
+      rekonstruiert. Synchrones Media-Staging in FPS-Statusabfragen und nachfolgende Frontend-Anfrageverstärkung
+      sind behoben und regressionsgetestet. Offen bleiben Deployment, kontrollierter Lastnachweis und
+      Runbook-Übung auf gc-10.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T14:03:17.534543Z'
+- id: workflow_documentation
+  category: documentation
+  title: Zustände, Übergänge und Betriebsabläufe sind aktuell dokumentiert
+  acceptance:
+  - Dokumentation unterscheidet kanonische, kompatible und nicht unterstützte Pfade.
+  - Dokumentation und Consumer-Terminologie unterscheiden Anonymisierungsstatus, allgemeinen Workflowstatus
+    und Segmentannotationsvalidierung eindeutig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation gegen Zustandscode, API und Jobs abgleichen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

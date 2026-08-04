@@ -1,0 +1,181 @@
+schema_version: '1.0'
+id: storage_security
+name: Geschützte Medien und Storage
+description: Einheitlicher fail-closed Schutz für klinische Medien bei Speicherung, Streaming, Migration
+  und Transfer.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/repo_alignment_todo.md
+  disposition: migrated
+  note: Cross-Repository-Divergenzen, Phasen und Erfolgskriterien sind Teil dieser DoD.
+- path: docs/video_hls_permissions_and_streaming.md
+  disposition: reference
+  note: Streaming- und Berechtigungsvertrag.
+definition_of_done:
+- id: storage_contract
+  category: requirements
+  title: Schutz- und Storagevertrag ist über endoreg_db, lx-annotate und LuxNix einheitlich
+  acceptance:
+  - Video, Bericht, Sidecar, Manifest und temporäres Artefakt haben einen eindeutigen Schutzmodus.
+  - Operatorseitiges encryption-off ist kein unterstützter Produktionszustand.
+  - storage_mode verwendet ausschließlich typisierte, exhaustive Routingentscheidungen.
+  - Der kanonische Dateioperations-Wrapper ist endoreg_db.utils.filesystem.file_operations; abweichende
+    Importpfade sind nur als inventarisierte, getestete und befristete Kompatibilität zulässig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Cross-Repository-Vertrag gegen Settings, Storage-Backends und Deploymentprofile prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: encrypted_at_rest
+  category: security
+  title: Physischer Datenträgerzugriff ermöglicht keinen Klartextzugriff
+  acceptance:
+  - Managed Non-Video-Payloads nutzen anwendungsseitig verschlüsselten Storage.
+  - Videos liegen innerhalb der freigegebenen verschlüsselten, streambaren Grenze.
+  - Start schlägt fehl, wenn erforderliche Schlüssel- oder Storageinvarianten fehlen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Datenträger-, Settings- und Startfehlerprüfung im Produktionsprofil durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: protected_delivery
+  category: functionality
+  title: Geschützte Medien werden nur autorisiert und proxygeeignet ausgeliefert
+  acceptance:
+  - Produktionsrouten mounten geschützte Medien nie direkt unter public media.
+  - Streaming nutzt authentifizierte API-Prüfung und optional X-Accel-Redirect.
+  - Range-, Chunk- und Fehlerverhalten funktionieren mit verschlüsseltem Storage.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_environment_readiness.py
+    - tests/views/video/test_video_stream.py
+    - tests/views/report/test_report_stream.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: filesystem_integrity
+  category: data_integrity
+  title: Alle Mutationen sind atomar, typisiert und strukturiert protokolliert
+  acceptance:
+  - Produktionscode umgeht endoreg_db.utils.filesystem.file_operations nicht; Cross-Repository-Aufrufer
+    verwenden denselben kanonischen Importpfad oder einen explizit dokumentierten Kompatibilitätswrapper.
+  - Teilwrites werden nicht als gültige Artefakte sichtbar und Integrität ist hashbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/utils/test_file_operations.py
+    - tests/services/test_report_artifact_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    - kind: review
+      reference: endoreg_db/utils/filesystem/file_operations.py; endoreg_db/services/video_storage/normalization.py
+    note: Der Video-Normalisierer verwendet den kanonischen Filesystem-Facade; Teiloutputs werden nicht
+      veröffentlicht und Mutationen/Lifecycle sind strukturiert protokolliert. Die repository-weite Migration
+      verbleibender Legacy-Imports ist noch offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:53.499645Z'
+- id: migration_and_repair
+  category: operations
+  title: Bestandsmigration, Rotation, Reparatur und Rollback sind sicher
+  acceptance:
+  - Migration arbeitet idempotent, prüft freien Speicher und verifiziert Quelle sowie Ziel.
+  - Fehler markieren Artefakte nachvollziehbar und führen nicht zu unsafe Auto-Recovery.
+  - Key-Rotation und Backup-Restore sind dokumentiert und geprobt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Produktionsnahe Migrations-, Abbruch-, Restore- und Rotationsübung durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    note: ENOSPC, Unterbrechung, Validierungsfehler und Publikationsfehler sind fail-closed regressionsgetestet.
+      Produktionsnahe Restore-, Key-Rotations- und harte Prozessabbruchübung fehlen weiterhin.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:54.487849Z'
+- id: automated_tests
+  category: testing
+  title: Produktionssettings, Storage, Streaming und Migration sind regressionsgetestet
+  acceptance:
+  - Öffentliche Mounts, falsche Roots, fehlende Schlüssel und Integritätsfehler haben negative Tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/deployment/test_prod_settings_contract.py
+    - tests/services/test_environment_readiness.py
+    - tests/utils/test_file_operations.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py
+        tests/services/test_environment_readiness.py tests/utils/test_file_operations.py tests/services/test_report_artifact_integrity.py
+        tests/services/test_video_storage_atomic_migration.py -q' (37 passed)
+    note: Produktionssettings, öffentliche/falsche Storage-Konfigurationen, Dateioperationsintegrität,
+      Report-Artefaktintegrität sowie fail-closed Video-Migrationsfehler sind regressionsgetestet.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:39:39.103438Z'
+- id: readiness_observability
+  category: observability
+  title: Schutzverletzungen und Storagezustand sind vor und während des Betriebs sichtbar
+  acceptance:
+  - Startup- und Health-Checks melden öffentliche Mounts, Root-Flucht und ungeschützte Modi laut.
+  - Dateioperationen erzeugen strukturierte, korrelierbare JSON-Ereignisse.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fehlkonfigurationen injizieren und Health- sowie Alarmverhalten prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/video_storage/normalization.py
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (strukturierte Fehler- und Unlink-Ereignisse)
+    note: Korrelierbare Normalisierungs- und Dateioperationsereignisse sind nachgewiesen. Startup-/Health-Alarmierung
+      für Fehlkonfigurationen bleibt offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:56.329335Z'
+- id: operator_documentation
+  category: documentation
+  title: Storage-, Streaming-, Schlüssel- und Incident-Runbooks sind konsistent
+  acceptance:
+  - Dokumentation enthält unterstützte Profile, Invarianten, Migration, Recovery und Cross-Repo-Abhängigkeiten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbooks mit Betrieb und Security in produktionsnaher Umgebung abnehmen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

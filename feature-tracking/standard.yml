@@ -1,0 +1,244 @@
+schema_version: '1.0'
+id: standard
+name: Feature-Tracking-Standard
+description: Selbstprüfung des zentralen, YAML-basierten Produktionsreife-Trackers.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T09:11:32.852237Z'
+    note: Definition of Done vollständig verifiziert; der Feature-Tracking-Standard wird aus dem aktiven
+      Tracking abgeschlossen.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-31T10:12:18.056160Z'
+    note: Feature-Lock mit atomarer Konfliktprüfung für Feature-, Kriteriums- und Dateiscopes wird ergänzt;
+      Bootstrap-Änderung, da der Lock-Befehl vor dieser Implementierung noch nicht existiert.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T10:20:34.707220Z'
+    note: Feature-Lock mit atomarer Feature-, Kriteriums- und Dateikoordination ist implementiert, dokumentiert
+      und mit 34 fokussierten Tests verifiziert.
+  - action: reopened
+    changed_by: codex/root
+    changed_at: '2026-07-31T10:32:26.102809Z'
+    note: Lokale, owner-adressierte Koordinations-API für unabhängige Codex-CLI-Prozesse ergänzen.
+  - action: done
+    changed_by: codex/root
+    changed_at: '2026-07-31T10:39:30.927919Z'
+    note: Codex-CLI-Koordination mit atomarem lokalem Nachrichtenpostfach, Owner-Bindung, Ablauf, Dokumentation
+      und 37 fokussierten Tests verifiziert.
+  - action: reopened
+    changed_by: codex-root-20260803-topology
+    changed_at: '2026-08-03T10:06:42.365155Z'
+    note: Add topology-aligned single-agent versus centralized multi-agent contracts, strict worker result
+      schemas, budget guardrails, and idempotent checkpoints.
+source_documents:
+- path: feature-tracking/README.md
+  disposition: reference
+  note: Bedien- und Governancevertrag des Trackers.
+definition_of_done:
+- id: defined_structure
+  category: requirements
+  title: Struktur und Produktionsgate sind strikt definiert
+  acceptance:
+  - Feature, Kriterien, Verifikation, Bewertung und Evidenz besitzen ein versioniertes Schema.
+  - Das Produktionsgate liefert binär produktionsreif oder nicht produktionsreif.
+  - Ein Prozentwert kann das binäre Gate nicht ersetzen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - feature-tracking/tracker.py
+    - validate
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python feature-tracking/tracker.py validate
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:11:35.220778Z'
+- id: terminal_commands
+  category: functionality
+  title: Kleine, testbare Terminalbefehle decken den Workflow ab
+  acceptance:
+  - overview, show, validate, check, update, verify, done, reopen und lock haben getrennte Verantwortlichkeiten.
+  - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
+  - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
+  - Ein Agent erwirbt vor Änderungen atomar einen zeitlich begrenzten Lock für ein Feature, ein Kriterium,
+    eine oder mehrere Repository-Dateien oder deren Kombination und gibt ihn nach der Arbeit wieder frei.
+  - Featureweite, identische Kriteriums- und überlappende Dateiscopes werden abgelehnt; unabhängige Kriteriums-
+    und Dateiscopes dürfen parallel bearbeitet werden.
+  - Lock-Status, Ablauf, Erneuerung und owner-gebundene Freigabe sind explizit prüfbar; abgelaufene Locks
+    blockieren keine neue Arbeit.
+  - Owner-adressierte Codex-CLI-Nachrichten unterstützen Send, Inbox, Acknowledge und Reply mit optionalem
+    Feature-/Kriteriumsbezug; Lock-Akquisition zeigt ungelesene Nachrichten desselben Owners an.
+  - Nachrichten werden atomar und owner-privat im lokalen Runtime-Verzeichnis gespeichert, laufen begrenzt
+    ab, lehnen Terminal-Steuerzeichen ab und erzeugen keinen parallelen Readiness- oder Status-Tracker.
+  - Orchestrierungsverträge wählen für sequenzielle Arbeit genau einen Agenten und erlauben zentralisierte
+    Multi-Agent-Ausführung nur für mindestens zwei unabhängig ausführbare Zweige.
+  - Jede Work-Unit besitzt genau eine Verantwortung, höchstens zwei Turns, ein explizites Token-Budget,
+    ein schema-validiertes Ergebnis und atomare idempotente Checkpoints.
+  - Zentralisierte Läufe wählen explizit native Codex-Subagents oder externe codex-exec-Worker; beide
+    Backends bewahren dieselben Hub-and-Spoke-, Lock-, Budget-, Ergebnis- und Checkpoint-Grenzen.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - .devenv/state/venv/bin/python
+      - feature-tracking/tracker.py
+      - overview
+    - command:
+      - .devenv/state/venv/bin/pytest
+      - feature-tracking/test_tracker.py
+      - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_feature_locks_reject_overlapping_scopes_and_allow_independent_work
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_simultaneous_feature_lock_contenders_have_exactly_one_winner
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_feature_lock_expiry_renewal_and_owner_bound_release
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_lock_cli_acquires_reports_and_releases
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py tests/utils/test_file_operations.py
+        -q (34 passed)
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_agent_messages_are_owner_bound_atomic_and_replyable
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_agent_message_expiry_and_terminal_control_validation
+    - kind: test
+      reference: feature-tracking/test_tracker.py::test_message_cli_and_lock_acquire_surface_unread_feedback
+    - kind: command
+      reference: devenv shell -- /home/admin/endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
+        tests/utils/test_file_operations.py -q (37 passed)
+    - kind: command
+      reference: devenv shell -- pyright feature-tracking/tracker.py feature-tracking/test_tracker.py
+        (0 errors)
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/release-worktrees/lx-dtypes-0.2.10 .devenv/state/venv/bin/pytest
+        feature-tracking/test_tracker.py -q (32 passed)
+    note: Native subagent and external codex exec backends are typed, documented, and verified.
+    assessed_by: codex-feature-tracker-topology-20260803
+    assessed_at: '2026-08-03T12:12:09.534904Z'
+- id: automated_tests
+  category: testing
+  title: Schema, Ableitung und Updates sind fokussiert getestet
+  acceptance:
+  - Ungültige Bewertungen, unvollständige Migration und falsche Produktionsfreigabe schlagen fehl.
+  - Update und atomarer YAML-Roundtrip sind getestet.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:22.134957Z'
+- id: safe_execution
+  category: security
+  title: YAML kann keine implizite Shellausführung oder Freigabe einschleusen
+  acceptance:
+  - Prüfkommandos werden als Argumentlisten ohne Shell ausgeführt.
+  - Unbekannte Felder und ungültige Zustände werden strikt abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py::test_command_verification_requires_one_command_shape
+    - feature-tracking/test_tracker.py::test_verification_working_directory_must_be_absolute
+    - feature-tracking/test_tracker.py::test_multi_repository_verification_runs_shell_free_in_order
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: 'feature-tracking/tracker.py: Verification, FeatureDefinition, run_verification'
+    - kind: test
+      reference: feature-tracking/test_tracker.py
+    note: Pydantic-Modelle verbieten unbekannte Felder; Verifikationskommandos sind typisierte Argumentlisten
+      und werden mit subprocess.run ohne Shell-Expansion ausgeführt.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:37.612032Z'
+- id: atomic_updates
+  category: operations
+  title: Terminalupdates sind atomar und strukturiert protokolliert
+  acceptance:
+  - Updates verwenden die zentralen Dateioperations-Wrapper.
+  - Ein fehlgeschlagener Write hinterlässt keine gültig aussehende Teildatei.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:26.661552Z'
+- id: governance_documentation
+  category: documentation
+  title: Nutzung und Agentenpflichten sind zentral dokumentiert
+  acceptance:
+  - README erklärt Authoring, Evidenz, Exit-Codes und Updateprozess.
+  - AGENTS.md verbietet parallele Markdown-Statustracker.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - feature-tracking/test_tracker.py::test_tracker_governance_documentation_contract
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: feature-tracking/README.md
+    - kind: review
+      reference: 'AGENTS.md: Feature Readiness Tracking'
+    note: README beschreibt Authoring, Evidenz, Exit-Codes, atomare Updates und den Pflegeprozess; AGENTS.md
+      erklärt feature-tracking als einzige Statusquelle und verbietet parallele Tracker.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:01:38.520989Z'

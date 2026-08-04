@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, cast
 
 from django.db import models
 
@@ -193,16 +193,6 @@ class ExaminationIndicationClassificationChoice(models.Model):
     numerical_descriptors = models.JSONField(default=dict)
 
     objects = ExaminationIndicationClassificationChoiceManager()
-
-    if TYPE_CHECKING:
-        from lx_dtypes.models.knowledge_base.classification_choice_descriptor import (
-            ClassificationChoiceDescriptorDataDict,
-        )
-
-        JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
-        DescriptorTemplateMap: TypeAlias = dict[
-            str, "ClassificationChoiceDescriptorDataDict"
-        ]
 
     def natural_key(self) -> tuple:
         """

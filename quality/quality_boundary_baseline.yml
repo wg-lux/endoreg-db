@@ -1,0 +1,32 @@
+schema_version: "1.0"
+scan:
+  paths:
+    - endoreg_db
+    - scripts
+  excluded_path_parts:
+    - migrations
+    - __pycache__
+broad_exception:
+  count: 410
+  fingerprint: 3d99467020bfb45b17e3e263cec93efc43ecc5f96c44e12a8ad33c0dbd1c763d
+  owner: endoreg_db maintainers
+  reason: >-
+    Geprüfter Bestand nach der Exception-Reduktionskohorte und der Extraktion
+    typisierter Workflow-Helfer. Handler im Report- und Videoimport, in der
+    Anonymisierung, im Hub-Ingest und im Setup-Command wurden mit ihren
+    Cleanup-, Status-, Logging- und Reraise-Verträgen in kleinere Scopes
+    verschoben; wiederholte Management-Command-Grenzen wurden konsolidiert.
+    Die niedrigere syntaktische Anzahl entsteht durch diese Wiederverwendung
+    und stellt keine pauschale Reduktion der Laufzeit-Catch-Pfade dar.
+    Unerwartete Domain-, ORM-, Integritäts- und Identitätsfehler propagieren
+    weiterhin fail-closed; es wurden keine neuen stillen Fallbacks akzeptiert.
+  review_after: 2026-10-17
+type_suppression:
+  count: 141
+  fingerprint: 47f70fedf60c4c6bec169a3d453a86d15a0a76b00dc1567cc39f92b91adad383
+  owner: endoreg_db maintainers
+  reason: >-
+    Geprüfter Altbestand nach Entfernung von vier Typunterdrückungen aus der
+    Video-Inferenzkohorte. Es wurden keine neuen Suppressions akzeptiert; der
+    verbleibende Bestand ist keine Freigabe.
+  review_after: 2026-10-17

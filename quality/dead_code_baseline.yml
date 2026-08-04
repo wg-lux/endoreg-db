@@ -1,0 +1,237 @@
+schema_version: "1.0"
+tool:
+  paths:
+    - endoreg_db
+    - scripts
+  exclude:
+    - "*/migrations/*"
+    - "*/tests/*"
+    - "*/settings/*"
+    - "*/management/commands/*"
+    - "*/apps.py"
+    - "*/admin.py"
+  min_confidence: 90
+accepted_findings:
+  - &protocol_signature
+    path: endoreg_db/helpers/typing.py
+    message: "unused variable 'objs'"
+    confidence: 100
+    classification: protocol_signature
+    reason: Required keyword name in a structural typing contract; the implementation consumes it dynamically.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *protocol_signature
+    path: endoreg_db/services/aidataset_training_manifests.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/annotation_access.py
+    message: "unused variable 'flat'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/interoperability/dicom_import.py
+    message: "unused variable 'expected_size_bytes'"
+  - <<: *protocol_signature
+    path: endoreg_db/utils/pydantic_models/db_config.py
+    message: "unused variable 'ask_override'"
+
+  - &framework_contract
+    path: endoreg_db/checks.py
+    message: "unused variable 'app_configs'"
+    confidence: 100
+    classification: framework_contract
+    reason: Required by the registered Django or Python framework callback signature.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+  - <<: *framework_contract
+    path: endoreg_db/models/state/signals.py
+    message: "unused variable 'sender'"
+    occurrences: 2
+  - <<: *framework_contract
+    path: endoreg_db/services/polling_coordinator.py
+    message: "unused variable 'exc_val'"
+  - <<: *framework_contract
+    path: endoreg_db/services/polling_coordinator.py
+    message: "unused variable 'exc_tb'"
+  - <<: *framework_contract
+    path: endoreg_db/services/reconciliation.py
+    message: "unused variable 'tb'"
+  - &compatibility_contract
+    path: endoreg_db/services/video_files/_ai.py
+    message: "unused variable 'save_results'"
+    confidence: 100
+    classification: compatibility_contract
+    reason: Public compatibility parameter retained for existing callers; removal requires a consumer migration.
+    owner: endoreg_db maintainers
+    review_after: 2026-10-17
+
+deletion_candidates:
+  - &empty_module
+    path: endoreg_db/api/serializers/finding_descriptions.py
+    line_range: empty file
+    symbol: entire module
+    classification: confirmed_dead
+    evidence:
+      - File is tracked but has zero bytes.
+      - No repository import, re-export, string reference, test, URL, command, or Django registration was found.
+    reason: Empty placeholder left after finding-description lookup removal.
+    recommended_action: remove
+    risk: low
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - <<: *empty_module
+    path: endoreg_db/api/views/finding_descriptions.py
+    reason: Empty companion view placeholder left after finding-description lookup removal.
+  - <<: *empty_module
+    path: endoreg_db/import_files/pseudonymization/pseudonymize.py
+    reason: Empty legacy pseudonymization placeholder with no package export or consumer.
+  - <<: *empty_module
+    path: endoreg_db/models/report/images.py
+    reason: Empty report-image model placeholder not imported by Django's model barrel.
+  - <<: *empty_module
+    path: endoreg_db/queries/sanity/__init_.py
+    reason: Empty, misspelled package initializer; Python package discovery does not treat it as __init__.py.
+  - <<: *empty_module
+    path: endoreg_db/utils/media/mime_types.py
+    reason: Empty utility placeholder; MIME validation is implemented at active upload call sites.
+  - <<: *empty_module
+    path: endoreg_db/utils/requirement_helpers.py
+    reason: Empty flattened-utility residue with no consumer.
+  - <<: *empty_module
+    path: endoreg_db/helpers/interact.py
+    line_range: line 1 (blank)
+    evidence:
+      - File contains only one newline.
+      - No repository import, re-export, string reference, test, URL, command, or Django registration was found.
+    reason: Blank helper placeholder with no consumer.
+
+  - path: endoreg_db/urls/classification.py
+    line_range: 1-34
+    symbol: empty classification URL module
+    classification: confirmed_dead
+    evidence:
+      - url_patterns is an empty list and every proposed endpoint is commented out.
+      - The only consumer adds this empty list to endoreg_db.urls.api_urls.
+    reason: The module mounts no route and retains only aspirational comments.
+    recommended_action: remove
+    risk: low
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/urls/__init__.py
+    line_range: 20-22, 54
+    symbol: classification_url_patterns wiring
+    classification: confirmed_dead
+    evidence:
+      - The imported classification url_patterns value is always empty.
+      - Removing the four wiring lines does not alter urlpatterns.
+    reason: Plumbing exists solely for an empty URL module.
+    recommended_action: remove
+    risk: low
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
+    line_range: 1-833
+    symbol: entire module
+    classification: confirmed_dead
+    evidence:
+      - Neither serializer class nor the module is imported, exported, routed, configured, or tested anywhere in the repository.
+      - The matching classification endpoints are comments in an empty URL list.
+      - The only remaining repository reference is an inventory document describing the path as legacy.
+    reason: Unmounted experimental NICE/PARIS frame-selection implementation with no runtime entry point.
+    recommended_action: remove
+    risk: medium
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/utils/extract_specific_frames.py
+    line_range: 1-67
+    symbol: extract_single_frame and extract_selected_frames
+    classification: confirmed_dead
+    evidence:
+      - extract_single_frame has no repository caller.
+      - The only production caller of extract_selected_frames is the dead NICE/PARIS serializer.
+      - The former isolated helper tests were retired; no test or production consumer now exercises this path.
+    reason: Exclusive helper for the unmounted classification experiment.
+    recommended_action: remove
+    risk: medium
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/utils/cropping.py
+    line_range: 1-37
+    symbol: crop_and_insert
+    classification: confirmed_dead
+    evidence:
+      - No repository import, call, re-export, test, configuration, or documentation reference was found.
+    reason: Isolated image helper with no consumer.
+    recommended_action: remove
+    risk: low
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/import_files/pseudonymization/fake.py
+    line_range: 1-49
+    symbol: fake_name_with_similar_dob_and_gender
+    classification: confirmed_dead
+    evidence:
+      - No repository import, call, re-export, test, command, or configuration reference was found.
+      - The active legacy pseudonymizer is deliberately fail-closed in k_pseudonymity.py instead of generating Faker identities.
+    reason: Unused Faker-based pseudonym helper outside the approved clinical pseudonymization contract.
+    recommended_action: remove
+    risk: low
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - path: endoreg_db/urls/root_urls.py
+    line_range: 1-74
+    symbol: duplicate root URLConf
+    classification: confirmed_dead
+    evidence:
+      - endoreg_db/config/settings/base.py selects endoreg_db.root_urls as ROOT_URLCONF.
+      - The only endoreg_db.urls.root_urls reference is a commented-out settings line.
+      - The startup smoke resolves endoreg_db.root_urls successfully and does not import this duplicate.
+    reason: Divergent duplicate of the active root URLConf, including an otherwise unmounted admin route.
+    recommended_action: remove
+    risk: medium
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+
+  - &consumer_check
+    path: endoreg_db/helpers/download_segmentation_model.py
+    line_range: 1-50
+    symbol: download_segmentation_model
+    classification: compatibility_contract
+    evidence:
+      - No internal caller or re-export was found.
+      - The public module path may still be imported by deployment or downstream scripts not present in this repository.
+    reason: Likely superseded model-download helper, but external consumers have not been excluded.
+    recommended_action: verify_consumers
+    risk: medium
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - <<: *consumer_check
+    path: endoreg_db/queries/annotations/legacy.py
+    line_range: 1-119
+    symbol: legacy annotation dataset query implementation
+    evidence:
+      - No internal call site or test was found.
+      - Its two functions are deliberately re-exported through package __init__.py files.
+    reason: Internally unused legacy dataset API whose re-exports may be consumed downstream.
+  - <<: *consumer_check
+    path: endoreg_db/queries/annotations/__init__.py
+    line_range: 1-6
+    symbol: legacy annotation query re-exports
+    evidence:
+      - No internal import of get_legacy_annotations_for_labelset was found.
+      - generate_legacy_dataset_output is forwarded again by endoreg_db.queries.
+    reason: Public compatibility barrel for an internally unused legacy query module.
+  - <<: *consumer_check
+    path: endoreg_db/queries/__init__.py
+    line_range: 1-3
+    symbol: generate_legacy_dataset_output re-export
+    evidence:
+      - No repository consumer imports endoreg_db.queries.
+      - __all__ explicitly presents the symbol as a public package contract.
+    reason: Top-level public re-export requires downstream confirmation before removal.
+  - <<: *consumer_check
+    path: endoreg_db/api_urls.py
+    line_range: 1-4
+    symbol: URL pattern export shim
+    evidence:
+      - No repository setting, URLConf, test, or script imports endoreg_db.api_urls.
+      - Host applications outside this repository may use the documented purpose of mounting raw API patterns.
+    reason: Internally unused host-integration shim with unresolved external consumers.

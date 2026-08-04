@@ -706,7 +706,6 @@ def create_or_reuse_upload_job(
     source_file_persisted: bool = True,
     cleanup_status: str = UploadJob.CleanupStatus.PENDING,
     processing_provenance: UploadProvenance | None = None,
-    allow_completed_reuse_without_media: bool = False,
 ) -> tuple[UploadJob, bool]:
     upload_job_manager = cast(Any, getattr(UploadJob, "objects"))
     base_processing_provenance = _upload_provenance(processing_provenance)

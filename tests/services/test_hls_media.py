@@ -1,0 +1,1080 @@
+# pyright: reportPrivateUsage=false
+from __future__ import annotations
+
+import subprocess
+import tempfile
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, BinaryIO, cast
+from urllib.parse import urlsplit
+from uuid import uuid4
+
+import pytest
+from django.core.files.base import ContentFile
+from django.utils import timezone
+
+from endoreg_db.models import Center, VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.services.video_storage import hls_encoding
+from endoreg_db.services import hls_media
+from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
+from endoreg_db.utils import transcode_execution
+from endoreg_db.utils.ffmpeg_wrapper import resolve_ffmpeg_executable
+from endoreg_db.utils.paths import EndoregPathsModel
+from tests.helpers.hls import FakeHlsOutputRecorder
+
+pytestmark = pytest.mark.django_db
+
+
+class PlaintextLeakSpy:
+    def __init__(self, *, needle: bytes, roots: tuple[Path, ...]) -> None:
+        self.needle = needle
+        self.roots = roots
+        self._snapshot: dict[Path, tuple[int, int]] = {}
+
+    def __enter__(self) -> "PlaintextLeakSpy":
+        self._snapshot = self._snapshot_files()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if exc_type is None:
+            self.assert_no_plaintext_leak()
+
+    def _snapshot_files(self) -> dict[Path, tuple[int, int]]:
+        snapshot: dict[Path, tuple[int, int]] = {}
+        for root in self.roots:
+            if not root.exists():
+                continue
+            for path in root.rglob("*"):
+                if not path.is_file():
+                    continue
+                try:
+                    stat_result = path.stat()
+                except OSError:
+                    continue
+                snapshot[path] = (stat_result.st_mtime_ns, stat_result.st_size)
+        return snapshot
+
+    def _new_or_modified_files(self) -> list[Path]:
+        changed: list[Path] = []
+        after = self._snapshot_files()
+        for path, stat_payload in after.items():
+            if self._snapshot.get(path) != stat_payload:
+                changed.append(path)
+        return changed
+
+    def assert_no_plaintext_leak(self) -> None:
+        for path in self._new_or_modified_files():
+            try:
+                with path.open("rb") as handle:
+                    while True:
+                        chunk = handle.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        assert self.needle not in chunk, (
+                            f"Plaintext payload leaked into {path}"
+                        )
+            except OSError:
+                continue
+
+
+@pytest.fixture
+def hls_center() -> Center:
+    return Center.objects.create(
+        name="hls-materialization-center",
+        display_name="HLS Materialization Center",
+    )
+
+
+def _create_processed_video(
+    *,
+    center: Center,
+    payload: bytes = b"plaintext mp4 payload",
+) -> VideoFile:
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"hls-video-{payload.hex()}",
+    )
+    cast(Any, video.processed_file).save(
+        "hls-source.mp4",
+        ContentFile(payload),
+        save=True,
+    )
+    return video
+
+
+def _create_raw_video(
+    *,
+    center: Center,
+    payload: bytes = b"raw plaintext mp4 payload",
+) -> VideoFile:
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"hls-raw-video-{payload.hex()}",
+    )
+    cast(Any, video.raw_file).save(
+        "hls-raw-source.mp4",
+        ContentFile(payload),
+        save=True,
+    )
+    return video
+
+
+def test_delete_video_hls_artifacts_removes_complete_raw_tree_only(
+    hls_center: Center,
+) -> None:
+    video = _create_raw_video(center=hls_center, payload=b"raw cleanup source")
+    raw_key_id = uuid4()
+    processed_key_id = uuid4()
+    raw_artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.RAW,
+        status=VideoHlsArtifact.Status.MATERIALIZING,
+        key_id=raw_key_id,
+    )
+    processed_artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED,
+        status=VideoHlsArtifact.Status.READY,
+        key_id=processed_key_id,
+    )
+
+    raw_video_dir = hls_media._artifact_target_dir(
+        video=video,
+        artifact_kind=hls_media.VideoArtifactKind.RAW,
+        key_id=raw_key_id,
+    ).parent.parent
+    stale_raw_dir = raw_video_dir / str(uuid4()) / "v0"
+    processed_dir = hls_media._artifact_target_dir(
+        video=video,
+        artifact_kind=hls_media.VideoArtifactKind.PROCESSED,
+        key_id=processed_key_id,
+    )
+    transient_dirs = (
+        hls_media._temporary_key_dir(video_id=int(video.pk), key_id=raw_key_id),
+        hls_media._temporary_plaintext_source_dir(
+            video_id=int(video.pk), key_id=raw_key_id
+        ),
+        hls_media._temporary_output_dir(video_id=int(video.pk), key_id=raw_key_id),
+    )
+    for directory in (stale_raw_dir, processed_dir, *transient_dirs):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "payload.bin").write_bytes(b"payload")
+    (transient_dirs[0] / "hls.key").write_bytes(b"secret key")
+    (transient_dirs[0] / "key_info.txt").write_text("key info")
+
+    removed = hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
+
+    assert removed is True
+    assert not raw_video_dir.exists()
+    assert all(not directory.exists() for directory in transient_dirs)
+    assert not VideoHlsArtifact.objects.filter(pk=raw_artifact.pk).exists()
+    assert processed_dir.exists()
+    assert VideoHlsArtifact.objects.filter(pk=processed_artifact.pk).exists()
+
+
+def test_ffmpeg_hls_command_uses_clinical_quality_h264_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper,
+        "resolve_ffmpeg_executable",
+        lambda: "/usr/bin/ffmpeg",
+    )
+
+    command = cast(Any, hls_media)._ffmpeg_command(
+        key_info_path=Path("/tmp/key_info.txt"),
+        segment_pattern=Path("/tmp/seg_%03d.ts"),
+        playlist_path=Path("/tmp/playlist.m3u8"),
+        segment_base_url="/media/videos/1/hls/",
+        encoding_profile=hls_media.configured_hls_encoding_profile(),
+        input_arg="pipe:0",
+    )
+
+    assert command[command.index("-preset") + 1] == "medium"
+    assert command[command.index("-crf") + 1] == "18"
+    assert command[command.index("-maxrate") + 1] == "12000000"
+    assert command[command.index("-bufsize") + 1] == "24000000"
+    assert command[command.index("-profile:v") + 1] == hls_media.HLS_VIDEO_PROFILE
+    assert command[command.index("-pix_fmt") + 1] == hls_media.HLS_VIDEO_PIXEL_FORMAT
+    assert command[command.index("-color_range") + 1] == "pc"
+    assert command[command.index("-fps_mode") + 1] == "passthrough"
+    assert "-fpsmax" not in command
+    assert "-r" not in command
+    assert command[command.index("-vf") + 1] == (
+        "scale=iw:ih:in_range=auto:out_range=full,format=yuv420p"
+    )
+    assert "-an" in command
+    assert "-codec:a" not in command
+    assert "0:v:0" in command
+    assert "0:a?" not in command
+    assert "-level" not in command
+    assert "-b:a" not in command
+
+
+def _extract_hls_key_uri(playlist_text: str) -> str:
+    key_uri_marker = 'URI="'
+    for line in playlist_text.splitlines():
+        if not line.startswith("#EXT-X-KEY:"):
+            continue
+        value_start = line.find(key_uri_marker)
+        if value_start < 0:
+            continue
+        value_start += len(key_uri_marker)
+        value_end = line.find('"', value_start)
+        if value_end < 0:
+            continue
+        return line[value_start:value_end]
+    raise AssertionError("HLS playlist does not contain an EXT-X-KEY URI")
+
+
+def _playlist_segment_uris(playlist_text: str) -> list[str]:
+    return [
+        line
+        for line in playlist_text.splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+
+def _assert_api_rooted_relative_uri(uri: str) -> None:
+    parsed_uri = urlsplit(uri)
+    assert parsed_uri.scheme == ""
+    assert parsed_uri.netloc == ""
+    assert parsed_uri.path.startswith("/endoreg-api/")
+
+
+def _write_tiny_ffmpeg_mp4(output_path: Path) -> None:
+    ffmpeg_executable = resolve_ffmpeg_executable()
+    if ffmpeg_executable is None:
+        pytest.skip("ffmpeg executable is not available")
+
+    command = [
+        ffmpeg_executable,
+        "-hide_banner",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc=size=64x64:rate=5:duration=1",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=channel_layout=mono:sample_rate=8000",
+        "-shortest",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        str(output_path),
+    ]
+    completed = subprocess.run(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+
+
+def test_materialize_video_hls_streams_decrypted_source_and_cleans_temp_key(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_payload = b"source payload that should only exist in the stream"
+    video = _create_processed_video(center=hls_center, payload=source_payload)
+    paths = EndoregPathsModel.from_environment()
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    with PlaintextLeakSpy(
+        needle=source_payload,
+        roots=(paths.transcoding, Path(tempfile.gettempdir())),
+    ):
+        result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    assert result.status == "materialized"
+    assert fake_hls.source_payloads == [source_payload]
+    assert fake_hls.key_info_records
+    key_record = fake_hls.key_info_records[0]
+    assert (
+        key_record.key_uri
+        == f"/endoreg-api/media/videos/{video.pk}/hls/key/{key_record.key_path.parent.name}/"
+    )
+    assert fake_hls.content_key_payloads[0] != source_payload
+    assert len(fake_hls.content_key_payloads[0]) == hls_media.HLS_CONTENT_KEY_BYTES
+    assert len(key_record.iv_hex) == hls_media.HLS_IV_HEX_LENGTH
+    assert all(not record.key_path.exists() for record in fake_hls.key_info_records)
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert artifact.key_ciphertext is not None
+    assert artifact.key_nonce is not None
+    assert hls_media.unwrap_hls_content_key(artifact) != source_payload
+
+    temp_key_dir = (
+        paths.transcoding / "hls_key_material" / str(video.pk) / result.key_id
+    )
+    assert not temp_key_dir.exists()
+    temp_output_dir = paths.transcoding / "hls_output" / str(video.pk) / result.key_id
+    assert not temp_output_dir.exists()
+
+    segment_dir = Path(paths.storage / result.segment_directory_relative_path)
+    assert (segment_dir / "seg_000.ts").exists()
+    assert not list(segment_dir.glob("*.key"))
+
+
+def test_hls_dispatch_reservation_deduplicates_queued_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+
+    first = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    second = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    assert first.status == "queued"
+    assert second.status == "already_queued"
+    assert first.artifact_id == second.artifact_id
+    artifact = VideoHlsArtifact.objects.get(pk=first.artifact_id)
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+
+
+def test_hls_dispatch_reservation_preserves_stale_materializing_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    artifact.refresh_from_db()
+    assert reservation.status == "already_queued"
+    assert reservation.artifact_id == artifact.pk
+    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert artifact.last_error == ""
+
+
+def test_hls_dispatch_reservation_preserves_stale_queued_artifact(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.QUEUED.value,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    artifact.refresh_from_db()
+    assert reservation.status == "already_queued"
+    assert reservation.artifact_id == artifact.pk
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert artifact.last_error == ""
+
+
+def test_stale_forced_queue_preserves_active_attempt_and_previous_ready_artifact(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"stable ready source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    ready_result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+    first_reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=first_reservation.artifact_id).update(
+        updated_at=stale_at
+    )
+
+    second_reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+
+    active_artifact = VideoHlsArtifact.objects.get(pk=first_reservation.artifact_id)
+    ready_artifact = VideoHlsArtifact.objects.get(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.READY.value,
+    )
+    assert first_reservation.status == "queued"
+    assert second_reservation.status == "already_queued"
+    assert second_reservation.artifact_id == first_reservation.artifact_id
+    assert active_artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert active_artifact.last_error == ""
+    assert str(ready_artifact.key_id) == ready_result.key_id
+    assert ready_artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert (
+        ready_artifact.segment_directory_relative_path
+        == ready_result.segment_directory_relative_path
+    )
+
+
+def test_queued_hls_worker_claims_reservation_and_materializes(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+
+    assert reservation.status == "queued"
+    assert result.status == "materialized"
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert str(artifact.key_id) == result.key_id
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_active_hls_materialization_is_not_stolen(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    force: bool,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    active_key_id = uuid4()
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        key_id=active_key_id,
+        key_ciphertext=b"active wrapped key",
+        key_nonce=b"n" * 12,
+        iv_hex="1" * 32,
+    )
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        force=force,
+    )
+
+    artifact.refresh_from_db()
+    assert result.status == "already_materializing"
+    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert artifact.key_id == active_key_id
+    assert fake_hls.source_payloads == []
+
+
+def test_stale_hls_worker_cannot_overwrite_new_owner(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    stale_key_id = uuid4()
+    new_key_id = uuid4()
+    artifact = VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        key_id=stale_key_id,
+        key_ciphertext=b"stale wrapped key",
+        key_nonce=b"s" * 12,
+        iv_hex="1" * 32,
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(updated_at=stale_at)
+
+    prepared = cast(Any, hls_media)._prepare_artifact_record(
+        video_id=video.pk,
+        artifact_kind=cast(Any, hls_media).VideoArtifactKind.PROCESSED,
+        source_file_name=str(video.processed_file.name),
+        source_generation_id=uuid4(),
+        requested_encoding_profile_name="clinical_h264_libx264_crf_v1",
+        key_id=new_key_id,
+        key_ciphertext=b"new wrapped key",
+        key_nonce=b"n" * 12,
+        iv_hex="2" * 32,
+        force=False,
+    )
+
+    assert prepared.should_materialize is True
+    with pytest.raises(RuntimeError, match="ownership was lost"):
+        cast(Any, hls_media)._mark_artifact_validated(
+            artifact_id=artifact.pk,
+            expected_key_id=stale_key_id,
+            segment_count=1,
+        )
+    marked_failed = cast(Any, hls_media)._mark_artifact_failed(
+        artifact_id=artifact.pk,
+        error="late stale worker failure",
+        previous=None,
+        expected_key_id=stale_key_id,
+        expected_status=VideoHlsArtifact.Status.MATERIALIZING.value,
+    )
+
+    artifact.refresh_from_db()
+    current_owner = VideoHlsArtifact.objects.get(pk=prepared.artifact_id)
+    assert marked_failed is False
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
+    assert current_owner.status == VideoHlsArtifact.Status.MATERIALIZING.value
+    assert current_owner.key_id == new_key_id
+    assert current_owner.key_ciphertext == b"new wrapped key"
+
+
+def test_force_materialize_video_hls_removes_replaced_artifact_directory(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_payload = b"first encrypted processed file source"
+    second_payload = b"second encrypted processed file source"
+    video = _create_processed_video(center=hls_center, payload=first_payload)
+    paths = EndoregPathsModel.from_environment()
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    first = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    first_segment_dir = Path(paths.storage / first.segment_directory_relative_path)
+    assert first_segment_dir.exists()
+
+    cast(Any, video.processed_file).save(
+        "hls-source-reimport.mp4",
+        ContentFile(second_payload),
+        save=True,
+    )
+
+    second = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+    second_segment_dir = Path(paths.storage / second.segment_directory_relative_path)
+
+    assert second.status == "materialized"
+    assert second.key_id != first.key_id
+    assert fake_hls.source_payloads == [first_payload, second_payload]
+    assert not first_segment_dir.exists()
+    assert second_segment_dir.exists()
+
+
+def test_materialize_video_hls_rebuilds_when_source_file_name_changes(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"first source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    first = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    cast(Any, video.processed_file).save(
+        "replacement-source.mp4",
+        ContentFile(b"replacement source"),
+        save=True,
+    )
+
+    second = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+
+    assert first.status == "materialized"
+    assert second.status == "materialized"
+    assert second.key_id != first.key_id
+    assert fake_hls.source_payloads == [b"first source", b"replacement source"]
+
+
+def test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"first source")
+    paths = EndoregPathsModel.from_environment()
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    first = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    cast(Any, video.processed_file).save(
+        "hls-source-cleanup-failure.mp4",
+        ContentFile(b"replacement source"),
+        save=True,
+    )
+
+    def fail_cleanup(snapshot: object) -> None:
+        raise RuntimeError("old cleanup failed")
+
+    monkeypatch.setattr(
+        hls_media,
+        "_cleanup_replaced_artifact",
+        fail_cleanup,
+        raising=True,
+    )
+    caplog.set_level("WARNING", logger=hls_media.__name__)
+
+    second = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+
+    assert second.status == "materialized"
+    assert second.key_id != first.key_id
+    assert (
+        Path(paths.storage / second.segment_directory_relative_path) / "seg_000.ts"
+    ).exists()
+    assert "Could not remove replaced HLS artifact" in caplog.text
+
+
+def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"stable source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    ready_result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+    )
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+        force=True,
+    )
+
+    def fail_ffmpeg(**_kwargs: object) -> None:
+        raise RuntimeError("forced retry failed")
+
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fail_ffmpeg)
+
+    with pytest.raises(RuntimeError, match="forced retry failed"):
+        hls_media.materialize_video_hls(
+            video.pk,
+            artifact_kind="processed",
+            force=True,
+        )
+
+    failed_artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    ready_artifact = VideoHlsArtifact.objects.get(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+        status=VideoHlsArtifact.Status.READY.value,
+    )
+    assert reservation.status == "queued"
+    assert failed_artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert failed_artifact.error_code == (
+        VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED.value
+    )
+    assert str(ready_artifact.key_id) == ready_result.key_id
+    assert ready_artifact.playlist_relative_path == ready_result.playlist_relative_path
+    assert (
+        ready_artifact.segment_directory_relative_path
+        == ready_result.segment_directory_relative_path
+    )
+    assert "forced retry failed" in failed_artifact.last_error
+
+
+def test_materialized_playlist_uses_api_rooted_relative_key_and_segment_uris(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(
+        center=hls_center,
+        payload=b"same origin playlist uri contract",
+    )
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    paths = EndoregPathsModel.from_environment()
+    playlist_path = Path(paths.storage / result.playlist_relative_path)
+    playlist_text = playlist_path.read_text(encoding="utf-8")
+    key_uri = _extract_hls_key_uri(playlist_text)
+    segment_uris = _playlist_segment_uris(playlist_text)
+    expected_key_uri = f"/endoreg-api/media/videos/{video.pk}/hls/key/{result.key_id}/"
+    expected_segment_uri = (
+        f"/endoreg-api/media/videos/{video.pk}/hls/segments/{result.key_id}/seg_000.ts"
+    )
+
+    assert key_uri == expected_key_uri
+    assert segment_uris == [expected_segment_uri]
+    for uri in [key_uri, *segment_uris]:
+        _assert_api_rooted_relative_uri(uri)
+
+
+def test_materialize_video_hls_ignores_existing_processed_streamable_source(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical_payload = b"canonical field file source"
+    video = _create_processed_video(
+        center=hls_center,
+        payload=canonical_payload,
+    )
+    paths = EndoregPathsModel.from_environment()
+    streamable_relative_path = "streamable_videos/processed/hls-streamable-source.mp4"
+    streamable_path = paths.storage / streamable_relative_path
+    streamable_path.parent.mkdir(parents=True, exist_ok=True)
+    streamable_payload = b"existing processed streamable payload"
+    streamable_path.write_bytes(streamable_payload)
+    video.processed_streamable_relative_path = streamable_relative_path
+    video.save(update_fields=["processed_streamable_relative_path"])
+
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    assert result.status == "materialized"
+    assert fake_hls.source_payloads == [canonical_payload]
+
+
+@pytest.mark.ffmpeg
+def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
+    hls_center: Center,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper,
+        "get_stream_info",
+        transcode_execution.get_stream_info,
+    )
+    source_path = tmp_path / "hls-source.mp4"
+    _write_tiny_ffmpeg_mp4(source_path)
+    video = _create_processed_video(
+        center=hls_center,
+        payload=source_path.read_bytes(),
+    )
+
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert result.status == "materialized"
+    assert result.segment_count >= 1
+
+    paths = EndoregPathsModel.from_environment()
+    playlist_path = Path(paths.storage / result.playlist_relative_path)
+    segment_dir = Path(paths.storage / result.segment_directory_relative_path)
+    segments = sorted(segment_dir.glob("seg_*.ts"))
+
+    assert playlist_path.is_file()
+    playlist_text = playlist_path.read_text(encoding="utf-8")
+    assert "#EXTM3U" in playlist_text
+    assert "#EXT-X-KEY" in playlist_text
+    key_uri = _extract_hls_key_uri(playlist_text)
+    segment_uris = _playlist_segment_uris(playlist_text)
+    assert key_uri == f"/endoreg-api/media/videos/{video.pk}/hls/key/{result.key_id}/"
+    assert segment_uris
+    for segment_uri in segment_uris:
+        assert segment_uri.startswith(
+            f"/endoreg-api/media/videos/{video.pk}/hls/segments/{result.key_id}/seg_"
+        )
+        assert segment_uri.endswith(".ts")
+    for uri in [key_uri, *segment_uris]:
+        _assert_api_rooted_relative_uri(uri)
+    assert len(segments) == result.segment_count
+    assert all(segment.is_file() and segment.stat().st_size > 0 for segment in segments)
+    assert not (
+        paths.transcoding / "hls_output" / str(video.pk) / result.key_id
+    ).exists()
+    assert not list(segment_dir.glob("*.key"))
+
+
+@pytest.mark.ffmpeg
+def test_materialize_video_hls_profile_failure_prevents_publication(
+    hls_center: Center,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = tmp_path / "invalid-profile-source.mp4"
+    _write_tiny_ffmpeg_mp4(source_path)
+    video = _create_processed_video(
+        center=hls_center,
+        payload=source_path.read_bytes(),
+    )
+
+    def fail_profile_validation(**_kwargs: object) -> None:
+        raise RuntimeError("generated HLS profile mismatch")
+
+    monkeypatch.setattr(
+        hls_media,
+        "_validate_generated_hls_profile",
+        fail_profile_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="generated HLS profile mismatch"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    paths = EndoregPathsModel.from_environment()
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.playlist_relative_path == ""
+    assert artifact.segment_directory_relative_path == ""
+    assert not (
+        paths.transcoding / "hls_output" / str(video.pk) / str(artifact.key_id)
+    ).exists()
+
+
+def test_materialize_video_hls_encrypts_raw_for_local_authenticated_playback(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_raw_video(center=hls_center, payload=b"raw local playback")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+    assert artifact.status == VideoHlsArtifact.Status.READY
+    assert result.artifact_kind == "raw"
+    assert Path(result.playlist_relative_path).parts[:3] == (
+        "streamable_videos",
+        "raw",
+        "hls",
+    )
+    assert hls_media.unwrap_hls_content_key(artifact) != b"raw local playback"
+
+
+def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_raw_video(center=hls_center, payload=b"ready raw")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+
+    resolved = hls_media.get_ready_hls_artifact_by_key(
+        video=video,
+        key_id=artifact.key_id,
+    )
+
+    assert resolved.pk == artifact.pk
+
+
+def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center, payload=b"failing source")
+    observed_temp_key_paths: list[Path] = []
+
+    def fake_run_ffmpeg_hls(
+        *,
+        source: BinaryIO,
+        source_file_name: str,
+        source_size_bytes: int | None,
+        temp_source_dir: Path,
+        key_info_path: Path,
+        segment_pattern: Path,
+        playlist_path: Path,
+        segment_base_url: str,
+        timeline_validation: object,
+        encoding_profile: hls_media.HlsEncodingProfile,
+    ) -> None:
+        _ = source_file_name
+        _ = source_size_bytes
+        _ = temp_source_dir
+        _ = source.read()
+        _ = playlist_path
+        _ = segment_base_url
+        _ = timeline_validation
+        _ = encoding_profile
+        key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
+        observed_temp_key_paths.append(Path(key_info_lines[1]))
+        segment_pattern.parent.mkdir(parents=True, exist_ok=True)
+        (segment_pattern.parent / "seg_000.ts").write_bytes(b"partial segment")
+        raise RuntimeError("ffmpeg failed")
+
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_run_ffmpeg_hls)
+
+    with pytest.raises(RuntimeError, match="ffmpeg failed"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
+    assert artifact.key_ciphertext is None
+    assert artifact.key_nonce is None
+    assert artifact.playlist_relative_path == ""
+    assert artifact.segment_directory_relative_path == ""
+    assert all(not path.exists() for path in observed_temp_key_paths)
+
+    paths = EndoregPathsModel.from_environment()
+    failed_hls_dir = (
+        paths.storage
+        / "streamable_videos"
+        / "processed"
+        / "hls"
+        / str(video.uuid)
+        / str(artifact.key_id)
+    )
+    assert not failed_hls_dir.exists()
+    temp_key_dir = (
+        paths.transcoding / "hls_key_material" / str(video.pk) / str(artifact.key_id)
+    )
+    assert not temp_key_dir.exists()
+    temp_output_dir = (
+        paths.transcoding / "hls_output" / str(video.pk) / str(artifact.key_id)
+    )
+    assert not temp_output_dir.exists()
+
+
+def test_deterministic_hls_validation_failure_is_not_rematerialized_and_does_not_block(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed_video = _create_processed_video(
+        center=hls_center,
+        payload=b"deterministic validation failure",
+    )
+    subsequent_video = _create_processed_video(
+        center=hls_center,
+        payload=b"independent subsequent source",
+    )
+    calls = 0
+
+    def fail_validation(**_kwargs: object) -> None:
+        nonlocal calls
+        calls += 1
+        raise hls_media.VideoStorageNormalizationError(
+            "deterministic presentation-timestamp drift"
+        )
+
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fail_validation)
+    with pytest.raises(
+        hls_media.VideoStorageNormalizationError,
+        match="presentation-timestamp drift",
+    ):
+        hls_media.materialize_video_hls(
+            failed_video.pk,
+            artifact_kind="processed",
+        )
+
+    repeated = hls_media.materialize_video_hls(
+        failed_video.pk,
+        artifact_kind="processed",
+    )
+    assert repeated.status == "failed_validation"
+    assert calls == 1
+
+    failed_artifact = VideoHlsArtifact.objects.get(
+        video=failed_video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED.value,
+    )
+    assert failed_artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert (
+        failed_artifact.error_code == VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value
+    )
+    paths = EndoregPathsModel.from_environment()
+    assert not (
+        paths.transcoding
+        / "hls_output"
+        / str(failed_video.pk)
+        / str(failed_artifact.key_id)
+    ).exists()
+    assert not VideoHlsArtifact.objects.filter(
+        video=failed_video,
+        status=VideoHlsArtifact.Status.READY.value,
+    ).exists()
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    subsequent = hls_media.materialize_video_hls(
+        subsequent_video.pk,
+        artifact_kind="processed",
+    )
+    assert subsequent.status == "materialized"
+
+
+def test_ffmpeg_hls_command_uses_explicit_nvenc_cq_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper,
+        "resolve_ffmpeg_executable",
+        lambda: "/usr/bin/ffmpeg",
+    )
+    profile = hls_encoding.hls_encoding_profile_by_name("clinical_h264_nvenc_cq_v1")
+    command = cast(Any, hls_media)._ffmpeg_command(
+        key_info_path=Path("/tmp/key_info.txt"),
+        segment_pattern=Path("/tmp/seg_%03d.ts"),
+        playlist_path=Path("/tmp/playlist.m3u8"),
+        segment_base_url="/media/videos/1/hls/",
+        encoding_profile=profile,
+        input_arg="pipe:0",
+    )
+    assert command[command.index("-codec:v") + 1] == "h264_nvenc"
+    assert command[command.index("-gpu") + 1] == "0"
+    assert command[command.index("-rc:v") + 1] == "vbr"
+    assert command[command.index("-cq:v") + 1] == "18"
+    assert command[command.index("-b:v") + 1] == "0"
+    assert "-crf" not in command
+    assert "-threads" not in command
+
+
+def test_nvenc_preflight_requires_one_isolated_visible_gpu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(hls_encoding.CUDA_VISIBLE_DEVICES_ENV, raising=False)
+    profile = hls_encoding.hls_encoding_profile_by_name("clinical_h264_nvenc_cq_v1")
+    with pytest.raises(VideoStorageNormalizationError, match="exactly one GPU"):
+        hls_encoding.assert_hls_encoder_runtime_available(
+            ffmpeg_executable="/usr/bin/ffmpeg",
+            profile=profile,
+        )
