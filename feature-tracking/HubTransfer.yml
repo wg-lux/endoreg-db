@@ -317,6 +317,8 @@ definition_of_done:
     and emits structured JSON logs.
   - Operators can handle storage pressure, hub outage, certificate rotation, worker restart, and database/media
     restore without losing transfer provenance.
+  - With Hub transfer disabled or its Vault-backed provisioning unavailable, lx-annotate remains startable;
+    Hub transfer workers remain fail-closed until their required credentials and node provisioning succeed.
   required: true
   verification:
     kind: manual
