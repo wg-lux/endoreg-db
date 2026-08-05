@@ -17,9 +17,6 @@ from endoreg_db.views.report import patient_examination_report
 
 from .anonymization import url_patterns as anonymization_url_patterns
 from .auth import urlpatterns as auth_url_patterns
-from .classification import url_patterns as _classification_url_patterns  # pyright: ignore[reportUnknownVariableType]
-
-classification_url_patterns = cast(Iterable[object], _classification_url_patterns)
 from .examination import urlpatterns as examination_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .patient import urlpatterns as patient_url_patterns
@@ -45,13 +42,20 @@ def _patient_examination_report_router() -> Router:
 
 
 def _release_ninja_api_namespace(namespace: str) -> None:
-    registry = NinjaAPI._registry
+    """Release the legacy django-ninja namespace registry when it exists.
+
+    django-ninja 1.6 removed the private class-level registry. Older supported
+    installations still require cleanup before Django reloads this URL module.
+    """
+    registry_value: object = getattr(NinjaAPI, "_registry", None)
+    if not isinstance(registry_value, list):
+        return
+    registry = cast(list[object], registry_value)
     while namespace in registry:
         registry.remove(namespace)
 
 
 api_urls: list[URLPattern | URLResolver] = []
-api_urls += _typed_url_patterns(classification_url_patterns)
 api_urls += _typed_url_patterns(anonymization_url_patterns)
 api_urls += _typed_url_patterns(auth_url_patterns)
 api_urls += _typed_url_patterns(examination_url_patterns)
