@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import stat
 import time
+from math import isfinite
 from pathlib import Path
 
 from endoreg_db.config.env import (
     get_watcher_poll_interval_seconds,
     get_watcher_stable_after_seconds,
 )
+from endoreg_db.utils.structured_logging import emit_structured_event, path_reference
 
 logger = logging.getLogger(__name__)
 
 WATCHER_SETTLE_TIMEOUT_SECONDS = 2.0
-WATCHER_SETTLE_MAX_STABLE_AFTER_SECONDS = 1.0
 IN_PROGRESS_HANDOFF_SUFFIXES = (
     ".tmp",
     ".part",
@@ -30,6 +30,27 @@ class WatcherFileNotReadyError(RuntimeError):
     """Raised when a watcher source should be retried later."""
 
 
+def _validated_duration_seconds(
+    value: float,
+    *,
+    label: str,
+    allow_zero: bool,
+) -> float:
+    parsed = float(value)
+    valid_lower_bound = parsed >= 0 if allow_zero else parsed > 0
+    if not isfinite(parsed) or not valid_lower_bound:
+        expected = "non-negative" if allow_zero else "positive"
+        raise ValueError(f"{label} must be a finite {expected} duration")
+    return parsed
+
+
+def watcher_path_reference_text(file_path: Path) -> str:
+    reference = path_reference(file_path)
+    return (
+        f"path_sha256={reference['path_sha256']} suffix={reference['suffix'] or 'none'}"
+    )
+
+
 def is_in_progress_handoff_path(file_path: Path | str) -> bool:
     name = Path(file_path).name.lower()
     return any(name.endswith(suffix) for suffix in IN_PROGRESS_HANDOFF_SUFFIXES) or any(
@@ -42,7 +63,8 @@ def reject_in_progress_handoff_path(file_path: Path | str) -> None:
     if is_in_progress_handoff_path(file_path):
         raise WatcherFileNotReadyError(
             "Watcher ingestion ignores in-progress handoff files. "
-            f"Atomically rename to the final media name before ingesting: {file_path}"
+            "Atomically rename to the final media name before ingesting; "
+            f"{watcher_path_reference_text(file_path)}"
         )
 
 
@@ -50,11 +72,19 @@ def watcher_file_stat(file_path: Path) -> os.stat_result:
     try:
         stat_result = file_path.lstat()
     except FileNotFoundError:
-        raise FileNotFoundError(f"Watcher file not found: {file_path}")
+        raise FileNotFoundError(
+            f"Watcher file not found; {watcher_path_reference_text(file_path)}"
+        )
     if stat.S_ISLNK(stat_result.st_mode):
-        raise ValueError(f"Watcher source must not be a symbolic link: {file_path}")
+        raise ValueError(
+            "Watcher source must not be a symbolic link; "
+            f"{watcher_path_reference_text(file_path)}"
+        )
     if not stat.S_ISREG(stat_result.st_mode):
-        raise ValueError(f"Watcher path is not a regular file: {file_path}")
+        raise ValueError(
+            "Watcher path is not a regular file; "
+            f"{watcher_path_reference_text(file_path)}"
+        )
     return stat_result
 
 
@@ -93,13 +123,23 @@ def wait_for_watcher_file_ready(
         if poll_interval_seconds is None
         else poll_interval_seconds
     )
-    stable_after = min(
-        max(0.0, float(stable_after)),
-        WATCHER_SETTLE_MAX_STABLE_AFTER_SECONDS,
+    stable_after = _validated_duration_seconds(
+        stable_after,
+        label="stable_after_seconds",
+        allow_zero=True,
     )
-    poll_interval = max(0.01, float(poll_interval))
+    poll_interval = _validated_duration_seconds(
+        poll_interval,
+        label="poll_interval_seconds",
+        allow_zero=False,
+    )
+    timeout = _validated_duration_seconds(
+        timeout_seconds,
+        label="timeout_seconds",
+        allow_zero=False,
+    )
 
-    deadline = time.monotonic() + max(timeout_seconds, stable_after + poll_interval)
+    deadline = time.monotonic() + max(timeout, stable_after + poll_interval)
     stable_since: float | None = None
     previous_snapshot: tuple[int, int, int, int] | None = None
     previous_size: int | None = None
@@ -117,16 +157,13 @@ def wait_for_watcher_file_ready(
                 return stat_result
         else:
             if previous_snapshot is not None and snapshot != previous_snapshot:
-                logger.info(
-                    json.dumps(
-                        {
-                            "event": "watcher.file_changed_during_settle",
-                            "path": str(file_path),
-                            "previous_size_bytes": previous_size,
-                            "current_size_bytes": size_bytes,
-                            "current_mtime_ns": mtime_ns,
-                        }
-                    )
+                emit_structured_event(
+                    logger,
+                    "watcher.file_changed_during_settle",
+                    file=path_reference(file_path),
+                    previous_size_bytes=previous_size,
+                    current_size_bytes=size_bytes,
+                    current_mtime_ns=mtime_ns,
                 )
             previous_snapshot = snapshot
             previous_size = size_bytes
@@ -137,7 +174,8 @@ def wait_for_watcher_file_ready(
 
         if now >= deadline:
             raise WatcherFileNotReadyError(
-                f"Watcher file did not become stable before ingest timeout: {file_path}"
+                "Watcher file did not become stable before ingest timeout; "
+                f"{watcher_path_reference_text(file_path)}"
             )
 
         time.sleep(min(poll_interval, max(deadline - now, 0.01)))
@@ -154,19 +192,18 @@ def assert_watcher_file_unchanged(
     current_snapshot = watcher_stat_snapshot(current_stat)
     if current_snapshot == expected_snapshot:
         return
-    logger.warning(
-        json.dumps(
-            {
-                "event": "watcher.file_changed_after_settle",
-                "path": str(file_path),
-                "stage": stage,
-                "expected_size_bytes": expected_snapshot[2],
-                "current_size_bytes": current_snapshot[2],
-                "expected_mtime_ns": expected_snapshot[3],
-                "current_mtime_ns": current_snapshot[3],
-            }
-        )
+    emit_structured_event(
+        logger,
+        "watcher.file_changed_after_settle",
+        level=logging.WARNING,
+        file=path_reference(file_path),
+        stage=stage,
+        expected_size_bytes=expected_snapshot[2],
+        current_size_bytes=current_snapshot[2],
+        expected_mtime_ns=expected_snapshot[3],
+        current_mtime_ns=current_snapshot[3],
     )
     raise WatcherFileNotReadyError(
-        f"Watcher file changed after settle check; deferring ingestion: {file_path}"
+        "Watcher file changed after settle check; deferring ingestion; "
+        f"{watcher_path_reference_text(file_path)}"
     )

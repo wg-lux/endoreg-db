@@ -75,6 +75,7 @@ from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     assert_watcher_file_unchanged as _assert_watcher_file_unchanged,
     wait_for_watcher_file_ready as _wait_for_watcher_file_ready,
+    watcher_path_reference_text,
 )
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
@@ -94,6 +95,11 @@ from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.permissions import is_debug_mode
+from endoreg_db.utils.structured_logging import (
+    emit_structured_event,
+    path_reference,
+    safe_log_value,
+)
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
@@ -1356,13 +1362,14 @@ def _load_preanonymized_sidecar(
     if len(sidecar_paths) > 1:
         raise ValueError(
             "Preanonymized input has multiple sidecars: "
-            + ", ".join(str(path) for path in sidecar_paths)
+            + ", ".join(watcher_path_reference_text(path) for path in sidecar_paths)
         )
     if not sidecar_paths:
         if strict:
             raise ValueError(
                 "Preanonymized sidecar is required "
-                f"(.json, .yaml, or .yml): {file_path}"
+                "(.json, .yaml, or .yml); "
+                f"{watcher_path_reference_text(file_path)}"
             )
         return None, None
 
@@ -1375,7 +1382,8 @@ def _load_preanonymized_sidecar(
         payload = yaml.safe_load(sidecar_text)
     if not isinstance(payload, dict):
         raise ValueError(
-            f"Preanonymized sidecar must contain a mapping: {sidecar_path}"
+            "Preanonymized sidecar must contain a mapping; "
+            f"{watcher_path_reference_text(sidecar_path)}"
         )
     try:
         model_cls = (
@@ -1386,7 +1394,8 @@ def _load_preanonymized_sidecar(
         return model_cls.model_validate(payload), sidecar_path
     except ValidationError as exc:
         raise ValueError(
-            f"Invalid preanonymized sidecar payload: {sidecar_path}"
+            "Invalid preanonymized sidecar payload; "
+            f"{watcher_path_reference_text(sidecar_path)}"
         ) from exc
 
 
@@ -2578,7 +2587,9 @@ def process_watcher_file(
 ) -> UploadJob:
     watched_path = Path(file_path)
     if not watched_path.exists():
-        raise FileNotFoundError(f"Watcher file not found: {watched_path}")
+        raise FileNotFoundError(
+            f"Watcher file not found; {watcher_path_reference_text(watched_path)}"
+        )
     if local_study_server_mode_enabled():
         raise ValueError(
             "Raw watcher ingestion is disabled for local_study_server; "
@@ -2733,10 +2744,12 @@ def _handle_watcher_handoff_failure(
         getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
     )
     if broker_error and inline_fallback_enabled:
-        logger.warning(
-            "Watcher Celery handoff failed for %s; processing inline: %s",
-            watched_path,
-            exc,
+        emit_structured_event(
+            logger,
+            "watcher.celery_handoff_failed_inline",
+            level=logging.WARNING,
+            file=path_reference(watched_path),
+            error=safe_log_value(exc, key="error"),
         )
         try:
             return _run_watcher_upload_job_inline(
@@ -2751,16 +2764,21 @@ def _handle_watcher_handoff_failure(
         except Exception as inline_exc:
             technical_error = inline_exc
     elif broker_error:
-        logger.warning(
-            "Watcher Celery handoff failed for %s and inline fallback is disabled: %s",
-            watched_path,
-            exc,
+        emit_structured_event(
+            logger,
+            "watcher.celery_handoff_failed",
+            level=logging.WARNING,
+            file=path_reference(watched_path),
+            inline_fallback_enabled=False,
+            error=safe_log_value(exc, key="error"),
         )
 
-    logger.exception(
-        "Watcher processing handoff failed for %s: %s",
-        watched_path,
-        technical_error,
+    emit_structured_event(
+        logger,
+        "watcher.processing_handoff_failed",
+        level=logging.ERROR,
+        file=path_reference(watched_path),
+        error=safe_log_value(technical_error, key="error"),
     )
     upload_job.refresh_from_db()
     if upload_job.status == UploadJob.Status.RETRYING.value:
@@ -3054,12 +3072,20 @@ def _quarantine_failed_preanonymized_media(
         atomic_move_file(source=watched_path, destination=quarantine_path)
         _update_upload_provenance(upload_job, quarantined_path=str(quarantine_path))
         upload_job.save(update_fields=["processing_provenance"])
-        logger.warning("File %s moved to quarantine: %s", watched_path, quarantine_path)
+        emit_structured_event(
+            logger,
+            "watcher.quarantine_media_moved",
+            level=logging.WARNING,
+            source=path_reference(watched_path),
+            destination=path_reference(quarantine_path),
+        )
     except Exception as move_exc:
-        logger.error(
-            "Failed to move file %s to quarantine during error handling: %s",
-            watched_path,
-            move_exc,
+        emit_structured_event(
+            logger,
+            "watcher.quarantine_media_move_failed",
+            level=logging.ERROR,
+            source=path_reference(watched_path),
+            error=safe_log_value(move_exc, key="error"),
         )
 
 
@@ -3081,16 +3107,20 @@ def _quarantine_failed_preanonymized_sidecar(
             quarantined_sidecar_path=str(quarantine_sidecar_path),
         )
         upload_job.save(update_fields=["processing_provenance", "updated_at"])
-        logger.warning(
-            "Sidecar %s moved to quarantine: %s",
-            sidecar_path,
-            quarantine_sidecar_path,
+        emit_structured_event(
+            logger,
+            "watcher.quarantine_sidecar_moved",
+            level=logging.WARNING,
+            source=path_reference(sidecar_path),
+            destination=path_reference(quarantine_sidecar_path),
         )
     except Exception as move_exc:
-        logger.error(
-            "Failed to move sidecar %s to quarantine during error handling: %s",
-            sidecar_path,
-            move_exc,
+        emit_structured_event(
+            logger,
+            "watcher.quarantine_sidecar_move_failed",
+            level=logging.ERROR,
+            source=path_reference(sidecar_path),
+            error=safe_log_value(move_exc, key="error"),
         )
 
 
@@ -3102,10 +3132,12 @@ def _handle_preanonymized_watcher_failure(
     source_system: str,
     exc: Exception,
 ) -> None:
-    logger.exception(
-        "Preanonymized watcher processing failed for %s: %s",
-        watched_path,
-        exc,
+    emit_structured_event(
+        logger,
+        "watcher.preanonymized_processing_failed",
+        level=logging.ERROR,
+        file=path_reference(watched_path),
+        error=safe_log_value(exc, key="error"),
     )
     upload_job.mark_error(str(exc))
     emit_hub_audit_event(
@@ -3132,7 +3164,9 @@ def _handle_preanonymized_watcher_failure(
 def _settled_watcher_path(file_path: Path | str) -> tuple[Path, os.stat_result]:
     watched_path = Path(file_path)
     if not watched_path.exists():
-        raise FileNotFoundError(f"Watcher file not found: {watched_path}")
+        raise FileNotFoundError(
+            f"Watcher file not found; {watcher_path_reference_text(watched_path)}"
+        )
     return watched_path, _wait_for_watcher_file_ready(watched_path)
 
 

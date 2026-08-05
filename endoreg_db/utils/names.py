@@ -1,9 +1,10 @@
 # Use faker library to generate fake names by gender
 # Use german names by default
 
-from typing import Any, Literal, cast
-import gender_guesser.detector as gender_detector  # pyright: ignore[reportMissingTypeStubs]
+from typing import Literal
+
 from faker import Faker
+from gender_guesser.detector import Detector
 
 
 def create_mock_examiner_name() -> tuple[str, str]:
@@ -63,12 +64,8 @@ def guess_name_gender(name: str) -> Literal["male", "female", "unknown"]:
     their own model lookups or fall back safely.
     """
 
-    # Cast detector to Any to decouple from missing stubs safely
-    detector = cast(Any, gender_detector.Detector(case_sensitive=False))
-    try:
-        detected = cast(str, detector.get_gender(name or ""))
-    except Exception:  # pragma: no cover - defensive, detector is pure-Python
-        detected = "unknown"
+    detector = Detector(case_sensitive=False)
+    detected = detector.get_gender(name or "")
 
     if not detected:
         return "unknown"

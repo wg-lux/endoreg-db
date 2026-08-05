@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from typing import Any, Literal, TypeAlias, cast
 
@@ -21,6 +20,8 @@ from lx_dtypes.models.contracts.video_reimport import (
 )
 
 from endoreg_db.config.env import (
+    env_choice,
+    env_int,
     get_celery_broker_url,
     get_celery_ffmpeg_media_queue,
 )
@@ -74,54 +75,32 @@ RESERVATION_CREATED = "created"
 RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
 DEFAULT_VIDEO_REIMPORT_JOB_MODE: VideoReimportJobMode = "celery"
+VIDEO_REIMPORT_JOB_MODES: tuple[VideoReimportJobMode, ...] = ("celery", "inline")
 DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS = 0
 
 
 JsonValue: TypeAlias = VideoReimportJsonValue
 
 
-def _env_int(key: str, default: int) -> int:
-    raw_value = os.environ.get(key)
-    if raw_value is None:
-        return default
-    try:
-        return int(str(raw_value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
 def get_video_reimport_job_mode() -> VideoReimportJobMode:
-    raw_mode = os.environ.get("VIDEO_REIMPORT_JOB_MODE")
-    if raw_mode is None:
-        broker_url = str(
-            getattr(settings, "CELERY_BROKER_URL", None)
-            or get_celery_broker_url()
-            or ""
-        ).strip()
-        if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)) or not broker_url:
-            return "inline"
-        mode = DEFAULT_VIDEO_REIMPORT_JOB_MODE
-    else:
-        mode = raw_mode
-    normalized = str(mode or DEFAULT_VIDEO_REIMPORT_JOB_MODE).strip().lower()
-    if normalized not in {"celery", "inline"}:
-        logger.warning(
-            "Unsupported VIDEO_REIMPORT_JOB_MODE=%s; using celery.",
-            mode,
-        )
-        return DEFAULT_VIDEO_REIMPORT_JOB_MODE
-    if normalized == "inline":
-        return "inline"
-    return "celery"
+    broker_url = str(
+        getattr(settings, "CELERY_BROKER_URL", None) or get_celery_broker_url() or ""
+    ).strip()
+    default_mode: VideoReimportJobMode = DEFAULT_VIDEO_REIMPORT_JOB_MODE
+    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)) or not broker_url:
+        default_mode = "inline"
+    return env_choice(
+        "VIDEO_REIMPORT_JOB_MODE",
+        VIDEO_REIMPORT_JOB_MODES,
+        default_mode,
+    )
 
 
 def get_video_reimport_dispatch_delay_seconds() -> int:
-    return max(
-        0,
-        _env_int(
-            "VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS",
-            DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS,
-        ),
+    return env_int(
+        "VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS",
+        DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS,
+        minimum=0,
     )
 
 

@@ -11,8 +11,27 @@ from __future__ import annotations
 
 import os
 import sys
+from math import isfinite
 from pathlib import Path
-from typing import Any, Dict, Mapping, MutableMapping, Optional
+from typing import (
+    Any,
+    Dict,
+    Literal,
+    Mapping,
+    MutableMapping,
+    Optional,
+    TypeAlias,
+    TypeVar,
+)
+
+EnvironmentChoice = TypeVar("EnvironmentChoice", bound=str)
+EnvironmentSnapshotValue: TypeAlias = str | bool | None
+JobExecutionMode: TypeAlias = Literal["celery", "thread", "inline"]
+VideoTemporalInferenceFrameSourceMode: TypeAlias = Literal[
+    "cache",
+    "stream",
+    "auto",
+]
 
 DJANGO_SETTINGS_MODULE_ENV = "DJANGO_SETTINGS_MODULE"
 PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
@@ -44,12 +63,12 @@ DEFAULT_VIDEO_FPS = 50.0
 DEFAULT_WATCHER_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_WATCHER_STABLE_AFTER_SECONDS = 10.0
 DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS = 2
-DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE = "celery"
+DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE: JobExecutionMode = "celery"
 DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS = 60
 DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS = 120
 DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS = 75
-DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE = "celery"
-DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE = "stream"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE: JobExecutionMode = "celery"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE: VideoTemporalInferenceFrameSourceMode = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
 DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
@@ -59,7 +78,7 @@ DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
 DEFAULT_CELERY_LLM_INFERENCE_QUEUE = "llm_inference"
 DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
-DEFAULT_MODEL_TRAINING_JOB_MODE = "celery"
+DEFAULT_MODEL_TRAINING_JOB_MODE: JobExecutionMode = "celery"
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = "/mnt/fast-nvme-cache/endoreg-training"
 SECURE_PROXY_SSL_HEADER_NAME_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_NAME"
 SECURE_PROXY_SSL_HEADER_VALUE_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_VALUE"
@@ -69,8 +88,54 @@ ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "local_study_server",
     "central_hub",
 )
+TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
+DOTENV_DEVELOPMENT_SETTINGS_MODULES = frozenset(
+    {
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+        "endoreg_db.config.settings.case_gen",
+    }
+)
+SNAPSHOT_REDACTED_VALUE = "<redacted>"
+SNAPSHOT_REDACTED_ENV_KEYS = frozenset(
+    {
+        STORAGE_DIR_ENV,
+        DATA_DIR_ENV,
+        PROTECTED_ROOT_ENV,
+        PROTECTED_MEDIA_ROOT_ENV,
+        "ASSET_DIR",
+        "DEV_DB_NAME",
+        "TEST_DB_NAME",
+        "TEST_DB_FILE",
+        "CELERY_BROKER_URL",
+        "MODEL_TRAINING_STAGING_ROOT",
+        "CACHE_LOCATION",
+    }
+)
+JOB_EXECUTION_MODES: tuple[JobExecutionMode, ...] = (
+    "celery",
+    "thread",
+    "inline",
+)
+VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODES: tuple[
+    VideoTemporalInferenceFrameSourceMode,
+    ...,
+] = ("cache", "stream", "auto")
 
 IS_STATIC_ANALYSIS = any("mypy" in arg for arg in sys.argv)
+
+
+class EnvironmentValueError(ValueError):
+    """Raised when a configured environment value cannot be parsed safely."""
+
+    key: str
+    expected: str
+
+    def __init__(self, key: str, expected: str) -> None:
+        self.key = key
+        self.expected = expected
+        super().__init__(f"{key} must be {expected}")
+
 
 # Compute repository BASE_DIR (repo root). This file is endoreg_db/config/env.py.
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -85,6 +150,21 @@ def _resolve_candidate_path(raw_value: str | Path, *, base_dir: Path) -> Path:
     return (base_dir / candidate).resolve()
 
 
+def _configured_path_value(
+    source: Mapping[str, str],
+    key: str,
+    *,
+    default: str | Path,
+) -> str | Path:
+    raw_value = source.get(key)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip()
+    if not normalized:
+        raise EnvironmentValueError(key, "a non-empty filesystem path")
+    return normalized
+
+
 def build_protected_runtime_env(
     *,
     default_protected_root: Path | None = None,
@@ -94,26 +174,41 @@ def build_protected_runtime_env(
 ) -> dict[str, str]:
     resolved_base_dir = (base_dir or BASE_DIR).resolve()
     env_source = source if source is not None else os.environ
+    protected_root_default = default_protected_root or (resolved_base_dir / "data")
 
     protected_root = _resolve_candidate_path(
-        env_source.get(PROTECTED_ROOT_ENV, str(default_protected_root)),
+        _configured_path_value(
+            env_source,
+            PROTECTED_ROOT_ENV,
+            default=protected_root_default,
+        ),
         base_dir=resolved_base_dir,
     )
     storage_dir = _resolve_candidate_path(
-        env_source.get(STORAGE_DIR_ENV, str(protected_root / "storage")),
+        _configured_path_value(
+            env_source,
+            STORAGE_DIR_ENV,
+            default=protected_root / "storage",
+        ),
         base_dir=resolved_base_dir,
     )
     if protected_root not in (storage_dir, *storage_dir.parents):
         storage_dir = protected_root / "storage"
 
     data_dir = _resolve_candidate_path(
-        env_source.get(
-            DATA_DIR_ENV, str(default_data_root or (resolved_base_dir / "data"))
+        _configured_path_value(
+            env_source,
+            DATA_DIR_ENV,
+            default=default_data_root or (resolved_base_dir / "data"),
         ),
         base_dir=resolved_base_dir,
     )
     protected_media_root = _resolve_candidate_path(
-        env_source.get(PROTECTED_MEDIA_ROOT_ENV, str(storage_dir)),
+        _configured_path_value(
+            env_source,
+            PROTECTED_MEDIA_ROOT_ENV,
+            default=storage_dir,
+        ),
         base_dir=resolved_base_dir,
     )
     if protected_root not in (protected_media_root, *protected_media_root.parents):
@@ -136,6 +231,14 @@ def _is_explicit_test_settings() -> bool:
         "endoreg_db.config.settings.test",
         "tests.settings_test",
     } or settings_module.endswith(".settings.test")
+
+
+def _dotenv_loading_allowed() -> bool:
+    settings_module = os.environ.get(
+        DJANGO_SETTINGS_MODULE_ENV,
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    ).strip()
+    return settings_module in DOTENV_DEVELOPMENT_SETTINGS_MODULES
 
 
 def _default_protected_runtime_root() -> Path:
@@ -168,10 +271,10 @@ def _normalize_protected_runtime_paths(
 
 _dotenv_loaded = False
 
-import dotenv
+if _dotenv_loading_allowed():
+    import dotenv
 
-dotenv.load_dotenv()
-_dotenv_loaded = True
+    _dotenv_loaded = dotenv.load_dotenv(override=False)
 
 if _is_explicit_test_settings():
     test_root = (BASE_DIR / "data" / "tests").resolve()
@@ -228,21 +331,58 @@ def env_str(key: str, default: str = "") -> str:
     return val if val is not None else default
 
 
+def env_choice(
+    key: str,
+    choices: tuple[EnvironmentChoice, ...],
+    default: EnvironmentChoice,
+) -> EnvironmentChoice:
+    if not choices:
+        raise ValueError("environment choices must not be empty")
+    if default not in choices:
+        raise ValueError("environment default must be one of the configured choices")
+
+    val = _get(key)
+    if val is None:
+        return default
+    normalized = val.strip().lower()
+    for choice in choices:
+        if normalized == choice.lower():
+            return choice
+    raise EnvironmentValueError(key, f"one of: {', '.join(choices)}")
+
+
 def env_bool(key: str, default: bool = False) -> bool:
     val = _get(key)
     if val is None:
         return default
-    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+    normalized = val.strip().lower()
+    if normalized in TRUE_ENV_VALUES:
+        return True
+    if normalized in FALSE_ENV_VALUES:
+        return False
+    raise EnvironmentValueError(key, "a boolean")
 
 
-def env_int(key: str, default: int = 0) -> int:
+def env_int(
+    key: str,
+    default: int = 0,
+    *,
+    minimum: int | None = None,
+) -> int:
     val = _get(key)
     if val is None:
-        return default
-    try:
-        return int(str(val).strip())
-    except Exception:
-        return default
+        parsed = default
+    else:
+        try:
+            parsed = int(val.strip())
+        except ValueError as exc:
+            raise EnvironmentValueError(key, "an integer") from exc
+    if minimum is not None and parsed < minimum:
+        raise EnvironmentValueError(
+            key,
+            f"an integer greater than or equal to {minimum}",
+        )
+    return parsed
 
 
 def env_float(key: str, default: float = 0.0) -> float:
@@ -250,21 +390,23 @@ def env_float(key: str, default: float = 0.0) -> float:
     if val is None:
         return default
     try:
-        return float(str(val).strip())
-    except Exception:
-        return default
+        parsed = float(val.strip())
+    except ValueError as exc:
+        raise EnvironmentValueError(key, "a finite number") from exc
+    if not isfinite(parsed):
+        raise EnvironmentValueError(key, "a finite number")
+    return parsed
 
 
 def env_path(key: str, default_relative: str) -> Path:
     """Return an absolute path. If env is relative, resolve under BASE_DIR."""
     val = _get(key)
-    if not val:
-        p = BASE_DIR / default_relative
-    else:
-        p = Path(val)
-        if not p.is_absolute():
-            p = (BASE_DIR / p).resolve()
-    return p
+    if val is None:
+        return _resolve_candidate_path(default_relative, base_dir=BASE_DIR)
+    normalized = val.strip()
+    if not normalized:
+        raise EnvironmentValueError(key, "a non-empty filesystem path")
+    return _resolve_candidate_path(normalized, base_dir=BASE_DIR)
 
 
 def env_list(key: str, default: str = "", *, separator: str = ",") -> list[str]:
@@ -501,12 +643,10 @@ def watcher_celery_inline_fallback_enabled() -> bool:
 
 
 def get_celery_audit_ledger_integrity_interval_seconds() -> int:
-    return max(
-        60,
-        env_int(
-            "CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS",
-            DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS,
-        ),
+    return env_int(
+        "CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS",
+        DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS,
+        minimum=60,
     )
 
 
@@ -566,6 +706,7 @@ def get_ffmpeg_transcode_timeout_seconds() -> int:
     return env_int(
         "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
         DEFAULT_FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+        minimum=1,
     )
 
 
@@ -703,7 +844,9 @@ def get_ffmpeg_env_candidates() -> list[str]:
 
 def get_video_default_fps() -> float:
     fps = env_float("VIDEO_DEFAULT_FPS", DEFAULT_VIDEO_FPS)
-    return fps if fps > 0 else DEFAULT_VIDEO_FPS
+    if fps <= 0:
+        raise EnvironmentValueError("VIDEO_DEFAULT_FPS", "a positive finite number")
+    return fps
 
 
 def get_endoreg_storage_profile_name() -> str:
@@ -711,21 +854,33 @@ def get_endoreg_storage_profile_name() -> str:
 
 
 def get_watcher_poll_interval_seconds() -> float:
-    return env_float(
+    value = env_float(
         "WATCHER_POLL_INTERVAL_SECONDS",
         DEFAULT_WATCHER_POLL_INTERVAL_SECONDS,
     )
+    if value <= 0:
+        raise EnvironmentValueError(
+            "WATCHER_POLL_INTERVAL_SECONDS",
+            "a positive finite number",
+        )
+    return value
 
 
 def get_watcher_stable_after_seconds() -> float:
-    return env_float(
+    value = env_float(
         "WATCHER_STABLE_AFTER_SECONDS",
         DEFAULT_WATCHER_STABLE_AFTER_SECONDS,
     )
+    if value < 0:
+        raise EnvironmentValueError(
+            "WATCHER_STABLE_AFTER_SECONDS",
+            "a finite number greater than or equal to 0",
+        )
+    return value
 
 
 def reconciliation_disabled() -> bool:
-    return env_str("ENDOREG_DISABLE_RECONCILIATION", "") == "1"
+    return env_bool("ENDOREG_DISABLE_RECONCILIATION", False)
 
 
 def get_report_pdf_renderer_bin() -> str:
@@ -733,96 +888,69 @@ def get_report_pdf_renderer_bin() -> str:
 
 
 def get_video_post_validation_job_max_workers() -> int:
-    return max(
-        1,
-        env_int(
-            "VIDEO_POST_VALIDATION_JOB_MAX_WORKERS",
-            DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS,
-        ),
+    return env_int(
+        "VIDEO_POST_VALIDATION_JOB_MAX_WORKERS",
+        DEFAULT_VIDEO_POST_VALIDATION_JOB_MAX_WORKERS,
+        minimum=1,
     )
 
 
-def get_video_post_validation_job_mode() -> str:
-    mode = (
-        env_str(
-            "VIDEO_POST_VALIDATION_JOB_MODE",
-            DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE,
-        )
-        .strip()
-        .lower()
+def get_video_post_validation_job_mode() -> JobExecutionMode:
+    return env_choice(
+        "VIDEO_POST_VALIDATION_JOB_MODE",
+        JOB_EXECUTION_MODES,
+        DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE,
     )
-    if mode not in {"celery", "thread", "inline"}:
-        return DEFAULT_VIDEO_POST_VALIDATION_JOB_MODE
-    return mode
 
 
 def get_video_post_validation_dispatch_delay_seconds() -> int:
-    return max(
-        0,
-        env_int(
-            "VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS",
-            DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS,
-        ),
+    return env_int(
+        "VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS",
+        DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS,
+        minimum=0,
     )
 
 
 def get_media_operation_stream_lease_seconds() -> int:
-    return max(
-        1,
-        env_int(
-            "MEDIA_OPERATION_STREAM_LEASE_SECONDS",
-            DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS,
-        ),
+    return env_int(
+        "MEDIA_OPERATION_STREAM_LEASE_SECONDS",
+        DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS,
+        minimum=1,
     )
 
 
 def get_media_operation_segment_update_grace_seconds() -> int:
-    return max(
-        1,
-        env_int(
-            "MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS",
-            DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS,
-        ),
+    return env_int(
+        "MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS",
+        DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS,
+        minimum=1,
     )
 
 
-def get_video_temporal_inference_job_mode() -> str:
-    mode = (
-        env_str(
-            "VIDEO_TEMPORAL_INFERENCE_JOB_MODE",
-            DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE,
-        )
-        .strip()
-        .lower()
+def get_video_temporal_inference_job_mode() -> JobExecutionMode:
+    return env_choice(
+        "VIDEO_TEMPORAL_INFERENCE_JOB_MODE",
+        JOB_EXECUTION_MODES,
+        DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE,
     )
-    if mode not in {"celery", "thread", "inline"}:
-        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE
-    return mode
 
 
-def get_video_temporal_inference_frame_source_mode() -> str:
-    mode = (
-        env_str(
-            "VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE",
-            DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE,
-        )
-        .strip()
-        .lower()
+def get_video_temporal_inference_frame_source_mode() -> (
+    VideoTemporalInferenceFrameSourceMode
+):
+    return env_choice(
+        "VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE",
+        VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODES,
+        DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE,
     )
-    if mode not in {"cache", "stream", "auto"}:
-        return DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE
-    return mode
 
 
-def get_model_training_job_mode() -> str:
-    mode = (
-        env_str("MODEL_TRAINING_JOB_MODE", DEFAULT_MODEL_TRAINING_JOB_MODE)
-        .strip()
-        .lower()
+def get_model_training_job_mode() -> JobExecutionMode:
+    return env_choice(
+        "MODEL_TRAINING_JOB_MODE",
+        JOB_EXECUTION_MODES,
+        DEFAULT_MODEL_TRAINING_JOB_MODE,
     )
-    if mode not in {"celery", "thread", "inline"}:
-        return DEFAULT_MODEL_TRAINING_JOB_MODE
-    return mode
 
 
 def get_model_training_staging_root() -> Path:
@@ -871,8 +999,8 @@ def build_base_rest_framework_settings() -> Dict[str, Any]:
     }
 
 
-def snapshot() -> Dict[str, Any]:
-    """Return a snapshot of relevant config for debugging/logging."""
+def snapshot() -> dict[str, EnvironmentSnapshotValue]:
+    """Return a secret- and topology-safe configuration snapshot."""
     keys = [
         # Core
         "DJANGO_SETTINGS_MODULE",
@@ -881,8 +1009,6 @@ def snapshot() -> Dict[str, Any]:
         "STORAGE_DIR",
         "DATA_DIR",
         "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "STORAGE_DIR",
-        "DATA_DIR",
         "PROTECTED_MEDIA_ROOT",
         "ALLOW_INSECURE_PROTECTED_MEDIA",
         "ASSET_DIR",
@@ -916,11 +1042,18 @@ def snapshot() -> Dict[str, Any]:
         "DRF_THROTTLE_USER",
         "DRF_THROTTLE_ANON",
     ]
-    data: Dict[str, Any] = {k: os.environ.get(k) for k in keys}
+    data: dict[str, EnvironmentSnapshotValue] = {
+        key: (
+            SNAPSHOT_REDACTED_VALUE
+            if key in SNAPSHOT_REDACTED_ENV_KEYS and os.environ.get(key) is not None
+            else os.environ.get(key)
+        )
+        for key in keys
+    }
     data.update(
         {
             "DOTENV_LOADED": _dotenv_loaded,
-            "BASE_DIR": str(BASE_DIR),
+            "BASE_DIR": SNAPSHOT_REDACTED_VALUE,
         }
     )
     return data

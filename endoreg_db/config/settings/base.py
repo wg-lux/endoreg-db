@@ -248,9 +248,6 @@ LANGUAGES = [
     ("en", "English"),
 ]
 
-# ROOT_URLCONF = 'endoreg_db.urls.root_urls'
-
-
 # Core apps
 INSTALLED_APPS = [
     "endoreg_db.apps.EndoregDbConfig",

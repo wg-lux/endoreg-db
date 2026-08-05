@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from datetime import timedelta
 from typing import Any, Literal, Protocol, cast
@@ -10,6 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import BaseModel, ConfigDict
 
+from endoreg_db.config.env import env_choice, env_int
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import (
@@ -38,13 +38,15 @@ from endoreg_db.utils.storage import ensure_local_file
 logger = logging.getLogger(__name__)
 
 ReportLlmOperation = Literal["report_llm_reimport", "report_llm_import"]
+ReportLlmJobMode = Literal["celery", "inline"]
 REPORT_LLM_REIMPORT_OPERATION = cast(
     ReportLlmOperation, ReportLlmInferenceJob.OPERATION_REIMPORT
 )
 REPORT_LLM_IMPORT_OPERATION = cast(
     ReportLlmOperation, ReportLlmInferenceJob.OPERATION_IMPORT
 )
-REPORT_LLM_JOB_MODE_DEFAULT = "celery"
+REPORT_LLM_JOB_MODE_DEFAULT: ReportLlmJobMode = "celery"
+REPORT_LLM_JOB_MODES: tuple[ReportLlmJobMode, ...] = ("celery", "inline")
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
 REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
 
@@ -92,7 +94,7 @@ class ReportLlmDispatchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_id: str
-    mode: str
+    mode: ReportLlmJobMode
     status: Literal[
         "queued",
         "already_queued",
@@ -112,32 +114,19 @@ class ReportLlmDispatchResult(BaseModel):
         return self.model_dump(mode="json", exclude_none=True)
 
 
-def _env_int(key: str, default: int) -> int:
-    raw_value = os.environ.get(key)
-    if raw_value is None:
-        return default
-    try:
-        return int(str(raw_value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def get_report_llm_job_mode() -> str:
-    mode = os.environ.get("REPORT_LLM_JOB_MODE", REPORT_LLM_JOB_MODE_DEFAULT)
-    normalized = str(mode or REPORT_LLM_JOB_MODE_DEFAULT).strip().lower()
-    if normalized not in {"celery", "inline"}:
-        logger.warning("Unsupported REPORT_LLM_JOB_MODE=%s; using celery.", mode)
-        return REPORT_LLM_JOB_MODE_DEFAULT
-    return normalized
+def get_report_llm_job_mode() -> ReportLlmJobMode:
+    return env_choice(
+        "REPORT_LLM_JOB_MODE",
+        REPORT_LLM_JOB_MODES,
+        REPORT_LLM_JOB_MODE_DEFAULT,
+    )
 
 
 def get_report_llm_dispatch_delay_seconds() -> int:
-    return max(
-        0,
-        _env_int(
-            "REPORT_LLM_DISPATCH_DELAY_SECONDS",
-            REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT,
-        ),
+    return env_int(
+        "REPORT_LLM_DISPATCH_DELAY_SECONDS",
+        REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT,
+        minimum=0,
     )
 
 
@@ -336,7 +325,7 @@ def report_llm_job_payload(job: ReportLlmInferenceJob) -> dict[str, JsonValue]:
 def _dispatch_result(
     *,
     task_id: str,
-    mode: str,
+    mode: ReportLlmJobMode,
     status: Literal["queued", "already_queued", "completed", "failed", "lost"],
     operation: str,
     report_id: int | None,
