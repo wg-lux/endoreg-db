@@ -5,7 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 from unittest.mock import patch
 
 import pytest
@@ -16,6 +16,7 @@ from lx_dtypes.models.contracts.hub_ingest import (
 
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
+from endoreg_db.services.hub import watcher_handoff
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     is_in_progress_handoff_path,
@@ -151,12 +152,16 @@ def test_wait_for_watcher_file_ready_rejects_atomic_handoff_marker(
     watched_file.write_bytes(b"partial-video")
 
     assert is_in_progress_handoff_path(watched_file) is True
-    with pytest.raises(WatcherFileNotReadyError, match="in-progress handoff"):
+    with pytest.raises(WatcherFileNotReadyError, match="in-progress handoff") as error:
         ingest._wait_for_watcher_file_ready(
             watched_file,
             stable_after_seconds=0,
             poll_interval_seconds=0.01,
         )
+
+    assert str(watched_file) not in str(error.value)
+    assert watched_file.name not in str(error.value)
+    assert "path_sha256=" in str(error.value)
 
 
 @pytest.mark.unit
@@ -166,12 +171,141 @@ def test_wait_for_watcher_file_ready_rejects_symbolic_link(tmp_path: Path) -> No
     watched_link = tmp_path / "linked.mp4"
     watched_link.symlink_to(source)
 
-    with pytest.raises(ValueError, match="symbolic link"):
+    with pytest.raises(ValueError, match="symbolic link") as error:
         ingest._wait_for_watcher_file_ready(
             watched_link,
             stable_after_seconds=0,
             poll_interval_seconds=0.01,
         )
+
+    assert str(watched_link) not in str(error.value)
+    assert watched_link.name not in str(error.value)
+    assert "path_sha256=" in str(error.value)
+
+
+@pytest.mark.unit
+def test_watcher_stat_and_timeout_errors_redact_source_path(tmp_path: Path) -> None:
+    missing_file = tmp_path / "patient-max-mustermann-missing.mp4"
+    with pytest.raises(FileNotFoundError, match="Watcher file not found") as missing:
+        watcher_handoff.watcher_file_stat(missing_file)
+
+    directory = tmp_path / "patient-max-mustermann-directory.mp4"
+    directory.mkdir()
+    with pytest.raises(ValueError, match="not a regular file") as not_regular:
+        watcher_handoff.watcher_file_stat(directory)
+
+    empty_file = tmp_path / "patient-max-mustermann-empty.mp4"
+    empty_file.touch()
+    with pytest.raises(
+        WatcherFileNotReadyError,
+        match="did not become stable",
+    ) as timeout:
+        watcher_handoff.wait_for_watcher_file_ready(
+            empty_file,
+            stable_after_seconds=0,
+            poll_interval_seconds=0.001,
+            timeout_seconds=0.001,
+        )
+
+    for error, path in (
+        (missing.value, missing_file),
+        (not_regular.value, directory),
+        (timeout.value, empty_file),
+    ):
+        message = str(error)
+        assert str(path) not in message
+        assert path.name not in message
+        assert "path_sha256=" in message
+
+
+def _standard_watcher_entrypoint(path: Path) -> object:
+    return ingest.process_watcher_file(file_path=path, file_type="video")
+
+
+def _preanonymized_watcher_entrypoint(path: Path) -> object:
+    return ingest.process_preanonymized_watcher_file(file_path=path)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "entrypoint",
+    [
+        _standard_watcher_entrypoint,
+        _preanonymized_watcher_entrypoint,
+    ],
+)
+def test_watcher_entrypoint_missing_file_errors_redact_source_path(
+    tmp_path: Path,
+    entrypoint: Callable[[Path], object],
+) -> None:
+    missing_file = tmp_path / "patient-max-mustermann-missing.mp4"
+
+    with pytest.raises(FileNotFoundError, match="Watcher file not found") as error:
+        entrypoint(missing_file)
+
+    assert str(missing_file) not in str(error.value)
+    assert missing_file.name not in str(error.value)
+    assert "path_sha256=" in str(error.value)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("stable_after", "poll_interval", "timeout", "expected_label"),
+    [
+        (-0.1, 0.01, 2.0, "stable_after_seconds"),
+        (float("nan"), 0.01, 2.0, "stable_after_seconds"),
+        (0.0, 0.0, 2.0, "poll_interval_seconds"),
+        (0.0, float("inf"), 2.0, "poll_interval_seconds"),
+        (0.0, 0.01, 0.0, "timeout_seconds"),
+        (0.0, 0.01, float("nan"), "timeout_seconds"),
+    ],
+)
+def test_wait_for_watcher_file_ready_rejects_invalid_durations(
+    tmp_path: Path,
+    stable_after: float,
+    poll_interval: float,
+    timeout: float,
+    expected_label: str,
+) -> None:
+    watched_file = tmp_path / "ready.mp4"
+    watched_file.write_bytes(b"video")
+
+    with pytest.raises(ValueError, match=expected_label):
+        watcher_handoff.wait_for_watcher_file_ready(
+            watched_file,
+            stable_after_seconds=stable_after,
+            poll_interval_seconds=poll_interval,
+            timeout_seconds=timeout,
+        )
+
+
+@pytest.mark.unit
+def test_wait_for_watcher_file_ready_honors_full_stability_window(
+    tmp_path: Path,
+) -> None:
+    watched_file = tmp_path / "ready.mp4"
+    watched_file.write_bytes(b"video")
+    clock = {"now": 0.0}
+
+    def monotonic() -> float:
+        return clock["now"]
+
+    def advance_clock(seconds: float) -> None:
+        clock["now"] += seconds
+
+    with (
+        patch.object(watcher_handoff.time, "monotonic", side_effect=monotonic),
+        patch.object(watcher_handoff.time, "sleep", side_effect=advance_clock),
+    ):
+        result = watcher_handoff.wait_for_watcher_file_ready(
+            watched_file,
+            stable_after_seconds=2.5,
+            poll_interval_seconds=0.5,
+            timeout_seconds=0.1,
+        )
+
+    assert result.st_size == len(b"video")
+    assert clock["now"] >= 2.5
 
 
 @pytest.mark.django_db
@@ -179,6 +313,7 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     tmp_path: Path,
     watcher_center: Center,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     initial_content = b"partial-"
     final_suffix = b"complete"
@@ -217,12 +352,13 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     )
 
     try:
-        upload_job = ingest.process_watcher_file(
-            file_path=watched_file,
-            file_type="video",
-            center=watcher_center,
-            processor_name="slow-writer-processor",
-        )
+        with caplog.at_level("INFO", logger=watcher_handoff.__name__):
+            upload_job = ingest.process_watcher_file(
+                file_path=watched_file,
+                file_type="video",
+                center=watcher_center,
+                processor_name="slow-writer-processor",
+            )
     finally:
         writer_thread.join(timeout=1)
 
@@ -231,6 +367,16 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     assert upload_job.content_hash == sha256_file(upload_job.file)
     with upload_job.file.open("rb") as handle:
         assert handle.read() == expected_content
+    settle_events = [
+        getattr(record, "structured_event", {})
+        for record in caplog.records
+        if getattr(record, "structured_event", {}).get("event")
+        == "watcher.file_changed_during_settle"
+    ]
+    assert settle_events
+    assert "path_sha256" in settle_events[-1]["file"]
+    assert str(watched_file) not in caplog.text
+    assert watched_file.name not in caplog.text
 
 
 @pytest.mark.django_db
@@ -532,13 +678,17 @@ def test_persist_preanonymized_file_unlinks_duplicate_source_when_target_exists(
 def test_load_preanonymized_sidecar_rejects_non_object_payload(
     tmp_path: Path,
 ) -> None:
-    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
     sidecar = watched_file.with_suffix(".json")
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
     sidecar.write_text("[]", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="must contain a mapping"):
+    with pytest.raises(ValueError, match="must contain a mapping") as error:
         ingest._load_preanonymized_sidecar(watched_file)
+
+    assert str(sidecar) not in str(error.value)
+    assert sidecar.name not in str(error.value)
+    assert "path_sha256=" in str(error.value)
 
 
 @pytest.mark.unit
@@ -563,13 +713,172 @@ def test_load_preanonymized_sidecar_accepts_yaml_mapping(tmp_path: Path) -> None
 def test_load_preanonymized_sidecar_rejects_multiple_formats(
     tmp_path: Path,
 ) -> None:
-    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
     watched_file.with_suffix(".json").write_text("{}", encoding="utf-8")
     watched_file.with_suffix(".yaml").write_text("{}", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="multiple sidecars"):
+    with pytest.raises(ValueError, match="multiple sidecars") as error:
         ingest._load_preanonymized_sidecar(watched_file)
+
+    assert str(tmp_path) not in str(error.value)
+    assert watched_file.stem not in str(error.value)
+    assert str(error.value).count("path_sha256=") == 2
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_errors_redact_missing_and_invalid_paths(
+    tmp_path: Path,
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    with pytest.raises(ValueError, match="sidecar is required") as missing:
+        ingest._load_preanonymized_sidecar(watched_file, strict=True)
+
+    sidecar = watched_file.with_suffix(".json")
+    sidecar.write_text('{"unexpected_field": true}', encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid preanonymized sidecar") as invalid:
+        ingest._load_preanonymized_sidecar(watched_file, strict=True)
+
+    for error in (missing.value, invalid.value):
+        message = str(error)
+        assert str(tmp_path) not in message
+        assert watched_file.stem not in message
+        assert "path_sha256=" in message
+
+
+@pytest.mark.django_db
+def test_preanonymized_quarantine_logs_use_opaque_path_references(
+    tmp_path: Path,
+    watcher_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    sidecar = watched_file.with_suffix(".json")
+    sidecar.write_text("{}", encoding="utf-8")
+    quarantine_dir = tmp_path / "quarantine"
+    quarantine_dir.mkdir()
+    upload_job = UploadJob.objects.create(
+        source_center=watcher_center,
+        processing_provenance={},
+    )
+    monkeypatch.setattr(ingest, "_quarantine_dir", lambda: quarantine_dir)
+
+    with caplog.at_level("WARNING", logger=ingest.__name__):
+        ingest._quarantine_failed_preanonymized_media(
+            upload_job=upload_job,
+            watched_path=watched_file,
+        )
+        ingest._quarantine_failed_preanonymized_sidecar(
+            upload_job=upload_job,
+            sidecar_path=sidecar,
+        )
+
+    events = [
+        getattr(record, "structured_event", {})
+        for record in caplog.records
+        if getattr(record, "structured_event", {}).get("event")
+        in {
+            "watcher.quarantine_media_moved",
+            "watcher.quarantine_sidecar_moved",
+        }
+    ]
+    assert len(events) == 2
+    for event in events:
+        assert "path_sha256" in event["source"]
+        assert "path_sha256" in event["destination"]
+    assert str(tmp_path) not in caplog.text
+    assert watched_file.name not in caplog.text
+    assert sidecar.name not in caplog.text
+
+
+@pytest.mark.django_db
+def test_preanonymized_quarantine_failure_log_redacts_path_bearing_error(
+    tmp_path: Path,
+    watcher_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    upload_job = UploadJob.objects.create(
+        source_center=watcher_center,
+        processing_provenance={},
+    )
+    monkeypatch.setattr(ingest, "_quarantine_dir", lambda: tmp_path / "quarantine")
+
+    def fail_move(*, source: Path, destination: Path) -> None:
+        raise OSError(f"move failed from {source} to {destination}")
+
+    monkeypatch.setattr(ingest, "atomic_move_file", fail_move)
+
+    with caplog.at_level("ERROR", logger=ingest.__name__):
+        ingest._quarantine_failed_preanonymized_media(
+            upload_job=upload_job,
+            watched_path=watched_file,
+        )
+
+    events = [
+        getattr(record, "structured_event", {})
+        for record in caplog.records
+        if getattr(record, "structured_event", {}).get("event")
+        == "watcher.quarantine_media_move_failed"
+    ]
+    assert len(events) == 1
+    assert "path_sha256" in events[0]["source"]
+    assert str(tmp_path) not in caplog.text
+    assert watched_file.name not in caplog.text
+
+
+@pytest.mark.django_db
+def test_watcher_handoff_failure_logs_redact_source_and_error_paths(
+    tmp_path: Path,
+    watcher_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.mp4"
+    watched_file.write_bytes(b"video")
+    upload_job = UploadJob.objects.create(
+        source_center=watcher_center,
+        processing_provenance={},
+    )
+    assert upload_job.schedule_retry(
+        "test retry",
+        error_code=UploadJob.ErrorCode.DISPATCH_UNAVAILABLE,
+        delay_seconds=1,
+    )
+    technical_error = ConnectionRefusedError(
+        f"broker rejected watcher source {watched_file}"
+    )
+    monkeypatch.setattr(
+        ingest.settings,
+        "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
+        False,
+    )
+
+    with caplog.at_level("WARNING", logger=ingest.__name__):
+        result = ingest._handle_watcher_handoff_failure(
+            upload_job=upload_job,
+            watched_path=watched_file,
+            normalized_type="video",
+            source_center=watcher_center,
+            effective_processor_name=None,
+            exc=technical_error,
+        )
+
+    assert result is not None
+    event_names = {
+        getattr(record, "structured_event", {}).get("event")
+        for record in caplog.records
+    }
+    assert "watcher.celery_handoff_failed" in event_names
+    assert "watcher.processing_handoff_failed" in event_names
+    assert str(tmp_path) not in caplog.text
+    assert watched_file.name not in caplog.text
 
 
 @pytest.mark.unit
@@ -614,6 +923,7 @@ def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
     tmp_path: Path,
     watcher_center: Center,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     watched_file = tmp_path / "changing-report.pdf"
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
@@ -626,7 +936,10 @@ def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
 
     monkeypatch.setattr(ingest, "sha256_file", mutate_during_hash)
 
-    with pytest.raises(WatcherFileNotReadyError, match="changed after settle"):
+    with (
+        caplog.at_level("WARNING", logger=watcher_handoff.__name__),
+        pytest.raises(WatcherFileNotReadyError, match="changed after settle") as error,
+    ):
         ingest.create_or_reuse_watcher_upload_job(
             file_path=watched_file,
             content_type="application/pdf",
@@ -635,3 +948,15 @@ def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
 
     assert watched_file.exists()
     assert UploadJob.objects.count() == 0
+    events = [
+        getattr(record, "structured_event", {})
+        for record in caplog.records
+        if getattr(record, "structured_event", {}).get("event")
+        == "watcher.file_changed_after_settle"
+    ]
+    assert len(events) == 1
+    assert "path_sha256" in events[0]["file"]
+    assert str(watched_file) not in caplog.text
+    assert watched_file.name not in caplog.text
+    assert str(watched_file) not in str(error.value)
+    assert watched_file.name not in str(error.value)

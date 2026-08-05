@@ -6,6 +6,36 @@ from typing import Any
 import pytest
 from pytest import MonkeyPatch
 
+from endoreg_db.config.env import EnvironmentValueError
+
+
+def test_video_reimport_job_mode_rejects_unsupported_value(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import endoreg_db.services.jobs.video_reimport_jobs as module
+
+    raw_value = "sensitive-invalid-video-reimport-mode"
+    monkeypatch.setenv("VIDEO_REIMPORT_JOB_MODE", raw_value)
+
+    with pytest.raises(EnvironmentValueError) as error:
+        module.get_video_reimport_job_mode()
+
+    assert error.value.key == "VIDEO_REIMPORT_JOB_MODE"
+    assert raw_value not in str(error.value)
+
+
+def test_video_reimport_dispatch_delay_rejects_negative_value(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import endoreg_db.services.jobs.video_reimport_jobs as module
+
+    monkeypatch.setenv("VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS", "-1")
+
+    with pytest.raises(EnvironmentValueError) as error:
+        module.get_video_reimport_dispatch_delay_seconds()
+
+    assert error.value.key == "VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS"
+
 
 @contextmanager
 def _context_path(path: Path) -> Any:

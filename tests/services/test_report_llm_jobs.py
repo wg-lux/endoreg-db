@@ -9,16 +9,43 @@ from pytest import MonkeyPatch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
+from endoreg_db.config.env import EnvironmentValueError
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
 from endoreg_db.schemas.report_llm import ReportLlmReimportRequestPayload
 from endoreg_db.services.jobs.report_llm_jobs import (
     dispatch_report_llm_import,
     dispatch_report_llm_reimport,
+    get_report_llm_dispatch_delay_seconds,
+    get_report_llm_job_mode,
     report_llm_job_payload,
 )
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 
 pytestmark = pytest.mark.django_db
+
+
+def test_report_llm_job_mode_rejects_unsupported_value(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    raw_value = "sensitive-invalid-report-llm-mode"
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", raw_value)
+
+    with pytest.raises(EnvironmentValueError) as error:
+        get_report_llm_job_mode()
+
+    assert error.value.key == "REPORT_LLM_JOB_MODE"
+    assert raw_value not in str(error.value)
+
+
+def test_report_llm_dispatch_delay_rejects_negative_value(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REPORT_LLM_DISPATCH_DELAY_SECONDS", "-1")
+
+    with pytest.raises(EnvironmentValueError) as error:
+        get_report_llm_dispatch_delay_seconds()
+
+    assert error.value.key == "REPORT_LLM_DISPATCH_DELAY_SECONDS"
 
 
 @pytest.fixture

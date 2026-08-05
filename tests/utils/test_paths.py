@@ -122,6 +122,45 @@ def test_build_protected_runtime_env_normalizes_related_paths(
     assert built["PROTECTED_MEDIA_ROOT"] == str((protected_root / "storage").resolve())
 
 
+def test_build_protected_runtime_env_has_safe_defaults_without_source_values(
+    tmp_path: Path,
+) -> None:
+    built = env_module.build_protected_runtime_env(base_dir=tmp_path, source={})
+
+    protected_root = (tmp_path / "data").resolve()
+    storage_root = protected_root / "storage"
+    assert built == {
+        "LX_ANNOTATE_ENCRYPTED_DATA_DIR": str(protected_root),
+        "STORAGE_DIR": str(storage_root),
+        "DATA_DIR": str(protected_root),
+        "PROTECTED_MEDIA_ROOT": str(storage_root),
+    }
+    assert "None" not in built["LX_ANNOTATE_ENCRYPTED_DATA_DIR"]
+
+
+@pytest.mark.parametrize(
+    "env_key",
+    [
+        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
+        "STORAGE_DIR",
+        "DATA_DIR",
+        "PROTECTED_MEDIA_ROOT",
+    ],
+)
+def test_build_protected_runtime_env_rejects_explicit_empty_paths(
+    tmp_path: Path,
+    env_key: str,
+) -> None:
+    with pytest.raises(env_module.EnvironmentValueError) as error:
+        env_module.build_protected_runtime_env(
+            base_dir=tmp_path,
+            source={env_key: "  "},
+        )
+
+    assert error.value.key == env_key
+    assert error.value.expected == "a non-empty filesystem path"
+
+
 def test_paths_module_resolves_relative_env_paths(
     monkeypatch: MonkeyPatch,
 ) -> None:
