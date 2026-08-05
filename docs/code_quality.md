@@ -49,6 +49,21 @@ zulässig ist. Eine Aktualisierung ist nur Teil einer benannten Kohorte:
    ohne erneute Prüfung verlängern.
 4. Pyright, den Boundary-Guard und die fokussierten Fehlerpfadtests ausführen.
 
+## Reproduzierbarer Qualitätslauf
+
+`devenv tasks run quality:code-regression` führt Pyright, Dead-Code-Guard,
+Boundary-Guard und die schnelle Pytest-Marker-Lane in der bereits
+synchronisierten Projekt-Venv aus. Vor dem Lauf sind Abhängigkeiten bei Bedarf
+einmalig mit `devenv tasks run agent:sync` zu aktualisieren. Der Qualitätslauf
+startet absichtlich keinen verschachtelten `test:sync`: eine erneute vollständige
+Auflösung innerhalb desselben Task-Zeitfensters kann den Testprozess trotz
+grüner Tests abbrechen.
+
+`devenv tasks run test:fast` bleibt der eigenständige Entwickler- und PR-Lauf;
+er synchronisiert seine Testabhängigkeiten weiterhin selbst und verwendet
+dieselben Marker, Umgebungsgrenzen, Parallelisierung und Datenbank-Wiederverwendung
+wie der Qualitätslauf.
+
 ## Helper- und Klassengrenzen
 
 - Reine Transformationen sind typisierte, seiteneffektfreie Funktionen.
@@ -70,6 +85,43 @@ Funktionen fangen keine breiten Exceptions und unterdrücken keine Fehler.
 Security-, Storage-, Kryptografie- und klinische Invarianten bleiben
 fail-closed. Fehlerantworten und Logs dürfen keine Secrets, Master Keys,
 direkten Patientenidentifikatoren oder vollständigen Payloads enthalten.
+
+### Konfigurationsgrenze
+
+Die zentralen Parser in `endoreg_db.config.env` verwenden einen Default nur,
+wenn eine Variable nicht gesetzt ist. Ein gesetzter, aber syntaktisch
+ungültiger Wert löst `EnvironmentValueError` aus und verhindert damit einen
+Start mit unklarer oder abgeschwächter Konfiguration. Boolesche Werte
+akzeptieren ausschließlich `1`/`0`, `true`/`false`, `yes`/`no` und `on`/`off`,
+jeweils unabhängig von Groß- und Kleinschreibung. Integer müssen durch
+`int()` parsebar sein; sicherheits- oder betriebsrelevante Aufrufer erzwingen
+zusätzlich ihre explizite Untergrenze. Fließkommazahlen müssen endlich sein. Geschlossene
+Moduswerte werden über `env_choice` normalisiert und gegen eine typisierte
+Wertemenge geprüft. Unbekannte oder leere Modi dürfen weder protokolliert noch
+stillschweigend durch `celery`, `inline` oder einen anderen Default ersetzt
+werden.
+
+Python lädt eine `.env`-Datei ausschließlich für die eigenen
+`endoreg_db.config.settings.dev`- und `case_gen`-Profile und immer mit
+`override=False`. Test-, Produktions- und eingebettete Consumer-Settings laden
+keine Datei durch einen Bibliotheksimport; Devenv, Secretspec oder der
+Prozess-Supervisor müssen dort die Umgebung vor dem Python-Start bereitstellen.
+Bei Pfadvariablen ist eine explizit leere oder nur aus Leerzeichen bestehende
+Belegung ungültig und löst `EnvironmentValueError` aus. Nur eine vollständig
+fehlende Variable darf den dokumentierten Default verwenden. Insbesondere darf
+ein leerer geschützter Runtime-Root weder zum Repository-Root noch zu einem
+aus dem Text `None` abgeleiteten Pfad werden.
+Der Debug-Snapshot redigiert Broker-Adressen, Datenbanknamen, Storage- und
+Staging-Pfade sowie den Repository-Pfad. `DOTENV_LOADED` beschreibt nur einen
+tatsächlich erfolgreichen Development-Load und nicht bloß den Import des
+Pakets.
+
+Die Exception nennt nur Variablenname und erwarteten Typ. Der konfigurierte
+Rohwert wird weder in die Meldung noch in Logs übernommen. Deployment- und
+Consumer-Manifeste sind vor dem Rollout gegen die akzeptierten Schreibweisen
+zu prüfen. Abbruchkriterium ist jeder unerwartete Startup-Fehler mit einer
+bisher dokumentierten Schreibweise; Rollback ist die Rücknahme dieser
+Parserkohorte, nicht ein stiller Fallback auf einen Default.
 
 Die erste migrierte Kohorte ist DICOM/FHIR-Interoperabilität:
 

@@ -147,6 +147,25 @@ that intentionally changes a video above 50 frames per second to exactly 50
 frames per second. Import, reimport, storage normalization, and HLS
 materialization do not use that limit as an implicit fallback.
 
+Watcher handoff and transcoding durations are fail-closed configuration
+boundaries. `WATCHER_POLL_INTERVAL_SECONDS` must be a positive finite number,
+`WATCHER_STABLE_AFTER_SECONDS` must be a non-negative finite number, and
+`FFMPEG_TRANSCODE_TIMEOUT_SECONDS` must be a positive integer. Invalid values
+stop startup or the first responsible workflow instead of being silently
+clamped. The handoff service observes the complete configured stability window;
+it does not shorten a ten-second operator setting to an internal test-oriented
+cap. A zero stability window remains available for explicit test and already
+atomic handoff callers, while production watcher profiles use a positive
+window. The effective readiness deadline is never shorter than the stability
+window plus one polling interval.
+
+Watcher readiness events and propagated handoff errors never include the raw
+source path or filename. They use the shared structured-logging reference with
+a SHA-256 path digest and a non-identifying suffix, alongside size, modification
+time, and workflow-stage fields required for diagnosis. Operators correlate
+repeated events by digest; enabling verbose logging must not reveal intake
+directory topology or patient-derived filenames.
+
 ## Timeline and Frame-Quality Gate
 
 During import, the source timeline is persisted in

@@ -32,14 +32,21 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: review
-      reference: endoreg_db/urls/root_urls.py; endoreg_db/utils/api_urls.py; docs/api_route_test_matrix.md
+      reference: endoreg_db/root_urls.py; endoreg_db/utils/api_urls.py; docs/api_route_test_matrix.md
     - kind: document
       reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
-    note: Kanonische Mounts, technische Ownership, Supportvertrag und Entfernungsgates für /api/ und /base_api/
-      sind dokumentiert; die vorhandene Routenmatrix erfasst Hochrisikorouten, aber noch nicht jede produktionskritische
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py -q (19 route/startup contract tests passed)
+    - kind: command
+      reference: manage.py show_urls --format csv before/after URLConf consolidation (505 rows; byte-identical
+        SHA-256 38fd085855cdd0ed9e95602ef944efa8dfd05103c821771e6ee04f7646415b20)
+    note: endoreg_db.root_urls ist nun die einzige kanonische Root-URLConf; die stale Tracker-Referenz
+      auf die nie konfigurierte Dublette wurde korrigiert. Kanonische Mounts und Kompatibilitätsaliasse
+      sind byteidentisch geblieben. Die Routenmatrix erfasst weiterhin noch nicht jede produktionskritische
       Route mit einzeln ausgewiesenem Owner und Supportstatus.
     assessed_by: Codex
-    assessed_at: '2026-07-23T08:33:12.416708Z'
+    assessed_at: '2026-08-04T16:06:39.859018Z'
 - id: route_contracts
   category: functionality
   title: Kanonische Routen und Payloadverträge stimmen mit der Implementierung überein
@@ -47,10 +54,10 @@ definition_of_done:
   - Alle dokumentierten Routen lösen auf die erwarteten Views auf.
   - Backend- und Wire-Verträge verwenden snake_case; die zentrale lx-annotate-Clientgrenze darf Requests
     nach snake_case und Responses nach camelCase konvertieren, ohne endpoint-spezifische Sonderpfade.
-  - GET media/videos/{id}/fps/ und GET/POST media/videos/{id}/segments/normalize-fps/ validieren
-    die persistierte positive, endliche Bildrate ohne vollständiges Media-Staging. Fehlende oder ungültige
-    persistierte Werte liefern HTTP 422; dateibasierte Verifikation bleibt dem schweren Worker beziehungsweise
-    expliziten Integritätsworkflow vorbehalten.
+  - GET media/videos/{id}/fps/ und GET/POST media/videos/{id}/segments/normalize-fps/ validieren die persistierte
+    positive, endliche Bildrate ohne vollständiges Media-Staging. Fehlende oder ungültige persistierte
+    Werte liefern HTTP 422; dateibasierte Verifikation bleibt dem schweren Worker beziehungsweise expliziten
+    Integritätsworkflow vorbehalten.
   required: true
   verification:
     kind: command
@@ -70,8 +77,18 @@ definition_of_done:
         tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest
         tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest -q
       note: Metadatenbasierter FPS-/Normalisierungsstatus-Vertrag einschließlich HTTP-422-Fehlerpfad bestanden.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+        (25 documented routes matched 489 normalized backend routes; 10 referenced test files exist)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+        tests/docs/test_show_urls_contract.py tests/test_resolve.py tests/test_app_startup.py tests/scripts/test_check_documentation_governance.py
+        -q (22 passed)
+    note: Die kanonischen Routenverträge werden nun reproduzierbar aus der versionierten Markdown-Matrix
+      gegen die reale Django-URL-Ausgabe geprüft. Der Legacy-JSON-Eingabevertrag bleibt unterstützt; snake_case-
+      und FPS-Verträge bleiben durch die bestehenden fokussierten Evidenzen belegt.
     assessed_by: Codex
-    assessed_at: '2026-07-23T08:17:33.541985Z'
+    assessed_at: '2026-08-04T16:18:17.139615Z'
 - id: route_coverage
   category: testing
   title: Jede Hochrisikoroute besitzt einen belastbaren Contract-Test
@@ -173,10 +190,24 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: .devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
-      note: Exit-Code 0
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+        (exit 0; documented=25, backend=489, test_files=10)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+        -q (7 passed: missing matrix, malformed coverage, missing backend and legacy JSON compatibility)'
+    - kind: document
+      reference: docs/api_route_test_matrix.md#reproducible-contract-check
+    - kind: command
+      reference: SKIP_EXPENSIVE_TESTS=true RUN_VIDEO_TESTS=false USE_STUB_MODEL_META=true TEST_DB_REUSE=true
+        .devenv/state/venv/bin/pytest -q -m "not (expensive or video or pipeline or ai or slow or ffmpeg)"
+        -n auto --dist=loadscope (1327 passed, 1 skipped, 803 subtests passed)
+    note: Die Routenprüfung ist lokal und in CI ohne absolute lx-annotate-Tempdatei reproduzierbar. Fehlende
+      oder ungültige Matrix, fehlende Testdatei und dokumentierter Backend-Drift liefern eindeutige Route/Zeile
+      und einen Fehlercode; Legacy-JSON-Automation bleibt kompatibel. Die exakte Fast-Marker-Lane besteht
+      vollständig; der verschachtelte devenv-Task-Wrapper überschritt zuvor sein Laufzeitfenster, ohne
+      einen Pytest-Fehler zu melden.
     assessed_by: Codex
-    assessed_at: '2026-07-23T08:18:03.368602Z'
+    assessed_at: '2026-08-04T16:34:54.829528Z'
 - id: api_documentation
   category: documentation
   title: API-Vertrag ist für Consumer aktuell und eindeutig

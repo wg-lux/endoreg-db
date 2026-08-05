@@ -67,6 +67,13 @@ let
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
+  FAST_TEST_ENV = ''
+    export SKIP_EXPENSIVE_TESTS=true
+    export RUN_VIDEO_TESTS=false
+    export USE_STUB_MODEL_META=true
+    export TEST_DB_REUSE=true
+  '';
+  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' -n auto --dist=loadscope";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
   COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
@@ -291,12 +298,13 @@ in
       exec = ".devenv/state/venv/bin/pytest tests/services/test_dicom_manifest_backfill.py -q";
     };
     "quality:code-regression" = {
-      description = "Run the versioned quality guards and fast regression lane";
+      description = "Run quality guards and the fast lane in the synced project venv";
       exec = ''
         .devenv/state/venv/bin/pyright
         .devenv/state/venv/bin/python scripts/check_dead_code.py
         .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
-        devenv tasks run test:fast
+        ${FAST_TEST_ENV}
+        .devenv/state/venv/bin/pytest -q ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "celery:check" = {
@@ -374,11 +382,8 @@ in
       description = "Run the fast PR pytest lane with live logging";
       exec = ''
         devenv tasks run test:sync
-        export SKIP_EXPENSIVE_TESTS=true
-        export RUN_VIDEO_TESTS=false
-        export USE_STUB_MODEL_META=true
-        export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -m '${FAST_TEST_MARKER}' -n auto --dist=loadscope
+        ${FAST_TEST_ENV}
+        pytest -s -o log_cli=true --log-level=INFO ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "test:heavy" = {

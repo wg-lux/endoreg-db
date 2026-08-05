@@ -2300,11 +2300,9 @@ models:
   rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
-  - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - endoreg_db/models/label/label.py:Label
   - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
-  - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - api:endoreg_db/serializers/label_video_segment/frame_annotation_bulk.py
   - api:endoreg_db/serializers/label_video_segment/frame_box_annotation.py
   - api:endoreg_db/serializers/label_video_segment/label/label.py
@@ -2441,11 +2439,9 @@ models:
   rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
-  - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - endoreg_db/models/label/label_video_segment/label_video_segment.py:LabelVideoSegment
   - lx-dtypes:lx_dtypes.models.contracts.label_video_segment_serializer
   boundary_consumers:
-  - api:endoreg_db/serializers/Frames_NICE_and_PARIS_classifications.py
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - api:endoreg_db/views/media/patient_media_timeline.py
   - api:endoreg_db/views/media/video_media.py

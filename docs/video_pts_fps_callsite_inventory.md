@@ -145,7 +145,13 @@ nicht reimportiert.
 | `services/segment_sync.py` | **migriert** | Erstellung und Änderungsvergleich verwenden persistierte PTS. |
 | `services/video_storage/timelines.py` | **migriert** | Normalisierungsevidenz materialisiert Segmentgrenzen mit `pts_v1`; eine variable Bildrate ohne vollständige Boundary-PTS schlägt fehl. |
 | `services/video_files/frames.py:extract_video_frame_range_by_timestamps` | **migriert** | Timestampbereiche werden zentral aufgelöst und mit Timestamp und Frameindex strukturiert protokolliert. |
-| `utils/extract_specific_frames.py` und `serializers/Frames_NICE_and_PARIS_classifications.py` | **bedingt sicher** | Auswahl erfolgt über Quell-Decode-Indizes. Ein Legacy-`fps`-Argument wird ignoriert; diese Pfade erzeugen selbst keine klinischen Timestamps. |
+
+Die zuvor hier geführten Pfade `utils/extract_specific_frames.py` und
+`serializers/Frames_NICE_and_PARIS_classifications.py` wurden am 4. August 2026
+als unmontiertes Legacy-Experiment entfernt. Weder URL-Routing noch statische,
+dynamische oder verfügbare repositoryübergreifende Verbraucher verwiesen auf
+diese Implementierung. Die autoritativen PTS-basierten Extraktionsservices und
+persistierten Framekoordinaten bleiben unverändert.
 
 Regressionsnachweise liegen insbesondere in
 `tests/services/test_video_temporal_mapping.py`,

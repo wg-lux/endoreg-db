@@ -8,6 +8,22 @@ This matrix tracks high-risk API routes and the backend tests that exercise them
 Routes are shown with the canonical `/endoreg-api/` mount. `/api/` remains a
 compatibility alias during migration.
 
+## Reproducible Contract Check
+
+Run the versioned matrix against Django's real URL inventory from the repository
+root:
+
+```bash
+.devenv/state/venv/bin/python scripts/check_route_matrix.py
+```
+
+The check fails when this document is missing, malformed, references a missing
+test file, contains duplicate canonical routes, or documents a route that is
+absent from `manage.py show_urls --format csv`. It no longer depends on an
+unversioned lx-annotate temporary file. `--matrix <legacy.json>` remains
+supported for older automation, while `--urls-csv <file>` permits deterministic
+offline validation of this Markdown contract.
+
 ## Mount Ownership And Compatibility
 
 | Mount | Owner | Support contract | Removal gate |

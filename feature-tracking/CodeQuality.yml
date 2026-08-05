@@ -45,24 +45,26 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv tasks run quality:dead-code (35 reviewed Vulture findings; 15 confirmed deletion
-        candidates; 20 candidates total; no new, stale, or expired findings)
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (35 reviewed
+        findings; 0 confirmed deletion candidates; 5 compatibility candidates; no new, stale, or expired
+        entries)
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py -q
-        (5 passed)
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: .devenv/state/venv/bin/pyright scripts/check_dead_code.py tests/scripts/test_check_dead_code.py
-        (0 errors)
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
+        passed)
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
         (startup-smoke ok; 7 root URL patterns)
     - kind: document
       reference: quality/dead_code_baseline.yml
-    note: The existing baseline separates 35 reviewed Vulture contracts from 15 confirmed deletion candidates
-      and 5 compatibility candidates. Each candidate records path/lines, consumer evidence, risk, action,
-      owner, and review date; no application code has been removed.
+    note: Die Baseline klassifiziert 35 geprüfte Vulture-Verträge und fünf separat untersuchte Kompatibilitätskandidaten.
+      Nach sechs kleinen, verifizierten Entfernungskohorten verbleibt kein bestätigter Löschkandidat.
+      Die fünf öffentlichen oder repositoryübergreifend potenziell konsumierten Verträge bleiben bis zur
+      Consumer-Migration bewusst erhalten.
     assessed_by: Codex
-    assessed_at: '2026-07-31T10:28:39.427146Z'
+    assessed_at: '2026-08-04T16:06:33.756585Z'
 - id: dead_code_reduction
   category: functionality
   title: Bestätigter toter Code ist sicher entfernt oder kontrolliert deprecatet
@@ -80,15 +82,30 @@ definition_of_done:
       Verbraucher abgleichen.
     timeout_seconds: 600
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: command
-      reference: .devenv/state/venv/bin/pyright (0 errors after removing the ProcessingHistory if False
-        typing branch)
-    note: First high-confidence cohort removed one artificial unreachable branch without replacing it
-      with an ignore; broader symbol and compatibility cleanup remains.
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py after
+        six cleanup cohorts (0 confirmed deletion candidates; 5 compatibility candidates)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after the canonical Root URLConf
+        cleanup (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
+        passed)
+    - kind: command
+      reference: manage.py show_urls --format csv before/after duplicate Root URLConf removal (505 rows;
+        byte-identical SHA-256 38fd085855cdd0ed9e95602ef944efa8dfd05103c821771e6ee04f7646415b20)
+    - kind: review
+      reference: Internal Django/settings/package search plus lx-annotate, LuxNix, lx-data-models and
+        lx-anonymizer consumer searches found no endoreg_db.urls.root_urls consumer.
+    note: Sechs kleine, geprüfte Kohorten haben alle bestätigten Löschkandidaten entfernt. Die letzte
+      Kohorte entfernt die divergente, nie konfigurierte endoreg_db.urls.root_urls und schützt endoreg_db.root_urls
+      als einzige kanonische URLConf durch einen Architekturtest. Öffentliche Legacy-Query-, Download-
+      und API-Mount-Verträge bleiben als fünf explizite Kompatibilitätskandidaten erhalten.
     assessed_by: Codex
-    assessed_at: '2026-07-17T13:28:04.928186Z'
+    assessed_at: '2026-08-04T16:06:36.735299Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
@@ -156,11 +173,40 @@ definition_of_done:
       reference: endoreg_db/services/jobs/error_handling.py
     - kind: command
       reference: pytest DICOM backfill and Celery task boundaries (22 passed)
-    note: DICOM/FHIR decken HTTP und Integration ab; der DICOM-Backfill besitzt nun eine sichere zentrale
-      Command-Übersetzung und MediaOperationDeferred eine einheitliche Celery-Retry-Policy mit strukturiertem
-      Audit. Weitere Altbestand-Commands und Jobs bleiben zu migrieren.
+    - kind: code
+      reference: endoreg_db/utils/names.py; typings/gender_guesser/detector.pyi
+    - kind: test
+      reference: tests/utils/test_names.py::test_guess_name_gender_propagates_unexpected_detector_failure
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+        -q (14 passed)
+    - kind: code
+      reference: endoreg_db/config/env.py::EnvironmentValueError; env_bool; env_int; env_float
+    - kind: test
+      reference: tests/environment/test_env.py (typed parser defaults, accepted values, safe failures,
+        chaining, finite-float contract)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
+    - kind: code
+      reference: endoreg_db/config/env.py::env_choice; env_int(minimum=...); typed job-mode getters
+    - kind: code
+      reference: endoreg_db/services/jobs/video_reimport_jobs.py; endoreg_db/services/jobs/report_llm_jobs.py
+        (central parser adapters; no private fallback parsers)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 296s after typed job-configuration
+        cohort)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_video_reimport_jobs.py
+        tests/services/test_report_llm_jobs.py tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
+        tests/services/test_model_training_jobs.py tests/services/test_model_training_jobs_unit.py tests/test_celery_config_checks.py
+        tests/test_app_startup.py -q (148 passed)
+    note: Der zentrale Environment-Adapter validiert nun zusätzlich geschlossene, literal-typisierte Job-
+      und Frame-Source-Modi sowie explizite numerische Untergrenzen. Report-LLM und Video-Reimport verwenden
+      denselben Adapter statt privater stiller Parser. Ungültige konfigurierte Modi, negative Dispatch-Delays,
+      zu kurze Leases und nicht positive Default-FPS schlagen datensparsam fehl; fehlende Variablen behalten
+      ihre bisherigen Defaults. Weitere Altbestandsgrenzen bleiben zu migrieren.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:33:49.850571Z'
+    assessed_at: '2026-08-04T17:28:48.164890Z'
 - id: quality_regression_guards
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
@@ -181,35 +227,51 @@ definition_of_done:
     - quality:code-regression
     timeout_seconds: 1800
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: command
-      reference: devenv tasks run quality:dead-code (38 reviewed findings; no new, stale, or expired entries)
+      reference: 'devenv tasks run quality:code-regression (passed in 374s: Pyright, dead-code guard,
+        quality-boundary guard and fast marker lane)'
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/app/test_model_import_boundaries.py
-        tests/models/metadata/file_import/test_create_video_file.py tests/models/metadata/file_import/test_create_report_file.py
-        -q (25 passed)
+      reference: Direct exact fast marker lane (1327 passed, 1 skipped, 36 warnings, 803 subtests passed
+        in 291.82s)
     - kind: command
-      reference: .devenv/state/venv/bin/pyright (0 errors)
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
+        tests/scripts/test_check_route_matrix.py -q (10 task/route guard tests passed across focused runs)
     - kind: command
-      reference: pytest DICOM/FHIR services and interoperability response mapper (17 passed)
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (clean:
+        35 reviewed findings, 0 confirmed deletion candidates, 5 compatibility candidates)'
     - kind: command
-      reference: devenv tasks run quality:boundaries (463 broad handlers and 146 type suppressions reviewed;
-        clean)
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 409 reviewed broad handlers, 141 reviewed type suppressions)'
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
-        tests/scripts/test_check_dead_code.py -q (7 passed)
-    - kind: command
-      reference: .devenv/state/venv/bin/pyright (0 errors, 0 warnings)
+      reference: nix-instantiate --parse devenv.nix (passed)
     - kind: document
-      reference: quality/quality_boundary_baseline.yml
+      reference: docs/code_quality.md#reproduzierbarer-qualitätslauf
     - kind: command
-      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
-    note: Dead-Code- und Boundary-Guards bleiben sauber; die zweite Exception-Kohorte deckt Command-Exitcode,
-      Chaining, drei Retry-Pfade, Unknown-Error-Passthrough und Importkompatibilität ab. Der restliche
-      Altbestand bleibt schrittweise zu reduzieren.
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after typed gender_guesser boundary
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 408 broad handlers, 140 type suppressions)'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+        -q (14 passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 336s after typed environment-parser
+        cohort)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 406 broad handlers, 140 type suppressions)'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/test_app_startup.py
+        tests/test_celery_config_checks.py tests/services/test_environment_readiness_unit.py tests/utils/test_storage_profile.py
+        tests/services/test_video_storage_normalization.py -q (102 passed)
+    note: Der offizielle Qualitätslauf bleibt verifiziert. Die Environment-Parser-Kohorte reduziert den
+      Bestand auf 406 breite Handler bei unverändert 140 Typunterdrückungen; parametrische Normal-, Invalid-
+      und Non-Finite-Tests sowie Startup- und Storage-Regressionen schützen die fail-loud Semantik.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:33:52.295400Z'
+    assessed_at: '2026-08-04T17:10:25.032805Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
@@ -238,11 +300,54 @@ definition_of_done:
       reference: tests/services/test_dicom_manifest_backfill.py::test_command_maps_backfill_failure_to_safe_stable_contract
     - kind: test
       reference: tests/test_tasks.py::test_job_boundary_preserves_unknown_error_without_retry
-    note: Command-Ausgabe und Job-Logs der zweiten Kohorte sind datensparsam; interne Ursachen bleiben
-      verkettet, Objektidentitäten werden gehasht und unbekannte Fehler nicht automatisch erneut versucht.
-      Weitere Security- und Storage-Grenzen bleiben.
+    - kind: test
+      reference: tests/utils/test_names.py (six valid detector outcomes, real unknown result, unexpected
+        detector failure propagation)
+    - kind: test
+      reference: tests/environment/test_env.py (invalid values fail closed; messages disclose no configured
+        raw value)
+    - kind: review
+      reference: Tracked LuxNix and lx-annotate manifests use supported boolean spellings; lx-data-models
+        has no matching declarations
+    - kind: code
+      reference: endoreg_db/config/env.py::_dotenv_loading_allowed; snapshot
+    - kind: test
+      reference: tests/environment/test_env.py (subprocess-isolierte Dotenv-Quellpräzedenz und Snapshot-Redaktion)
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/deployment/test_prod_settings_contract.py
+        tests/test_app_startup.py tests/services/test_environment_readiness_unit.py tests/test_celery_config_checks.py
+        tests/utils/test_paths.py -q (101 passed)
+    - kind: test
+      reference: SKIP_EXPENSIVE_TESTS=true RUN_VIDEO_TESTS=false USE_STUB_MODEL_META=true TEST_DB_REUSE=true
+        .devenv/state/venv/bin/pytest -q -m 'not (expensive or video or pipeline or ai or slow or ffmpeg)'
+        -n auto --dist=loadscope (1374 passed, 1 skipped, 803 subtests passed)
+    - kind: review
+      reference: LuxNix und lx-annotate injizieren Produktionsumgebungen bereits über Secretspec, systemd
+        oder Devenv; keine Consumer-Manifeständerung erforderlich
+    - kind: code
+      reference: endoreg_db/config/env.py::_configured_path_value; build_protected_runtime_env; env_path
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/utils/test_paths.py
+        tests/deployment/test_prod_settings_contract.py tests/test_app_startup.py tests/services/test_environment_readiness_unit.py
+        -q (104 passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 391s)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+        tests/system/test_config_unit.py -q (32 passed)
+    - kind: command
+      reference: nix-instantiate --parse /home/admin/dev/lx-annotate/devenv.nix (passed)
+    - kind: review
+      reference: LuxNix supplies explicit protected roots; lx-annotate resolves its empty Secretspec sentinel
+        to DATA_DIR in devenv.nix before exporting the Python runtime environment
+    note: Die zentrale Pfadkonfiguration unterscheidet nun strikt zwischen nicht gesetzten und explizit
+      leeren Werten. Ein fehlender geschützter Runtime-Root wird deterministisch als <base>/data abgeleitet;
+      leere oder nur aus Leerzeichen bestehende Werte für Runtime-, Storage-, Daten-, Medien-, Asset-,
+      Static- oder Staging-Pfade schlagen mit einem datensparsamen EnvironmentValueError fehl und können
+      weder den Repository-Root noch einen aus None abgeleiteten Pfad aktivieren. EndoReg-, lx-annotate-
+      und Nix-Verträge sind grün; weitere Security- und Storage-Grenzen bleiben zu prüfen.
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:33:54.821735Z'
+    assessed_at: '2026-08-04T18:03:55.627863Z'
 - id: incremental_rollout
   category: operations
   title: Qualitätsrefactorings besitzen einen kontrollierten Rollout- und Rollbackpfad
@@ -307,8 +412,10 @@ definition_of_done:
       reference: endoreg_db/management/command_errors.py
     - kind: code
       reference: endoreg_db/services/jobs/error_handling.py
-    note: Die Dokumentation enthält nun neben HTTP/Integration ein vollständiges Command-/Job-Beispiel
-      mit Exitcode, Retry-Policy, Chaining, sicheren Logs, Kompatibilität und Rollback. Weitere Altbestandsmigrationen
-      bleiben.
+    - kind: document
+      reference: docs/code_quality.md#konfigurationsgrenze
+    note: 'Die Dokumentation beschreibt nun zusätzlich die zentrale Environment-Grenze: Defaults nur für
+      nicht gesetzte Variablen, geschlossene akzeptierte Bool-Schreibweisen, endliche Zahlen, datensparsame
+      Fehlertexte, Consumer-Prüfung, Abbruchkriterium und Rollback. Weitere Altbestandsmigrationen bleiben.'
     assessed_by: Codex
-    assessed_at: '2026-07-17T14:34:00.318493Z'
+    assessed_at: '2026-08-04T17:10:26.541207Z'

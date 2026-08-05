@@ -85,8 +85,20 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py
+        tests/services/test_report_materialization_contracts.py tests/views/report/test_report_stream.py
+        tests/services/test_report_llm_jobs.py -q (21 passed)
+    - kind: test
+      reference: tests/services/test_report_llm_jobs.py (positive inline/celery workflows plus fail-closed
+        invalid mode and negative dispatch delay)
+    note: Die im Kriterium festgelegte fokussierte Lane für Persistenz, Materialisierung, Streaming und
+      LLM-Jobs besteht vollständig. Positive Inline-/Celery-Pfade und negative Konfigurationsgrenzen sind
+      enthalten; die separate manuelle Betriebsreife bleibt im Kriterium operational_readiness offen.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T17:28:51.919948Z'
 - id: report_template_selection_consistency
   category: functionality
   title: Berichtsvorlagen bleiben zwischen Auswahl, Draft und Laufzeitvalidierung konsistent

@@ -41,8 +41,8 @@ definition_of_done:
     CPU-Profil verwendet libx264 mit Constant Rate Factor; das NVIDIA-NVENC-Profil verwendet explizite
     variable Bitratenregelung mit Constant-Quality-Wert (`-cq`) und niemals libx264-CRF-Argumente.
   - Das NVIDIA-NVENC-Profil startet nur, wenn der dedizierte FFmpeg-Worker genau ein deklarativ sichtbares
-    Grafikprozessor-Gerät besitzt und ein realer Encoder-Preflight erfolgreich ist. Fehlende, mehrere oder
-    unzugängliche Geräte sowie ein fehlender `h264_nvenc`-Encoder schlagen laut fehl; ein automatischer
+    Grafikprozessor-Gerät besitzt und ein realer Encoder-Preflight erfolgreich ist. Fehlende, mehrere
+    oder unzugängliche Geräte sowie ein fehlender `h264_nvenc`-Encoder schlagen laut fehl; ein automatischer
     CPU-Fallback ist unzulässig.
   - Der Name des verwendeten HLS-Encoderprofils wird mit dem HLS-Artefakt persistiert. Ein deklarativer
     Profilwechsel invalidiert nur das reproduzierbare HLS-Derivat und erzwingt eine neue atomare Generation,
@@ -222,8 +222,8 @@ definition_of_done:
     Rust-Worker- und GPU-Budgets begrenzen die Parallelität über den gesamten gerichteten azyklischen
     Graphen; Datenbank-Leases, Fencing, Publikation und Cleanup bleiben in den autoritativen Python-Services.
   - Native Batch-Dateiidentitäten verwenden einen versuchslokalen, explizit begrenzten Rayon-Threadpool,
-    geben den Python Global Interpreter Lock frei und bewahren Eingabereihenfolge sowie fail-closed
-    Mutationsprüfung. Die Zahl der Rayon-Worker überschreitet nie die dem Snakemake-Job zugewiesenen Threads.
+    geben den Python Global Interpreter Lock frei und bewahren Eingabereihenfolge sowie fail-closed Mutationsprüfung.
+    Die Zahl der Rayon-Worker überschreitet nie die dem Snakemake-Job zugewiesenen Threads.
   - Der überwachte Offline-Batch-Runner erzwingt eine prozessgebundene lokale Einzelinstanz-Sperre innerhalb
     des freigegebenen Workflow-Pfads, prüft die Pflichtbudgets gegen jeden konfigurierten Job und beendet
     sowie reapet die vollständige Snakemake-Prozessgruppe bei Signal oder Laufzeitüberschreitung mit begrenzter
@@ -283,22 +283,46 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pyright endoreg_db/services/offline_batch_runner.py
         endoreg_db/management/commands/run_offline_batch.py tests/services/test_offline_batch_runner.py
         tests/management/commands/test_run_offline_batch.py (0 errors); devenv shell -- .devenv/state/venv/bin/pytest
-        tests/services/test_offline_batch_runner.py tests/management/commands/test_run_offline_batch.py -q
-        (15 passed)
-    note: Nachgewiesen sind Datenbankzeit-Lease, Heartbeat und monotones Fencing auf UploadJob, eingezäunte
-      Task-Zustandswechsel einschließlich Fehlerbereinigung, versuchseigene Kandidaten, symlink-freier
-      Watcher-Handoff und eine erneute Besitzprüfung unmittelbar vor der kanonischen Storage-Veröffentlichung.
-      Alle endoreg-db-Anwendungswege delegieren OCR nun an den lx-anonymizer-FrameOCR-Vertrag; pro gesampeltem
-      Video wird eine eigene Instanz verwendet und das frühere endoreg_db/utils/ocr.py ist entfernt. lx-anonymizer
-      lehnt konkurrierende FrameCleaner-Instanznutzung ab, beendet FFmpeg-Prozessgruppen bei Timeout und
-      prüft native Pflicht-Capabilities fail-closed. Der optionale Snakemake-Pfad besitzt nun einen typisierten,
-      fail-closed Einzelinstanz-Runner mit Pflichtbudgetprüfung, begrenzter Prozessgruppenbeendigung und
-      alarmierbaren PHI-freien Laufzusammenfassungen. Offen bleiben ein kurzer atomarer, durch denselben
-      Fencing-Token geschützter Datenbank-/Generationswechsel, produktionsnahe Mehrprozess-/Crash-/Disk-full-Failure-Injection,
-      unmittelbare Lease-Verlust-Cancellation in allen lx-anonymizer-Unterprozessen, vollständige Phasenmetriken
-      und Betriebs-/Security-Abnahme.
+        tests/services/test_offline_batch_runner.py tests/management/commands/test_run_offline_batch.py
+        -q (15 passed)
+    - kind: code
+      reference: endoreg_db/services/jobs/video_reimport_jobs.py (typed centralized mode and bounded dispatch-delay
+        configuration)
+    - kind: test
+      reference: tests/services/test_video_reimport_jobs.py::test_video_reimport_job_mode_rejects_unsupported_value;
+        test_video_reimport_dispatch_delay_rejects_negative_value
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_reimport_jobs.py
+        tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
+        -q (included in 148 passed focused job/configuration lane)
+    - kind: code
+      reference: endoreg_db/config/env.py::get_ffmpeg_transcode_timeout_seconds; get_watcher_poll_interval_seconds;
+        get_watcher_stable_after_seconds
+    - kind: code
+      reference: endoreg_db/services/hub/watcher_handoff.py::_validated_duration_seconds; wait_for_watcher_file_ready
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_watcher_storage_import.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/services/test_hls_media.py tests/utils/video/test_ffmpeg_wrapper.py
+        -q (154 passed, 4 subtests passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 333s)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+        tests/ingestion/test_full_video_import.py -q (5 passed)
+    - kind: test
+      reference: /home/admin/luxnix/.devenv/state/venv/bin/pytest tests/lx-annotate/test_file_mover_filewatcher_contract.py
+        tests/lx-annotate/test_lx_annotate_filewatcher_wheel_key_env.py -q (20 passed)
+    - kind: document
+      reference: docs/video_storage_normalization.md#transcoding-steps-and-idempotency
+    note: 'Watcher- und Transcode-Zeitgrenzen sind nun fail-closed: Polling muss positiv und endlich,
+      die Stabilitätsdauer nichtnegativ und endlich sowie der FFmpeg-Timeout positiv ganzzahlig sein.
+      Der autoritative Handoff-Service verkürzt die konfigurierte Stabilitätsdauer nicht mehr auf eine
+      interne Ein-Sekunden-Grenze und validiert auch direkte Aufrufer; eine Null-Stabilitätsdauer bleibt
+      für explizite atomare Test-Handoffs zulässig. EndoReg-, lx-annotate- und LuxNix-Verträge sind grün.
+      Produktionsnahe Last-, Abbruch- und Failure-Injection-Evidenz sowie formale Owner-Abnahme bleiben
+      offen.'
     assessed_by: Codex
-    assessed_at: '2026-07-27T08:54:22.647069Z'
+    assessed_at: '2026-08-04T18:21:18.592686Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
@@ -351,10 +375,10 @@ definition_of_done:
     die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
   - Nominelle rationale Bildrate, gemessene durchschnittliche Bildrate und Präsentationszeitstempel-Timeline
     sind getrennte typisierte Werte. Eine HLS-Ausgabe mit nominell 50/1 und gemessen 50/1 darf gegenüber
-    einer gemessen 49,8549-FPS-Quelle ausschließlich dann akzeptiert werden, wenn die aktuelle
-    `annotation_fps_resample_v1`-Provenienz, der Content-Hash der Processed-Generation, Frameanzahl,
-    Dauer, Time-Base, streng monotone konstante PTS-Abstände sowie alle persistierten Segment- und
-    extrahierten Framegrenzen dieselbe 50-FPS-Timeline beweisen.
+    einer gemessen 49,8549-FPS-Quelle ausschließlich dann akzeptiert werden, wenn die aktuelle `annotation_fps_resample_v1`-Provenienz,
+    der Content-Hash der Processed-Generation, Frameanzahl, Dauer, Time-Base, streng monotone konstante
+    PTS-Abstände sowie alle persistierten Segment- und extrahierten Framegrenzen dieselbe 50-FPS-Timeline
+    beweisen.
   - Fehlende oder fremde FPS-Provenienz, ein abweichender Generation-Hash, Frameverlust, Frameduplikation,
     echte PTS- beziehungsweise Grenzendrift und variable Bildrate ohne autoritative PTS verhindern die
     HLS-Veröffentlichung weiterhin; die allgemeine FPS-Toleranz wird dafür nicht erweitert.
@@ -612,17 +636,17 @@ definition_of_done:
   - Konfigurierbare Warn- und Stoppschwellen verhindern, dass Transcoding oder HLS-Materialisierung den
     kritischen Storage erschöpfen.
   - Ein wegen unzureichenden Storage-Headrooms vor der Medienanlage abgebrochener Import bewahrt seine
-    verschlüsselte verwaltete Quelle, erscheint center-begrenzt in der Anonymisierungsübersicht als
-    wiederholbar und kann nach Freigabe von Speicher automatisch oder explizit erneut angestoßen werden;
-    der Kapazitätsfehler führt nicht zur Quarantäne.
+    verschlüsselte verwaltete Quelle, erscheint center-begrenzt in der Anonymisierungsübersicht als wiederholbar
+    und kann nach Freigabe von Speicher automatisch oder explizit erneut angestoßen werden; der Kapazitätsfehler
+    führt nicht zur Quarantäne.
   - Gewöhnliche Laufzeit-, Transcoding-, Worker- und Dispatchfehler verschieben eine bereits verschlüsselt
     verwaltete Importquelle nicht in die Quarantäne. Sie bewahren die unveränderte Quelle und verwenden
     begrenzte, beobachtbare Wiederholungsversuche; nach Ausschöpfung bleibt die Quelle für eine explizite
     Betreiberentscheidung erhalten.
   - Quarantäne bleibt auf seltene Trust-Boundary- oder Integritätsfälle begrenzt, in denen eine Quelle
-    nicht sicher als verwalteter Import weiterverarbeitet werden darf, insbesondere abgelehnte
-    voranonymisierte Drops. Profil-, Timeline-, Hash- und Referenzfehler bleiben fail-closed und werden
-    durch diese Einschränkung weder akzeptiert noch mit einem schwächeren Verarbeitungspfad umgangen.
+    nicht sicher als verwalteter Import weiterverarbeitet werden darf, insbesondere abgelehnte voranonymisierte
+    Drops. Profil-, Timeline-, Hash- und Referenzfehler bleiben fail-closed und werden durch diese Einschränkung
+    weder akzeptiert noch mit einem schwächeren Verarbeitungspfad umgangen.
   - Nach jedem Batch werden Zähler aus Datenbank und Dateisystem abgeglichen; Abweichungen stoppen weitere
     destruktive Schritte.
   required: true
@@ -645,15 +669,15 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_ingest_idempotency_quarantine.py
         tests/services/test_import_monitoring.py tests/views/anonymization/test_anonymization_overview.py
         -q (24 passed); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py
-        tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py
-        -q (32 passed)
+        tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py -q
+        (32 passed)
     note: Kapazitätsprojektion, Warn-/Stoppschwellen, Rollen- und Statuszähler, batch_id, strukturierte
       Ergebnislogs und Fail-closed-Referenzabgleich sind implementiert. Storage-blockierte Neuimporte
-      bewahren jetzt ihre verwaltete Quelle, vermeiden Quarantäne, erscheinen center-begrenzt in der
-      Übersicht und unterstützen automatischen sowie expliziten Retry. Gewöhnliche Fehler bei verwalteten
-      Videoimporten und Watcher-Handoffs bewahren die Importquelle nun ebenfalls und verwenden begrenzte
-      Wiederholungen statt Quarantäne; abgelehnte voranonymisierte Trust-Boundary-Drops bleiben im
-      Quarantäneprozess. Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
+      bewahren jetzt ihre verwaltete Quelle, vermeiden Quarantäne, erscheinen center-begrenzt in der Übersicht
+      und unterstützen automatischen sowie expliziten Retry. Gewöhnliche Fehler bei verwalteten Videoimporten
+      und Watcher-Handoffs bewahren die Importquelle nun ebenfalls und verwenden begrenzte Wiederholungen
+      statt Quarantäne; abgelehnte voranonymisierte Trust-Boundary-Drops bleiben im Quarantäneprozess.
+      Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
     assessed_by: Codex
     assessed_at: '2026-07-27T13:32:14Z'
 - id: operator_documentation
