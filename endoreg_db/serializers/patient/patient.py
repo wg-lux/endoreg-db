@@ -36,6 +36,8 @@ class PatientSerializer(serializers.ModelSerializer[Patient]):
             allow_null=True,
         ),
     )
+    email = serializers.CharField(required=False, allow_blank=True, default="")
+    phone = serializers.CharField(required=False, allow_blank=True, default="")
     center = serializers.CharField(source="center.display_name", read_only=True)
     center_key = cast(
         CenterKeyRelatedField,
@@ -84,6 +86,12 @@ class PatientSerializer(serializers.ModelSerializer[Patient]):
             return obj.age()
         return None
 
+    def to_representation(self, instance: Patient) -> dict[str, object]:
+        payload = super().to_representation(instance)
+        payload["email"] = payload.get("email") or ""
+        payload["phone"] = payload.get("phone") or ""
+        return payload
+
     def validate_first_name(self, value: str) -> str:
         """Validiert den Vornamen"""
         if not value or not value.strip():
@@ -106,6 +114,7 @@ class PatientSerializer(serializers.ModelSerializer[Patient]):
 
     def validate_email(self, value: str) -> str:
         """Validiert die E-Mail-Adresse"""
+        value = (value or "").strip()
         if value and "@" not in value:
             raise serializers.ValidationError("Ungültige E-Mail-Adresse")
         return value
