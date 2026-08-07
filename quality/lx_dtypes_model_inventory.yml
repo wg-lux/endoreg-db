@@ -200,7 +200,7 @@ models:
   boundary_consumers: []
   dynamic_model_references: []
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.report.ReportMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_report_file_meta_payload
   exception_owner: null
@@ -229,7 +229,7 @@ models:
   boundary_consumers: []
   dynamic_model_references: []
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.report.ReportMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_report_file_meta_payload
   exception_owner: null
@@ -356,7 +356,7 @@ models:
   - service:endoreg_db/services/report_persistence.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.report.ReportMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_report_file_meta_payload
   exception_owner: null
@@ -387,7 +387,7 @@ models:
   boundary_consumers: []
   dynamic_model_references: []
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.report.ReportMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_report_file_meta_payload
   exception_owner: null
@@ -1075,7 +1075,7 @@ models:
   - schema:endoreg_db/schemas/persisted_json.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.report.ReportMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_report_file_meta_payload
   exception_owner: null
@@ -4119,8 +4119,7 @@ models:
   - endoreg_db/services/raw_pdf_files/state.py
   - endoreg_db/services/raw_pdf_files/validation.py
   module_lx_dtypes_imports:
-  - lx_dtypes.models.contracts.json_types.JsonNull
-  - lx_dtypes.models.contracts.json_types.JsonValue
+  - lx_dtypes.models.contracts.pdf_file.PdfFileMetaJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_raw_pdf_meta_payload
   exception_owner: null

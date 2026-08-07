@@ -135,6 +135,7 @@ tf.close()"
 	@echo \"\\nCheck that lx-data-models/ and tools/report_pdf_renderer_rust/ are absent from the sdist listing above.\"
 
 pypi-clean:
+	@ ruff format
 	@rm -rf $(PYPI_DIST_DIR) build *.egg-info
 	@echo \"Cleaned dist/build artifacts\"
 

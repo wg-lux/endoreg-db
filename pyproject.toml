@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.8.9"
+version = "1.0.9.0"
 requires-python = ">=3.12,<3.13"
 license = {file = "LICENSE"}
 
@@ -184,6 +184,11 @@ allow_redefinition = true
 warn_return_any = false
 warn_unused_ignores = true
 show_error_codes = true
+
+[tool.django-stubs]
+django_settings_module = "endoreg_db.config.settings.test"
+strict_settings = true
+strict_model_abstract_attrs = true
 
 [[tool.mypy.overrides]]
 module = [
