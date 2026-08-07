@@ -8,16 +8,17 @@ from typing import TYPE_CHECKING, TypeAlias, Any
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from django.db.models import QuerySet
 
 if TYPE_CHECKING:
     from ...medical.patient.patient_examination import PatientExamination
     from ...medical.patient.patient_lab_sample import PatientLabSample
     from ...medical.patient.patient_lab_value import PatientLabValue
+    from ...report.patient_examination_report import PatientExaminationReport
     from ...medical.patient.patient_medication import PatientMedication
     from ...medical.patient.patient_medication_schedule import (
         PatientMedicationSchedule,
     )
-
 NoCaseEndDate: TypeAlias = NoneType
 CaseEndDate: TypeAlias = datetime | NoCaseEndDate
 
@@ -58,6 +59,9 @@ class Case(models.Model):
         related_name="cases",
         help_text="The examinations included in this case.",
     )
+    # Case media/report access is intentionally derived via case -> patient_examinations.
+    # This avoids duplicate case-level links and keeps attachment ownership anchored
+    # at PatientExamination for videos, reports, PDFs, and frames.
     patient_medications: "models.ManyToManyField[PatientMedication, PatientMedication]" = models.ManyToManyField(
         "PatientMedication", related_name="cases", blank=True
     )
@@ -105,9 +109,6 @@ class Case(models.Model):
         auto_now=True, help_text="The date and time the case was last updated."
     )
 
-    if TYPE_CHECKING:
-        pass
-
     class Meta:
         ordering = ["-start_date", "patient"]
         verbose_name = "Case"
@@ -150,6 +151,15 @@ class Case(models.Model):
         self.is_closed = False
         self.is_active = True
         self.save()
+
+    @property
+    def reports(self) -> QuerySet["PatientExaminationReport"]:
+        """Return all reports attached to examinations in this case."""
+        from ...report.patient_examination_report import PatientExaminationReport
+
+        return PatientExaminationReport.objects.filter(
+            patient_examination__cases=self
+        ).select_related("patient_examination")
 
     def mark_as_deleted(self) -> None:
         """Mark this case as deleted."""

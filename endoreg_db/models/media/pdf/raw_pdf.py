@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast, Any
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.utils import paths as path_utils
@@ -44,13 +44,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.state.raw_pdf import RawPdfState
 
 
-type ReportMetaJsonValue = (
-    JsonValue
-    | JsonNull
-    | list["ReportMetaJsonValue"]
-    | dict[str, "ReportMetaJsonValue"]
-)
-type ReportMetaJsonObject = dict[str, ReportMetaJsonValue]
+type ReportMetaJsonObject = PdfFileMetaJsonObject
 
 
 class _RawPdfFileCreateKwargs(TypedDict, total=False):

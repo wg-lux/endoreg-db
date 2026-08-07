@@ -16,7 +16,7 @@ from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.schemas import (
+from lx_dtypes.models.contracts.media_streaming import (
     FfmpegActiveStreamThrottleState,
     FfmpegStreamThrottleState,
     FfmpegStreamThrottleStatePayload,

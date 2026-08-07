@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 from django.contrib.auth.models import AnonymousUser, User
@@ -22,10 +23,13 @@ from endoreg_db.services.export_annotated import (
 )
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 
-def _request_payload(data: object) -> dict[str, Any]:
-    return cast(dict[str, Any], data) if isinstance(data, dict) else {}
+def _request_payload(data: object) -> Mapping[str, JsonValue]:
+    if isinstance(data, Mapping):
+        return cast(Mapping[str, JsonValue], data)
+    return {}
 
 
 def _export_result_payload(result: object) -> dict[str, Any]:

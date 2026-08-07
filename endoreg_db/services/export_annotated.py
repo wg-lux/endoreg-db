@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from collections.abc import Mapping
 
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from lx_dtypes.models.contracts.export_annotated import ExportAnnotatedConfigContract
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.video_frame_export import export_config, export_result
 from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
@@ -38,10 +39,10 @@ class ExportAnnotatedService:
     def run_api_export(
         self,
         *,
-        payload: dict[str, Any],
+        payload: Mapping[str, JsonValue],
         user: User | AnonymousUser,
     ) -> export_result:
-        contract = ExportAnnotatedConfigContract.from_api_payload(payload)
+        contract = ExportAnnotatedConfigContract.from_api_payload(dict(payload))
 
         video = VideoFile.objects.select_related("state", "center").get(
             pk=contract.video_id

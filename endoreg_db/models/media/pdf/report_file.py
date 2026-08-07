@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.report import ReportMetaJsonObject
 
 from endoreg_db.schemas import validate_report_file_meta_payload
 
@@ -23,7 +23,7 @@ NoDocumentDateValue: TypeAlias = NoneType
 NoDocumentTimeValue: TypeAlias = NoneType
 NoDocumentMetaValue: TypeAlias = NoneType
 DocumentDescription: TypeAlias = "str | NoDocumentTextValue"
-DocumentMeta: TypeAlias = "JsonObject | NoDocumentMetaValue"
+DocumentMeta: TypeAlias = "ReportMetaJsonObject | NoDocumentMetaValue"
 DocumentDate: TypeAlias = "date | NoDocumentDateValue"
 DocumentTime: TypeAlias = "time | NoDocumentTimeValue"
 DocumentCenter: TypeAlias = "Center | NoDocumentRelationValue"

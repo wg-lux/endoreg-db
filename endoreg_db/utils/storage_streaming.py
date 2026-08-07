@@ -9,7 +9,10 @@ from typing import Protocol, TypeGuard, cast
 from django.http import StreamingHttpResponse
 from django.http.response import HttpResponseBase
 
-from endoreg_db.schemas import ByteRange, MediaStreamDisposition
+from lx_dtypes.models.contracts.media_streaming import (
+    ByteRange,
+    MediaStreamDisposition,
+)
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import (
     ensure_within_protected_root,

@@ -116,7 +116,7 @@ def resolve_pdf_document_type_name(
 
     raw_meta: JsonObject
     if isinstance(pdf.raw_meta, dict):
-        raw_meta = cast(JsonObject, pdf.raw_meta)
+        raw_meta = pdf.raw_meta
     else:
         raw_meta = cast(JsonObject, {})
     candidate = raw_meta.get("document_type")

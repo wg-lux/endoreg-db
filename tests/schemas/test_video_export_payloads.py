@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from endoreg_db.schemas import (
+from lx_dtypes.models.contracts.video_export import (
     VideoAnnotationExportErrorPayload,
     VideoAnnotationExportRequestPayload,
     VideoAnnotationExportResultPayload,

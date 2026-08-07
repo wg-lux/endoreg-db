@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from endoreg_db.schemas.upload import (
+from lx_dtypes.models.contracts import (
     upload_api_request_data_from_mapping,
     validate_upload_api_request_payload,
 )

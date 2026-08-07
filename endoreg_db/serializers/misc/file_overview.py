@@ -234,7 +234,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
 
         raw_meta: JsonObject
         if isinstance(instance.raw_meta, dict):
-            raw_meta = cast(JsonObject, instance.raw_meta)
+            raw_meta = instance.raw_meta
         else:
             raw_meta = cast(JsonObject, {})
         raw_document_type = raw_meta.get("document_type")

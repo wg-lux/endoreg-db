@@ -6,6 +6,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from django.core.exceptions import ObjectDoesNotExist
 from lx_dtypes.models.base.file.ddict.FilesAndDirsDataDict import FilesAndDirsDataDict
 from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
+from lx_dtypes.models.ledger.video_file import VideoFile as LxVideoFile
 from lx_dtypes.models.ledger.p_video.state import (
     AnonymizationState as LxAnonymizationState,
 )
@@ -63,6 +64,18 @@ class _SegmentStateRecord(Protocol):
     is_validated: bool
 
 
+class _VideoFileRelation(Protocol):
+    id: int | None
+
+
+class _CaseRelation(Protocol):
+    pk: int | None
+
+
+class _CaseRelationManager(Protocol):
+    def all(self) -> Iterable[_CaseRelation]: ...
+
+
 class _PatientVideoFileInput(TypedDict, total=False):
     uuid: str
     patient: str | None
@@ -92,6 +105,40 @@ def _as_date(value: date | datetime | None) -> date | None:
     if isinstance(value, datetime):
         return value.date()
     return value
+
+
+def _optional_str(value: object | None) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _optional_file_path(file_field: object | None) -> str | None:
+    if file_field is None:
+        return None
+    file_value = str(file_field)
+    return file_value or None
+
+
+def _video_relation_id(relation: _VideoFileRelation | None) -> str | None:
+    return _optional_str(relation.id) if relation is not None else None
+
+
+def _resolve_case_ids(video: VideoFile) -> list[str] | None:
+    if video.examination is None:
+        return None
+
+    cases_manager = getattr(video.examination, "cases", None)
+    if cases_manager is None:
+        return None
+
+    case_ids = [
+        str(case.pk)
+        for case in cast(_CaseRelationManager, cases_manager).all()
+        if case.pk is not None
+    ]
+    cases = case_ids
+    return cases or None
 
 
 def resolve_lx_anonymization_state(video: VideoFile) -> LxAnonymizationState:
@@ -286,3 +333,58 @@ def build_lx_patient_video_file(
     }
 
     return PatientVideoFile.model_validate(data)
+
+
+def build_lx_video_file(video: VideoFile) -> LxVideoFile:
+    """Build the `VideoFile` ledger payload for a media model row."""
+
+    return LxVideoFile.model_validate(
+        {
+            "center": _video_relation_id(cast(_VideoFileRelation | None, video.center)),
+            "processor": _video_relation_id(
+                cast(_VideoFileRelation | None, video.processor)
+            ),
+            "video_meta": _video_relation_id(
+                cast(_VideoFileRelation | None, video.video_meta)
+            ),
+            "examination": _video_relation_id(
+                cast(_VideoFileRelation | None, video.examination)
+            ),
+            "cases": _resolve_case_ids(video),
+            "patient": _video_relation_id(
+                cast(_VideoFileRelation | None, video.patient)
+            ),
+            "ai_model_meta": _video_relation_id(
+                cast(_VideoFileRelation | None, video.ai_model_meta)
+            ),
+            "state": _video_relation_id(cast(_VideoFileRelation | None, video.state)),
+            "import_meta": _video_relation_id(
+                cast(_VideoFileRelation | None, video.import_meta)
+            ),
+            "sensitive_meta": _video_relation_id(
+                cast(_VideoFileRelation | None, video.sensitive_meta)
+            ),
+            "video_hash": video.video_hash,
+            "processed_video_hash": video.processed_video_hash,
+            "original_file_name": video.original_file_name,
+            "storage_mode": str(video.storage_mode),
+            "raw_streamable_relative_path": video.raw_streamable_relative_path,
+            "processed_streamable_relative_path": video.processed_streamable_relative_path,
+            "uploaded_at": video.uploaded_at,
+            "raw_file": _optional_file_path(video.raw_file),
+            "processed_file": _optional_file_path(video.processed_file),
+            "frame_dir": video.frame_dir,
+            "fps": video.fps,
+            "duration": video.duration,
+            "frame_count": video.frame_count,
+            "width": video.width,
+            "height": video.height,
+            "suffix": video.suffix,
+            "sequences": video.sequences,
+            "export_segments_by_video": video.export_segments_by_video,
+            "date": video.date,
+            "meta": video.meta,
+            "date_created": video.date_created,
+            "date_modified": video.date_modified,
+        }
+    )

@@ -201,8 +201,6 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/views/report/reimport.py
     - kind: code
-      reference: endoreg_db/schemas/upload.py
-    - kind: code
       reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/upload.py
     - kind: code
       reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/video_frame_annotations.py
@@ -335,9 +333,8 @@ definition_of_done:
       nur noch den geschlossenen ReportLlmReimportRequestPayload mit einem strikt booleschen retry-Feld;
       Body-IDs, Unknown Fields, Scalar-Coercion und nicht-objektförmige Bodies scheitern vor Dispatch und
       Jobreservierung. Der Multipart-Upload-Vertrag im lx_dtypes-Owner toleriert ausschließlich das
-      Transportfeld file außerhalb seiner vier Contract-Felder. Bis eine Version neuer als lx_dtypes 0.2.9
-      gepinnt ist, erzwingt endoreg_db/schemas/upload.py dieselbe Regel als benannter Kompatibilitätsadapter;
-      danach kann dieser Adapter entfallen. Die fokussierten Matrizen bestanden mit 15 Report- und 21
+      Transportfeld file außerhalb seiner vier Contract-Felder. Endoreg nutzt diese Regel direkt über den
+      Contract ohne separaten Upload-Adapter. Die fokussierten Matrizen bestanden mit 15 Report- und 21
       Endpunkt-Tests sowie 13 Shared-Contract-Tests. Frame-Annotation-Bulk-Upsert, Skip und Box-Upsert
       verwenden nun die geschlossenen Shared Mutation Envelopes. Unknown Wrapper-/Item-Felder und
       widersprüchliche äußere/innere frame_id-Werte scheitern vor DRF und ORM; dokumentierte Bare-List-

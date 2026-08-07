@@ -15,7 +15,10 @@ from rest_framework.views import APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.schemas import MediaStreamDisposition, MediaStreamFileKind
+from lx_dtypes.models.contracts.media_streaming import (
+    MediaStreamDisposition,
+    MediaStreamFileKind,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative

@@ -31,8 +31,10 @@ MAGIC_AVAILABLE = _magic is not None
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.serializers.hub import UploadJobStatusSerializer
-from endoreg_db.schemas import UploadApiRequestPayload
-from endoreg_db.schemas import validate_upload_api_request_payload
+from lx_dtypes.models.contracts import (
+    UploadApiRequestPayload,
+    validate_upload_api_request_payload,
+)
 from endoreg_db.services.hub import ingest
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.utils.permissions import EnvironmentAwarePermission

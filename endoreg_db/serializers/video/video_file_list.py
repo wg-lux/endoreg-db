@@ -56,6 +56,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     )
     center_key = serializers.CharField(source="center.center_key", read_only=True)
     center_name = serializers.CharField(source="center.display_name", read_only=True)
+    processor_name = serializers.SerializerMethodField()
 
     class Meta(_ModelSerializerMeta):
         model = VideoFile  # pyright: ignore[reportAssignmentType]
@@ -76,6 +77,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
             "validated_annotators",
             "segments",
             "export_segments_by_video",
+            "processor_name",
         ]
 
     # --- internal helper -------------------------------------------------
@@ -245,6 +247,12 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
 
         return validated_annotators_for_video(obj)
 
+    def get_processor_name(self, obj: VideoFile) -> str:
+        processor = getattr(obj, "processor", None)
+        if processor is None:
+            return "Unbekannt"
+        return getattr(processor, "name", "Unbekannt")
+
 
 class CrossCenterProcessedVideoSerializer(VideoFileListSerializer):
     """Pseudonymous discovery payload for the central-hub exception."""
@@ -256,6 +264,7 @@ class CrossCenterProcessedVideoSerializer(VideoFileListSerializer):
             "id",
             "center_key",
             "center_name",
+            "processor_name",
             "duration",
             "status",
             "anonymized",

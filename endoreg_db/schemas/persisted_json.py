@@ -439,12 +439,8 @@ class TransferFrameAnnotationRow(BaseModel):
         )
 
 
-class TransferSegmentProvenanceRow(HubTransferSegmentProvenancePayload):
-    """Backward-compatible Endoreg name for the canonical LXDM contract."""
-
-
-class TransferVideoSegmentRow(HubTransferVideoSegmentPayload):
-    """Backward-compatible Endoreg name for the canonical LXDM contract."""
+TransferSegmentProvenanceRow = HubTransferSegmentProvenancePayload
+TransferVideoSegmentRow = HubTransferVideoSegmentPayload
 
 
 class TransferPatientExaminationReportRow(BaseModel):

@@ -35,11 +35,43 @@ class _DtypesFindingLike(Protocol):
 
 class _DtypesRecordLike(Protocol):
     examination: str
+    patient: str
     knowledge_base_module: str | None
     knowledge_base_version: str | None
     patient_findings: list[_DtypesFindingLike]
 
     def model_dump(self, *args: object, **kwargs: object) -> dict[str, Any]: ...
+
+
+def _normalise_patient_reference_list(
+    payload: Mapping[str, JsonValue],
+    *,
+    list_field: str,
+    link_field: str,
+    expected_patient_examination: str,
+) -> list[JsonValue]:
+    raw_items = payload.get(list_field)
+    if not isinstance(raw_items, list):
+        return []
+
+    normalized_items: list[JsonValue] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            normalized_items.append(cast(JsonValue, raw_item))
+            continue
+
+        source_item: dict[object, object] = cast(dict[object, object], raw_item)
+        item: dict[str, JsonValue] = {}
+        for key, value in source_item.items():
+            if isinstance(key, str):
+                item[key] = cast(JsonValue, value)
+
+        if item.get(link_field) != expected_patient_examination:
+            item[link_field] = expected_patient_examination
+        normalized_items.append(cast(JsonValue, item))
+
+    return normalized_items
+
 
 
 def _patient_examination(value: object) -> _PatientExaminationLike:
@@ -52,13 +84,34 @@ def _patient_examination(value: object) -> _PatientExaminationLike:
 
 def _validated_p_examination(
     value: BaseModel | Mapping[str, JsonValue],
+    *,
+    expected_examination: str | None = None,
 ) -> _DtypesRecordLike:
     if isinstance(value, BaseModel):
-        candidate = value.model_dump(mode="json", exclude_none=True)
+        candidate = cast(
+            dict[str, JsonValue], value.model_dump(mode="json", exclude_none=True)
+        )
     else:
-        candidate = value
+        candidate = dict(value)
     if not candidate:
         raise ValueError("dtypes_record must not be empty")
+
+    if expected_examination:
+        normalized_payload = dict(candidate)
+        normalized_payload["patient_findings"] = _normalise_patient_reference_list(
+            normalized_payload,
+            list_field="patient_findings",
+            link_field="patient_examination",
+            expected_patient_examination=expected_examination,
+        )
+        normalized_payload["patient_indications"] = _normalise_patient_reference_list(
+            normalized_payload,
+            list_field="patient_indications",
+            link_field="patient_examination",
+            expected_patient_examination=expected_examination,
+        )
+        candidate = normalized_payload
+
     return cast(_DtypesRecordLike, parse_dtypes_record_persistence_payload(candidate))
 
 
@@ -73,7 +126,14 @@ def _validate_host_patient_examination_match(
             f"'{payload.examination}' != '{examination.name}'"
         )
 
-    expected_patient_examination = str(patient_examination.id)
+    expected_patient_examination = examination.name
+    patient = str(getattr(patient_examination, "patient_id", ""))
+    if payload.patient != patient:
+        raise ValueError(
+            "dtypes_record patient does not match PatientExamination: "
+            f"'{payload.patient}' != '{patient}'"
+        )
+
     for patient_finding in payload.patient_findings:
         if patient_finding.patient_examination != expected_patient_examination:
             raise ValueError(
@@ -89,7 +149,12 @@ def persist_patient_examination_dtypes_record(
     value: BaseModel | Mapping[str, JsonValue],
 ) -> dict[str, Any]:
     host_patient_examination = _patient_examination(patient_examination)
-    payload = _validated_p_examination(value)
+    payload = _validated_p_examination(
+        value,
+        expected_examination=str(
+            getattr(host_patient_examination.examination_safe, "name", "")
+        ).strip(),
+    )
     _validate_host_patient_examination_match(host_patient_examination, payload)
 
     record = payload.model_dump(mode="json", exclude_none=True)

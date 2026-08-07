@@ -22,6 +22,7 @@ from lx_dtypes.models.contracts.media_streaming import (
     FfmpegStreamProbeEntry,
     validate_ffmpeg_stream_info,
 )
+from lx_dtypes.models.contracts.video_frame import VideoFrameDimensions
 from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 from lx_dtypes.models.contracts.video_frame_box_annotations import (
     VideoPhiFrameObservationPayload,
@@ -689,6 +690,7 @@ def _verified_anonymizer_video_stream(
                 f"Anonymizer source has unreadable structural dimensions: {source_path}"
             ),
         )
+    VideoFrameDimensions.model_validate({"width": width, "height": height})
     return video_stream
 
 

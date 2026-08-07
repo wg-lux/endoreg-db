@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Any, Literal, Protocol, cast
+from typing import Literal, Protocol, cast
 import json
 import logging
 
@@ -17,6 +17,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts import (
     CaseResolutionRequest,
     CaseResolutionNewPatient,
@@ -77,10 +78,10 @@ def _as_isoformat(value: object) -> str | None:
     return value_.isoformat() if value_ is not None else None
 
 
-def _request_payload(request: Request) -> Mapping[str, Any]:
+def _request_payload(request: Request) -> Mapping[str, JsonValue]:
     payload = cast(object, request.data)
     if isinstance(payload, Mapping):
-        return cast(Mapping[str, Any], payload)
+        return cast(Mapping[str, JsonValue], payload)
     return {}
 
 
@@ -94,8 +95,8 @@ def _serialize_response_data(serializer: object) -> object:
     return cast(object, getattr(serializer, "data", {}))
 
 
-def _serialize_response_errors(serializer: object) -> Mapping[str, Any]:
-    return cast(Mapping[str, Any], getattr(serializer, "errors", {}))
+def _serialize_response_errors(serializer: object) -> Mapping[str, JsonValue]:
+    return cast(Mapping[str, JsonValue], getattr(serializer, "errors", {}))
 
 
 def _get_object_field(
@@ -779,7 +780,7 @@ def pdf_sensitive_metadata(request: Request, pk: int) -> Response:
             updated_instance = serializer.save()
             response_serializer = SensitiveMetaDetailSerializer(updated_instance)
             response_data = cast(
-                dict[str, Any], _serialize_response_data(response_serializer)
+                dict[str, JsonValue], _serialize_response_data(response_serializer)
             )
             sensitive_meta.update_from_dict(response_data)
             logger.info("Updated sensitive metadata: %s", json.dumps(response_data))

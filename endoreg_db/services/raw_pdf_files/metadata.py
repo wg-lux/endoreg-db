@@ -6,7 +6,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.core.exceptions import ValidationError
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject, PdfFileMetaJsonValue
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from endoreg_db.utils.hashs import get_pdf_hash
@@ -23,13 +23,8 @@ if TYPE_CHECKING:
     )
 
 
-type ReportMetaJsonValue = (
-    JsonValue
-    | JsonNull
-    | list["ReportMetaJsonValue"]
-    | dict[str, "ReportMetaJsonValue"]
-)
-type ReportMetaJsonObject = dict[str, ReportMetaJsonValue]
+type ReportMetaJsonObject = PdfFileMetaJsonObject
+type ReportMetaJsonValue = PdfFileMetaJsonValue
 
 
 class _ReportSensitiveMeta(Protocol):
