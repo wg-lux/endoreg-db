@@ -79,8 +79,7 @@ class DeadCodeBaseline(BaseModel):
     @property
     def confirmed_deletion_count(self) -> int:
         return sum(
-            item.classification == "confirmed_dead"
-            for item in self.deletion_candidates
+            item.classification == "confirmed_dead" for item in self.deletion_candidates
         )
 
 

@@ -24,7 +24,10 @@ def _literal_all(tree: ast.Module) -> list[str]:
         if not isinstance(node, (ast.Assign, ast.AnnAssign)):
             continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        if not any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
+        if not any(
+            isinstance(target, ast.Name) and target.id == "__all__"
+            for target in targets
+        ):
             continue
         value = node.value
         if isinstance(value, (ast.List, ast.Tuple)):
@@ -86,15 +89,22 @@ def _imports_by_contract(
                         for module in symbol_modules.get(alias.name, set()):
                             direct[module].add(relative)
                 elif node.module and node.module.startswith(f"{CONTRACT_PACKAGE}."):
-                    module = node.module.removeprefix(f"{CONTRACT_PACKAGE}.").split(".")[0]
+                    module = node.module.removeprefix(f"{CONTRACT_PACKAGE}.").split(
+                        "."
+                    )[0]
                     direct[module].add(relative)
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name.startswith(f"{CONTRACT_PACKAGE}."):
-                        module = alias.name.removeprefix(f"{CONTRACT_PACKAGE}.").split(".")[0]
+                        module = alias.name.removeprefix(f"{CONTRACT_PACKAGE}.").split(
+                            "."
+                        )[0]
                         direct[module].add(relative)
         for module in exports:
-            if f"{CONTRACT_PACKAGE}.{module}" in text and relative not in direct[module]:
+            if (
+                f"{CONTRACT_PACKAGE}.{module}" in text
+                and relative not in direct[module]
+            ):
                 dynamic[module].add(relative)
     return direct, dynamic
 
@@ -107,7 +117,9 @@ def _boundaries(paths: set[str]) -> str:
             categories.add("API")
         if any(token in lowered for token in ("models/", "schemas/", "migrations/")):
             categories.add("persistence")
-        if any(token in lowered for token in ("hub/", "import", "export", "task", "job")):
+        if any(
+            token in lowered for token in ("hub/", "import", "export", "task", "job")
+        ):
             categories.add("job/import-export")
         if any(token in lowered for token in ("auth", "permission", "security")):
             categories.add("auth")
@@ -131,9 +143,7 @@ def _invariants(text: str) -> str:
     if "Literal[" in text or "Enum" in text:
         values.append("closed values")
     helpers = [
-        prefix
-        for prefix in ("validate_", "parse_", "dump_")
-        if f"def {prefix}" in text
+        prefix for prefix in ("validate_", "parse_", "dump_") if f"def {prefix}" in text
     ]
     if helpers:
         values.append("validated parse/dump helpers")
@@ -252,7 +262,9 @@ Regenerate from `/home/admin/endoreg-db`:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lxdm-root", type=Path, default=Path("/home/admin/lx-data-models"))
+    parser.add_argument(
+        "--lxdm-root", type=Path, default=Path("/home/admin/lx-data-models")
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     content = generate(args.lxdm_root.resolve(), Path.cwd().resolve())

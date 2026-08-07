@@ -860,11 +860,14 @@ def test_agent_messages_are_owner_bound_atomic_and_replyable(tmp_path: Path) -> 
         directory=tmp_path,
         now=created_at,
     ) == (message,)
-    assert agent_inbox(
-        recipient="codex/other",
-        directory=tmp_path,
-        now=created_at,
-    ) == ()
+    assert (
+        agent_inbox(
+            recipient="codex/other",
+            directory=tmp_path,
+            now=created_at,
+        )
+        == ()
+    )
 
     with pytest.raises(TrackerError, match="gehört"):
         acknowledge_agent_message(
@@ -881,11 +884,14 @@ def test_agent_messages_are_owner_bound_atomic_and_replyable(tmp_path: Path) -> 
         now=created_at + timedelta(minutes=1),
     )
     assert acknowledged.acknowledged_by == "codex/worker-1"
-    assert agent_inbox(
-        recipient="codex/worker-1",
-        directory=tmp_path,
-        now=created_at + timedelta(minutes=1),
-    ) == ()
+    assert (
+        agent_inbox(
+            recipient="codex/worker-1",
+            directory=tmp_path,
+            now=created_at + timedelta(minutes=1),
+        )
+        == ()
+    )
 
     reply = reply_to_agent_message(
         features,
@@ -920,11 +926,14 @@ def test_agent_message_expiry_and_terminal_control_validation(tmp_path: Path) ->
         now=created_at,
     )
 
-    assert agent_inbox(
-        recipient="worker",
-        directory=tmp_path,
-        now=created_at + timedelta(hours=2),
-    ) == ()
+    assert (
+        agent_inbox(
+            recipient="worker",
+            directory=tmp_path,
+            now=created_at + timedelta(hours=2),
+        )
+        == ()
+    )
     assert not (tmp_path / ".messages" / f"{message.message_id}.json").exists()
 
     with pytest.raises(ValueError, match="control characters"):
@@ -1024,11 +1033,14 @@ def test_worker_result_schema_and_checkpoints_are_strict_and_idempotent() -> Non
         work_unit_id="review",
         status=WorkUnitStatus.IN_PROGRESS,
     )
-    assert checkpoint_orchestration(
-        in_progress,
-        work_unit_id="review",
-        status=WorkUnitStatus.IN_PROGRESS,
-    ) is in_progress
+    assert (
+        checkpoint_orchestration(
+            in_progress,
+            work_unit_id="review",
+            status=WorkUnitStatus.IN_PROGRESS,
+        )
+        is in_progress
+    )
 
     result = WorkerResult(
         task_status="complete",
@@ -1129,55 +1141,64 @@ def test_message_cli_and_lock_acquire_surface_unread_feedback(
         encoding="utf-8",
     )
 
-    assert main(
-        [
-            "--directory",
-            str(tracking_dir),
-            "message",
-            "send",
-            "--from",
-            "codex/manager",
-            "--to",
-            "codex/worker",
-            "--subject",
-            "Please review the evidence",
-            "--body",
-            "Run the exact verifier before changing status.",
-            "--feature",
-            "standard",
-            "--criterion",
-            "terminal_commands",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "message",
+                "send",
+                "--from",
+                "codex/manager",
+                "--to",
+                "codex/worker",
+                "--subject",
+                "Please review the evidence",
+                "--body",
+                "Run the exact verifier before changing status.",
+                "--feature",
+                "standard",
+                "--criterion",
+                "terminal_commands",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
 
-    assert main(
-        [
-            "--directory",
-            str(tracking_dir),
-            "lock",
-            "acquire",
-            "standard",
-            "--criterion",
-            "terminal_commands",
-            "--owner",
-            "codex/worker",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "lock",
+                "acquire",
+                "standard",
+                "--criterion",
+                "terminal_commands",
+                "--owner",
+                "codex/worker",
+            ]
+        )
+        == 0
+    )
     lock_output = capsys.readouterr().out
     assert "Ungelesene Agentennachrichten: 1" in lock_output
     assert "Please review the evidence" in lock_output
 
-    assert main(
-        [
-            "--directory",
-            str(tracking_dir),
-            "message",
-            "inbox",
-            "--owner",
-            "codex/worker",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--directory",
+                str(tracking_dir),
+                "message",
+                "inbox",
+                "--owner",
+                "codex/worker",
+                "--json",
+            ]
+        )
+        == 0
+    )
     inbox_output = capsys.readouterr().out
     assert '"recipient": "codex/worker"' in inbox_output

@@ -73,7 +73,6 @@ def _normalise_patient_reference_list(
     return normalized_items
 
 
-
 def _patient_examination(value: object) -> _PatientExaminationLike:
     if not hasattr(value, "examination_safe"):
         raise ValueError("patient_examination must expose examination_safe")

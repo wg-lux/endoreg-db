@@ -6,7 +6,10 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.core.exceptions import ValidationError
-from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject, PdfFileMetaJsonValue
+from lx_dtypes.models.contracts.pdf_file import (
+    PdfFileMetaJsonObject,
+    PdfFileMetaJsonValue,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from endoreg_db.utils.hashs import get_pdf_hash

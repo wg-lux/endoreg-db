@@ -423,7 +423,9 @@ class AgentMessage(BaseModel):
     @classmethod
     def reject_terminal_control_characters(cls, value: str) -> str:
         if any(ord(character) < 32 and character not in "\n\t" for character in value):
-            raise ValueError("agent messages cannot contain terminal control characters")
+            raise ValueError(
+                "agent messages cannot contain terminal control characters"
+            )
         return value
 
     @model_validator(mode="after")
@@ -659,9 +661,7 @@ def _validate_acyclic_work_units(work_units: Sequence[WorkUnit]) -> None:
     remaining = set(dependencies)
     while remaining:
         ready = {
-            unit_id
-            for unit_id in remaining
-            if not (dependencies[unit_id] & remaining)
+            unit_id for unit_id in remaining if not (dependencies[unit_id] & remaining)
         }
         if not ready:
             raise ValueError("work unit dependency graph must be acyclic")
@@ -1467,7 +1467,9 @@ def reply_to_agent_message(
             criterion_id=source.criterion_id,
         )
         reply_subject = (
-            source.subject if source.subject.startswith("Re: ") else f"Re: {source.subject}"
+            source.subject
+            if source.subject.startswith("Re: ")
+            else f"Re: {source.subject}"
         )[:200]
         reply = AgentMessage(
             message_id=uuid4().hex,
@@ -1521,7 +1523,9 @@ def load_orchestration_contract(path: Path) -> OrchestrationContract:
         payload = json.loads(path.read_text(encoding="utf-8"))
         return OrchestrationContract.model_validate(payload)
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
-        raise TrackerError(f"Ungültiger Orchestrierungsvertrag in {path}: {exc}") from exc
+        raise TrackerError(
+            f"Ungültiger Orchestrierungsvertrag in {path}: {exc}"
+        ) from exc
 
 
 def load_worker_result(path: Path) -> WorkerResult:
@@ -1538,9 +1542,7 @@ def validate_orchestration_against_registry(
 ) -> None:
     feature = find_feature(features, contract.feature_id)
     if feature.tracking.state is FeatureTrackingState.DONE:
-        raise TrackerError(
-            f"{feature.id} ist done und kann nicht orchestriert werden"
-        )
+        raise TrackerError(f"{feature.id} ist done und kann nicht orchestriert werden")
     for work_unit in contract.work_units:
         find_criterion(feature, work_unit.criterion_id)
 
@@ -2196,9 +2198,7 @@ def build_parser() -> argparse.ArgumentParser:
     message = subparsers.add_parser(
         "message", help="Lokale Nachrichten zwischen Codex-CLI-Agenten verwalten"
     )
-    message_subparsers = message.add_subparsers(
-        dest="message_command", required=True
-    )
+    message_subparsers = message.add_subparsers(dest="message_command", required=True)
 
     message_send = message_subparsers.add_parser(
         "send", help="Owner-adressierte Nachricht atomar zustellen"
@@ -2405,7 +2405,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if orchestration_command == "checkpoint":
             status = WorkUnitStatus(cast(str, args.status))
             result_path = cast(Path | None, args.result_file)
-            result = load_worker_result(result_path) if result_path is not None else None
+            result = (
+                load_worker_result(result_path) if result_path is not None else None
+            )
             updated = checkpoint_orchestration(
                 contract,
                 work_unit_id=cast(str, args.work_unit_id),
@@ -2457,7 +2459,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if requested_status is AssessmentStatus.VERIFIED:
             reviewed = tuple(cast(Sequence[int], args.acceptance_bullet))
             expected = tuple(range(1, len(criterion.acceptance) + 1))
-            if tuple(sorted(set(reviewed))) != expected or len(reviewed) != len(expected):
+            if tuple(sorted(set(reviewed))) != expected or len(reviewed) != len(
+                expected
+            ):
                 raise TrackerError(
                     f"{feature.id}/{criterion.id}: --status verified erfordert "
                     f"jeden --acceptance-bullet genau einmal ({', '.join(map(str, expected))})"
