@@ -209,8 +209,11 @@ def _record_operator_control(
                 )
             return replay
 
-        state = StorageBalancingControlState.objects.select_for_update().get(
-            pk="global"
+        state, _created = (
+            StorageBalancingControlState.objects.select_for_update().get_or_create(
+                pk="global",
+                defaults={"is_paused": False, "version": 0},
+            )
         )
         if state.is_paused and request.action in {
             StorageOperatorAction.REBALANCE,
@@ -361,7 +364,11 @@ def request_storage_balance_retry(
 
 
 def get_storage_balancing_control_state() -> StorageBalancingControlState:
-    return StorageBalancingControlState.objects.get(pk="global")
+    state, _created = StorageBalancingControlState.objects.get_or_create(
+        pk="global",
+        defaults={"is_paused": False, "version": 0},
+    )
+    return state
 
 
 __all__ = [
