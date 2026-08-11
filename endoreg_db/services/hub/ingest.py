@@ -1946,6 +1946,14 @@ def _finalize_preanonymized_report(
         state.mark_processing_started()
         state.mark_anonymized()
         state.mark_sensitive_meta_processed()
+        # This watcher path has already hashed the exact immutable source bytes
+        # before the atomic copy/move into the protected final directory.  The
+        # legacy final path is not written through FieldFile.storage, so trying
+        # to reopen it through LazyEncryptedStorage would interpret plaintext
+        # PDF bytes as an encrypted container.  Persist the content-bound hash
+        # from that verified handoff instead.
+        state.processed_file_sha256 = pdf_hash
+        state.save(update_fields=["processed_file_sha256", "date_modified"])
         state.mark_anonymization_validated()
 
         if sensitive_meta is not None:

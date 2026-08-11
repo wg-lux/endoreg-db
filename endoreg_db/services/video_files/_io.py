@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Optional
@@ -158,7 +158,20 @@ def _ensure_local_processed_file(video: "VideoFile") -> Generator[Path]:
     if not (video.is_processed and processed_field and processed_field.name):
         raise ValueError(f"Video {video.video_hash} has no processed file")
 
-    with ensure_local_file(processed_field) as local_path:
+    local_context = ensure_local_file(processed_field)
+    with ExitStack() as stack:
+        try:
+            local_path = stack.enter_context(local_context)
+        except (FileNotFoundError, IOError):
+            from endoreg_db.services.hub.remote_processed_media import (
+                materialize_remote_processed_video,
+            )
+
+            remote_path = stack.enter_context(
+                materialize_remote_processed_video(video_id=int(video.pk))
+            )
+            yield Path(remote_path)
+            return
         yield Path(local_path)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, TypeGuard, cast
 
 from django.db.models.fields.files import FieldFile
 from django.http import Http404, HttpResponse, StreamingHttpResponse
@@ -231,6 +231,113 @@ def build_eager_content_response(
     return response
 
 
+class _RemotePathIterator:
+    def __init__(
+        self,
+        *,
+        manager: object,
+        path: Path,
+        start: int,
+        length: int,
+        chunk_size: int = 1024 * 1024,
+    ) -> None:
+        self._manager = manager
+        self._handle: BinaryIO | None = path.open("rb")
+        self._handle.seek(start)
+        self._remaining = length
+        self._chunk_size = chunk_size
+        self._closed = False
+
+    def __iter__(self) -> "_RemotePathIterator":
+        return self
+
+    def __next__(self) -> bytes:
+        if self._closed or self._remaining == 0:
+            self.close()
+            raise StopIteration
+        assert self._handle is not None
+        chunk = self._handle.read(min(self._chunk_size, self._remaining))
+        if not chunk:
+            self.close()
+            raise IOError("remote processed report ended before expected size")
+        self._remaining -= len(chunk)
+        return chunk
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
+        cast(Any, self._manager).__exit__(None, None, None)
+
+
+def _serve_remote_processed_report(
+    *,
+    report_id: int,
+    range_header: str | None,
+    disposition: MediaStreamDisposition,
+    frontend_origin: str | None,
+) -> HttpResponseBase:
+    from endoreg_db.services.hub.remote_processed_report import (
+        materialize_remote_processed_report,
+    )
+
+    manager = materialize_remote_processed_report(report_id=report_id)
+    try:
+        path = manager.__enter__()
+    except Exception:
+        raise
+    try:
+        file_size = path.stat().st_size
+        if file_size <= 0:
+            raise FileNotFoundError("remote processed report is empty")
+        if range_header:
+            try:
+                byte_range = parse_byte_range(range_header, file_size)
+            except ValueError:
+                manager.__exit__(None, None, None)
+                response = HttpResponse(status=416, content_type="application/pdf")
+                response["Content-Range"] = f"bytes */{file_size}"
+                response["Accept-Ranges"] = "bytes"
+                return _add_cors_headers_if_configured(response, frontend_origin)
+            start = byte_range.start
+            length = byte_range.length
+            status_code = 206
+        else:
+            start = 0
+            length = file_size
+            status_code = 200
+    except Exception:
+        manager.__exit__(None, None, None)
+        raise
+
+    try:
+        iterator = _RemotePathIterator(
+            manager=manager,
+            path=path,
+            start=start,
+            length=length,
+        )
+    except Exception:
+        manager.__exit__(None, None, None)
+        raise
+    response = StreamingHttpResponse(
+        iterator,
+        status=status_code,
+        content_type="application/pdf",
+    )
+    if status_code == 206:
+        response["Content-Range"] = f"bytes {start}-{start + length - 1}/{file_size}"
+    response["Content-Length"] = str(length)
+    response["Accept-Ranges"] = "bytes"
+    response["Content-Disposition"] = (
+        f'{disposition}; filename="processed-report-{report_id}.pdf"'
+    )
+    return _add_cors_headers_if_configured(response, frontend_origin)
+
+
 @method_decorator(xframe_options_exempt, name="dispatch")
 class ReportStreamView(APIView):
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
@@ -279,7 +386,28 @@ class ReportStreamView(APIView):
 
         file_type = self._parse_file_type(request)
 
-        field_file = _pick_report_field_file(report, file_type)
+        disposition = self._parse_disposition(request)
+        frontend_origin = resolve_response_origin(request)
+        range_header = self._range_header(request)
+        try:
+            field_file = _pick_report_field_file(report, file_type)
+        except Http404:
+            if file_type != "processed":
+                raise
+            try:
+                return _serve_remote_processed_report(
+                    report_id=report_id,
+                    range_header=range_header,
+                    disposition=disposition,
+                    frontend_origin=frontend_origin,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Remote processed report is unavailable: id=%s error=%s",
+                    report_id,
+                    type(exc).__name__,
+                )
+                raise Http404("Report file is not available") from exc
         if field_file_is_local_encrypted_without_reader(field_file):
             logger.error(
                 "Refusing to stream encrypted report bytes without a decrypting "
@@ -298,6 +426,20 @@ class ReportStreamView(APIView):
         except FileNotFoundError as exc:
             recovered_field_file = recover_missing_report_field_path(report, file_type)
             if recovered_field_file is None:
+                if file_type == "processed":
+                    try:
+                        return _serve_remote_processed_report(
+                            report_id=report_id,
+                            range_header=range_header,
+                            disposition=disposition,
+                            frontend_origin=frontend_origin,
+                        )
+                    except Exception as remote_exc:
+                        logger.warning(
+                            "Remote processed report is unavailable: id=%s error=%s",
+                            report_id,
+                            type(remote_exc).__name__,
+                        )
                 logger.warning(
                     "Report stream file missing for id=%s type=%s path=%s: %s",
                     report_id,
@@ -311,10 +453,6 @@ class ReportStreamView(APIView):
             file_size = field_file_size(field_file)
         if file_size <= 0:
             raise Http404("Report file is empty")
-
-        disposition = self._parse_disposition(request)
-        frontend_origin = resolve_response_origin(request)
-        range_header = self._range_header(request)
 
         if nginx_offload_enabled() and not range_header and not recovered_from_fallback:
             nginx_response = _serve_with_nginx(

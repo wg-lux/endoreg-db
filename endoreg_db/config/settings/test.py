@@ -67,7 +67,11 @@ SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = str(TEST_DB_FILE)
+DB_NAME = (
+    str(TEST_DB_FILE)
+    if DB_ENGINE.endswith("sqlite3")
+    else env_str("TEST_DB_NAME", "postgres")
+)
 DB_USER = env_str("TEST_DB_USER", "")
 DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
 DB_HOST = env_str("TEST_DB_HOST", "")

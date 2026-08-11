@@ -1,0 +1,375 @@
+schema_version: '1.0'
+id: hub_storage_load_balancing
+name: Hub Storage-Node Load Balancing
+description: Provide the typed endoreg-db domain and service contracts for hub-managed placement and safe
+  rotation of protected artifacts across one or more dedicated storage nodes.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+- LuxNix maintainers
+- storage operations
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Existing authenticated hub ingest, replay, ownership, and integrity boundary.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Canonical video master, lease, publication, cleanup, and migration invariants.
+- path: docs/deployment_note_hub_contract.md
+  disposition: reference
+  note: Existing hub and site node roles and fail-closed transport contract.
+- path: /home/admin/luxnix/docs/hardware-setup.md
+  disposition: reference
+  note: Current declarative disk and persistent-storage provisioning context.
+definition_of_done:
+- id: typed_storage_domain_contract
+  category: requirements
+  title: Storage-node capabilities, placements, reservations, and rotations have one typed domain model
+  acceptance:
+  - A storage node is distinct from central-hub, site-node, and standalone roles and has immutable identity,
+    active and drain state, endpoint, failure domain, weight, capabilities, and freshness metadata.
+  - Persisted typed models represent artifact identity, artifact kind, canonical primary, optional replicas,
+    reservation, policy version, rotation intent, workflow state, lease, retry, and terminal failure reason.
+  - Placement is independent of VideoStorageMode; encryption and streamability policy cannot be mistaken
+    for the physical node holding an artifact.
+  - The schema supports one initial dedicated node and additional nodes without changing artifact identifiers
+    or silently converting placement balancing into backup or replication.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review models, constraints, migrations, typed schemas, and ownership boundaries against
+      HubTransfer and StorageSecurity.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/hub/storage_placement.py; endoreg_db/migrations/0060_hub_storage_placement.py
+    - kind: command
+      reference: 'focused Pyright: 0 errors; focused pytest: 26 passed in 33.47s (2026-08-11)'
+    - kind: code
+      reference: endoreg_db/models/hub/storage_placement.py; endoreg_db/migrations/0061_storage_control_plane_hardening.py
+    - kind: command
+      reference: 'focused hardening Pyright: 0 errors; focused pytest: 31 passed in 22.46s (2026-08-11)'
+    - kind: code
+      reference: endoreg_db/models/hub/storage_balancing.py; endoreg_db/migrations/0062_storage_balance_work_item.py
+    - kind: command
+      reference: 'focused balancing Pyright: 0 errors; focused pytest: 23 passed in 27.78s (2026-08-11)'
+    - kind: command
+      reference: '2026-08-11 focused storage/model/migration suite: 37 passed, 1 PostgreSQL-only test
+        skipped in SQLite.'
+    - kind: command
+      reference: Candidate endoreg-db 1.0.10.0 and LX 0.9.62 wheels migrated fresh PostgreSQL 17 to expected
+        leaves with no model drift; candidate-wheel live transfer contract passed.
+    - kind: code
+      reference: endoreg_db/services/hub/storage_artifact_resolution.py adds the exact
+        hub-storage-artifact-resolution-v1 current-generation selector. Approved video/report generations
+        resolve only one committed primary with one exact verified envelope. This post-candidate delta is
+        unexecuted pending owner testing.
+    note: Typed storage persistence and public planning/transfer contracts are packaged and locally migration-tested.
+      The approved endoreg release is not published/locked and restored production-like migration approval
+      remains outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T11:19:00.249667Z'
+- id: deterministic_capacity_aware_placement
+  category: functionality
+  title: Placement is deterministic, capacity aware, and concurrency safe
+  acceptance:
+  - A versioned exhaustive policy filters by authorization, health freshness, drain state, artifact capability,
+    residency, failure domain, usable capacity, reservation, and configured safety margin.
+  - Selection accounts for node weight and utilization and uses a stable documented tie-breaker; identical
+    eligible input and policy version produce the same result.
+  - Capacity is reserved atomically with placement intent before bytes are accepted, and concurrent transactions
+    cannot overcommit the same capacity or create multiple canonical primaries.
+  - No eligible node, stale telemetry, insufficient capacity, and ambiguous state fail loudly with stable
+    typed errors and never fall back to an unapproved path.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run model and service tests for deterministic selection, concurrent reservation, stale
+      telemetry, policy versioning, node drain, skew, and no-eligible-node behavior.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/storage_placement.py
+    - kind: command
+      reference: 'tests/services/test_hub_storage_placement.py in focused suite: 26 passed total (2026-08-11)'
+    - kind: code
+      reference: endoreg_db/services/hub/storage_placement.py (atomic consume/release/expiry and dual
+        capacity admission)
+    - kind: command
+      reference: 'focused hardening pytest: 31 passed in 22.46s (2026-08-11)'
+    - kind: command
+      reference: '2026-08-11 hardened focused model/schema/placement/rotation suite: 31 passed in 22.46s;
+        Pyright 0 errors; migration drift and Ruff checks passed.'
+    - kind: code
+      reference: endoreg_db/services/hub/storage_placement.py (public non-mutating plan_storage_placement
+        contract)
+    - kind: command
+      reference: 'focused balancing Pyright: 0 errors; focused pytest: 23 passed in 27.78s (2026-08-11)'
+    - kind: command
+      reference: '2026-08-11 ephemeral PostgreSQL 17 test_postgresql_concurrent_reservations_cannot_over_admit_capacity:
+        1 passed.'
+    note: The public hub-storage-control-v1 planner and atomic reservation share deterministic eligibility/scoring,
+      dual physical/policy capacity gates, exact replay, expiry, and counter reconciliation. A real PostgreSQL
+      two-thread race proves capacity cannot be over-admitted.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:51.966033Z'
+- id: idempotent_rotation_state_machine
+  category: functionality
+  title: Rotation uses an idempotent copy-verify-commit-cleanup state machine
+  acceptance:
+  - Rotation persists immutable source and target placements, artifact hash and size, policy version,
+    idempotency key, initiator, reason, timestamps, retry state, and current transition.
+  - Copy completion alone cannot change the canonical placement; target verification precedes an atomic
+    compare-and-set placement commit and source cleanup remains a distinct deferred transition.
+  - Exact replay resumes the same rotation, changed replay is rejected, and concurrent rotations for the
+    same artifact serialize or terminate with a stable conflict.
+  - Cleanup requires committed placement, all required replicas, expired media-operation leases, verified
+    target, and database/filesystem reconciliation; it never removes the previous or only valid master
+    early.
+  required: true
+  verification:
+    kind: manual
+    instructions: Interrupt and replay every transition under concurrent ingest, playback, reconciliation,
+      drain, retry, and cleanup workloads and inspect constraints and ledgers.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/storage_rotation.py
+    - kind: command
+      reference: 'tests/services/test_hub_storage_rotation.py in focused suite: 26 passed total (2026-08-11)'
+    - kind: code
+      reference: endoreg_db/services/hub/storage_rotation.py (fingerprinted transition and receipt services)
+    - kind: command
+      reference: 'focused hardening pytest: 31 passed in 22.46s (2026-08-11)'
+    - kind: command
+      reference: '2026-08-11 hardened focused suite: 31 passed; changed transition evidence, verification
+        receipt, cleanup receipt, and reservation lifecycle paths covered.'
+    - kind: command
+      reference: '2026-08-11 endoreg focused storage suite: 37 passed; LX focused orchestration suite:
+        67 passed.'
+    - kind: code
+      reference: Operator retry receipts are included in the deterministic balance-work fingerprint. A retry
+        therefore materializes a new reservation, target placement, rotation, and immutable work item rather
+        than replaying or reopening the failed workflow. Focused test code covers unchanged-telemetry retry and
+        exact subsequent reconciliation replay; execution is intentionally left to the evidence owner.
+    note: Copy, verification, commit, cleanup deferral, terminal failure, transition fingerprints, and
+      reconciler and operator-control receipts are persisted and exact-replay safe; LX now executes and recovers
+      the workflow, and a retry requires fresh placement state. Owner-run verification and production
+      lease/replica drills remain outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:53.155877Z'
+- id: storage_node_security_boundary
+  category: security
+  title: Storage-node transport and encryption preserve the clinical security boundary
+  acceptance:
+  - Storage-node calls require HTTPS with mutually authenticated Transport Layer Security, authenticated
+    node identity, explicit operation authorization, certificate rotation, bounded request lifetime, and
+    replay protection.
+  - NetworkNode.shared_secret remains request authentication material only; neither it nor the application
+    master key is used as a payload key or transmitted to a storage node.
+  - Standalone artifacts leaving a local encrypted-storage boundary use per-transfer envelope encryption
+    and a data-encryption key wrapped to the approved recipient identity; plaintext staging remains prohibited.
+  - Only approved protected artifacts are accepted, raw-media export remains prohibited, and wrong node,
+    center, artifact, recipient, hash, storage profile, or residency fails before disclosure or mutation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review keys, models, serializers, clients, logs, and deployment settings, then run positive
+      and negative mutually authenticated Transport Layer Security, authorization, replay, recipient,
+      and envelope-encryption tests.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '2026-08-11 cross-repository live TLS 1.3/mTLS envelope suite: 3 passed.'
+    note: Typed evidence binds recipient key, envelope profile, hash, size, placement, and generation;
+      the exact cross-repository client/server contract passed a live local TLS 1.3 mTLS encrypted transfer.
+      Deployed certificate validation remains pending.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:54.436491Z'
+- id: atomic_storage_operations_and_integrity
+  category: data_integrity
+  title: Remote storage mutations are atomic, hash verified, and fully reconcilable
+  acceptance:
+  - Store, publish, fetch, verify, and delete contracts carry canonical artifact identity, expected size,
+    cryptographic hash, key version, placement generation, and idempotency key.
+  - Filesystem mutations use endoreg_db.utils.filesystem.file_operations, atomic publication, bounded
+    staging, and structured JavaScript Object Notation events; partial targets are never exposed as valid
+    artifacts.
+  - Retrieval and streaming resolve only a committed placement and renew the appropriate media-operation
+    lease; missing, corrupt, or mismatched content fails closed and records an explicit failed or LOST
+    outcome.
+  - Reconciliation detects database-only, storage-only, duplicate, stale-generation, corrupt, and unreachable
+    states without guessing a canonical copy or rewriting clinical timeline coordinates.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise store, fetch, stream, verify, publish, reconcile, and delete with injected
+      partial writes, corruption, generation mismatch, database rollback, and node loss.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: Lux storage/deployment lane 55 passed; endoreg focused storage suite 37 passed.
+    note: Persisted transfer and deletion evidence, placement commit receipts, integrity/failure transitions,
+      resolver gates, and reconciliation receipts now match the atomic Lux data plane. Production filesystem/database
+      skew drills remain outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:55.651986Z'
+- id: versioned_hub_storage_api
+  category: functionality
+  title: Hub and storage services share a versioned least-privilege API contract
+  acceptance:
+  - Typed request and response schemas cover capability discovery, health, capacity, reservation, store,
+    fetch, verification, and deletion with stable error codes and no unvalidated persisted dictionaries.
+  - Health and capacity distinguish total, filesystem-free, policy-usable, reserved, in-flight, committed,
+    and cleanup-reclaimable bytes and include a signed or authenticated observation timestamp.
+  - Pagination, timeouts, byte limits, backpressure, idempotency, range access, and error semantics are
+    explicit and compatible with large streamable media.
+  - Storage nodes cannot mutate application metadata, select their own canonical placement, or enumerate
+    or access artifacts outside the hub-authorized scope.
+  required: true
+  verification:
+    kind: manual
+    instructions: Validate schemas and endpoint tests from both endoreg-db and LX-Annotate and exercise
+      them against an independently deployed storage-node service.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: 'Cross-contract schema and envelope suite: 3 passed; combined Pyright: 0 errors.'
+    note: Public versioned planner and typed model/service contracts are consumed fail-closed by LX, while
+      the data plane exposes least-privilege typed health/capacity/store/fetch/verify/delete operations.
+      Additive inventory pagination and exact current-generation application resolution are implemented.
+      Node-side plaintext range transfer and production compatibility remain outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:56.848172Z'
+- id: concurrency_and_failure_tests
+  category: testing
+  title: Placement and rotation failure modes are regression tested
+  acceptance:
+  - Tests cover one and multiple nodes, weighted utilization, deterministic ties, capacity margins, reservations,
+    drain, recovery, rebalance, lease deferral, replicas, and safe cleanup.
+  - Concurrency tests cover simultaneous ingest, placement, rotation, fetch, reconciliation, retry, and
+    node drain without overcommit, duplicate primaries, stale publication, or early deletion.
+  - Negative tests cover stale or dishonest telemetry, no capacity, unreachable node, timeout, partial
+    copy, wrong size or hash, replay, lost acknowledgement, transaction rollback, worker restart, and
+    corrupt source or target.
+  - Cross-repository contract tests pin compatible schema and policy versions and a production-like integration
+    test verifies hub ingest, remote placement, playback, rotation, recovery, and reconciliation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused unit, database-constraint, concurrency, failure-injection, cross-repository,
+      and production-like integration suites and record exact revisions and results.
+    timeout_seconds: 3600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '2026-08-11: endoreg 37 passed/1 SQLite skip; PostgreSQL concurrency 1 passed; LX 67
+        passed; Lux 55 passed.'
+    - kind: command
+      reference: '2026-08-11 final domain lane: 49 passed/1 PostgreSQL-only skip; the skipped simultaneous-reservation
+        test passed separately on disposable PostgreSQL 17 and proved one admission, one insufficient-capacity
+        result, and exact accounting.'
+    - kind: code
+      reference: The report integrity writers, dependency-inverted remote video/report providers, exact selector,
+        and LX publication migration 0006 were added after the recorded candidate. No tests, type checks,
+        linters, migrations, builds, or Nix evaluations were run after this delta at the owner's request.
+    - kind: code
+      reference: Owner-run regression output identified four preanonymized watcher failures, one model-import
+        boundary failure, and stale lx-dtypes inventory metadata. The watcher now persists its already-computed
+        immutable handoff digest without reopening legacy plaintext through LazyEncryptedStorage; the resolver
+        uses owning-module imports; and the reviewed inventory contains all storage control-plane models. These
+        fixes have not been rerun by Codex.
+    note: Real PostgreSQL concurrent admission and focused domain failure/replay tests pass. Broader PostgreSQL
+      balancing/cleanup/lease stress, final publication/playback verification, restored-database migration,
+      and production soak remain outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T11:18:57.881646Z'
+- id: reconciliation_observability_and_recovery
+  category: operations
+  title: Operators can detect and safely recover skew, failures, and capacity pressure
+  acceptance:
+  - Structured correlated events and metrics expose placement decisions, policy version, reservations,
+    node health age, capacity, skew, rotation transitions, bytes moved, retries, verification, cleanup,
+    and failures without secrets or patient data.
+  - Scheduled reconciliation and balancing are rate limited, lease aware, resumable, bounded, and safe
+    after hub, database, worker, network, or storage-node restart.
+  - Alerts cover stale health, low and stop capacity, imbalance, unreachable node, integrity mismatch,
+    stuck rotation, reservation leak, repeated retry, cleanup failure, and loss of the only verified copy.
+  - Drain, replacement, rollback, key rotation, restore, and disaster recovery preserve auditable placement
+    history and require explicit approval before destructive repair.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run a production-like soak and recovery drill with injected skew, capacity exhaustion,
+      restart, partition, corruption, drain, replacement, and rollback; inspect metrics, alerts, and ledgers.
+    timeout_seconds: 3600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/storage_balancing.py; endoreg_db/models/hub/storage_balancing.py
+    - kind: command
+      reference: 'focused balancing suite: 23 passed in 27.78s; Pyright 0 errors; Ruff and migration drift
+        passed (2026-08-11)'
+    - kind: command
+      reference: LX overview/task suites and endoreg balancing/telemetry suites passed in focused lanes.
+    - kind: code
+      reference: endoreg_db/services/hub/storage_reconciliation.py; endoreg_db/models/hub/storage_balancing.py;
+        endoreg_db/migrations/0070_storage_reconciliation.py
+    - kind: code
+      reference: endoreg_db/services/hub/storage_operator_control.py; endoreg_db/migrations/0071_storage_operator_control.py
+    note: Bounded balancing, immutable outcomes, telemetry probe state, restart redispatch, reservation
+      expiry, cleanup deferral, retired-key cleanup, failure/readiness counts, a deployment kill switch,
+      and typed immutable reconciliation pages/events/health snapshots are implemented. The final reconciliation
+      test delta is intentionally left for the owner to run. Persisted pause/resume, manual reconcile/rebalance,
+      and fresh-placement-only retry intents are now represented but remain unverified. External metrics/alerts
+      and production soak remain outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:35:59.275650Z'
+- id: architecture_and_operations_documentation
+  category: documentation
+  title: Domain, API, migration, and recovery contracts are documented
+  acceptance:
+  - English documentation defines storage-node identity, placement versus storage mode, balancing policy,
+    reservations, replicas, rotation state machine, leases, encryption, reconciliation, and stable errors.
+  - Migration from hub-local persistent storage inventories and verifies every artifact, records initial
+    placement, supports dry-run and rollback, and prohibits destructive cleanup until production gates
+    pass.
+  - Operator procedures cover node enrollment, capacity planning, drain, rebalance, replacement, certificate
+    and recipient-key rotation, incident response, backup, restore, and disaster recovery.
+  - The documentation links this feature to HubTransfer, StorageSecurity, VideoStorageNormalization, the
+    LX-Annotate tracker, and the LuxNix storage-node deployment without maintaining parallel readiness
+    status.
+  required: true
+  verification:
+    kind: manual
+    instructions: Have endoreg-db, LX-Annotate, LuxNix, security, and storage owners execute the migration
+      and recovery runbooks in a production-like environment and approve the evidence.
+    timeout_seconds: 2400
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: ../dev/lx-annotate/docs/guides/hub-storage-load-balancing.md
+    note: The LX runbook documents domain ownership, placement versus replication, envelope/key rotation,
+      gs-02/gs-01 topology, gates, rollout, rollback, and incident response. Production migration and
+      disaster-recovery execution evidence remains outstanding.
+    assessed_by: codex-storage-prod-readiness
+    assessed_at: '2026-08-11T10:36:00.484488Z'

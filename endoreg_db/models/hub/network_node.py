@@ -23,6 +23,7 @@ class NetworkNode(models.Model):
     class Role(models.TextChoices):
         CENTRAL_HUB = "central_hub", "Central Hub"
         SITE_NODE = "site_node", "Site Node"
+        STORAGE_NODE = "storage_node", "Storage Node"
         STANDALONE = "standalone", "Standalone"
 
     objects = NetworkNodeManager()
@@ -69,14 +70,18 @@ class NetworkNode(models.Model):
 
     def save(self, *args: object, **kwargs: object) -> None:
         if self.pk:
-            existing_key = (
-                type(self)
-                .objects.filter(pk=self.pk)
-                .values_list("node_key", flat=True)
-                .first()
+            existing = (
+                type(self).objects.filter(pk=self.pk).values("node_key", "role").first()
             )
+            existing_key = existing["node_key"] if existing is not None else None
+            existing_role = existing["role"] if existing is not None else None
             if existing_key and self.node_key and self.node_key != existing_key:
                 raise ValueError("node_key is immutable once assigned")
+            if (
+                existing_role == self.Role.STORAGE_NODE
+                and self.role != self.Role.STORAGE_NODE
+            ):
+                raise ValueError("storage_node role is immutable once assigned")
 
         if not self.node_key:
             self.node_key = self.build_node_key(

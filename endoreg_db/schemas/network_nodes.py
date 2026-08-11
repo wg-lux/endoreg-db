@@ -18,6 +18,7 @@ from pydantic import (
 class NetworkNodeRole(StrEnum):
     CENTRAL_HUB = "central_hub"
     SITE_NODE = "site_node"
+    STORAGE_NODE = "storage_node"
     STANDALONE = "standalone"
 
 

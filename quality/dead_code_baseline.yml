@@ -48,9 +48,6 @@ accepted_findings:
     path: endoreg_db/services/annotation_access.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature
-    path: endoreg_db/services/interoperability/dicom_import.py
-    message: "unused variable 'expected_size_bytes'"
-  - <<: *protocol_signature
     path: endoreg_db/utils/media/frame_anonymization_utils.py
     message: "unused variable 'flat'"
     occurrences: 2

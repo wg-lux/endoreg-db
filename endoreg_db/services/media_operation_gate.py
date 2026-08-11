@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 from typing import Final, cast
 
 from django.db import transaction
@@ -33,6 +35,78 @@ FFMPEG_STREAM_THROTTLE_NORMAL: Final[StreamThrottleMode] = "normal"
 FFMPEG_STREAM_THROTTLE_STREAMING: Final[StreamThrottleMode] = "streaming"
 
 
+class MediaOperationLeaseType(StrEnum):
+    STREAM = MediaOperationLease.LEASE_STREAM
+    SEGMENT_UPDATE = MediaOperationLease.LEASE_SEGMENT_UPDATE
+
+
+@dataclass(frozen=True, slots=True)
+class MediaOperationLeaseAcquisition:
+    video_id: int
+    lease_type: MediaOperationLeaseType
+    expires_at: datetime
+    metadata: dict[str, object]
+    renew_matching: bool = False
+
+    def __post_init__(self) -> None:
+        if self.video_id <= 0:
+            raise ValueError("video_id must be positive")
+        if not timezone.is_aware(self.expires_at) or self.expires_at <= timezone.now():
+            raise ValueError("expires_at must be timezone-aware and in the future")
+
+
+def acquire_media_operation_lease(
+    *, request: MediaOperationLeaseAcquisition
+) -> MediaOperationLease:
+    """Acquire a lease through the VideoFile row used by cleanup authorization.
+
+    An outstanding storage cleanup authorization is an exclusive barrier: no
+    new playback or segment-update lease may start until that rotation reaches
+    a terminal state.
+    """
+
+    from endoreg_db.models.hub.storage_placement import (
+        StorageRotation,
+        StorageRotationCleanupReceipt,
+    )
+
+    with transaction.atomic():
+        locked_video = VideoFile.objects.select_for_update().get(pk=request.video_id)
+        cleanup_pending = StorageRotationCleanupReceipt.objects.filter(
+            rotation__source_placement__media_lease_video=locked_video,
+            rotation__state__in=[
+                StorageRotation.State.COMMITTED,
+                StorageRotation.State.CLEANUP_DEFERRED,
+            ],
+        ).exists()
+        if cleanup_pending:
+            raise MediaOperationDeferred(
+                "Media operation lease delayed by an authorized storage cleanup."
+            )
+        metadata = dict(request.metadata)
+        if request.renew_matching:
+            existing = (
+                MediaOperationLease.objects.select_for_update()
+                .filter(
+                    video=locked_video,
+                    lease_type=request.lease_type.value,
+                    metadata=metadata,
+                )
+                .order_by("-expires_at", "pk")
+                .first()
+            )
+            if existing is not None:
+                existing.expires_at = request.expires_at
+                existing.save(update_fields=["expires_at", "updated_at"])
+                return existing
+        return MediaOperationLease.objects.create(
+            video=locked_video,
+            lease_type=request.lease_type.value,
+            expires_at=request.expires_at,
+            metadata=metadata,
+        )
+
+
 def expire_media_operation_leases(*, video_id: int | None = None) -> int:
     queryset = MediaOperationLease.objects.filter(expires_at__lte=timezone.now())
     if video_id is not None:
@@ -58,28 +132,15 @@ def create_video_stream_lease(
     normalized_file_type = str(file_type).strip()
     if not normalized_file_type:
         raise ValueError("file_type must not be empty")
-    with transaction.atomic():
-        locked_video = VideoFile.objects.select_for_update().get(pk=int(video.pk))
-        existing = (
-            MediaOperationLease.objects.select_for_update()
-            .filter(
-                video=locked_video,
-                lease_type=MediaOperationLease.LEASE_STREAM,
-                metadata__file_type=normalized_file_type,
-            )
-            .order_by("-expires_at", "pk")
-            .first()
-        )
-        if existing is not None:
-            existing.expires_at = expires_at
-            existing.save(update_fields=["expires_at"])
-            return existing
-        return MediaOperationLease.objects.create(
-            video=locked_video,
-            lease_type=MediaOperationLease.LEASE_STREAM,
+    return acquire_media_operation_lease(
+        request=MediaOperationLeaseAcquisition(
+            video_id=int(video.pk),
+            lease_type=MediaOperationLeaseType.STREAM,
             expires_at=expires_at,
             metadata={"file_type": normalized_file_type},
+            renew_matching=True,
         )
+    )
 
 
 def create_video_segment_update_lease(
@@ -93,14 +154,14 @@ def create_video_segment_update_lease(
         else max(1, int(ttl_seconds))
     )
     expires_at = timezone.now() + timedelta(seconds=ttl)
-    with transaction.atomic():
-        locked_video = VideoFile.objects.select_for_update().get(pk=int(video.pk))
-        return MediaOperationLease.objects.create(
-            video=locked_video,
-            lease_type=MediaOperationLease.LEASE_SEGMENT_UPDATE,
+    return acquire_media_operation_lease(
+        request=MediaOperationLeaseAcquisition(
+            video_id=int(video.pk),
+            lease_type=MediaOperationLeaseType.SEGMENT_UPDATE,
             expires_at=expires_at,
             metadata={"source": "segment_validation"},
         )
+    )
 
 
 def release_media_operation_lease(lease: MediaOperationLease | None) -> None:

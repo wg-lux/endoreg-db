@@ -31,6 +31,9 @@ from endoreg_db.serializers.pdf.pdf_processing_history import (
 )
 from endoreg_db.services.polling_coordinator import ProcessingLockContext
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.services.raw_pdf_files.integrity import (
+    verify_and_persist_processed_report_sha256,
+)
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.media_urls import build_pdf_stream_path
 from endoreg_db.utils.operation_log import record_operation
@@ -296,15 +299,18 @@ def _persist_redaction(
         state_update_fields = [
             "anonymized",
             "anonymization_validated",
+            "processed_file_sha256",
             "date_modified",
         ]
         state.anonymized = True
         state.anonymization_validated = False
+        state.processed_file_sha256 = ""
         # Keep existing value unless missing; a redacted upload is processed output.
         if not _state_sensitive_meta_processed(state):
             state.sensitive_meta_processed = True
             state_update_fields.append("sensitive_meta_processed")
         _save_pdf_state(state, update_fields=state_update_fields)
+        verify_and_persist_processed_report_sha256(pdf)
 
         user = getattr(request, "user", None)
         actor_user = user if getattr(user, "is_authenticated", False) else None

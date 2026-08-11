@@ -2620,6 +2620,8 @@ models:
   - job:endoreg_db/management/commands/profile_video_streaming.py
   boundary_consumers:
   - job:endoreg_db/management/commands/profile_video_streaming.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
   - service:endoreg_db/services/media_operation_gate.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
@@ -2944,6 +2946,8 @@ models:
   - api:endoreg_db/views/media/hub/transfers.py
   - api:endoreg_db/views/misc/application_settings_network_nodes.py
   - service:endoreg_db/services/hub/network_nodes.py
+  - service:endoreg_db/services/hub/storage_placement.py
+  - service:endoreg_db/services/hub/storage_telemetry.py
   - service:endoreg_db/services/hub/transfers.py
   dynamic_model_references:
   - endoreg_db/views/media/hub/transfers.py
@@ -4104,6 +4108,7 @@ models:
   - service:endoreg_db/services/evaluation_manifest.py
   - service:endoreg_db/services/hub/ingest.py
   - service:endoreg_db/services/hub/media_integrity.py
+  - service:endoreg_db/services/hub/storage_artifact_resolution.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/raw_pdf_files/queries.py
   - service:endoreg_db/services/report_materialization.py
@@ -4629,6 +4634,576 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.StorageArtifactPlacement
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageArtifactPlacement
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storageartifactplacement
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageArtifactPlacement
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_artifact_resolution.py
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  - service:endoreg_db/services/hub/storage_placement.py
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageBalanceCancellationReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageBalanceCancellationReceipt
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagebalancecancellationreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageBalanceCancellationReceipt
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageBalanceWorkItem
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageBalanceWorkItem
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagebalanceworkitem
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageBalanceWorkItem
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageBalancingControlState
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageBalancingControlState
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagebalancingcontrolstate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageBalancingControlState
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageHealthSnapshot
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageHealthSnapshot
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagehealthsnapshot
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageHealthSnapshot
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageNodeCapability
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageNodeCapability
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagenodecapability
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageNodeCapability
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_telemetry.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageNodeState
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageNodeState
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagenodestate
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageNodeState
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  - service:endoreg_db/services/hub/storage_placement.py
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_telemetry.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageOperatorControlReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageOperatorControlReceipt
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storageoperatorcontrolreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageOperatorControlReceipt
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StoragePlacementCommitReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_transfer.StoragePlacementCommitReceipt
+  source_path: endoreg_db/models/hub/storage_transfer.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storageplacementcommitreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_transfer.py:StoragePlacementCommitReceipt
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReconciliationEvent
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageReconciliationEvent
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereconciliationevent
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageReconciliationEvent
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReconciliationObservation
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageReconciliationObservation
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereconciliationobservation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageReconciliationObservation
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReconciliationOutcome
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageReconciliationOutcome
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereconciliationoutcome
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageReconciliationOutcome
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReconciliationRun
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_balancing.StorageReconciliationRun
+  source_path: endoreg_db/models/hub/storage_balancing.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereconciliationrun
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_balancing.py:StorageReconciliationRun
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReservation
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageReservation
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereservation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageReservation
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  - service:endoreg_db/services/hub/storage_placement.py
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageReservationTransition
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageReservationTransition
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagereservationtransition
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageReservationTransition
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_placement.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageRotation
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageRotation
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagerotation
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageRotation
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_balancing.py
+  - service:endoreg_db/services/hub/storage_operator_control.py
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  - service:endoreg_db/services/media_operation_gate.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageRotationCleanupReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageRotationCleanupReceipt
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagerotationcleanupreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageRotationCleanupReceipt
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_reconciliation.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  - service:endoreg_db/services/media_operation_gate.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageRotationTransition
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageRotationTransition
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagerotationtransition
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageRotationTransition
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_rotation.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageRotationVerificationReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_placement.StorageRotationVerificationReceipt
+  source_path: endoreg_db/models/hub/storage_placement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagerotationverificationreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_placement.py:StorageRotationVerificationReceipt
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageTransferEvidence
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_transfer.StorageTransferEvidence
+  source_path: endoreg_db/models/hub/storage_transfer.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagetransferevidence
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: The storage control-plane model is endoreg-db operational state with a typed local service
+    boundary.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_transfer.py:StorageTransferEvidence
+  boundary_consumers:
+  - service:endoreg_db/services/hub/storage_artifact_resolution.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.Tag
   kind: registered
   python_path: endoreg_db.models.other.tag.Tag
@@ -4921,6 +5496,9 @@ models:
   - service:endoreg_db/services/hls_media.py
   - service:endoreg_db/services/hub/ingest.py
   - service:endoreg_db/services/hub/media_integrity.py
+  - service:endoreg_db/services/hub/storage_artifact_resolution.py
+  - service:endoreg_db/services/hub/storage_rotation.py
+  - service:endoreg_db/services/hub/storage_transfer.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/lx_video_contracts.py
   - service:endoreg_db/services/media_integrity.py

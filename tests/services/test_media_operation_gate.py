@@ -16,6 +16,9 @@ from endoreg_db.services.media_operation_gate import (
     FFMPEG_STREAM_THROTTLE_NORMAL,
     FFMPEG_STREAM_THROTTLE_STREAMING,
     MediaOperationDeferred,
+    MediaOperationLeaseAcquisition,
+    MediaOperationLeaseType,
+    acquire_media_operation_lease,
     active_media_operation_lease_summary,
     create_segment_update_lease_on_commit,
     create_video_segment_update_lease,
@@ -95,6 +98,34 @@ def test_stream_iterator_releases_lease_after_consumption() -> None:
 
     assert body == b"abcdef"
     assert not MediaOperationLease.objects.filter(pk=lease.pk).exists()
+
+
+@pytest.mark.django_db
+def test_public_lease_acquisition_uses_typed_request_and_renews_exact_match() -> None:
+    video = _create_video()
+    first_expiry = timezone.now() + timedelta(seconds=30)
+    request = MediaOperationLeaseAcquisition(
+        video_id=video.pk,
+        lease_type=MediaOperationLeaseType.STREAM,
+        expires_at=first_expiry,
+        metadata={"file_type": "processed"},
+        renew_matching=True,
+    )
+
+    first = acquire_media_operation_lease(request=request)
+    later_expiry = first_expiry + timedelta(seconds=30)
+    replay = acquire_media_operation_lease(
+        request=MediaOperationLeaseAcquisition(
+            video_id=video.pk,
+            lease_type=MediaOperationLeaseType.STREAM,
+            expires_at=later_expiry,
+            metadata={"file_type": "processed"},
+            renew_matching=True,
+        )
+    )
+
+    assert replay.pk == first.pk
+    assert replay.expires_at == later_expiry
 
 
 @pytest.mark.django_db
