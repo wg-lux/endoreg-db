@@ -23,6 +23,7 @@ from endoreg_db.models import (
     PortalUserInfo,
 )
 from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.video_segment_validation import SegmentAnnotationStatus
 from endoreg_db.views.anonymization.overview import (
     AnonymizationOverviewView,
     UploadJobRetryView,
@@ -189,7 +190,7 @@ def test_anonymization_overview_mixed_content():
     assert data[0]["annotation_status"] == "not_started"
 
     assert data[1]["anonymization_status"] == AnonymizationState.VALIDATED
-    assert data[1]["annotation_status"] == "validated"
+    assert data[1]["annotation_status"] == SegmentAnnotationStatus.NOT_STARTED.value
 
 
 @pytest.mark.django_db

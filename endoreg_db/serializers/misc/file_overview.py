@@ -21,6 +21,10 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
+from endoreg_db.models.state.video_segment_validation import SegmentAnnotationStatus
+from endoreg_db.services.video_segment_validation_workflow import (
+    resolve_segment_annotation_status,
+)
 
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
 
@@ -262,6 +266,9 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
                 _FileOverviewSensitiveMetaLike | None, instance.sensitive_meta
             )
             document_type = None
+            annotation_status = SegmentAnnotationStatus(
+                resolve_segment_annotation_status(instance)
+            ).value
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
             except Exception:
@@ -282,6 +289,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
                 _FileOverviewSensitiveMetaLike | None, instance.sensitive_meta
             )
             document_type = self._pdf_document_type(instance)
+            annotation_status = SegmentAnnotationStatus.NOT_STARTED.value
             try:
                 file_size = instance.file.size if instance.file else 0
             except Exception:
@@ -296,20 +304,12 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             state_obj, "anonymization_status", AnonymizationState.NOT_STARTED
         )
 
-        # 3. Map to frontend annotation_status
-        annot_status = "not_started"
-
-        # FIX: Explicitly check against the Enum value
-        if raw_status == AnonymizationState.VALIDATED:
-            annot_status = "validated"
-
-        # 4. Return Payload
         return {
             "id": instance.pk,
             "filename": filename,
             "media_type": media_type,
             "anonymization_status": raw_status,
-            "annotation_status": annot_status,
+            "annotation_status": annotation_status,
             "created_at": created_at,
             "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
             "file_size": file_size,
@@ -355,11 +355,9 @@ class CrossCenterProcessedOverviewSerializer(serializers.Serializer[VideoFile]):
             "filename": f"Video {instance.pk}",
             "media_type": "video",
             "anonymization_status": raw_status,
-            "annotation_status": (
-                "validated"
-                if raw_status == AnonymizationState.VALIDATED
-                else "not_started"
-            ),
+            "annotation_status": SegmentAnnotationStatus(
+                resolve_segment_annotation_status(instance)
+            ).value,
             "created_at": instance.uploaded_at,
             "sensitive_meta_id": None,
             "file_size": 0,
