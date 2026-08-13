@@ -14,7 +14,17 @@ from endoreg_db.models.medical.examination.examination_indication import (
 class _IndicationChoiceRow(TypedDict):
     id: int
     name: str
+    name_de: str
+    name_en: str
     classification_ids: list[int]
+
+
+class _LocalizedCatalogRow(TypedDict):
+    id: int
+    name: str
+    name_de: str
+    name_en: str
+    description: str | None
 
 
 def _int_pk(value: object) -> int:
@@ -25,24 +35,33 @@ def _int_pk(value: object) -> int:
     raise ValueError(f"Expected integer primary key, got {type(value).__name__}.")
 
 
+def _localized_catalog_item(value: object) -> _LocalizedCatalogRow:
+    name = str(getattr(value, "name", "")).strip()
+    if not name:
+        raise ValueError("Catalog item name must not be blank.")
+    name_de = str(getattr(value, "name_de", "") or "").strip()
+    name_en = str(getattr(value, "name_en", "") or "").strip()
+    description = str(getattr(value, "description", "") or "").strip()
+    return {
+        "id": _int_pk(getattr(value, "pk")),
+        "name": name,
+        "name_de": name_de if name_de and name_de != "unknown" else name,
+        "name_en": name_en if name_en and name_en != "unknown" else name,
+        "description": description or None,
+    }
+
+
 @api_view(["GET"])
 def get_indications_for_examination(request: HttpRequest, exam_id: int) -> Response:
     """
     Retrieve indication options for a given examination.
 
     Returns:
-        list[dict]: [{"id": int, "name": str, "description": str}, ...]
+        list[dict]: Canonical localized indication catalog items.
     """
     exam = get_object_or_404(Examination, id=exam_id)
     indications = exam.indications.all().order_by("name", "id")
-    payload = [
-        {
-            "id": _int_pk(getattr(indication, "pk")),
-            "name": str(getattr(indication, "name", "")),
-            "description": str(getattr(indication, "description", "") or ""),
-        }
-        for indication in indications
-    ]
+    payload = [_localized_catalog_item(indication) for indication in indications]
     return Response(payload)
 
 
@@ -65,12 +84,15 @@ def get_indication_choices(request: HttpRequest, indication_id: int) -> Response
     choices_by_id: dict[int, _IndicationChoiceRow] = {}
     for classification in indication.classifications.all():
         for choice in classification.choices.all():
-            choice_id = _int_pk(getattr(choice, "pk"))
+            localized_choice = _localized_catalog_item(choice)
+            choice_id = localized_choice["id"]
             row = choices_by_id.setdefault(
                 choice_id,
                 {
                     "id": choice_id,
-                    "name": str(getattr(choice, "name", "")),
+                    "name": localized_choice["name"],
+                    "name_de": localized_choice["name_de"],
+                    "name_en": localized_choice["name_en"],
                     "classification_ids": [],
                 },
             )
@@ -85,6 +107,8 @@ def get_indication_choices(request: HttpRequest, indication_id: int) -> Response
             {
                 "id": int(row["id"]),
                 "name": str(row["name"]),
+                "name_de": str(row["name_de"]),
+                "name_en": str(row["name_en"]),
                 "classification_ids": classification_ids,
             }
         )

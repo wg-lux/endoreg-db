@@ -32,9 +32,17 @@ from endoreg_db.models import (
 )
 from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
 from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
 
 REPORT_API_MODULE = "endoreg_db.views.report.patient_examination_report"
 API_PREFIX = "/api/patient-examination-reports"
+
+
+def _successful_runtime_validation(
+    *_args: object,
+    **_kwargs: object,
+) -> dict[str, object]:
+    return {"ok": True, "issues": []}
 
 
 class _ReportHeaderPayload(TypedDict):
@@ -444,7 +452,17 @@ def test_create_report_minimal_payload(
 def test_create_report_with_payload_and_final_status(
     logged_in_client: Client,
     patient_examination: PatientExamination,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    patient_examination.knowledge_base_module = "report_template_examples"
+    patient_examination.knowledge_base_version = "0.1.0"
+    patient_examination.save(
+        update_fields=["knowledge_base_module", "knowledge_base_version"]
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
     resp = logged_in_client.post(
         f"{API_PREFIX}/save-submission",
         data=_json_body(
@@ -466,9 +484,57 @@ def test_create_report_with_payload_and_final_status(
     report = PatientExaminationReport.objects.get(pk=data["report"]["id"])
     assert report.status == PatientExaminationReport.Status.FINAL
     assert report.title == "Initial Finalized Draft"
-    assert report.editor_payload == {"sections": [{"id": "findings"}]}
+    assert report.language == "de"
+    assert report.knowledge_base_module == "report_template_examples"
+    assert report.knowledge_base_version == "0.1.0"
+    assert report.editor_payload == {
+        "sections": [{"id": "findings"}],
+        "report_language": "de",
+    }
+    assert data["report"]["language"] == "de"
+    assert data["report"]["knowledge_base_module"] == "report_template_examples"
+    assert data["report"]["knowledge_base_version"] == "0.1.0"
     assert report.rendered_text == "Rendered report text"
     assert data["history_context"]["previous_examinations"] == []
+
+
+@pytest.mark.django_db
+def test_final_submission_returns_422_and_rolls_back_failed_template_validation(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_validation(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise ReportRuntimeValidationError(
+            {
+                "ok": False,
+                "issues": [
+                    {"code": "required_finding_missing", "message": "Befund fehlt."}
+                ],
+            }
+        )
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        fail_validation,
+    )
+
+    response = logged_in_client.post(
+        f"{API_PREFIX}/save-submission",
+        data=_json_body(
+            {
+                "patient_examination_id": patient_examination.pk,
+                "template_name": "star_upper_gi_main",
+                "status": "final",
+                "rendered_text": "Unvollständiger Befund",
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 422
+    assert "required_finding_missing" in str(response.json())
+    assert PatientExaminationReport.objects.count() == 0
 
 
 @pytest.mark.django_db
@@ -773,6 +839,10 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         renderer_module,
         "render_pdf_with_rust_renderer",
         fake_render_pdf,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.views.report.patient_examination_report.validate_final_report_submission",
+        _successful_runtime_validation,
     )
 
     resp = logged_in_client.post(

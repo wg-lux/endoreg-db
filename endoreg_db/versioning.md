@@ -1,12 +1,17 @@
-### Dynamic Versioning with Hatch-VCS
+### Static package versioning with Maturin
 
-This project uses `hatch-vcs` to automatically determine the package version based on Git tags. This ensures that PyPI releases always match the Git tag exactly, without manually editing version files.
+This project builds its Python artifacts with Maturin. The release version is
+the static `[project].version` value in `pyproject.toml`; `uv.lock` must contain
+the same version for the editable `endoreg-db` package. Git tags document
+releases, but they do not calculate or override the package version.
 
 #### How It Works
 
-1. **Clean State:** If the commit matches a tag (e.g., `v1.0.0`) and the working directory is clean, the version is `1.0.0`.
-2. **Dirty State:** If files are modified or uncommitted, `hatch` appends a local identifier (e.g., `1.0.1.dev0+g<hash>.d<date>`). **PyPI will reject these uploads.**
-3. **Distance State:** If you are ahead of a tag by commits, it generates a dev version (e.g., `1.0.1.dev4+g<hash>`).
+1. **Unique version:** Choose a version that has not already been published to
+   PyPI and update `pyproject.toml`.
+2. **Locked metadata:** Run `uv lock` and verify it with `uv lock --check`.
+3. **Clean release commit:** Build the final upload artifacts from the exact,
+   committed source that will receive the matching tag.
 
 #### Release Workflow
 
@@ -14,7 +19,7 @@ This project uses `hatch-vcs` to automatically determine the package version bas
 Make your code changes, update `pyproject.toml` dependencies if needed, and commit everything.
 ```bash
 git add .
-git commit -m "Update dependencies for release"
+git commit -m "Prepare release 1.0.15.0"
 
 ```
 
@@ -32,7 +37,7 @@ git status
 3. **Tag the Release:**
 Create an annotated tag for the new version.
 ```bash
-git tag -a v0.8.9.16 -m "Release v0.8.9.16"
+git tag -a v1.0.15.0 -m "Release v1.0.15.0"
 
 ```
 
@@ -40,17 +45,20 @@ git tag -a v0.8.9.16 -m "Release v0.8.9.16"
 4. **Build:**
 Generate the distribution packages.
 ```bash
-rm -rf /dist #ensure empty dist
-python -m build
+make pypi-clean
+make pypi-build-check
+.devenv/state/venv/bin/twine check dist/*
 
 ```
 
 
-*Check:* The filename in `dist/` should look like `endoreg_db-0.8.9.16.tar.gz` (clean version).
+*Check:* Wheel and source-distribution filenames must contain the exact version
+from `pyproject.toml`, and the wheel must contain the migration named by
+`endoreg_db/migrations/max_migration.txt`.
 5. **Publish:**
 Upload to PyPI.
 ```bash
-python -m twine upload dist/*
+make pypi-upload
 
 ```
 
@@ -66,14 +74,10 @@ git push origin main --tags
 
 #### Troubleshooting
 
-**Problem:** `build` generates a version like `0.8.9.17.dev0+g...`
-**Cause:** Your working directory is "dirty" (uncommitted changes).
-**Fix:**
+**Problem:** PyPI reports that the filename or version already exists.
 
-1. Run `git status` to identify modified files.
-2. Commit them, add them to `.gitignore`, or stash them (`git stash`).
-3. Re-run the build.
+**Cause:** `[project].version` was already published. PyPI artifacts are
+immutable and cannot be replaced.
 
-**Problem:** `HTTPError: 400 Bad Request ... use of local versions is not allowed`
-**Cause:** You attempted to upload a "dirty" build to PyPI.
-**Fix:** Delete `dist/`, clean your git state (stash/commit), rebuild, and upload again.
+**Fix:** Choose the next release version, update `pyproject.toml`, run `uv lock`,
+commit the complete candidate, rebuild, and tag that exact commit.

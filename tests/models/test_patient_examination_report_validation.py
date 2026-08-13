@@ -63,3 +63,66 @@ def test_patient_examination_report_rejects_invalid_direct_json_writes(
         PatientExaminationReport.objects.create(**kwargs)
 
     assert field_name in exc_info.value.message_dict
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("template_name", "  "),
+        ("status", "translated_final"),
+        ("language", "fr"),
+        ("version", 0),
+        ("version", True),
+    ],
+)
+def test_patient_examination_report_rejects_invalid_direct_lifecycle_writes(
+    field_name: str,
+    value: object,
+) -> None:
+    kwargs: dict[str, object] = {
+        "patient_examination": _patient_examination(),
+        "template_name": "standard-report",
+        field_name: value,
+    }
+
+    with pytest.raises(ValidationError) as exc_info:
+        PatientExaminationReport.objects.create(**kwargs)
+
+    assert field_name in exc_info.value.message_dict
+
+
+@pytest.mark.django_db
+def test_patient_examination_report_canonicalizes_language_provenance() -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=_patient_examination(),
+        template_name="standard-report",
+        editor_payload={"reportLanguage": "de"},
+    )
+
+    report.refresh_from_db()
+    assert report.editor_payload == {"report_language": "de"}
+
+
+@pytest.mark.django_db
+def test_patient_examination_report_rejects_unsupported_language() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        PatientExaminationReport.objects.create(
+            patient_examination=_patient_examination(),
+            template_name="standard-report",
+            editor_payload={"report_language": "fr"},
+        )
+
+    assert "editor_payload" in exc_info.value.message_dict
+
+
+@pytest.mark.django_db
+def test_patient_examination_report_requires_complete_knowledge_base_identity() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        PatientExaminationReport.objects.create(
+            patient_examination=_patient_examination(),
+            template_name="standard-report",
+            knowledge_base_module="report_template_examples",
+        )
+
+    assert "knowledge_base_module" in exc_info.value.message_dict

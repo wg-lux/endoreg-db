@@ -200,6 +200,7 @@ def _normalize_classification_numerical_descriptors(
 
 
 def _resolve_classification_sync(
+    finding: Finding,
     item: PatientFindingClassificationSyncData,
 ) -> _ResolvedClassificationSync:
     classification = _resolve_finding_classification(
@@ -211,6 +212,16 @@ def _resolve_classification_sync(
     if classification is None or choice is None:
         raise ValidationError(
             {"classifications": "Unknown classification or classification choice."}
+        )
+    if not finding.finding_classifications.filter(pk=classification.pk).exists():
+        raise ValidationError(
+            {"classifications": "Classification is not allowed for this finding."}
+        )
+    if not classification.choices.filter(pk=choice.pk).exists():
+        raise ValidationError(
+            {
+                "classifications": "Classification choice is not allowed for this classification."
+            }
         )
     return _ResolvedClassificationSync(
         classification=classification,
@@ -311,7 +322,7 @@ def _sync_patient_finding_classifications(
     }
     matched_ids: set[int] = set()
     for item in payload:
-        resolved = _resolve_classification_sync(item)
+        resolved = _resolve_classification_sync(patient_finding.finding, item)
         identity = (
             cast(_IdentifiedLike, resolved.classification).id,
             cast(_IdentifiedLike, resolved.choice).id,
@@ -329,6 +340,7 @@ def _sync_patient_finding_classifications(
 
 
 def _resolve_intervention_sync(
+    finding: Finding,
     item: PatientFindingInterventionSyncData,
 ) -> _ResolvedInterventionSync:
     intervention = _resolve_finding_intervention(
@@ -336,6 +348,10 @@ def _resolve_intervention_sync(
     )
     if intervention is None:
         raise ValidationError({"interventions": "Unknown intervention."})
+    if not finding.finding_interventions.filter(pk=intervention.pk).exists():
+        raise ValidationError(
+            {"interventions": "Intervention is not allowed for this finding."}
+        )
     return _ResolvedInterventionSync(
         intervention=intervention,
         state=item.get("state"),
@@ -423,7 +439,7 @@ def _sync_patient_finding_interventions(
     existing_active = list(relations.interventions.filter(is_active=True))
     matched_ids: set[int] = set()
     for item in payload:
-        resolved = _resolve_intervention_sync(item)
+        resolved = _resolve_intervention_sync(patient_finding.finding, item)
         match = _find_active_intervention(existing_active, resolved)
         if match is None:
             match = cast(
@@ -436,10 +452,24 @@ def _sync_patient_finding_interventions(
     _deactivate_unmatched_interventions(existing_active, matched_ids)
 
 
-def _resolve_finding_sync(item: Mapping[str, object]) -> _ResolvedFindingSync:
+def _resolve_finding_sync(
+    patient_examination: PatientExamination,
+    item: Mapping[str, object],
+) -> _ResolvedFindingSync:
     finding = _resolve_finding(item.get("finding_id", item.get("finding")))
     if finding is None:
         raise ValidationError({"findings": "Unknown finding."})
+    examination_id = patient_examination.examination_id
+    if (
+        examination_id is not None
+        and not Finding.objects.filter(
+            pk=finding.pk,
+            examinations__pk=examination_id,
+        ).exists()
+    ):
+        raise ValidationError(
+            {"findings": "Finding is not allowed for this examination."}
+        )
     return _ResolvedFindingSync(
         finding=finding,
         classifications=cast(
@@ -546,14 +576,22 @@ def sync_report_findings(
     *,
     user: AuthUser | None,
 ) -> None:
+    resolved_payload = [
+        _resolve_finding_sync(patient_examination, item) for item in findings_payload
+    ]
+    for resolved in resolved_payload:
+        for item in resolved.classifications:
+            _resolve_classification_sync(resolved.finding, item)
+        for item in resolved.interventions:
+            _resolve_intervention_sync(resolved.finding, item)
+
     existing_active = list(
         patient_examination.patient_findings.filter(is_active=True).select_related(
             "finding"
         )
     )
     matched_ids: set[int] = set()
-    for item in findings_payload:
-        resolved = _resolve_finding_sync(item)
+    for resolved in resolved_payload:
         match = _find_active_patient_finding(existing_active, resolved.finding)
         if match is None:
             patient_finding = _create_patient_finding(

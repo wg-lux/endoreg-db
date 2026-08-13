@@ -168,3 +168,100 @@ def test_case_and_patient_examination_are_created_atomically(
     assert list(persisted_case.patient_examinations.values_list("id", flat=True)) == [
         patient_examination_body["id"]
     ]
+
+
+@pytest.mark.django_db
+def test_create_with_examination_rejects_unknown_fields_before_persistence(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"case-strict-{uuid4().hex}",
+        first_name="Strict",
+        last_name="Patient",
+    )
+    examination = Examination.objects.create(name=f"strict-exam-{uuid4().hex}")
+    patient_examination_count = PatientExamination.objects.count()
+    case_count = Case.objects.count()
+
+    response = api_client.post(
+        "/api/cases/create-with-examination/",
+        data={
+            "admission_date": "2026-07-22T08:00:00Z",
+            "patient_examination": {
+                "patient": patient.patient_hash,
+                "examination": examination.name,
+                "date_start": "2026-07-22",
+                "patient_birth_date": "1980-01-01",
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "extra_forbidden" in str(response.data)
+    assert PatientExamination.objects.count() == patient_examination_count
+    assert Case.objects.count() == case_count
+
+
+@pytest.mark.django_db
+def test_create_with_examination_rolls_back_patient_created_during_validation(
+    api_client: APIClient,
+) -> None:
+    new_patient_hash = f"case-rollback-{uuid4().hex}"
+    patient_count = Patient.objects.count()
+    patient_examination_count = PatientExamination.objects.count()
+    case_count = Case.objects.count()
+
+    response = api_client.post(
+        "/api/cases/create-with-examination/",
+        data={
+            "admission_date": "2026-07-22T08:00:00Z",
+            "patient_examination": {
+                "patient": new_patient_hash,
+                "examination": f"missing-exam-{uuid4().hex}",
+                "date_start": "2026-07-22",
+            },
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert Patient.objects.filter(patient_hash=new_patient_hash).exists() is False
+    assert Patient.objects.count() == patient_count
+    assert PatientExamination.objects.count() == patient_examination_count
+    assert Case.objects.count() == case_count
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("patient", 7),
+        ("examination", True),
+        ("date_start", 20260722),
+    ],
+)
+def test_create_with_examination_rejects_coerced_nested_scalars(
+    api_client: APIClient,
+    field: str,
+    value: object,
+) -> None:
+    nested_payload: dict[str, object] = {
+        "patient": "strict-patient",
+        "examination": "strict-examination",
+        "date_start": "2026-07-22",
+    }
+    nested_payload[field] = value
+
+    response = api_client.post(
+        "/api/cases/create-with-examination/",
+        data={
+            "admission_date": "2026-07-22T08:00:00Z",
+            "patient_examination": nested_payload,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert Case.objects.count() == 0
+    assert PatientExamination.objects.count() == 0

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, cast
 
 from django.conf import settings
 from django.db import transaction
@@ -77,9 +77,6 @@ RESERVATION_BUSY = "busy"
 DEFAULT_VIDEO_REIMPORT_JOB_MODE: VideoReimportJobMode = "celery"
 VIDEO_REIMPORT_JOB_MODES: tuple[VideoReimportJobMode, ...] = ("celery", "inline")
 DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS = 0
-
-
-JsonValue: TypeAlias = VideoReimportJsonValue
 
 
 def get_video_reimport_job_mode() -> VideoReimportJobMode:
@@ -414,7 +411,7 @@ def _job_dispatch_result(
     history_id: int | None = None,
     message: str | None = None,
     reason: str | None = None,
-    prediction_refresh: dict[str, JsonValue] | None = None,
+    prediction_refresh: dict[str, VideoReimportJsonValue] | None = None,
 ) -> VideoReimportDispatchResult:
     return VideoReimportDispatchResult(
         task_id=task_id,
@@ -450,9 +447,9 @@ def _prediction_refresh_payload(
     *,
     status: str,
     queued: bool,
-    **extra: JsonValue,
-) -> dict[str, JsonValue]:
-    payload: dict[str, JsonValue] = {"status": status, "queued": queued}
+    **extra: VideoReimportJsonValue,
+) -> dict[str, VideoReimportJsonValue]:
+    payload: dict[str, VideoReimportJsonValue] = {"status": status, "queued": queued}
     payload.update(extra)
     return payload
 
@@ -461,7 +458,7 @@ def _run_prediction_refresh(
     *,
     video: VideoFile,
     config: VideoReimportHistoryConfig,
-) -> dict[str, JsonValue]:
+) -> dict[str, VideoReimportJsonValue]:
     if not config.refresh_predictions:
         return _prediction_refresh_payload(
             status="skipped",
@@ -472,7 +469,9 @@ def _run_prediction_refresh(
     return video_reimport_json_safe_dict(raw_result)
 
 
-def _regenerate_reimport_hls_artifacts(video: VideoFile) -> dict[str, JsonValue]:
+def _regenerate_reimport_hls_artifacts(
+    video: VideoFile,
+) -> dict[str, VideoReimportJsonValue]:
     """
     Rebuild processed HLS from the freshly committed encrypted processed_file.
 

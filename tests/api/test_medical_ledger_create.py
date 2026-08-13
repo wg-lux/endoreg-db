@@ -179,6 +179,45 @@ def test_update_medication_patches_only_provided_fields(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"active": None},
+        {"active": "false"},
+        {"unexpected": "value"},
+    ],
+)
+def test_update_medication_rejects_invalid_contract_before_mutation(
+    api_client: APIClient,
+    payload: dict[str, object],
+) -> None:
+    patient = _patient("InvalidUpdate")
+    medication, unit, intake_time = _terminology()
+    record = _create_medication(
+        patient=patient,
+        medication=medication,
+        unit=unit,
+        intake_time=intake_time,
+    )
+
+    response = api_client.patch(
+        f"/api/patients/{_pk(patient)}/medications/{_pk(record)}/",
+        data=payload,
+        format="json",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation-error"
+    record.refresh_from_db()
+    assert record.medication == medication
+    assert record.unit == unit
+    assert record.dosage == {"morning": 500}
+    assert record.active is True
+    assert list(record.intake_times.all()) == [intake_time]
+
+
+@pytest.mark.django_db
 def test_update_medication_hides_another_patients_record(
     api_client: APIClient,
 ) -> None:
@@ -252,6 +291,69 @@ def test_create_and_update_schedule_use_only_patient_owned_medications(
     assert update_response.json()["medications"][0]["external_ids"]["endoreg_db"] == (
         f"PatientMedication:{_pk(second)}"
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"medication_ids": [1, 1]},
+        {"medication_ids": [0]},
+        {"medication_ids": ["1"]},
+        {"medication_ids": [], "unexpected": True},
+    ],
+)
+def test_create_schedule_rejects_invalid_contract_before_mutation(
+    api_client: APIClient,
+    payload: dict[str, object],
+) -> None:
+    patient = _patient("InvalidScheduleCreate")
+
+    response = api_client.post(
+        f"/api/patients/{_pk(patient)}/medication-schedules/",
+        data=payload,
+        format="json",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation-error"
+    assert not PatientMedicationSchedule.objects.filter(patient=patient).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"medication_ids": [1, 1]},
+        {"medication_ids": [True]},
+        {"medication_ids": [], "unexpected": True},
+    ],
+)
+def test_update_schedule_rejects_invalid_contract_before_mutation(
+    api_client: APIClient,
+    payload: dict[str, object],
+) -> None:
+    patient = _patient("InvalidScheduleUpdate")
+    medication, unit, intake_time = _terminology()
+    record = _create_medication(
+        patient=patient,
+        medication=medication,
+        unit=unit,
+        intake_time=intake_time,
+    )
+    schedule = PatientMedicationSchedule.objects.create(patient=patient)
+    schedule.medication.add(record)
+
+    response = api_client.patch(
+        (f"/api/patients/{_pk(patient)}/medication-schedules/{_pk(schedule)}/"),
+        data=payload,
+        format="json",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation-error"
+    assert list(schedule.medication.all()) == [record]
 
 
 @pytest.mark.django_db

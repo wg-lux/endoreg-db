@@ -80,7 +80,11 @@ in-progress receipt can survive a failed write.
 
 ## Contract version, rollout, and recovery
 
-EndoReg pins the published shared package at `lx-dtypes==0.2.9`. The local
+EndoReg declares the compatible published package range in `pyproject.toml`
+and pins the resolved release in `uv.lock`; the contract test requires the
+installed distribution to match that lock exactly. The current EndoReg lock is
+`lx-dtypes==0.2.15`, while the `0.2.16` sibling source and lx-annotate consumer
+lane verify forward compatibility before the next lock refresh. The local
 `MedicalLedgerWriteReceipt.record_ids` persistence contract is
 `schema_version: "1.0"`. Version 1.0 adds only the explicit discriminator to
 the previously unversioned row-ID manifest; its clinical meaning and public

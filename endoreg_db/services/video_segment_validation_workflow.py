@@ -138,6 +138,7 @@ def segment_annotations_are_final(video: VideoFile) -> bool:
 
 
 __all__ = [
+    "SegmentAnnotationStatus",
     "blackening_history_config",
     "is_outside_frame_blackening_history",
     "latest_post_validation_rebuild",

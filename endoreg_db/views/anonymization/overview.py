@@ -58,7 +58,7 @@ import logging
 from lx_dtypes.models.contracts.anonymization_overview import (
     AnonymizationStatusInfoData,
 )
-from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
 
 logger = logging.getLogger(__name__)
@@ -443,7 +443,7 @@ class AnonymizationValidateView(APIView):
         pdf = RawPdfFile.objects.filter(pk=item_id).first()
         if pdf:
             ok = validate_report_metadata_annotation(
-                pdf, cast(ReportMetaJsonObject, payload)
+                pdf, cast(PdfFileMetaJsonObject, payload)
             )
             if not ok:
                 return Response(

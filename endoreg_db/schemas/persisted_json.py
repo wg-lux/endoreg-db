@@ -15,7 +15,6 @@ from lx_dtypes.models.contracts.hub_transfer import (
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
-from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
     BaseModel,
@@ -818,15 +817,18 @@ def validate_report_file_meta_payload(value: Any) -> dict[str, Any] | None:
     return _validate_model_payload(RawPdfMetaPayload, value, field_name="meta")
 
 
-def validate_dtypes_p_examination_payload(value: Any) -> dict[str, Any]:
+def validate_dtypes_p_examination_payload(value: object) -> dict[str, JsonValue]:
     if value is None or value == {}:
         return {}
-    if isinstance(value, PExamination):
-        candidate = value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, BaseModel):
+        candidate: BaseModel | dict[str, JsonValue] = value
     elif isinstance(value, dict):
-        candidate = _json_compatible_mapping(
-            cast(dict[Any, Any], value),
-            field_name="dtypes_record",
+        candidate = cast(
+            dict[str, JsonValue],
+            _json_compatible_mapping(
+                cast(dict[Any, Any], value),
+                field_name="dtypes_record",
+            ),
         )
     else:
         raise ValueError("dtypes_record must be a JSON object")
@@ -834,7 +836,9 @@ def validate_dtypes_p_examination_payload(value: Any) -> dict[str, Any]:
         payload = parse_dtypes_record_persistence_payload(candidate)
     except ValidationError as exc:
         raise ValueError(str(exc)) from exc
-    return payload.model_dump(mode="json", exclude_none=True)
+    return cast(
+        dict[str, JsonValue], payload.model_dump(mode="json", exclude_none=True)
+    )
 
 
 def validate_ai_model_training_request_payload(value: Any) -> dict[str, Any]:

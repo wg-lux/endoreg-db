@@ -26,16 +26,12 @@ if TYPE_CHECKING:
     )
 
 
-type ReportMetaJsonObject = PdfFileMetaJsonObject
-type ReportMetaJsonValue = PdfFileMetaJsonValue
-
-
 class _ReportSensitiveMeta(Protocol):
     pseudo_patient: "Patient | None"
     pseudo_examination: "PatientExamination | None"
     center: "CenterModel | None"
 
-    def update_from_dict(self, data: ReportMetaJsonObject) -> None: ...
+    def update_from_dict(self, data: PdfFileMetaJsonObject) -> None: ...
 
     def save(self) -> None: ...
 
@@ -64,11 +60,11 @@ class ReportProcessingPayload(BaseModel):
 
     text: str | None = None
     anonymized_text: str | None = None
-    raw_meta: ReportMetaJsonObject = Field(default_factory=dict)
+    raw_meta: PdfFileMetaJsonObject = Field(default_factory=dict)
 
     @field_validator("raw_meta", mode="before")
     @classmethod
-    def _validate_raw_meta(cls, value: object) -> ReportMetaJsonObject:
+    def _validate_raw_meta(cls, value: object) -> PdfFileMetaJsonObject:
         if value is None:
             return {}
         if not isinstance(value, dict):
@@ -76,7 +72,7 @@ class ReportProcessingPayload(BaseModel):
         return _json_compatible_mapping(cast(dict[object, object], value))
 
 
-def _json_compatible_value(value: object) -> ReportMetaJsonValue:
+def _json_compatible_value(value: object) -> PdfFileMetaJsonValue:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -92,8 +88,8 @@ def _json_compatible_value(value: object) -> ReportMetaJsonValue:
     raise TypeError(f"Unsupported raw_meta value type: {type(value).__name__}")
 
 
-def _json_compatible_mapping(value: dict[object, object]) -> ReportMetaJsonObject:
-    payload: ReportMetaJsonObject = {}
+def _json_compatible_mapping(value: dict[object, object]) -> PdfFileMetaJsonObject:
+    payload: PdfFileMetaJsonObject = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise TypeError("raw_meta keys must be strings")
@@ -148,9 +144,9 @@ def process_raw_pdf_file(
     report: "RawPdfFile",
     text: str,
     anonymized_text: str,
-    report_meta: ReportMetaJsonObject,
+    report_meta: PdfFileMetaJsonObject,
     verbose: bool,
-) -> tuple[str, str, ReportMetaJsonObject]:
+) -> tuple[str, str, PdfFileMetaJsonObject]:
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
     report.text = text
@@ -180,7 +176,7 @@ def process_raw_pdf_file(
     return text, anonymized_text, report_meta
 
 
-def build_report_reader_config(report: "RawPdfFile") -> ReportMetaJsonObject:
+def build_report_reader_config(report: "RawPdfFile") -> PdfFileMetaJsonObject:
     from warnings import warn
 
     from endoreg_db.models.administration.center.center import Center

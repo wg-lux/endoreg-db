@@ -14,26 +14,37 @@ from django.contrib.auth.models import User as AuthUser
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.pdf.raw_pdf import ReportMetaJsonObject
 from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_examination_indication import (
     PatientExaminationIndication,
 )
+from endoreg_db.models.medical.examination.examination_indication import (
+    ExaminationIndication,
+    ExaminationIndicationClassificationChoice,
+)
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
+from endoreg_db.schemas.report_persistence import (
+    report_language_from_editor_payload,
+    validate_report_editor_payload,
+)
 from endoreg_db.services.dtypes_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
 from endoreg_db.services.report_finding_sync import sync_report_findings
 from endoreg_db.services.report_history import get_patient_examination_history_context
 from endoreg_db.services.report_patient_context import update_report_patient_context
+from endoreg_db.services.report_runtime_validation import (
+    validate_final_report_submission,
+)
 from lx_dtypes.models.contracts.patient_examination_report import (
     report_json_safe_dict,
 )
@@ -68,11 +79,15 @@ class _PatientExaminationReportLike(Protocol):
     template_name: str
     template_version: str
     template_hash: str
+    knowledge_base_module: str
+    knowledge_base_version: str
+    language: str
     title: str
     status: str
     editor_payload: Mapping[str, object]
     patient_context_snapshot: Mapping[str, object]
     history_context_snapshot: Mapping[str, object]
+    runtime_validation_snapshot: Mapping[str, object]
     rendered_text: str
     version: int
     patient_examination: PatientExamination
@@ -105,7 +120,7 @@ class _RawPdfFileLike(Protocol):
     examination: PatientExamination | None
     center: Center | None
     text: str | None
-    raw_meta: ReportMetaJsonObject | None
+    raw_meta: PdfFileMetaJsonObject | None
     anonym_examination_report: AnonymExaminationReport | None
     file: _WritableFileLike
 
@@ -131,11 +146,17 @@ class _FindingsSyncResult:
     persisted_record_updated_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedIndicationSelection:
+    indication: ExaminationIndication
+    choice: ExaminationIndicationClassificationChoice | None
+
+
 def _normalize_pdf_meta_payload(
     value: dict[str, object],
-) -> ReportMetaJsonObject:
+) -> PdfFileMetaJsonObject:
     validated_pdf_meta = validate_raw_pdf_meta_payload(value)
-    return cast(ReportMetaJsonObject, validated_pdf_meta or {})
+    return cast(PdfFileMetaJsonObject, validated_pdf_meta or {})
 
 
 def _safe_file_component(value: str, *, fallback: str = "report") -> str:
@@ -237,7 +258,12 @@ def persist_report_pdf_artifact(
 
     report_id = report_ref.id
     patient_examination_id = patient_examination_ref.id
-    report_title = report_ref.title or f"{report_ref.template_name} report"
+    report_language = report_ref.language
+    report_title = report_ref.title or (
+        f"{report_ref.template_name} Befundbericht"
+        if report_language == "de"
+        else f"{report_ref.template_name} report"
+    )
     pdf_body = rendered_text or report_ref.rendered_text or ""
     pdf_meta_input: dict[str, object] = {
         "source": "patient_examination_report",
@@ -366,23 +392,69 @@ def _sync_indications(
     if indications_payload is None:
         return
 
-    # Conservative skeleton: replace current indication rows if payload is provided.
+    resolved = [
+        _resolve_indication_selection(patient_examination, item)
+        for item in indications_payload
+    ]
     patient_examination.indications.all().delete()
-
-    for item in indications_payload:
-        examination_indication_id = item.get(
-            "examination_indication_id", item.get("examination_indication")
-        )
-        indication_choice_id = item.get(
-            "indication_choice_id", item.get("indication_choice")
-        )
-        if not examination_indication_id:
-            continue
+    for selection in resolved:
         PatientExaminationIndication.objects.create(
             patient_examination=patient_examination,
-            examination_indication_id=examination_indication_id,
-            indication_choice_id=indication_choice_id or None,
+            examination_indication=selection.indication,
+            indication_choice=selection.choice,
         )
+
+
+def _positive_integer(value: object, *, field_name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValidationError({field_name: "A positive integer is required."})
+    return value
+
+
+def _resolve_indication_selection(
+    patient_examination: PatientExamination,
+    item: Mapping[str, object],
+) -> _ResolvedIndicationSelection:
+    indication_id = _positive_integer(
+        item.get("examination_indication_id", item.get("examination_indication")),
+        field_name="examination_indication_id",
+    )
+    indication = ExaminationIndication.objects.filter(pk=indication_id).first()
+    if indication is None:
+        raise ValidationError(
+            {"examination_indication_id": "Unknown examination indication."}
+        )
+    examination_id = patient_examination.examination_id
+    if (
+        examination_id is not None
+        and not indication.examinations.filter(pk=examination_id).exists()
+    ):
+        raise ValidationError(
+            {
+                "examination_indication_id": (
+                    "Examination indication is not allowed for this examination."
+                )
+            }
+        )
+
+    choice_value = item.get("indication_choice_id", item.get("indication_choice"))
+    if choice_value in (None, ""):
+        return _ResolvedIndicationSelection(indication=indication, choice=None)
+    choice_id = _positive_integer(choice_value, field_name="indication_choice_id")
+    choice = ExaminationIndicationClassificationChoice.objects.filter(
+        pk=choice_id
+    ).first()
+    if choice is None:
+        raise ValidationError({"indication_choice_id": "Unknown indication choice."})
+    if not indication.classifications.filter(choices=choice).exists():
+        raise ValidationError(
+            {
+                "indication_choice_id": (
+                    "Indication choice is not allowed for this examination indication."
+                )
+            }
+        )
+    return _ResolvedIndicationSelection(indication=indication, choice=choice)
 
 
 def _resolve_submission_examination(
@@ -486,6 +558,8 @@ def _apply_submission_report_fields(
     rendered_text: str,
     patient_data: Mapping[str, object] | None,
     history_context: Mapping[str, object],
+    patient_examination: PatientExamination,
+    runtime_validation: Mapping[str, object],
 ) -> None:
     report.template_name = template_name
     report.template_version = _value_or_default(template_version, "")
@@ -495,12 +569,20 @@ def _apply_submission_report_fields(
         status,
         PatientExaminationReport.Status.DRAFT.value,
     )
-    report.editor_payload = report_json_safe_dict(_mapping_or_empty(editor_payload))
+    canonical_editor_payload = validate_report_editor_payload(
+        _mapping_or_empty(editor_payload),
+        default_language="de",
+    )
+    report.editor_payload = canonical_editor_payload
+    report.language = report_language_from_editor_payload(canonical_editor_payload)
+    report.knowledge_base_module = patient_examination.knowledge_base_module
+    report.knowledge_base_version = patient_examination.knowledge_base_version
     report.rendered_text = _value_or_default(rendered_text, "")
     report.patient_context_snapshot = report_json_safe_dict(
         _mapping_or_empty(patient_data)
     )
     report.history_context_snapshot = report_json_safe_dict(history_context)
+    report.runtime_validation_snapshot = report_json_safe_dict(runtime_validation)
     report.updated_by = user
     if created:
         report.created_by = user
@@ -550,22 +632,15 @@ def _persist_final_report_artifacts(
     *,
     report_status: str,
     rendered_text: str,
-    warnings: list[str],
 ) -> tuple[int | None, int | None]:
     if report_status != PatientExaminationReport.Status.FINAL.value:
         return None, None
-    try:
-        return persist_report_pdf_artifact(
-            report,
-            patient_examination,
-            rendered_text=rendered_text,
-        )
-    except Exception as error:
-        warnings.append(
-            "PDF artifact persistence failed "
-            f"({type(error).__name__}). Report save continued."
-        )
-        return None, None
+    return persist_report_pdf_artifact(
+        report,
+        patient_examination,
+        rendered_text=rendered_text,
+        strict_renderer=True,
+    )
 
 
 @transaction.atomic
@@ -622,6 +697,14 @@ def save_report_submission(
     history_context = get_patient_examination_history_context(
         patient_examination, limit=history_limit
     )
+    runtime_validation = (
+        validate_final_report_submission(
+            patient_examination,
+            template_name=template_name,
+        )
+        if status == PatientExaminationReport.Status.FINAL.value
+        else {}
+    )
     _apply_submission_report_fields(
         report_ref,
         created=created,
@@ -635,6 +718,8 @@ def save_report_submission(
         rendered_text=rendered_text,
         patient_data=patient_data,
         history_context=history_context,
+        patient_examination=patient_examination,
+        runtime_validation=runtime_validation,
     )
     _apply_submission_finalization(report_ref, user=user_ref)
     report_ref.save()
@@ -648,7 +733,6 @@ def save_report_submission(
             patient_examination,
             report_status=report_ref.status,
             rendered_text=report_ref.rendered_text,
-            warnings=warnings,
         )
     )
 

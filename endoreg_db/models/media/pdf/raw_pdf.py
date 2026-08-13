@@ -44,9 +44,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.state.raw_pdf import RawPdfState
 
 
-type ReportMetaJsonObject = PdfFileMetaJsonObject
-
-
 class _RawPdfFileCreateKwargs(TypedDict, total=False):
     pass
 
@@ -130,7 +127,7 @@ class RawPdfFile(models.Model):
         default=False
     )
     raw_meta: models.JSONField[
-        ReportMetaJsonObject | None, ReportMetaJsonObject | None
+        PdfFileMetaJsonObject | None, PdfFileMetaJsonObject | None
     ] = models.JSONField(blank=True, null=True)
     anonym_examination_report: models.OneToOneField[
         "AnonymExaminationReport | None"
@@ -305,7 +302,7 @@ class RawPdfFile(models.Model):
         return mark_report_sensitive_meta_verified(self)
 
     def validate_metadata_annotation(
-        self, extracted_data_dict: ReportMetaJsonObject | None = None
+        self, extracted_data_dict: PdfFileMetaJsonObject | None = None
     ) -> bool:
         """
         Validate the metadata of the RawPdf instance.
@@ -318,7 +315,7 @@ class RawPdfFile(models.Model):
         )
 
         validate_annotation = cast(
-            Callable[["RawPdfFile", ReportMetaJsonObject | None], bool],
+            Callable[["RawPdfFile", PdfFileMetaJsonObject | None], bool],
             validate_report_metadata_annotation,
         )
         return validate_annotation(self, extracted_data_dict)
@@ -378,7 +375,7 @@ class RawPdfFile(models.Model):
             validated_raw_meta = validate_raw_pdf_meta_payload(self.raw_meta)
         except ValueError as exc:
             raise ValidationError({"raw_meta": str(exc)}) from exc
-        self.raw_meta = cast(ReportMetaJsonObject | None, validated_raw_meta)
+        self.raw_meta = cast(PdfFileMetaJsonObject | None, validated_raw_meta)
 
     def save(self, *args: object, **kwargs: object) -> None:
         # Ensure hash is calculated before the first save if possible and not already set
@@ -423,15 +420,15 @@ class RawPdfFile(models.Model):
         self,
         text: str,
         anonymized_text: str,
-        report_meta: ReportMetaJsonObject,
+        report_meta: PdfFileMetaJsonObject,
         verbose: bool,
-    ) -> tuple[str, str, ReportMetaJsonObject]:
+    ) -> tuple[str, str, PdfFileMetaJsonObject]:
         from endoreg_db.services.raw_pdf_files import process_raw_pdf_file
 
         process_report = cast(
             Callable[
-                ["RawPdfFile", str, str, ReportMetaJsonObject, bool],
-                tuple[str, str, ReportMetaJsonObject],
+                ["RawPdfFile", str, str, PdfFileMetaJsonObject, bool],
+                tuple[str, str, PdfFileMetaJsonObject],
             ],
             process_raw_pdf_file,
         )
@@ -443,7 +440,7 @@ class RawPdfFile(models.Model):
             verbose,
         )
 
-    def get_report_reader_config(self) -> ReportMetaJsonObject:
+    def get_report_reader_config(self) -> PdfFileMetaJsonObject:
         from endoreg_db.services.raw_pdf_files import build_report_reader_config
 
         return build_report_reader_config(self)

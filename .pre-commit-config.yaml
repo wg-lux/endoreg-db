@@ -27,12 +27,6 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
-      - id: dead-code-baseline
-        name: dead code
-        entry: .devenv/state/venv/bin/python scripts/check_dead_code.py
-        language: system
-        pass_filenames: false
-        files: ^(endoreg_db/.*\.py|scripts/.*\.py|quality/dead_code_baseline\.yml)$
       - id: documentation-governance
         name: documentation governance inventory
         entry: .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db

@@ -62,6 +62,10 @@ from endoreg_db.services.report_persistence import (
     persist_report_pdf_artifact,
     save_report_submission,
 )
+from endoreg_db.services.report_runtime_validation import (
+    ReportRuntimeValidationError,
+    validate_final_report_submission,
+)
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
@@ -1025,23 +1029,26 @@ def save_submission(
 
     api._get_scoped_patient_examination(data["patient_examination_id"])
 
-    result = save_report_submission(
-        patient_examination_id=data["patient_examination_id"],
-        template_name=data["template_name"],
-        editor_payload=data.get("editor_payload"),
-        rendered_text=data.get("rendered_text", ""),
-        status=data.get("status", PatientExaminationReport.Status.DRAFT),
-        user=_authenticated_user_from_request(request),
-        report_id=data.get("report_id"),
-        expected_version=data.get("expected_version"),
-        patient_data=data.get("patient_data"),
-        indications=data.get("indications"),
-        findings=data.get("findings"),
-        title=data.get("title", ""),
-        template_version=data.get("template_version", ""),
-        template_hash=data.get("template_hash", ""),
-        history_limit=data.get("history_limit", 5),
-    )
+    try:
+        result = save_report_submission(
+            patient_examination_id=data["patient_examination_id"],
+            template_name=data["template_name"],
+            editor_payload=data.get("editor_payload"),
+            rendered_text=data.get("rendered_text", ""),
+            status=data.get("status", PatientExaminationReport.Status.DRAFT),
+            user=_authenticated_user_from_request(request),
+            report_id=data.get("report_id"),
+            expected_version=data.get("expected_version"),
+            patient_data=data.get("patient_data"),
+            indications=data.get("indications"),
+            findings=data.get("findings"),
+            title=data.get("title", ""),
+            template_version=data.get("template_version", ""),
+            template_hash=data.get("template_hash", ""),
+            history_limit=data.get("history_limit", 5),
+        )
+    except ReportRuntimeValidationError as exc:
+        raise HttpError(422, json.dumps(exc.result)) from exc
 
     persisted_artifacts = api._build_persisted_artifacts_payload(
         patient_examination=_report_patient_examination(result.report),
@@ -1101,6 +1108,15 @@ def make_report(
     if report is None:
         return 404, {"detail": "No report found for this patient examination."}
 
+    try:
+        runtime_validation = validate_final_report_submission(
+            patient_examination,
+            template_name=_report_template_name(report),
+        )
+    except ReportRuntimeValidationError as exc:
+        raise HttpError(422, json.dumps(exc.result)) from exc
+    report.runtime_validation_snapshot = runtime_validation
+
     user = _authenticated_user_from_request(request)
     if _report_status(report) != "final":
         report.status = "final"
@@ -1117,8 +1133,11 @@ def make_report(
                 "finalized_by",
                 "updated_by",
                 "updated_at",
+                "runtime_validation_snapshot",
             ]
         )
+    else:
+        report.save(update_fields=["runtime_validation_snapshot", "updated_at"])
 
     (
         frame_paths,

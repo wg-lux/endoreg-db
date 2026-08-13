@@ -1456,6 +1456,7 @@ models:
   - job:endoreg_db/management/commands/load_examination_indication_data.py
   - service:endoreg_db/helpers/default_objects.py
   - service:endoreg_db/services/patient_examination_links.py
+  - service:endoreg_db/services/report_persistence.py
   - service:endoreg_db/utils/links/model_links.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
@@ -1524,6 +1525,7 @@ models:
   boundary_consumers:
   - job:endoreg_db/management/commands/load_examination_indication_data.py
   - service:endoreg_db/services/patient_examination_links.py
+  - service:endoreg_db/services/report_persistence.py
   - service:endoreg_db/utils/links/model_links.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
@@ -3228,6 +3230,7 @@ models:
   - service:endoreg_db/services/report_patient_context.py
   - service:endoreg_db/services/report_pdf_renderer.py
   - service:endoreg_db/services/report_persistence.py
+  - service:endoreg_db/services/report_runtime_validation.py
   - service:endoreg_db/services/study_cohort.py
   - service:endoreg_db/utils/links/model_links.py
   dynamic_model_references:
@@ -3284,6 +3287,7 @@ models:
   - editor_payload
   - history_context_snapshot
   - patient_context_snapshot
+  - runtime_validation_snapshot
   custom_clean: true
   custom_save: true
   target: shared_lx_dtypes_contract
@@ -3309,6 +3313,7 @@ models:
   - lx_dtypes.models.contracts.patient_examination_report.ReportJsonObject
   module_endoreg_schema_imports:
   - endoreg_db.schemas.report_persistence.validate_persisted_report_json_object
+  - endoreg_db.schemas.report_persistence.validate_report_editor_payload
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null

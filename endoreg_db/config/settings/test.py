@@ -125,7 +125,6 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
         def __getitem__(self, item: str) -> NoneType:
             return None
 
-    # MIGRATION_MODULES = DisableMigrations()
 
 globals()["INSTALLED_APPS"] = BASE_INSTALLED_APPS + [
     "django_extensions",

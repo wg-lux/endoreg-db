@@ -213,6 +213,9 @@ definition_of_done:
   acceptance:
   - Ein Fehler beim Speichern eines Pflichtanhangs hinterlässt keinen als vollständig sichtbaren Teilfall;
     Transaktionsgrenzen und Wiederholungsstrategie sind explizit.
+  - Der kombinierte Fall-/Untersuchungs-Endpoint validiert den geschlossenen Pydantic-Request vor jeder
+    Mutation und führt auch relationale Serializer-Auflösung innerhalb derselben Transaktion aus; ungültige
+    Untersuchungen dürfen insbesondere keine automatisch angelegten Patienten zurücklassen.
   - Gleichzeitiges Aktualisieren, Schließen oder Anhängen erkennt Konflikte und verhindert verlorene Updates.
   - Soft-Delete, Retention und endgültige Löschung folgen expliziten Regeln für alle Datenbankzeilen und
     Datei-Artefakte des Fallgraphs.
@@ -237,11 +240,25 @@ definition_of_done:
       reference: endoreg_db/services/case_documents.py
     - kind: test
       reference: tests/services/test_case_media_attachments.py
-    note: Die neue Dokumentmutation validiert vor der Mutation und verwendet select_for_update für Fall,
-      Untersuchung und PDF/Video innerhalb einer transaction.atomic-Grenze; identische Wiederholung ist
-      idempotent. Echte Parallelkonflikttests, Optimistic Concurrency sowie Retention/Delete bleiben offen.
-    assessed_by: Codex
-    assessed_at: '2026-07-29T13:32:32.187707Z'
+    - kind: code
+      reference: endoreg_db/schemas/case_creation.py; endoreg_db/views/case.py::CaseViewSet.create_with_examination
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py (unknown fields, scalar coercion, and orphan-patient
+        rollback)
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/views/case/test_case_viewset.py tests/services/test_case_persistence_transactions.py tests/authz/test_case_policy.py
+        -q (12 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright endoreg_db/schemas/case_creation.py endoreg_db/views/case.py
+        tests/views/case/test_case_viewset.py (0 errors)
+    note: Case/document mutations remain atomic and idempotent where previously implemented. The create-with-examination
+      entry now validates a closed Pydantic envelope before persistence, runs serializer relation resolution
+      and both writes in one transaction, constructs the response before commit, and proves invalid examinations
+      cannot leave an auto-created orphan patient. True parallel conflict tests, optimistic concurrency,
+      retention, and delete behavior remain open.
+    assessed_by: codex-pydantic-entry-20260813
+    assessed_at: '2026-08-13T09:27:49.753671Z'
 - id: automated_tests
   category: testing
   title: Der vollständige Fallgraph ist durch Roundtrip-, Fehler- und Migrationstests geschützt

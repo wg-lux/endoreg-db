@@ -1,8 +1,11 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.db import DatabaseError, IntegrityError, OperationalError
 from rest_framework.test import APIRequestFactory, force_authenticate
+from unittest.mock import patch
 import json
 from endoreg_db.models import (
+    AIDataSet,
     Center,
     Frame,
     ImageClassificationAnnotation,
@@ -321,3 +324,129 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("choice_name", str(data))
+
+    def test_bulk_upsert_reports_retryable_database_failure_and_rolls_back(self):
+        dataset = AIDataSet.objects.create(
+            name="rollback-dataset",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        payload = {
+            "video_id": self.video.pk,
+            "ai_dataset_id": dataset.pk,
+            "annotations": [
+                {
+                    "frame_id": self.frame_1.pk,
+                    "label_id": self.label.pk,
+                    "information_source_name": self.source.name,
+                    "annotator": "bulk-user",
+                }
+            ],
+        }
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+
+        with patch.object(
+            AIDataSet,
+            "add_frame_annotations",
+            side_effect=OperationalError("storage unavailable"),
+        ):
+            response = self.view(request)
+        data = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            data,
+            {
+                "status": "error",
+                "error": "Frame annotation storage is temporarily unavailable.",
+                "code": "frame_annotation_write_temporarily_unavailable",
+                "retryable": True,
+                "write_committed": False,
+            },
+        )
+        self.assertEqual(ImageClassificationAnnotation.objects.count(), 0)
+        self.assertEqual(dataset.image_annotations.count(), 0)
+
+    def test_bulk_upsert_reports_non_retryable_integrity_conflict(self):
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "label_id": self.label.pk,
+                "information_source_name": self.source.name,
+                "annotator": "bulk-user",
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations._persist_bulk_annotations",
+            side_effect=IntegrityError("conflict"),
+        ):
+            response = self.view(request)
+        data = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(data["code"], "frame_annotation_write_conflict")
+        self.assertFalse(data["retryable"])
+        self.assertFalse(data["write_committed"])
+
+    def test_bulk_upsert_redacts_unclassified_database_failure(self):
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "label_id": self.label.pk,
+                "information_source_name": self.source.name,
+                "annotator": "bulk-user",
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.frame_annotations._persist_bulk_annotations",
+            side_effect=DatabaseError("sensitive database detail"),
+        ):
+            response = self.view(request)
+        data = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(data["code"], "frame_annotation_write_failed")
+        self.assertEqual(data["error"], "Frame annotations could not be saved.")
+        self.assertNotIn("sensitive database detail", response.content.decode())
+        self.assertFalse(data["retryable"])
+        self.assertFalse(data["write_committed"])
+
+    def test_bulk_upsert_does_not_mask_unexpected_programming_error(self):
+        payload = [
+            {
+                "frame_id": self.frame_1.pk,
+                "label_id": self.label.pk,
+                "information_source_name": self.source.name,
+                "annotator": "bulk-user",
+            }
+        ]
+        request = self.factory.post(
+            "/api/media/annotations/frames/bulk-upsert/",
+            payload,
+            format="json",
+        )
+
+        with (
+            patch(
+                "endoreg_db.views.video.ai.frame_annotations._persist_bulk_annotations",
+                side_effect=RuntimeError("unexpected implementation failure"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "unexpected implementation failure"),
+        ):
+            self.view(request)

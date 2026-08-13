@@ -13,6 +13,7 @@ from endoreg_db.models.medical.finding.finding_classification import (
     FindingClassificationChoice,
 )
 from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
+from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.medical.patient.patient_finding_classification import (
@@ -53,6 +54,8 @@ def _create_graph() -> tuple[
     )
     classification.choices.add(choice)
     intervention = FindingIntervention.objects.create(name="report_sync_intervention")
+    finding.finding_classifications.add(classification)
+    finding.finding_interventions.add(intervention)
     return patient_examination, finding, classification, choice, intervention
 
 
@@ -208,6 +211,102 @@ def test_sync_report_findings_preserves_duplicate_new_intervention_items() -> No
         ).count()
         == 2
     )
+
+
+def test_sync_report_findings_rejects_classification_not_linked_to_finding() -> None:
+    patient_examination, finding, _classification, choice, _intervention = (
+        _create_graph()
+    )
+    unrelated = FindingClassification.objects.create(name="unrelated-classification")
+    unrelated.choices.add(choice)
+
+    with pytest.raises(ValidationError, match="not allowed for this finding"):
+        sync_report_findings(
+            patient_examination,
+            [
+                {
+                    "finding": finding.pk,
+                    "classifications": [
+                        {
+                            "classification": unrelated.pk,
+                            "classification_choice": choice.pk,
+                        }
+                    ],
+                }
+            ],
+            user=None,
+        )
+
+    assert PatientFinding.objects.count() == 0
+
+
+def test_sync_report_findings_rejects_choice_not_linked_to_classification() -> None:
+    patient_examination, finding, classification, _choice, _intervention = (
+        _create_graph()
+    )
+    unrelated_choice = FindingClassificationChoice.objects.create(
+        name="unrelated-choice",
+        subcategories={},
+        numerical_descriptors={},
+    )
+
+    with pytest.raises(ValidationError, match="not allowed for this classification"):
+        sync_report_findings(
+            patient_examination,
+            [
+                {
+                    "finding": finding.pk,
+                    "classifications": [
+                        {
+                            "classification": classification.pk,
+                            "classification_choice": unrelated_choice.pk,
+                        }
+                    ],
+                }
+            ],
+            user=None,
+        )
+
+    assert PatientFinding.objects.count() == 0
+
+
+def test_sync_report_findings_rejects_intervention_not_linked_to_finding() -> None:
+    patient_examination, finding, _classification, _choice, _intervention = (
+        _create_graph()
+    )
+    unrelated = FindingIntervention.objects.create(name="unrelated-intervention")
+
+    with pytest.raises(ValidationError, match="not allowed for this finding"):
+        sync_report_findings(
+            patient_examination,
+            [
+                {
+                    "finding": finding.pk,
+                    "interventions": [{"intervention": unrelated.pk}],
+                }
+            ],
+            user=None,
+        )
+
+    assert PatientFinding.objects.count() == 0
+
+
+def test_sync_report_findings_rejects_finding_not_linked_to_examination() -> None:
+    patient_examination, finding, _classification, _choice, _intervention = (
+        _create_graph()
+    )
+    examination = Examination.objects.create(name="report-sync-examination")
+    patient_examination.examination = examination
+    patient_examination.save(update_fields=["examination"])
+
+    with pytest.raises(ValidationError, match="not allowed for this examination"):
+        sync_report_findings(
+            patient_examination,
+            [{"finding": finding.pk}],
+            user=None,
+        )
+
+    assert PatientFinding.objects.count() == 0
 
 
 def test_sync_report_findings_reconciles_classifications_and_deactivates_findings() -> (

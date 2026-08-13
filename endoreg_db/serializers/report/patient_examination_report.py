@@ -94,12 +94,16 @@ class PatientExaminationReportSchema(Schema):
     template_name: str
     template_version: str
     template_hash: str
+    knowledge_base_module: str
+    knowledge_base_version: str
+    language: str
     title: str
     status: str
 
     editor_payload: ReportJsonObject
     patient_context_snapshot: ReportJsonObject
     history_context_snapshot: ReportJsonObject
+    runtime_validation_snapshot: ReportJsonObject
     rendered_text: str
 
     dtypes_record: ReportJsonObject | None = None

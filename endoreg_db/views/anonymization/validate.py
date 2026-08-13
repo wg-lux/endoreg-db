@@ -5,8 +5,8 @@ from typing import Any, Protocol, TypedDict, cast
 from django.contrib.auth.models import AnonymousUser
 from django.db import models, transaction
 from django.utils import timezone
-from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
 from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -119,7 +119,7 @@ class _PdfValidationLike(Protocol):
 
     def save(self, *args: object, **kwargs: object) -> None: ...
 
-    def validate_metadata_annotation(self, payload: ReportMetaJsonObject) -> bool: ...
+    def validate_metadata_annotation(self, payload: PdfFileMetaJsonObject) -> bool: ...
 
 
 class ValidationOperationMetaPayload(TypedDict):
@@ -160,7 +160,7 @@ def _request_actor(request: Request) -> models.Model | None:
     return cast(models.Model, user)
 
 
-def _preferred_validation_timestamp(payload: ReportMetaJsonObject) -> tuple[str, str]:
+def _preferred_validation_timestamp(payload: PdfFileMetaJsonObject) -> tuple[str, str]:
     """
     Prefer a manually supplied examination_date as the validation timestamp.
 
@@ -183,7 +183,7 @@ def _preferred_validation_timestamp(payload: ReportMetaJsonObject) -> tuple[str,
 
 
 def _validation_operation_meta(
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> ValidationOperationMetaPayload:
     timestamp, source = _preferred_validation_timestamp(payload)
     meta: ValidationOperationMetaPayload = {
@@ -201,9 +201,9 @@ def _validation_operation_meta(
 
 
 def _video_text_meta_payload_data(
-    payload: ReportMetaJsonObject,
-) -> ReportMetaJsonObject:
-    normalized: ReportMetaJsonObject = dict(payload)
+    payload: PdfFileMetaJsonObject,
+) -> PdfFileMetaJsonObject:
+    normalized: PdfFileMetaJsonObject = dict(payload)
     for field_name in ("patient_dob", "examination_date"):
         value = normalized.get(field_name)
         if isinstance(value, datetime):
@@ -214,11 +214,11 @@ def _video_text_meta_payload_data(
 
 
 def _prepare_validation_payload(
-    base_payload: ReportMetaJsonObject,
+    base_payload: PdfFileMetaJsonObject,
     file_obj: object,
-) -> ReportMetaJsonObject:
+) -> PdfFileMetaJsonObject:
     """Return a fresh payload tailored for the given media object."""
-    prepared: ReportMetaJsonObject = dict(base_payload)
+    prepared: PdfFileMetaJsonObject = dict(base_payload)
     prepared.pop("file_type", None)
     prepared.pop("no_more_names_confirmed", None)
     _apply_payload_center_name(prepared=prepared, file_obj=file_obj)
@@ -228,7 +228,7 @@ def _prepare_validation_payload(
 
 def _apply_payload_center_name(
     *,
-    prepared: ReportMetaJsonObject,
+    prepared: PdfFileMetaJsonObject,
     file_obj: object,
 ) -> None:
     center = getattr(file_obj, "center", None)
@@ -239,8 +239,8 @@ def _apply_payload_center_name(
 
 def _apply_payload_gender(
     *,
-    prepared: ReportMetaJsonObject,
-    base_payload: ReportMetaJsonObject,
+    prepared: PdfFileMetaJsonObject,
+    base_payload: PdfFileMetaJsonObject,
 ) -> None:
     raw_gender = base_payload.get("patient_gender")
     if raw_gender is None:
@@ -261,7 +261,7 @@ def _apply_payload_gender(
 
 
 def _prepare_video_validation_payload(
-    base_payload: ReportMetaJsonObject,
+    base_payload: PdfFileMetaJsonObject,
     file_obj: object,
 ) -> VideoValidationPayload:
     prepared = _prepare_validation_payload(base_payload, file_obj)
@@ -274,7 +274,7 @@ def _prepare_video_validation_payload(
 def _persist_pdf_validation_state(
     *,
     pdf: RawPdfFile,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     validated_at_iso: str,
     document_type: DocumentTypeContract,
 ) -> str:
@@ -319,7 +319,7 @@ def _persist_pdf_validation_state(
 def _initialize_pdf_anonymized_text(
     *,
     pdf_obj: _PdfValidationLike,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> str | None:
     original_text = pdf_obj.anonymized_text
     if original_text is None:
@@ -328,10 +328,10 @@ def _initialize_pdf_anonymized_text(
     return original_text
 
 
-def _pdf_raw_meta_payload(pdf_obj: _PdfValidationLike) -> ReportMetaJsonObject:
+def _pdf_raw_meta_payload(pdf_obj: _PdfValidationLike) -> PdfFileMetaJsonObject:
     if isinstance(pdf_obj.raw_meta, dict):
-        return cast(ReportMetaJsonObject, dict(pdf_obj.raw_meta))
-    return cast(ReportMetaJsonObject, {})
+        return cast(PdfFileMetaJsonObject, dict(pdf_obj.raw_meta))
+    return cast(PdfFileMetaJsonObject, {})
 
 
 def _assign_pdf_center_from_sensitive_meta(
@@ -352,7 +352,7 @@ def _pdf_validation_update_fields(
     pdf: RawPdfFile,
     pdf_obj: _PdfValidationLike,
     sensitive_meta: SensitiveMeta | None,
-    raw_meta: ReportMetaJsonObject,
+    raw_meta: PdfFileMetaJsonObject,
     resolved_text: str,
     original_anonymized_text: str | None,
 ) -> list[str]:
@@ -422,7 +422,7 @@ def _normalized_tag_name(entry: object) -> str | None:
 def _update_validation_comment(
     *,
     validated_meta: _ValidatedSensitiveMeta,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> None:
     if "validation_comment" not in payload:
         return
@@ -437,7 +437,7 @@ def _update_validation_comment(
 def _apply_validation_tags(
     *,
     sensitive_meta: SensitiveMeta,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> None:
     validated_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
     _update_validation_comment(validated_meta=validated_meta, payload=payload)
@@ -449,7 +449,7 @@ def _apply_validation_tags(
 
 
 def _validated_pdf_document_type(
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> tuple[str, DocumentTypeContract] | Response:
     document_type_name = payload.get("document_type")
     if not isinstance(document_type_name, str) or not document_type_name:
@@ -549,7 +549,7 @@ def _video_integrity_error(
 def _run_video_metadata_validation(
     *,
     video_obj: _VideoValidationLike,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     file_id: int,
 ) -> VideoValidationPayload | Response:
     prepared_payload = _prepare_video_validation_payload(payload, video_obj)
@@ -597,7 +597,7 @@ def _finalize_video_validation(
     video: VideoFile,
     video_obj: _VideoValidationLike,
     sensitive_meta: SensitiveMeta,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> AutoCaseResolutionResult | Response:
     video_obj.save(update_fields=["sensitive_meta"])
     sensitive_meta.get_or_create_state()
@@ -631,7 +631,7 @@ def _record_video_validation_metrics(
     request: Request,
     video: VideoFile,
     prepared_payload: VideoValidationPayload,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     before_values: dict[str, Any],
     status_before: str | None,
     status_after: str | None,
@@ -654,7 +654,7 @@ def _validate_video(
     request: Request,
     video: VideoFile,
     file_id: int,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     video_obj = cast(_VideoValidationLike, video)
@@ -732,9 +732,9 @@ def _run_pdf_metadata_validation(
     *,
     pdf: RawPdfFile,
     pdf_obj: _PdfValidationLike,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     file_id: int,
-) -> ReportMetaJsonObject | Response:
+) -> PdfFileMetaJsonObject | Response:
     prepared_payload = _prepare_validation_payload(payload, pdf_obj)
     try:
         ok = validate_report_metadata_annotation(
@@ -785,7 +785,7 @@ def _finalize_pdf_validation(
     pdf: RawPdfFile,
     pdf_obj: _PdfValidationLike,
     sensitive_meta: SensitiveMeta,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
 ) -> AutoCaseResolutionResult | Response:
     sensitive_meta.get_or_create_state()
     _apply_validation_tags(sensitive_meta=sensitive_meta, payload=payload)
@@ -833,8 +833,8 @@ def _record_pdf_validation_metrics(
     *,
     request: Request,
     pdf: RawPdfFile,
-    prepared_payload: ReportMetaJsonObject,
-    payload: ReportMetaJsonObject,
+    prepared_payload: PdfFileMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     before_values: dict[str, Any],
     status_before: str | None,
     status_after: str | None,
@@ -886,7 +886,7 @@ def _validate_pdf(
     request: Request,
     pdf: RawPdfFile,
     file_id: int,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     pdf_obj = cast(_PdfValidationLike, pdf)
@@ -982,7 +982,7 @@ def _validate_video_or_not_found(
     *,
     request: Request,
     file_id: int,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     video = _video_by_id(file_id)
@@ -1004,7 +1004,7 @@ def _validate_pdf_or_not_found(
     *,
     request: Request,
     file_id: int,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     pdf = _pdf_by_id(file_id)
@@ -1026,7 +1026,7 @@ def _dispatch_validation(
     *,
     request: Request,
     file_id: int,
-    payload: ReportMetaJsonObject,
+    payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     file_type = payload.get("file_type")
@@ -1101,7 +1101,7 @@ class AnonymizationValidateView(APIView):
     def post(self, request: Request, file_id: int) -> Response:
         serializer = SensitiveMetaValidateSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        payload: ReportMetaJsonObject = dict(serializer.validated_data)
+        payload: PdfFileMetaJsonObject = dict(serializer.validated_data)
         payload.setdefault("is_verified", True)
         operation_meta = _validation_operation_meta(payload)
 

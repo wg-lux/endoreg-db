@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, TypeVar, cast
+from typing import Any, Callable, Literal, Protocol, TypeVar, cast
 
 from django.db import models, transaction
 from django.db.models import QuerySet
 from django.http import FileResponse
+from lx_dtypes.models.contracts.ai_dataset import (
+    AIDataSetAttachmentResultContract,
+    AIDataSetAttachVideoContract,
+    AIDataSetCreateContract,
+)
 from lx_dtypes.models.contracts.application_settings import (
     ApplicationSettingsDataSetEntryPayload,
 )
+from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
@@ -39,10 +45,6 @@ AI_DATASET_FRAME_FORMAT_STRATEGIES = {
     "preserve_dimensions_black_mask",
     "crop_to_endoscope_roi",
 }
-AI_DATASET_DEFAULT_MODEL_TYPE_BY_DATASET_TYPE = {
-    AIDataSet.DATASET_TYPE_IMAGE: AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-    AIDataSet.DATASET_TYPE_VIDEO: AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
-}
 AIDataSetFrameFormatStrategy = Literal[
     "preserve_dimensions_black_mask",
     "crop_to_endoscope_roi",
@@ -50,24 +52,14 @@ AIDataSetFrameFormatStrategy = Literal[
 _BatchModel = TypeVar("_BatchModel", bound=models.Model)
 
 
-@dataclass(frozen=True, slots=True)
-class _AIDataSetCreateOptions:
-    name: str
-    description: str
-    dataset_type: str
-    ai_model_type: str
-    is_active: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _AttachmentRequest:
+class _AttachmentOptions(Protocol):
     video_id: int | None
     frame_annotation_ids: list[int]
     segment_ids: list[int]
     include_frame_annotations: bool
     include_video_annotations: bool
     include_all_annotations: bool
-    information_source_names: list[str] | None
+    information_source_names: list[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,109 +187,27 @@ def _application_settings_dataset_entries_data() -> list[dict[str, Any]]:
     ]
 
 
-def _record_error(
-    errors: dict[str, str],
-    *,
-    field_name: str,
-    error: str | None,
-) -> None:
-    if error is not None:
-        errors[field_name] = error
-
-
-def _normalize_dataset_name(value: object) -> tuple[str, str | None]:
-    if not isinstance(value, str):
-        return "", "name must be a string."
-    name = value.strip()
-    if not name:
-        return "", "name is required."
-    if len(name) > 255:
-        return name, "name must be 255 characters or fewer."
-    return name, None
-
-
-def _normalize_dataset_type(value: object) -> tuple[str, str | None]:
-    if not isinstance(value, str):
-        return "", "dataset_type must be a string."
-    dataset_type = value.strip() or AIDataSet.DATASET_TYPE_IMAGE
-    if dataset_type not in AI_DATASET_DEFAULT_MODEL_TYPE_BY_DATASET_TYPE:
-        return dataset_type, "dataset_type must be one of: image, video."
-    return dataset_type, None
-
-
-def _normalize_ai_model_type(
-    value: object,
-    *,
-    default_model_type: str,
-) -> tuple[str, str | None]:
-    if not isinstance(value, str):
-        return "", "ai_model_type must be a string."
-    ai_model_type = value.strip() or default_model_type
-    if ai_model_type != default_model_type:
-        return (
-            ai_model_type,
-            "ai_model_type is not compatible with dataset_type.",
-        )
-    return ai_model_type, None
-
-
-def _normalize_dataset_description(value: object) -> tuple[str, str | None]:
-    if value is None:
-        return "", None
-    if isinstance(value, str):
-        return value.strip(), None
-    return "", "description must be a string."
-
-
-def _normalize_dataset_active(value: object) -> tuple[bool, str | None]:
-    if not isinstance(value, bool):
-        return True, "is_active must be a boolean."
-    return value, None
-
-
 def _parse_ai_dataset_create_options(
-    payload: dict[str, Any],
-) -> tuple[_AIDataSetCreateOptions | None, dict[str, str]]:
-    name, name_error = _normalize_dataset_name(payload.get("name"))
-    dataset_type, dataset_type_error = _normalize_dataset_type(
-        payload.get("dataset_type", AIDataSet.DATASET_TYPE_IMAGE)
-    )
-    default_model_type = AI_DATASET_DEFAULT_MODEL_TYPE_BY_DATASET_TYPE.get(
-        dataset_type,
-        AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-    )
-    ai_model_type, ai_model_type_error = _normalize_ai_model_type(
-        payload.get("ai_model_type", default_model_type),
-        default_model_type=default_model_type,
-    )
-    description, description_error = _normalize_dataset_description(
-        payload.get("description", "")
-    )
-    is_active, is_active_error = _normalize_dataset_active(
-        payload.get("is_active", True)
-    )
-
-    errors: dict[str, str] = {}
-    _record_error(errors, field_name="name", error=name_error)
-    _record_error(errors, field_name="dataset_type", error=dataset_type_error)
-    _record_error(errors, field_name="ai_model_type", error=ai_model_type_error)
-    _record_error(errors, field_name="description", error=description_error)
-    _record_error(errors, field_name="is_active", error=is_active_error)
-    if errors:
+    payload: object,
+) -> tuple[AIDataSetCreateContract | None, dict[str, str]]:
+    try:
+        return AIDataSetCreateContract.model_validate(payload), {}
+    except ValidationError as exc:
+        errors: dict[str, str] = {}
+        for error in exc.errors(include_url=False):
+            location = error["loc"]
+            message = str(error["msg"]).removeprefix("Value error, ")
+            if location:
+                field_name = str(location[0])
+            elif "ai_model_type" in message:
+                field_name = "ai_model_type"
+            else:
+                field_name = "payload"
+            errors.setdefault(field_name, message)
         return None, errors
-    return (
-        _AIDataSetCreateOptions(
-            name=name,
-            description=description,
-            dataset_type=dataset_type,
-            ai_model_type=ai_model_type,
-            is_active=is_active,
-        ),
-        {},
-    )
 
 
-def _create_ai_dataset(options: _AIDataSetCreateOptions) -> AIDataSet:
+def _create_ai_dataset(options: AIDataSetCreateContract) -> AIDataSet:
     with transaction.atomic():
         return AIDataSet.objects.create(
             name=options.name,
@@ -309,7 +219,7 @@ def _create_ai_dataset(options: _AIDataSetCreateOptions) -> AIDataSet:
 
 
 def _create_ai_dataset_response(data: object) -> Response:
-    options, errors = _parse_ai_dataset_create_options(_request_payload(data))
+    options, errors = _parse_ai_dataset_create_options(data)
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
     assert options is not None
@@ -531,45 +441,6 @@ def _payload_information_source_names(
     return _listed_information_source_names(cast(list[object], raw_value))
 
 
-def _payload_integer_list(
-    raw_value: object,
-    *,
-    field_name: str,
-) -> tuple[list[int], Response | None]:
-    if raw_value in (None, ""):
-        return [], None
-    if not isinstance(raw_value, list):
-        return (
-            [],
-            Response(
-                {"errors": {field_name: f"{field_name} must be a list."}},
-                status=status.HTTP_400_BAD_REQUEST,
-            ),
-        )
-
-    values: list[int] = []
-    for item in cast(list[object], raw_value):
-        if isinstance(item, bool):
-            return (
-                [],
-                Response(
-                    {"errors": {field_name: f"{field_name} entries must be integers."}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                ),
-            )
-        try:
-            values.append(int(cast(str | int, item)))
-        except (TypeError, ValueError):
-            return (
-                [],
-                Response(
-                    {"errors": {field_name: f"{field_name} entries must be integers."}},
-                    status=status.HTTP_400_BAD_REQUEST,
-                ),
-            )
-    return values, None
-
-
 def _attach_queryset_in_batches(
     add_objects: Callable[[list[_BatchModel]], int],
     queryset: QuerySet[_BatchModel],
@@ -590,109 +461,24 @@ def _attach_queryset_in_batches(
     return attached_count
 
 
-def _parse_attachment_identifiers(
-    payload: dict[str, Any],
-) -> tuple[int | None, list[int], list[int], Response | None]:
-    video_id, error = _parse_optional_integer_param(
-        payload.get("video_id"),
-        field_name="video_id",
-    )
-    if error is not None:
-        return None, [], [], error
-    frame_ids, error = _payload_integer_list(
-        payload.get("frame_annotation_ids"),
-        field_name="frame_annotation_ids",
-    )
-    if error is not None:
-        return None, [], [], error
-    segment_ids, error = _payload_integer_list(
-        payload.get("segment_ids"),
-        field_name="segment_ids",
-    )
-    return video_id, frame_ids, segment_ids, error
-
-
-def _parse_attachment_flags(
-    payload: dict[str, Any],
-) -> tuple[bool, bool, bool, Response | None]:
-    include_frames, error = _payload_bool_field(
-        payload,
-        "include_frame_annotations",
-        default=False,
-    )
-    if error is not None:
-        return False, False, False, error
-    include_videos, error = _payload_bool_field(
-        payload,
-        "include_video_annotations",
-        default=False,
-    )
-    if error is not None:
-        return False, False, False, error
-    include_all, error = _payload_bool_field(
-        payload,
-        "include_all_annotations",
-        default=False,
-    )
-    return include_frames, include_videos, include_all, error
+def _attachment_validation_response(exc: ValidationError) -> Response:
+    errors: dict[str, str] = {}
+    for error in exc.errors(include_url=False):
+        location = error["loc"]
+        field_name = str(location[0]) if location else "include_all_annotations"
+        message = str(error["msg"]).removeprefix("Value error, ")
+        errors.setdefault(field_name, message)
+    return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _parse_attachment_request(
-    payload: dict[str, Any],
-) -> tuple[_AttachmentRequest | None, Response | None]:
-    video_id, frame_ids, segment_ids, error = _parse_attachment_identifiers(payload)
-    if error is not None:
-        return None, error
-    include_frames, include_videos, include_all, error = _parse_attachment_flags(
-        payload
-    )
-    if error is not None:
-        return None, error
-    source_names, error = _payload_information_source_names(
-        payload.get("information_source_names")
-    )
-    if error is not None:
-        return None, error
-    return (
-        _AttachmentRequest(
-            video_id=video_id,
-            frame_annotation_ids=frame_ids,
-            segment_ids=segment_ids,
-            include_frame_annotations=include_frames,
-            include_video_annotations=include_videos,
-            include_all_annotations=include_all,
-            information_source_names=source_names,
-        ),
-        None,
-    )
-
-
-def _validate_attachment_request(options: _AttachmentRequest) -> Response | None:
-    if not options.include_all_annotations:
-        return None
-    has_explicit_selection = any(
-        (
-            options.video_id is not None,
-            options.frame_annotation_ids,
-            options.segment_ids,
-        )
-    )
-    has_annotation_type = any(
-        (options.include_frame_annotations, options.include_video_annotations)
-    )
-    if has_explicit_selection:
-        message = (
-            "include_all_annotations cannot be combined with "
-            "video_id, frame_annotation_ids, or segment_ids."
-        )
-    elif not has_annotation_type:
-        message = "At least one annotation type must be selected."
-    else:
-        return None
-    return Response(
-        {"errors": {"include_all_annotations": message}},
-        status=status.HTTP_400_BAD_REQUEST,
-    )
+    payload: object,
+) -> tuple[_AttachmentOptions | None, Response | None]:
+    try:
+        validated = AIDataSetAttachVideoContract.model_validate(payload)
+        return cast(_AttachmentOptions, validated), None
+    except ValidationError as exc:
+        return None, _attachment_validation_response(exc)
 
 
 def _load_explicit_frame_annotations(
@@ -748,7 +534,7 @@ def _filter_segments_for_video(
 
 
 def _load_video_attachment_rows(
-    options: _AttachmentRequest,
+    options: _AttachmentOptions,
 ) -> tuple[
     list[ImageClassificationAnnotation], list[LabelVideoSegment], Response | None
 ]:
@@ -783,7 +569,7 @@ def _load_video_attachment_rows(
 
 
 def _load_attachment_rows(
-    options: _AttachmentRequest,
+    options: _AttachmentOptions,
 ) -> tuple[_AttachmentRows | None, Response | None]:
     explicit_frames, error = _load_explicit_frame_annotations(
         options.frame_annotation_ids
@@ -808,22 +594,23 @@ def _load_attachment_rows(
 
 
 def _prepare_attachment(
-    payload: dict[str, Any],
-) -> tuple[_AttachmentRequest | None, _AttachmentRows | None, Response | None]:
+    payload: object,
+) -> tuple[
+    _AttachmentOptions | None,
+    _AttachmentRows | None,
+    Response | None,
+]:
     options, error = _parse_attachment_request(payload)
     if error is not None:
         return None, None, error
     assert options is not None
-    error = _validate_attachment_request(options)
-    if error is not None:
-        return None, None, error
     rows, error = _load_attachment_rows(options)
     return options, rows, error
 
 
 def _attach_all_annotations(
     dataset: AIDataSet,
-    options: _AttachmentRequest,
+    options: _AttachmentOptions,
     result: _AttachmentResult,
 ) -> None:
     if options.include_frame_annotations:
@@ -867,7 +654,7 @@ def _attach_explicit_rows(
 
 def _attach_video_rows(
     dataset: AIDataSet,
-    options: _AttachmentRequest,
+    options: _AttachmentOptions,
     rows: _AttachmentRows,
     result: _AttachmentResult,
 ) -> None:
@@ -889,7 +676,7 @@ def _attach_video_rows(
 
 def _attach_dataset_rows(
     dataset: AIDataSet,
-    options: _AttachmentRequest,
+    options: _AttachmentOptions,
     rows: _AttachmentRows,
 ) -> _AttachmentResult:
     result = _AttachmentResult(frame_annotation_ids=set(), segment_ids=set())
@@ -1084,14 +871,14 @@ def application_settings_ai_dataset_attachments(
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    options, rows, error = _prepare_attachment(_request_payload(request.data))
+    options, rows, error = _prepare_attachment(request.data)
     if error is not None:
         return error
     assert options is not None
     assert rows is not None
     attached = _attach_dataset_rows(dataset, options, rows)
 
-    return Response(
+    response_payload = AIDataSetAttachmentResultContract.model_validate(
         {
             "dataset_id": dataset.pk,
             "video_id": options.video_id,
@@ -1101,7 +888,10 @@ def application_settings_ai_dataset_attachments(
             "attached_segment_ids": sorted(attached.segment_ids),
             "attached_frame_annotation_count": attached.frame_annotation_count,
             "attached_segment_count": attached.segment_count,
-        },
+        }
+    ).model_dump(mode="json")
+    return Response(
+        response_payload,
         status=status.HTTP_200_OK,
     )
 

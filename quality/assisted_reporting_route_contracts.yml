@@ -1,0 +1,45 @@
+schema_version: "1.0"
+wire_contract:
+  backend_fields: snake_case
+  frontend_response_fields: camelCase
+  request_conversion_owner: frontend/src/api/axiosInstance.ts
+  response_conversion_owner: frontend/src/api/axiosInstance.ts
+routes:
+  - id: terminology_bundles
+    method: GET
+    path: /dtypes-api/terminology/bundles
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/terminology_routes.py
+    implementation_marker: '@api.get("/terminology/bundles")'
+    frontend_file: frontend/src/api/terminologyApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "dtypesApi('terminology')"
+    query_parameters: []
+  - id: examination_findings
+    method: GET
+    path: /dtypes-api/examinations/{examination_id}/findings/
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/findings_routes.py
+    implementation_marker: '@api.get("/examinations/{examination_id}/findings/")'
+    frontend_file: frontend/src/api/findingsApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "dtypesApi(`examinations/${String(examinationId)}/findings/`)"
+    query_parameters: []
+  - id: patient_findings
+    method: GET
+    path: /dtypes-api/patient-findings/
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/findings_routes.py
+    implementation_marker: '@api.get("/patient-findings/")'
+    frontend_file: frontend/src/api/findingsApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "patientFindings: dtypesApi('patient-findings/')"
+      - "params: { patient_examination: validPatientExaminationId }"
+    query_parameters:
+      - patient_examination
+forbidden_frontend_markers:
+  - VITE_FINDINGS_BACKEND
+  - /endoreg-api/findings/

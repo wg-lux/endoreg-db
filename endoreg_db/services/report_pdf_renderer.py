@@ -44,6 +44,7 @@ def build_report_template_pdf_payload(
     patient_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     patient = patient_examination.patient
+    report_language = report.language
     identity = patient_identity or {}
     first_name = str(identity.get("first_name") or getattr(patient, "first_name", ""))
     last_name = str(identity.get("last_name") or getattr(patient, "last_name", ""))
@@ -63,16 +64,21 @@ def build_report_template_pdf_payload(
     elif report.rendered_text:
         blocks.append({"type": "paragraph", "text": report.rendered_text})
     else:
+        fallback_text = (
+            "Kein Befundtext verfügbar."
+            if report_language == "de"
+            else "No rendered report text available."
+        )
         blocks.append(
             {
                 "type": "sentence_group",
-                "section_title": "Report",
+                "section_title": "Befund" if report_language == "de" else "Report",
                 "variables": {},
                 "sentences": [
                     {
                         "template": "{text}",
                         "enabled": True,
-                        "variables": {"text": "No rendered report text available."},
+                        "variables": {"text": fallback_text},
                     }
                 ],
             }
@@ -82,17 +88,25 @@ def build_report_template_pdf_payload(
         blocks.append(
             {
                 "type": "image_grid",
-                "title": "Frames",
+                "title": "Bilddokumentation" if report_language == "de" else "Frames",
                 "columns": 3,
                 "image_paths": frame_image_paths,
                 "captions": frame_captions
                 if frame_captions
-                else [f"frame {i + 1}" for i in range(len(frame_image_paths))],
+                else [
+                    f"Bild {i + 1}" if report_language == "de" else f"frame {i + 1}"
+                    for i in range(len(frame_image_paths))
+                ],
             }
         )
 
     return {
-        "title": report.title or f"{report.template_name} report",
+        "title": report.title
+        or (
+            f"{report.template_name} Befundbericht"
+            if report_language == "de"
+            else f"{report.template_name} report"
+        ),
         "subtitle": report.template_name,
         "header": header,
         "assets_root": assets_root,

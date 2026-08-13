@@ -178,6 +178,12 @@ definition_of_done:
   acceptance:
   - The sender validates typed payload schema, immutable transfer identity, source ownership, processed-media
     hash, and resource rows before network transmission.
+  - Video overview eligibility, marking, and payload construction consume one canonical readiness resolver;
+    anonymization state, the canonical SegmentAnnotationStatus, and processed-media export integrity remain
+    separate, and no video is eligible when transfer-time hash validation would reject it.
+  - Polling overview requests never read complete processed-video files; the typed API exposes anonymization,
+    SegmentAnnotationStatus, persisted export-integrity status, and derived eligibility, while marking
+    and transfer perform fresh fail-closed byte verification.
   - Timeouts and retries reuse the same transfer key; changed canonical payloads and ownership collisions
     fail as INCONSISTENT rather than creating or mutating unrelated resources.
   - Completion and cleanup eligibility require a receiver acknowledgement tied to the same transfer, artifact
@@ -189,59 +195,19 @@ definition_of_done:
       ownership collision, and lost-acknowledgement scenarios and compare both ledgers.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
-    - kind: code
-      reference: endoreg_db/serializers/hub/transfer_job.py; endoreg_db/services/hub/transfers.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_payloads.py;
-        /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py
     - kind: command
-      reference: 'lx-annotate: devenv shell -- .devenv/state/venv/bin/pytest tests/hub -q (65 passed)'
-    - kind: command
-      reference: endoreg-db receiver and contract suite (51 passed)
-    - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py (actual video/report
-        sender payload accepted by endoreg_db TransferJobCreateSerializer)
-    - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
-        9.68s, 2026-08-03)
-    - kind: command
-      reference: devenv shell -- pyright tests/hub/test_hub_export_end_to_end.py lx_annotate/hub/hub_export_payloads.py
-        (0 errors, 2026-08-03)
-    - kind: command
-      reference: endoreg-db receiver/contract/middleware suite with freshly compiled native backend (62
-        passed in 29.29s, 2026-08-03)
-    - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py::HubExportEndToEndTests::test_report_worker_reaches_real_receiver_and_both_ledgers_complete
-        (real sender worker, authenticated Django receiver registration and Multipart upload, hash/persistence
-        path, and correlated sender/receiver completion)
-    - kind: command
-      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (76 passed in 10.66s, 2026-08-03)
-    - kind: command
-      reference: pyright tests/hub/test_hub_export_end_to_end.py (0 errors, 2026-08-03)
-    - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (HTTP 409 is terminal
-        integrity_inconsistency; it is never reclassified as an exact replay)
-    - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_end_to_end.py::HubExportEndToEndTests::test_report_worker_recovers_lost_ack_and_rejects_changed_replay
-        (real registration/upload, lost upload acknowledgement, exact replay recovery, changed canonical
-        replay rejection, pre-network processed-hash mismatch rejection, cross-node ownership collision,
-        and immutable receiver artifacts and ledgers)
-    - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_rejects_canonical_replay_conflict_on_409
-    - kind: command
-      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (76 passed in 11.08s, 2026-08-03)
-    - kind: command
-      reference: pyright lx_annotate/hub/hub_export_worker.py tests/hub/test_hub_export_worker.py tests/hub/test_hub_export_end_to_end.py
-        (0 errors, 2026-08-03)
-    note: 'Verifiziert durch den echten lx-annotate Sender-Worker gegen Serializer und Django-Receiver-Endpunkte:
-      Registrierung, Processed-Media-Upload, korrelierte Acknowledgements, Lost-Acknowledgement mit exaktem
-      Replay, terminaler Changed-Replay, Pre-Network-Hash-Mismatch und Cross-Node-Ownership-Kollision
-      sind über beide Ledger abgedeckt. HTTP 409 wird fail-closed als integrity_inconsistency behandelt.
-      Receiver-Artefakte und bestehende Transfers bleiben bei Konflikten unverändert. Nur die physische
-      Trennung der Artefaktablage wird im In-Process-Test emuliert, weil beide Anwendungen dieselbe Testdatenbank
-      und denselben Medienpfad verwenden.'
-    assessed_by: codex-hub-transfer-ready
-    assessed_at: '2026-08-03T11:54:39.647608Z'
+      reference: 'endoreg-db pyright: 0 errors; tests/app/test_imports.py: 1 passed; lx-annotate pyright:
+        0 errors; focused frontend Vitest: 15 passed; lx-annotate API pytest blocked by missing pytest
+        executable (2026-08-13)'
+    note: 'Implemented authenticated server-side bulk video discovery, fresh integrity verification, idempotent
+      locked outbound-job reuse, explicit queue dispatch independent of auto-queue, typed result counts,
+      and a German Hub overview action. Validation 2026-08-13: endoreg-db Pyright 0 errors; package imports
+      1 passed; lx-annotate Pyright 0 errors; frontend focused Vitest 15 passed. LX focused API pytest
+      was not collected because the locked devenv/uv environment has no pytest executable.'
+    assessed_by: codex-hub-bulk-video-offload
+    assessed_at: '2026-08-13T08:31:41.325511Z'
 - id: automated_boundary_tests
   category: testing
   title: Sender, receiver, UI, authorization, retry, and negative integrity paths are regression tested

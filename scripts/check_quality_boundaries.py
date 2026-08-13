@@ -121,6 +121,8 @@ class _BroadExceptionVisitor(ast.NodeVisitor):
 
 
 def _broad_exception_types(node: ast.expr | None) -> tuple[str, ...]:
+    if node is None:
+        return ("bare except",)
     if isinstance(node, ast.Name) and node.id in {"Exception", "BaseException"}:
         return (node.id,)
     if isinstance(node, ast.Tuple):

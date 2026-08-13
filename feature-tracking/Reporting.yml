@@ -60,14 +60,84 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest -q (524 passed, 2 skipped)
     - kind: command
       reference: 'scripts/lint_kb_yaml.py strict: 110 files, 0 errors, 0 warnings'
-    note: 'LXDM 2026-08-03: Vier veröffentlichungsfähige, lokalisierte und leitlinienreferenzierte ReportingShell-Templates
-      sind implementiert (Koloskopie 34 Coverage-Konzepte, Upper GI 7, ERCP 5, EUS 5). Registry-Auflösung
-      ist fail-closed. 524 Tests bestanden, strict KB lint 110 Dateien 0 Fehler/0 Warnungen, changed-file
-      Pyright/Ruff und Docs-Linkcheck bestanden. Offen bleiben Frontend-Darstellung der neuen Metadaten,
-      klinische Fachfreigabe und populationsbezogene QI-Aggregation; repositoryweites Pyright bleibt an
-      einem vorbestehenden unveränderten FHIR-Testfehler blockiert.'
-    assessed_by: codex-lxdm-kb-019fc7c1
-    assessed_at: '2026-08-03T14:05:44.500297Z'
+    - kind: code
+      reference: endoreg_db/services/report_runtime_validation.py
+    - kind: code
+      reference: endoreg_db/services/report_finding_sync.py
+    - kind: code
+      reference: endoreg_db/services/report_persistence.py
+    - kind: test
+      reference: tests/services/test_report_runtime_validation.py
+    - kind: test
+      reference: tests/services/test_report_finding_sync.py
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest focused report/LXDM lane -q (75 passed)
+    - kind: command
+      reference: focused Ruff passed; focused Pyright 0 errors
+    - kind: command
+      reference: 'tracker report_workflow verification lane: 25 passed'
+    note: Finale Berichte werden jetzt erst nach strengem LXDM-Ledger-Roundtrip und Ausführung der versionierten
+      ReportTemplate-Validatorfamilien gespeichert; fehlende Anforderungen liefern 422 und rollen Patienten-,
+      Ledger- und Reportänderungen zurück. Terminologiebeziehungen für Untersuchung, Befund, Klassifikation,
+      Auswahl, Intervention und Indikation werden vor Mutation geprüft. Die erfolgreiche Laufzeitvalidierung
+      wird als Snapshot persistiert. Offen bleiben klinische Fachfreigabe und Release der neuen Artefaktversionen.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T10:54:43.641322Z'
+- id: report_draft_persistence_contract
+  category: data_integrity
+  title: Berichtsentwürfe werden repositoryübergreifend strikt und kanonisch persistiert
+  acceptance:
+  - Der versionierte Pydantic-Vertrag für den Report-Draft besitzt genau einen kanonischen Owner in lx_dtypes;
+    endoreg_db re-exportiert ihn ohne lokales Schema oder eigene Normalisierung.
+  - Unbekannte Felder, skalare Typ-Coercion, nicht objektförmige Payloads sowie NaN und Infinity werden
+    vor jedem normalen PatientExamination-JSONField-Schreibpfad abgelehnt.
+  - Gültige snake_case- und dokumentierte Legacy-camelCase-Template-Identitäten werden ohne semantischen
+    Verlust in eine kanonische snake_case-Persistenzform überführt.
+  - lx-annotate validiert GET- und PUT-Antworten an derselben API-Grenze; der zentrale Axios-Adapter bleibt
+    allein für camelCase-/snake_case-Transportkonvertierung zuständig.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_report_draft.py
+      && cd /home/admin/endoreg-db && devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/python
+      -m pytest tests/views/patient_examination/test_patient_examination_draft_viewset.py -q && cd /home/admin/dev/lx-annotate/frontend
+      && devenv shell -- npm exec -- vitest run src/api/__tests__/reportDraftApi.test.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/report_draft.py
+    - kind: code
+      reference: endoreg_db/schemas/report_draft.py
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/reportDraftApi.ts
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_report_draft.py
+    - kind: test
+      reference: tests/views/patient_examination/test_patient_examination_draft_viewset.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts
+    - kind: command
+      reference: 'lx_dtypes report-draft tests: 9 passed; focused Pyright 0 errors; Ruff passed'
+    - kind: command
+      reference: 'endoreg_db draft persistence/API tests against extracted lx_dtypes 0.2.17 wheel: 11
+        passed; focused Pyright 0 errors'
+    - kind: command
+      reference: 'lx-annotate reportDraftApi: 5 passed; vue-tsc type-check passed'
+    - kind: command
+      reference: 'lx-dtypes-release build: 0.2.17 wheel and sdist built; twine checks passed'
+    note: Der Report-Draft besitzt mit lx_dtypes 0.2.17 einen einzigen strikt konfigurierten Pydantic-Owner.
+      endoreg_db re-exportiert den Vertrag und PatientExamination.clean() erzwingt die kanonische JSON-Form
+      auch bei direkten Saves. NaN, Infinity, Typ-Coercion, unbekannte Felder und nicht objektförmige
+      Payloads scheitern fail-closed. GET- und PUT-Antworten werden im Frontend an derselben Boundary
+      geprüft. Der gebaute Wheel-Artefakt-Roundtrip bestand; die geschützte Veröffentlichung von 0.2.17
+      bleibt der anschließende Release-Schritt.
+    assessed_by: codex-persistence-contract-20260813
+    assessed_at: '2026-08-13T09:36:53.424461Z'
 - id: automated_tests
   category: testing
   title: Import, Persistenz, Materialisierung, LLM-Jobs und Streaming sind getestet
@@ -208,11 +278,39 @@ definition_of_done:
     - kind: test
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py
         (1 bestanden; Pyright 0 Fehler)
-    note: API-Sprachvertrag, Flow-Persistenz, sprachspezifische LXDM-Konzeptlabels und Editor-Provenienz
-      sind implementiert und fokussiert getestet. Offen bleiben versionierte sprachspezifische Template-,
-      Abschnitts- und Untertitel sowie ein Browser-Roundtrip gegen eine veröffentlichte KnowledgeBase.
-    assessed_by: Codex
-    assessed_at: '2026-07-31T07:36:13.468304Z'
+    - kind: code
+      reference: endoreg_db/models/report/patient_examination_report.py
+    - kind: code
+      reference: endoreg_db/migrations/0072_patient_examination_report_provenance.py
+    - kind: code
+      reference: endoreg_db/services/report_pdf_renderer.py
+    - kind: test
+      reference: tests/migrations/test_report_provenance_backfill.py
+    - kind: test
+      reference: tests/services/test_report_persistence_service.py
+    - kind: command
+      reference: migration backfill tests 7 passed; report/API subset 39 passed
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/terminology_catalog.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/knowledge_base/report_template/ReportTemplateSection.py
+    - kind: test
+      reference: '/home/admin/lx-data-models focused localization/route lane: 19 passed, 1 skipped; route
+        contract 3 passed, 1 skipped; full 645-test collection exit 0'
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate localized reporting/API lane: 29 passed; both type-check
+        lanes passed'
+    - kind: test
+      reference: 'Endoreg indication compatibility endpoint: Pyright 0; 6 tests passed'
+    note: Berichtssprache und KnowledgeBase-Identität sind nun erstklassige persistierte Reportfelder.
+      Ingress kanonisiert reportLanguage/report_language; neue und historische deutsche oder englische
+      Berichte bleiben eindeutig, Konflikte und unbekannte Werte scheitern fail-closed. PDF-Fallbacktitel,
+      Leertext und Bilddokumentation folgen dem Sprachfeld und sind standardmäßig deutsch. Upstream liefern
+      LXDM-Routen streng lokalisierte Untersuchungs-, Indikations- und Abschnitts-DTOs; lx-annotate konsumiert
+      Titel anhand der persistierten Berichtssprache. Offen bleiben klinische Freigabe und die Release-Reihenfolge
+      lx-dtypes 0.2.17, neue Endoreg-Version, danach lx-annotate Pins/Lock.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T10:55:13.285510Z'
 - id: access_controls
   category: security
   title: Berichtszugriff und LLM-Verarbeitung sind patienten- und center-bezogen
@@ -247,8 +345,20 @@ definition_of_done:
     - -q
     timeout_seconds: 600
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/report_persistence.py:_persist_final_report_artifacts
+    - kind: test
+      reference: tests/services/test_report_persistence_service.py::test_final_submission_rolls_back_when_pdf_materialization_fails
+    - kind: test
+      reference: tests/services/test_report_persistence_service.py::test_final_submission_rolls_back_when_template_requirements_fail
+    note: Finale Submissionen verwenden den strikten Renderer; Renderer- oder Templatevalidierungsfehler
+      werden nicht mehr in Warnungen umgewandelt und lassen weder finalen Report noch gelöschten Draft
+      zurück. Atomarer DB-Rollback ist getestet. Eine vollständige Dateisystem-Reconciliation und Betriebsfreigabe
+      bleibt offen.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T10:52:25.288580Z'
 - id: stable_report_snapshot
   category: functionality
   title: Berichtsquellen werden als stabile, unveränderliche Snapshots übernommen

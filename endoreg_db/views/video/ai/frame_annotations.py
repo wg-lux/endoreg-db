@@ -5,7 +5,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeAlias, cast
 
-from django.db import transaction
+from django.db import DatabaseError, IntegrityError, OperationalError, transaction
 from django.utils import timezone
 from lx_dtypes.models.contracts.frame_annotation import (
     FrameAnnotationQueueSpecPayload,
@@ -244,6 +244,14 @@ class _BulkAnnotationReferences:
     label_ids: set[int]
     frame_video_by_id: dict[int, int]
     source_by_name: dict[str, InformationSource]
+
+
+@dataclass(frozen=True, slots=True)
+class _BulkWriteFailureDescriptor:
+    code: str
+    detail: str
+    retryable: bool
+    status_code: int
 
 
 class _BulkRequestError(Exception):
@@ -535,6 +543,54 @@ def _bulk_upsert_success_response(
     return Response(response_data, status=status.HTTP_200_OK)
 
 
+def _bulk_write_failure_descriptor(
+    error: DatabaseError,
+) -> _BulkWriteFailureDescriptor:
+    if isinstance(error, IntegrityError):
+        return _BulkWriteFailureDescriptor(
+            code="frame_annotation_write_conflict",
+            detail="Frame annotations conflict with persisted data.",
+            retryable=False,
+            status_code=status.HTTP_409_CONFLICT,
+        )
+    if isinstance(error, OperationalError):
+        return _BulkWriteFailureDescriptor(
+            code="frame_annotation_write_temporarily_unavailable",
+            detail="Frame annotation storage is temporarily unavailable.",
+            retryable=True,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return _BulkWriteFailureDescriptor(
+        code="frame_annotation_write_failed",
+        detail="Frame annotations could not be saved.",
+        retryable=False,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
+
+
+def _bulk_write_failure_response(error: DatabaseError) -> Response:
+    descriptor = _bulk_write_failure_descriptor(error)
+    logger.error(
+        "Bulk frame annotation write failed at the database boundary.",
+        extra={
+            "error_code": descriptor.code,
+            "error_type": type(error).__name__,
+            "retryable": descriptor.retryable,
+            "write_committed": False,
+        },
+    )
+    return Response(
+        {
+            "status": "error",
+            "error": descriptor.detail,
+            "code": descriptor.code,
+            "retryable": descriptor.retryable,
+            "write_committed": False,
+        },
+        status=descriptor.status_code,
+    )
+
+
 def _build_bulk_upsert_response(
     annotation_items: Sequence[Mapping[str, Any]],
     requested_video_id: int | None,
@@ -568,12 +624,8 @@ def _build_bulk_upsert_response(
                 references,
                 ai_dataset,
             )
-    except Exception as exc:
-        logger.error("Bulk frame annotation upsert failed: %s", exc, exc_info=True)
-        return Response(
-            {"error": "Bulk frame annotation upsert failed."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    except DatabaseError as exc:
+        return _bulk_write_failure_response(exc)
 
     return _bulk_upsert_success_response(
         annotations_to_upsert=annotations_to_upsert,

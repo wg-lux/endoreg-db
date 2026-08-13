@@ -59,7 +59,6 @@ from endoreg_db.utils.file_operations import (
 logger = logging.getLogger(__name__)
 
 JsonNull: TypeAlias = NoneType
-MediaType: TypeAlias = LxAnonymizerPerformanceMediaType
 ForcedMediaType: TypeAlias = Literal["auto", "video", "report"]
 ProcessorRoi: TypeAlias = RoiBoxCore | dict[str, int | JsonNull]
 ImportedMedia: TypeAlias = VideoFile | RawPdfFile
@@ -383,7 +382,7 @@ class Command(BaseCommand):
     def _selected_inputs(
         self,
         options: PerformanceCommandOptions,
-    ) -> list[tuple[Path, MediaType]]:
+    ) -> list[tuple[Path, LxAnonymizerPerformanceMediaType]]:
         inputs = self._discover_inputs(
             paths=[*options["paths"], *options["input_dir"]],
             forced_media_type=options["media_type"],
@@ -417,7 +416,7 @@ class Command(BaseCommand):
 
     def _run_inputs(
         self,
-        inputs: list[tuple[Path, MediaType]],
+        inputs: list[tuple[Path, LxAnonymizerPerformanceMediaType]],
         options: PerformanceCommandOptions,
     ) -> list[LxAnonymizerPerformanceRunPayload]:
         run_results: list[LxAnonymizerPerformanceRunPayload] = []
@@ -506,8 +505,8 @@ class Command(BaseCommand):
         forced_media_type: ForcedMediaType,
         recursive: bool,
         limit: int,
-    ) -> list[tuple[Path, MediaType]]:
-        discovered: list[tuple[Path, MediaType]] = []
+    ) -> list[tuple[Path, LxAnonymizerPerformanceMediaType]]:
+        discovered: list[tuple[Path, LxAnonymizerPerformanceMediaType]] = []
         for raw_path in paths:
             for candidate in self._input_candidates(raw_path, recursive=recursive):
                 classified = self._classify_input_candidate(
@@ -536,7 +535,7 @@ class Command(BaseCommand):
         candidate: Path,
         *,
         forced_media_type: ForcedMediaType,
-    ) -> tuple[Path, MediaType] | None:
+    ) -> tuple[Path, LxAnonymizerPerformanceMediaType] | None:
         if not candidate.is_file() or candidate.is_symlink():
             return None
         media_type = self._media_type_for_path(candidate, forced_media_type)
@@ -547,9 +546,9 @@ class Command(BaseCommand):
     def _exclude_video_inputs_without_roi(
         self,
         *,
-        inputs: list[tuple[Path, MediaType]],
+        inputs: list[tuple[Path, LxAnonymizerPerformanceMediaType]],
         processor_name: str,
-    ) -> tuple[list[tuple[Path, MediaType]], int]:
+    ) -> tuple[list[tuple[Path, LxAnonymizerPerformanceMediaType]], int]:
         video_inputs = [
             (source_path, media_type)
             for source_path, media_type in inputs
@@ -601,7 +600,7 @@ class Command(BaseCommand):
     def _media_type_for_path(
         path: Path,
         forced_media_type: ForcedMediaType,
-    ) -> MediaType | JsonNull:
+    ) -> LxAnonymizerPerformanceMediaType | JsonNull:
         suffix = path.suffix.lower()
         if suffix in REPORT_BYPASS_EXTENSIONS:
             if forced_media_type == "report":
@@ -624,7 +623,7 @@ class Command(BaseCommand):
         self,
         *,
         source_path: Path,
-        media_type: MediaType,
+        media_type: LxAnonymizerPerformanceMediaType,
         iteration: int,
         center_name: str,
         processor_name: str,
@@ -728,7 +727,7 @@ class Command(BaseCommand):
         self,
         *,
         staged_path: Path,
-        media_type: MediaType,
+        media_type: LxAnonymizerPerformanceMediaType,
         center_name: str,
         processor_name: str,
         retry: bool,

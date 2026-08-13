@@ -97,8 +97,38 @@ definition_of_done:
       reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
         tests/api/test_dtypes_record_persistence.py -q
       note: Exit-Code 0
-    assessed_by: Codex
-    assessed_at: '2026-07-20T14:40:28.135445Z'
+    - kind: code
+      reference: endoreg_db/schemas/persisted_json.py:validate_dtypes_p_examination_payload
+    - kind: test
+      reference: tests/schemas/test_dtypes_record_persistence_boundary.py
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/schemas/test_dtypes_record_persistence_boundary.py tests/api/test_dtypes_record_persistence.py::test_base_api_persists_full_dtypes_record
+        tests/api/test_dtypes_record_persistence.py::test_base_api_rejects_unknown_nested_dtypes_record_fields
+        tests/api/test_dtypes_record_persistence.py::test_report_submission_api_returns_and_retrieves_persisted_dtypes_record
+        -q
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/schemas/persisted_json.py
+        tests/schemas/test_dtypes_record_persistence_boundary.py
+    - kind: code
+      reference: endoreg_db/services/dtypes_records.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/findings_routes.py
+    - kind: test
+      reference: tests/services/test_dtypes_records.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_report_template_validate_from_ledger_api.py
+    - kind: command
+      reference: 'Endoreg focused persistence/report lane: 75 passed'
+    - kind: command
+      reference: 'lx_dtypes host-ledger builder: 4 passed'
+    note: Der Host schreibt widersprüchliche nested patient_examination-Referenzen nicht mehr still um.
+      Der gemeinsame DtypesRecordPersistencePayload lehnt Befund- und Indikationskonflikte vor Mutation
+      ab; der LXDM-Host-Builder erzeugt die kanonische Untersuchungsreferenz direkt. Die fokussierte Endoreg-Lane
+      bestand mit 75 Tests, der Upstream-Builder mit 4 Tests; Pyright und Ruff sind in den geänderten
+      Dateien fehlerfrei.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T10:52:27.713623Z'
 - id: record_consistency
   category: data_integrity
   title: Persistierter LXDM-Datensatz folgt allen klinischen Änderungen
@@ -208,10 +238,24 @@ definition_of_done:
       reference: docs/dtypes_lookup_module_entrypoint.md
     - kind: test
       reference: 'Candidate integration, persistence, transfer and hub endpoint lane: 72 passed'
-    note: Codepfad, Backfill- und atomarer Rollback sind getestet; Produktionsfreigabe bleibt bis Veröffentlichung/Pin
-      von lx-dtypes 0.2.1 und realer Backup-Restore-Probe blockiert.
-    assessed_by: Codex
-    assessed_at: '2026-07-20T14:42:24.877342Z'
+    - kind: code
+      reference: 'lx-data-models commit 1598d15 (release: prepare lx-dtypes 0.2.17)'
+    - kind: command
+      reference: uv run --locked --extra dev lx-dtypes-release build (wheel/sdist, exact KB data, German
+        templates, Twine passed)
+    - kind: demonstration
+      reference: 'isolated installed wheel smoke: lx-dtypes 0.2.17, report_template_examples, German title,
+        6 German sections'
+    - kind: command
+      reference: wheel sha256 cde7101b003685ecb633edf3abc6c6597757936b821ab67173be8e074de8f6e6; sdist
+        sha256 a23eba62e583e417f02c4ea57eebc5d91553ada7a23fc3c3c3c846586d062592
+    note: 'lx-dtypes 0.2.17 is committed and technically release-ready: clean source commit, locked toolchain,
+      full Pyright/tests, source-derived wheel/sdist, exact KB artifact checks, isolated installed-wheel
+      German template smoke, Twine and docs checks pass. Production readiness remains blocked only on
+      protected publication, downstream EndoReg/lx-annotate pinning, and the existing real backup/restore
+      operational probe.'
+    assessed_by: codex/lxdtypes-consistency-20260813
+    assessed_at: '2026-08-13T11:05:04.993616Z'
 - id: integration_documentation
   category: documentation
   title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert

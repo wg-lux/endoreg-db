@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 
+import math
 from typing import Any, cast
 from uuid import uuid4
 
@@ -20,6 +21,26 @@ def _response_body(response: Any) -> dict[str, object]:
 
 def _pk(instance: object) -> int:
     return int(cast(Any, instance).pk)
+
+
+def _successful_final_runtime_validation(
+    patient_examination: PatientExamination,
+    *,
+    template_name: str,
+) -> dict[str, object]:
+    del patient_examination, template_name
+    return {"ok": True, "issues": []}
+
+
+def _successful_final_artifact_persistence(
+    report: PatientExaminationReport,
+    patient_examination: PatientExamination,
+    *,
+    rendered_text: str,
+    strict_renderer: bool = False,
+) -> tuple[None, None]:
+    del report, patient_examination, rendered_text, strict_renderer
+    return None, None
 
 
 @pytest.mark.django_db
@@ -199,27 +220,40 @@ def test_patient_examination_draft_rejects_unknown_fields(
 
 
 @pytest.mark.django_db
-def test_patient_examination_rejects_invalid_direct_draft_write() -> None:
+@pytest.mark.parametrize(
+    "invalid_draft",
+    [
+        {"schema_version": "2.0", "payload": {}},
+        {"module_name": 7, "payload": {}},
+        {"payload": []},
+        {"payload": {"measurement": math.nan}},
+        {"payload": {"measurement": math.inf}},
+    ],
+)
+def test_patient_examination_rejects_invalid_direct_draft_write(
+    invalid_draft: dict[str, object],
+) -> None:
     patient = Patient.objects.create(
         patient_hash=f"draft-direct-{uuid4().hex}",
         first_name="Draft",
         last_name="Direct",
     )
     patient_examination = PatientExamination.objects.create(patient=patient)
-    patient_examination.report_draft = {
-        "schema_version": "2.0",
-        "payload": {},
-    }
+    patient_examination.report_draft = invalid_draft
 
     with pytest.raises(DjangoValidationError) as exc_info:
         patient_examination.save(update_fields=["report_draft"])
 
     assert "report_draft" in exc_info.value.message_dict
 
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft == {}
+
 
 @pytest.mark.django_db
 def test_patient_examination_draft_is_empty_after_final_report_save(
     api_client: APIClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     patient = Patient.objects.create(
         patient_hash=f"draft-purge-{uuid4().hex}",
@@ -236,6 +270,15 @@ def test_patient_examination_draft_is_empty_after_final_report_save(
     }
     patient_examination.draft_updated_at = timezone.now()
     patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        _successful_final_runtime_validation,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        _successful_final_artifact_persistence,
+    )
 
     save_report_submission(
         patient_examination_id=patient_examination_id,

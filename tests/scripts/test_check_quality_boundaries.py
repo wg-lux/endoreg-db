@@ -69,6 +69,33 @@ value = dynamic_value  # pyright: ignore[reportUnknownVariableType, reportAssign
     ]
 
 
+def test_bare_except_is_broad_and_causes_baseline_drift() -> None:
+    baseline = _baseline("value = 1\n", review_after=date(2026, 7, 18))
+    findings = scan_source(
+        path="endoreg_db/example.py",
+        source="""
+def inner_service() -> None:
+    try:
+        operation()
+    except:
+        raise
+""",
+    )
+
+    assert [(item.kind, item.scope, item.detail) for item in findings] == [
+        ("broad_exception", "inner_service", "bare except"),
+    ]
+
+    broad_exception, type_suppression = compare_with_baseline(
+        findings,
+        baseline,
+        today=date(2026, 7, 17),
+    )
+    assert broad_exception.actual.count == 1
+    assert not broad_exception.is_clean
+    assert type_suppression.is_clean
+
+
 def test_snapshot_is_stable_when_only_source_lines_move() -> None:
     compact = scan_source(
         path="endoreg_db/example.py",

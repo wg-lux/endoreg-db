@@ -31,11 +31,13 @@ zu prüfen. Öffentliche Verträge benötigen zuerst einen Deprecation-Pfad.
 ## Qualitäts-Boundary-Guard
 
 `devenv tasks run quality:boundaries` friert den überprüften Altbestand an
-breiten `Exception`-/`BaseException`-Handlern und Typunterdrückungen ein. Die
-versionierte Baseline steht in `quality/quality_boundary_baseline.yml`. Ihr
-Fingerprint basiert auf Datei, qualifiziertem Scope und Regel, nicht auf
-Zeilennummern. Reine Zeilenverschiebungen bleiben deshalb stabil; neue,
-entfernte oder verschobene Befunde verlangen einen bewussten Review.
+breiten `Exception`-/`BaseException`-Handlern, parameterlosen `except:`-Klauseln
+und Typunterdrückungen ein. Die versionierte Baseline steht in
+`quality/quality_boundary_baseline.yml`. Ihr Fingerprint basiert auf Datei,
+qualifiziertem Scope und Regel, nicht auf Zeilennummern. Reine
+Zeilenverschiebungen bleiben deshalb stabil; neue, entfernte oder verschobene
+Befunde verlangen einen bewussten Review. Eine parameterlose `except:`-Klausel
+gilt dabei als breiter Handler und benötigt denselben benannten Boundary-Review.
 
 Die Baseline ist kein Allowlisting und keine Aussage, dass der Altbestand
 zulässig ist. Eine Aktualisierung ist nur Teil einer benannten Kohorte:

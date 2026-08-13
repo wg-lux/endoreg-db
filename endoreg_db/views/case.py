@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Protocol, TypeVar, cast
 
 from django.db import models, transaction
@@ -14,6 +13,7 @@ from rest_framework.response import Response
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.administration.case.case import Case
 from endoreg_db.schemas.case_documents import CaseDocumentAttachmentPayload
+from endoreg_db.schemas.case_creation import CreateCaseWithExaminationPayload
 from endoreg_db.serializers.case import CaseSerializer
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 from endoreg_db.services.cases import (
@@ -172,23 +172,16 @@ class CaseViewSet(viewsets.ModelViewSet[Case]):
     @action(detail=False, methods=["post"], url_path="create-with-examination")
     def create_with_examination(self, request: Request) -> Response:
         """Atomically create a patient examination and its owning case."""
-        request_data = request.data
-
-        admission_date = serializers.DateTimeField().run_validation(
-            request_data.get("admission_date")
-        )
-        patient_examination_payload = request_data.get("patient_examination")
-        if not isinstance(patient_examination_payload, Mapping):
-            raise serializers.ValidationError(
-                {"patient_examination": "An object payload is required"}
-            )
-
-        examination_serializer = PatientExaminationSerializer(
-            data=patient_examination_payload
-        )
-        examination_serializer.is_valid(raise_exception=True)
+        try:
+            payload = CreateCaseWithExaminationPayload.model_validate(request.data)
+        except PydanticValidationError as exc:
+            raise serializers.ValidationError(drf_validation_error_detail(exc)) from exc
 
         with transaction.atomic():
+            examination_serializer = PatientExaminationSerializer(
+                data=payload.patient_examination.model_dump(mode="json")
+            )
+            examination_serializer.is_valid(raise_exception=True)
             patient_examination = examination_serializer.save()
             assert_center_scope_allowed(
                 request=request,
@@ -199,18 +192,19 @@ class CaseViewSet(viewsets.ModelViewSet[Case]):
                 instance=None,
                 scalar_values={
                     "patient": patient_examination.patient,
-                    "start_date": admission_date,
+                    "start_date": payload.admission_date,
                 },
                 relationships={"patient_examinations": [patient_examination]},
             )
-
-        return Response(
-            {
+            response_data = {
                 "case": cast(_SerializerDataLike, CaseSerializer(patient_case)).data,
                 "patient_examination": cast(
                     _SerializerDataLike,
                     PatientExaminationSerializer(patient_examination),
                 ).data,
-            },
+            }
+
+        return Response(
+            response_data,
             status=status.HTTP_201_CREATED,
         )

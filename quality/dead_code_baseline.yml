@@ -60,6 +60,11 @@ accepted_findings:
   - <<: *protocol_signature
     path: endoreg_db/views/anonymization/validate.py
     message: "unused variable 'through_defaults'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/report_runtime_validation.py
+    message: "unused variable 'p_examination'"
+    reason: Required keyword parameter in the KnowledgeBase runtime protocol; the validated ledger payload is passed under this name and consumed by the concrete implementation.
+    review_after: 2026-11-13
 
   - &framework_contract
     path: endoreg_db/checks.py

@@ -80,6 +80,14 @@ Each annotation item supports:
   - `"<label>: present"` => `value=true`
   - `"<label>: absent"` => `value=false`
 
+Annotation rows and their optional dataset attachment are committed in one
+database transaction. A database failure returns `status="error"`, a stable
+machine-readable `code`, `retryable`, and `write_committed=false`; the client
+must keep the current task visible and may retry only when `retryable=true`.
+Integrity conflicts return HTTP 409, temporary database failures return HTTP
+503, and other database failures return HTTP 500. Internal database messages
+are never included in the response.
+
 This is compatible with the current Vue submit format that sends `choiceName`.
 
 ### 3) Skip

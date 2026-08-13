@@ -1,10 +1,4 @@
 schema_version: '1.0'
-# AGENT-MANAGER-NOTIZ (2026-07-31): Fuer Dead-Code-Audits keinen parallelen
-# Feature-Tracker wie `feature-tracking/DeletableCode.yml` anlegen. Scope,
-# Bewertung und Produktionsreife gehoeren in die bestehenden Kriterien
-# `dead_code_baseline` und `dead_code_reduction`; einzelne Funde und Entscheide
-# gehoeren in `quality/dead_code_baseline.yml`. Vor einer neuen Tracker-Datei
-# zuerst eine tatsaechlich fehlende, eigenstaendige Feature-Grenze nachweisen.
 id: code_quality
 name: Codequalität und Wartbarkeit
 description: Toten Code belastbar identifizieren und entfernen, Helper- und Klassengrenzen vereinheitlichen
@@ -200,13 +194,48 @@ definition_of_done:
         tests/services/test_report_llm_jobs.py tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
         tests/services/test_model_training_jobs.py tests/services/test_model_training_jobs_unit.py tests/test_celery_config_checks.py
         tests/test_app_startup.py -q (148 passed)
-    note: Der zentrale Environment-Adapter validiert nun zusätzlich geschlossene, literal-typisierte Job-
-      und Frame-Source-Modi sowie explizite numerische Untergrenzen. Report-LLM und Video-Reimport verwenden
-      denselben Adapter statt privater stiller Parser. Ungültige konfigurierte Modi, negative Dispatch-Delays,
-      zu kurze Leases und nicht positive Default-FPS schlagen datensparsam fehl; fehlende Variablen behalten
-      ihre bisherigen Defaults. Weitere Altbestandsgrenzen bleiben zu migrieren.
-    assessed_by: Codex
-    assessed_at: '2026-08-04T17:28:48.164890Z'
+    - kind: code
+      reference: scripts/check_quality_boundaries.py::_broad_exception_types (bare except wird als broad_exception
+        mit stabilem Fingerprint erfasst)
+    - kind: test
+      reference: tests/scripts/test_check_quality_boundaries.py::test_bare_except_is_broad_and_causes_baseline_drift
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after bare-except guard cohort
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
+        -q (4 passed)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        after bare-except guard cohort (existing drift blocker: baseline 406, current tree 411; no bare
+        except findings)'
+    - kind: code
+      reference: endoreg_db/views/video/ai/frame_annotations.py::_bulk_write_failure_response (typed database-boundary
+        classification; stable retry and commit-state contract)
+    - kind: test
+      reference: tests/views/video/test_frame_annotation_bulk_upsert.py (atomic rollback after annotation
+        insert, HTTP 409/503/500 mapping, redaction, unexpected-error propagation)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after frame-annotation write-boundary
+        cohort (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_bulk_upsert.py
+        -q (12 passed, 2 subtests passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_task_endpoints.py
+        tests/views/video/test_annotation_access_controls.py -q (31 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        after frame-annotation write-boundary cohort (broad-handler debt reduced from current-tree 411
+        to 410; reviewed baseline remains 406 and was not rewritten)
+    note: Der zentrale Environment-Adapter validiert geschlossene, literal-typisierte Job- und Frame-Source-Modi
+      sowie explizite numerische Untergrenzen. Der Boundary-Guard erkennt parameterlose except:-Klauseln.
+      Der Frame-Annotation-Bulk-Upsert übersetzt Datenbankfehler nun an der HTTP-Grenze in stabile, datensparsame
+      Codes mit retryable und write_committed=false; Annotation und optionale Dataset-Verknüpfung bleiben
+      atomar, während unerwartete Programmierfehler sichtbar propagieren. Weitere Altbestandsgrenzen bleiben
+      zu migrieren.
+    assessed_by: codex-root-quality-gold
+    assessed_at: '2026-08-13T08:53:54.704545Z'
 - id: quality_regression_guards
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen

@@ -35,7 +35,7 @@ from endoreg_db.utils.file_operations import (
 from .model_weights import ensure_managed_stub_weights
 
 if TYPE_CHECKING:
-    from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
+    from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
     from endoreg_db.models import RawPdfFile, VideoFile
 
 
@@ -352,7 +352,7 @@ def get_default_egd_pdf() -> "RawPdfFile":
         safe_unlink_file(temp_file_path, missing_ok=True)
 
         default_report_meta = cast(
-            "ReportMetaJsonObject",
+            "PdfFileMetaJsonObject",
             {
                 "patient_first_name": "DefaultFirstName",
                 "patient_last_name": "DefaultLastName",

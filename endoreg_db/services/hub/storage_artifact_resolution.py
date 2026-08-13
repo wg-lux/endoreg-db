@@ -8,8 +8,8 @@ import string
 from endoreg_db.models.hub.storage_placement import (
     StorageArtifactKind,
     StorageArtifactPlacement,
-    StorageTransferEvidence,
 )
+from endoreg_db.models.hub.storage_transfer import StorageTransferEvidence
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 

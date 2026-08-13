@@ -66,15 +66,16 @@ definition_of_done:
       reference: Candidate endoreg-db 1.0.10.0 and LX 0.9.62 wheels migrated fresh PostgreSQL 17 to expected
         leaves with no model drift; candidate-wheel live transfer contract passed.
     - kind: code
-      reference: endoreg_db/services/hub/storage_artifact_resolution.py adds the exact
-        hub-storage-artifact-resolution-v1 current-generation selector. Approved video/report generations
-        resolve only one committed primary with one exact verified envelope. This post-candidate delta is
-        unexecuted pending owner testing.
-    note: Typed storage persistence and public planning/transfer contracts are packaged and locally migration-tested.
-      The approved endoreg release is not published/locked and restored production-like migration approval
-      remains outstanding.
-    assessed_by: codex-storage-prod-readiness
-    assessed_at: '2026-08-11T11:19:00.249667Z'
+      reference: endoreg_db/services/hub/storage_artifact_resolution.py adds the exact hub-storage-artifact-resolution-v1
+        current-generation selector. Approved video/report generations resolve only one committed primary
+        with one exact verified envelope. This post-candidate delta is unexecuted pending owner testing.
+    - kind: command
+      reference: 'endoreg-db Pyright: 0 errors; tests/app/test_imports.py: 1 passed (2026-08-13)'
+    note: Typed storage persistence and public planning/transfer contracts remain in progress. Corrected
+      the exact artifact resolver to import StorageTransferEvidence from its owning storage_transfer model
+      module; no model or schema behavior changed.
+    assessed_by: codex-hub-bulk-video-offload
+    assessed_at: '2026-08-13T08:32:03.295867Z'
 - id: deterministic_capacity_aware_placement
   category: functionality
   title: Placement is deterministic, capacity aware, and concurrency safe
@@ -158,13 +159,14 @@ definition_of_done:
       reference: '2026-08-11 endoreg focused storage suite: 37 passed; LX focused orchestration suite:
         67 passed.'
     - kind: code
-      reference: Operator retry receipts are included in the deterministic balance-work fingerprint. A retry
-        therefore materializes a new reservation, target placement, rotation, and immutable work item rather
-        than replaying or reopening the failed workflow. Focused test code covers unchanged-telemetry retry and
-        exact subsequent reconciliation replay; execution is intentionally left to the evidence owner.
+      reference: Operator retry receipts are included in the deterministic balance-work fingerprint. A
+        retry therefore materializes a new reservation, target placement, rotation, and immutable work
+        item rather than replaying or reopening the failed workflow. Focused test code covers unchanged-telemetry
+        retry and exact subsequent reconciliation replay; execution is intentionally left to the evidence
+        owner.
     note: Copy, verification, commit, cleanup deferral, terminal failure, transition fingerprints, and
-      reconciler and operator-control receipts are persisted and exact-replay safe; LX now executes and recovers
-      the workflow, and a retry requires fresh placement state. Owner-run verification and production
+      reconciler and operator-control receipts are persisted and exact-replay safe; LX now executes and
+      recovers the workflow, and a retry requires fresh placement state. Owner-run verification and production
       lease/replica drills remain outstanding.
     assessed_by: codex-storage-prod-readiness
     assessed_at: '2026-08-11T10:35:53.155877Z'
@@ -287,15 +289,16 @@ definition_of_done:
         test passed separately on disposable PostgreSQL 17 and proved one admission, one insufficient-capacity
         result, and exact accounting.'
     - kind: code
-      reference: The report integrity writers, dependency-inverted remote video/report providers, exact selector,
-        and LX publication migration 0006 were added after the recorded candidate. No tests, type checks,
-        linters, migrations, builds, or Nix evaluations were run after this delta at the owner's request.
+      reference: The report integrity writers, dependency-inverted remote video/report providers, exact
+        selector, and LX publication migration 0006 were added after the recorded candidate. No tests,
+        type checks, linters, migrations, builds, or Nix evaluations were run after this delta at the
+        owner's request.
     - kind: code
       reference: Owner-run regression output identified four preanonymized watcher failures, one model-import
         boundary failure, and stale lx-dtypes inventory metadata. The watcher now persists its already-computed
-        immutable handoff digest without reopening legacy plaintext through LazyEncryptedStorage; the resolver
-        uses owning-module imports; and the reviewed inventory contains all storage control-plane models. These
-        fixes have not been rerun by Codex.
+        immutable handoff digest without reopening legacy plaintext through LazyEncryptedStorage; the
+        resolver uses owning-module imports; and the reviewed inventory contains all storage control-plane
+        models. These fixes have not been rerun by Codex.
     note: Real PostgreSQL concurrent admission and focused domain failure/replay tests pass. Broader PostgreSQL
       balancing/cleanup/lease stress, final publication/playback verification, restored-database migration,
       and production soak remain outstanding.

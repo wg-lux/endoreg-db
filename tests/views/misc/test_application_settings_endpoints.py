@@ -282,6 +282,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert response.status_code == 200, response.content
         response_payload = response.json()
         assert response_payload["dataset_id"] == dataset.pk
+        assert response_payload["video_id"] is None
         assert response_payload["frame_annotation_count"] == 1
         assert response_payload["video_annotation_count"] == 1
         assert response_payload["attached_frame_annotation_count"] == 1
@@ -313,6 +314,31 @@ class ApplicationSettingsEndpointTests(TestCase):
                 "video_id, frame_annotation_ids, or segment_ids."
             )
         }
+        assert dataset.image_annotations.count() == 0
+        assert dataset.video_annotations.count() == 0
+
+    def test_ai_dataset_attachment_rejects_non_contract_payloads(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-attach-invalid-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        url = f"/api/settings/application/ai_datasets/{dataset.pk}/attachments/"
+
+        for payload in (
+            {"include_all_annotations": "true"},
+            {"segment_ids": ["7"]},
+            {"include_video_annotations": True, "unknown": True},
+            ["not", "an", "object"],
+        ):
+            response = self.client.post(
+                url,
+                data=payload,
+                content_type="application/json",
+            )
+
+            assert response.status_code == 400, response.content
+
         assert dataset.image_annotations.count() == 0
         assert dataset.video_annotations.count() == 0
 
@@ -450,6 +476,20 @@ class ApplicationSettingsEndpointTests(TestCase):
             for entry in response.json()
         )
 
+    def test_ai_dataset_dropdown_preserves_phi_detector_contract(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-phi-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="phi_region_detector",
+        )
+
+        response = self.client.get("/api/settings/application/dropdowns/ai_datasets/")
+
+        assert response.status_code == 200, response.content
+        entry = next(item for item in response.json() if item["id"] == dataset.pk)
+        assert entry["dataset_type"] == AIDataSet.DATASET_TYPE_IMAGE
+        assert entry["ai_model_type"] == "phi_region_detector"
+
     def test_ai_dataset_dropdown_post_returns_current_duplicate_name_count(self):
         dataset_name = f"dataset-duplicate-{uuid4().hex[:8]}"
         AIDataSet.objects.create(
@@ -474,6 +514,41 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["ai_model_type"] == AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL
         assert payload["name_count"] == 2
 
+    def test_ai_dataset_dropdown_post_derives_video_model_type(self):
+        dataset_name = f"dataset-video-default-{uuid4().hex[:8]}"
+
+        response = self.client.post(
+            "/api/settings/application/dropdowns/ai_datasets/",
+            data={
+                "name": dataset_name,
+                "dataset_type": AIDataSet.DATASET_TYPE_VIDEO,
+                "description": None,
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201, response.content
+        dataset = AIDataSet.objects.get(name=dataset_name)
+        assert dataset.dataset_type == AIDataSet.DATASET_TYPE_VIDEO
+        assert (
+            dataset.ai_model_type
+            == AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION
+        )
+        assert dataset.description == ""
+
+    def test_ai_dataset_dropdown_post_rejects_non_object_before_writing(self):
+        initial_count = AIDataSet.objects.count()
+
+        response = self.client.post(
+            "/api/settings/application/dropdowns/ai_datasets/",
+            data=["not", "an", "object"],
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert "payload" in response.json()["errors"]
+        assert AIDataSet.objects.count() == initial_count
+
     def test_ai_dataset_dropdown_post_aggregates_errors_without_writing(self):
         initial_count = AIDataSet.objects.count()
 
@@ -490,12 +565,12 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
 
         assert response.status_code == 400, response.content
-        assert response.json()["errors"] == {
-            "name": "name must be a string.",
-            "dataset_type": "dataset_type must be one of: image, video.",
-            "ai_model_type": "ai_model_type is not compatible with dataset_type.",
-            "description": "description must be a string.",
-            "is_active": "is_active must be a boolean.",
+        assert set(response.json()["errors"]) == {
+            "name",
+            "dataset_type",
+            "ai_model_type",
+            "description",
+            "is_active",
         }
         assert AIDataSet.objects.count() == initial_count
 

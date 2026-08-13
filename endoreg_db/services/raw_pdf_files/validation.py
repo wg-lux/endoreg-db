@@ -4,8 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.db import transaction
-
-from endoreg_db.services.raw_pdf_files.metadata import ReportMetaJsonObject
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
 from .integrity import require_usable_completed_report
 from .io import delete_raw_pdf_raw_file
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class _ValidatedSensitiveMeta(Protocol):
-    def update_from_dict(self, data: ReportMetaJsonObject) -> None: ...
+    def update_from_dict(self, data: PdfFileMetaJsonObject) -> None: ...
 
     def save(self) -> None: ...
 
@@ -41,7 +40,7 @@ def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
 
 def validate_report_metadata_annotation(
     report: "RawPdfFile",
-    extracted_data_dict: ReportMetaJsonObject | None = None,
+    extracted_data_dict: PdfFileMetaJsonObject | None = None,
     *,
     delete_original_raw: bool = True,
     enforce_processed_artifact: bool = True,

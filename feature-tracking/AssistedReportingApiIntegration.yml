@@ -34,13 +34,36 @@ definition_of_done:
       und die lx_dtypes-Routen gemeinsam gegen den dokumentierten Vertrag prüfen.
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
-    - kind: review
-      reference: docs/assisted_reporting_api_integration.md; frontend/src/api/findingsApi.ts
-    note: Kanonische Routen und der harte Cutover auf dtypes sind implementiert und dokumentiert.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T08:27:03.568509Z'
+    - kind: document
+      reference: quality/assisted_reporting_route_contracts.yml
+    - kind: code
+      reference: scripts/check_assisted_reporting_route_contracts.py
+    - kind: test
+      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_assisted_reporting_route_contracts.py
+        -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/docs/test_show_urls_contract.py tests/api/test_dtypes_record_persistence.py::test_dtypes_terminology_mutation_rejects_read_only_actor
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_create_updates_dtypes_record
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_routes_require_authentication
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_routes_enforce_center_scope
+        -q
+    - kind: command
+      reference: devenv shell -- npm exec -- vitest run src/api/__tests__/findingsApi.test.ts src/api/__tests__/terminologyApi.test.ts
+        src/api/__tests__/apiPrefixContract.test.ts (working directory /home/admin/dev/lx-annotate/frontend)
+    note: Der versionierte YAML-Vertrag ordnet Terminologie-Bundles, untersuchungsbezogene Befundkataloge
+      und patientenbezogene Befunde ausschließlich lx_dtypes zu und belegt das endoreg_db-Hosting unter
+      /dtypes-api/. Der Checker validiert strikt Schema, Methoden, snake_case-Pfad- und Queryparameter,
+      Implementierungsmarker, zentrale Axios-Konvertierung sowie die Abwesenheit des entfernten VITE_FINDINGS_BACKEND-Schalters
+      und globaler /endoreg-api/findings/-Aufrufe in produktiven Frontendquellen. Pyright, fünf Checker-Unit-Tests,
+      zehn fokussierte Backend- und 21 Frontend-Tests bestanden.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T09:09:13.956469Z'
 - id: host_adapter_configuration
   category: functionality
   title: Der lx_dtypes-Hostadapter ist in jedem unterstützten Laufzeitprofil verfügbar
@@ -136,6 +159,9 @@ definition_of_done:
     bereits beim Deployment erkannt und nicht als irreführender Route-404 erst bei Nutzung sichtbar.
   - Import und Auswahl eines Bundles bleiben auf die vorgesehenen schreibenden Rollen beschränkt und verändern
     die Registry atomar.
+  - Der lx-dtypes-Release prüft Wheel und Source-Distribution bytegenau gegen den vollständigen Knowledge-Base-Datenbaum
+    und führt den semantischen Smoke-Test für die veröffentlichten deutschen Demo-Vorlagen aus; endoreg-db
+    und lx-annotate werden erst nach der Veröffentlichung gemeinsam auf diese Version angehoben.
   required: true
   verification:
     kind: command
@@ -164,13 +190,44 @@ definition_of_done:
     - kind: command
       reference: 'LuxNix isolated terminology contract: 4 passed; nix build gc-02 toplevel with clean
         local lx_annotate-0.9.54 wheel override: passed'
-    note: 'lx-annotate 0.9.54 release candidate commit 213a8e2d packages a default report_template_examples
-      terminology bootstrap and treats missing or invalid terminology as a structured best-effort warning,
-      not a service startup gate. The clean make package artifact and an isolated LuxNix gc-02 build with
-      runtime.wheelPath overridden to that wheel passed. Remaining gate: publish this exact wheel, pin
-      its PyPI URL and hash in LuxNix options.nix, then repeat the default-path build.'
-    assessed_by: codex/root
-    assessed_at: '2026-08-03T12:24:17.376556Z'
+    - kind: command
+      reference: uv build --out-dir /var/tmp/...; verify_migration_artifacts + verify_knowledge_base_artifacts
+        passed for lx_dtypes-0.2.17 wheel and sdist
+    - kind: command
+      reference: 'isolated wheel install: lx_dtypes.scripts.verify_packaged_report_templates passed for
+        upper_gi_quality_2025 and colonoscopy_training_basic'
+    - kind: test
+      reference: '/home/admin/lx-data-models: release/API focused suites 40 passed; focused Pyright 0
+        errors'
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/frontend: template identity, API, editor, shell suites 62
+        passed; new test ESLint passed'
+    - kind: command
+      reference: final candidate wheel sha256 c1bb0439a10b28f30f0d65d61aa8bd9e493b344de09a027c742e51579b1bd166;
+        sdist sha256 bea8cb29aa4cb93c658815d7e5f89796acb02e9fe27460658e71391d60887412; artifact contracts
+        and twine passed
+    - kind: command
+      reference: 'isolated final wheel: required templates passed; colonoscopy emitted canonical German
+        title and six German section titles'
+    - kind: command
+      reference: 'lx-annotate installed-layout bootstrap twice: active report_template_examples@0.1.0
+        and registry input_dirs matched wheel lx_dtypes/data'
+    - kind: test
+      reference: 'lx-data-models: full Pyright 0 errors; focused release/API/semantic cohorts 68 passed;
+        Ruff and format checks passed'
+    - kind: test
+      reference: 'lx-annotate frontend: 62 reporting tests plus both vue-tsc lanes passed; new identity
+        test ESLint passed'
+    - kind: review
+      reference: 'PyPI JSON checked 2026-08-13: lx-dtypes 0.2.16; endoreg-db 1.0.14.0 requires lx-dtypes>=0.2.15'
+    - kind: test
+      reference: 'parallel backend persistence lane: focused Pyright 0 errors, 75 report/LXDM tests passed,
+        7 provenance backfill tests passed, canonical migration graph passed'
+    - kind: review
+      reference: 'release ordering confirmed: new migration/report fields require a new endoreg-db version
+        after lx-dtypes 0.2.17; consumed 1.0.14.0 will not be reused'
+    assessed_by: codex-german-reporting-frontend-20260813
+    assessed_at: '2026-08-13T10:55:08.008972Z'
 - id: frontend_backend_contract_tests
   category: testing
   title: Die Reporting-Aufrufe werden repository-übergreifend regressionsgetestet
