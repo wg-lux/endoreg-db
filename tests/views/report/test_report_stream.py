@@ -88,6 +88,25 @@ class LocalStubFieldFile:
                 yield chunk
 
 
+class TrackingPathManager:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.entered = False
+        self.exited = False
+
+    def __enter__(self) -> Path:
+        self.entered = True
+        return self.path
+
+    def __exit__(
+        self,
+        exc_type: object,
+        exc_value: object,
+        traceback: object,
+    ) -> None:
+        self.exited = True
+
+
 def _sync_streaming_body(response: object) -> bytes:
     from django.http import StreamingHttpResponse
 
@@ -97,6 +116,90 @@ def _sync_streaming_body(response: object) -> bytes:
 
 def _resolve_local_path_stub(field_file: LocalStubFieldFile) -> Path:
     return Path(field_file.path)
+
+
+def _patch_remote_report_manager(
+    monkeypatch: pytest.MonkeyPatch,
+    manager: TrackingPathManager,
+) -> None:
+    from endoreg_db.services.hub import remote_processed_report
+
+    def materialize(*, report_id: int) -> TrackingPathManager:
+        del report_id
+        return manager
+
+    monkeypatch.setattr(
+        remote_processed_report,
+        "materialize_remote_processed_report",
+        materialize,
+    )
+
+
+def test_remote_processed_report_lifetime_ends_after_stream_consumption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.views.report import report_stream
+
+    path = tmp_path / "processed-report.pdf"
+    payload = b"%PDF-1.4\nremote\n%%EOF\n"
+    path.write_bytes(payload)
+    manager = TrackingPathManager(path)
+    _patch_remote_report_manager(monkeypatch, manager)
+
+    response = report_stream._serve_remote_processed_report(
+        report_id=17,
+        range_header=None,
+        disposition="inline",
+        frontend_origin=None,
+    )
+
+    assert manager.entered is True
+    assert manager.exited is False
+    assert _sync_streaming_body(response) == payload
+    assert manager.exited is True
+
+
+def test_remote_processed_report_invalid_range_closes_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.views.report import report_stream
+
+    path = tmp_path / "processed-report.pdf"
+    path.write_bytes(b"%PDF-1.4\nremote\n%%EOF\n")
+    manager = TrackingPathManager(path)
+    _patch_remote_report_manager(monkeypatch, manager)
+
+    response = report_stream._serve_remote_processed_report(
+        report_id=18,
+        range_header="bytes=500-600",
+        disposition="inline",
+        frontend_origin=None,
+    )
+
+    assert response.status_code == 416
+    assert manager.exited is True
+
+
+def test_remote_processed_report_setup_failure_closes_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.views.report import report_stream
+
+    manager = TrackingPathManager(tmp_path / "missing.pdf")
+    _patch_remote_report_manager(monkeypatch, manager)
+
+    with pytest.raises(FileNotFoundError):
+        report_stream._serve_remote_processed_report(
+            report_id=19,
+            range_header=None,
+            disposition="inline",
+            frontend_origin=None,
+        )
+
+    assert manager.exited is True
 
 
 class ReportStreamViewTests(TestCase):

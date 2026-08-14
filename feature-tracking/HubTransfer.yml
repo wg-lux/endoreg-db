@@ -201,13 +201,17 @@ definition_of_done:
       reference: 'endoreg-db pyright: 0 errors; tests/app/test_imports.py: 1 passed; lx-annotate pyright:
         0 errors; focused frontend Vitest: 15 passed; lx-annotate API pytest blocked by missing pytest
         executable (2026-08-13)'
-    note: 'Implemented authenticated server-side bulk video discovery, fresh integrity verification, idempotent
-      locked outbound-job reuse, explicit queue dispatch independent of auto-queue, typed result counts,
-      and a German Hub overview action. Validation 2026-08-13: endoreg-db Pyright 0 errors; package imports
-      1 passed; lx-annotate Pyright 0 errors; frontend focused Vitest 15 passed. LX focused API pytest
-      was not collected because the locked devenv/uv environment has no pytest executable.'
+    - kind: command
+      reference: 'devenv shell -- pyright: 0 errors; tests/views/media/test_video_ready_export.py: 13
+        passed, 4 subtests passed (2026-08-14)'
+    note: The explicit ready-for-export action repairs missing or stale processed-content hash metadata
+      only after anonymization validation and final segment blackening/cleanup. It locks the video, hashes
+      the final managed processed artifact once, atomically aligns VideoFile.processed_video_hash and
+      VideoState.processed_file_sha256, rejects client-proof mismatch and duplicate digest collisions,
+      and leaves polling side-effect free. This covers the legacy Video 2 inconsistency without requiring
+      a separate integrity command when the operator presses Exportfreigabe pruefen.
     assessed_by: codex-hub-bulk-video-offload
-    assessed_at: '2026-08-13T08:31:41.325511Z'
+    assessed_at: '2026-08-14T07:14:36.399848Z'
 - id: automated_boundary_tests
   category: testing
   title: Sender, receiver, UI, authorization, retry, and negative integrity paths are regression tested

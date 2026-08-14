@@ -142,6 +142,28 @@ def _verify_state(video: VideoFile) -> None:
         )
 
 
+def _synchronize_processed_content_hash(
+    *,
+    video: VideoFile,
+    processed_file_sha256: str,
+) -> None:
+    current_hash = str(video.processed_video_hash or "").strip().lower()
+    if current_hash == processed_file_sha256:
+        return
+    if (
+        type(video)
+        .objects.filter(processed_video_hash=processed_file_sha256)
+        .exclude(pk=video.pk)
+        .exists()
+    ):
+        raise ReadyForExportError(
+            "The processed artifact hash is already assigned to another video.",
+            status_code=409,
+        )
+    video.processed_video_hash = processed_file_sha256
+    video.save(update_fields=["processed_video_hash", "date_modified"])
+
+
 def _append_ready_audit(
     *,
     video: VideoFile,
@@ -188,6 +210,11 @@ def mark_video_ready_for_export(
     expected_processed_file_sha256: str | None = None,
 ) -> ReadyForExportResult:
     _require_authenticated_user(user)
+    video = (
+        VideoFile.objects.select_for_update()
+        .select_related("center", "state")
+        .get(pk=video.pk)
+    )
     center = _resolve_center(center_key)
     _verify_center_scope(user=user, video=video, center=center)
     _verify_state(video)
@@ -202,6 +229,11 @@ def mark_video_ready_for_export(
             "processed_file_sha256 does not match the processed artifact.",
             status_code=409,
         )
+
+    _synchronize_processed_content_hash(
+        video=video,
+        processed_file_sha256=processed_file_sha256,
+    )
 
     state: VideoState = get_or_create_video_state(video)
     ready_by = _user_identifier(user)

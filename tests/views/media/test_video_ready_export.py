@@ -119,6 +119,26 @@ class VideoReadyExportEndpointTests(TestCase):
             action="ready_for_export",
         ).exists()
 
+    def test_backfills_hashes_from_final_blackened_processed_artifact(self):
+        video = self._video()
+        video.processed_video_hash = "0" * 64
+        video.save(update_fields=["processed_video_hash", "date_modified"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data={"center_key": self.center.center_key},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        video.refresh_from_db()
+        state = video.get_or_create_state()
+        assert video.processed_video_hash == self.processed_sha
+        assert state.processed_file_sha256 == self.processed_sha
+        assert state.outside_segments_removed is True
+        assert state.ready_for_export is True
+
     def test_ledger_down_aborts_ready_promotion(self):
         video = self._video()
         self.client.force_login(self.user)

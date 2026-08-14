@@ -8,7 +8,7 @@ scan:
     - __pycache__
 broad_exception:
   count: 406
-  fingerprint: a3891c013c1ac19e52b58c2f12d7140124dfdfe9150c1169507340e6b3f020c3
+  fingerprint: f45f2d00b78f2db3ff896939149ec62993b92332e72218598f90107ccc4c63fb
   owner: endoreg_db maintainers
   reason: >-
     Geprüfter Bestand nach der Exception-Reduktionskohorte und der Extraktion
@@ -30,6 +30,13 @@ broad_exception:
     Handler durch konkrete ValueError-Übersetzung. Gesetzte ungültige Werte
     und nicht endliche Fließkommazahlen lösen einen datensparsamen typisierten
     Fehler aus, statt still den Default zu aktivieren.
+    Zwei entfernte Altbefunde werden durch zwei geprüfte Handler an der HTTP-
+    Integrationsgrenze für entfernte verarbeitete Berichte ersetzt. Sie fangen
+    unbekannte Fehler eines konfigurierbaren externen Providers ausschließlich
+    am View-Rand ab, protokollieren nur Berichts-ID und Exception-Typ und
+    übersetzen fail-closed in den bestehenden nichtoffenlegenden HTTP-404-
+    Vertrag. Die Materialisierungslebensdauer selbst verwendet ExitStack und
+    benötigt weder breite Cleanup-Handler noch manuelle __exit__-Aufrufe.
   review_after: 2026-10-17
 type_suppression:
   count: 140

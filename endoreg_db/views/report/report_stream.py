@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+from contextlib import ExitStack
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, TypeGuard, cast
+from typing import TYPE_CHECKING, BinaryIO, TypeGuard, cast
 
 from django.db.models.fields.files import FieldFile
 from django.http import Http404, HttpResponse, StreamingHttpResponse
@@ -235,7 +236,7 @@ class _RemotePathIterator:
     def __init__(
         self,
         *,
-        manager: object,
+        manager: ExitStack,
         path: Path,
         start: int,
         length: int,
@@ -270,7 +271,7 @@ class _RemotePathIterator:
         if self._handle is not None:
             self._handle.close()
             self._handle = None
-        cast(Any, self._manager).__exit__(None, None, None)
+        self._manager.close()
 
 
 def _serve_remote_processed_report(
@@ -284,12 +285,10 @@ def _serve_remote_processed_report(
         materialize_remote_processed_report,
     )
 
-    manager = materialize_remote_processed_report(report_id=report_id)
-    try:
-        path = manager.__enter__()
-    except Exception:
-        raise
-    try:
+    with ExitStack() as stack:
+        path = stack.enter_context(
+            materialize_remote_processed_report(report_id=report_id)
+        )
         file_size = path.stat().st_size
         if file_size <= 0:
             raise FileNotFoundError("remote processed report is empty")
@@ -297,7 +296,6 @@ def _serve_remote_processed_report(
             try:
                 byte_range = parse_byte_range(range_header, file_size)
             except ValueError:
-                manager.__exit__(None, None, None)
                 response = HttpResponse(status=416, content_type="application/pdf")
                 response["Content-Range"] = f"bytes */{file_size}"
                 response["Accept-Ranges"] = "bytes"
@@ -309,9 +307,7 @@ def _serve_remote_processed_report(
             start = 0
             length = file_size
             status_code = 200
-    except Exception:
-        manager.__exit__(None, None, None)
-        raise
+        manager = stack.pop_all()
 
     try:
         iterator = _RemotePathIterator(
@@ -320,8 +316,8 @@ def _serve_remote_processed_report(
             start=start,
             length=length,
         )
-    except Exception:
-        manager.__exit__(None, None, None)
+    except OSError:
+        manager.close()
         raise
     response = StreamingHttpResponse(
         iterator,
