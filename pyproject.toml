@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.15.0"
+version = "1.0.17.0"
 requires-python = ">=3.12,<3.13"
 license = {file = "LICENSE"}
 
@@ -91,7 +91,7 @@ dependencies = [
     "djangorestframework-types>=0.9.0",
     "celery-types>=0.26.0",
     "lightning-fabric>=2.6.5",
-    "lx-dtypes==0.2.17",
+    "lx-dtypes>=0.2.18",
     "snakemake==9.23.1",
 ]
 

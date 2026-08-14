@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
@@ -12,6 +12,7 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
@@ -22,9 +23,6 @@ from endoreg_db.services.video_segment_validation_workflow import (
 from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.paths import ensure_within_protected_media_root
 from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
-
-if TYPE_CHECKING:
-    from endoreg_db.models.state.video import VideoState
 
 logger = logging.getLogger(__name__)
 
@@ -211,10 +209,12 @@ def mark_video_ready_for_export(
 ) -> ReadyForExportResult:
     _require_authenticated_user(user)
     video = (
-        VideoFile.objects.select_for_update()
-        .select_related("center", "state")
+        VideoFile.objects.select_for_update(of=("self",))
+        .select_related("center")
         .get(pk=video.pk)
     )
+    state = get_or_create_video_state(video)
+    video.state = VideoState.objects.select_for_update().get(pk=state.pk)
     center = _resolve_center(center_key)
     _verify_center_scope(user=user, video=video, center=center)
     _verify_state(video)

@@ -93,16 +93,28 @@ class VideoReadyExportEndpointTests(TestCase):
         video = self._video()
         self.client.force_login(self.user)
 
-        response = self.client.post(
-            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
-            data={
-                "center_key": self.center.center_key,
-                "processed_file_sha256": self.processed_sha,
-            },
-            content_type="application/json",
-        )
+        with patch.object(
+            VideoFile.objects,
+            "select_for_update",
+            wraps=VideoFile.objects.select_for_update,
+        ) as select_video_for_update:
+            with patch.object(
+                VideoState.objects,
+                "select_for_update",
+                wraps=VideoState.objects.select_for_update,
+            ) as select_state_for_update:
+                response = self.client.post(
+                    f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+                    data={
+                        "center_key": self.center.center_key,
+                        "processed_file_sha256": self.processed_sha,
+                    },
+                    content_type="application/json",
+                )
 
         assert response.status_code == 200, response.content
+        select_video_for_update.assert_called_once_with(of=("self",))
+        select_state_for_update.assert_called_once_with()
         body = response.json()
         assert body["success"] is True
         assert body["processed_file_sha256"] == self.processed_sha
