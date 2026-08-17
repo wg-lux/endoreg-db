@@ -6,11 +6,14 @@ from collections.abc import Iterator, Mapping
 from datetime import date
 from pathlib import Path
 
-import lx_dtypes
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 from lx_dtypes.django.api.findings_routes import clear_findings_route_caches
+from lx_dtypes.knowledge_bases import (
+    BUILTIN_KNOWLEDGE_BASE_PROVIDER,
+    get_packaged_knowledge_base,
+)
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     DtypesRecordPersistencePayload,
     parse_dtypes_record_persistence_payload,
@@ -200,17 +203,25 @@ def _use_report_template_examples_findings_module(
     settings: SettingsWrapper,
 ) -> Iterator[None]:
     registry_path = tmp_path / "kb_registry.json"
-    dtypes_data_root = Path(lx_dtypes.__file__).resolve().parent / "data"
+    descriptor = get_packaged_knowledge_base("dgvs_reporting")
     registry_path.write_text(
         json.dumps(
             {
                 "active": {
-                    "module_name": "report_template_examples",
-                    "version": "0.1.0",
+                    "module_name": descriptor.module_name,
+                    "version": descriptor.version,
                 },
                 "modules": {
-                    "report_template_examples": {
-                        "0.1.0": {"input_dirs": [str(dtypes_data_root)]}
+                    descriptor.module_name: {
+                        descriptor.version: {
+                            "sources": [
+                                {
+                                    "kind": "provider",
+                                    "provider": BUILTIN_KNOWLEDGE_BASE_PROVIDER,
+                                    "content_sha256": descriptor.content_sha256,
+                                }
+                            ]
+                        }
                     }
                 },
             }

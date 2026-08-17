@@ -29,9 +29,11 @@ from endoreg_db.serializers.hub import (
 )
 from endoreg_db.services.hub import (
     apply_transfer_metadata,
-    attach_transfer_media,
+    attach_enveloped_transfer_media,
     authenticate_network_node,
     create_or_reuse_transfer_job,
+    get_media_envelope_receipt,
+    HubMediaEnvelopeReplayConflict,
     transfer_api_enabled,
 )
 from endoreg_db.services.hub.transfer_logging import (
@@ -112,6 +114,20 @@ def _safe_request_context(request: Request) -> dict[str, str | None]:
 
 def _serialize_response_data(serializer: object) -> Mapping[str, _TransferPayloadValue]:
     return cast(_SerializerLike, serializer).data
+
+
+def _transfer_status_response_payload(
+    transfer_job: TransferJob,
+) -> dict[str, _TransferPayloadValue]:
+    serializer = TransferJobStatusSerializer(transfer_job)
+    payload = dict(_serialize_response_data(serializer))
+    envelope_receipt = get_media_envelope_receipt(transfer_job)
+    if envelope_receipt is not None:
+        payload["envelope_receipt"] = cast(
+            _TransferPayloadValue,
+            envelope_receipt.model_dump(mode="json"),
+        )
+    return payload
 
 
 def _serialize_validation_error_payload(serializer: object) -> _ValidationErrorValue:
@@ -413,11 +429,7 @@ class HubTransferCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        response_serializer = TransferJobStatusSerializer(transfer_job)
-        response_payload = cast(
-            dict[str, _TransferPayloadValue],
-            _serialize_response_data(response_serializer),
-        )
+        response_payload = _transfer_status_response_payload(transfer_job)
         decision("RECEIVER CREATE-TRANSFER RESULT")
         kv("Transfer created", created)
         kv("Transfer status", transfer_job.transfer_status)
@@ -460,8 +472,7 @@ class HubTransferStatusView(APIView):
         source_center_id = cast(int | None, getattr(source_center, "id", None))
         _assert_transfer_center_scope(authenticated_node, source_center_id)
 
-        serializer = TransferJobStatusSerializer(transfer_job)
-        payload = _serialize_response_data(serializer)
+        payload = _transfer_status_response_payload(transfer_job)
         decision("RECEIVER TRANSFER-STATUS RESULT")
         kv("Transfer status", transfer_job.transfer_status)
         kv("Processing decision", transfer_job.processing_decision)
@@ -537,6 +548,23 @@ class HubTransferMediaUploadView(APIView):
             )
             raise ValidationError(errors)
 
+        envelope_json = str(request_data.get("envelope", "") or "").strip()
+        if not envelope_json:
+            errors = {
+                "envelope": (
+                    "A typed recipient-encrypted media envelope is required; "
+                    "plaintext uploads are prohibited."
+                )
+            }
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=cast(_ValidationErrorValue, errors),
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+            )
+            raise ValidationError(errors)
+
         max_upload_bytes = int(
             getattr(settings, "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES", 50 * 1024**3)
         )
@@ -560,10 +588,11 @@ class HubTransferMediaUploadView(APIView):
             raise ValidationError(errors)
 
         try:
-            transfer_job = attach_transfer_media(
+            transfer_job = attach_enveloped_transfer_media(
                 transfer_job=transfer_job,
                 uploaded_file=uploaded_file,
                 media_role=media_role,
+                envelope_json=envelope_json,
             )
         except DjangoValidationError as exc:
             error("Media attachment model validation failed")
@@ -581,6 +610,12 @@ class HubTransferMediaUploadView(APIView):
                     "details": details,
                 }
             ) from exc
+        except HubMediaEnvelopeReplayConflict as exc:
+            error("Conflicting replay of an applied media envelope was rejected")
+            transfer_job.refresh_from_db()
+            payload = _transfer_status_response_payload(transfer_job)
+            payload["detail"] = str(exc)
+            return Response(payload, status=status.HTTP_409_CONFLICT)
         except ValueError as exc:
             error("Media integrity or attachment validation failed")
             _log_transfer_validation_failure(
@@ -592,8 +627,7 @@ class HubTransferMediaUploadView(APIView):
             )
             raise ValidationError({"detail": str(exc)}) from exc
 
-        serializer = TransferJobStatusSerializer(transfer_job)
-        payload = _serialize_response_data(serializer)
+        payload = _transfer_status_response_payload(transfer_job)
         decision("RECEIVER MEDIA-UPLOAD RESULT")
         kv("Transfer status", transfer_job.transfer_status)
         kv("Processing decision", transfer_job.processing_decision)

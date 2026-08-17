@@ -325,7 +325,20 @@ definition_of_done:
     evidence:
     - kind: review
       reference: docs/assisted_reporting_api_integration.md
-    note: Integrations- und Fehlerdiagnose-Runbook ist erstellt; Nachvollzug auf einem frischen Deployment
-      fehlt.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T08:27:14.711014Z'
+    - kind: document
+      reference: quality/assisted_reporting_route_contracts.yml
+    - kind: test
+      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .devenv/state/venv/bin/pytest -q -o addopts='' --confcutdir=tests/scripts
+        tests/scripts/test_check_assisted_reporting_route_contracts.py (5 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py (verified
+        5 canonical routes)
+    note: Canonical route, exact module/version query, typed provider/digest and filesystem registry,
+      bootstrap migration/full packaged validation, fail-closed governed wheel deployment, and editor-native
+      layout boundaries are documented across the participating repositories. Route checker covers five
+      routes and passes. Fresh governed-deployment walkthrough remains outstanding, so this criterion
+      is not verified.
+    assessed_by: codex-finding-resolution-docs
+    assessed_at: '2026-08-17T09:20:55.927466Z'

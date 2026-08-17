@@ -490,6 +490,32 @@ def get_hub_transfer_mtls_meta_value() -> str:
     )
 
 
+def get_hub_transfer_recipient_private_key_files() -> tuple[Path, ...]:
+    """Return the explicitly configured Hub envelope recipient keyring."""
+
+    return tuple(
+        Path(value).expanduser()
+        for value in env_list("ENDOREG_HUB_TRANSFER_RECIPIENT_PRIVATE_KEY_FILES")
+    )
+
+
+def get_hub_transfer_require_root_owned_private_keys() -> bool:
+    """Require production recipient keys to be owned by the root account."""
+
+    return env_bool(
+        "ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS",
+        True,
+    )
+
+
+def get_hub_transfer_max_upload_bytes() -> int:
+    return env_int(
+        "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES",
+        50 * 1024**3,
+        minimum=1,
+    )
+
+
 def get_lookup_requirement_source() -> str:
     return env_str("LOOKUP_REQUIREMENT_SOURCE", "dtypes")
 

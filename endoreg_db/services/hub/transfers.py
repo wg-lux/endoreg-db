@@ -4,12 +4,19 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Iterable, Mapping
+from functools import partial
 from pathlib import Path
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, BinaryIO, Literal, NotRequired, TypedDict, cast
 
+from django.core.files import File
+from django.db.models.fields.files import FieldFile
 from django.core.files.uploadedfile import UploadedFile
 from django.db import DatabaseError, IntegrityError, connection, models, transaction
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from lx_dtypes.models.contracts.hub_media_envelope import (
+    HubMediaEnvelopeReceipt,
+    validate_hub_media_receipt_matches_envelope,
+)
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
@@ -48,7 +55,7 @@ from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
     ensure_directory,
-    safe_unlink_file,
+    safe_delete_field_file,
     sha256_file,
 )
 from endoreg_db.utils.hashs import get_pdf_hash
@@ -56,6 +63,10 @@ from endoreg_db.utils.paths import TRANSCODING_DIR
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
 from endoreg_db.utils.structured_logging import hash_identifier
 from .ingest import _default_processor_name
+from .transfer_envelope import (
+    HubMediaEnvelopeReplayConflict,
+    prepare_inbound_hub_envelope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +96,7 @@ def _is_transfer_key_unique_violation(error: IntegrityError) -> bool:
         models.Field[Any, Any],
         TransferJob._meta.get_field("transfer_key"),
     )
-    column_name = cast(str, field.column)
+    column_name = field.column
     cause = error.__cause__
     diagnostic = getattr(cause, "diag", None)
     constraint_name = getattr(diagnostic, "constraint_name", None)
@@ -603,6 +614,23 @@ def attach_transfer_media(
     uploaded_file: UploadedFile,
     media_role: str,
 ) -> TransferJob:
+    """Reject the retired plaintext transfer path before any staging occurs."""
+
+    raise ValueError(
+        "Plaintext Hub media attachment is prohibited; use a typed "
+        "recipient-encrypted media envelope."
+    )
+
+
+def attach_enveloped_transfer_media(
+    *,
+    transfer_job: TransferJob,
+    uploaded_file: UploadedFile,
+    media_role: str,
+    envelope_json: str,
+) -> TransferJob:
+    """Authenticate and atomically publish one processed-media envelope."""
+
     if (
         transfer_job.transfer_status == TransferJob.TransferStatus.INCONSISTENT.value
         or transfer_job.processing_decision
@@ -623,32 +651,156 @@ def attach_transfer_media(
             "Processed media upload requires metadata_and_processed_media transfer mode."
         )
 
-    default_suffix = ".mp4"
-    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
-        default_suffix = ".pdf"
-
-    temp_path = _write_uploaded_file_to_temp(
-        uploaded_file=uploaded_file,
-        default_suffix=default_suffix,
-    )
-    try:
-        if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
-            return _attach_video_transfer_media(
-                transfer_job=transfer_job,
-                uploaded_file=uploaded_file,
-                temp_path=temp_path,
-                media_role=media_role,
-            )
-        if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
-            return _attach_report_transfer_media(
-                transfer_job=transfer_job,
-                uploaded_file=uploaded_file,
-                temp_path=temp_path,
-                media_role=media_role,
-            )
+    target: VideoFile | RawPdfFile
+    field_name = "processed_file"
+    if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
+        target = _get_transfer_video(transfer_job)
+        expected_hash = _expected_processed_video_hash(
+            transfer_job=transfer_job,
+            video=target,
+        )
+        suffix = ".mp4"
+    elif transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
+        target = _get_transfer_report(transfer_job)
+        expected_hash = _expected_processed_report_hash(transfer_job=transfer_job)
+        suffix = ".pdf"
+    else:
         raise ValueError(f"Unsupported resource_kind: {transfer_job.resource_kind}")
-    finally:
-        safe_unlink_file(temp_path, missing_ok=True)
+    if not expected_hash:
+        raise ValueError("Processed media hash is missing from transfer metadata")
+
+    field_file = getattr(target, field_name)
+    original_name = str(getattr(field_file, "name", "") or "")
+    candidate_name = ""
+    try:
+        with prepare_inbound_hub_envelope(
+            transfer_job=transfer_job,
+            uploaded_file=uploaded_file,
+            envelope_json=envelope_json,
+            media_role=media_role,
+        ) as prepared:
+            if transfer_job.transfer_status == TransferJob.TransferStatus.APPLIED.value:
+                existing_receipt = get_media_envelope_receipt(transfer_job)
+                exact_replay = existing_receipt is not None
+                if existing_receipt is not None:
+                    try:
+                        validate_hub_media_receipt_matches_envelope(
+                            envelope=prepared.metadata,
+                            receipt=existing_receipt,
+                        )
+                    except ValueError:
+                        exact_replay = False
+                    exact_replay = exact_replay and (
+                        existing_receipt.ciphertext_sha256 == prepared.ciphertext_sha256
+                        and existing_receipt.ciphertext_size == prepared.ciphertext_size
+                    )
+                prepared.accept_exact_replay()
+                if exact_replay:
+                    return transfer_job
+                transfer_job.transfer_status = TransferJob.TransferStatus.INCONSISTENT
+                transfer_job.processing_decision = (
+                    TransferJob.ProcessingDecision.MARK_INCONSISTENT
+                )
+                transfer_job.status_detail = (
+                    "Applied Hub media transfer received a conflicting envelope replay; "
+                    "the previously authenticated artifact was preserved"
+                )
+                transfer_job.save(
+                    update_fields=[
+                        "transfer_status",
+                        "processing_decision",
+                        "status_detail",
+                        "updated_at",
+                    ]
+                )
+                raise HubMediaEnvelopeReplayConflict(transfer_job.status_detail)
+
+            with transaction.atomic():
+                candidate_name = _store_model_stream(
+                    instance=target,
+                    field_name=field_name,
+                    source=prepared.plaintext_stream,
+                    stored_name=f"{expected_hash}{suffix}",
+                )
+                prepared.require_verified()
+
+                if isinstance(target, VideoFile):
+                    target.processed_video_hash = expected_hash
+                    target.save(
+                        update_fields=[
+                            "processed_file",
+                            "processed_video_hash",
+                            "date_modified",
+                        ]
+                    )
+                    _mark_video_transfer_as_processed(target)
+                    media_type = "video"
+                else:
+                    target.save(update_fields=["processed_file", "date_modified"])
+                    _mark_report_transfer_as_processed(target)
+                    media_type = "pdf"
+
+                processing_decision = (
+                    TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE.value
+                )
+                metadata = prepared.metadata
+                receipt = HubMediaEnvelopeReceipt(
+                    envelope_contract_version=metadata.contract_version,
+                    profile=metadata.profile,
+                    transfer_key=metadata.transfer_key,
+                    source_node_key=metadata.source_node_key,
+                    source_center_key=metadata.source_center_key,
+                    target_node_key=metadata.target_node_key,
+                    resource_kind=metadata.resource_kind,
+                    resource_hash=metadata.resource_hash,
+                    processed_media_hash=metadata.processed_media_hash,
+                    transfer_mode=metadata.transfer_mode,
+                    media_role=metadata.media_role,
+                    plaintext_sha256=metadata.plaintext_sha256,
+                    plaintext_size=metadata.plaintext_size,
+                    recipient_key_id=metadata.recipient_key_id,
+                    ciphertext_sha256=prepared.ciphertext_sha256,
+                    ciphertext_size=prepared.ciphertext_size,
+                    envelope_fingerprint_sha256=(prepared.envelope_fingerprint_sha256),
+                    receiver_transfer_id=str(transfer_job.pk),
+                    processing_decision=processing_decision,
+                )
+                _record_media_upload(
+                    transfer_job=transfer_job,
+                    media_role=media_role,
+                    stored_name=candidate_name,
+                    content_hash=expected_hash,
+                    envelope_receipt=receipt,
+                )
+                _apply_case_resolution_for_media(
+                    transfer_job=transfer_job,
+                    media_obj=target,
+                    media_type=media_type,
+                )
+                applied_transfer_job = _save_transfer_job_state(
+                    transfer_job=transfer_job,
+                    target_object_id=target.pk,
+                    transfer_status=TransferJob.TransferStatus.APPLIED,
+                    processing_decision=processing_decision,
+                    status_detail=(
+                        "Envelope-authenticated processed media uploaded and sender "
+                        "processing state preserved"
+                    ),
+                )
+                if original_name and original_name != candidate_name:
+                    _delete_replaced_generation_after_commit(
+                        instance=target,
+                        field_name=field_name,
+                        replaced_name=original_name,
+                    )
+                return applied_transfer_job
+    except Exception:
+        if candidate_name and candidate_name != original_name:
+            candidate_field = getattr(target, field_name)
+            candidate_field.name = candidate_name
+            safe_delete_field_file(candidate_field, missing_ok=True)
+            candidate_field.name = original_name
+        raise
 
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
@@ -1388,6 +1540,39 @@ def _store_model_file(
     return [field_name]
 
 
+def _store_model_stream(
+    *,
+    instance: Any,
+    field_name: str,
+    source: BinaryIO,
+    stored_name: str,
+) -> str:
+    """Publish a stream as a new storage generation without deleting the old one."""
+
+    field_file = getattr(instance, field_name)
+    storage_name = field_file.field.generate_filename(instance, stored_name)
+    django_file = File(source, name=stored_name)
+    saved_name = str(field_file.storage.save(storage_name, django_file))
+    field_file.name = saved_name
+    return saved_name
+
+
+def _delete_replaced_generation_after_commit(
+    *,
+    instance: Any,
+    field_name: str,
+    replaced_name: str,
+) -> None:
+    """Delete exactly one superseded storage generation after database commit."""
+
+    current_field = cast(FieldFile, getattr(instance, field_name))
+    replaced_field = FieldFile(instance, current_field.field, replaced_name)
+    transaction.on_commit(
+        partial(safe_delete_field_file, replaced_field, missing_ok=True),
+        robust=True,
+    )
+
+
 def _stored_field_name(field_file: object) -> str:
     stored_name = getattr(field_file, "name", None)
     if not isinstance(stored_name, str) or not stored_name:
@@ -1424,18 +1609,40 @@ def _record_media_upload(
     media_role: str,
     stored_name: str,
     content_hash: str,
+    envelope_receipt: HubMediaEnvelopeReceipt | None = None,
 ) -> None:
     provenance = _transfer_provenance(transfer_job.provenance)
     uploads = list(provenance.get("media_uploads") or [])
-    uploads.append(
-        {
-            "media_role": media_role,
-            "stored_name": stored_name,
-            "content_hash": content_hash,
-            "uploaded_name": Path(stored_name).name,
-        }
-    )
+    upload: dict[str, JsonValue] = {
+        "media_role": media_role,
+        "stored_name": stored_name,
+        "content_hash": content_hash,
+        "uploaded_name": Path(stored_name).name,
+    }
+    if envelope_receipt is not None:
+        upload["envelope_receipt"] = cast(
+            JsonValue,
+            envelope_receipt.model_dump(mode="json"),
+        )
+    uploads.append(upload)
     _update_transfer_provenance(transfer_job, media_uploads=uploads)
+
+
+def get_media_envelope_receipt(
+    transfer_job: TransferJob,
+) -> HubMediaEnvelopeReceipt | None:
+    provenance = _transfer_provenance(transfer_job.provenance)
+    uploads = provenance.get("media_uploads") or []
+    for upload in reversed(uploads):
+        receipt_value = upload.get("envelope_receipt")
+        if receipt_value is not None:
+            try:
+                return HubMediaEnvelopeReceipt.model_validate(receipt_value)
+            except ValueError as exc:
+                raise ValueError(
+                    "Persisted Hub media envelope receipt is invalid"
+                ) from exc
+    return None
 
 
 def _get_transfer_video(transfer_job: TransferJob) -> VideoFile:

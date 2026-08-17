@@ -178,7 +178,10 @@ class TransferJobContractTests(TestCase):
             cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
         )
 
-        with self.assertRaisesMessage(ValueError, "Only anonymized processed media"):
+        with self.assertRaisesMessage(
+            ValueError,
+            "Plaintext Hub media attachment is prohibited",
+        ):
             attach_transfer_media(
                 transfer_job=transfer_job,
                 uploaded_file=SimpleUploadedFile("raw.pdf", b"raw"),

@@ -9,6 +9,7 @@ __all__ = [
     "apply_transfer_metadata",
     "assert_environment_readiness",
     "attach_transfer_media",
+    "attach_enveloped_transfer_media",
     "authenticate_network_node",
     "check_environment_readiness",
     "create_or_reuse_transfer_job",
@@ -16,6 +17,8 @@ __all__ = [
     "create_or_reuse_watcher_upload_job",
     "deployment_profile_payload",
     "get_deployment_role",
+    "get_media_envelope_receipt",
+    "HubMediaEnvelopeReplayConflict",
     "hub_mode_enabled",
     "local_study_server_mode_enabled",
     "MediaIntegrityError",
@@ -93,8 +96,17 @@ _EXPORTS = {
     "resolve_upload_center": (".ingest", "resolve_upload_center"),
     "apply_transfer_metadata": (".transfers", "apply_transfer_metadata"),
     "attach_transfer_media": (".transfers", "attach_transfer_media"),
+    "attach_enveloped_transfer_media": (
+        ".transfers",
+        "attach_enveloped_transfer_media",
+    ),
     "authenticate_network_node": (".transfers", "authenticate_network_node"),
     "create_or_reuse_transfer_job": (".transfers", "create_or_reuse_transfer_job"),
+    "get_media_envelope_receipt": (".transfers", "get_media_envelope_receipt"),
+    "HubMediaEnvelopeReplayConflict": (
+        ".transfer_envelope",
+        "HubMediaEnvelopeReplayConflict",
+    ),
     "MediaIntegrityError": (".media_integrity", "MediaIntegrityError"),
     "MediaIntegrityExpectation": (".media_integrity", "MediaIntegrityExpectation"),
     "MediaIntegrityResult": (".media_integrity", "MediaIntegrityResult"),
@@ -149,10 +161,13 @@ if TYPE_CHECKING:
     )
     from .transfers import (
         apply_transfer_metadata,
+        attach_enveloped_transfer_media,
         attach_transfer_media,
         authenticate_network_node,
         create_or_reuse_transfer_job,
+        get_media_envelope_receipt,
     )
+    from .transfer_envelope import HubMediaEnvelopeReplayConflict
 
 
 def __getattr__(name: str):

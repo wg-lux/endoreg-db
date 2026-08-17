@@ -26,7 +26,13 @@ routes:
     frontend_markers:
       - "import axiosInstance, { dtypesApi }"
       - "dtypesApi(`examinations/${String(examinationId)}/findings/`)"
-    query_parameters: []
+      - "module_name:"
+      - "module_version:"
+      - "patient_examination_id:"
+    query_parameters:
+      - module_name
+      - module_version
+      - patient_examination_id
   - id: patient_findings
     method: GET
     path: /dtypes-api/patient-findings/
@@ -40,6 +46,28 @@ routes:
       - "params: { patient_examination: validPatientExaminationId }"
     query_parameters:
       - patient_examination
+  - id: knowledge_base_graph
+    method: GET
+    path: /dtypes-api/knowledge-bases/{module_name}/{module_version}/graph
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/knowledge_base_graph_routes.py
+    implementation_marker: '@api.get("/knowledge-bases/{module_name}/{version}/graph")'
+    frontend_file: frontend/src/api/knowledgeBaseGraphApi.ts
+    frontend_markers:
+      - "export async function fetchKnowledgeBaseGraphSnapshot("
+      - "${graphBasePath(moduleName, version)}/graph"
+    query_parameters: []
+  - id: examination_reporting_context
+    method: GET
+    path: /dtypes-api/knowledge-bases/{module_name}/{module_version}/examinations/{examination_name}/reporting-context
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/knowledge_base_graph_routes.py
+    implementation_marker: "def examination_reporting_context("
+    frontend_file: frontend/src/api/knowledgeBaseGraphApi.ts
+    frontend_markers:
+      - "export async function fetchExaminationReportingContext("
+      - "/examinations/${encodeURIComponent(examinationName)}/reporting-context"
+    query_parameters: []
 forbidden_frontend_markers:
   - VITE_FINDINGS_BACKEND
   - /endoreg-api/findings/

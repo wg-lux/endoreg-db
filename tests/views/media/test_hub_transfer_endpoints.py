@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import base64
+import os
+import tempfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Protocol, cast
 from unittest.mock import patch
 
@@ -13,6 +17,12 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeMetadata
 
 from endoreg_db.models import (
     Center,
@@ -53,6 +63,26 @@ class HubTransferEndpointTests(TestCase):
         load_gender_data()
 
     def setUp(self):
+        self._key_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._key_directory.cleanup)
+        self._recipient_private_key = X25519PrivateKey.generate()
+        recipient_private_key_path = Path(self._key_directory.name) / "recipient.pem"
+        recipient_private_key_path.write_bytes(
+            self._recipient_private_key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        recipient_private_key_path.chmod(0o600)
+        key_settings = override_settings(
+            ENDOREG_HUB_TRANSFER_RECIPIENT_PRIVATE_KEY_FILES=(
+                recipient_private_key_path,
+            ),
+            ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS=False,
+        )
+        key_settings.enable()
+        self.addCleanup(key_settings.disable)
         self.center = Center.objects.create(name="center-a", display_name="Center A")
         self.processor = EndoscopyProcessor.objects.create(
             name="hub-test-processor",
@@ -141,6 +171,103 @@ class HubTransferEndpointTests(TestCase):
     @staticmethod
     def _sha256(content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _b64(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    def _enveloped_upload_data(
+        self,
+        *,
+        transfer_key: str,
+        plaintext: bytes,
+        filename: str,
+    ) -> dict[str, object]:
+        transfer_job = TransferJob.objects.select_related(
+            "source_node", "source_center", "target_node"
+        ).get(transfer_key=transfer_key)
+        plaintext_hash = self._sha256(plaintext)
+        recipient_public_key = self._recipient_private_key.public_key()
+        recipient_key_id = self._sha256(
+            recipient_public_key.public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        )
+        ephemeral_private_key = X25519PrivateKey.generate()
+        ephemeral_public_key = ephemeral_private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        wrap_salt = os.urandom(16)
+        wrap_nonce = os.urandom(12)
+        payload_nonce = os.urandom(12)
+        data_encryption_key = os.urandom(32)
+        source_center = transfer_job.source_center
+        assert source_center is not None
+        metadata_values = {
+            "transfer_key": transfer_job.transfer_key,
+            "source_node_key": transfer_job.source_node.node_key,
+            "source_center_key": source_center.center_key,
+            "target_node_key": transfer_job.target_node.node_key,
+            "resource_kind": transfer_job.resource_kind,
+            "resource_hash": transfer_job.resource_hash,
+            "processed_media_hash": plaintext_hash,
+            "plaintext_sha256": plaintext_hash,
+            "plaintext_size": len(plaintext),
+            "recipient_key_id": recipient_key_id,
+            "ephemeral_public_key": self._b64(ephemeral_public_key),
+            "wrap_salt": self._b64(wrap_salt),
+            "wrap_nonce": self._b64(wrap_nonce),
+            "wrapped_data_encryption_key": self._b64(b"0" * 48),
+            "payload_nonce": self._b64(payload_nonce),
+            "payload_tag": self._b64(b"0" * 16),
+        }
+        provisional = HubMediaEnvelopeMetadata.model_validate(metadata_values)
+        wrapping_key = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=wrap_salt,
+            info=b"lx-hub-media-envelope-wrap-v1",
+        ).derive(ephemeral_private_key.exchange(recipient_public_key))
+        wrapped_key = AESGCM(wrapping_key).encrypt(
+            wrap_nonce,
+            data_encryption_key,
+            provisional.authenticated_data(),
+        )
+        metadata_values["wrapped_data_encryption_key"] = self._b64(wrapped_key)
+        provisional = HubMediaEnvelopeMetadata.model_validate(metadata_values)
+        encryptor = Cipher(
+            algorithms.AES(data_encryption_key), modes.GCM(payload_nonce)
+        ).encryptor()
+        encryptor.authenticate_additional_data(provisional.authenticated_data())
+        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+        metadata_values["payload_tag"] = self._b64(encryptor.tag)
+        metadata = HubMediaEnvelopeMetadata.model_validate(metadata_values)
+        # Wrapped-key and payload authentication both bind the final metadata AAD.
+        wrapped_key = AESGCM(wrapping_key).encrypt(
+            wrap_nonce,
+            data_encryption_key,
+            metadata.authenticated_data(),
+        )
+        metadata_values["wrapped_data_encryption_key"] = self._b64(wrapped_key)
+        metadata = HubMediaEnvelopeMetadata.model_validate(metadata_values)
+        encryptor = Cipher(
+            algorithms.AES(data_encryption_key), modes.GCM(payload_nonce)
+        ).encryptor()
+        encryptor.authenticate_additional_data(metadata.authenticated_data())
+        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+        metadata_values["payload_tag"] = self._b64(encryptor.tag)
+        metadata = HubMediaEnvelopeMetadata.model_validate(metadata_values)
+        return {
+            "media_role": "processed",
+            "envelope": metadata.model_dump_json(),
+            "file": SimpleUploadedFile(
+                filename,
+                ciphertext,
+                content_type="application/octet-stream",
+            ),
+        }
 
     def _video_transfer_payload(
         self,
@@ -1116,14 +1243,11 @@ class HubTransferEndpointTests(TestCase):
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{second_payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_content,
-                    content_type="video/mp4",
-                ),
-            },
+            data=self._enveloped_upload_data(
+                transfer_key=cast(str, second_payload["transfer_key"]),
+                plaintext=processed_content,
+                filename="processed.bin",
+            ),
             headers=second_headers,
         )
         assert upload_response.status_code == 400, upload_response.content
@@ -1411,14 +1535,11 @@ class HubTransferEndpointTests(TestCase):
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_bytes,
-                    content_type="video/mp4",
-                ),
-            },
+            data=self._enveloped_upload_data(
+                transfer_key=cast(str, payload["transfer_key"]),
+                plaintext=processed_bytes,
+                filename="ciphertext.bin",
+            ),
             headers=self._auth_headers(),
         )
 
@@ -1473,21 +1594,18 @@ class HubTransferEndpointTests(TestCase):
         assert create_response.status_code == 201, create_response.content
 
         with patch(
-            "endoreg_db.views.media.hub.transfers.attach_transfer_media",
+            "endoreg_db.views.media.hub.transfers.attach_enveloped_transfer_media",
             side_effect=DjangoValidationError(
                 {"processed_file": ["Processed artifact state is inconsistent."]}
             ),
         ):
             upload_response = self._secure_post(
                 f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-                data={
-                    "media_role": "processed",
-                    "file": SimpleUploadedFile(
-                        "processed.mp4",
-                        processed_bytes,
-                        content_type="video/mp4",
-                    ),
-                },
+                data=self._enveloped_upload_data(
+                    transfer_key=cast(str, payload["transfer_key"]),
+                    plaintext=processed_bytes,
+                    filename="processed.bin",
+                ),
                 headers=self._auth_headers(),
             )
 
@@ -1523,14 +1641,11 @@ class HubTransferEndpointTests(TestCase):
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_bytes,
-                    content_type="video/mp4",
-                ),
-            },
+            data=self._enveloped_upload_data(
+                transfer_key=cast(str, payload["transfer_key"]),
+                plaintext=processed_bytes,
+                filename="processed.bin",
+            ),
             headers=self._auth_headers(),
         )
 
@@ -1541,10 +1656,179 @@ class HubTransferEndpointTests(TestCase):
         assert body["transfer_key"] == payload["transfer_key"]
         assert body["resource_hash"] == payload["resource_hash"]
         assert body["processed_media_hash"] == processed_hash
+        receipt = cast(dict[str, object], body["envelope_receipt"])
+        assert receipt["verified"] is True
+        assert receipt["plaintext_sha256"] == processed_hash
+        assert receipt["target_node_key"] == self.target_node.node_key
 
         video = VideoFile.objects.get(video_hash=raw_hash)
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_processed_upload_rejects_plaintext_without_envelope(self) -> None:
+        processed_bytes = b"plaintext-must-not-cross-the-boundary"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__plaintext-rejected",
+            video_hash=self._sha256(b"raw-plaintext-rejected"),
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "file": SimpleUploadedFile("plaintext.mp4", processed_bytes),
+            },
+            headers=self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 400, upload_response.content
+        assert "plaintext uploads are prohibited" in str(upload_response.json())
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        assert transfer_job.transfer_status == TransferJob.TransferStatus.AWAITING_MEDIA
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_exact_replay_is_idempotent_and_changed_replay_is_conflict(self) -> None:
+        processed_bytes = b"replay-stable-processed-video"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__envelope-replay",
+            video_hash=self._sha256(b"raw-replay-video"),
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+        upload_data = self._enveloped_upload_data(
+            transfer_key=cast(str, payload["transfer_key"]),
+            plaintext=processed_bytes,
+            filename="ciphertext.bin",
+        )
+        envelope_json = cast(str, upload_data["envelope"])
+        first_upload = cast(SimpleUploadedFile, upload_data["file"])
+        ciphertext = first_upload.read()
+        staging_directory = Path(self._key_directory.name) / "replay-staging"
+
+        with patch(
+            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
+            staging_directory,
+        ):
+            first_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "processed",
+                    "envelope": envelope_json,
+                    "file": SimpleUploadedFile("first.bin", ciphertext),
+                },
+                headers=self._auth_headers(),
+            )
+            assert first_response.status_code == 200, first_response.content
+            video = VideoFile.objects.get(video_hash=payload["resource_hash"])
+            canonical_name = str(video.processed_file.name)
+            receipt = first_response.json()["envelope_receipt"]
+
+            exact_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "processed",
+                    "envelope": envelope_json,
+                    "file": SimpleUploadedFile("renamed.bin", ciphertext),
+                },
+                headers=self._auth_headers(),
+            )
+            assert exact_response.status_code == 200, exact_response.content
+            assert exact_response.json()["envelope_receipt"] == receipt
+            video.refresh_from_db()
+            assert str(video.processed_file.name) == canonical_name
+
+            changed_ciphertext = bytes([ciphertext[0] ^ 1]) + ciphertext[1:]
+            conflict_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data={
+                    "media_role": "processed",
+                    "envelope": envelope_json,
+                    "file": SimpleUploadedFile("changed.bin", changed_ciphertext),
+                },
+                headers=self._auth_headers(),
+            )
+
+        assert conflict_response.status_code == 409, conflict_response.content
+        assert conflict_response.json()["transfer_status"] == "inconsistent"
+        assert conflict_response.json()["processing_decision"] == "mark_inconsistent"
+        video.refresh_from_db()
+        assert str(video.processed_file.name) == canonical_name
+        assert not staging_directory.exists() or not any(staging_directory.iterdir())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_failed_authenticated_publication_preserves_previous_generation(
+        self,
+    ) -> None:
+        processed_bytes = b"replacement-processed-video"
+        processed_hash = self._sha256(processed_bytes)
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__failed-replacement",
+            video_hash=self._sha256(b"raw-failed-replacement"),
+            transfer_mode="metadata_and_processed_media",
+            processing_policy="preserve_processing_state",
+            sender_processing_success=True,
+            processed_video_hash=processed_hash,
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+        video = VideoFile.objects.get(video_hash=payload["resource_hash"])
+        video.processed_file.save(
+            "previous-generation.mp4",
+            SimpleUploadedFile("previous-generation.mp4", b"previous-generation"),
+            save=True,
+        )
+        previous_name = str(video.processed_file.name)
+        upload_data = self._enveloped_upload_data(
+            transfer_key=cast(str, payload["transfer_key"]),
+            plaintext=processed_bytes,
+            filename="ciphertext.bin",
+        )
+        envelope_json = cast(str, upload_data["envelope"])
+        valid_ciphertext = cast(SimpleUploadedFile, upload_data["file"]).read()
+        tampered_ciphertext = bytes([valid_ciphertext[0] ^ 1]) + valid_ciphertext[1:]
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data={
+                "media_role": "processed",
+                "envelope": envelope_json,
+                "file": SimpleUploadedFile("tampered.bin", tampered_ciphertext),
+            },
+            headers=self._auth_headers(),
+        )
+
+        assert upload_response.status_code == 400, upload_response.content
+        video.refresh_from_db()
+        assert str(video.processed_file.name) == previous_name
+        assert video.processed_file.storage.exists(previous_name)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_report_upload_verifies_and_persists_anonymized_hash(self):
@@ -1569,14 +1853,11 @@ class HubTransferEndpointTests(TestCase):
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "patient-name-report.pdf",
-                    processed_bytes,
-                    content_type="application/pdf",
-                ),
-            },
+            data=self._enveloped_upload_data(
+                transfer_key=cast(str, payload["transfer_key"]),
+                plaintext=processed_bytes,
+                filename="ciphertext.bin",
+            ),
             headers=self._auth_headers(),
         )
 
@@ -1670,14 +1951,11 @@ class HubTransferEndpointTests(TestCase):
         self.client.force_login(user)
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile(
-                    "processed.mp4",
-                    processed_bytes,
-                    content_type="video/mp4",
-                ),
-            },
+            data=self._enveloped_upload_data(
+                transfer_key=cast(str, payload["transfer_key"]),
+                plaintext=processed_bytes,
+                filename="processed.bin",
+            ),
             headers=self._auth_headers(),
         )
 

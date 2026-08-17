@@ -27,8 +27,18 @@ def test_versioned_contract_is_strict_and_typed() -> None:
         "terminology_bundles",
         "examination_findings",
         "patient_findings",
+        "knowledge_base_graph",
+        "examination_reporting_context",
     }
     assert all(route.owner_repository == "lx_dtypes" for route in contract.routes)
+    examination_findings = next(
+        route for route in contract.routes if route.id == "examination_findings"
+    )
+    assert examination_findings.query_parameters == (
+        "module_name",
+        "module_version",
+        "patient_examination_id",
+    )
 
 
 def test_contract_rejects_unknown_fields() -> None:
@@ -120,4 +130,4 @@ def test_repository_contract_cli() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert "verified 3 canonical routes" in result.stdout
+    assert "verified 5 canonical routes" in result.stdout

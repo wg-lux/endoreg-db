@@ -22,7 +22,9 @@ artifact path:
    an existing identity is rejected.
 4. An authorized terminology administrator imports the export ZIP. The server
    extracts it below the encrypted terminology package root, loads it through
-   `KnowledgeBaseResolver`, and only then publishes its registry entry.
+   `KnowledgeBaseResolver`, and only then publishes a `filesystem` source in
+   the registry. Bundles shipped by the `lx-dtypes` wheel are registered as
+   `provider` sources with the digest from the wheel's package catalog.
 5. Activation atomically writes the selected `{module_name, version}` identity
    into the same registry. Active state is not browser state, worker memory, or
    a mutable process-environment override.
@@ -34,14 +36,27 @@ artifact path:
 
 Local checkouts, the current working directory, `LOOKUP_DTYPES_DATA_ROOT`, Nix
 source-tree inputs, and browser-selected default modules are not deployment
-sources. Packaged `lx_dtypes/data` remains available for library tests and
-authoring tools; clinical runtime selection requires the versioned registry.
+sources. A wheel resource is addressed through its provider descriptor; its
+resolved `site-packages` or Nix-store path is never persisted. Clinical runtime
+selection always requires a registered, versioned identity.
 
 ## Finding routes
 
 The reporting UI loads a finding catalog for the selected examination through
-`GET /dtypes-api/examinations/{examination_id}/findings/`. There is no global
-`GET /endoreg-api/findings/` contract. Patient findings use
+`GET /dtypes-api/examinations/{examination_id}/findings/`. Every catalog request
+sends the selected `module_name` and `module_version`; it sends
+`patient_examination_id` when a patient examination supplies the reporting
+context. The server must resolve that exact module/version and must not silently
+substitute the registry's active identity.
+
+The graph and examination-specific reporting context use the same identity:
+
+```text
+GET /dtypes-api/knowledge-bases/{module_name}/{module_version}/graph
+GET /dtypes-api/knowledge-bases/{module_name}/{module_version}/examinations/{examination_name}/reporting-context
+```
+
+There is no global `GET /endoreg-api/findings/` contract. Patient findings use
 `/dtypes-api/patient-findings/` and the `patient_examination` query parameter.
 The frontend sends snake_case request payloads; its central Axios response
 boundary converts response keys to camelCase.
@@ -66,10 +81,27 @@ has this minimum shape:
   "modules": {
     "gastroenterology_reporting": {
       "2026.07.31": {
-        "input_dirs": ["/managed/encrypted/terminology/packages/gastroenterology_reporting/2026.07.31"]
+        "sources": [{
+          "kind": "provider",
+          "provider": "lx_dtypes.builtin",
+          "content_sha256": "<64-character catalog digest>"
+        }]
       }
     }
   }
+}
+```
+
+The provider resolves the matching package resource from the installed wheel at
+load time and verifies its catalog digest. Imported packages instead use an
+explicit deployment-owned source:
+
+```json
+{
+  "sources": [{
+    "kind": "filesystem",
+    "input_dirs": ["/managed/encrypted/terminology/packages/gastroenterology_reporting/2026.07.31"]
+  }]
 }
 ```
 
@@ -94,10 +126,20 @@ Before serving traffic, runtime checks verify that:
 
 1. the host adapter setting exists and is importable;
 2. the registry environment setting exists;
-3. the registry file is readable JSON with a `modules` object;
-4. the registry contains an explicit active identity present in `modules`;
-5. the exact active module and version can be loaded successfully;
-6. the normal database, encrypted-storage, and Nginx checks pass.
+3. bootstrap has registered and fully loaded every package-catalog bundle;
+4. a missing, empty, or no-active registry has received the configured/default
+   packaged identity;
+5. a stale active built-in provider or wheel-path entry has been atomically
+   migrated to the matching current catalog identity, without replacing a
+   custom active entry;
+6. the registry contains an explicit active identity present in `modules`;
+7. the exact active module and version can be loaded successfully;
+8. the normal database, encrypted-storage, and Nginx checks pass.
+
+Governed wheel deployments fail closed: bootstrap, catalog validation, digest
+verification, or exact active-identity failures block readiness and traffic.
+A best-effort invocation is diagnostic convenience only and is not production
+readiness evidence.
 
 The deployed artifact set must record the lx-annotate, endoreg_db, and
 lx_dtypes versions together. The frontend and Python wheel are one compatibility

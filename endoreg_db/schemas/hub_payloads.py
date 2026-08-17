@@ -12,6 +12,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeReceipt
 
 
 class PreanonymizedIngestPayload(BaseModel):
@@ -213,6 +214,7 @@ class TransferMediaUploadPayload(BaseModel):
     stored_name: str
     content_hash: str
     uploaded_name: str
+    envelope_receipt: HubMediaEnvelopeReceipt | None = None
 
 
 class TransferCaseResolutionPayload(BaseModel):

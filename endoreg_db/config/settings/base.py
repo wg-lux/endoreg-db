@@ -27,7 +27,10 @@ from endoreg_db.config.env import (
     get_ffmpeg_transcode_quality_mode,
     get_hub_transfer_mtls_meta_key,
     get_hub_transfer_mtls_meta_value,
+    get_hub_transfer_max_upload_bytes,
+    get_hub_transfer_recipient_private_key_files,
     get_hub_transfer_require_mtls,
+    get_hub_transfer_require_root_owned_private_keys,
     get_hub_transfer_require_secure_transport,
     get_lookup_dtypes_data_root,
     get_lookup_dtypes_module_name,
@@ -82,6 +85,13 @@ ENDOREG_HUB_TRANSFER_REQUIRE_MTLS = get_hub_transfer_require_mtls(
 )
 ENDOREG_HUB_TRANSFER_MTLS_META_KEY = get_hub_transfer_mtls_meta_key()
 ENDOREG_HUB_TRANSFER_MTLS_META_VALUE = get_hub_transfer_mtls_meta_value()
+ENDOREG_HUB_TRANSFER_RECIPIENT_PRIVATE_KEY_FILES = (
+    get_hub_transfer_recipient_private_key_files()
+)
+ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS = (
+    get_hub_transfer_require_root_owned_private_keys()
+)
+ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES = get_hub_transfer_max_upload_bytes()
 LOOKUP_REQUIREMENT_SOURCE = get_lookup_requirement_source()
 LOOKUP_DTYPES_MODULE_NAME = get_lookup_dtypes_module_name()
 LOOKUP_DTYPES_MODULE_VERSION = get_lookup_dtypes_module_version()
@@ -359,6 +369,9 @@ __all__ = [
     "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS",
     "ENDOREG_HUB_TRANSFER_MTLS_META_KEY",
     "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE",
+    "ENDOREG_HUB_TRANSFER_RECIPIENT_PRIVATE_KEY_FILES",
+    "ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS",
+    "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES",
     "LOOKUP_REQUIREMENT_SOURCE",
     "LOOKUP_DTYPES_MODULE_NAME",
     "LOOKUP_DTYPES_MODULE_VERSION",
