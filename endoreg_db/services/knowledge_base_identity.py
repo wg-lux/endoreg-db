@@ -9,12 +9,37 @@ from lx_dtypes.models.interface.KnowledgeBaseResolver import (
 )
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_package_data_root() -> Path | None:
+    try:
+        import lx_dtypes
+
+        package_data_root = Path(lx_dtypes.__file__).resolve().parent / "data"
+        if package_data_root.exists():
+            return package_data_root
+    except Exception:
+        return None
+    return None
+
+
 def _resolve_dtypes_data_root() -> Path | None:
     configured_root = str(getattr(settings, "LOOKUP_DTYPES_DATA_ROOT", "")).strip()
-    if not configured_root:
-        return None
-    configured_path = Path(configured_root).expanduser().resolve()
-    return configured_path if configured_path.exists() else None
+    if configured_root:
+        configured_path = Path(configured_root).expanduser().resolve()
+        if configured_path.exists():
+            return configured_path
+
+    repo_data_root = _project_root() / "lx-data-models" / "lx_dtypes" / "data"
+    if repo_data_root.exists():
+        return repo_data_root
+    package_data_root = _resolve_package_data_root()
+    if package_data_root is not None:
+        return package_data_root
+
+    return None
 
 
 def get_configured_knowledge_base_module() -> str:
@@ -36,6 +61,8 @@ def get_configured_knowledge_base_identity() -> tuple[str, str] | None:
         if active_identity is None:
             return None
         module_name, version = active_identity
+        if not module_name.strip() or not version.strip():
+            return None
         return get_knowledge_base_identity(module_name, version=version)
 
     module_name = get_configured_knowledge_base_module()

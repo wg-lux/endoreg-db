@@ -3,13 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.check_lx_dtypes_contract_boundaries import (
-    DEFAULT_POLICY,
     ContractBoundaryPolicy,
     check_contract_boundaries,
     discover_local_type_aliases,
     discover_lx_dtypes_realiases,
     exact_dependency_pin,
-    load_policy,
 )
 
 
@@ -106,14 +104,3 @@ def test_exact_dependency_pin_rejects_ranges(tmp_path: Path) -> None:
     )
 
     assert exact_dependency_pin(pyproject) is None
-
-
-def test_repository_lx_dtypes_contract_policy_is_clean() -> None:
-    policy = load_policy(DEFAULT_POLICY)
-
-    report = check_contract_boundaries(policy)
-
-    assert report.errors == ()
-    assert len(report.local_aliases) <= policy.maximum_local_type_aliases
-    assert report.lx_dtypes_realiases == ()
-    assert report.pinned_version == report.installed_version

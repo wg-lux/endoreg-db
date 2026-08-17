@@ -5,6 +5,7 @@ results/
 .snakemake/
 .ruff_cache/
 .devenv
+/tests/services/test_media/*
 untracked_notes.md
 data_integrity_security_report.md
 security_best_practices_report.md

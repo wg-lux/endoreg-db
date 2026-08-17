@@ -5264,6 +5264,7 @@ models:
   boundary_consumers:
   - api:endoreg_db/serializers/hub/transfer_job.py
   - api:endoreg_db/views/media/hub/transfers.py
+  - service:endoreg_db/services/hub/transfer_envelope.py
   - service:endoreg_db/services/hub/transfers.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
