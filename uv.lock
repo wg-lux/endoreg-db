@@ -1167,7 +1167,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.5" },
-    { name = "lx-dtypes", specifier = ">=0.2.21" },
+    { name = "lx-dtypes", specifier = "==0.2.22" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2106,7 +2106,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.21"
+version = "0.2.22"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2129,9 +2129,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fe/a7/10966bf7490cfac342670c95a66914e6c3cdf1b151d1e6c5a05857b00ce6/lx_dtypes-0.2.21.tar.gz", hash = "sha256:10c3f640e575e1d4368468e46c93347d81f5aba3af395f47aef5590d7f1b2919", size = 3445853, upload-time = "2026-08-17T09:32:27.129Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/f9/473722bf7428fa82cfcd375ab9baa827c3297f0ae5b665e123feabf4b000/lx_dtypes-0.2.22.tar.gz", hash = "sha256:c1824381e84a137e70ad88b48f36fe19fdf49dc90d64e23044324da029169a5f", size = 2594804, upload-time = "2026-08-17T11:31:38.178Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/3e/56d62eee468ab08269f526f56ee44ab28ee81e2e01e5f6654cc05da81843/lx_dtypes-0.2.21-py3-none-any.whl", hash = "sha256:f2059a200db6dd1604c6839f7e340addda0bdc7d800936d4eae12558ea96af9a", size = 808264, upload-time = "2026-08-17T09:32:20.808Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/64/5b1a12edee7cb364d7ead399736333f21f665d8ab02acfa249fffb2e989b/lx_dtypes-0.2.22-py3-none-any.whl", hash = "sha256:03cb566d1e2e4c09601c189a3df9a82a3f9fc112ad34dfe84432ce4036f04873", size = 808323, upload-time = "2026-08-17T11:31:35.268Z" },
 ]
 
 [[package]]

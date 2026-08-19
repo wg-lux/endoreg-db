@@ -1,5 +1,4 @@
 # endoreg_db/import_files/storage/sensitive_meta_storage.py
-from logging import getLogger
 from typing import Protocol, cast
 
 from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
@@ -13,20 +12,19 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 #
 
-logger = getLogger(__name__)
-
 
 class _SensitiveMetaCarrier(Protocol):
     pk: int
     sensitive_meta: SensitiveMeta | None
 
 
-def sensitive_meta_storage(
-    sensitive_meta: LxSensitiveMeta,
+def persist_sensitive_meta_candidate(
+    *,
     instance: RawPdfFile | VideoFile,
-) -> bool:
+    candidate: LxSensitiveMeta,
+) -> SensitiveMeta:
     """
-    Merge lx_anonymizer.SensitiveMeta into instance.sensitive_meta in the DB.
+    Persist the extracted SensitiveMeta into ``instance.sensitive_meta``.
 
     - Delegates normalization and persistence to SensitiveMeta.update_from_dict()
     """
@@ -37,21 +35,8 @@ def sensitive_meta_storage(
         local_meta = default_sensitive_meta(instance)
 
     if not isinstance(local_meta, SensitiveMeta):
-        logger.error(
-            "Could not create SensitiveMeta for %s(pk=%s)",
-            instance.__class__.__name__,
-            instance.pk,
+        raise RuntimeError(
+            f"Could not create SensitiveMeta for {instance.__class__.__name__}(pk={instance.pk})."
         )
-        return False
 
-    try:
-        local_meta.update_from_lx_sensitive_meta(sensitive_meta)
-    except Exception as e:
-        logger.exception(
-            "Failed to update SensitiveMeta(pk=%s) from lx sensitive meta: %s",
-            local_meta.pk,
-            e,
-        )
-        return False
-
-    return True
+    return local_meta.update_from_lx_sensitive_meta(candidate)

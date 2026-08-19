@@ -1,25 +1,25 @@
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, NoReturn
 
 import pytest
 
+from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
+
+from tests.helpers.default_objects import get_default_center
+
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
+    persist_report_anonymization_result,
+    persist_sensitive_meta_candidate,
     ReportAnonymizer,
 )
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-
-
-class _ReportRecord:
-    pdf_hash = "a" * 64
-    text = ""
-    anonymized_text = ""
-
-    def save(self, *args: object, **kwargs: object) -> None:
-        return None
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
 
 
 class _V2Reader:
@@ -57,10 +57,23 @@ class _LegacyReader:
         return "legacy-original", "legacy-anonymized", {}, self.output_path
 
 
+def _create_report_for_tests(**kwargs: Any) -> RawPdfFile:
+    data: dict[str, Any] = {
+        "pdf_hash": "report-" + uuid.uuid4().hex,
+        "file": "report-test.pdf",
+        "center": get_default_center(),
+        "text": "",
+        "anonymized_text": "",
+    }
+    data.update(kwargs)
+    return RawPdfFile.objects.create(**data)
+
+
 @pytest.mark.unit
 def test_report_anonymizer_prefers_v2_attempt_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    base_db_data: bool,
 ) -> None:
     import endoreg_db.import_files.processing.report_processing.report_anonymization as module
 
@@ -90,12 +103,17 @@ def test_report_anonymizer_prefers_v2_attempt_contract(
         fake_reader,
     )
 
-    def persist_metadata(metadata: object, report: object) -> bool:
-        return True
+    def persist_metadata(
+        *, instance: RawPdfFile, candidate: LxSensitiveMeta
+    ) -> SensitiveMeta:
+        return SensitiveMeta.objects.create(
+            center=instance.center,
+            patient_first_name="unit",
+        )
 
     monkeypatch.setattr(
         module,
-        "sensitive_meta_storage",
+        "persist_sensitive_meta_candidate",
         persist_metadata,
     )
     ctx = ImportContext(
@@ -104,7 +122,7 @@ def test_report_anonymizer_prefers_v2_attempt_contract(
         center_name="dummy-center",
         file_type="report",
         file_hash="b" * 64,
-        current_report=cast(RawPdfFile, _ReportRecord()),
+        current_report=_create_report_for_tests(text="", anonymized_text=""),
     )
 
     result = anonymizer.anonymize_report(ctx)
@@ -124,6 +142,7 @@ def test_report_anonymizer_supports_legacy_tuple_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    base_db_data: bool,
 ) -> None:
     import endoreg_db.import_files.processing.report_processing.report_anonymization as module
 
@@ -136,27 +155,174 @@ def test_report_anonymizer_supports_legacy_tuple_contract(
     def fake_reader(self: ReportAnonymizer) -> _LegacyReader:
         return reader
 
-    def persist_metadata(metadata: object, report: object) -> bool:
-        return True
+    def persist_metadata(
+        *, instance: RawPdfFile, candidate: LxSensitiveMeta
+    ) -> SensitiveMeta:
+        return SensitiveMeta.objects.create(
+            center=instance.center,
+            patient_first_name="unit",
+        )
 
     monkeypatch.setattr(ReportAnonymizer, "_instantiate_report_reader", fake_reader)
     monkeypatch.setattr(
         module,
-        "sensitive_meta_storage",
+        "persist_sensitive_meta_candidate",
         persist_metadata,
     )
+    report = _create_report_for_tests(text="", anonymized_text="")
     ctx = ImportContext(
         file_path=source,
         original_path=source,
         center_name="dummy-center",
         file_type="report",
         file_hash="c" * 64,
-        current_report=cast(RawPdfFile, _ReportRecord()),
+        current_report=report,
     )
 
     with caplog.at_level("WARNING"):
         result = anonymizer.anonymize_report(ctx)
 
-    assert reader.output_path == tmp_path / "processed" / f"{'a' * 64}.pdf"
+    assert reader.output_path == tmp_path / "processed" / f"{report.pdf_hash}.pdf"
     assert result.anonymized_path == reader.output_path
     assert "legacy report tuple contract" in caplog.text
+
+
+@pytest.mark.django_db
+def test_persist_report_anonymization_result_rolls_back_text_fields_on_meta_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base_db_data: bool,
+) -> None:
+    report = _create_report_for_tests(
+        pdf_hash="rollback-" + uuid.uuid4().hex,
+        file="rollback-report.pdf",
+        text="original text",
+        anonymized_text="original anonymized",
+    )
+
+    def _fail_to_persist_sensitive_meta(
+        *,
+        instance: object,
+        candidate: object,
+    ) -> NoReturn:
+        del instance
+        del candidate
+        raise RuntimeError("Sensitive meta persistence failed")
+
+    monkeypatch.setattr(
+        "endoreg_db.import_files.processing.report_processing.report_anonymization.persist_sensitive_meta_candidate",
+        _fail_to_persist_sensitive_meta,
+    )
+    result = ReportAnonymizationResult.model_validate(
+        {
+            "original_text": "anonymized text",
+            "anonymized_text": "anonymized sensitive text",
+            "extracted_metadata": {},
+            "anonymized_path": tmp_path / "anonymized.pdf",
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="Sensitive meta persistence failed"):
+        persist_report_anonymization_result(report_id=report.pk, result=result)
+
+    report.refresh_from_db()
+    assert report.text == "original text"
+    assert report.anonymized_text == "original anonymized"
+
+
+@pytest.mark.django_db
+def test_persist_report_anonymization_result_uses_db_freshness(
+    base_db_data: bool,
+) -> None:
+    report = _create_report_for_tests(
+        pdf_hash="freshness-" + uuid.uuid4().hex,
+        file="freshness-report.pdf",
+        text="old-text",
+        anonymized_text="old-anon",
+    )
+    stale_report = RawPdfFile.objects.get(pk=report.pk)
+    stale_report.text = "stale-text"
+    stale_report.anonymized_text = "stale-anon"
+
+    result = persist_report_anonymization_result(
+        report_id=report.pk,
+        result=ReportAnonymizationResult.model_validate(
+            {
+                "original_text": "fresh-text",
+                "anonymized_text": "fresh-anon",
+                "extracted_metadata": {},
+                "anonymized_path": Path("/tmp/ignored.pdf"),
+            }
+        ),
+    )
+
+    db_report = RawPdfFile.objects.get(pk=report.pk)
+
+    assert result.pk == report.pk
+    assert result is not stale_report
+    assert stale_report.text == "stale-text"
+    assert db_report.text == "fresh-text"
+    assert db_report.anonymized_text == "fresh-anon"
+
+
+@pytest.mark.django_db
+def test_persist_report_anonymization_keeps_sensitive_meta_stable_on_idempotent_updates(
+    tmp_path: Path,
+    base_db_data: bool,
+) -> None:
+    report = _create_report_for_tests(
+        pdf_hash="idempotent-" + uuid.uuid4().hex,
+        file="idempotent-report.pdf",
+        text="old-text",
+        anonymized_text="old-anon",
+    )
+    existing_meta = SensitiveMeta.objects.create(
+        center=report.center,
+        patient_first_name="idempotent",
+    )
+    report.sensitive_meta = existing_meta
+    report.save(update_fields=["sensitive_meta"])
+    start_count = SensitiveMeta.objects.count()
+    anonymization_result = ReportAnonymizationResult.model_validate(
+        {
+            "original_text": "new-text",
+            "anonymized_text": "new-anon",
+            "extracted_metadata": {"first_name": "idempotent"},
+            "anonymized_path": tmp_path / "idempotent-anonymized.pdf",
+        }
+    )
+
+    first = persist_report_anonymization_result(
+        report_id=report.pk,
+        result=anonymization_result,
+    )
+    second = persist_report_anonymization_result(
+        report_id=report.pk,
+        result=anonymization_result,
+    )
+
+    assert first.pk == report.pk
+    assert second.pk == report.pk
+    assert first.sensitive_meta_id == existing_meta.pk
+    assert second.sensitive_meta_id == existing_meta.pk
+    assert SensitiveMeta.objects.count() == start_count
+
+
+@pytest.mark.django_db
+def test_persist_sensitive_meta_candidate_returns_sensitive_meta_instance(
+    base_db_data: bool,
+) -> None:
+    report = _create_report_for_tests(
+        pdf_hash="candidate-" + uuid.uuid4().hex,
+        file="candidate-report.pdf",
+    )
+    candidate = LxSensitiveMeta.model_validate({"first_name": "A", "last_name": "B"})
+
+    stored_meta = persist_sensitive_meta_candidate(
+        instance=report,
+        candidate=candidate,
+    )
+
+    assert isinstance(stored_meta, SensitiveMeta)
+    assert stored_meta.pk is not None
+    assert RawPdfFile.objects.get(pk=report.pk).sensitive_meta_id == stored_meta.pk

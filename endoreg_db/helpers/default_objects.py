@@ -293,7 +293,7 @@ def get_default_center() -> Center:
     Returns:
         The Center instance with the default name.
     """
-    center = Center.objects.get(
+    center = Center.get_by_name(
         name=DEFAULT_CENTER_NAME,
     )
     return center
@@ -318,7 +318,7 @@ def _resolve_patient_center(center_input: Center | str | NoneType) -> Center:
         return center_input
     if center_input is None:
         return get_default_center()
-    return Center.objects.get(name=center_input)
+    return Center.get_by_name(name=center_input)
 
 
 def _resolve_patient_date(date_input: date | str) -> date:

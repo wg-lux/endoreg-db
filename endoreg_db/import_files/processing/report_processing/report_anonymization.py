@@ -7,13 +7,16 @@ from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
 
+from django.db import transaction
+
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
-    sensitive_meta_storage,
+    persist_sensitive_meta_candidate,
 )
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import ensure_directory
 
@@ -52,6 +55,38 @@ class _ReportStorageRecord(Protocol):
     anonymized_text: str
 
     def save(self, *args: object, **kwargs: object) -> None: ...
+
+
+@transaction.atomic
+def persist_report_anonymization_result(
+    *,
+    report_id: int,
+    result: ReportAnonymizationResult,
+) -> RawPdfFile:
+    report = RawPdfFile.objects.select_for_update().get(pk=report_id)
+
+    updates: list[str] = []
+
+    if report.text != result.original_text:
+        report.text = result.original_text
+        updates.append("text")
+
+    if report.anonymized_text != result.anonymized_text:
+        report.anonymized_text = result.anonymized_text
+        updates.append("anonymized_text")
+
+    sensitive_meta = persist_sensitive_meta_candidate(
+        instance=report,
+        candidate=result.extracted_metadata,
+    )
+    if report.sensitive_meta_id != sensitive_meta.pk:
+        report.sensitive_meta = sensitive_meta
+        updates.append("sensitive_meta")
+
+    if updates:
+        report.save(update_fields=updates)
+
+    return report
 
 
 def _processed_report_dir() -> Path:
@@ -171,14 +206,11 @@ class ReportAnonymizer:
                     "Report anonymization did not produce a readable anonymized PDF."
                 )
 
-        report.text = ctx.original_text
-        report.anonymized_text = ctx.anonymized_text
-        report.save(update_fields=["text", "anonymized_text"])
-
-        if not sensitive_meta_storage(ctx.extracted_metadata, ctx.current_report):
-            raise RuntimeError(
-                "Report anonymization could not persist extracted sensitive metadata."
-            )
+        report = persist_report_anonymization_result(
+            report_id=report.pk,
+            result=anonymization_result,
+        )
+        ctx.current_report = report
         return ctx
 
     def _instantiate_report_reader(self) -> _ReportReader:

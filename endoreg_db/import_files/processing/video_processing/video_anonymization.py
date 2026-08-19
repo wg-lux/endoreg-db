@@ -35,7 +35,7 @@ from endoreg_db.import_files.context.import_context import (
     ImportContext,
 )
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
-    sensitive_meta_storage,
+    persist_sensitive_meta_candidate,
 )
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
 from endoreg_db.models.label.label import Label
@@ -908,8 +908,9 @@ class VideoAnonymizer:
             for key, value in extracted_metadata.items()
             if key in SensitiveMeta.model_fields
         }
-        sensitive_meta_storage(
-            SensitiveMeta.model_validate(lx_sensitive_payload), ctx.current_video
+        persist_sensitive_meta_candidate(
+            instance=ctx.current_video,
+            candidate=SensitiveMeta.model_validate(lx_sensitive_payload),
         )
         self._persist_paper_evaluation_metrics(ctx.current_video, extracted_metadata)
         self._persist_phi_region_proposals(ctx.current_video, extracted_metadata)

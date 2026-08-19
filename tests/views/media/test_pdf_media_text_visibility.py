@@ -9,9 +9,6 @@ from django.test import TestCase
 from lx_dtypes.models import SensitiveMeta
 
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
-    sensitive_meta_storage,
-)
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     ReportAnonymizer,
 )
@@ -108,12 +105,8 @@ class PdfMediaTextVisibilityTests(TestCase):
             ctx.current_report.text = ctx.original_text
             ctx.current_report.anonymized_text = ctx.anonymized_text
             ctx.current_report.save(update_fields=["text", "anonymized_text"])
-            sm = SensitiveMeta()
-            if sensitive_meta_storage(sm, ctx.current_report):
-                ctx.extracted_metadata = sm
-                return ctx
-            else:
-                return ctx
+            ctx.extracted_metadata = SensitiveMeta()
+            return ctx
 
         try:
             with patch.object(

@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from endoreg_db.import_files.file_storage import (
         create_report_file as create_report_file,
         create_video_file as create_video_file,
-        sensitive_meta_storage as sensitive_meta_storage,
     )
     from endoreg_db.import_files.report_import_service import (
         ReportImportService as ReportImportService,
@@ -35,12 +34,16 @@ if TYPE_CHECKING:
         VideoImportService as VideoImportService,
     )
 
+from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
+    persist_sensitive_meta_candidate,
+)
+
 type ImportFilesExportName = Literal[
     "content_hash_lock",
     "file_lock",
     "create_report_file",
     "create_video_file",
-    "sensitive_meta_storage",
+    "persist_sensitive_meta_candidate",
     "ReportImportService",
     "VideoImportService",
     "ImportContext",
@@ -88,7 +91,7 @@ __all__: list[ImportFilesExportName] = [
     "file_lock",
     "create_report_file",
     "create_video_file",
-    "sensitive_meta_storage",
+    "persist_sensitive_meta_candidate",
     "ReportImportService",
     "VideoImportService",
     "ImportContext",
@@ -104,7 +107,7 @@ _LAZY_EXPORTS: dict[ImportFilesExportName, str] = {
     "default_sensitive_meta": "endoreg_db.import_files.context.default_sensitive_meta",
     "create_report_file": "endoreg_db.import_files.file_storage.create_report_file",
     "create_video_file": "endoreg_db.import_files.file_storage.create_video_file",
-    "sensitive_meta_storage": "endoreg_db.import_files.file_storage.sensitive_meta_storage",
+    "persist_sensitive_meta_candidate": "endoreg_db.import_files.file_storage.sensitive_meta_storage",
     "ReportImportService": "endoreg_db.import_files.report_import_service",
     "VideoImportService": "endoreg_db.import_files.video_import_service",
 }

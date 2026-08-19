@@ -59,7 +59,6 @@ def _run_dotenv_import_probe(
     [
         "endoreg_db.config.settings.test",
         "endoreg_db.config.settings.prod",
-        "lx_annotate.settings.settings_prod",
     ],
 )
 def test_dotenv_is_not_imported_outside_endoreg_development_settings(

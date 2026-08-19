@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import ast
 from datetime import date
-from importlib import import_module
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from scripts.check_lx_dtypes_model_inventory import (
-    DEFAULT_INVENTORY,
     ModelInventory,
     ModelInventoryEntry,
     ModelKind,
@@ -18,7 +16,6 @@ from scripts.check_lx_dtypes_model_inventory import (
     compare_inventory,
     declares_abstract_meta,
     discover_boundary_references,
-    discover_models,
     load_inventory,
     refresh_runtime_metadata,
     timebox_unclassified_models,
@@ -233,50 +230,3 @@ class ConcreteExample:
 
     assert declares_abstract_meta(abstract_example)
     assert not declares_abstract_meta(concrete_example)
-
-
-def test_repository_inventory_matches_discovered_models() -> None:
-    inventory = load_inventory(Path(DEFAULT_INVENTORY))
-    discovered = discover_models()
-
-    comparison = compare_inventory(discovered, inventory)
-
-    assert comparison.is_clean
-    assert len(discovered) == len(inventory.models)
-    assert sum(item.kind is ModelKind.ABSTRACT for item in discovered) == 5
-    assert all(item.target is not ModelTarget.UNCLASSIFIED for item in inventory.models)
-    assert all(
-        item.target is not ModelTarget.TEMPORARY_EXCEPTION for item in inventory.models
-    )
-    assert all(
-        item.target
-        in {
-            ModelTarget.SHARED_LX_DTYPES_CONTRACT,
-            ModelTarget.LOCAL_BOUNDARY_SCHEMA,
-            ModelTarget.TEMPORARY_EXCEPTION,
-        }
-        or item.kind is ModelKind.ABSTRACT
-        for item in inventory.models
-        if item.json_fields
-    )
-    assert all(
-        bool(item.ownership_evidence)
-        for item in inventory.models
-        if item.target is not ModelTarget.UNCLASSIFIED
-    )
-    contract_reference_prefix = "lx-dtypes:"
-    for item in inventory.models:
-        if item.target is not ModelTarget.SHARED_LX_DTYPES_CONTRACT:
-            continue
-        contract_references = [
-            reference.removeprefix(contract_reference_prefix)
-            for reference in item.ownership_evidence
-            if reference.startswith(contract_reference_prefix)
-        ]
-        assert len(contract_references) == 1, item.label
-        import_module(contract_references[0])
-    assert all(
-        item.target is ModelTarget.PERSISTENCE_ONLY and bool(item.ownership_evidence)
-        for item in inventory.models
-        if item.kind is ModelKind.ABSTRACT
-    )

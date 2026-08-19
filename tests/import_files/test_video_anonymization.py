@@ -200,11 +200,12 @@ def _quarantine_dir_for(quarantine_dir: Path) -> Callable[[], Path]:
     return _quarantine_dir
 
 
-def _sensitive_meta_storage_noop(
-    sensitive_meta: SensitiveMeta,
-    current_video: VideoFile,
-) -> None:
-    return None
+def _persist_sensitive_meta_candidate_noop(
+    *,
+    instance: VideoFile,
+    candidate: SensitiveMeta,
+) -> SensitiveMeta:
+    return candidate
 
 
 def _local_raw_file_context(path: Path) -> Callable[[], nullcontext[Path]]:
@@ -634,8 +635,8 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     )
     monkeypatch.setattr(
         video_anonymization,
-        "sensitive_meta_storage",
-        _sensitive_meta_storage_noop,
+        "persist_sensitive_meta_candidate",
+        _persist_sensitive_meta_candidate_noop,
     )
 
     ctx = _create_import_context(
@@ -718,8 +719,8 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     )
     monkeypatch.setattr(
         video_anonymization,
-        "sensitive_meta_storage",
-        _sensitive_meta_storage_noop,
+        "persist_sensitive_meta_candidate",
+        _persist_sensitive_meta_candidate_noop,
     )
 
     ctx = _create_import_context(
@@ -815,8 +816,8 @@ def test_anonymize_video_uses_local_source_path_override(
     )
     monkeypatch.setattr(
         video_anonymization,
-        "sensitive_meta_storage",
-        _sensitive_meta_storage_noop,
+        "persist_sensitive_meta_candidate",
+        _persist_sensitive_meta_candidate_noop,
     )
 
     local_source_stat = local_source.stat()
@@ -901,8 +902,8 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
     )
     monkeypatch.setattr(
         video_anonymization,
-        "sensitive_meta_storage",
-        _sensitive_meta_storage_noop,
+        "persist_sensitive_meta_candidate",
+        _persist_sensitive_meta_candidate_noop,
     )
 
     ctx = _create_import_context(
@@ -967,8 +968,8 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
     )
     monkeypatch.setattr(
         video_anonymization,
-        "sensitive_meta_storage",
-        _sensitive_meta_storage_noop,
+        "persist_sensitive_meta_candidate",
+        _persist_sensitive_meta_candidate_noop,
     )
 
     ctx = _create_import_context(
