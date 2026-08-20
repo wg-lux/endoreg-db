@@ -32,13 +32,7 @@ from endoreg_db.config.env import (
     get_hub_transfer_require_mtls,
     get_hub_transfer_require_root_owned_private_keys,
     get_hub_transfer_require_secure_transport,
-    get_lookup_dtypes_data_root,
-    get_lookup_dtypes_module_name,
-    get_lookup_dtypes_module_version,
-    get_lookup_requirement_legacy_fallback_enabled,
-    get_lookup_requirement_source,
     get_lx_dtypes_host_models_module,
-    get_lx_dtypes_kb_registry,
     get_media_root,
     get_media_url,
     get_model_training_job_mode,
@@ -92,15 +86,7 @@ ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS = (
     get_hub_transfer_require_root_owned_private_keys()
 )
 ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES = get_hub_transfer_max_upload_bytes()
-LOOKUP_REQUIREMENT_SOURCE = get_lookup_requirement_source()
-LOOKUP_DTYPES_MODULE_NAME = get_lookup_dtypes_module_name()
-LOOKUP_DTYPES_MODULE_VERSION = get_lookup_dtypes_module_version()
-LOOKUP_DTYPES_DATA_ROOT = get_lookup_dtypes_data_root()
-LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED = (
-    get_lookup_requirement_legacy_fallback_enabled()
-)
 LX_DTYPES_HOST_MODELS_MODULE = get_lx_dtypes_host_models_module()
-LX_DTYPES_KB_REGISTRY = get_lx_dtypes_kb_registry()
 CELERY_BROKER_URL = get_celery_broker_url()
 CELERY_REQUIRE_SECURE_TRANSPORT = celery_requires_secure_transport(
     deployment_role=ENDOREG_DEPLOYMENT_ROLE
@@ -372,13 +358,7 @@ __all__ = [
     "ENDOREG_HUB_TRANSFER_RECIPIENT_PRIVATE_KEY_FILES",
     "ENDOREG_HUB_TRANSFER_REQUIRE_ROOT_OWNED_PRIVATE_KEYS",
     "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES",
-    "LOOKUP_REQUIREMENT_SOURCE",
-    "LOOKUP_DTYPES_MODULE_NAME",
-    "LOOKUP_DTYPES_MODULE_VERSION",
-    "LOOKUP_DTYPES_DATA_ROOT",
-    "LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED",
     "LX_DTYPES_HOST_MODELS_MODULE",
-    "LX_DTYPES_KB_REGISTRY",
     "CELERY_BROKER_URL",
     "CELERY_REQUIRE_SECURE_TRANSPORT",
     "CELERY_RUNTIME_CONFIG_STRICT",

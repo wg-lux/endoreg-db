@@ -95,6 +95,11 @@ definition_of_done:
   acceptance:
   - Export ist nur für anonymisierte, validierte Medien möglich.
   - Master-Key und direkte Identifikatoren gelangen weder in Payloads noch Konfiguration.
+  - Leere oder nur aus Platzhaltern bestehende Anonymizer-Metadaten überschreiben bei Wiederholungen keine
+    bereits persistierten direkten Identifikatoren.
+  - Center-Zuordnung und lokale Dateipfade stammen ausschließlich aus dem vertrauenswürdigen Importkontext;
+    Anonymizer-Metadaten dürfen diese Besitz- und Speichergrenzen nicht verändern und Routine-Logs enthalten
+    keine sensitiven Quellpfade.
   required: true
   verification:
     kind: command
@@ -103,6 +108,7 @@ definition_of_done:
     - shell
     - --
     - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_sensitive_meta_storage.py
     - tests/services/test_export_frames_contract.py
     - tests/services/test_transfer_job_contract.py
     - tests/views/media/test_hub_transfer_endpoints.py
@@ -113,14 +119,16 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
-        tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/import_files/test_sensitive_meta_storage.py
+        tests/services/test_export_frames_contract.py tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
         tests/utils/test_structured_logging.py -q
-    note: 'Manuelle Codeprüfung: Export verlangt human validation und processed_file; Hub-Transfer verwirft
-      Rohmedien, Rohtext und direkte Identitätsfelder; Master-Key bleibt in lokaler Secret-/Datei-Ladung.
-      Ergänzend 52 fokussierte Regressionstests bestanden.'
-    assessed_by: Codex
-    assessed_at: '2026-07-17T12:35:18.012030Z'
+      note: Exit-Code 0
+    note: 'Codeprüfung und fokussierte Verifikation bestätigen: Export bleibt validierungsgebunden; Transferpfade
+      verwerfen Rohdaten und direkte Identifikatoren; leere oder Platzhalter-Metadaten erhalten bekannte
+      Identifikatoren; Center und Dateipfad sind keine schreibbaren Anonymizer-Felder; die Importservices
+      protokollieren keine sensitiven Quell- oder Stagingpfade.'
+    assessed_by: codex-sensitive-meta-20260820
+    assessed_at: '2026-08-20T09:10:33.293358Z'
 - id: quality_evidence
   category: data_integrity
   title: Freigabe beruht auf persistierten, nachvollziehbaren Qualitätsnachweisen

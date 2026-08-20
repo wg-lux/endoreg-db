@@ -131,6 +131,24 @@ class VideoReadyExportEndpointTests(TestCase):
             action="ready_for_export",
         ).exists()
 
+    def test_rejects_non_object_payload_before_ready_promotion(self):
+        video = self._video()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data=["not", "an", "object"],
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert video.get_or_create_state().ready_for_export is False
+        assert not AuditLedger.objects.filter(
+            object_type="VideoFile",
+            object_pk=str(video.pk),
+            action="ready_for_export",
+        ).exists()
+
     def test_backfills_hashes_from_final_blackened_processed_artifact(self):
         video = self._video()
         video.processed_video_hash = "0" * 64

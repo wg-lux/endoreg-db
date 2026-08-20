@@ -8,7 +8,7 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
 )
 from lx_dtypes.models.contracts.patient_examination_report import (
     ReportJsonObject,
-    report_json_safe_dict,
+    report_json_safe,
 )
 from lx_dtypes.models.interface.KnowledgeBaseResolver import load_knowledge_base
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
@@ -98,12 +98,15 @@ def validate_final_report_submission(
             _KnowledgeBaseRuntime,
             load_knowledge_base(module_name, version=version),
         )
-        result = report_json_safe_dict(
+        result_value = report_json_safe(
             knowledge_base.evaluate_report_template_validators(
                 template_name,
                 p_examination=payload,
             )
         )
+        if not isinstance(result_value, dict):
+            raise ValueError("Report template validators must return an object.")
+        result = result_value
     except (KeyError, ValueError) as exc:
         raise ReportRuntimeValidationError(
             {

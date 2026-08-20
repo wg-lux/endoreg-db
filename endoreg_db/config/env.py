@@ -516,26 +516,6 @@ def get_hub_transfer_max_upload_bytes() -> int:
     )
 
 
-def get_lookup_requirement_source() -> str:
-    return env_str("LOOKUP_REQUIREMENT_SOURCE", "dtypes")
-
-
-def get_lookup_dtypes_module_name() -> str:
-    return env_str("LOOKUP_DTYPES_MODULE_NAME", "report_template_examples")
-
-
-def get_lookup_dtypes_module_version() -> str:
-    return env_str("LOOKUP_DTYPES_MODULE_VERSION", "")
-
-
-def get_lookup_dtypes_data_root() -> str:
-    return env_str("LOOKUP_DTYPES_DATA_ROOT", "")
-
-
-def get_lookup_requirement_legacy_fallback_enabled() -> bool:
-    return env_bool("LOOKUP_REQUIREMENT_LEGACY_FALLBACK_ENABLED", False)
-
-
 def get_lx_dtypes_host_models_module() -> str:
     return env_str(
         "LX_DTYPES_HOST_MODELS_MODULE",
@@ -543,12 +523,8 @@ def get_lx_dtypes_host_models_module() -> str:
     )
 
 
-def get_lx_dtypes_kb_registry() -> str:
-    return env_str("LX_DTYPES_KB_REGISTRY", "")
-
-
 def get_celery_broker_url() -> str:
-    return env_str("CELERY_BROKER_URL", "")
+    return env_str("CELERY_BROKER_URL", "redis://localhost:6379/0")
 
 
 def celery_runtime_config_strict(*, deployment_role: str | None = None) -> bool:

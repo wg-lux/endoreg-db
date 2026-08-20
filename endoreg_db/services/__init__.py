@@ -60,7 +60,6 @@ _SYSTEM_MODULES = (
     "frames",
     "hub",
     "jobs",
-    "knowledge_base_identity",
     "model_meta_from_hf",
     "polling_coordinator",
     "reconciliation",
@@ -138,7 +137,6 @@ if TYPE_CHECKING:
     frame_segment_reconciliation: ModuleType
     hub: ModuleType
     jobs: ModuleType
-    knowledge_base_identity: ModuleType
     lx_video_contracts: ModuleType
     media_integrity: ModuleType
     media_operation_gate: ModuleType

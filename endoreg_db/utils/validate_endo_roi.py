@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from lx_dtypes.models.contracts.endoscopy_processor import roi_box_or_none_from_object
+from collections.abc import Mapping
+from typing import cast
+
+from lx_dtypes.models.contracts.endoscopy_processor import (
+    RoiBoxCore,
+    roi_box_or_none_from_object,
+)
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 
 def validate_endo_roi(
@@ -15,7 +22,11 @@ def validate_endo_roi(
     is normalized into RoiBoxCore instead of handled as a loose dict.
     """
     raw_roi = endo_roi if endo_roi is not None else endo_roi_dict
-    roi = roi_box_or_none_from_object(raw_roi)
+    if raw_roi is not None and not isinstance(raw_roi, (RoiBoxCore, Mapping)):
+        return False
+    roi = roi_box_or_none_from_object(
+        cast(RoiBoxCore | Mapping[str, JsonValue] | None, raw_roi)
+    )
     if roi is None:
         return False
 

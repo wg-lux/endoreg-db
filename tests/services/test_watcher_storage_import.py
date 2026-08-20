@@ -31,7 +31,14 @@ from endoreg_db.utils.storage import save_local_file
 
 class _VideoImportCallable(Protocol):
     def __call__(
-        self, *, file_path: Path, center_name: str, processor_name: str, retry: bool
+        self,
+        *,
+        file_path: Path,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        attempt_id: str | None = None,
+        execution_guard: Callable[[], None] | None = None,
     ) -> VideoFile: ...
 
 
@@ -122,8 +129,17 @@ def _create_completed_video_upload(
 
 def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
     def _import_and_anonymize(
-        *, file_path: Path, center_name: str, processor_name: str, retry: bool
+        *,
+        file_path: Path,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        attempt_id: str | None = None,
+        execution_guard: Callable[[], None] | None = None,
     ) -> VideoFile:
+        assert attempt_id
+        assert execution_guard is not None
+        execution_guard()
         assert Path(file_path).exists()
         safe_unlink_file(Path(file_path), missing_ok=False)
         return video

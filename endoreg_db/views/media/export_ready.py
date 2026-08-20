@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import cast
 
 from django.shortcuts import get_object_or_404
 from lx_dtypes.models.contracts.export_ready import (
+    VideoReadyForExportPayload,
     dump_video_ready_for_export_payload,
-    validate_video_ready_for_export_payload,
 )
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
@@ -41,15 +40,9 @@ class VideoMarkReadyForExportView(APIView):
             pk=pk,
         )
         assert_center_scope_allowed(request=request, obj=video)
-        request_payload = cast(object, request.data)
-        payload_mapping: Mapping[str, object] = (
-            cast(Mapping[str, object], request_payload)
-            if isinstance(request_payload, Mapping)
-            else {}
-        )
         try:
             payload = dump_video_ready_for_export_payload(
-                validate_video_ready_for_export_payload(payload_mapping)
+                VideoReadyForExportPayload.model_validate(cast(object, request.data))
             )
         except PydanticValidationError as exc:
             return Response(

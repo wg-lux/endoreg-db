@@ -28,6 +28,8 @@ TEST_PROTECTED_ROOT = TEST_RUN_ROOT / "protected_runtime"
 TEST_DATA_DIR = TEST_RUN_ROOT / "runtime"
 TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_ASSET_DIR = Path(__file__).parent / "assets"
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_BROKER_URL = "memory://"
 
 
 def _configure_test_path_env(protected_root: Path) -> None:

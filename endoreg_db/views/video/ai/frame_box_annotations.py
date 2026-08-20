@@ -15,6 +15,7 @@ from lx_dtypes.models.contracts.video_frame_box_annotations import (
 from lx_dtypes.models.contracts.video_frame_annotations import (
     FrameBoxAnnotationBulkEnvelopePayload,
 )
+from lx_dtypes.models.contracts.json_types import JsonObject
 from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.request import Request
@@ -136,11 +137,14 @@ def _json_object_list_excluding_none(value: object) -> list[VideoFrameBoxJsonObj
             mapping = cast(Mapping[object, object], item)
             items.append(
                 video_frame_box_json_safe_dict(
-                    {
-                        str(key): item_value
-                        for key, item_value in mapping.items()
-                        if item_value is not None
-                    }
+                    cast(
+                        JsonObject,
+                        {
+                            str(key): item_value
+                            for key, item_value in mapping.items()
+                            if item_value is not None
+                        },
+                    )
                 )
             )
     return items
@@ -165,7 +169,7 @@ def _validation_details(
         include_context=False,
         include_input=False,
     ):
-        details.append(video_frame_box_json_safe_dict(error))
+        details.append(video_frame_box_json_safe_dict(cast(JsonObject, error)))
     return details
 
 

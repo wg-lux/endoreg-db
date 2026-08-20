@@ -443,7 +443,7 @@ class VideoImportService:
         lock_path = ctx.original_path
 
         with file_lock(lock_path):
-            logger.info("Acquired file lock for %s", lock_path)
+            logger.info("Acquired video source lock")
             ctx.file_hash = _raw_source_identity(ctx.file_path).sha256
             with content_hash_lock(ctx.file_hash, _hash_lock_dir()):
                 logger.info("Acquired content-hash lock for %s", ctx.file_hash)
@@ -507,12 +507,10 @@ class VideoImportService:
                         _normalize_reimport_video_quality(ctx)
                     _require_execution_ownership(ctx)
                     logger.info(
-                        "Primary video anonymization succeeded for %s",
-                        ctx.file_path,
+                        "Primary video anonymization succeeded for content hash %s",
+                        ctx.file_hash,
                     )
-                    logger.info(
-                        f"Anonymized Video is located at: {ctx.anonymized_path}"
-                    )
+                    logger.info("Anonymized video retained in protected staging")
 
                     # --- Finalize success: history + move anonymized file ---
                     finalize_video_success(ctx)
@@ -521,8 +519,8 @@ class VideoImportService:
 
                 except Exception as exc:
                     logger.exception(
-                        "Video import/anonymization failed for %s: %s",
-                        ctx.file_path,
+                        "Video import/anonymization failed for content hash %s: %s",
+                        ctx.file_hash,
                         exc,
                     )
                     try:
@@ -558,9 +556,8 @@ class VideoImportService:
             if before_identity != after_identity:
                 logger.critical(
                     "Video raw source changed during metadata extraction: "
-                    "video=%s path=%s before=%s after=%s",
+                    "video=%s before=%s after=%s",
                     current_video.video_hash,
-                    local_source_path.resolve(),
                     before_identity,
                     after_identity,
                 )
@@ -633,9 +630,8 @@ class VideoImportService:
                     if before_identity != after_identity:
                         logger.critical(
                             "Video raw source changed during re-anonymization "
-                            "metadata extraction: video=%s path=%s before=%s after=%s",
+                            "metadata extraction: video=%s before=%s after=%s",
                             video_hash,
-                            local_source_path.resolve(),
                             before_identity,
                             after_identity,
                         )

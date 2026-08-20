@@ -490,6 +490,16 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert entry["dataset_type"] == AIDataSet.DATASET_TYPE_IMAGE
         assert entry["ai_model_type"] == "phi_region_detector"
 
+    def test_ai_dataset_dropdown_rejects_invalid_persisted_contract_literals(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-invalid-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type="unsupported_model_family",
+        )
+
+        with self.assertRaisesRegex(ValueError, "Unsupported AI model type"):
+            ai_dataset_view_module._application_settings_ai_dataset_entry(dataset)
+
     def test_ai_dataset_dropdown_post_returns_current_duplicate_name_count(self):
         dataset_name = f"dataset-duplicate-{uuid4().hex[:8]}"
         AIDataSet.objects.create(

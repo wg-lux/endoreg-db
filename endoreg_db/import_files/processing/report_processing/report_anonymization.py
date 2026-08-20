@@ -30,7 +30,7 @@ class _ReportReader(Protocol):
         pdf_path: Path,
         create_anonymized_pdf: bool,
         anonymized_pdf_output_path: str,
-    ) -> tuple[object, object, object, object]: ...
+    ) -> tuple[str, str, dict[str, object], Path | None]: ...
 
 
 class _ReportAnonymizationV2Result(Protocol):
@@ -183,14 +183,23 @@ class ReportAnonymizer:
                     "lx-anonymizer does not expose report_anonymization_v2; "
                     "using the legacy report tuple contract."
                 )
-                anonymization_result = (
-                    ReportAnonymizationResult.from_process_report_result(
-                        report_reader.process_report(
-                            pdf_path=ctx.file_path,
-                            create_anonymized_pdf=True,
-                            anonymized_pdf_output_path=str(anonymized_output_path),
-                        )
-                    )
+                (
+                    original_text,
+                    anonymized_text,
+                    extracted_metadata,
+                    legacy_anonymized_path,
+                ) = report_reader.process_report(
+                    pdf_path=ctx.file_path,
+                    create_anonymized_pdf=True,
+                    anonymized_pdf_output_path=str(anonymized_output_path),
+                )
+                anonymization_result = ReportAnonymizationResult.model_validate(
+                    {
+                        "original_text": original_text,
+                        "anonymized_text": anonymized_text,
+                        "extracted_metadata": extracted_metadata,
+                        "anonymized_path": legacy_anonymized_path,
+                    }
                 )
             ctx.original_text = anonymization_result.original_text
             ctx.anonymized_text = anonymization_result.anonymized_text

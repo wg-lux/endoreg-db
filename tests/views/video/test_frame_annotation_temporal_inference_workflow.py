@@ -287,6 +287,22 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             "wg-lux/colo_segmentation_RegNetX800MF_base",
         )
 
+    def test_rerun_prediction_segments_rejects_non_object_payload(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/rerun-predictions/",
+            ["not", "an", "object"],
+            format="json",
+        )
+
+        with patch(
+            "endoreg_db.views.video.ai.label.dispatch_video_temporal_inference"
+        ) as dispatch:
+            response = rerun_prediction_segments(request, self.video.pk)
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data["error_type"], "invalid_options")
+        dispatch.assert_not_called()
+
     def test_rerun_prediction_segments_dispatches_temporal_inference_job(
         self,
     ):

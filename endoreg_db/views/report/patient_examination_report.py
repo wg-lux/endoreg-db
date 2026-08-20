@@ -12,6 +12,7 @@ from django.db import models, transaction
 from django.db.models import Q, QuerySet
 from django.http import HttpRequest
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientExaminationReportMakeReportData,
     PatientExaminationReportMakeReportPayload,
@@ -232,7 +233,7 @@ def _request_json_object(request: HttpRequest) -> ReportJsonObject:
             decoded = mapped["payload"]
     if not isinstance(decoded, Mapping):
         raise HttpError(400, "Request body must be a valid JSON object.")
-    return report_json_safe_dict(cast(object, decoded))
+    return report_json_safe_dict(cast(Mapping[str, JsonValue], decoded))
 
 
 class PatientExaminationReportApi:
@@ -1033,6 +1034,8 @@ def save_submission(
         result = save_report_submission(
             patient_examination_id=data["patient_examination_id"],
             template_name=data["template_name"],
+            knowledge_base_module=data.get("knowledge_base_module", ""),
+            knowledge_base_version=data.get("knowledge_base_version", ""),
             editor_payload=data.get("editor_payload"),
             rendered_text=data.get("rendered_text", ""),
             status=data.get("status", PatientExaminationReport.Status.DRAFT),
@@ -1057,7 +1060,9 @@ def save_submission(
     )
 
     persisted_dtypes_record = (
-        report_json_safe_dict(result.persisted_dtypes_record)
+        report_json_safe_dict(
+            cast(Mapping[str, JsonValue], result.persisted_dtypes_record)
+        )
         if result.persisted_dtypes_record is not None
         else None
     )
@@ -1107,6 +1112,27 @@ def make_report(
     )
     if report is None:
         return 404, {"detail": "No report found for this patient examination."}
+    submitted_identity = (
+        data["knowledge_base_module"],
+        data["knowledge_base_version"],
+    )
+    examination_identity = (
+        patient_examination.knowledge_base_module,
+        patient_examination.knowledge_base_version,
+    )
+    report_identity = (
+        report.knowledge_base_module,
+        report.knowledge_base_version,
+    )
+    if (
+        submitted_identity != examination_identity
+        or submitted_identity != report_identity
+    ):
+        raise HttpError(
+            409,
+            "The submitted knowledge-base identity does not match the persisted "
+            "PatientExamination and report identity.",
+        )
 
     try:
         runtime_validation = validate_final_report_submission(

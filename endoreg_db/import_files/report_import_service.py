@@ -227,7 +227,7 @@ class ReportImportService:
         retry: bool,
     ) -> RawPdfFile | None:
         with report_source_lock(lock_path):
-            logger.info("Acquired file lock for %s", lock_path)
+            logger.info("Acquired report source lock")
             snapshot = create_sensitive_report_snapshot(
                 ctx.file_path,
                 _sensitive_report_dir(),
@@ -275,8 +275,8 @@ class ReportImportService:
                 raise
             except Exception as exc:
                 logger.exception(
-                    "Report import/anonymization failed for %s: %s",
-                    ctx.file_path,
+                    "Report import/anonymization failed for content hash %s: %s",
+                    ctx.file_hash,
                     exc,
                 )
                 self._finalize_owned_failure(ctx, fence)
@@ -331,15 +331,15 @@ class ReportImportService:
         try:
             ctx = self.anonymizer.anonymize_report(ctx)
             logger.info(
-                "Primary report anonymization succeeded for %s",
-                ctx.file_path,
+                "Primary report anonymization succeeded for content hash %s",
+                ctx.file_hash,
             )
             return ctx
         except Exception as primary_exc:
             logger.exception(
-                "Primary report anonymization failed for %s: %s "
+                "Primary report anonymization failed for content hash %s: %s "
                 "- trying basic anonymization",
-                ctx.file_path,
+                ctx.file_hash,
                 primary_exc,
             )
             try:
@@ -349,8 +349,8 @@ class ReportImportService:
                 raise
 
             logger.info(
-                "Basic report anonymization succeeded for %s",
-                ctx.file_path,
+                "Basic report anonymization succeeded for content hash %s",
+                ctx.file_hash,
             )
             return ctx
 

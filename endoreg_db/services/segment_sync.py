@@ -10,6 +10,7 @@ from typing import Optional
 
 from django.contrib.auth.models import User
 from django.db import transaction
+from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
@@ -27,14 +28,13 @@ from .video_files import (
 )
 from lx_dtypes.models.contracts.video_segments import (
     SegmentAnnotationInput,
-    parse_segment_annotation_input,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def create_user_segment_from_annotation(
-    annotation: SegmentAnnotationInput | dict[str, object], request_user: User
+    annotation: object, request_user: User
 ) -> Optional[LabelVideoSegment]:
     """
     Create a user-source LabelVideoSegment from a segment annotation.
@@ -53,8 +53,13 @@ def create_user_segment_from_annotation(
     Returns:
         New LabelVideoSegment instance or None if creation failed/skipped
     """
-    annotation_input = parse_segment_annotation_input(annotation)
-    if annotation_input is None:
+    try:
+        annotation_input = (
+            annotation
+            if isinstance(annotation, SegmentAnnotationInput)
+            else SegmentAnnotationInput.model_validate(annotation)
+        )
+    except PydanticValidationError:
         logger.debug("Annotation is invalid for segment creation, skipping")
         return None
 

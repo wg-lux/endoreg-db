@@ -45,6 +45,8 @@ KNOWN_BASE_API_URLS = {
     "/base_api/patient-findings/",
     "/base_api/patient-findings/<patient_finding_id>/",
     "/base_api/patient-findings/<patient_finding_id>/classifications/",
+    "/base_api/knowledge-bases/<module_name>/<version>/graph",
+    "/base_api/knowledge-bases/<module_name>/<version>/examinations/<examination_name>/reporting-context",
 }
 
 KNOWN_DTYPES_API_URLS = {
@@ -60,6 +62,8 @@ KNOWN_DTYPES_API_URLS = {
     "/dtypes-api/patient-findings/",
     "/dtypes-api/patient-findings/<patient_finding_id>/",
     "/dtypes-api/patient-findings/<patient_finding_id>/classifications/",
+    "/dtypes-api/knowledge-bases/<module_name>/<version>/graph",
+    "/dtypes-api/knowledge-bases/<module_name>/<version>/examinations/<examination_name>/reporting-context",
 }
 
 LEGACY_FINDINGS_API_URLS = {

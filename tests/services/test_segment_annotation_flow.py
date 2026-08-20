@@ -2,16 +2,18 @@ import pytest
 from django.test import TestCase
 from django.contrib.auth.models import User
 from unittest.mock import Mock, patch
+from typing import cast
 
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from lx_dtypes.models.contracts.video_segments import parse_segment_annotation_input
+from lx_dtypes.models.contracts.json_types import JsonObject
 import endoreg_db.services.segment_sync as segment_sync
 
 create_user_segment_from_annotation = segment_sync.create_user_segment_from_annotation
 
 
-def _segment_annotation_payload(**payload: object) -> dict[str, object]:
-    return payload
+def _segment_annotation_payload(**payload: object) -> JsonObject:
+    return cast(JsonObject, payload)
 
 
 def _segment_id(segment: LabelVideoSegment | None) -> int:

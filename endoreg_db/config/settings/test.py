@@ -106,6 +106,13 @@ globals()["CACHES"] = {
     }
 }
 
+# Keep task dispatch deterministic and broker-independent in the test profile.
+# These must be Django settings; similarly named variables in pytest's
+# conftest module are not consumed by Celery.
+globals()["CELERY_TASK_ALWAYS_EAGER"] = True
+globals()["CELERY_TASK_EAGER_PROPAGATES"] = True
+globals()["CELERY_BROKER_URL"] = "memory://"
+
 # Tests exercise watcher-local import behavior without requiring a live broker.
 globals()["WATCHER_CELERY_INLINE_FALLBACK_ENABLED"] = env_bool(
     "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",

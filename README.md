@@ -414,7 +414,6 @@ and writes a registry file at:
 ../lx-terminology-editor/.published/kb_registry.json
 ```
 
-That registry can then be used as an `LX_DTYPES_KB_REGISTRY` source.
 
 ### Optimization Documentation
 - [Complete Optimization Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)

@@ -36,6 +36,7 @@ from lx_dtypes.models.contracts.label_video_segment_serializer import (
     LabelVideoSegmentFrameClassificationPayload,
     LabelVideoSegmentTimeSegmentPayload,
 )
+from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.video_segments import SegmentAnnotationInput
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,11 @@ class _SerializerDataLike(Protocol):
     def data(self) -> Sequence[Mapping[str, object]]: ...
 
 
-def _serializer_rows(serializer: object) -> list[dict[str, object]]:
-    return [dict(item) for item in cast(_SerializerDataLike, serializer).data]
+def _serializer_rows(serializer: object) -> list[JsonObject]:
+    return [
+        cast(JsonObject, dict(item))
+        for item in cast(_SerializerDataLike, serializer).data
+    ]
 
 
 def _segment_frame_number(segment: object, field_name: str) -> int:
@@ -703,7 +707,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
 
     def get_manual_frame_annotations(
         self, obj: LabelVideoSegmentLike
-    ) -> list[dict[str, object]]:
+    ) -> list[JsonObject]:
         if not self._include_annotation_payload():
             return []
         return _serializer_rows(
@@ -712,9 +716,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             )
         )
 
-    def get_frame_predictions(
-        self, obj: LabelVideoSegmentLike
-    ) -> list[dict[str, object]]:
+    def get_frame_predictions(self, obj: LabelVideoSegmentLike) -> list[JsonObject]:
         if not self._include_annotation_payload():
             return []
         return _serializer_rows(

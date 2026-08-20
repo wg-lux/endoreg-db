@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping
 from typing import Any, Literal, cast
 
 from django.conf import settings
@@ -18,6 +19,7 @@ from lx_dtypes.models.contracts.video_reimport import (
     validate_video_reimport_request_payload,
     video_reimport_json_safe_dict,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.config.env import (
     env_choice,
@@ -496,7 +498,9 @@ def _regenerate_reimport_hls_artifacts(
             "Processed HLS source is missing after video re-import."
         ) from exc
 
-    payload = video_reimport_json_safe_dict(result.as_dict())
+    payload = video_reimport_json_safe_dict(
+        cast(Mapping[str, JsonValue], result.as_dict())
+    )
     logger.info(
         "Regenerated processed HLS after video re-import: video=%s status=%s key_id=%s",
         getattr(video, "video_hash", video_id),

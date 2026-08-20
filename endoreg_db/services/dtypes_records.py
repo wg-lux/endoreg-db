@@ -67,6 +67,11 @@ def _validated_p_examination(
         candidate = dict(value)
     if not candidate:
         raise ValueError("dtypes_record must not be empty")
+    kb_module = candidate.get("knowledge_base_module")
+    kb_version = candidate.get("knowledge_base_version")
+
+    candidate["knowledge_base_module"] = kb_module if kb_module else None
+    candidate["knowledge_base_version"] = kb_version if kb_version else None
 
     return cast(_DtypesRecordLike, parse_dtypes_record_persistence_payload(candidate))
 

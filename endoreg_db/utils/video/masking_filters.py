@@ -3,6 +3,7 @@ import logging
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -10,6 +11,7 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
     RoiBoxCore,
     roi_box_from_object,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
@@ -78,7 +80,9 @@ def _build_blacken_filter_expression(
     return _build_blacken_filter_expression_from_normalized(normalized_intervals)
 
 
-def _normalize_video_roi(endo_roi: RoiBoxCore | object) -> tuple[int, int, int, int]:
+def _normalize_video_roi(
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
+) -> tuple[int, int, int, int]:
     try:
         roi = roi_box_from_object(endo_roi)
         x = int(roi.x)
@@ -97,7 +101,9 @@ def _normalize_video_roi(endo_roi: RoiBoxCore | object) -> tuple[int, int, int, 
     return x, y, width, height
 
 
-def _build_roi_mask_filter_expressions(endo_roi: RoiBoxCore | object) -> list[str]:
+def _build_roi_mask_filter_expressions(
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
+) -> list[str]:
     """Build drawbox filters that keep the ROI visible and blacken the rest."""
 
     x, y, width, height = _normalize_video_roi(endo_roi)
@@ -120,7 +126,7 @@ def _build_roi_mask_filter_expressions(endo_roi: RoiBoxCore | object) -> list[st
 
 def _build_roi_mask_and_blacken_filter_expression(
     *,
-    endo_roi: RoiBoxCore | object,
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
 ) -> str:
     filter_parts = _build_roi_mask_filter_expressions(endo_roi)
@@ -133,7 +139,7 @@ def _build_roi_mask_and_blacken_filter_expression(
 
 def _roi_mask_and_blacken_filter_args(
     *,
-    endo_roi: RoiBoxCore | object,
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
     inline_threshold: int = 120,
     script_dir: Path | None = None,
@@ -296,7 +302,7 @@ def mask_video_to_roi_and_blacken_intervals(
     input_path: Path,
     output_path: Path,
     *,
-    endo_roi: RoiBoxCore | object,
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
     quality_mode: str = "balanced",
     force_cpu: bool = False,

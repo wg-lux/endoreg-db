@@ -361,10 +361,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         }
     ),
     (
-        "endoreg_db/models/medical/patient/patient_examination.py",
-        "endoreg_db.services.knowledge_base_identity",
-    ): frozenset({"get_configured_knowledge_base_identity"}),
-    (
         "endoreg_db/models/metadata/video_prediction_logic.py",
         "endoreg_db.services.video_files.metadata",
     ): frozenset({"get_video_fps"}),

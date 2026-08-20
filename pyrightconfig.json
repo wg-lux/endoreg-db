@@ -35,7 +35,7 @@
   ],
   "extraPaths": [
     ".",
-    "../lx-parse/lx-data-models"
+    "../lx-data-models"
   ],
   "venvPath": ".devenv/state",
   "venv": "venv",

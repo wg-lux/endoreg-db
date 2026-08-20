@@ -14,7 +14,12 @@ from django.contrib.auth.models import User as AuthUser
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    get_knowledge_base_identity,
+)
 from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models.administration.center.center import Center
@@ -461,7 +466,8 @@ def _resolve_submission_examination(
     patient_examination_id: int,
 ) -> PatientExamination:
     patient_examination = (
-        PatientExamination.objects.select_related("patient", "examination")
+        PatientExamination.objects.select_for_update()
+        .select_related("patient", "examination")
         .filter(pk=patient_examination_id)
         .first()
     )
@@ -470,6 +476,59 @@ def _resolve_submission_examination(
             {"patient_examination_id": "PatientExamination not found."}
         )
     return patient_examination
+
+
+def _bind_submission_knowledge_base_identity(
+    patient_examination: PatientExamination,
+    *,
+    module_name: str,
+    version: str,
+) -> None:
+    if not module_name and not version:
+        return
+    if not module_name or not version:
+        raise ValidationError(
+            {
+                "knowledge_base_module": (
+                    "knowledge_base_module and knowledge_base_version must be "
+                    "submitted together."
+                )
+            }
+        )
+    try:
+        identity = KnowledgeBaseIdentity(
+            knowledge_base_module=module_name,
+            knowledge_base_version=version,
+        )
+        resolved = get_knowledge_base_identity(
+            identity.knowledge_base_module,
+            version=identity.knowledge_base_version,
+        )
+    except (LookupError, ValueError) as exc:
+        raise ValidationError({"knowledge_base_module": str(exc)}) from exc
+    expected = (
+        identity.knowledge_base_module,
+        identity.knowledge_base_version,
+    )
+    if resolved != expected:
+        raise ValidationError(
+            {
+                "knowledge_base_module": (
+                    "Resolved knowledge-base identity does not match the submitted "
+                    "identity."
+                )
+            }
+        )
+    if (
+        patient_examination.knowledge_base_module,
+        patient_examination.knowledge_base_version,
+    ) == expected:
+        return
+    patient_examination.knowledge_base_module = identity.knowledge_base_module
+    patient_examination.knowledge_base_version = identity.knowledge_base_version
+    patient_examination.save(
+        update_fields=["knowledge_base_module", "knowledge_base_version"]
+    )
 
 
 def _resolve_submission_report(
@@ -579,10 +638,14 @@ def _apply_submission_report_fields(
     report.knowledge_base_version = patient_examination.knowledge_base_version
     report.rendered_text = _value_or_default(rendered_text, "")
     report.patient_context_snapshot = report_json_safe_dict(
-        _mapping_or_empty(patient_data)
+        cast(Mapping[str, JsonValue], _mapping_or_empty(patient_data))
     )
-    report.history_context_snapshot = report_json_safe_dict(history_context)
-    report.runtime_validation_snapshot = report_json_safe_dict(runtime_validation)
+    report.history_context_snapshot = report_json_safe_dict(
+        cast(Mapping[str, JsonValue], history_context)
+    )
+    report.runtime_validation_snapshot = report_json_safe_dict(
+        cast(Mapping[str, JsonValue], runtime_validation)
+    )
     report.updated_by = user
     if created:
         report.created_by = user
@@ -648,6 +711,8 @@ def save_report_submission(
     *,
     patient_examination_id: int,
     template_name: str,
+    knowledge_base_module: str = "",
+    knowledge_base_version: str = "",
     editor_payload: Mapping[str, object] | None = None,
     rendered_text: str = "",
     status: str = PatientExaminationReport.Status.DRAFT.value,
@@ -675,6 +740,11 @@ def save_report_submission(
         raise ValidationError({"template_name": "template_name is required."})
     user_ref = cast(AuthUser | None, user)
     patient_examination = _resolve_submission_examination(patient_examination_id)
+    _bind_submission_knowledge_base_identity(
+        patient_examination,
+        module_name=knowledge_base_module,
+        version=knowledge_base_version,
+    )
     report, created = _resolve_submission_report(
         patient_examination,
         report_id=report_id,

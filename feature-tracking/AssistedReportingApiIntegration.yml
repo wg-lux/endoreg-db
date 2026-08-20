@@ -151,8 +151,6 @@ definition_of_done:
   category: functionality
   title: Terminologiepakete aus lx-terminology-editor sind im Produktionsprofil auffindbar
   acceptance:
-  - LX_DTYPES_KB_REGISTRY verweist in jedem unterstützten Deployment auf eine lesbare, schema-gültige
-    Registry innerhalb des vorgesehenen persistenten Datenbereichs.
   - Die Registry referenziert versionierte, für den Dienst lesbare Exportpakete aus lx-terminology-editor
     und enthält eine explizite aktive Auswahl oder einen dokumentierten Zustand ohne aktive Auswahl.
   - GET /dtypes-api/terminology/bundles liefert die typisierte Bundle-Liste; eine fehlende Registry wird
@@ -209,9 +207,6 @@ definition_of_done:
     - kind: command
       reference: 'isolated final wheel: required templates passed; colonoscopy emitted canonical German
         title and six German section titles'
-    - kind: command
-      reference: 'lx-annotate installed-layout bootstrap twice: active report_template_examples@0.1.0
-        and registry input_dirs matched wheel lx_dtypes/data'
     - kind: test
       reference: 'lx-data-models: full Pyright 0 errors; focused release/API/semantic cohorts 68 passed;
         Ruff and format checks passed'

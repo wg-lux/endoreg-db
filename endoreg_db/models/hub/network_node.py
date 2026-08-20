@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import importlib
 from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
 
-from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils.text import slugify
+
+
+class _PasswordHashers(Protocol):
+    def check_password(self, password: str | None, encoded: str) -> bool: ...
+
+    def make_password(self, password: str | None) -> str: ...
+
+
+_password_hashers = cast(
+    _PasswordHashers,
+    importlib.import_module("django.contrib.auth.hashers"),
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
@@ -95,13 +107,13 @@ class NetworkNode(models.Model):
         normalized = str(secret or "").strip()
         if not normalized:
             raise ValueError("shared secret must not be empty")
-        self.shared_secret_hash = make_password(normalized)
+        self.shared_secret_hash = _password_hashers.make_password(normalized)
 
     def check_shared_secret(self, secret: str) -> bool:
         normalized = str(secret or "").strip()
         if not normalized or not self.shared_secret_hash:
             return False
-        return bool(check_password(normalized, self.shared_secret_hash))
+        return _password_hashers.check_password(normalized, self.shared_secret_hash)
 
     def __str__(self) -> str:
         return self.display_name

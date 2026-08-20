@@ -38,6 +38,19 @@ offline validation of this Markdown contract.
 and deployment overrides. A deployment may temporarily select a compatibility
 prefix, but feature code must not bypass these boundaries with a literal mount.
 
+## Knowledge-Base Graph
+
+| Route | Purpose | Test Coverage |
+|---|---|---|
+| `/dtypes-api/knowledge-bases/<module_name>/<version>/graph` | Complete deterministic graph snapshot for one exact knowledge-base identity | `tests/api/test_knowledge_base_graph_api.py`, `tests/docs/test_show_urls_contract.py` |
+| `/dtypes-api/knowledge-bases/<module_name>/<version>/examinations/<examination_name>/reporting-context` | Closed reporting projection for one exact examination | `tests/api/test_knowledge_base_graph_api.py` |
+| `/base_api/knowledge-bases/<module_name>/<version>/graph` | Upstream compatibility alias for the complete graph snapshot | `tests/api/test_knowledge_base_graph_api.py` |
+| `/base_api/knowledge-bases/<module_name>/<version>/examinations/<examination_name>/reporting-context` | Upstream compatibility alias for the reporting projection | `tests/docs/test_show_urls_contract.py` |
+
+The payload contract, identity rules, snapshot hashing, edge semantics, and
+`404`/`409` error behavior are owned by `lx-data-models`; `endoreg_db` only
+hosts the shared API on both mounts.
+
 ## Common Wire Contract
 
 - Public paths are currently unversioned. Compatibility is controlled through

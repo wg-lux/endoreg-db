@@ -10,8 +10,12 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.patient_examination import (
     PatientExaminationPatientDataPayload,
+)
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    get_knowledge_base_identity,
 )
 
 
@@ -71,8 +75,6 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
         read_only_fields = [
             "id",
             "hash",
-            "knowledge_base_module",
-            "knowledge_base_version",
             "patient_name",
             "examination_name",
             "patient_data",
@@ -142,6 +144,43 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             raise serializers.ValidationError(
                 "Enddatum muss nach dem Startdatum liegen"
             )
+        has_module = "knowledge_base_module" in attrs
+        has_version = "knowledge_base_version" in attrs
+        if has_module != has_version:
+            raise serializers.ValidationError(
+                {
+                    "knowledge_base_module": (
+                        "knowledge_base_module and knowledge_base_version must be "
+                        "submitted together"
+                    )
+                }
+            )
+        if has_module and has_version:
+            try:
+                identity = KnowledgeBaseIdentity(
+                    knowledge_base_module=attrs["knowledge_base_module"],
+                    knowledge_base_version=attrs["knowledge_base_version"],
+                )
+                resolved = get_knowledge_base_identity(
+                    identity.knowledge_base_module,
+                    version=identity.knowledge_base_version,
+                )
+            except (LookupError, ValueError) as exc:
+                raise serializers.ValidationError(
+                    {"knowledge_base_module": str(exc)}
+                ) from exc
+            if resolved != (
+                identity.knowledge_base_module,
+                identity.knowledge_base_version,
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "knowledge_base_module": (
+                            "Resolved knowledge-base identity does not match the "
+                            "submitted identity."
+                        )
+                    }
+                )
         return attrs
 
     def create(

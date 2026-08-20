@@ -64,7 +64,7 @@ from lx_dtypes.models.contracts.video_temporal_inference import (
     parse_temporal_inference_history_config_payload,
     parse_temporal_inference_history_result_payload,
 )
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.video_segments import (
     validate_video_segments_payload,
 )
@@ -953,7 +953,9 @@ def _parse_temporal_history_config(
     config_payload = (
         config
         if isinstance(config, TemporalInferenceHistoryConfigPayload)
-        else parse_temporal_inference_history_config_payload(config)
+        else parse_temporal_inference_history_config_payload(
+            cast(Mapping[str, JsonValue], config)
+        )
     )
     if config_payload.kind != TEMPORAL_INFERENCE_KIND:
         return None

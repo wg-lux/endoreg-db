@@ -7,6 +7,7 @@ from lx_dtypes.models.contracts import (
     AiModelSerializerInputPayload,
     validate_ai_model_serializer_output_payload,
 )
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 
 class _SerializerDataCarrier(Protocol):
@@ -125,7 +126,7 @@ class AiModelSerializerTest(TestCase):
         serializer = AiModelSerializer(instance=ai_model)
         serializer_payload = cast(_SerializerDataCarrier, serializer)
         serialized_data = validate_ai_model_serializer_output_payload(
-            dict[str, object](serializer_payload.data)
+            cast(JsonObject, dict(serializer_payload.data))
         )
 
         # 3. Assert: Check the serialized data (use self.assertEqual)

@@ -6,6 +6,7 @@ from typing import TypedDict, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from lx_dtypes.models.contracts import validate_segment_annotation_ensure_payload
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.management.commands._profiling import (
     add_profiling_arguments,
@@ -84,9 +85,12 @@ class Command(BaseCommand):
         dry_run = self._bool_option(options, "dry_run")
         payload = validate_segment_annotation_ensure_payload(
             {
-                "video_ids": options.get("video_ids"),
-                "segment_ids": options.get("segment_ids"),
-                "information_source_name": options.get("information_source_name"),
+                "video_ids": self._id_list_option(options, "video_ids"),
+                "segment_ids": self._id_list_option(options, "segment_ids"),
+                "information_source_name": self._string_option(
+                    options,
+                    "information_source_name",
+                ),
             },
             default_information_source_name="manual_annotation",
         )
@@ -135,4 +139,26 @@ class Command(BaseCommand):
         value = options.get(name, False)
         if not isinstance(value, bool):
             raise CommandError(f"Option {name} must be a boolean flag.")
+        return value
+
+    @staticmethod
+    def _id_list_option(
+        options: dict[str, _CommandOption],
+        name: str,
+    ) -> list[JsonValue] | None:
+        value = options.get(name)
+        if value is None:
+            return None
+        if not isinstance(value, list) or any(isinstance(item, bool) for item in value):
+            raise CommandError(f"Option {name} must be a list of integers.")
+        return list(value)
+
+    @staticmethod
+    def _string_option(
+        options: dict[str, _CommandOption],
+        name: str,
+    ) -> str | None:
+        value = options.get(name)
+        if value is not None and not isinstance(value, str):
+            raise CommandError(f"Option {name} must be a string.")
         return value

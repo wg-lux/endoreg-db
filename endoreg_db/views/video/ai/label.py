@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Protocol, TypeAlias, cast
 
 from django.db.models import Q, QuerySet
@@ -22,6 +22,7 @@ from lx_dtypes.models.contracts.video_ai_labels import (
     validate_video_ai_rerun_prediction_request,
     video_ai_json_safe_dict,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
 from pydantic import ValidationError
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -121,10 +122,15 @@ class _ModelMetaManagerSource(Protocol):
 
 
 def _request_payload_data(request: Request) -> VideoAiJsonObject:
-    return video_ai_json_safe_dict(cast(object, request.data))
+    raw_payload = cast(object, request.data)
+    if not isinstance(raw_payload, Mapping):
+        raise ValueError("Request body must be a JSON object.")
+    return video_ai_json_safe_dict(cast(Mapping[str, JsonValue], raw_payload))
 
 
-def _validation_error_message(exc: ValidationError) -> str:
+def _validation_error_message(exc: ValidationError | ValueError) -> str:
+    if not isinstance(exc, ValidationError):
+        return str(exc)
     errors = exc.errors()
     if errors:
         return errors[0].get("msg", str(exc))
@@ -303,7 +309,7 @@ def rerun_prediction_segments(
         payload = validate_video_ai_rerun_prediction_request(
             _request_payload_data(request)
         )
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
         return _error_response(
             _validation_error_message(exc),
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -433,7 +439,7 @@ def label_set_list(request: Request) -> Response:
 def add_label(request: Request) -> Response:
     try:
         payload = validate_video_ai_label_name_payload(_request_payload_data(request))
-    except ValidationError:
+    except (ValidationError, ValueError):
         return _missing_required_field_response("name")
 
     try:
@@ -461,7 +467,7 @@ def add_label(request: Request) -> Response:
 def delete_label(request: Request) -> Response:
     try:
         payload = validate_video_ai_label_name_payload(_request_payload_data(request))
-    except ValidationError:
+    except (ValidationError, ValueError):
         return _missing_required_field_response("name")
 
     try:
@@ -492,7 +498,12 @@ def update_label(request: Request) -> Response:
     """
     try:
         payload = validate_video_ai_label_rename_payload(_request_payload_data(request))
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
+        if not isinstance(exc, ValidationError):
+            return _error_response(
+                _validation_error_message(exc),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
         field_names = {error.get("loc", ("",))[0] for error in exc.errors()}
         if "name_old" in field_names:
             return _missing_required_field_response("name_old")

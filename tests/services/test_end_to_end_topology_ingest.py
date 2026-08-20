@@ -61,9 +61,13 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     retry: bool,
                 ) -> RawPdfFile:
                     normalized_file_path = Path(file_path)
-                    assert normalized_file_path == first_drop
+                    assert normalized_file_path != first_drop
+                    assert normalized_file_path.is_relative_to(
+                        reloaded_paths.protected_media_root()
+                    )
+                    assert normalized_file_path.name == first_drop.name
                     assert center_name == center.name
-                    assert retry is False
+                    assert retry is True
                     file_hash = sha256_file(normalized_file_path)
                     report = RawPdfFile(pdf_hash=file_hash, center=center)
                     save_local_file(
@@ -86,6 +90,16 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             monkeypatch.setattr(
                 "endoreg_db.services.report_import.ReportImportService",
                 _StubReportImportService,
+            )
+
+            def _verified_processed_report_hash(
+                *_args: object, **_kwargs: object
+            ) -> str:
+                return sha256_file(first_drop)
+
+            monkeypatch.setattr(
+                "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+                _verified_processed_report_hash,
             )
 
             first_job = process_watcher_file(

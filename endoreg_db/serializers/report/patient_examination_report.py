@@ -187,6 +187,8 @@ class PatientExaminationReportSubmissionSchema(Schema):
     report_id: int | None = Field(default=None, ge=1)
     patient_examination_id: int = Field(ge=1)
     template_name: str = Field(min_length=1)
+    knowledge_base_module: str = Field(min_length=1)
+    knowledge_base_version: str = Field(min_length=1)
 
     template_version: str = ""
     template_hash: str = ""
@@ -225,6 +227,8 @@ class PatientExaminationReportSubmissionSchema(Schema):
 class PatientExaminationReportMakeReportSchema(Schema):
     patient_examination_id: int = Field(ge=1)
     report_id: int | None = Field(default=None, ge=1)
+    knowledge_base_module: str = Field(min_length=1)
+    knowledge_base_version: str = Field(min_length=1)
     patient: PatientReportIdentitySchema
     max_frames: int = Field(default=12, ge=1, le=24)
 

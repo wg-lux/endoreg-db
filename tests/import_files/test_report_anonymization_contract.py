@@ -9,8 +9,6 @@ import pytest
 
 from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 
-from tests.helpers.default_objects import get_default_center
-
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     persist_report_anonymization_result,
@@ -18,6 +16,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
 
@@ -58,10 +57,11 @@ class _LegacyReader:
 
 
 def _create_report_for_tests(**kwargs: Any) -> RawPdfFile:
+    center, _ = Center.objects.get_or_create(name="report-anonymization-test-center")
     data: dict[str, Any] = {
         "pdf_hash": "report-" + uuid.uuid4().hex,
         "file": "report-test.pdf",
-        "center": get_default_center(),
+        "center": center,
         "text": "",
         "anonymized_text": "",
     }
@@ -69,7 +69,7 @@ def _create_report_for_tests(**kwargs: Any) -> RawPdfFile:
     return RawPdfFile.objects.create(**data)
 
 
-@pytest.mark.unit
+@pytest.mark.django_db
 def test_report_anonymizer_prefers_v2_attempt_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -138,6 +138,7 @@ def test_report_anonymizer_prefers_v2_attempt_contract(
 
 
 @pytest.mark.unit
+@pytest.mark.django_db
 def test_report_anonymizer_supports_legacy_tuple_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

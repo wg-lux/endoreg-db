@@ -14,6 +14,7 @@ from lx_dtypes.knowledge_bases import (
     BUILTIN_KNOWLEDGE_BASE_PROVIDER,
     get_packaged_knowledge_base,
 )
+
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     DtypesRecordPersistencePayload,
     parse_dtypes_record_persistence_payload,
@@ -23,6 +24,7 @@ from lx_dtypes.models.interface.KnowledgeBaseResolver import (
     clear_knowledge_base_resolver_caches,
 )
 from pytest_django.fixtures import SettingsWrapper
+
 from rest_framework.exceptions import AuthenticationFailed
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
@@ -133,6 +135,8 @@ def _create_patient_examination() -> PatientExamination:
     return PatientExamination.objects.create(
         patient=patient,
         examination=examination,
+        knowledge_base_module="dgvs_reporting",
+        knowledge_base_version="0.1.0",
         hash=f"dtypes-record-{model_pk(patient)}-{model_pk(examination)}",
     )
 
@@ -197,20 +201,17 @@ def _create_center_user(*, center: Center, username: str) -> User:
 
 
 @pytest.fixture(autouse=True)
-def _use_report_template_examples_findings_module(
+def _use_frontend_owned_test_registry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     settings: SettingsWrapper,
 ) -> Iterator[None]:
-    registry_path = tmp_path / "kb_registry.json"
     descriptor = get_packaged_knowledge_base("dgvs_reporting")
+    registry_path = tmp_path / "kb_registry.json"
     registry_path.write_text(
         json.dumps(
             {
-                "active": {
-                    "module_name": descriptor.module_name,
-                    "version": descriptor.version,
-                },
+                "active": None,
                 "modules": {
                     descriptor.module_name: {
                         descriptor.version: {
@@ -228,13 +229,8 @@ def _use_report_template_examples_findings_module(
         ),
         encoding="utf-8",
     )
+    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
     monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
-    monkeypatch.setattr(
-        settings,
-        "LX_DTYPES_KB_REGISTRY",
-        str(registry_path),
-        raising=False,
-    )
     clear_findings_route_caches()
     clear_knowledge_base_resolver_caches()
     yield
@@ -885,6 +881,8 @@ def test_report_submission_api_returns_and_retrieves_persisted_dtypes_record(
         data={
             "patient_examination_id": model_pk(patient_examination),
             "template_name": "colonoscopy_training_basic",
+            "knowledge_base_module": "dgvs_reporting",
+            "knowledge_base_version": "0.1.0",
             "findings": [
                 {
                     "finding": "colon_polyp",

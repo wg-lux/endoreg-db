@@ -116,6 +116,8 @@ def patient_examination(
     return PatientExamination.objects.create(
         patient=report_patient,
         examination=report_examination,
+        knowledge_base_module="star_upper_gi",
+        knowledge_base_version="0.1.2",
         date_start="2026-02-24",
         hash=f"report-pe-{uuid.uuid4().hex}",
     )
@@ -206,6 +208,8 @@ def export_context(
     report = PatientExaminationReport.objects.create(
         patient_examination=patient_examination,
         template_name="star_upper_gi_main",
+        knowledge_base_module="star_upper_gi",
+        knowledge_base_version="0.1.2",
         title="Exportable report",
         status=PatientExaminationReport.Status.DRAFT,
         rendered_text="AI prediction based report text.",
@@ -379,6 +383,8 @@ def test_save_submission_returns_history_and_warnings(
             {
                 "patient_examination_id": patient_examination.pk,
                 "template_name": "t",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "status": "draft",
             }
         ),
@@ -431,6 +437,8 @@ def test_create_report_minimal_payload(
             {
                 "patient_examination_id": patient_examination.pk,
                 "template_name": "star_upper_gi_main",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "status": "draft",
             }
         ),
@@ -449,7 +457,7 @@ def test_create_report_minimal_payload(
 
 
 @pytest.mark.django_db
-def test_create_report_with_payload_and_final_status(
+def test_explicit_frontend_identity_migrates_examination_and_report(
     logged_in_client: Client,
     patient_examination: PatientExamination,
     monkeypatch: pytest.MonkeyPatch,
@@ -469,6 +477,8 @@ def test_create_report_with_payload_and_final_status(
             {
                 "patient_examination_id": patient_examination.pk,
                 "template_name": "star_upper_gi_main",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "title": "Initial Finalized Draft",
                 "status": "final",
                 "editor_payload": {"sections": [{"id": "findings"}]},
@@ -485,15 +495,18 @@ def test_create_report_with_payload_and_final_status(
     assert report.status == PatientExaminationReport.Status.FINAL
     assert report.title == "Initial Finalized Draft"
     assert report.language == "de"
-    assert report.knowledge_base_module == "report_template_examples"
-    assert report.knowledge_base_version == "0.1.0"
+    assert report.knowledge_base_module == "star_upper_gi"
+    assert report.knowledge_base_version == "0.1.2"
     assert report.editor_payload == {
         "sections": [{"id": "findings"}],
         "report_language": "de",
     }
     assert data["report"]["language"] == "de"
-    assert data["report"]["knowledge_base_module"] == "report_template_examples"
-    assert data["report"]["knowledge_base_version"] == "0.1.0"
+    assert data["report"]["knowledge_base_module"] == "star_upper_gi"
+    assert data["report"]["knowledge_base_version"] == "0.1.2"
+    patient_examination.refresh_from_db()
+    assert patient_examination.knowledge_base_module == "star_upper_gi"
+    assert patient_examination.knowledge_base_version == "0.1.2"
     assert report.rendered_text == "Rendered report text"
     assert data["history_context"]["previous_examinations"] == []
 
@@ -525,6 +538,8 @@ def test_final_submission_returns_422_and_rolls_back_failed_template_validation(
             {
                 "patient_examination_id": patient_examination.pk,
                 "template_name": "star_upper_gi_main",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "status": "final",
                 "rendered_text": "Unvollständiger Befund",
             }
@@ -795,6 +810,8 @@ def test_make_report_returns_404_when_no_report_exists(
         data=_json_body(
             {
                 "patient_examination_id": patient_examination.pk,
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "patient": {
                     "first_name": "Ada",
                     "last_name": "Lovelace",
@@ -851,6 +868,8 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
             {
                 "patient_examination_id": export_context.patient_examination.pk,
                 "report_id": export_context.report.pk,
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "patient": {
                     "first_name": "Ada",
                     "last_name": "Lovelace",
@@ -902,6 +921,8 @@ def test_make_report_rejects_invalid_patient_identity(
             {
                 "patient_examination_id": export_context.patient_examination.pk,
                 "report_id": export_context.report.pk,
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
                 "patient": {
                     "first_name": "",
                     "last_name": "Lovelace",

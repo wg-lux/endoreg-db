@@ -8,9 +8,11 @@ from django.db import models, transaction
 from django.db.models import QuerySet
 from django.http import FileResponse
 from lx_dtypes.models.contracts.ai_dataset import (
+    AIModelType,
     AIDataSetAttachmentResultContract,
     AIDataSetAttachVideoContract,
     AIDataSetCreateContract,
+    DatasetType,
 )
 from lx_dtypes.models.contracts.application_settings import (
     ApplicationSettingsDataSetEntryPayload,
@@ -97,12 +99,22 @@ def _ai_dataset_name(dataset: AIDataSet) -> str:
     return cast(str | None, getattr(dataset, "name", None)) or ""
 
 
-def _ai_dataset_type(dataset: AIDataSet) -> str:
-    return cast(str, getattr(dataset, "dataset_type"))
+def _ai_dataset_type(dataset: AIDataSet) -> DatasetType:
+    value = dataset.dataset_type
+    if value not in ("image", "video"):
+        raise ValueError(f"Unsupported AI dataset type: {value!r}.")
+    return value
 
 
-def _ai_dataset_model_type(dataset: AIDataSet) -> str:
-    return cast(str, getattr(dataset, "ai_model_type"))
+def _ai_dataset_model_type(dataset: AIDataSet) -> AIModelType:
+    value = dataset.ai_model_type
+    if value not in (
+        "image_multilabel_classification",
+        "phi_region_detector",
+        "video_segment_classification",
+    ):
+        raise ValueError(f"Unsupported AI model type: {value!r}.")
+    return value
 
 
 def _ai_dataset_is_active(dataset: AIDataSet) -> bool:

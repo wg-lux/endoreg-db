@@ -142,13 +142,6 @@ class PatientExamination(models.Model):
     def save(self, *args: object, **kwargs: object) -> None:
         if not self.hash:
             self.hash = self.generate_default_hash()
-        identity_assigned = self.assign_knowledge_base_identity()
-        update_fields = kwargs.get("update_fields")
-        if identity_assigned and update_fields is not None:
-            kwargs["update_fields"] = set(cast(Any, update_fields)) | {
-                "knowledge_base_module",
-                "knowledge_base_version",
-            }
         self.clean()
         super().save(*args, **kwargs)
 
@@ -176,25 +169,6 @@ class PatientExamination(models.Model):
             errors["report_draft"] = str(exc)
         if errors:
             raise ValidationError(errors)
-
-    def assign_knowledge_base_identity(self) -> bool:
-        has_module = bool(self.knowledge_base_module.strip())
-        has_version = bool(self.knowledge_base_version.strip())
-        if has_module or has_version:
-            return False
-
-        from endoreg_db.services.knowledge_base_identity import (
-            get_configured_knowledge_base_identity,
-        )
-
-        knowledge_base_identity = get_configured_knowledge_base_identity()
-        if knowledge_base_identity is None:
-            return False
-
-        knowledge_base_module, knowledge_base_version = knowledge_base_identity
-        self.knowledge_base_module = knowledge_base_module
-        self.knowledge_base_version = knowledge_base_version
-        return True
 
     def get_patient_age_at_examination(self) -> int:
         """
