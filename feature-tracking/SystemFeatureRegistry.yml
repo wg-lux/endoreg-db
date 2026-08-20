@@ -1,0 +1,193 @@
+schema_version: '1.0'
+id: system_feature_registry
+name: System-level WG-Lux feature registry
+description: Resolves immutable package-owned feature specifications through the deployed NixOS closure
+  while keeping assessment history and current work in persistent system state addressed by provider and
+  semantic feature ID.
+owners:
+- WG-Lux platform maintainers
+- WG-Lux package maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents: []
+definition_of_done:
+- id: immutable_package_specs
+  category: requirements
+  title: Owning derivations install assessment-free feature specifications
+  acceptance:
+  - lx-data-models, endoreg-db, and lx-annotate install YAML specifications below $out/share/<package>/features.
+  - Semantic identity is the provider and feature ID and never a checkout, virtualenv, site-packages,
+    or Nix store path.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - tests/test_system_feature_tracking.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:41.982157Z'
+- id: deterministic_deployed_resolution
+  category: functionality
+  title: NixOS generates the canonical deployed provider registry
+  acceptance:
+  - Provider roots and package paths are generated directly from configured Nix package outputs.
+  - Missing providers, missing feature IDs, malformed specifications, and ambiguous duplicate IDs fail
+    explicitly.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - tests/test_system_feature_tracking.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:44.286132Z'
+- id: auditable_assessment_ledger
+  category: security
+  title: Mutable assessments are atomic, persistent, and provenance-bearing
+  acceptance:
+  - Assessment events and projections live outside the Nix store under a managed persistent state root.
+  - Events retain semantic identifiers, assessor timestamps, evidence, and available immutable Nix provenance
+    without duplicating specifications.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - wg-lux-mcp/tests/test_features.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:46.487428Z'
+- id: progressive_disclosure_api
+  category: functionality
+  title: Typed resolver and MCP tools expose bounded semantic views
+  acceptance:
+  - Status responses omit detailed evidence history and dedicated evidence calls provide bounded drill-down.
+  - Deployed resolution never silently falls back to filesystem checkouts and development providers are
+    explicitly typed.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - wg-lux-mcp/tests/test_features.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:48.611770Z'
+- id: nixos_service_integration
+  category: operations
+  title: Authorized services receive hardened registry and state access
+  acceptance:
+  - NixOS exposes providers.json and the assessment state root through explicit environment variables.
+  - The MCP service can read package roots and has only controlled state-root access with no generic shell
+    tool.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - tests/test_system_feature_tracking.py
+      - tests/test_network_service_contract.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:50.516156Z'
+- id: migration_and_reconstruction
+  category: testing
+  title: Combined trackers migrate deterministically without evidence loss
+  acceptance:
+  - Migration separates immutable specifications from assessment events and current work while preserving
+    requirement IDs and all assessment metadata.
+  - Current status reconstructs from append-only event history and remains stable when package store paths
+    change.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - python
+      - -m
+      - pytest
+      - wg-lux-mcp/tests/test_features.py
+      - -q
+      working_directory: /home/admin/luxnix
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:52.462208Z'
+- id: lifecycle_documentation
+  category: documentation
+  title: Ownership, resolution, migration, recovery, and provenance are documented
+  acceptance:
+  - Documentation identifies package and LuxNix ownership boundaries and the immutable specification versus
+    mutable state lifecycle.
+  - Recovery and deployment verification instructions use semantic identities and generated Nix provenance.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the WG-Lux feature tracking architecture documentation against the module and
+      resolver contracts.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence: []
+    note: Implementing package-owned specifications, NixOS deployment resolution, persistent event state,
+      and bounded resolver APIs.
+    assessed_by: codex-os-feature-storage
+    assessed_at: '2026-08-20T11:07:54.483496Z'
