@@ -16,6 +16,10 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     ReportPersistedArtifactsData,
     SegmentFrameSelectorResponseData,
 )
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    clear_knowledge_base_resolver_caches,
+)
+from pytest_django.fixtures import SettingsWrapper
 
 from endoreg_db.models import (
     Center,
@@ -427,10 +431,85 @@ def test_save_submission_rejects_invalid_payload(
 
 
 @pytest.mark.django_db
+def test_save_submission_maps_unregistered_knowledge_base_to_422(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    response = logged_in_client.post(
+        f"{API_PREFIX}/save-submission",
+        data=_json_body(
+            {
+                "patient_examination_id": patient_examination.pk,
+                "template_name": "unknown_template",
+                "knowledge_base_module": "unknown_module",
+                "knowledge_base_version": "9.9.9",
+                "status": "draft",
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 422, response.content
+    assert "not provisioned" in str(response.json())
+    assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("registry_failure", ["missing", "malformed", "unreadable"])
+def test_save_submission_maps_registry_deployment_failures_to_503(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
+    registry_failure: str,
+) -> None:
+    registry_path = tmp_path / "deployment_registry.json"
+    if registry_failure == "malformed":
+        atomic_write_file(
+            destination=registry_path,
+            content=(b"{not-json",),
+            required_bytes=9,
+        )
+    elif registry_failure == "unreadable":
+        registry_path.mkdir()
+
+    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
+    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+    clear_knowledge_base_resolver_caches()
+    try:
+        response = logged_in_client.post(
+            f"{API_PREFIX}/save-submission",
+            data=_json_body(
+                {
+                    "patient_examination_id": patient_examination.pk,
+                    "template_name": "star_upper_gi_main",
+                    "knowledge_base_module": "star_upper_gi",
+                    "knowledge_base_version": "0.1.2",
+                    "status": "draft",
+                }
+            ),
+            content_type="application/json",
+        )
+    finally:
+        clear_knowledge_base_resolver_caches()
+
+    assert response.status_code == 503, response.content
+    assert response.json()["detail"] == (
+        "The configured knowledge-base registry is unavailable."
+    )
+    assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
 def test_create_report_minimal_payload(
     logged_in_client: Client,
     patient_examination: PatientExamination,
+    packaged_registry: Path,
 ) -> None:
+    del packaged_registry
     resp = logged_in_client.post(
         f"{API_PREFIX}/save-submission",
         data=_json_body(
@@ -461,7 +540,9 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
     logged_in_client: Client,
     patient_examination: PatientExamination,
     monkeypatch: pytest.MonkeyPatch,
+    packaged_registry: Path,
 ) -> None:
+    del packaged_registry
     patient_examination.knowledge_base_module = "report_template_examples"
     patient_examination.knowledge_base_version = "0.1.0"
     patient_examination.save(
@@ -516,7 +597,10 @@ def test_final_submission_returns_422_and_rolls_back_failed_template_validation(
     logged_in_client: Client,
     patient_examination: PatientExamination,
     monkeypatch: pytest.MonkeyPatch,
+    packaged_registry: Path,
 ) -> None:
+    del packaged_registry
+
     def fail_validation(*_args: object, **_kwargs: object) -> dict[str, object]:
         raise ReportRuntimeValidationError(
             {

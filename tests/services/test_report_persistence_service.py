@@ -6,7 +6,6 @@ from typing import Any, cast
 
 import pytest
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models import (
     Examination,
@@ -18,7 +17,10 @@ from endoreg_db.models import (
     PatientExaminationIndication,
     PatientExaminationReport,
 )
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.report_persistence import (
+    ReportPersistenceValidationError,
+    save_report_submission,
+)
 from endoreg_db.services.report_pdf_renderer import build_report_template_pdf_payload
 from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
 
@@ -201,7 +203,10 @@ def test_report_submission_validates_indications_before_replacing_rows() -> None
         indication_choice=choice,
     )
 
-    with pytest.raises(ValidationError, match="Unknown examination indication"):
+    with pytest.raises(
+        ReportPersistenceValidationError,
+        match="Unknown examination indication",
+    ):
         save_report_submission(
             patient_examination_id=patient_examination.pk,
             template_name="indication-report",
@@ -223,7 +228,8 @@ def test_report_submission_rejects_choice_from_another_indication() -> None:
     examination.indications.add(other_indication)
 
     with pytest.raises(
-        ValidationError, match="not allowed for this examination indication"
+        ReportPersistenceValidationError,
+        match="not allowed for this examination indication",
     ):
         save_report_submission(
             patient_examination_id=patient_examination.pk,

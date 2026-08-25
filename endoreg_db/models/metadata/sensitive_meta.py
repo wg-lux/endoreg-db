@@ -5,7 +5,6 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save sensitive_meta_logic)
-from datetime import date
 from typing import TYPE_CHECKING, ClassVar, Protocol, Type, cast, Any
 
 from django.db import models
@@ -234,16 +233,6 @@ class SensitiveMeta(models.Model):
             return self.state.is_verified
         return None
 
-    @staticmethod
-    def _generate_random_dob() -> date:
-        # Delegate to sensitive_meta_logic
-        return sensitive_meta_logic.generate_random_dob()
-
-    @staticmethod
-    def _generate_random_examination_date() -> date:
-        # Delegate to sensitive_meta_logic
-        return sensitive_meta_logic.generate_random_examination_date()
-
     @classmethod
     def create_from_dict(
         cls: Type["SensitiveMeta"], data: dict[str, Any]
@@ -469,13 +458,3 @@ class SensitiveMeta(models.Model):
         """
         state = self.get_or_create_state()
         state.mark_names_verified()
-
-    @classmethod
-    def _update_name_db(cls, first_name: str, last_name: str) -> None:
-        # Delegate to sensitive_meta_logic
-        """
-        Update the name database with the provided first and last names using external sensitive_meta_logic.
-
-        This method delegates the update operation to the external sensitive_meta_logic module responsible for managing name data.
-        """
-        sensitive_meta_logic.update_name_db(first_name, last_name)

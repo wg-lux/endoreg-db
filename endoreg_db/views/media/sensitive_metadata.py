@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Literal, Protocol, cast
-import json
 import logging
 
 from django.db import transaction
@@ -17,6 +16,7 @@ from rest_framework import serializers as drf_serializers
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
+from pydantic import ValidationError as PydanticValidationError
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts import (
     CaseResolutionRequest,
@@ -40,6 +40,17 @@ from endoreg_db.services.case_resolution_state import (
 from endoreg_db.services.auto_case_resolution import link_media_to_patient_examination
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
+)
+from endoreg_db.schemas.sensitive_meta_verification import (
+    SensitiveMetaVerificationCommand,
+)
+from endoreg_db.services.sensitive_meta_verification import (
+    update_sensitive_meta_verification,
+)
+from endoreg_db.services.sensitive_meta_update import (
+    SensitiveMetaUpdateCenterNotFoundError,
+    SensitiveMetaUpdateGenderNotFoundError,
+    update_sensitive_meta,
 )
 from endoreg_db.serializers.meta import (
     SensitiveMetaDetailSerializer,
@@ -145,6 +156,95 @@ def _query_str_param(
     if isinstance(value, str):
         return value
     return str(value)
+
+
+def _verify_sensitive_metadata(
+    *,
+    request: Request,
+    sensitive_meta: SensitiveMeta,
+    media_id_key: Literal["video_id", "pdf_id"],
+    media_id: int,
+) -> Response:
+    try:
+        command = SensitiveMetaVerificationCommand.model_validate(
+            _request_payload(request)
+        )
+    except PydanticValidationError:
+        return Response(
+            {
+                "error": "At least one of dob_verified or names_verified must be provided"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    sensitive_meta_id = _get_int_field(sensitive_meta, "pk")
+    if sensitive_meta_id is None:
+        return Response(
+            {"error": "Sensitive metadata has no id"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    result = update_sensitive_meta_verification(
+        sensitive_meta_id=sensitive_meta_id,
+        command=command,
+    )
+    response_serializer = SensitiveMetaDetailSerializer(sensitive_meta)
+    return Response(
+        {
+            "message": "Verification state updated successfully",
+            "sensitive_meta": _serialize_response_data(response_serializer),
+            media_id_key: media_id,
+            "state_verified": result.is_verified,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+def _update_sensitive_metadata(
+    *,
+    request: Request,
+    sensitive_meta: SensitiveMeta,
+    media_id_key: Literal["video_id", "pdf_id"],
+    media_id: int,
+) -> Response:
+    serializer = SensitiveMetaUpdateSerializer(
+        data=_request_payload(request), partial=True
+    )
+    if not serializer.is_valid():
+        return Response(
+            _serialize_response_errors(serializer),
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    sensitive_meta_id = _get_int_field(sensitive_meta, "pk")
+    if sensitive_meta_id is None:
+        return Response(
+            {"error": "Sensitive metadata has no id"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    try:
+        result = update_sensitive_meta(
+            sensitive_meta_id=sensitive_meta_id,
+            command=serializer.to_command(),
+        )
+    except SensitiveMetaUpdateCenterNotFoundError as exc:
+        return Response({"center_name": [str(exc)]}, status=status.HTTP_400_BAD_REQUEST)
+    except SensitiveMetaUpdateGenderNotFoundError as exc:
+        return Response(
+            {"patient_gender_name": [str(exc)]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    response_serializer = SensitiveMetaDetailSerializer(result.sensitive_meta)
+    return Response(
+        {
+            "message": "Sensitive metadata updated successfully",
+            "sensitive_meta": _serialize_response_data(response_serializer),
+            media_id_key: media_id,
+        },
+        status=status.HTTP_200_OK,
+    )
 
 
 def _serialize_patient_examination_match(
@@ -609,33 +709,17 @@ def video_sensitive_metadata(request: Request, pk: int) -> Response:
         return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)
 
     elif request.method == "PATCH":
-        data = _request_payload(request)
-        serializer = SensitiveMetaUpdateSerializer(
-            sensitive_meta, data=data, partial=True
-        )
-
-        if serializer.is_valid():
-            updated_instance = serializer.save()
-            response_serializer = SensitiveMetaDetailSerializer(updated_instance)
-            response_data = _serialize_response_data(response_serializer)
-            video_pk = _get_int_field(video, "pk")
-            if video_pk is None:
-                return Response(
-                    {"error": "Could not resolve video id"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
+        video_pk = _get_int_field(video, "pk")
+        if video_pk is None:
             return Response(
-                {
-                    "message": "Sensitive metadata updated successfully",
-                    "sensitive_meta": response_data,
-                    "video_id": video_pk,
-                },
-                status=status.HTTP_200_OK,
+                {"error": "Could not resolve video id"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-        return Response(
-            _serialize_response_errors(serializer), status=status.HTTP_400_BAD_REQUEST
+        return _update_sensitive_metadata(
+            request=request,
+            sensitive_meta=sensitive_meta,
+            media_id_key="video_id",
+            media_id=video_pk,
         )
 
     return Response(
@@ -684,7 +768,6 @@ def video_case_resolution(request: Request, pk: int) -> Response:
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-@transaction.atomic
 def video_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     """
     POST /api/media/videos/<pk>/sensitive-metadata/verify/
@@ -709,36 +792,11 @@ def video_sensitive_metadata_verify(request: Request, pk: int) -> Response:
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    request_data = _request_payload(request)
-    dob_verified = _as_bool(request_data.get("dob_verified"))
-    names_verified = _as_bool(request_data.get("names_verified"))
-
-    if dob_verified is None and names_verified is None:
-        return Response(
-            {
-                "error": "At least one of dob_verified or names_verified must be provided"
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    state = sensitive_meta.get_or_create_state()
-
-    if dob_verified is not None:
-        state.dob_verified = dob_verified
-    if names_verified is not None:
-        state.names_verified = names_verified
-
-    state.save()
-
-    response_serializer = SensitiveMetaDetailSerializer(sensitive_meta)
-    return Response(
-        {
-            "message": "Verification state updated successfully",
-            "sensitive_meta": _serialize_response_data(response_serializer),
-            "video_id": pk,
-            "state_verified": state.is_verified,
-        },
-        status=status.HTTP_200_OK,
+    return _verify_sensitive_metadata(
+        request=request,
+        sensitive_meta=sensitive_meta,
+        media_id_key="video_id",
+        media_id=pk,
     )
 
 
@@ -771,36 +829,17 @@ def pdf_sensitive_metadata(request: Request, pk: int) -> Response:
         return Response(_serialize_response_data(serializer), status=status.HTTP_200_OK)
 
     elif request.method == "PATCH":
-        data = _request_payload(request)
-        serializer = SensitiveMetaUpdateSerializer(
-            sensitive_meta, data=data, partial=True
-        )
-
-        if serializer.is_valid():
-            updated_instance = serializer.save()
-            response_serializer = SensitiveMetaDetailSerializer(updated_instance)
-            response_data = cast(
-                dict[str, JsonValue], _serialize_response_data(response_serializer)
-            )
-            sensitive_meta.update_from_dict(response_data)
-            logger.info("Updated sensitive metadata: %s", json.dumps(response_data))
-            pdf_pk = _get_int_field(pdf, "pk")
-            if pdf_pk is None:
-                return Response(
-                    {"error": "Could not resolve report id"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        pdf_pk = _get_int_field(pdf, "pk")
+        if pdf_pk is None:
             return Response(
-                {
-                    "message": "Sensitive metadata updated successfully",
-                    "sensitive_meta": response_data,
-                    "pdf_id": pdf_pk,
-                },
-                status=status.HTTP_200_OK,
+                {"error": "Could not resolve report id"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-        return Response(
-            _serialize_response_errors(serializer), status=status.HTTP_400_BAD_REQUEST
+        return _update_sensitive_metadata(
+            request=request,
+            sensitive_meta=sensitive_meta,
+            media_id_key="pdf_id",
+            media_id=pdf_pk,
         )
 
     return Response(
@@ -849,7 +888,6 @@ def pdf_case_resolution(request: Request, pk: int) -> Response:
 
 @api_view(["POST"])
 @permission_classes([EnvironmentAwarePermission, PolicyPermission])
-@transaction.atomic
 def pdf_sensitive_metadata_verify(request: Request, pk: int) -> Response:
     """
     POST /api/media/pdfs/<pk>/sensitive-metadata/verify/
@@ -874,36 +912,11 @@ def pdf_sensitive_metadata_verify(request: Request, pk: int) -> Response:
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    request_data = _request_payload(request)
-    dob_verified = _as_bool(request_data.get("dob_verified"))
-    names_verified = _as_bool(request_data.get("names_verified"))
-
-    if dob_verified is None and names_verified is None:
-        return Response(
-            {
-                "error": "At least one of dob_verified or names_verified must be provided"
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    state = sensitive_meta.get_or_create_state()
-
-    if dob_verified is not None:
-        state.dob_verified = dob_verified
-    if names_verified is not None:
-        state.names_verified = names_verified
-
-    state.save()
-
-    response_serializer = SensitiveMetaDetailSerializer(sensitive_meta)
-    return Response(
-        {
-            "message": "Verification state updated successfully",
-            "sensitive_meta": _serialize_response_data(response_serializer),
-            "pdf_id": pk,
-            "state_verified": state.is_verified,
-        },
-        status=status.HTTP_200_OK,
+    return _verify_sensitive_metadata(
+        request=request,
+        sensitive_meta=sensitive_meta,
+        media_id_key="pdf_id",
+        media_id=pk,
     )
 
 

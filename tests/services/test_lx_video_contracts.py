@@ -24,6 +24,7 @@ from endoreg_db.models import (
     VideoState,
     Center,
 )
+from endoreg_db.services.aidataset_exports import export_to_standardized_structure
 from endoreg_db.services.lx_video_contracts import (
     build_lx_p_video_segment,
     build_lx_patient_video_file,
@@ -324,7 +325,7 @@ def test_ai_dataset_json_export_omits_sensitive_meta(
     )
     dataset.video_annotations.add(segment)
 
-    payload = dataset.export_to_standardized_structure()
+    payload = export_to_standardized_structure(dataset)
 
     patient_videos = payload["patient_videos"]
     assert isinstance(patient_videos, dict)

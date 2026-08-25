@@ -7,8 +7,6 @@ from typing import Any, Literal, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict
-
 from endoreg_db.config.env import env_choice, env_int
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -19,7 +17,9 @@ from endoreg_db.models.media.pdf.report_llm_job import (
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.schemas.report_llm import (
+    ReportLlmDispatchResult,
     ReportLlmJobConfig,
+    ReportLlmJobMode,
     ReportLlmReimportRequestPayload,
     build_report_llm_job_config,
     dump_report_llm_reimport_request_payload,
@@ -31,14 +31,15 @@ from endoreg_db.services.jobs.heavy_jobs import (
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
 from endoreg_db.services.raw_pdf_files import require_usable_completed_report
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
 
 ReportLlmOperation = Literal["report_llm_reimport", "report_llm_import"]
-ReportLlmJobMode = Literal["celery", "inline"]
 REPORT_LLM_REIMPORT_OPERATION = cast(
     ReportLlmOperation, ReportLlmInferenceJob.OPERATION_REIMPORT
 )
@@ -52,6 +53,37 @@ REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
 
 
 JsonValue = ReportLlmJobJsonValue
+
+
+def _record_celery_handoff_failure(
+    *,
+    job: ReportLlmInferenceJob,
+    operation: ReportLlmOperation,
+    content_hash: str,
+    retryable: bool,
+    exc: Exception,
+) -> None:
+    job.refresh_from_db()
+    execution_failed = job.status in {
+        ReportLlmInferenceJob.STATUS_FAILURE,
+        ReportLlmInferenceJob.STATUS_LOST,
+    }
+    if not execution_failed:
+        job.mark_failure(str(exc))
+    emit_structured_event(
+        logger,
+        (
+            "report_llm.task_execution_failed"
+            if execution_failed
+            else "report_llm.dispatch_failed"
+        ),
+        level=logging.ERROR,
+        job_id=job.job_key,
+        operation=operation,
+        content_hash=content_hash,
+        failure_class=type(exc).__name__,
+        retryable=retryable,
+    )
 
 
 class _CenterLike(Protocol):
@@ -88,30 +120,6 @@ class _UploadJobLike(Protocol):
     def mark_lost(self, error_detail: str) -> None: ...
     def mark_processing(self) -> None: ...
     def mark_completed(self, sensitive_meta: SensitiveMeta | None = None) -> None: ...
-
-
-class ReportLlmDispatchResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str
-    mode: ReportLlmJobMode
-    status: Literal[
-        "queued",
-        "already_queued",
-        "completed",
-        "failed",
-        "lost",
-    ]
-    operation: str
-    report_id: int | None = None
-    queue: str
-    job_id: str
-    poll_url: str | None = None
-    message: str | None = None
-    reason: str | None = None
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return self.model_dump(mode="json", exclude_none=True)
 
 
 def get_report_llm_job_mode() -> ReportLlmJobMode:
@@ -571,6 +579,25 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         job.mark_lost(error_detail)
         logger.exception("Stored source missing during report LLM import %s.", job_id)
         raise
+    except InvalidReportDocumentError as exc:
+        typed_upload_job = cast(UploadJob, upload_job)
+        typed_upload_job.storage_class = UploadJob.StorageClass.QUARANTINE
+        typed_upload_job.save(update_fields=["storage_class", "updated_at"])
+        typed_upload_job.mark_error(
+            str(exc),
+            error_code=UploadJob.ErrorCode.INVALID_INPUT,
+        )
+        job.mark_failure(str(exc))
+        emit_structured_event(
+            logger,
+            "report_llm.invalid_document_quarantined",
+            level=logging.ERROR,
+            job_id=job.job_key,
+            content_hash=typed_upload_job.content_hash,
+            failure_class=type(exc).__name__,
+            retryable=False,
+        )
+        raise
     except Exception as exc:
         error_detail = str(exc)
         upload_job.mark_error(error_detail)
@@ -671,11 +698,13 @@ def dispatch_report_llm_reimport(
             message="Report LLM re-import queued.",
         )
     except Exception as exc:
-        logger.exception(
-            "Celery dispatch failed for report LLM re-import %s.",
-            report_id,
+        _record_celery_handoff_failure(
+            job=job,
+            operation=operation,
+            content_hash=pdf.pdf_hash,
+            retryable=False,
+            exc=exc,
         )
-        job.mark_failure(str(exc))
         return _dispatch_result(
             task_id=task_id,
             mode=mode,
@@ -777,11 +806,14 @@ def dispatch_report_llm_import(
             message="Report LLM import queued.",
         )
     except Exception as exc:
-        logger.exception(
-            "Celery dispatch failed for report LLM import %s.",
-            upload_job_id,
+        upload_job.refresh_from_db()
+        _record_celery_handoff_failure(
+            job=job,
+            operation=operation,
+            content_hash=upload_job.content_hash,
+            retryable=upload_job.retryable,
+            exc=exc,
         )
-        job.mark_failure(str(exc))
         return _dispatch_result(
             task_id=task_id,
             mode=mode,

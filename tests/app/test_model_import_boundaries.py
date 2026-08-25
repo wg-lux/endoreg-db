@@ -191,21 +191,6 @@ ALLOWLISTED_NON_SCHEMA_PYDANTIC_MODELS = {
         "endoreg_db/import_files/context/import_context.py",
         "ImportContext",
     ),
-    ("endoreg_db/services/jobs/heavy_jobs.py", "HeavyJobDispatchPayload"),
-    ("endoreg_db/services/jobs/report_llm_jobs.py", "ReportLlmDispatchResult"),
-    (
-        "endoreg_db/services/jobs/video_correction_jobs.py",
-        "VideoAnonymizationCorrectionJobConfig",
-    ),
-    (
-        "endoreg_db/services/jobs/video_correction_jobs.py",
-        "VideoCorrectionRegion",
-    ),
-    ("endoreg_db/services/jobs/video_correction_jobs.py", "VideoCorrectionRoi"),
-    (
-        "endoreg_db/services/jobs/video_fps_normalization_jobs.py",
-        "FpsNormalizationHistoryConfig",
-    ),
     (
         "endoreg_db/services/offline_batch_runner.py",
         "NativeCapabilityRequirement",
@@ -229,31 +214,6 @@ ALLOWLISTED_MODEL_TO_SERVICE_IMPORTS = {
         "endoreg_db/models/administration/ai/ai_model.py",
         "endoreg_db.services.model_meta_from_hf",
     ): frozenset({"ensure_model_meta_from_hf"}),
-    (
-        "endoreg_db/models/aidataset/aidataset.py",
-        "endoreg_db.services.aidataset_active_learning",
-    ): frozenset(
-        {
-            "select_active_learning_candidates_locally",
-        }
-    ),
-    (
-        "endoreg_db/models/aidataset/aidataset.py",
-        "endoreg_db.services.aidataset_exports",
-    ): frozenset(
-        {
-            "build_export_payload",
-            "export_to_standardized_structure",
-        }
-    ),
-    (
-        "endoreg_db/models/aidataset/aidataset.py",
-        "endoreg_db.services.aidataset_frame_buckets",
-    ): frozenset(
-        {
-            "build_frame_bucket_distribution",
-        }
-    ),
     (
         "endoreg_db/models/label/label_video_segment/label_video_segment.py",
         "endoreg_db.services.video_files.frames",

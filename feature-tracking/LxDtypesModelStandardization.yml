@@ -61,18 +61,13 @@ definition_of_done:
       reference: ./feature-tracking/tracker.py validate
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright
-    note: 'Das reproduzierbare Inventar importiert alle Modell-Leaf-Module vor der Registry-Auswertung
-      und deckt damit 146 registrierte sowie fünf abstrakte Modelle vollständig ab. Alle 151 Deklarationen
-      besitzen genau eine konkrete Zielklasse: 53 shared_lx_dtypes_contract, 40 local_boundary_schema
-      und 58 persistence_only; es bestehen keine unclassified-Einträge oder temporary_exceptions. Erfasst
-      werden Modellstruktur, persistierte JSON-Felder, API-, Schema-, Service-, Import-, Export- und Job-Consumer
-      sowie dynamische Modellreferenzen. Neue oder veränderte Modelle und Boundaries lassen den Guard
-      fehlschlagen. Die Runtime-Metadaten wurden nach den DICOM-, Video- und Annotation-Boundary-Änderungen
-      reproduzierbar aktualisiert; der Guard meldet weiterhin 146 registrierte und fünf abstrakte Modelle
-      ohne Klassifikationsabweichung. Pyright, die fokussierten Integrations- und Tracker-Tests sowie
-      der Repositoryscan bestanden.'
-    assessed_by: codex
-    assessed_at: '2026-07-31T11:42:27Z'
+    note: 'Das reproduzierbare Inventar und der Guard erfassen 171 Modell-Deklarationen vollständig: 166
+      registrierte und fünf abstrakte Modelle. Die exklusive Zielklassifikation umfasst 53 shared_lx_dtypes_contract,
+      60 local_boundary_schema und 58 persistence_only; es bestehen keine unclassified-Einträge oder temporary_exceptions.
+      Der neu erkannte RawPdfFile-Consumer im Report-Anonymisierungsimport ist im YAML-Inventar erfasst.
+      Pyright und die fokussierten Inventar- und Modellimport-Grenztests bestanden.'
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T10:32:54.553539Z'
 - id: field_and_contract_ownership
   category: interoperability
   title: Feld-, Enum- und Contract-Ownership ist für jedes Modell eindeutig
@@ -129,18 +124,13 @@ definition_of_done:
         tests/services/test_lx_video_contracts.py tests/services/test_video_format_reconciliation.py -q
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright
-    note: 'Alle 151 Modell-Deklarationen besitzen eine überprüfbare Ownership: 53 gemeinsam genutzte Verträge
-      verweisen auf importierbare Module der aktuell installierten, projektseitig gepinnten lx-dtypes-Version,
-      40 endoreg_db-spezifische Boundary-Schemata bleiben lokal und 58 reine Datenbankformen bleiben im
-      Persistenzmodell. Persistierte JSON-Felder, sämtliche erkannten Consumer und dynamische Referenzen
-      sind pro Modell dokumentiert. Es bestehen keine temporären Ausnahmen. Der Guard importiert alle
-      Modell-Leaf-Module, prüft die exklusive Klassifikation und die gepinnten shared-Contract-Module
-      und verhindert neue konkurrierende lokale Pydantic-Verträge sowie Model-zu-Service- oder Barrel-Import-Abweichungen.
-      CommonLabValues wurde vom parallelen Pydantic-Vertrag zu einer typisierten unveränderlichen Dataclass
-      reduziert. Version, betroffene Layer und Consumer bleiben im Inventar und im dokumentierten Releaseverfahren
-      nachvollziehbar. Pyright und die 91 Tests umfassende Cross-Domain-Matrix bestanden.'
-    assessed_by: codex
-    assessed_at: '2026-07-30T07:45:14.217866Z'
+    note: 'Alle 171 Modell-Deklarationen besitzen eine überprüfbare Ownership: 53 gemeinsam genutzte lx_dtypes-Verträge,
+      60 lokale endoreg_db-Boundary-Schemata und 58 reine Persistenzmodelle. Der Inventar-Guard bildet
+      sämtliche aktuell erkannten Consumer einschließlich des RawPdfFile-Report-Anonymisierungsimports
+      ab. Es bestehen keine temporären Ausnahmen; Pyright und die fokussierten Inventar- und Modellimport-Grenztests
+      bestanden.'
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T10:32:56.796057Z'
 - id: canonical_boundary_validation
   category: functionality
   title: Externe und repositoryübergreifende Daten werden zentral durch lx_dtypes validiert

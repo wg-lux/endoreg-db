@@ -6,12 +6,15 @@ from dataclasses import asdict, dataclass
 
 from django.conf import settings
 from django.db import transaction
-from pydantic import BaseModel, ConfigDict
-
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
+)
+from endoreg_db.schemas.video_jobs import (
+    FPS_NORMALIZATION_CONFIG_OPERATION,
+    FpsNormalizationHistoryConfig,
+    MAX_SEGMENTATION_FPS,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -27,16 +30,7 @@ from endoreg_db.services.video_processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )
 
-MAX_SEGMENTATION_FPS = 50.0
-CONFIG_OPERATION = "segmentation_fps_normalization"
-
-
-class FpsNormalizationHistoryConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    operation: str = CONFIG_OPERATION
-    max_fps: float = MAX_SEGMENTATION_FPS
-    queue: str
+CONFIG_OPERATION = FPS_NORMALIZATION_CONFIG_OPERATION
 
 
 @dataclass(frozen=True)

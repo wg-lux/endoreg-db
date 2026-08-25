@@ -12,6 +12,12 @@ from lx_dtypes.models.contracts.ai_dataset import (
     AIDataSetScoredActiveLearningCandidateContract,
 )
 
+__all__ = [
+    "select_active_learning_candidates_locally",
+    "select_active_learning_frame_indices",
+    "select_active_learning_frame_indices_from_candidates",
+]
+
 
 @dataclass(slots=True)
 class _ActiveLearningScores:
@@ -554,4 +560,135 @@ def select_active_learning_candidates_locally(
         candidate_count=len(normalized_candidates),
         segment_count=len(segments),
         selected=selected,
+    )
+
+
+def select_active_learning_frame_indices_from_candidates(
+    candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
+    *,
+    labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
+    class_frequencies: np.ndarray | Sequence[float] | None = None,
+    config: AIDataSetActiveLearningConfigContract | None = None,
+) -> AIDataSetActiveLearningSelectionContract:
+    resolved_config = config or AIDataSetActiveLearningConfigContract()
+    normalized_candidates = _coerce_candidates(candidates)
+    reference_embeddings = (
+        None
+        if labeled_embeddings is None
+        else np.asarray(labeled_embeddings, dtype=np.float64).tolist()
+    )
+    frequencies = (
+        None
+        if class_frequencies is None
+        else np.asarray(class_frequencies, dtype=np.float64).tolist()
+    )
+
+    try:
+        from lx_ai_core.active_learning import select_active_learning_candidates
+    except ModuleNotFoundError as exc:
+        if exc.name != "lx_ai_core":
+            raise
+        return select_active_learning_candidates_locally(
+            normalized_candidates,
+            labeled_embeddings=reference_embeddings,
+            class_frequencies=frequencies,
+            config=resolved_config,
+        )
+
+    selection = select_active_learning_candidates(
+        [candidate.model_dump(mode="json") for candidate in normalized_candidates],
+        labeled_embeddings=reference_embeddings,
+        class_frequencies=frequencies,
+        config=resolved_config.model_dump(mode="json"),
+    )
+    return AIDataSetActiveLearningSelectionContract.model_validate(
+        selection.model_dump(mode="json")
+    )
+
+
+def _required_int_values(
+    values: Sequence[int | None],
+    *,
+    name: str,
+) -> list[int]:
+    result: list[int] = []
+    for value in values:
+        if value is None:
+            raise ValueError(f"{name} must not contain None values.")
+        result.append(int(value))
+    return result
+
+
+def _required_float_values(
+    values: Sequence[float | None],
+    *,
+    name: str,
+) -> list[float]:
+    result: list[float] = []
+    for value in values:
+        if value is None:
+            raise ValueError(f"{name} must not contain None values.")
+        result.append(float(value))
+    return result
+
+
+def select_active_learning_frame_indices(
+    *,
+    sample_indices: Sequence[int],
+    video_ids: Sequence[int],
+    frame_numbers: Sequence[int],
+    probs: Sequence[Sequence[float]],
+    embeddings: Sequence[Sequence[float]],
+    frame_ids: Sequence[int | None] | None = None,
+    timestamps: Sequence[float | None] | None = None,
+    quality_scores: Sequence[float | None] | None = None,
+    labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
+    class_frequencies: np.ndarray | Sequence[float] | None = None,
+    config: AIDataSetActiveLearningConfigContract | None = None,
+) -> AIDataSetActiveLearningSelectionContract:
+    candidate_count = len(sample_indices)
+    if not (
+        len(video_ids)
+        == len(frame_numbers)
+        == len(probs)
+        == len(embeddings)
+        == candidate_count
+    ):
+        raise ValueError("All active learning arrays must have the same length.")
+
+    if frame_ids is None or quality_scores is None:
+        raise ValueError(
+            "frame_ids and quality_scores are required by "
+            "AIDataSetActiveLearningCandidateContract."
+        )
+
+    resolved_frame_ids = _required_int_values(frame_ids, name="frame_ids")
+    resolved_timestamps = (
+        _required_float_values(timestamps, name="timestamps")
+        if timestamps is not None
+        else [float(frame_number) for frame_number in frame_numbers]
+    )
+    resolved_quality_scores = _required_float_values(
+        quality_scores, name="quality_scores"
+    )
+
+    candidates = [
+        AIDataSetActiveLearningCandidateContract(
+            sample_index=sample_indices[index],
+            frame_id=resolved_frame_ids[index],
+            video_id=video_ids[index],
+            frame_number=frame_numbers[index],
+            timestamp=resolved_timestamps[index],
+            probs=list(probs[index]),
+            embedding=list(embeddings[index]),
+            quality_score=resolved_quality_scores[index],
+        )
+        for index in range(candidate_count)
+    ]
+
+    return select_active_learning_frame_indices_from_candidates(
+        candidates,
+        labeled_embeddings=labeled_embeddings,
+        class_frequencies=class_frequencies,
+        config=config,
     )

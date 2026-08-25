@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from lx_dtypes.models.contracts.patient_examination_report import ReportJsonObject
+from lx_dtypes.models.contracts.patient_examination_report import (
+    ReportJsonObject,
+    ReportJsonValue,
+)
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -16,8 +19,9 @@ from pydantic import (
 
 REPORT_LLM_JOB_SCHEMA_VERSION: Literal["1.0"] = "1.0"
 type ReportLlmOperation = Literal["report_llm_reimport", "report_llm_import"]
+type ReportLlmJobMode = Literal["celery", "inline"]
 
-_JSON_OBJECT_ADAPTER = TypeAdapter(
+_JSON_OBJECT_ADAPTER: TypeAdapter[ReportJsonObject] = TypeAdapter(
     ReportJsonObject,
     config=ConfigDict(strict=True, allow_inf_nan=False),
 )
@@ -70,6 +74,33 @@ class ReportLlmJobResult(BaseModel):
                 "processed_file_sha256 must be a 64-character SHA-256 hex digest"
             )
         return normalized
+
+
+class ReportLlmDispatchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    mode: ReportLlmJobMode
+    status: Literal[
+        "queued",
+        "already_queued",
+        "completed",
+        "failed",
+        "lost",
+    ]
+    operation: str
+    report_id: int | None = None
+    queue: str
+    job_id: str
+    poll_url: str | None = None
+    message: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, ReportJsonValue]:
+        return cast(
+            dict[str, ReportJsonValue],
+            self.model_dump(mode="json", exclude_none=True),
+        )
 
 
 def build_report_llm_job_config(
@@ -128,7 +159,9 @@ def dump_report_llm_job_result(
 
 __all__ = [
     "REPORT_LLM_JOB_SCHEMA_VERSION",
+    "ReportLlmDispatchResult",
     "ReportLlmJobConfig",
+    "ReportLlmJobMode",
     "ReportLlmJobResult",
     "ReportLlmOperation",
     "ReportLlmReimportRequestPayload",

@@ -23,7 +23,6 @@ from endoreg_db.services.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )
-from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
@@ -32,9 +31,7 @@ from endoreg_db.services.hub.import_monitoring import (
     schedule_storage_retry,
 )
 from endoreg_db.services.video_files import (
-    get_or_create_video_state,
     get_video_by_pk,
-    validate_video_metadata_annotation,
 )
 from endoreg_db.views.access_control import (
     filter_video_read_queryset,
@@ -58,8 +55,6 @@ import logging
 from lx_dtypes.models.contracts.anonymization_overview import (
     AnonymizationStatusInfoData,
 )
-from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
-from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
 
 logger = logging.getLogger(__name__)
 PERMS = DEBUG_PERMISSIONS  # shorten
@@ -394,67 +389,6 @@ class UploadJobRetryView(APIView):
                 "upload_job": overview_upload_job_summary(cast(Any, upload_job)),
             },
             status=status.HTTP_202_ACCEPTED,
-        )
-
-
-class AnonymizationValidateView(APIView):
-    """
-    POST /api/anonymization/<int:item_id>/validate/
-    Body: {
-      // common SensitiveMeta fields (snake_case):
-      "patient_first_name": "...",
-      "patient_last_name":  "...",
-      "patient_dob":        "YYYY-MM-DD",
-      "examination_date":   "YYYY-MM-DD",
-      "casenumber":         "...",
-      "anonymized_text":    "...",   # only for PDFs; ignored by videos
-      "is_verified": true            # optional; defaults to true here
-    }
-    """
-
-    @transaction.atomic
-    def post(self, request: Request, item_id: int) -> Response:
-        payload = request.data
-        payload.setdefault("is_verified", True)
-
-        # Try Video first
-        video = VideoFile.objects.filter(pk=item_id).first()
-        if video:
-            video_state = get_or_create_video_state(video)
-            video_meta = cast(dict[str, object], getattr(video, "meta", {}))
-            if getattr(video_state, "processing_error", False) or (
-                video_meta.get("integrity_status") == "lost"
-            ):
-                return Response(
-                    {"error": "Video is marked failed/lost by media integrity."},
-                    status=status.HTTP_409_CONFLICT,
-                )
-            ok = validate_video_metadata_annotation(
-                video, cast(VideoTextMetaPayload, payload)
-            )
-            if not ok:
-                return Response(
-                    {"error": "Video validation failed."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            return Response({"message": "Video validated."}, status=status.HTTP_200_OK)
-
-        # Then PDF
-        pdf = RawPdfFile.objects.filter(pk=item_id).first()
-        if pdf:
-            ok = validate_report_metadata_annotation(
-                pdf, cast(PdfFileMetaJsonObject, payload)
-            )
-            if not ok:
-                return Response(
-                    {"error": "PDF validation failed."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            return Response({"message": "PDF validated."}, status=status.HTTP_200_OK)
-
-        return Response(
-            {"error": f"Item {item_id} not found as video or pdf."},
-            status=status.HTTP_404_NOT_FOUND,
         )
 
 

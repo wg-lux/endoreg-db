@@ -23,7 +23,6 @@ from .label_video_segment import (
 from .meta import (
     SensitiveMetaDetailSerializer,
     SensitiveMetaUpdateSerializer,
-    SensitiveMetaVerificationSerializer,
     VideoMetaSerializer,
 )
 from .misc import (
@@ -73,7 +72,6 @@ __all__ = [
     # Meta
     "SensitiveMetaDetailSerializer",
     "SensitiveMetaUpdateSerializer",
-    "SensitiveMetaVerificationSerializer",
     "VideoMetaSerializer",
     # Misc
     "FileOverviewSerializer",

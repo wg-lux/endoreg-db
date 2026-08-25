@@ -778,8 +778,8 @@ class ApplicationSettingsEndpointTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
 
-        with patch.object(
-            AIDataSet,
+        with patch(
+            "endoreg_db.services.application_settings.ai_dataset_export."
             "export_to_standardized_structure",
             return_value={"summary": {}},
         ) as exporter:

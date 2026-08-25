@@ -3,12 +3,13 @@ from pathlib import Path
 
 from django.test import SimpleTestCase
 
-from endoreg_db.models.aidataset.aidataset import (
-    AIDataSet,
+from lx_dtypes.models.contracts.ai_dataset import (
     AIDataSetActiveLearningConfigContract,
 )
+
 from endoreg_db.services.aidataset_active_learning import (
     select_active_learning_candidates_locally,
+    select_active_learning_frame_indices,
 )
 
 
@@ -21,7 +22,7 @@ class AIDataSetActiveLearningTests(SimpleTestCase):
         self.TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     def test_selector_returns_temporally_spread_sample_indices(self):
-        selection = AIDataSet.select_active_learning_frame_indices(
+        selection = select_active_learning_frame_indices(
             sample_indices=[0, 1, 2, 3, 4],
             frame_ids=[10, 11, 12, 13, 14],
             video_ids=[1, 1, 1, 1, 1],
@@ -57,7 +58,7 @@ class AIDataSetActiveLearningTests(SimpleTestCase):
         self.assertEqual(selection.segment_count, 3)
 
     def test_selector_filters_low_quality_frames(self):
-        selection = AIDataSet.select_active_learning_frame_indices(
+        selection = select_active_learning_frame_indices(
             sample_indices=[0, 1],
             frame_ids=[20, 21],
             video_ids=[2, 2],

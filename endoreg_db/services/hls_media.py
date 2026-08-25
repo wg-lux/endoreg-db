@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import BinaryIO, Literal, cast
+from typing import BinaryIO, Literal, Protocol, cast
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -181,6 +181,43 @@ class HlsMaterializationDispatchReservation:
     artifact_id: int
     artifact_kind: HlsArtifactKind
     status: Literal["queued", "already_queued", "already_ready"]
+
+
+@dataclass(frozen=True)
+class HlsMaterializationDispatchResult:
+    video_id: int
+    artifact_kind: HlsArtifactKind
+    status: Literal[
+        "queued",
+        "already_queued",
+        "already_ready",
+        "dispatch_failed",
+    ]
+    queue: str
+    task_id: str = ""
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "video_id": self.video_id,
+            "artifact_kind": self.artifact_kind,
+            "status": self.status,
+            "queue": self.queue,
+            "task_id": self.task_id,
+        }
+
+
+class _AsyncTaskResult(Protocol):
+    id: object
+
+
+class _HlsTaskDispatcher(Protocol):
+    def apply_async(
+        self,
+        *,
+        args: list[object],
+        queue: str,
+        routing_key: str,
+    ) -> _AsyncTaskResult: ...
 
 
 @dataclass(frozen=True)
@@ -709,6 +746,83 @@ def mark_hls_materialization_dispatch_failed(*, artifact_id: int, error: str) ->
             expected_status=VideoHlsArtifact.Status.QUEUED.value,
             error_code=VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value,
         )
+
+
+def dispatch_video_hls_materialization(
+    *,
+    video_id: int,
+    artifact_kind: object = VideoArtifactKind.PROCESSED,
+    force: bool = False,
+    task_dispatcher: _HlsTaskDispatcher | None = None,
+) -> HlsMaterializationDispatchResult:
+    """Reserve and dispatch one bounded HLS task for an authenticated demand."""
+    from endoreg_db.services.jobs.heavy_jobs import (
+        HeavyJobKind,
+        ensure_secure_transport_for_job_kind,
+        queue_for_job_kind,
+    )
+
+    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
+    job_kind = HeavyJobKind.VIDEO_HLS_MATERIALIZATION
+    ensure_secure_transport_for_job_kind(job_kind)
+    queue = queue_for_job_kind(job_kind)
+    reservation = reserve_hls_materialization_dispatch(
+        video_id=int(video_id),
+        artifact_kind=parsed_kind,
+        force=force,
+    )
+    if reservation.status != "queued":
+        return HlsMaterializationDispatchResult(
+            video_id=int(video_id),
+            artifact_kind=reservation.artifact_kind,
+            status=reservation.status,
+            queue=queue,
+        )
+
+    dispatcher = task_dispatcher
+    if dispatcher is None:
+        from endoreg_db.tasks import video_hls_materialization
+
+        dispatcher = cast(_HlsTaskDispatcher, video_hls_materialization)
+    try:
+        async_result = dispatcher.apply_async(
+            args=[int(video_id), reservation.artifact_kind, bool(force)],
+            queue=queue,
+            routing_key=queue,
+        )
+    except Exception as exc:
+        mark_hls_materialization_dispatch_failed(
+            artifact_id=reservation.artifact_id,
+            error="Celery HLS dispatch failed",
+        )
+        from endoreg_db.utils.structured_logging import (
+            emit_structured_event,
+            hash_identifier,
+        )
+
+        emit_structured_event(
+            logger,
+            "video.hls_dispatch_failed",
+            level=logging.ERROR,
+            video_id_sha256=hash_identifier(video_id),
+            artifact_kind=reservation.artifact_kind,
+            artifact_id_sha256=hash_identifier(reservation.artifact_id),
+            error_type=type(exc).__name__,
+            retryable=True,
+        )
+        return HlsMaterializationDispatchResult(
+            video_id=int(video_id),
+            artifact_kind=reservation.artifact_kind,
+            status="dispatch_failed",
+            queue=queue,
+        )
+    return HlsMaterializationDispatchResult(
+        video_id=int(video_id),
+        artifact_kind=reservation.artifact_kind,
+        status="queued",
+        queue=queue,
+        task_id=str(async_result.id),
+    )
 
 
 def _prepare_artifact_record(

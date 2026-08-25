@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Protocol, cast
 from uuid import UUID
 
@@ -104,6 +105,21 @@ def _materialize_fake_hls(
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
     hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
     return VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+
+
+def _stub_pending_hls_materialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_dispatch(
+        *,
+        video_id: int,
+        artifact_kind: object,
+    ) -> SimpleNamespace:
+        _ = video_id, artifact_kind
+        return SimpleNamespace(status="queued")
+
+    monkeypatch.setattr(
+        "endoreg_db.views.video.hls_stream.dispatch_video_hls_materialization",
+        fake_dispatch,
+    )
 
 
 def test_profile_video_streaming_profiles_hls_and_mp4_nginx_handoff(
@@ -214,12 +230,13 @@ def test_profile_video_streaming_profiles_hls_and_mp4_nginx_handoff(
     assert payload["media_operation_leases_after"] == lease_count_before
 
 
-def test_profile_video_streaming_frontend_falls_back_to_progressive_stream(
+def test_profile_video_streaming_frontend_reports_pending_hls_materialization(
     streaming_profile_center: Center,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SERVE_WITH_NGINX", "true")
     monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    _stub_pending_hls_materialization(monkeypatch)
     video = _create_processed_video(streaming_profile_center)
     _make_processed_streamable(video)
 
@@ -241,29 +258,27 @@ def test_profile_video_streaming_frontend_falls_back_to_progressive_stream(
     frontend_video = frontend_payload["videos"][0]
 
     assert payload["selected"] == {"hls": 0, "mp4": 1, "frontend_videos": 1}
-    assert payload["request_count"] == 3
-    assert frontend_payload["request_count"] == 2
+    assert payload["request_count"] == 2
+    assert frontend_payload["request_count"] == 1
     assert frontend_payload["playback_modes"]["error"] == 1
     assert frontend_payload["streaming_video_present_count"] == 1
     assert frontend_payload["streaming_usable_count"] == 0
     assert frontend_payload["nginx_handoff_ready_count"] == 0
     assert frontend_video["hls_artifact_ready"] is False
     assert frontend_video["playback_mode"] == "error"
-    assert frontend_video["fallback_reason"] == "hls_playlist_404"
-    assert frontend_video["hls_playlist_status"] == 404
-    assert frontend_video["progressive_stream_status"] == 302
-    assert frontend_video["progressive_stream_state"] == "hls_compat_redirect"
-    assert frontend_video["progressive_x_accel_redirect"] is None
+    assert frontend_video["hls_playlist_status"] == 202
+    assert "progressive_stream_status" not in frontend_video
     assert frontend_video["nginx_handoff_can_work"] is False
-    assert "progressive_stream_redirect_to_hls" in frontend_video["issues"]
+    assert "hls_playlist_unavailable" in frontend_video["issues"]
 
 
-def test_profile_video_streaming_frontend_reports_missing_streaming_video(
+def test_profile_video_streaming_frontend_reports_missing_video_while_hls_pending(
     streaming_profile_center: Center,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SERVE_WITH_NGINX", "true")
     monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    _stub_pending_hls_materialization(monkeypatch)
     video = _create_processed_video(streaming_profile_center)
 
     stdout = StringIO()
@@ -284,8 +299,8 @@ def test_profile_video_streaming_frontend_reports_missing_streaming_video(
     frontend_video = frontend_payload["videos"][0]
 
     assert payload["selected"] == {"hls": 0, "mp4": 0, "frontend_videos": 1}
-    assert payload["request_count"] == 2
-    assert frontend_payload["request_count"] == 2
+    assert payload["request_count"] == 1
+    assert frontend_payload["request_count"] == 1
     assert frontend_payload["streaming_video_present_count"] == 0
     assert frontend_payload["missing_streaming_video_count"] == 1
     assert frontend_payload["streaming_usable_count"] == 0
@@ -294,11 +309,10 @@ def test_profile_video_streaming_frontend_reports_missing_streaming_video(
     assert frontend_video["streaming_video_present"] is False
     assert frontend_video["streaming_usable"] is False
     assert frontend_video["nginx_handoff_can_work"] is False
-    assert frontend_video["hls_playlist_status"] == 404
-    assert frontend_video["progressive_stream_status"] == 302
-    assert frontend_video["progressive_stream_state"] == "hls_compat_redirect"
+    assert frontend_video["hls_playlist_status"] == 202
+    assert "progressive_stream_status" not in frontend_video
     assert "missing_streaming_video" in frontend_video["issues"]
-    assert "progressive_stream_redirect_to_hls" in frontend_video["issues"]
+    assert "hls_playlist_unavailable" in frontend_video["issues"]
 
 
 def test_profile_video_streaming_requires_nginx_handoff(

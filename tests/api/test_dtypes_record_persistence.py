@@ -99,7 +99,13 @@ def test_dtypes_terminology_mutation_rejects_read_only_actor(client: Client) -> 
 
     response = client.post(
         "/dtypes-api/terminology/bundles/select",
-        data=json.dumps({"module_name": "example", "version": "1"}),
+        data=json.dumps(
+            {
+                "module_name": "example",
+                "version": "1",
+                "expected_revision": f"sha256:{'0' * 64}",
+            }
+        ),
         content_type="application/json",
         secure=True,
     )

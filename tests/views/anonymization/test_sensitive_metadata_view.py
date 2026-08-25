@@ -193,6 +193,51 @@ class TestSensitiveMetadataEndpoints:
         assert payload["video_id"] == video.pk
         assert payload["sensitive_meta"]["patient_first_name"] == "Anna"
 
+    def test_patch_video_sensitive_metadata_updates_relations_and_false_flag(
+        self, client: DjangoClient, video: VideoFile
+    ) -> None:
+        suffix = uuid4().hex[:8]
+        center = Center.objects.create(name=f"updated-center-{suffix}")
+        gender = Gender.objects.create(name=f"updated-gender-{suffix}")
+        sensitive_meta = self._require_sensitive_meta(video.sensitive_meta)
+        state = sensitive_meta.get_or_create_state()
+        state.dob_verified = True
+        state.names_verified = True
+        state.save(update_fields=["dob_verified", "names_verified"])
+
+        response = client.patch(
+            f"/api/media/videos/{video.pk}/sensitive-metadata/",
+            data={
+                "center_name": center.name,
+                "patient_gender_name": gender.name,
+                "dob_verified": False,
+                "unknown_legacy_field": "ignored",
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        sensitive_meta.refresh_from_db()
+        state.refresh_from_db()
+        assert sensitive_meta.center_id == center.pk
+        assert sensitive_meta.patient_gender_id == gender.pk
+        assert state.dob_verified is False
+        assert state.names_verified is True
+
+    def test_patch_video_sensitive_metadata_maps_missing_relation_errors(
+        self, client: DjangoClient, video: VideoFile
+    ) -> None:
+        response = client.patch(
+            f"/api/media/videos/{video.pk}/sensitive-metadata/",
+            data={"center_name": "missing-center"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "center_name": ["Center 'missing-center' does not exist."]
+        }
+
     def test_verify_video_sensitive_metadata(
         self, client: DjangoClient, video: VideoFile
     ) -> None:
@@ -205,7 +250,24 @@ class TestSensitiveMetadataEndpoints:
         assert response.status_code == 200, response.content
         payload = response.json()
         assert payload["video_id"] == video.pk
-        assert payload["state_verified"] in (True, False)
+        assert payload["message"] == "Verification state updated successfully"
+        assert payload["sensitive_meta"]["dob_verified"] is True
+        assert payload["sensitive_meta"]["names_verified"] is False
+        assert payload["state_verified"] is False
+
+    def test_verify_video_sensitive_metadata_rejects_missing_valid_flag(
+        self, client: DjangoClient, video: VideoFile
+    ) -> None:
+        response = client.post(
+            f"/api/media/videos/{video.pk}/sensitive-metadata/verify/",
+            data={"dob_verified": "not-a-boolean"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "error": "At least one of dob_verified or names_verified must be provided"
+        }
 
     def test_get_pdf_sensitive_metadata_success(
         self, client: DjangoClient, pdf: RawPdfFile
@@ -794,6 +856,11 @@ class TestSensitiveMetadataEndpoints:
         payload = response.json()
         assert payload["pdf_id"] == pdf.pk
         assert payload["sensitive_meta"]["patient_first_name"] == "Anna"
+        pdf.refresh_from_db()
+        assert (
+            self._require_sensitive_meta(pdf.sensitive_meta).patient_first_name
+            == "Anna"
+        )
 
     def test_verify_pdf_sensitive_metadata(
         self, client: DjangoClient, pdf: RawPdfFile
@@ -807,7 +874,10 @@ class TestSensitiveMetadataEndpoints:
         assert response.status_code == 200, response.content
         payload = response.json()
         assert payload["pdf_id"] == pdf.pk
-        assert payload["state_verified"] in (True, False)
+        assert payload["message"] == "Verification state updated successfully"
+        assert payload["sensitive_meta"]["dob_verified"] is True
+        assert payload["sensitive_meta"]["names_verified"] is False
+        assert payload["state_verified"] is False
 
     def test_get_sensitive_metadata_pk_by_media_type(
         self, client: DjangoClient, video: VideoFile, pdf: RawPdfFile

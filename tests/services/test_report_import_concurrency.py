@@ -29,7 +29,11 @@ def test_report_import_snapshots_after_path_lock_and_before_content_lock(
 
     source = tmp_path / "source.pdf"
     snapshot_path = tmp_path / "sensitive" / "snapshot.pdf"
-    source.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    source.write_bytes(
+        ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
+            "lock ordering test"
+        )
+    )
     events: list[str] = []
 
     @contextmanager

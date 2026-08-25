@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict
-
 from endoreg_db.config.env import (
     celery_broker_transport_error,
     celery_ffmpeg_media_requires_secure_transport,
@@ -106,22 +102,3 @@ def ensure_secure_transport_for_job_kind(kind: HeavyJobKind) -> None:
     if error is None:
         return
     raise RuntimeError(error)
-
-
-class HeavyJobDispatchPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: str
-    operation: str
-    queue: str
-    task_id: str = ""
-    job_id: str | None = None
-    history_id: int | None = None
-    video_id: int | None = None
-    report_id: int | None = None
-    poll_url: str | None = None
-    reason: str | None = None
-    message: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.model_dump(mode="json", exclude_none=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Protocol, cast
 
 import pytest
@@ -196,6 +197,102 @@ def test_hls_playlist_access_renews_one_media_operation_lease(
         ).count()
         == 1
     )
+
+
+def test_hls_playlist_demand_dispatches_one_materialization_task(
+    hls_view_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db import tasks as task_module
+
+    video = _create_processed_video(hls_view_center)
+    user = User.objects.create_user(username="hls-on-demand-reader")
+    dispatched: list[tuple[object, ...]] = []
+
+    class FakeTaskDispatcher:
+        def apply_async(
+            self,
+            *,
+            args: list[object],
+            queue: str,
+            routing_key: str,
+        ) -> SimpleNamespace:
+            assert queue == "ffmpeg_media"
+            assert routing_key == queue
+            dispatched.append(tuple(args))
+            return SimpleNamespace(id="on-demand-hls-task")
+
+    monkeypatch.setattr(
+        task_module,
+        "video_hls_materialization",
+        FakeTaskDispatcher(),
+    )
+    view = hls_stream.HLSPlaylistView.as_view()
+
+    first = view(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            user,
+        ),
+        pk=video.pk,
+    )
+    second = view(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            user,
+        ),
+        pk=video.pk,
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first["Retry-After"] == str(hls_stream.HLS_PENDING_RETRY_AFTER_SECONDS)
+    assert first["Cache-Control"] == "no-store, private"
+    assert dispatched == [(video.pk, "processed", False)]
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+
+
+def test_hls_playlist_dispatch_failure_is_private_and_retryable(
+    hls_view_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db import tasks as task_module
+
+    video = _create_processed_video(hls_view_center)
+    user = User.objects.create_user(username="hls-dispatch-failure-reader")
+
+    class FailingTaskDispatcher:
+        def apply_async(
+            self,
+            *,
+            args: list[object],
+            queue: str,
+            routing_key: str,
+        ) -> SimpleNamespace:
+            del args, queue, routing_key
+            raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr(
+        task_module,
+        "video_hls_materialization",
+        FailingTaskDispatcher(),
+    )
+
+    response = hls_stream.HLSPlaylistView.as_view()(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            user,
+        ),
+        pk=video.pk,
+    )
+
+    assert response.status_code == 503
+    assert response["Retry-After"] == str(hls_stream.HLS_PENDING_RETRY_AFTER_SECONDS)
+    assert response["Cache-Control"] == "no-store, private"
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value
 
 
 def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(

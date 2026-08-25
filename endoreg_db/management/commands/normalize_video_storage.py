@@ -33,13 +33,17 @@ from ._video_command_base import BaseVideoCommand
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_INVENTORY_BATCH_SIZE = 100
+MAX_INVENTORY_BATCH_SIZE = 1000
+
 
 @dataclass(frozen=True)
 class _RunOptions:
     apply_changes: bool
     cleanup_validated_raw: bool
     video_ids: list[int] | None
-    limit: int | None
+    limit: int
+    after_video_id: int
     quality_mode: str
     force_cpu: bool
     json_output: bool
@@ -59,6 +63,16 @@ class Command(BaseVideoCommand):
             parser,
             limit_help=(
                 "Maximum videos after sorting by reclaimable bytes descending."
+            ),
+        )
+        parser.set_defaults(limit=DEFAULT_INVENTORY_BATCH_SIZE)
+        parser.add_argument(
+            "--after-video-id",
+            type=int,
+            default=0,
+            help=(
+                "Resume inventory after this VideoFile primary key. Selection "
+                "is bounded before filesystem inspection."
             ),
         )
         self.add_apply_argument(
@@ -105,16 +119,31 @@ class Command(BaseVideoCommand):
             results=results,
             batch_id=batch_id,
             capacity=capacity.as_dict(),
+            after_video_id=run_options.after_video_id,
+            batch_limit=run_options.limit,
+            next_after_video_id=self._next_inventory_cursor(
+                inventory_rows,
+                reconciliation_failed=reconciliation_failed,
+            ),
         )
         self._write_summary(payload, run_options.json_output)
         self._raise_on_failed_results(payload, reconciliation_failed)
 
     def _run_options(self, options: dict[str, object]) -> _RunOptions:
+        limit = self.positive_limit_from_options(options)
+        if limit is None:
+            limit = DEFAULT_INVENTORY_BATCH_SIZE
+        if limit > MAX_INVENTORY_BATCH_SIZE:
+            raise CommandError(f"--limit must not exceed {MAX_INVENTORY_BATCH_SIZE}")
+        raw_after_video_id = options.get("after_video_id", 0)
+        if not isinstance(raw_after_video_id, int) or raw_after_video_id < 0:
+            raise CommandError("--after-video-id must be a non-negative integer")
         return _RunOptions(
             apply_changes=bool(options.get("apply")),
             cleanup_validated_raw=bool(options.get("cleanup_validated_raw")),
             video_ids=self.selected_video_ids_from_options(options),
-            limit=self.positive_limit_from_options(options),
+            limit=limit,
+            after_video_id=raw_after_video_id,
             quality_mode=str(options.get("quality_mode") or "balanced"),
             force_cpu=bool(options.get("force_cpu")),
             json_output=bool(options.get("json_output")),
@@ -136,12 +165,18 @@ class Command(BaseVideoCommand):
 
     @staticmethod
     def _inventory_rows(run_options: _RunOptions) -> list[_InventoryRow]:
-        queryset = VideoFile.objects.select_related("state").prefetch_related(
-            "hls_artifacts"
+        queryset = (
+            VideoFile.objects.select_related("state")
+            .prefetch_related("hls_artifacts")
+            .filter(pk__gt=run_options.after_video_id)
+            .order_by("pk")
         )
         if run_options.video_ids:
             queryset = queryset.filter(pk__in=run_options.video_ids)
-        inventory_rows = [(video, inventory_video_storage(video)) for video in queryset]
+        bounded_videos = list(queryset[: run_options.limit])
+        inventory_rows = [
+            (video, inventory_video_storage(video)) for video in bounded_videos
+        ]
         inventory_rows.sort(
             key=lambda item: (
                 item[1].reclaimable_raw_bytes,
@@ -150,8 +185,6 @@ class Command(BaseVideoCommand):
             ),
             reverse=True,
         )
-        if run_options.limit is not None:
-            return inventory_rows[: run_options.limit]
         return inventory_rows
 
     @staticmethod
@@ -179,6 +212,19 @@ class Command(BaseVideoCommand):
         return video_storage_capacity(
             storage_root=path_utils.protected_media_root(),
             projected_temporary_bytes=projected_temporary_bytes,
+        )
+
+    @staticmethod
+    def _next_inventory_cursor(
+        inventory_rows: list[_InventoryRow],
+        *,
+        reconciliation_failed: bool,
+    ) -> int | None:
+        if reconciliation_failed:
+            return None
+        return max(
+            (int(video.pk) for video, _ in inventory_rows),
+            default=None,
         )
 
     @staticmethod
@@ -280,6 +326,7 @@ class Command(BaseVideoCommand):
         after_transcode = inventory_video_storage(video)
         cleanup_allowed = (
             run_options.cleanup_validated_raw
+            and after_transcode.reconciled
             and after_transcode.anonymization_validated
             and after_transcode.normalization_verified
             and not raw_cleanup_blockers(video)
@@ -337,6 +384,9 @@ class Command(BaseVideoCommand):
         results: list[dict[str, Any]],
         batch_id: str,
         capacity: dict[str, int | str],
+        after_video_id: int,
+        batch_limit: int,
+        next_after_video_id: int | None,
     ) -> dict[str, Any]:
         profile = configured_video_storage_profile()
         inventory_counts = Command._inventory_counts(rows)
@@ -344,6 +394,11 @@ class Command(BaseVideoCommand):
         return {
             "apply": apply_changes,
             "batch_id": batch_id,
+            "inventory_cursor": {
+                "after_video_id": after_video_id,
+                "next_after_video_id": next_after_video_id,
+                "batch_limit": batch_limit,
+            },
             "cleanup_validated_raw": cleanup_validated_raw,
             "capacity": capacity,
             "profile": Command._profile_payload(profile),
@@ -372,6 +427,7 @@ class Command(BaseVideoCommand):
             "normalized_videos": 0,
             "pending_videos": 0,
             "reconciliation_error_videos": 0,
+            "incomplete_hls_inventory_artifacts": 0,
             "occupied_bytes": 0,
             "raw_bytes": 0,
             "processed_bytes": 0,
@@ -383,6 +439,9 @@ class Command(BaseVideoCommand):
             counts["normalized_videos"] += int(row.normalization_verified)
             counts["pending_videos"] += int(not row.normalization_verified)
             counts["reconciliation_error_videos"] += int(not row.reconciled)
+            counts["incomplete_hls_inventory_artifacts"] += (
+                row.incomplete_hls_inventory_artifacts
+            )
             counts["occupied_bytes"] += row.total_bytes
             counts["raw_bytes"] += row.raw_bytes
             counts["processed_bytes"] += row.processed_bytes

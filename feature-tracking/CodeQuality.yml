@@ -94,12 +94,35 @@ definition_of_done:
     - kind: review
       reference: Internal Django/settings/package search plus lx-annotate, LuxNix, lx-data-models and
         lx-anonymizer consumer searches found no endoreg_db.urls.root_urls consumer.
-    note: Sechs kleine, geprüfte Kohorten haben alle bestätigten Löschkandidaten entfernt. Die letzte
-      Kohorte entfernt die divergente, nie konfigurierte endoreg_db.urls.root_urls und schützt endoreg_db.root_urls
-      als einzige kanonische URLConf durch einen Architekturtest. Öffentliche Legacy-Query-, Download-
-      und API-Mount-Verträge bleiben als fünf explizite Kompatibilitätskandidaten erhalten.
-    assessed_by: Codex
-    assessed_at: '2026-08-04T16:06:36.735299Z'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest --collect-only -q (2800 tests collected
+        after removal)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/fileserver/test_whitenoise_file_serving.py
+        tests/dataloader/test_dataloader.py tests/dataloader/test_dataloader_foreign_keys.py tests/dataloader/test_dataloader_missing_tables.py
+        -q (28 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+        tests/views/anonymization/test_validate_view.py tests/utils/test_media_urlpatterns_contract.py
+        -q (33 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python manage.py show_urls --format csv
+        (canonical validate routes resolve to endoreg_db.views.anonymization.validate.AnonymizationValidateView)
+    - kind: review
+      reference: SensitiveMeta private wrapper and video frame-cache legacy path consumer/history audit;
+        no internal, dynamic or known external consumers
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+        passed)
+    note: Bestätigte Dead-Code-Kohorten entfernten zusätzlich drei private SensitiveMeta-Delegationsmethoden,
+      den unverdrahteten Legacy-Frame-Cache-Anonymisierungspfad samt ausschließlich abhängigen Helfern
+      sowie den verwaisten SensitiveMetaVerificationSerializer mit Barrel-Re-Exports. Interne, dynamische,
+      historische und bekannte repositoryübergreifende Consumer wurden vor der Löschung geprüft. Aktive
+      Identitäts-, Streaming-, Timeline-, Storage-, Lease- und Publikationspfade bleiben unverändert.
+      Der Dead-Code-Guard ist ausschließlich durch die fremde Änderung endoreg_db/services/hls_media.py:219
+      blockiert; die Baseline wurde nicht angepasst.
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T11:15:35.993624Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
@@ -127,10 +150,26 @@ definition_of_done:
         -q (25 passed)
     - kind: command
       reference: .devenv/state/venv/bin/pyright (0 errors)
-    note: Existing model/service and barrel-import architecture guards pass after the first cleanup cohort;
-      systematic helper ownership refactoring remains.
-    assessed_by: Codex
-    assessed_at: '2026-07-17T13:28:04.928186Z'
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+        passed)
+    - kind: code
+      reference: AIDataSet-Modell ohne endoreg_db.services-Importe und sieben entfernte Workflow-Fassaden;
+        SensitiveMetaUpdateSerializer als reine DRF-Validierungsgrenze; typisierter atomarer Service in
+        endoreg_db/services/sensitive_meta_update.py; AST-Nullregeln in tests/app/test_clean_layer_cohorts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations);
+        integrierter Pytest-Lauf über 13 Boundary-/Runtime-Dateien (90 passed)
+    note: Die AIDataSet-Kohorte besitzt nun keine Model→Service-Abhängigkeit und keine der sieben Legacy-Servicefassaden;
+      bekannte Consumer in Endoreg, lx-annotate und lx-data-models sind auf direkte Services migriert
+      beziehungsweise leer geprüft. SensitiveMeta-PATCH validiert nur noch am HTTP-Rand und delegiert
+      Relation-, Skalar- und Verifikationsmutation atomar an einen Service; explizites false bleibt erhalten,
+      die PDF-Doppelmutation und sensitive Response-Protokollierung entfallen. AST-Tests erzwingen die
+      Nullgrenzen. Weitere Modell-, View- und Serializer-Altbestände bleiben kohortenweise zu migrieren.
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T11:51:30.946367Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert

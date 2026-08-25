@@ -49,8 +49,8 @@ def test_create_ai_dataset_export_writes_json_artifact(tmp_path: Path) -> None:
         "summary": {"image_annotation_count": 0},
     }
 
-    with patch.object(
-        AIDataSet,
+    with patch(
+        "endoreg_db.services.application_settings.ai_dataset_export."
         "export_to_standardized_structure",
         return_value=export_payload,
     ) as exporter:
@@ -181,8 +181,8 @@ def test_create_ai_dataset_export_marks_artifact_failed_on_export_error(
 ) -> None:
     dataset = _dataset()
 
-    with patch.object(
-        AIDataSet,
+    with patch(
+        "endoreg_db.services.application_settings.ai_dataset_export."
         "export_to_standardized_structure",
         side_effect=RuntimeError("export failed"),
     ):

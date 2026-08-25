@@ -53,8 +53,8 @@ described where they are introduced.
 |---|---|---|---|
 | Canonical unprocessed MP4 | Import or reimport | Until human anonymization validation and complete approval of every gate | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
 | Canonical anonymized MP4 | Import, reimport, or reanonymization | Permanent; exactly one published generation | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active |
-| Raw HLS | Raw playback | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
-| Processed HLS | After publication of the anonymized master | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
+| Raw HLS | Successful import or reimport | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
+| Processed HLS | Successful import, reimport, or reanonymization | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
 | Streamable MP4 | Compatibility materialization | Only while the associated master generation is published | With the superseded master generation, after reference reconciliation and expiry of every lease |
 | Extracted frame | Segment or frame workflow | According to the case-specific retention policy; it is not a storage-normalization cache | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
 | Temporary transcode artifact | Normalization inside the protected transcoding directory | Only for the duration of one attempt | Through the `finally` path after success or failure; it is never marked as a valid master |
@@ -141,6 +141,21 @@ shared compliance contract:
    timeline. The validation playlist is removed immediately.
    A complete current HLS generation is returned idempotently without starting
    FFmpeg.
+
+Import, reimport, and reanonymization require raw and processed HLS readiness
+before reporting success. This deliberate write amplification keeps immediate
+playback latency bounded in time-critical environments. The existing typed HLS
+materializer remains idempotent, atomically publishes complete generations,
+and fails the import loudly when either required rendition cannot be prepared.
+Completed-duplicate paths also call the same readiness helper so a missing or
+reconciled derivative is repaired before returning the existing video.
+
+The authenticated playlist boundary retains its idempotent demand fallback for
+legacy, evicted, or reconciled records whose HLS is unexpectedly absent. While
+that bounded worker task is queued or materializing, the endpoint returns a
+private, non-cacheable `202 Accepted` response with `Retry-After`; broker
+failure returns `503 Service Unavailable`. It never performs synchronous
+transcoding in the web process.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50
@@ -236,6 +251,33 @@ devenv shell -- python manage.py normalize_video_storage --json
 devenv shell -- python manage.py normalize_video_storage --video-id 123 --json
 ```
 
+Inventory is bounded before any filesystem traversal. The default batch is 100
+videos and `--limit` cannot exceed 1,000. JSON output includes
+`inventory_cursor.after_video_id`, `next_after_video_id`, and `batch_limit`.
+Within a selected video, traversal is also capped at 20,000 filesystem entries
+per HLS artifact. Exceeding that cap stops only that artifact scan and marks it
+as `incomplete_hls_inventory_artifacts` and unreconciled. This limit never
+truncates, rewrites, moves, or partially stores video or HLS media; it only
+limits read-only metadata traversal. The reported byte count is explicitly
+incomplete, reclaimable bytes are forced to zero, and every apply or cleanup
+action is rejected before mutation. Read-only inventory continues so operators
+can identify other pressure sources without risking data loss or an unbounded
+walk.
+Resume the next stable primary-key batch with the returned non-null cursor:
+
+```bash
+devenv shell -- python manage.py normalize_video_storage \
+  --after-video-id 1234 \
+  --limit 100 \
+  --json
+```
+
+An empty batch returns a null next cursor and ends the scan. The database batch
+is selected in ascending video-ID order before inspecting files; reclaimable
+byte ordering is applied only within that bounded batch. Do not raise the hard
+limit or combine output from different database snapshots as one reconciliation
+receipt.
+
 The JavaScript Object Notation output reports canonical raw and processed
 media, raw and processed HLS, and both streamable full-video variants
 separately. `reclaimable_raw_bytes`
@@ -263,9 +305,10 @@ devenv shell -- python manage.py normalize_video_storage --limit 5 --apply --jso
 ```
 
 Validated raw artifacts are deleted only with the additional
-`--cleanup-validated-raw` option. The command orders candidates by reclaimable
-bytes, verifies temporary storage headroom, and preserves the previous source
-after transcode, timeline, quality, or HLS failure.
+`--cleanup-validated-raw` option. Within each primary-key cursor batch, the
+command orders candidates by reclaimable bytes, verifies temporary storage
+headroom, and preserves the previous source after transcode, timeline, quality,
+or HLS failure.
 
 Raw cleanup additionally requires reviewed
 `VideoFile.meta.clinical_frame_quality` evidence with `approved: true`, a
@@ -296,10 +339,12 @@ justify stream copy or a manual deletion fallback.
 
 The command processes videos sequentially. Pause it by stopping the current
 foreground process, then inventory the same selection without `--apply`.
-Resume with the same video IDs or bounded batch. Validation and hash checks keep
-already compliant videos idempotent. Before resuming, active media leases must
-have expired, capacity must be above the stop threshold, and every reference
-must be reconciled.
+Resume explicit video IDs or use the last completely reported
+`next_after_video_id`; never advance past a partially completed apply batch
+without reconciling its result rows. Validation and hash checks keep already
+compliant videos idempotent. Before resuming, active media leases must have
+expired, capacity must be above the stop threshold, and every reference must be
+reconciled.
 
 ### Quarantine and Release
 

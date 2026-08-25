@@ -12,10 +12,13 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageInventoryReport,
     VideoStorageNormalizationError,
 )
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage.timelines import segment_timeline_references
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
+
+MAX_HLS_INVENTORY_ENTRIES_PER_ARTIFACT = 20_000
 
 
 class _StoragePathProvider(Protocol):
@@ -105,7 +108,7 @@ def _hls_reference_state(artifact: object) -> tuple[int, int]:
     return (referenced, missing)
 
 
-def _hls_artifact_size(artifact: object) -> int:
+def _hls_artifact_size(artifact: object) -> tuple[int, bool]:
     from endoreg_db.utils.paths import resolve_existing_protected_media_path
 
     paths: set[Path] = set()
@@ -118,11 +121,17 @@ def _hls_artifact_size(artifact: object) -> int:
         getattr(artifact, "segment_directory_relative_path", "") or ""
     )
     segment_dir = resolve_existing_protected_media_path(segment_relative)
+    scan_incomplete = False
     if segment_dir is not None and segment_dir.is_dir():
+        entries_seen = 0
         for candidate in segment_dir.rglob("*"):
+            entries_seen += 1
+            if entries_seen > MAX_HLS_INVENTORY_ENTRIES_PER_ARTIFACT:
+                scan_incomplete = True
+                break
             if candidate.is_file() and not candidate.is_symlink():
                 paths.add(candidate.resolve())
-    return sum(path.stat().st_size for path in paths)
+    return sum(path.stat().st_size for path in paths), scan_incomplete
 
 
 def inventory_video_storage(video: "VideoFile") -> VideoStorageInventoryReport:
@@ -132,6 +141,7 @@ def inventory_video_storage(video: "VideoFile") -> VideoStorageInventoryReport:
     processed_hls_bytes = 0
     referenced_artifacts = 0
     missing_referenced_artifacts = 0
+    incomplete_hls_inventory_artifacts = 0
     for field_file in (video.raw_file, video.processed_file):
         referenced, missing = _field_file_reference_state(field_file)
         referenced_artifacts += referenced
@@ -145,15 +155,23 @@ def inventory_video_storage(video: "VideoFile") -> VideoStorageInventoryReport:
         missing_referenced_artifacts += missing
 
     for artifact in VideoHlsArtifact.objects.filter(video_id=int(video.pk)):
-        size = _hls_artifact_size(artifact)
+        size, scan_incomplete = _hls_artifact_size(artifact)
+        incomplete_hls_inventory_artifacts += int(scan_incomplete)
         referenced, missing = _hls_reference_state(artifact)
         referenced_artifacts += referenced
         missing_referenced_artifacts += missing
-        kind = str(getattr(artifact, "artifact_kind", ""))
-        if kind == "raw":
-            raw_hls_bytes += size
-        elif kind == "processed":
-            processed_hls_bytes += size
+        raw_kind = str(getattr(artifact, "artifact_kind", ""))
+        try:
+            kind = VideoArtifactKind(raw_kind)
+        except ValueError as exc:
+            raise VideoStorageNormalizationError(
+                f"Unsupported HLS artifact kind for video {int(video.pk)}"
+            ) from exc
+        match kind:
+            case VideoArtifactKind.RAW:
+                raw_hls_bytes += size
+            case VideoArtifactKind.PROCESSED:
+                processed_hls_bytes += size
 
     normalization_verified = video_normalization_evidence(video) is not None
     cleanup_ready = not raw_cleanup_blockers(video)
@@ -177,6 +195,7 @@ def inventory_video_storage(video: "VideoFile") -> VideoStorageInventoryReport:
         raw_cleanup_ready=cleanup_ready,
         referenced_artifacts=referenced_artifacts,
         missing_referenced_artifacts=missing_referenced_artifacts,
+        incomplete_hls_inventory_artifacts=incomplete_hls_inventory_artifacts,
     )
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 import json
-from typing import Any, Protocol, cast
+from typing import Any
 
 from django.core.management.base import CommandError, CommandParser
 from django.db.models import Q, QuerySet
@@ -14,24 +14,18 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.services.hls_media import (
     coerce_hls_artifact_kind,
-    mark_hls_materialization_dispatch_failed,
+    dispatch_video_hls_materialization,
     materialize_video_hls,
-    reserve_hls_materialization_dispatch,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
-from endoreg_db.tasks import video_hls_materialization
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.encryption.encryption import load_master_key
 
 from ._video_command_base import BaseVideoCommand
-
-
-class _TaskDispatcher(Protocol):
-    def apply_async(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 _HLS_STATUS_VALUES = (
@@ -357,42 +351,19 @@ class Command(BaseVideoCommand):
         force: bool,
         queue: str,
     ) -> dict[str, Any]:
-        reservation = reserve_hls_materialization_dispatch(
+        dispatch = dispatch_video_hls_materialization(
             video_id=video_id,
             artifact_kind=artifact_kind,
             force=force,
         )
-        if reservation.status != "queued":
-            return {
-                "video_id": video_id,
-                "artifact_kind": artifact_kind,
-                "status": reservation.status,
-            }
-        task_dispatcher = cast(_TaskDispatcher, video_hls_materialization)
-        try:
-            async_result = task_dispatcher.apply_async(
-                args=[video_id, artifact_kind, force],
-                queue=queue,
-                routing_key=queue,
+        if dispatch.queue != queue:
+            raise RuntimeError(
+                "HLS dispatch queue disagrees with the validated preflight queue"
             )
-        except Exception as exc:
-            mark_hls_materialization_dispatch_failed(
-                artifact_id=reservation.artifact_id,
-                error=f"Celery HLS dispatch failed: {exc}",
-            )
-            return {
-                "video_id": video_id,
-                "artifact_kind": artifact_kind,
-                "status": "failed",
-                "error": str(exc),
-            }
-        return {
-            "video_id": video_id,
-            "artifact_kind": artifact_kind,
-            "status": "queued",
-            "task_id": str(async_result.id),
-            "queue": queue,
-        }
+        result = dispatch.as_dict()
+        if dispatch.status == "dispatch_failed":
+            result["status"] = "failed"
+        return result
 
     def _write_completion(
         self,

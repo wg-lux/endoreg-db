@@ -66,6 +66,7 @@ from django.test import Client as DjangoClient
 from django.test import override_settings
 from pluggy import Result
 from pytest import FixtureRequest
+from pytest_django.fixtures import SettingsWrapper
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
 from endoreg_db.import_files.context import ImportContext
@@ -82,6 +83,13 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from lx_dtypes.knowledge_bases import (
+    BUILTIN_KNOWLEDGE_BASE_PROVIDER,
+    get_packaged_knowledge_base,
+)
+from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    clear_knowledge_base_resolver_caches,
+)
 from tests.helpers.model_weights import (
     cleanup_managed_stub_weight_collisions,
     ensure_managed_stub_weights,
@@ -92,6 +100,49 @@ if TYPE_CHECKING:
     from endoreg_db.models import AiModel, LabelSet, VideoFile
 
 LOGGER = logging.getLogger(__name__)
+
+
+@pytest.fixture
+def packaged_registry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
+) -> Iterator[Path]:
+    """Opt in to the packaged STAR upper gastrointestinal knowledge base."""
+    descriptor = get_packaged_knowledge_base("star_upper_gi", "0.1.2")
+    registry_path = tmp_path / "knowledge_base_registry.json"
+    registry_payload = {
+        "active": {
+            "module_name": descriptor.module_name,
+            "version": descriptor.version,
+        },
+        "modules": {
+            descriptor.module_name: {
+                descriptor.version: {
+                    "sources": [
+                        {
+                            "kind": "provider",
+                            "provider": BUILTIN_KNOWLEDGE_BASE_PROVIDER,
+                            "content_sha256": descriptor.content_sha256,
+                        }
+                    ]
+                }
+            }
+        },
+    }
+    encoded_registry = json.dumps(registry_payload, sort_keys=True).encode("utf-8")
+    atomic_write_file(
+        destination=registry_path,
+        content=(encoded_registry,),
+        required_bytes=len(encoded_registry),
+    )
+    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
+    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+    clear_knowledge_base_resolver_caches()
+    try:
+        yield registry_path
+    finally:
+        clear_knowledge_base_resolver_caches()
 
 
 class _CacheNamespace(Protocol):

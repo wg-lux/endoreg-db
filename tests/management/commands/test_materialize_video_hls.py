@@ -249,15 +249,25 @@ def test_materialize_video_hls_command_dispatches_each_artifact_once(
 ) -> None:
     video = _create_processed_video(center=hls_command_center)
     _patch_command_preflight(monkeypatch)
+    from endoreg_db import tasks as task_module
+
     dispatched: list[tuple[object, ...]] = []
 
     class FakeTaskDispatcher:
-        def apply_async(self, *args: object, **kwargs: object) -> SimpleNamespace:
-            dispatched.append(args)
+        def apply_async(
+            self,
+            *,
+            args: list[object],
+            queue: str,
+            routing_key: str,
+        ) -> SimpleNamespace:
+            assert queue == "ffmpeg_media"
+            assert routing_key == queue
+            dispatched.append(tuple(args))
             return SimpleNamespace(id="hls-task-1")
 
     monkeypatch.setattr(
-        command_module,
+        task_module,
         "video_hls_materialization",
         FakeTaskDispatcher(),
     )
@@ -283,7 +293,7 @@ def test_materialize_video_hls_command_dispatches_each_artifact_once(
         stderr=StringIO(),
     )
 
-    assert dispatched == [()]
+    assert dispatched == [(video.pk, "processed", False)]
     assert json.loads(first_stdout.getvalue())["results"][0]["status"] == "queued"
     assert (
         json.loads(second_stdout.getvalue())["results"][0]["status"] == "already_queued"

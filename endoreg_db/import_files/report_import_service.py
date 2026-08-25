@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Protocol, cast
 from uuid import uuid4
+
+import pymupdf
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.report_lock import (
@@ -51,6 +54,17 @@ from endoreg_db.utils.rust_backend import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class InvalidReportDocumentError(ValueError):
+    """The submitted PDF cannot be parsed as a supported report document."""
+
+
+class _PdfDocument(Protocol):
+    needs_pass: bool
+    page_count: int
+
+    def close(self) -> None: ...
 
 
 def _sensitive_report_dir() -> Path:
@@ -165,6 +179,24 @@ class ReportImportService:
     def _cleanup_path(self, file_path: Path, log_prefix: str) -> None:
         safe_cleanup_staging_file(file_path, label=log_prefix, missing_ok=False)
 
+    @staticmethod
+    def _validate_pdf_document(file_path: Path) -> None:
+        try:
+            document = cast(_PdfDocument, pymupdf.open(filename=str(file_path)))
+            try:
+                if document.needs_pass or document.page_count < 1:
+                    raise InvalidReportDocumentError(
+                        "The PDF is encrypted, empty, or has no readable pages."
+                    )
+            finally:
+                document.close()
+        except InvalidReportDocumentError:
+            raise
+        except (pymupdf.EmptyFileError, pymupdf.FileDataError) as exc:
+            raise InvalidReportDocumentError(
+                "The PDF is malformed or unreadable."
+            ) from exc
+
     def import_and_anonymize(
         self,
         file_path: Path | str,
@@ -180,6 +212,8 @@ class ReportImportService:
             if ctx.file_path.suffix.lower() == ".txt":
                 temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
                 ctx.file_path = temp_pdf_path
+            else:
+                self._validate_pdf_document(ctx.file_path)
 
             lock_path = self._report_source_lock_path(ctx, temp_pdf_path)
             return self._import_with_source_lock(ctx, lock_path, retry)

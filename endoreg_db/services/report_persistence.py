@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import tempfile
 from dataclasses import dataclass
@@ -18,9 +19,10 @@ from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from lx_dtypes.models.interface.KnowledgeBaseResolver import (
+    KnowledgeBaseRegistryError,
+    KnowledgeBaseVersionNotFoundError,
     get_knowledge_base_identity,
 )
-from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient import Patient
@@ -55,6 +57,18 @@ from lx_dtypes.models.contracts.patient_examination_report import (
 )
 
 User = get_user_model()
+
+
+class ReportPersistenceValidationError(ValueError):
+    """A report submission violated a client-facing persistence invariant."""
+
+    def __init__(self, detail: Mapping[str, str]) -> None:
+        self.detail = dict(detail)
+        super().__init__(json.dumps(self.detail, sort_keys=True))
+
+
+class ReportKnowledgeBaseRegistryUnavailableError(RuntimeError):
+    """Deployment-owned knowledge-base resolution is unavailable."""
 
 
 class _IdentifiedLike(Protocol):
@@ -412,7 +426,9 @@ def _sync_indications(
 
 def _positive_integer(value: object, *, field_name: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-        raise ValidationError({field_name: "A positive integer is required."})
+        raise ReportPersistenceValidationError(
+            {field_name: "A positive integer is required."}
+        )
     return value
 
 
@@ -426,7 +442,7 @@ def _resolve_indication_selection(
     )
     indication = ExaminationIndication.objects.filter(pk=indication_id).first()
     if indication is None:
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {"examination_indication_id": "Unknown examination indication."}
         )
     examination_id = patient_examination.examination_id
@@ -434,7 +450,7 @@ def _resolve_indication_selection(
         examination_id is not None
         and not indication.examinations.filter(pk=examination_id).exists()
     ):
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {
                 "examination_indication_id": (
                     "Examination indication is not allowed for this examination."
@@ -450,9 +466,11 @@ def _resolve_indication_selection(
         pk=choice_id
     ).first()
     if choice is None:
-        raise ValidationError({"indication_choice_id": "Unknown indication choice."})
+        raise ReportPersistenceValidationError(
+            {"indication_choice_id": "Unknown indication choice."}
+        )
     if not indication.classifications.filter(choices=choice).exists():
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {
                 "indication_choice_id": (
                     "Indication choice is not allowed for this examination indication."
@@ -472,7 +490,7 @@ def _resolve_submission_examination(
         .first()
     )
     if patient_examination is None:
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {"patient_examination_id": "PatientExamination not found."}
         )
     return patient_examination
@@ -487,7 +505,7 @@ def _bind_submission_knowledge_base_identity(
     if not module_name and not version:
         return
     if not module_name or not version:
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {
                 "knowledge_base_module": (
                     "knowledge_base_module and knowledge_base_version must be "
@@ -504,14 +522,22 @@ def _bind_submission_knowledge_base_identity(
             identity.knowledge_base_module,
             version=identity.knowledge_base_version,
         )
+    except KnowledgeBaseRegistryError as exc:
+        raise ReportKnowledgeBaseRegistryUnavailableError(str(exc)) from exc
+    except KnowledgeBaseVersionNotFoundError as exc:
+        raise ReportPersistenceValidationError(
+            {"knowledge_base_module": str(exc)}
+        ) from exc
     except (LookupError, ValueError) as exc:
-        raise ValidationError({"knowledge_base_module": str(exc)}) from exc
+        raise ReportPersistenceValidationError(
+            {"knowledge_base_module": str(exc)}
+        ) from exc
     expected = (
         identity.knowledge_base_module,
         identity.knowledge_base_version,
     )
     if resolved != expected:
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {
                 "knowledge_base_module": (
                     "Resolved knowledge-base identity does not match the submitted "
@@ -547,7 +573,7 @@ def _resolve_submission_report(
         .first()
     )
     if report is None:
-        raise ValidationError(
+        raise ReportPersistenceValidationError(
             {"report_id": "Report not found for patient examination."}
         )
     return report, False
@@ -561,7 +587,7 @@ def _validate_submission_version(
 ) -> None:
     if expected_version is None or created or report.version == expected_version:
         return
-    raise ValidationError(
+    raise ReportPersistenceValidationError(
         {
             "expected_version": (
                 f"Version conflict. Current version is {report.version}, "
@@ -737,7 +763,9 @@ def save_report_submission(
     - normalized patient findings/classifications/interventions
     """
     if not template_name:
-        raise ValidationError({"template_name": "template_name is required."})
+        raise ReportPersistenceValidationError(
+            {"template_name": "template_name is required."}
+        )
     user_ref = cast(AuthUser | None, user)
     patient_examination = _resolve_submission_examination(patient_examination_id)
     _bind_submission_knowledge_base_identity(

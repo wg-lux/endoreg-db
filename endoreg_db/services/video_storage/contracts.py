@@ -117,6 +117,7 @@ class VideoStorageInventoryReport:
     raw_cleanup_ready: bool
     referenced_artifacts: int = 0
     missing_referenced_artifacts: int = 0
+    incomplete_hls_inventory_artifacts: int = 0
 
     @property
     def total_bytes(self) -> int:
@@ -131,13 +132,20 @@ class VideoStorageInventoryReport:
 
     @property
     def reclaimable_raw_bytes(self) -> int:
-        if not self.anonymization_validated or not self.raw_cleanup_ready:
+        if (
+            not self.anonymization_validated
+            or not self.raw_cleanup_ready
+            or not self.reconciled
+        ):
             return 0
         return self.raw_bytes + self.raw_streamable_bytes + self.raw_hls_bytes
 
     @property
     def reconciled(self) -> bool:
-        return self.missing_referenced_artifacts == 0
+        return (
+            self.missing_referenced_artifacts == 0
+            and self.incomplete_hls_inventory_artifacts == 0
+        )
 
     def as_dict(self) -> dict[str, int | bool]:
         return {
@@ -155,6 +163,9 @@ class VideoStorageInventoryReport:
             "raw_cleanup_ready": self.raw_cleanup_ready,
             "referenced_artifacts": self.referenced_artifacts,
             "missing_referenced_artifacts": self.missing_referenced_artifacts,
+            "incomplete_hls_inventory_artifacts": (
+                self.incomplete_hls_inventory_artifacts
+            ),
             "reconciled": self.reconciled,
         }
 

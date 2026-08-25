@@ -8,10 +8,10 @@ from lx_dtypes.models.contracts.patient_examination_report import (
 from pydantic import ConfigDict, TypeAdapter
 
 
-REPORT_JSON_CONTRACT_VERSION = "lx-dtypes==0.2.9"
+REPORT_JSON_CONTRACT_VERSION = "lx-dtypes==0.2.26"
 ReportLanguage = Literal["de", "en"]
 
-_REPORT_JSON_OBJECT_ADAPTER = TypeAdapter(
+_REPORT_JSON_OBJECT_ADAPTER: TypeAdapter[ReportJsonObject] = TypeAdapter(
     ReportJsonObject,
     config=ConfigDict(strict=True, allow_inf_nan=False),
 )

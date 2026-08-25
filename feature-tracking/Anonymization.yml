@@ -87,8 +87,24 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
         tests/views/anonymization -q
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-17T12:50:03.120066Z'
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+        passed)
+    - kind: code
+      reference: endoreg_db/schemas/sensitive_meta_update.py; endoreg_db/services/sensitive_meta_update.py;
+        gemeinsame Video-/PDF-PATCH-Grenze in endoreg_db/views/media/sensitive_metadata.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrierte Boundary-Kohorte (90
+        passed)
+    note: Video- und PDF-PATCH verwenden denselben streng typisierten partiellen Command und einen per
+      select_for_update serialisierten Service. Relationen, Skalare, explizites false, ausgelassene Flags,
+      Nullwerte, unbekannte Legacy-HTTP-Felder, ungültige Referenzen und Whitespace-Namensvalidierung
+      sind regressionsgetestet. Die PDF-Route führt keine zweite Mutation aus und protokolliert keine
+      sensitiven Response-Daten.
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T11:51:33.879621Z'
 - id: privacy_controls
   category: security
   title: Nicht freigegebene Rohdaten können den lokalen Schutzbereich nicht verlassen

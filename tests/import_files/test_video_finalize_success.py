@@ -226,6 +226,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         fake_staging_cleanup_roots,
         raising=True,
     )
+
     hls_calls: list[int] = []
 
     def fake_ensure_video_hls(
@@ -242,7 +243,6 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         fake_ensure_video_hls,
         raising=True,
     )
-
     video = DummyVideo()
     ctx = ImportContext(
         file_path=import_file,

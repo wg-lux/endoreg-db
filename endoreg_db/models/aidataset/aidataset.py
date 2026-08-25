@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from datetime import datetime
 from types import NoneType
 from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
 
-import numpy as np
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
@@ -58,8 +57,6 @@ __all__ = [
 if TYPE_CHECKING:
     from endoreg_db.models import (
         ImageClassificationAnnotation,
-        Label,
-        LabelSet,
         LabelVideoSegment,
         VideoFile,
     )
@@ -193,171 +190,6 @@ class AIDataSet(models.Model):
             return self.video_annotations
         return self.image_annotations.none()
 
-    @classmethod
-    def _coerce_active_learning_candidates(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
-    ) -> list[AIDataSetActiveLearningCandidateContract]:
-        return [
-            (
-                candidate
-                if isinstance(candidate, AIDataSetActiveLearningCandidateContract)
-                else AIDataSetActiveLearningCandidateContract.model_validate(candidate)
-            )
-            for candidate in candidates
-        ]
-
-    @classmethod
-    def _select_active_learning_candidates_locally(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
-        *,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfigContract | None = None,
-    ) -> AIDataSetActiveLearningSelectionContract:
-        from endoreg_db.services.aidataset_active_learning import (
-            select_active_learning_candidates_locally,
-        )
-
-        return select_active_learning_candidates_locally(
-            candidates,
-            labeled_embeddings=labeled_embeddings,
-            class_frequencies=class_frequencies,
-            config=config,
-        )
-
-    @classmethod
-    def select_active_learning_frame_indices_from_candidates(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
-        *,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfigContract | None = None,
-    ) -> AIDataSetActiveLearningSelectionContract:
-        resolved_config = config or AIDataSetActiveLearningConfigContract()
-        normalized_candidates = cls._coerce_active_learning_candidates(candidates)
-        reference_embeddings = (
-            None
-            if labeled_embeddings is None
-            else np.asarray(labeled_embeddings, dtype=np.float64).tolist()
-        )
-        frequencies = (
-            None
-            if class_frequencies is None
-            else np.asarray(class_frequencies, dtype=np.float64).tolist()
-        )
-
-        try:
-            from lx_ai_core.active_learning import select_active_learning_candidates
-        except ModuleNotFoundError as exc:
-            if exc.name != "lx_ai_core":
-                raise
-            return cls._select_active_learning_candidates_locally(
-                normalized_candidates,
-                labeled_embeddings=reference_embeddings,
-                class_frequencies=frequencies,
-                config=resolved_config,
-            )
-
-        selection = select_active_learning_candidates(
-            [candidate.model_dump(mode="json") for candidate in normalized_candidates],
-            labeled_embeddings=reference_embeddings,
-            class_frequencies=frequencies,
-            config=resolved_config.model_dump(mode="json"),
-        )
-        return AIDataSetActiveLearningSelectionContract.model_validate(
-            selection.model_dump(mode="json")
-        )
-
-    @classmethod
-    def select_active_learning_frame_indices(
-        cls,
-        *,
-        sample_indices: Sequence[int],
-        video_ids: Sequence[int],
-        frame_numbers: Sequence[int],
-        probs: Sequence[Sequence[float]],
-        embeddings: Sequence[Sequence[float]],
-        frame_ids: Sequence[int | None] | None = None,
-        timestamps: Sequence[float | None] | None = None,
-        quality_scores: Sequence[float | None] | None = None,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfigContract | None = None,
-    ) -> AIDataSetActiveLearningSelectionContract:
-        candidate_count = len(sample_indices)
-        if not (
-            len(video_ids)
-            == len(frame_numbers)
-            == len(probs)
-            == len(embeddings)
-            == candidate_count
-        ):
-            raise ValueError("All active learning arrays must have the same length.")
-
-        if frame_ids is None or quality_scores is None:
-            raise ValueError(
-                "frame_ids and quality_scores are required by "
-                "AIDataSetActiveLearningCandidateContract."
-            )
-
-        def _required_int_values(
-            values: Sequence[int | None],
-            *,
-            name: str,
-        ) -> list[int]:
-            result: list[int] = []
-            for value in values:
-                if value is None:
-                    raise ValueError(f"{name} must not contain None values.")
-                result.append(int(value))
-            return result
-
-        def _required_float_values(
-            values: Sequence[float | None],
-            *,
-            name: str,
-        ) -> list[float]:
-            result: list[float] = []
-            for value in values:
-                if value is None:
-                    raise ValueError(f"{name} must not contain None values.")
-                result.append(float(value))
-            return result
-
-        resolved_frame_ids = _required_int_values(frame_ids, name="frame_ids")
-        resolved_timestamps = (
-            _required_float_values(timestamps, name="timestamps")
-            if timestamps is not None
-            else [float(frame_number) for frame_number in frame_numbers]
-        )
-        resolved_quality_scores = _required_float_values(
-            quality_scores, name="quality_scores"
-        )
-
-        candidates = [
-            AIDataSetActiveLearningCandidateContract(
-                sample_index=sample_indices[idx],
-                frame_id=resolved_frame_ids[idx],
-                video_id=video_ids[idx],
-                frame_number=frame_numbers[idx],
-                timestamp=resolved_timestamps[idx],
-                probs=list(probs[idx]),
-                embedding=list(embeddings[idx]),
-                quality_score=resolved_quality_scores[idx],
-            )
-            for idx in range(candidate_count)
-        ]
-
-        return cls.select_active_learning_frame_indices_from_candidates(
-            candidates,
-            labeled_embeddings=labeled_embeddings,
-            class_frequencies=class_frequencies,
-            config=config,
-        )
-
     def add_frame_annotations(
         self,
         annotations: (
@@ -452,58 +284,6 @@ class AIDataSet(models.Model):
         return VideoFile.objects.filter(
             pk__in=set(image_video_ids).union(set(segment_video_ids))
         ).distinct()
-
-    def build_frame_bucket_distribution(
-        self,
-        *,
-        label_set: LabelSet | None = None,
-        target_label: Label | None = None,
-        prediction_segments_only: bool = True,
-    ) -> AIDataSetFrameBucketDistribution:
-        from endoreg_db.services.aidataset_frame_buckets import (
-            build_frame_bucket_distribution,
-        )
-
-        return build_frame_bucket_distribution(
-            self,
-            label_set=label_set,
-            target_label=target_label,
-            prediction_segments_only=prediction_segments_only,
-        )
-
-    def build_export_payload(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> AIDataSetExportPayload:
-        from endoreg_db.services.aidataset_exports import build_export_payload
-
-        return build_export_payload(
-            self,
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
-
-    def export_to_standardized_structure(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> dict[str, Any]:
-        from endoreg_db.services.aidataset_exports import (
-            export_to_standardized_structure,
-        )
-
-        return export_to_standardized_structure(
-            self,
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
 
     def __str__(self) -> str:
         if self.name:

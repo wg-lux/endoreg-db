@@ -9,16 +9,18 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 import cv2
 from django.conf import settings
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
-from pydantic import BaseModel, ConfigDict
-
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.schemas.video_jobs import (
+    VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND,
+    VideoAnonymizationCorrectionJobConfig,
+)
 from endoreg_db.services.hls_media import materialize_video_hls
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -39,39 +41,6 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
 
 logger = logging.getLogger(__name__)
-
-VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND = "video_anonymization_correction"
-
-
-class VideoCorrectionRoi(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    x: int
-    y: int
-    width: int
-    height: int
-
-
-class VideoCorrectionRegion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    mode: Literal["device", "custom"]
-    device_name: str
-    roi: VideoCorrectionRoi | None = None
-
-
-class VideoAnonymizationCorrectionJobConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    job_kind: Literal["video_anonymization_correction"] = (
-        VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND
-    )
-    strategy: Literal["detector_assisted", "processor_region"]
-    processing_method: Literal["streaming", "direct"]
-    region: VideoCorrectionRegion
-    human_review_required: Literal[True]
-    apply_all_frames: Literal[True]
-    queue: str
 
 
 @dataclass(frozen=True)

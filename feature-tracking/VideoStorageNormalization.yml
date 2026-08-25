@@ -33,6 +33,11 @@ definition_of_done:
     Strings durch den Workflow gereicht.
   - Genau ein anonymisiertes kanonisches Video bleibt dauerhaft erhalten; HLS ist ein reproduzierbares,
     größenbegrenztes Derivat mit expliziter Cache- und Eviction-Regel.
+  - Ein erfolgreicher Import, Reimport oder eine Reanonymisierung kehrt erst zurück, wenn Raw- und Processed-HLS
+    über den typisierten, idempotenten Materializer atomar bereitstehen. Dieser bewusste Storage-Trade-off
+    hält die Wiedergabelatenz in zeitkritischen Umgebungen begrenzt; fehlgeschlagene HLS-Erzeugung lässt
+    den Import laut und wiederholbar fehlschlagen. Der autorisierte Playlist-Zugriff behält den begrenzten
+    Demand-Fallback für Legacy-, evizierte oder reconciliierte Derivate.
   - Jeder FFmpeg-Befehl, der ein Video, HLS-Derivat oder extrahiertes Frame erzeugt, deaktiviert Audio
     explizit mit `-an`.
   - Abweichungen vom Profil werden laut abgelehnt oder in einen expliziten Quarantänestatus versetzt;
@@ -65,12 +70,40 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
         tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
         tests/services/test_hls_media.py -q (45 passed)
-    note: Der typisierte Vertrag wird jetzt bei Import, Reimport, Reanonymisierung sowie vor und nach
-      HLS-Transcoding durchgesetzt. Bereits konforme Artefakte werden ohne erneute Kodierung übernommen;
-      verschlüsselte HLS-Ausgaben werden vor Veröffentlichung vollständig geprobt. Offen bleibt die formale
-      Abnahme durch Betrieb, klinischen Reviewer und Storage-Verantwortliche.
-    assessed_by: Codex
-    assessed_at: '2026-07-23T09:07:36.963905Z'
+    - kind: code
+      reference: endoreg_db/services/hls_media.py; endoreg_db/views/video/hls_stream.py; endoreg_db/import_files/file_storage/state_management.py;
+        endoreg_db/import_files/video_import_service.py
+    - kind: command
+      reference: ruff check focused files (passed); pyright focused files (0 errors); compileall focused
+        modules (passed); git diff --check (passed)
+    - kind: command
+      reference: 'RUN_VIDEO_TESTS=true PYTHONPATH=/home/admin/endoreg-db /home/admin/dev/lx-annotate/.devenv/state/venv/bin/python
+        -m pytest -q -n0 focused files: 40 setup errors because pg_hba rejects admin for postgres/lxAnnotateTest;
+        9 expensive tests skipped; no test bodies ran'
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 focused import/materialize/playlist files => 39 passed, 10 expensive tests skipped
+        in 32.54s
+    - kind: command
+      reference: Ruff focused files passed; Pyright focused files 0 errors; compileall and git diff --check
+        passed
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/import_files/video_import_service.py
+        duplicate and completed paths
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 focused import/materialize/playlist files => 39 passed, 10 expensive tests skipped
+        in 41.02s
+    - kind: command
+      reference: Focused Ruff passed; focused Pyright 0 errors; git diff --check passed
+    note: 'Import-time eager HLS readiness is restored for time-critical playback: successful import,
+      reimport, reanonymization, and completed-duplicate return paths use the existing typed idempotent
+      materializer and require both raw and processed HLS before returning. Failure remains loud and retryable.
+      The authenticated playlist keeps its bounded on-demand fallback for legacy, evicted, or reconciled
+      derivatives. Ruff, focused Pyright, diff checks, and the non-expensive database-backed focused lane
+      pass; expensive media and formal production acceptance remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T08:10:36.939740Z'
 - id: temporal_frame_contract
   category: data_integrity
   title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
@@ -531,12 +564,21 @@ definition_of_done:
       reference: devenv shell -- env RUSTFLAGS=-C_link-arg=-lpython3.12 cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
         (17 passed); pytest tests/services/test_hls_media.py (22 passed); pytest tests/management/commands/test_materialize_video_hls.py
         tests/test_tasks.py (24 passed)
-    note: Die Rust-HLS-Zustandsmaschine, getrennte aktive/ready Generationen, Worker-Fencing, lease-geschützte
-      Veröffentlichung und begrenzter Task-Retry sind lokal implementiert und fokussiert getestet. Offen
-      bleiben Migration und Rollout auf gc-10, die fail-closed Inventur unbekannter verwaister Verzeichnisse
-      sowie ein produktionsnaher Konkurrenz- und Reconciliation-Nachweis.
-    assessed_by: Codex
-    assessed_at: '2026-07-27T09:44:47.066973Z'
+    - kind: code
+      reference: endoreg_db/services/runtime_wheel_staging.py; endoreg_db/management/commands/reap_runtime_wheel_staging.py
+    - kind: test
+      reference: pytest -q -n0 tests/services/test_runtime_wheel_staging.py => 5 passed; Ruff passed;
+        Pyright 0 errors
+    - kind: command
+      reference: 'Live dry-run /var/lib/lx-annotate: scanned_entries=99, candidate_count=83, candidate_bytes=2420525134,
+        removed_count=0; post-run inventory unchanged'
+    note: Existing HLS lifecycle work remains in progress. This change additionally provides a bounded,
+      typed, dry-run-by-default cleanup for obsolete LX-Annotate deployment wheel staging. It validates
+      canonical roots and wheel identities, rejects symlinks, malformed names and races, never descends
+      into media, and deletes only through safe_unlink_file structured logging. Production apply awaits
+      coordinated LuxNix deployment.
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T07:45:44.708398Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze
@@ -671,15 +713,45 @@ definition_of_done:
         -q (24 passed); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py
         tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py -q
         (32 passed)
-    note: Kapazitätsprojektion, Warn-/Stoppschwellen, Rollen- und Statuszähler, batch_id, strukturierte
-      Ergebnislogs und Fail-closed-Referenzabgleich sind implementiert. Storage-blockierte Neuimporte
-      bewahren jetzt ihre verwaltete Quelle, vermeiden Quarantäne, erscheinen center-begrenzt in der Übersicht
-      und unterstützen automatischen sowie expliziten Retry. Gewöhnliche Fehler bei verwalteten Videoimporten
-      und Watcher-Handoffs bewahren die Importquelle nun ebenfalls und verwenden begrenzte Wiederholungen
-      statt Quarantäne; abgelehnte voranonymisierte Trust-Boundary-Drops bleiben im Quarantäneprozess.
-      Offen bleibt die Demonstration in einer produktionsnahen verschlüsselten Kopie.
-    assessed_by: Codex
-    assessed_at: '2026-07-27T13:32:14Z'
+    - kind: code
+      reference: endoreg_db/management/commands/normalize_video_storage.py bounded _inventory_rows and
+        inventory_cursor payload
+    - kind: code
+      reference: endoreg_db/services/video_storage/inventory.py converts persisted HLS kinds to VideoArtifactKind
+        and branches exhaustively; unknown values fail with VideoStorageNormalizationError; each HLS artifact
+        inventory scan is capped at 20,000 filesystem entries and classified as incomplete when capped;
+        media bytes are never truncated or modified
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py => 5 passed, 4 destructive/expensive
+        tests skipped in 37.80s after incomplete-inventory terminology update
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_cursor_does_not_advance_after_reconciliation_failure
+        => 1 passed in 25.91s
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_rejects_unknown_hls_artifact_kind
+        => 1 passed in 38.98s
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_marks_hls_artifact_above_entry_limit_incomplete
+        => 1 passed in 33.29s; read-only inventory continues with incomplete/unreconciled evidence and apply
+        is rejected before mutation
+    - kind: command
+      reference: Focused Ruff passed; focused Pyright 0 errors; git diff --check passed
+    note: 'Existing capacity projection, thresholds, role/status counters, and fail-closed reconciliation
+      remain implemented. Inventory selection is now bounded before filesystem traversal: default batch
+      100, hard maximum 1000, stable ascending VideoFile primary-key cursor, and machine-readable next
+      cursor. This prevents --limit from scanning the whole fleet. Persisted HLS artifact kinds now enter
+      the existing typed enum and use exhaustive routing; unexpected values fail loudly instead of being
+      omitted from byte totals. Per-artifact HLS traversal is capped at 20,000 filesystem entries without
+      aborting read-only inventory: capped scans are marked incomplete and unreconciled, expose zero reclaimable
+      bytes, and block apply and cleanup before mutation. The cap affects metadata traversal only; no video
+      or HLS bytes are truncated, rewritten, moved, or partially stored. Production-like encrypted inventory
+      reconciliation and full lifecycle classification metrics remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T09:10:28Z'
 - id: operator_documentation
   category: documentation
   title: Profilwahl, Rollout, Recovery und Qualitätsprüfung sind dokumentiert
@@ -704,8 +776,19 @@ definition_of_done:
       reference: AGENTS.md; docs/video_storage_normalization.md
     - kind: document
       reference: a33c73fe; 3f7084c4; docs/video_storage_normalization.md
-    note: Das englische Runbook dokumentiert nun die idempotenten Import-, Reimport- und HLS-Schritte
-      einschließlich der verschlüsselten Vorveröffentlichungsprüfung und der Trennung von annotation_fps_resample_v1.
-      Offen bleibt die formale Abnahme durch Betrieb, Security und klinischen Reviewer.
-    assessed_by: Codex
-    assessed_at: '2026-07-23T09:07:40.613087Z'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md#inventory-and-migration; #pause-and-resume'
+    - kind: document
+      reference: docs/video_storage_normalization.md documents the 20,000-entry per-HLS-artifact inventory
+        ceiling, nonfatal incomplete-scan classification, zero reclaimability, immutable media bytes, and
+        pre-mutation apply/cleanup gate
+    - kind: test
+      reference: 'Bounded cursor inventory tests: 3 passed sequentially with 4 destructive/expensive
+        tests skipped by policy; the resume-safety failure path passed separately with the expensive-test
+        skip disabled (1 passed)'
+    note: 'The English runbook documents eager HLS readiness, encrypted pre-publication validation, timeline
+      gates, and now the bounded inventory contract: default/max batch sizes, stable primary-key cursor
+      fields, resume commands, within-batch prioritization, and partial-apply reconciliation. Formal operations,
+      security, storage-owner, and clinical review remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T08:26:18.303628Z'

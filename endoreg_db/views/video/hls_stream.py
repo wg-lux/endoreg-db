@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.http.response import HttpResponseBase
 from django.db import transaction
 from rest_framework.request import Request
@@ -15,6 +15,7 @@ from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hls_media import (
     coerce_hls_artifact_kind,
+    dispatch_video_hls_materialization,
     get_ready_hls_artifact,
     get_ready_hls_artifact_by_key,
     hls_playlist_path,
@@ -38,6 +39,7 @@ HLS_PLAYLIST_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 HLS_SEGMENT_CONTENT_TYPE = "video/mp2t"
 HLS_KEY_CONTENT_TYPE = "application/octet-stream"
 HLS_SEGMENT_CACHE_CONTROL = "private, max-age=31536000, immutable"
+HLS_PENDING_RETRY_AFTER_SECONDS = 3
 
 
 def _private_no_store(response: HttpResponseBase) -> HttpResponseBase:
@@ -78,6 +80,45 @@ def _file_response(path: Path, *, content_type: str) -> FileResponse:
     return FileResponse(path.open("rb"), content_type=content_type)
 
 
+def _hls_not_ready_response(
+    *,
+    request: Request,
+    artifact_kind: VideoArtifactKind,
+    status: str,
+    unavailable: bool = False,
+) -> HttpResponseBase:
+    response = JsonResponse(
+        {
+            "status": status,
+            "artifact_kind": artifact_kind.value,
+            "retry_after_seconds": HLS_PENDING_RETRY_AFTER_SECONDS,
+        },
+        status=503 if unavailable else 202,
+    )
+    response["Retry-After"] = str(HLS_PENDING_RETRY_AFTER_SECONDS)
+    response = _add_cors_if_configured(response, request)
+    return _harden_media_response(_private_no_store(response))
+
+
+def _ready_hls_playlist_path(
+    *,
+    video: VideoFile,
+    artifact_kind: VideoArtifactKind,
+) -> Path:
+    with transaction.atomic():
+        locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+        artifact = get_ready_hls_artifact(
+            video=locked_video,
+            artifact_kind=artifact_kind,
+        )
+        path = hls_playlist_path(artifact)
+        create_video_stream_lease(
+            locked_video,
+            file_type=f"hls_{artifact.artifact_kind}_playlist",
+        )
+    return path
+
+
 class HLSPlaylistView(APIView):
     permission_classes = [
         EnvironmentAwarePermission,
@@ -98,19 +139,49 @@ class HLSPlaylistView(APIView):
             assert_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)
         try:
-            with transaction.atomic():
-                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
-                artifact = get_ready_hls_artifact(
-                    video=locked_video,
+            path = _ready_hls_playlist_path(
+                video=video,
+                artifact_kind=artifact_kind,
+            )
+        except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
+            try:
+                dispatch = dispatch_video_hls_materialization(
+                    video_id=int(video.pk),
                     artifact_kind=artifact_kind,
                 )
-                path = hls_playlist_path(artifact)
-                create_video_stream_lease(
-                    locked_video,
-                    file_type=f"hls_{artifact.artifact_kind}_playlist",
+            except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
+                raise Http404("HLS source is not available") from None
+            except RuntimeError:
+                return _hls_not_ready_response(
+                    request=request,
+                    artifact_kind=artifact_kind,
+                    status="dispatch_unavailable",
+                    unavailable=True,
                 )
-        except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
-            raise Http404("HLS playlist is not available") from None
+            if dispatch.status in {"queued", "already_queued"}:
+                return _hls_not_ready_response(
+                    request=request,
+                    artifact_kind=artifact_kind,
+                    status=dispatch.status,
+                )
+            if dispatch.status == "dispatch_failed":
+                return _hls_not_ready_response(
+                    request=request,
+                    artifact_kind=artifact_kind,
+                    status=dispatch.status,
+                    unavailable=True,
+                )
+            try:
+                path = _ready_hls_playlist_path(
+                    video=video,
+                    artifact_kind=artifact_kind,
+                )
+            except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
+                return _hls_not_ready_response(
+                    request=request,
+                    artifact_kind=artifact_kind,
+                    status="publication_pending",
+                )
 
         if nginx_offload_enabled():
             response = build_nginx_accel_response_for_path(

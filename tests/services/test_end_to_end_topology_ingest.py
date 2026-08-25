@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pytest import MonkeyPatch
 
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
 from endoreg_db.utils import paths as paths_module
@@ -41,7 +42,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             )
             first_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-a.pdf"
             second_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-b.pdf"
-            payload = b"%PDF-1.4 topology ingest"
+            payload = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
+                "topology ingest"
+            )
             atomic_write_file(destination=first_drop, content=(payload,))
             atomic_write_file(destination=second_drop, content=(payload,))
 
@@ -88,7 +91,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     return report
 
             monkeypatch.setattr(
-                "endoreg_db.services.report_import.ReportImportService",
+                "endoreg_db.services.jobs.report_llm_jobs.ReportImportService",
                 _StubReportImportService,
             )
 

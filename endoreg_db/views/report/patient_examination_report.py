@@ -60,6 +60,8 @@ from endoreg_db.serializers.report.patient_examination_report import (
 )
 from endoreg_db.services.report_history import get_patient_examination_history_context
 from endoreg_db.services.report_persistence import (
+    ReportKnowledgeBaseRegistryUnavailableError,
+    ReportPersistenceValidationError,
     persist_report_pdf_artifact,
     save_report_submission,
 )
@@ -1052,6 +1054,13 @@ def save_submission(
         )
     except ReportRuntimeValidationError as exc:
         raise HttpError(422, json.dumps(exc.result)) from exc
+    except ReportPersistenceValidationError as exc:
+        raise HttpError(422, json.dumps(exc.detail)) from exc
+    except ReportKnowledgeBaseRegistryUnavailableError as exc:
+        raise HttpError(
+            503,
+            "The configured knowledge-base registry is unavailable.",
+        ) from exc
 
     persisted_artifacts = api._build_persisted_artifacts_payload(
         patient_examination=_report_patient_examination(result.report),

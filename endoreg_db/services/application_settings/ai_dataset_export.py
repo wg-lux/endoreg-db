@@ -18,6 +18,7 @@ from endoreg_db.schemas.aidataset_export import (
     dump_ai_dataset_export_summary,
     parse_ai_dataset_export_request_payload,
 )
+from endoreg_db.services.aidataset_exports import export_to_standardized_structure
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
 )
@@ -388,7 +389,8 @@ def create_ai_dataset_export(
     output_path = export_dir / file_name
 
     try:
-        export_payload = dataset.export_to_standardized_structure(
+        export_payload = export_to_standardized_structure(
+            dataset,
             center_key=center_key,
             all_centers=all_centers,
             only_validated=only_validated,

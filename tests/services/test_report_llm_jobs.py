@@ -195,6 +195,59 @@ def test_report_upload_import_dispatches_to_llm_queue(
     assert ReportLlmInferenceJob.objects.filter(upload_job=upload_job).exists()
 
 
+def test_eager_report_task_failure_is_not_logged_as_dispatch_failure(
+    monkeypatch: MonkeyPatch,
+    center: Center,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    upload_job = _make_upload_job(center)
+
+    class InvalidPdfForTest(ValueError):
+        pass
+
+    def apply_async(*_args: object, **kwargs: object) -> SimpleNamespace:
+        task_args = cast(tuple[str], kwargs["args"])
+        job = ReportLlmInferenceJob.objects.get(job_id=task_args[0])
+        job.mark_failure("invalid PDF")
+        upload_job.mark_error(
+            "invalid PDF",
+            error_code=UploadJob.ErrorCode.INVALID_INPUT,
+        )
+        raise InvalidPdfForTest("invalid PDF")
+
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
+    monkeypatch.setattr(
+        "endoreg_db.tasks.run_report_llm_import_task.apply_async",
+        apply_async,
+    )
+
+    with caplog.at_level(
+        "ERROR",
+        logger="endoreg_db.services.jobs.report_llm_jobs",
+    ):
+        result = dispatch_report_llm_import(
+            upload_job_id=str(upload_job.pk),
+            payload={"retry": False},
+        )
+
+    assert result.status == "failed"
+    structured_events = [
+        getattr(record, "structured_event", {}) for record in caplog.records
+    ]
+    event = next(
+        item
+        for item in structured_events
+        if item.get("event") == "report_llm.task_execution_failed"
+    )
+    assert event["job_id"] == result.job_id
+    assert event["content_hash"] == upload_job.content_hash
+    assert event["failure_class"] == "InvalidPdfForTest"
+    assert event["retryable"] is False
+    assert not any(
+        item.get("event") == "report_llm.dispatch_failed" for item in structured_events
+    )
+
+
 def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     monkeypatch: MonkeyPatch,
     center: Center,
@@ -299,3 +352,36 @@ def test_report_upload_import_does_not_publish_success_without_usable_artifact(
     upload_job.refresh_from_db()
     assert upload_job.status == UploadJob.Status.ERROR
     assert "processed report missing" in upload_job.error_detail
+
+
+def test_corrupted_pdf_is_quarantined_as_non_retryable_invalid_input(
+    monkeypatch: MonkeyPatch,
+    center: Center,
+) -> None:
+    upload_job = UploadJob.objects.create(
+        file=SimpleUploadedFile(
+            name="corrupted-report.pdf",
+            content=b"%PDF-1.4 topology ingest",
+            content_type="application/pdf",
+        ),
+        content_type="application/pdf",
+        source_center=center,
+        source_system="test",
+        processing_provenance={"entrypoint": "test"},
+    )
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+
+    result = dispatch_report_llm_import(
+        upload_job_id=str(upload_job.pk),
+        payload={"retry": False},
+    )
+
+    assert result.status == "failed"
+    upload_job.refresh_from_db()
+    assert upload_job.status == UploadJob.Status.ERROR
+    assert upload_job.error_code == UploadJob.ErrorCode.INVALID_INPUT
+    assert upload_job.storage_class == UploadJob.StorageClass.QUARANTINE
+    assert upload_job.retryable is False
+    assert upload_job.next_retry_at is None
+    assert upload_job.file
+    assert ReportLlmInferenceJob.objects.filter(upload_job=upload_job).count() == 1

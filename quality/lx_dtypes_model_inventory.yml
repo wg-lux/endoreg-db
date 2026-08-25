@@ -602,7 +602,6 @@ models:
   - api:endoreg_db/serializers/administration/center.py
   - api:endoreg_db/serializers/fields.py
   - api:endoreg_db/serializers/hub/transfer_job.py
-  - api:endoreg_db/serializers/meta/sensitive_meta_update.py
   - api:endoreg_db/views/media/hub/transfers.py
   - api:endoreg_db/views/media/patient_media_timeline.py
   - api:endoreg_db/views/misc/application_settings.py
@@ -637,6 +636,7 @@ models:
   - service:endoreg_db/services/report_patient_context.py
   - service:endoreg_db/services/report_persistence.py
   - service:endoreg_db/services/sap_ish_clinical.py
+  - service:endoreg_db/services/sensitive_meta_update.py
   - service:endoreg_db/utils/set_default_center.py
   dynamic_model_references:
   - endoreg_db/integrations/lx_dtypes_host_models.py
@@ -2108,7 +2108,6 @@ models:
   - endoreg_db/models/other/gender.py:Gender
   boundary_consumers:
   - api:endoreg_db/serializers/administration/gender.py
-  - api:endoreg_db/serializers/meta/sensitive_meta_update.py
   - api:endoreg_db/serializers/patient/patient.py
   - api:endoreg_db/views/misc/gender.py
   - job:endoreg_db/management/commands/load_gender_data.py
@@ -2116,6 +2115,7 @@ models:
   - service:endoreg_db/helpers/default_objects.py
   - service:endoreg_db/services/report_patient_context.py
   - service:endoreg_db/services/report_persistence.py
+  - service:endoreg_db/services/sensitive_meta_update.py
   dynamic_model_references:
   - endoreg_db/integrations/lx_dtypes_host_models.py
   module_lx_dtypes_imports: []
@@ -4096,6 +4096,7 @@ models:
   - import:endoreg_db/import_files/file_storage/create_report_file.py
   - import:endoreg_db/import_files/file_storage/sensitive_meta_storage.py
   - import:endoreg_db/import_files/file_storage/state_management.py
+  - import:endoreg_db/import_files/processing/report_processing/report_anonymization.py
   - import:endoreg_db/import_files/report_import_service.py
   - import:endoreg_db/services/raw_pdf_files/imports.py
   - job:endoreg_db/management/commands/emergency_storage_relief.py
@@ -4486,8 +4487,6 @@ models:
   - lx-dtypes:lx_dtypes.models.meta.SensitiveMeta
   boundary_consumers:
   - api:endoreg_db/serializers/meta/sensitive_meta_detail.py
-  - api:endoreg_db/serializers/meta/sensitive_meta_update.py
-  - api:endoreg_db/serializers/meta/sensitive_meta_verification.py
   - api:endoreg_db/serializers/video_examination.py
   - api:endoreg_db/views/anonymization/validate.py
   - api:endoreg_db/views/media/patient_media_timeline.py
@@ -4513,6 +4512,8 @@ models:
   - service:endoreg_db/services/raw_pdf_files/metadata.py
   - service:endoreg_db/services/raw_pdf_files/state.py
   - service:endoreg_db/services/sap_ish_clinical.py
+  - service:endoreg_db/services/sensitive_meta_update.py
+  - service:endoreg_db/services/sensitive_meta_verification.py
   - service:endoreg_db/services/video_files/_metadata/text_meta.py
   dynamic_model_references:
   - endoreg_db/services/validated_identity.py
@@ -4541,11 +4542,13 @@ models:
   rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
     Django retains relations and constraints.
   ownership_evidence:
-  - api:endoreg_db/serializers/meta/sensitive_meta_verification.py
   - endoreg_db/models/state/sensitive_meta.py:SensitiveMetaState
   - lx-dtypes:lx_dtypes.models.meta.SensitiveMeta
+  - service:endoreg_db/services/sensitive_meta_update.py
+  - service:endoreg_db/services/sensitive_meta_verification.py
   boundary_consumers:
-  - api:endoreg_db/serializers/meta/sensitive_meta_verification.py
+  - service:endoreg_db/services/sensitive_meta_update.py
+  - service:endoreg_db/services/sensitive_meta_verification.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []

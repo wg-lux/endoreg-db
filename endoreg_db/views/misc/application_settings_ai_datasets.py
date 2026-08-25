@@ -38,6 +38,9 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,
 )
+from endoreg_db.services.aidataset_frame_buckets import (
+    build_frame_bucket_distribution,
+)
 from endoreg_db.services.aidataset_training_manifests import (
     build_frame_multilabel_training_manifest,
 )
@@ -941,7 +944,8 @@ def application_settings_ai_dataset_frame_bucket_distribution(
         request.query_params.get("prediction_segments_only"),
         default=True,
     )
-    distribution = dataset.build_frame_bucket_distribution(
+    distribution = build_frame_bucket_distribution(
+        dataset,
         label_set=label_set,
         target_label=target_label,
         prediction_segments_only=prediction_segments_only,
