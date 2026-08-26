@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Protocol, TypeAlias, cast
 
+from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject
@@ -56,6 +57,17 @@ def _serializer_data(serializer: _SerializerDataLike) -> JsonValue:
 
 def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
+
+
+def _report_draft_revision(draft: object) -> int:
+    if not isinstance(draft, Mapping):
+        raise ValueError("Persisted report draft must be an object.")
+    revision = cast(Mapping[str, object], draft).get("revision", 0)
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise ValueError(
+            "Persisted report draft revision must be a non-negative integer."
+        )
+    return revision
 
 
 class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
@@ -182,9 +194,11 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
         examination = self.get_object()
 
         if request.method == "GET":
+            current_revision = _report_draft_revision(examination.report_draft or {})
             serializer = PatientExaminationDraftResponseSerializer(
                 {
                     "patient_examination_id": cast(int, examination.pk),
+                    "revision": current_revision,
                     "draft": examination.report_draft or {},
                     "updated_at": cast(
                         datetime | None,
@@ -196,17 +210,43 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
 
         serializer = PatientExaminationDraftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        examination.report_draft = cast(JsonObject, serializer.validated_data)
-        examination.draft_updated_at = timezone.now()
-        examination.save(update_fields=["report_draft", "draft_updated_at"])
+        expected_revision = serializer.validated_expected_revision
+
+        with transaction.atomic():
+            locked_examination = PatientExamination.objects.select_for_update().get(
+                pk=examination.pk
+            )
+            current_revision = _report_draft_revision(
+                locked_examination.report_draft or {}
+            )
+            if expected_revision != current_revision:
+                return Response(
+                    {
+                        "detail": "The report draft was modified by another writer.",
+                        "current_revision": current_revision,
+                        "updated_at": cast(
+                            datetime | None,
+                            getattr(locked_examination, "draft_updated_at"),
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            next_revision = current_revision + 1
+            next_draft = dict(serializer.validated_data)
+            next_draft["revision"] = next_revision
+            locked_examination.report_draft = cast(JsonObject, next_draft)
+            locked_examination.draft_updated_at = timezone.now()
+            locked_examination.save(update_fields=["report_draft", "draft_updated_at"])
 
         response_serializer = PatientExaminationDraftResponseSerializer(
             {
-                "patient_examination_id": cast(int, examination.pk),
-                "draft": examination.report_draft,
+                "patient_examination_id": cast(int, locked_examination.pk),
+                "revision": next_revision,
+                "draft": locked_examination.report_draft,
                 "updated_at": cast(
                     datetime | None,
-                    getattr(examination, "draft_updated_at"),
+                    getattr(locked_examination, "draft_updated_at"),
                 ),
             }
         )

@@ -60,6 +60,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
 
     body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
+    assert body["revision"] == 0
     assert body["draft"] == {}
     assert body["updated_at"] is None
 
@@ -73,6 +74,18 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
             "templateHash": "sha256:template",
             "lifecycleStatus": "published",
         },
+        "indications": [{"examination_indication_id": 12, "indication_choice_id": 21}],
+        "template_section_drafts": {
+            "findings": {
+                "note": "No acute bleeding",
+                "include_patient_data": True,
+                "include_examination_data": False,
+            }
+        },
+        "selected_report_language": "de",
+        "active_report_id": 88,
+        "report_text_mode": "manual",
+        "rendered_text": "Klinischer Freitext",
         "payload": {
             "sections": [
                 {"name": "findings", "items": ["esophagus_polyp"]},
@@ -81,6 +94,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
     }
     canonical_payload = {
         "schema_version": "1.0",
+        "revision": 1,
         "module_name": "report_template_examples",
         "template_name": "star_upper_gi_main",
         "template_identity": {
@@ -90,6 +104,18 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
             "template_hash": "sha256:template",
             "lifecycle_status": "published",
         },
+        "indications": [{"examination_indication_id": 12, "indication_choice_id": 21}],
+        "template_section_drafts": {
+            "findings": {
+                "note": "No acute bleeding",
+                "include_patient_data": True,
+                "include_examination_data": False,
+            }
+        },
+        "selected_report_language": "de",
+        "active_report_id": 88,
+        "report_text_mode": "manual",
+        "rendered_text": "Klinischer Freitext",
         "payload": {
             "sections": [
                 {"name": "findings", "items": ["esophagus_polyp"]},
@@ -97,11 +123,14 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
         },
     }
 
-    response = api_client.put(url, data=payload, format="json")
+    response = api_client.put(
+        url, data={**payload, "expected_revision": 0}, format="json"
+    )
     assert response.status_code == 200
 
     body = _response_body(response)
     assert body["patient_examination_id"] == patient_examination_id
+    assert body["revision"] == 1
     assert body["draft"] == canonical_payload
     assert body["updated_at"] is not None
 
@@ -111,6 +140,7 @@ def test_patient_examination_draft_roundtrip(api_client: APIClient) -> None:
 
     response = api_client.get(url)
     assert response.status_code == 200
+    assert _response_body(response)["revision"] == 1
     assert _response_body(response)["draft"] == canonical_payload
 
 
@@ -172,13 +202,17 @@ def test_patient_examination_draft_put_overwrites_previous_payload(
         "payload": {"step": 2, "selected": ["colon_polyp"]},
     }
 
-    first_response = api_client.put(url, data=first_payload, format="json")
+    first_response = api_client.put(
+        url, data={**first_payload, "expected_revision": 0}, format="json"
+    )
     assert first_response.status_code == 200
 
     first_body = _response_body(first_response)
     first_updated_at = cast(str, first_body["updated_at"])
 
-    second_response = api_client.put(url, data=second_payload, format="json")
+    second_response = api_client.put(
+        url, data={**second_payload, "expected_revision": 1}, format="json"
+    )
     assert second_response.status_code == 200
 
     second_body = _response_body(second_response)
@@ -186,6 +220,12 @@ def test_patient_examination_draft_put_overwrites_previous_payload(
 
     assert second_body["draft"] == {
         "schema_version": "1.0",
+        "revision": 2,
+        "indications": [],
+        "template_section_drafts": {},
+        "selected_report_language": "de",
+        "report_text_mode": "generated",
+        "rendered_text": "",
         **second_payload,
     }
     assert second_updated_at >= first_updated_at
@@ -193,8 +233,121 @@ def test_patient_examination_draft_put_overwrites_previous_payload(
     patient_examination.refresh_from_db()
     assert patient_examination.report_draft == {
         "schema_version": "1.0",
+        "revision": 2,
+        "indications": [],
+        "template_section_drafts": {},
+        "selected_report_language": "de",
+        "report_text_mode": "generated",
+        "rendered_text": "",
         **second_payload,
     }
+
+
+@pytest.mark.django_db
+def test_patient_examination_draft_rejects_stale_second_writer(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"draft-conflict-{uuid4().hex}",
+        first_name="Draft",
+        last_name="Conflict",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    url = f"/api/patient-examinations/{_pk(patient_examination)}/draft/"
+
+    first_writer = api_client.put(
+        url,
+        data={
+            "expected_revision": 0,
+            "module_name": "report_template_examples",
+            "template_name": "template_a",
+            "rendered_text": "First writer",
+        },
+        format="json",
+    )
+    stale_writer = api_client.put(
+        url,
+        data={
+            "expected_revision": 0,
+            "module_name": "report_template_examples",
+            "template_name": "template_a",
+            "rendered_text": "Stale writer",
+        },
+        format="json",
+    )
+
+    assert first_writer.status_code == 200
+    assert _response_body(first_writer)["revision"] == 1
+    assert stale_writer.status_code == 409
+    stale_body = _response_body(stale_writer)
+    assert stale_body["current_revision"] == 1
+    assert stale_body["updated_at"] is not None
+
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft["revision"] == 1
+    assert patient_examination.report_draft["rendered_text"] == "First writer"
+
+
+@pytest.mark.django_db
+def test_patient_examination_draft_requires_expected_revision(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"draft-revision-required-{uuid4().hex}",
+        first_name="Draft",
+        last_name="Revision",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+
+    response = api_client.put(
+        f"/api/patient-examinations/{_pk(patient_examination)}/draft/",
+        data={"module_name": "report_template_examples"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft == {}
+
+
+@pytest.mark.django_db
+def test_patient_examination_draft_upgrades_legacy_unrevisioned_draft(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"draft-legacy-revision-{uuid4().hex}",
+        first_name="Draft",
+        last_name="Legacy",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    PatientExamination.objects.filter(pk=patient_examination.pk).update(
+        report_draft={
+            "schema_version": "1.0",
+            "module_name": "report_template_examples",
+            "template_name": "legacy_template",
+            "payload": {},
+        }
+    )
+    url = f"/api/patient-examinations/{_pk(patient_examination)}/draft/"
+
+    legacy_response = api_client.get(url)
+    update_response = api_client.put(
+        url,
+        data={
+            "expected_revision": 0,
+            "module_name": "report_template_examples",
+            "template_name": "legacy_template",
+            "rendered_text": "Updated legacy draft",
+        },
+        format="json",
+    )
+
+    assert legacy_response.status_code == 200
+    assert _response_body(legacy_response)["revision"] == 0
+    assert update_response.status_code == 200
+    assert _response_body(update_response)["revision"] == 1
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft["revision"] == 1
 
 
 @pytest.mark.django_db
@@ -210,7 +363,11 @@ def test_patient_examination_draft_rejects_unknown_fields(
 
     response = api_client.put(
         f"/api/patient-examinations/{_pk(patient_examination)}/draft/",
-        data={"module_name": "reports", "unexpected": "value"},
+        data={
+            "module_name": "reports",
+            "expected_revision": 0,
+            "unexpected": "value",
+        },
         format="json",
     )
 
