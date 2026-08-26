@@ -167,6 +167,9 @@ definition_of_done:
   acceptance:
   - Tests decken alle Importzustände, transiente Wiederholungsmetadaten, terminale Fehler, LOST, HLS-Materialisierungszustände,
     sichere Fehlerdarstellung und Cleanup-Zustände ab.
+  - 'Vertragstests sichern die vollständige Übergabe vom Ingest-Layer an die Report- und Video-Import-Jobs:
+    typisierte Report-Payloads und Ergebniszustände, Video-Queue und Task-ID, Celery-Delegation sowie
+    die Weitergabe von Lease-Owner, deterministischer Attempt-ID und Execution-Guard.'
   - Quarantänetests decken fehlende Verzeichnisse, unlesbare Einträge, Symlinks, Limits, Pfadbereinigung,
     Ledger-Korrelation und sichere Lebenszyklusaktionen ab.
   required: true
@@ -189,8 +192,17 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
         tests/services/test_ingest_idempotency_quarantine.py tests/services/test_hls_media.py -q
       note: Exit-Code 0
-    assessed_by: Codex
-    assessed_at: '2026-07-21T08:34:58.641925Z'
+    - kind: test
+      reference: tests/services/test_hub_ingest_import_job_contract.py (12 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_import_job_contract.py tests/services/test_hub_ingest_dispatch.py
+        tests/services/test_report_llm_jobs.py tests/services/test_upload_job_import_lease.py tests/test_tasks.py
+        -q (49 passed)
+    note: Der Ingest-zu-Import-Job-Vertrag ist durch fokussierte AAA-Tests für Report- und Video-Handoffs,
+      Ergebniszustände, Task-Identität, Lease-Owner, Attempt-ID und Execution-Guard ergänzt; die angrenzende
+      Regression-Lane ist grün.
+    assessed_by: codex-dag-import-analysis
+    assessed_at: '2026-08-26T07:37:35.835745Z'
 - id: frontend_state_tests
   category: testing
   title: Frontend-Darstellung und erlaubte Aktionen sind automatisiert getestet

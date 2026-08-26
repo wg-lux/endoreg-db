@@ -1,0 +1,248 @@
+schema_version: '1.0'
+id: import_pipeline_robustness
+name: Robuste Import-Pipeline
+description: Einheitlicher, fail-closed und wiederanlauffähiger Importvertrag für Video-, Report-, UploadJob-,
+  Watcher-, Transfer- und voranonymisierte Pfade. Die Aufgabe bündelt die schrittweise Härtung von Ownership,
+  Publikation, Erfolgsevidenz und Reconciliation, ohne bestehende Medienpfade vorzeitig als atomar oder
+  produktionsreif zu bewerten.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Definiert Lease, Heartbeat, Fencing und versuchseigene Publikationsrechte für Videoimporte.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Definiert kanonischen Master, HLS-Generationen, atomare Veröffentlichung und Cleanup-Gates.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Beschreibt Upload-, Watcher-, Transfer-, Quarantäne- und Wiederanlaufpfade.
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
+definition_of_done:
+- id: canonical_import_attempt_contract
+  category: requirements
+  title: Alle produktiven Importpfade verwenden einen kanonischen Importversuch
+  acceptance:
+  - Video, Report, API, Watcher, Transfer und voranonymisierter Import besitzen einen persistierten, typisierten
+    Versuch mit eindeutiger Medienart, Quellgeneration, Owner, Status und Attempt-ID.
+  - Direkte Service- und Kommandoaufrufe umgehen Lease, Retry, Fencing, Publikation oder Cleanup nicht.
+  - Der Vertrag benennt explizit, welche lokalen Locks nur Optimierungen und welche Datenbankzustände
+    autoritative Cluster-Ownership sind.
+  required: true
+  verification:
+    kind: manual
+    instructions: Alle Call-Sites von VideoImportService und ReportImportService inventarisieren und gegen
+      den kanonischen Attempt-Vertrag prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/import_files/video_import_service.py; endoreg_db/services/hub/ingest.py; docs/video_import_concurrency_contract.md
+    - kind: test
+      reference: PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db .devenv/state/venv/bin/pytest
+        tests/services/test_video_import_service_unit.py tests/services/test_hub_ingest_import_job_contract.py
+        -q (57 passed)
+    note: Der UploadJob-Wrapper besitzt den persistierten Lease und den Hintergrund-Heartbeat; VideoImportExecutionFence
+      koppelt Attempt-ID und synchronen Ownership-Guard untrennbar, und der Video-Service kann Ownership
+      weder erwerben noch erneuern. 57 fokussierte Tests bestehen. Inline-Watcher, Transfer und weitere
+      direkte Aufrufe nutzen weiterhin den ausdrücklich unfenced Kompatibilitätspfad und müssen vor einer
+      Verifizierung migriert werden.
+    assessed_by: codex-import-robustness-20260826
+    assessed_at: '2026-08-26T09:32:06.361421Z'
+- id: video_finalization_fencing_receipt
+  category: data_integrity
+  title: Video-Finalisierung prüft Ownership und verlangt persistente Erfolgsevidenz
+  acceptance:
+  - Die aktuelle Ausführungsberechtigung wird vor Master-Metadaten, HLS-Materialisierung, Zustandsübergang,
+    Staging-Cleanup und erfolgreicher ProcessingHistory erneut geprüft.
+  - Ein Fehler beim Schreiben der erfolgreichen ProcessingHistory wird nicht unterdrückt und kann vom
+    Aufrufer nicht als erfolgreicher Import interpretiert werden.
+  - Regressionstests erzwingen die wiederholten Ownership-Prüfungen und einen laut propagierten History-Schreibfehler.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_video_finalize_success.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/import_files/file_storage/state_management.py::_record_successful_video_processing_history
+    - kind: test
+      reference: tests/import_files/test_video_finalize_success.py::test_successful_video_history_failure_is_not_suppressed;
+        tests/import_files/test_video_finalize_success.py::test_finalize_video_success_keeps_only_canonical_raw_and_anonymized
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py tests/services/test_preanonymized_watcher_ingest.py
+        -q (14 passed, 4 subtests passed)
+    note: Die kleinen Publikationsguards und der harte ProcessingHistory-Gate sind implementiert und typisiert
+      getestet; eine atomare Gesamtgeneration bleibt ein separates offenes Kriterium.
+    assessed_by: codex-ingest-audit-20260826
+    assessed_at: '2026-08-26T07:52:39Z'
+- id: preanonymized_streamability_fail_closed
+  category: security
+  title: Voranonymisierte Videos melden Streamable-Fehler nicht als Erfolg
+  acceptance:
+  - Ein Fehler beim Synchronisieren der erforderlichen Streamable-Artefakte propagiert bis zum Importversuch
+    und verhindert dessen erfolgreichen Abschluss.
+  - Der Fehler wird nicht in eine Warnung mit anschließend validiertem UploadJob umgewandelt.
+  - Ein negativer Regressionstest belegt das fail-closed Verhalten.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_preanonymized_watcher_ingest.py::test_preanonymized_video_streamable_sync_failure_is_not_suppressed
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py::_mark_preanonymized_video_ready
+    - kind: test
+      reference: tests/services/test_preanonymized_watcher_ingest.py::test_preanonymized_video_streamable_sync_failure_is_not_suppressed
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py tests/services/test_preanonymized_watcher_ingest.py
+        -q (14 passed, 4 subtests passed)
+    note: Die bisher unterdrückte Streamable-Ausnahme schlägt jetzt laut fehl. Medienprofil, Anonymisierungsattestation
+      und atomare Veröffentlichung bleiben gesondert offen.
+    assessed_by: codex-ingest-audit-20260826
+    assessed_at: '2026-08-26T07:52:39Z'
+- id: atomic_media_generation_publication
+  category: functionality
+  title: Master, Derivate, Status und Erfolgsevidenz werden als eine Generation veröffentlicht
+  acceptance:
+  - Ein Import wird erst erfolgreich, wenn kanonischer Master, erforderliche Derivate, Zustände und Erfolgshistorie
+    auf dieselbe Generation zeigen und vollständig validiert sind.
+  - Ein Fehler nach Master-Staging, während Raw- oder Processed-HLS oder beim History-Commit hinterlässt
+    keine teilweise als gültig referenzierte Generation.
+  - Die vorherige gültige Generation bleibt bis zum vollständigen Commit lesbar und wird bei Fehlern weder
+    überschrieben noch gelöscht.
+  required: true
+  verification:
+    kind: manual
+    instructions: Failure Injection an jeder Datei- und Datenbankgrenze ausführen und Datenbank, Master,
+      HLS, History und vorherige Generation anschließend reconciliieren.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: report_attempt_heartbeat_and_metadata_fencing
+  category: functionality
+  title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
+  acceptance:
+  - Die Report-Lease wird während lang laufender OCR- und Large-Language-Model-Phasen regelmäßig anhand
+    der Datenbankzeit erneuert.
+  - Originaltext, anonymisierter Text, SensitiveMeta und PDF-Publikation prüfen denselben monotonen Fencing-Token
+    vor jeder persistenten Mutation.
+  - Ein ersetzter Worker kann weder Metadaten noch Dateien oder Erfolgszustände eines neueren Versuchs
+    ändern.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_import_fencing.py
+    - tests/services/test_report_import_concurrency.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/report_import_fencing.py::ReportImportFenceHeartbeat; endoreg_db/services/report_import_fencing.py::report_import_mutation_guard;
+        endoreg_db/import_files/report_import_service.py::_import_with_content_hash_lock; endoreg_db/import_files/processing/report_processing/report_anonymization.py::ReportAnonymizer.anonymize_report
+    - kind: command
+      reference: 'targeted pyright: 0 errors, 1 external pymupdf-stub warning; report fencing: 6 passed;
+        report service unit: 52 passed'
+    note: Database-clock renewal, background heartbeat, expiry-aware ownership checks, and attempt-row-locked
+      text/SensitiveMeta persistence are implemented. Focused fencing and unit tests pass; the required
+      combined concurrency lane remains blocked by the partially synchronized Torch test runtime.
+    assessed_by: codex-import-robustness-20260826
+    assessed_at: '2026-08-26T08:22:49.336939Z'
+- id: cross_entrypoint_failure_injection
+  category: testing
+  title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
+  acceptance:
+  - Prozessbasierte Tests decken API, regulären Watcher, voranonymisierten Watcher, Transfer, CLI und
+    direkte Service-Aufrufe mit gleichem Pfad, gleichem Inhalt und unabhängigen Inhalten ab.
+  - Tests injizieren Lease-Verlust, Worker-Abbruch, Datenbankfehler, Disk-full, HLS-Fehler, History-Fehler
+    und Quelländerung an jeder Publikationsgrenze.
+  - Nach jedem Szenario bestehen höchstens eine gültige Generation und eine eindeutige aktuelle Ownership;
+    Quellenverlust und verwaiste Artefakte werden explizit erkannt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Die vollständige Failure-Injection-Matrix pro Eingangsweg in getrennten Prozessen gegen
+      PostgreSQL und produktionsnahen verschlüsselten Storage ausführen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: import_reconciliation_and_recovery
+  category: operations
+  title: Partielle Importe werden sicher erkannt und wiederaufgenommen
+  acceptance:
+  - Reconciliation erkennt Datenbank-only, Storage-only, fehlende History, unvollständige HLS-Generation,
+    abgelaufene Ownership und widersprüchliche Erfolgszustände.
+  - Automatische Reparatur verändert nur eindeutig besessene, wiederherstellbare Zustände; unbekannte
+    oder klinisch unsichere Zustände werden als LOST oder Quarantäne sichtbar und bleiben erhalten.
+  - Retry ist begrenzt, idempotent, kapazitätsgeprüft und löscht nie die einzige gültige Quelle oder Generation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Abgebrochene Importe in jeder Publikationsphase erzeugen und Recovery, Retry, Quarantäne
+      sowie unveränderte vorherige Generation betrieblich nachweisen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/reconciliation.py::ReconciliationService.clear_stale_lock_files;
+        cleanup_orphaned_artifacts; reset_incomplete_processing_states
+    - kind: command
+      reference: 'targeted pyright: 0 errors; tests/services/test_reconciliation_service.py: 15 passed'
+    note: 'Startup reconciliation is now fail-closed for ownership-ambiguous local locks, staging artifacts,
+      and legacy processing states: it retains and reports them instead of deleting/resetting by wall-clock
+      age. Generation-aware HLS/media repair remains delegated to existing typed services. Persisted attempt-to-artifact
+      generation linkage and the full DB-only/storage-only auto-repair matrix remain open.'
+    assessed_by: codex-import-robustness-20260826
+    assessed_at: '2026-08-26T08:25:08.560085Z'
+- id: import_pipeline_operator_documentation
+  category: documentation
+  title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert
+  acceptance:
+  - Die Dokumentation zeigt je Eingangsweg Attempt, Lease, Heartbeat, Fencing, Staging, Publikation, Cleanup
+    und terminale Fehlerzustände ohne widersprüchliche Erfolgsdefinitionen.
+  - Videoimport-Erfolg, HLS-Bereitschaft und Generation werden zwischen Runbook und Feature-Tracker identisch
+    definiert.
+  - Das Runbook beschreibt Diagnose und Recovery für History-Fehler, Streamable-Fehler, Lease-Verlust,
+    partielle Generation und voranonymisierte Trust-Boundary-Verletzung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbooks gegen Code, Tracker und Incident-Abläufe gemeinsam mit Betrieb, Security, Storage
+      und klinischem Reviewer abnehmen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: runbook
+      reference: docs/video_import_concurrency_contract.md; docs/video_storage_normalization.md; docs/hub_ingest_operations.md;
+        docs/wiki/hub_ingest_current_state.md
+    note: Runbooks now share the fail-closed video success boundary, distinguish database ownership from
+      local locks, and include operator recovery for history, HLS, ownership, DB/storage mismatch, and
+      pre-anonymized trust failures. Cross-functional operations, security, storage, and clinical acceptance
+      remains outstanding.
+    assessed_by: codex-import-robustness-20260826
+    assessed_at: '2026-08-26T08:22:58.351741Z'

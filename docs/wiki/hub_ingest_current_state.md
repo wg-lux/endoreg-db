@@ -272,10 +272,18 @@ Current behavior:
   or inline execution
 - `process_upload_job(...)` dispatches to `ReportImportService` or
   `VideoImportService`
-- successful completion marks the job `anonymized`
+- video completion marks the job `anonymized` only after canonical master,
+  required raw and processed HTTP Live Streaming generations, state, and
+  successful processing history have committed under the current fencing token
+- report completion marks the job `anonymized` only after the processed PDF,
+  text, `SensitiveMeta`, state, and successful processing history have committed
+  under the current report fencing token
 - failed processing marks the job `error`
 - missing or inconsistent stored input fails loudly rather than silently
   recovering
+- source-path and content-hash file locks are local performance optimizations;
+  persisted database lease state and fencing tokens are authoritative across
+  processes and nodes
 
 ### Transfer jobs
 

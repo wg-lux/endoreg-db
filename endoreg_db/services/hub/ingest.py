@@ -1721,36 +1721,45 @@ def _finalize_preanonymized_video(
 ) -> VideoFile:
     video_hash = sha256_file(source_path)
     final_path = _processed_video_dir() / f"{video_hash}.mp4"
+    target_already_existed = final_path.exists()
     _persist_preanonymized_file(
         source_path=source_path,
         target_path=final_path,
-        delete_source=delete_source,
+        delete_source=False,
     )
 
-    processor = _resolve_preanonymized_video_processor(processor_name)
-    relative_name = to_storage_relative(final_path)
-    with transaction.atomic():
-        video = _get_or_update_preanonymized_video(
-            source_path=source_path,
-            center=center,
-            processor=processor,
-            video_hash=video_hash,
-            relative_name=relative_name,
-        )
-        sensitive_meta = _apply_preanonymized_metadata(
-            sensitive_meta=video.sensitive_meta,
-            center=center,
-            payload=payload,
-        )
-        _link_preanonymized_video_metadata(
-            video=video,
-            sensitive_meta=sensitive_meta,
-        )
-        _mark_preanonymized_video_ready(
-            video=video,
-            resolve_case=sensitive_meta is not None,
-        )
-        return video
+    try:
+        processor = _resolve_preanonymized_video_processor(processor_name)
+        relative_name = to_storage_relative(final_path)
+        with transaction.atomic():
+            video = _get_or_update_preanonymized_video(
+                source_path=source_path,
+                center=center,
+                processor=processor,
+                video_hash=video_hash,
+                relative_name=relative_name,
+            )
+            sensitive_meta = _apply_preanonymized_metadata(
+                sensitive_meta=video.sensitive_meta,
+                center=center,
+                payload=payload,
+            )
+            _link_preanonymized_video_metadata(
+                video=video,
+                sensitive_meta=sensitive_meta,
+            )
+            _mark_preanonymized_video_ready(
+                video=video,
+                resolve_case=sensitive_meta is not None,
+            )
+    except Exception:
+        if not target_already_existed:
+            safe_unlink_file(final_path, missing_ok=True)
+        raise
+
+    if delete_source:
+        safe_unlink_file(source_path, missing_ok=True)
+    return video
 
 
 def _resolve_preanonymized_video_processor(
@@ -1851,19 +1860,12 @@ def _mark_preanonymized_video_ready(
                 video.video_hash,
                 exc,
             )
-    try:
-        sync_video_streamable_artifacts(
-            video,
-            include_raw=True,
-            include_processed=True,
-            save=True,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Could not synchronize streamable artifacts for preanonymized video %s: %s",
-            video.video_hash,
-            exc,
-        )
+    sync_video_streamable_artifacts(
+        video,
+        include_raw=True,
+        include_processed=True,
+        save=True,
+    )
 
 
 def _finalize_preanonymized_report(
@@ -2160,17 +2162,21 @@ def _import_fenced_video_upload(
     center: Center,
     provenance: UploadProvenance,
 ) -> VideoFile | None:
+    """Adapt the wrapper-owned heartbeat into the video service capability."""
     processor_name = _required_video_upload_processor_name(provenance)
+    from endoreg_db.import_files.video_import_service import VideoImportExecutionFence
     from endoreg_db.services.video_import import VideoImportService
 
     try:
-        return VideoImportService().import_and_anonymize(
+        return VideoImportService().import_and_anonymize_fenced(
             file_path=file_path,
             center_name=center.name,
             processor_name=processor_name,
             retry=False,
-            attempt_id=uuid.uuid5(uuid.NAMESPACE_URL, attempt.owner).hex,
-            execution_guard=heartbeat.guard,
+            execution_fence=VideoImportExecutionFence(
+                attempt_id=uuid.uuid5(uuid.NAMESPACE_URL, attempt.owner).hex,
+                guard=heartbeat.guard,
+            ),
         )
     except (IntegrityError, InsufficientStorageError):
         raise
@@ -2230,6 +2236,12 @@ def _dispatch_video_upload_prediction(
 def _execute_video_upload_import_attempt(
     attempt: _VideoUploadImportAttempt,
 ) -> bool:
+    """Own the heartbeat lifecycle around one persisted UploadJob attempt.
+
+    The heartbeat context renews the database lease in the background. The
+    service receives only ``heartbeat.guard`` and cannot renew or extend its
+    own authority.
+    """
     validated_source = _validate_fenced_video_upload_source(attempt.lease)
     if validated_source is None:
         release_upload_job_import_lease(attempt.lease)
@@ -2259,14 +2271,14 @@ def _execute_video_upload_import_attempt(
             lease=heartbeat.lease,
             sensitive_meta=sensitive_meta,
         )
-        cleanup_upload_job_source(attempt.job)
-        _dispatch_video_upload_prediction(
-            job=attempt.job,
-            job_id=attempt.job_id,
-            video=video,
-            provenance=provenance,
-        )
-        release_upload_job_import_lease(heartbeat.lease)
+    release_upload_job_import_lease(attempt.lease)
+    cleanup_upload_job_source(attempt.job)
+    _dispatch_video_upload_prediction(
+        job=attempt.job,
+        job_id=attempt.job_id,
+        video=video,
+        provenance=provenance,
+    )
     return True
 
 

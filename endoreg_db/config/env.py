@@ -836,6 +836,11 @@ def video_storage_destructive_migration_enabled() -> bool:
     return env_bool("ENDOREG_VIDEO_STORAGE_DESTRUCTIVE_MIGRATION_ENABLED", False)
 
 
+def upload_job_source_reaper_apply_enabled() -> bool:
+    """Require explicit operator rollout authorization for source deletion."""
+    return env_bool("UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED", False)
+
+
 def get_ffmpeg_env_candidates() -> list[str]:
     return [
         env_str("FFMPEG_EXECUTABLE", ""),

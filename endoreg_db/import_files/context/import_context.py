@@ -1,6 +1,7 @@
 import re
 import uuid
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Literal, Self, TypedDict
 
@@ -90,6 +91,9 @@ class ImportContext(BaseModel):
         default=None,
         exclude=True,
     )
+    mutation_guard: SkipValidation[
+        Callable[[], AbstractContextManager[None]] | None
+    ] = Field(default=None, exclude=True)
 
     current_report: SkipValidation[RawPdfFile | None] = None
     current_video: SkipValidation[VideoFile | None] = None

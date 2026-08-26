@@ -42,7 +42,7 @@ class _SerializerDataLike(Protocol):
     def data(self) -> object: ...
 
 
-class CaseViewSet(viewsets.ModelViewSet[Case]):
+class CaseViewSet(viewsets.ModelViewSet["Case"]):
     serializer_class = CaseSerializer
     permission_classes = [EnvironmentAwarePermission, PolicyPermission]
     lookup_field = "case_id"

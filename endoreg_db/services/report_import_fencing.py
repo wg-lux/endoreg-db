@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import threading
 import uuid
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import timedelta
-from collections.abc import Generator
-from typing import Final
+from datetime import datetime, timedelta
+from typing import Final, Self
 
-from django.db import transaction
-from django.utils import timezone
+from django.db import close_old_connections, transaction
+from django.db.models.functions import Now
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
 
@@ -30,6 +31,18 @@ class ReportImportFence:
     fencing_token: int
 
 
+def _database_now(content_hash: str) -> datetime:
+    value = (
+        ReportImportAttempt.objects.filter(content_hash=content_hash)
+        .annotate(database_now=Now())
+        .values_list("database_now", flat=True)
+        .get()
+    )
+    if not isinstance(value, datetime):
+        raise RuntimeError("Database did not return a typed current timestamp")
+    return value
+
+
 def _validate_content_hash(content_hash: str) -> str:
     normalized = content_hash.strip()
     if len(normalized) != 64 or any(
@@ -42,11 +55,15 @@ def _validate_content_hash(content_hash: str) -> str:
 def _require_owner(
     attempt: ReportImportAttempt,
     fence: ReportImportFence,
+    *,
+    database_now: datetime,
 ) -> None:
     if (
         attempt.status != ReportImportAttempt.STATUS_ACTIVE
         or attempt.owner_id != fence.owner_id
         or int(attempt.fencing_token) != fence.fencing_token
+        or attempt.lease_expires_at is None
+        or attempt.lease_expires_at <= database_now
     ):
         raise StaleReportImportAttemptError(
             "Report import attempt was superseded "
@@ -63,13 +80,13 @@ def acquire_report_import_fence(
     if lease_seconds < 1:
         raise ValueError("lease_seconds must be positive")
     owner_id = uuid.uuid4()
-    now = timezone.now()
     with transaction.atomic():
         attempt, _created = (
             ReportImportAttempt.objects.select_for_update().get_or_create(
                 content_hash=normalized_hash
             )
         )
+        now = _database_now(normalized_hash)
         if (
             attempt.status == ReportImportAttempt.STATUS_ACTIVE
             and attempt.lease_expires_at is not None
@@ -108,12 +125,12 @@ def renew_report_import_fence(
 ) -> None:
     if lease_seconds < 1:
         raise ValueError("lease_seconds must be positive")
-    now = timezone.now()
     with transaction.atomic():
         attempt = ReportImportAttempt.objects.select_for_update().get(
             content_hash=fence.content_hash
         )
-        _require_owner(attempt, fence)
+        now = _database_now(fence.content_hash)
+        _require_owner(attempt, fence, database_now=now)
         attempt.heartbeat_at = now
         attempt.lease_expires_at = now + timedelta(seconds=lease_seconds)
         attempt.save(update_fields=["heartbeat_at", "lease_expires_at", "updated_at"])
@@ -128,7 +145,11 @@ def report_import_finalization_guard(
         attempt = ReportImportAttempt.objects.select_for_update().get(
             content_hash=fence.content_hash
         )
-        _require_owner(attempt, fence)
+        _require_owner(
+            attempt,
+            fence,
+            database_now=_database_now(fence.content_hash),
+        )
         yield
         attempt.status = ReportImportAttempt.STATUS_SUCCEEDED
         attempt.owner_id = None
@@ -145,6 +166,23 @@ def report_import_finalization_guard(
         )
 
 
+@contextmanager
+def report_import_mutation_guard(
+    fence: ReportImportFence,
+) -> Generator[None]:
+    """Fence one report metadata mutation in the attempt-row transaction."""
+    with transaction.atomic():
+        attempt = ReportImportAttempt.objects.select_for_update().get(
+            content_hash=fence.content_hash
+        )
+        _require_owner(
+            attempt,
+            fence,
+            database_now=_database_now(fence.content_hash),
+        )
+        yield
+
+
 def mark_report_import_fence_failed(fence: ReportImportFence) -> bool:
     """Release this attempt only if its token still owns the row."""
     updated = ReportImportAttempt.objects.filter(
@@ -157,6 +195,63 @@ def mark_report_import_fence_failed(fence: ReportImportFence) -> bool:
         owner_id=None,
         heartbeat_at=None,
         lease_expires_at=None,
-        updated_at=timezone.now(),
+        updated_at=Now(),
     )
     return updated == 1
+
+
+class ReportImportFenceHeartbeat:
+    """Renew a report lease while optical-character and language-model work runs."""
+
+    def __init__(
+        self,
+        fence: ReportImportFence,
+        *,
+        interval_seconds: float | None = None,
+    ) -> None:
+        self._fence = fence
+        self._stop = threading.Event()
+        self._failure: BaseException | None = None
+        self._interval_seconds = (
+            interval_seconds
+            if interval_seconds is not None
+            else max(10.0, min(60.0, DEFAULT_REPORT_IMPORT_LEASE_SECONDS / 3))
+        )
+        if self._interval_seconds <= 0:
+            raise ValueError("Report heartbeat interval must be positive")
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"report-import-heartbeat-{fence.owner_id}",
+            daemon=True,
+        )
+
+    def __enter__(self) -> Self:
+        self._thread.start()
+        return self
+
+    def guard(self) -> None:
+        if self._failure is not None:
+            raise StaleReportImportAttemptError(
+                f"Report import heartbeat failed: {self._failure}"
+            ) from self._failure
+        renew_report_import_fence(self._fence)
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object,
+    ) -> None:
+        self._stop.set()
+        self._thread.join(timeout=min(5.0, self._interval_seconds))
+        close_old_connections()
+
+    def _run(self) -> None:
+        close_old_connections()
+        try:
+            while not self._stop.wait(self._interval_seconds):
+                renew_report_import_fence(self._fence)
+        except Exception as exc:
+            self._failure = exc
+        finally:
+            close_old_connections()

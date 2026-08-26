@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import pytest
-from django.test import TestCase
+from django.test import TransactionTestCase
 from django.utils import timezone
 
 from endoreg_db.models import Center, PatientExamination, RawPdfFile
@@ -67,20 +67,15 @@ startxref
 """
 
 
-class TestReportImportService(TestCase):
+class TestReportImportService(TransactionTestCase):
     """Test cases for report (report) import service."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Set up session-scoped fixtures."""
-        super().setUpClass()
+    def setUp(self):
+        """Load fixtures outside a test-wide transaction for heartbeat threads."""
+        super().setUp()
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
-
-    def setUp(self):
-        """Set up test fixtures."""
-        super().setUp()
         self.center = get_default_center()
         self.processor = get_default_processor()
 

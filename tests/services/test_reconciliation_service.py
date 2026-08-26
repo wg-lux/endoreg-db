@@ -5,8 +5,7 @@ import uuid
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
-from types import TracebackType
+from types import SimpleNamespace, TracebackType
 from typing import Generic, TypeVar
 
 import pytest
@@ -125,7 +124,7 @@ class _FakeAtomic:
 
 
 @pytest.mark.unit
-def test_reconciliation_removes_stale_lock_files(
+def test_reconciliation_retains_local_lock_files_regardless_of_age(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
@@ -156,13 +155,13 @@ def test_reconciliation_removes_stale_lock_files(
 
     removed = ReconciliationService().clear_stale_lock_files()
 
-    assert removed == 1
-    assert not stale_lock.exists()
+    assert removed == 0
+    assert stale_lock.exists()
     assert fresh_lock.exists()
 
 
 @pytest.mark.unit
-def test_reconciliation_cleans_orphaned_temp_and_uuid_files(
+def test_reconciliation_retains_artifacts_without_attempt_ownership(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
@@ -196,10 +195,10 @@ def test_reconciliation_cleans_orphaned_temp_and_uuid_files(
     )
     removed = ReconciliationService().cleanup_orphaned_artifacts()
 
-    assert removed == 3
-    assert not orphan_part.exists()
-    assert not orphan_uuid.exists()
-    assert not completed_part.exists()
+    assert removed == 0
+    assert orphan_part.exists()
+    assert orphan_uuid.exists()
+    assert completed_part.exists()
 
 
 @pytest.mark.unit
@@ -236,7 +235,7 @@ def test_cleanup_ignores_recent_part_files(
 
 
 @pytest.mark.unit
-def test_cleanup_removes_stale_part_files(
+def test_cleanup_retains_stale_part_files_without_attempt_ownership(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
@@ -266,8 +265,8 @@ def test_cleanup_removes_stale_part_files(
 
     removed = ReconciliationService().cleanup_orphaned_artifacts()
 
-    assert removed == 1
-    assert not stale_part.exists()
+    assert removed == 0
+    assert stale_part.exists()
 
 
 @pytest.mark.unit
@@ -781,7 +780,7 @@ def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
 
 
 @pytest.mark.unit
-def test_reconciliation_resets_incomplete_processing_states(
+def test_reconciliation_retains_incomplete_states_without_generation_link(
     monkeypatch: MonkeyPatch,
 ) -> None:
     import endoreg_db.services.reconciliation as reconciliation_module
@@ -808,30 +807,10 @@ def test_reconciliation_resets_incomplete_processing_states(
         _FakeManager([DummyPdfState("pdf-1")]),
         raising=True,
     )
-    monkeypatch.setattr(
-        reconciliation_module.transaction,
-        "atomic",
-        _FakeAtomic,
-        raising=True,
-    )
-
-    def fake_mark_failure(*, file_hash: str, obj: object) -> None:
-        events.append(("mark_failure", file_hash))
-
-    monkeypatch.setattr(
-        reconciliation_module.ProcessingHistory,
-        "mark_failure",
-        staticmethod(fake_mark_failure),
-        raising=True,
-    )
-
     reset = ReconciliationService().reset_incomplete_processing_states()
 
-    assert reset == 2
-    assert ("video_reset", "video-1") in events
-    assert ("pdf_reset", "pdf-1") in events
-    assert ("mark_failure", "video-1") in events
-    assert ("mark_failure", "pdf-1") in events
+    assert reset == 0
+    assert events == []
 
 
 def test_should_run_startup_reconciliation_skips_pytest_entrypoints(

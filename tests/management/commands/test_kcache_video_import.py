@@ -9,6 +9,7 @@ import sys
 from hashlib import sha256
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -28,6 +29,9 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
+from endoreg_db.models.state.processing_history.processing_history import (
+    ProcessingHistory,
+)
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
@@ -66,6 +70,36 @@ def command_processor(command_center: Center) -> EndoscopyProcessor:
     processor = EndoscopyProcessor.objects.create(name="kcache-command-processor")
     processor.centers.add(command_center)
     return processor
+
+
+@pytest.fixture
+def cleanup_safe_hls(monkeypatch: pytest.MonkeyPatch) -> None:
+    from endoreg_db.services.hub import cleanup as cleanup_service
+
+    def ready_hls_artifact(*, video: VideoFile, artifact_kind: str) -> object:
+        source_file = video.raw_file if artifact_kind == "raw" else video.processed_file
+        return SimpleNamespace(source_file_name=source_file.name)
+
+    monkeypatch.setattr(
+        cleanup_service,
+        "get_ready_hls_artifact",
+        ready_hls_artifact,
+    )
+
+
+def _persist_successful_video_artifacts(video: VideoFile, source_path: Path) -> None:
+    source_content = source_path.read_bytes()
+    video.raw_file.save(
+        f"raw_videos/{source_path.name}",
+        ContentFile(source_content),
+        save=False,
+    )
+    video.processed_file.save(
+        f"processed_videos/{source_path.name}",
+        ContentFile(b"anonymized " + source_content),
+        save=True,
+    )
+    ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
 
 
 def _write_source_video(path: Path, content: bytes = b"kcache source video") -> Path:
@@ -271,6 +305,7 @@ def test_kcache_video_import_apply_invokes_concrete_video_import_service(
     command_center: Center,
     command_processor: EndoscopyProcessor,
     monkeypatch: pytest.MonkeyPatch,
+    cleanup_safe_hls: None,
 ) -> None:
     from endoreg_db.import_files.video_import_service import (
         VideoImportService as ConcreteVideoImportService,
@@ -307,6 +342,7 @@ def test_kcache_video_import_apply_invokes_concrete_video_import_service(
         state.mark_anonymized()
         state.mark_sensitive_meta_processed()
         state.mark_anonymization_validated()
+        _persist_successful_video_artifacts(video, file_path)
         return video
 
     monkeypatch.setattr(
@@ -362,6 +398,7 @@ def test_kcache_video_import_apply_reruns_incomplete_command_owned_upload_job(
     command_center: Center,
     command_processor: EndoscopyProcessor,
     monkeypatch: pytest.MonkeyPatch,
+    cleanup_safe_hls: None,
 ) -> None:
     from endoreg_db.import_files.video_import_service import (
         VideoImportService as ConcreteVideoImportService,
@@ -422,6 +459,7 @@ def test_kcache_video_import_apply_reruns_incomplete_command_owned_upload_job(
         state.mark_anonymized()
         state.mark_sensitive_meta_processed()
         state.mark_anonymization_validated()
+        _persist_successful_video_artifacts(video, file_path)
         return video
 
     monkeypatch.setattr(

@@ -76,6 +76,141 @@ def test_ensure_video_hls_materializes_raw_and_processed(
 
 
 @pytest.mark.unit
+def test_successful_video_history_failure_is_not_suppressed(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import endoreg_db.import_files.file_storage.state_management as state_management_module
+
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"source")
+    anonymized_path = tmp_path / "anonymized.mp4"
+    anonymized_path.write_bytes(b"anonymized")
+    sensitive_path = tmp_path / "sensitive.mp4"
+    sensitive_path.write_bytes(b"sensitive")
+    guard_calls = 0
+
+    class DummyState:
+        processing_started = True
+        anonymized = False
+        sensitive_meta_processed = False
+
+        def mark_processing_started(self) -> None:
+            self.processing_started = True
+
+        def mark_anonymized(self) -> None:
+            self.anonymized = True
+
+        def mark_sensitive_meta_processed(self) -> None:
+            self.sensitive_meta_processed = True
+
+        def save(self) -> None:
+            return None
+
+    class DummyVideo:
+        pk = 1
+        video_hash = "video-hash"
+        processed_video_hash: str | None = None
+        processed_file = SimpleNamespace(name="")
+        meta: dict[str, object] = {}
+        state = DummyState()
+
+        def save(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        def get_or_create_state(self) -> DummyState:
+            return self.state
+
+    def execution_guard() -> None:
+        nonlocal guard_calls
+        guard_calls += 1
+
+    def fail_history_write(**kwargs: object) -> NoReturn:
+        raise RuntimeError("history unavailable")
+
+    def accept_final_video_output(path: Path) -> None:
+        return None
+
+    def store_final_video(
+        field_file: object,
+        final_path: Path,
+        *,
+        relative_name: str | None = None,
+    ) -> str:
+        assert relative_name is not None
+        return relative_name
+
+    def accept_video_hls(video: VideoFile, *, force: bool = False) -> None:
+        return None
+
+    def storage_relative(path: Path) -> str:
+        return f"anonymized_videos/{path.name}"
+
+    monkeypatch.setattr(
+        state_management_module,
+        "VideoFile",
+        DummyVideo,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module,
+        "_verify_final_video_output",
+        accept_final_video_output,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module,
+        "_processed_video_dir",
+        lambda: tmp_path,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module.path_utils,
+        "to_storage_relative",
+        storage_relative,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module,
+        "_store_existing_final_file",
+        store_final_video,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module,
+        "ensure_video_hls",
+        accept_video_hls,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        state_management_module.ProcessingHistory,
+        "get_or_create_for_hash",
+        staticmethod(fail_history_write),
+        raising=True,
+    )
+    ctx = ImportContext(
+        file_path=source_path,
+        center_name="university_hospital_wuerzburg",
+        processor_name="olympus_cv_1500",
+        execution_guard=execution_guard,
+    )
+    ctx.file_hash = "file-hash"
+    video = DummyVideo()
+    ctx.current_video = cast(VideoFile, video)
+    ctx.anonymized_path = anonymized_path
+    ctx.sensitive_path = sensitive_path
+    ctx.storage_normalization_evidence = _normalization_evidence()
+
+    with pytest.raises(RuntimeError, match="history unavailable"):
+        finalize_video_success(ctx)
+
+    assert guard_calls >= 6
+    assert video.state.anonymized is False
+    assert video.state.sensitive_meta_processed is False
+    assert sensitive_path.exists()
+
+
+@pytest.mark.unit
 def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -265,7 +400,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert video.processed_file.name.endswith("anonymized_videos/video_hash.mp4")
     assert store_calls == [(final_anonymized, video.processed_file.name)]
-    assert ownership_checks >= 1
+    assert ownership_checks >= 7
     assert hls_calls == [1]
 
 

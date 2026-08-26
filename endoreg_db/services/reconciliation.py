@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 import sys
 import time
 import uuid
@@ -10,6 +10,8 @@ from django.db import OperationalError, ProgrammingError, transaction
 from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.media_integrity import reconcile_media_integrity
 from endoreg_db.services.streamable_media import (
     STREAMABLE_PROCESSED_VIDEO_ROOT,
@@ -17,11 +19,6 @@ from endoreg_db.services.streamable_media import (
     STREAMABLE_VIDEO_ROOT,
     sync_video_streamable_artifacts,
 )
-from endoreg_db.models.state.processing_history.processing_history import (
-    ProcessingHistory,
-)
-from endoreg_db.models.state.raw_pdf import RawPdfState
-from endoreg_db.models.state.video import VideoState
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
@@ -87,26 +84,26 @@ class ReconciliationService:
         reconcile_media_integrity()
 
     def clear_stale_lock_files(self) -> int:
-        """Delete abandoned import lock files older than the stale threshold."""
+        """Retain local lock files; age is not authoritative ownership evidence."""
 
-        now = self._now()
-        removed = 0
         for root in (data_paths["import_video"], data_paths["import_report"]):
             for lock_path in Path(root).glob("*.lock"):
-                try:
-                    age = now - lock_path.stat().st_mtime
-                except FileNotFoundError:
-                    continue
-                if age > STALE_LOCK_SECONDS:
-                    safe_unlink_file(lock_path, missing_ok=True)
-                    removed += 1
-                    logger.warning("Removed stale lock file: %s", lock_path)
-        return removed
+                logger.warning(
+                    "Retaining local import lock during reconciliation because "
+                    "database lease state is authoritative: %s",
+                    lock_path,
+                )
+        return 0
 
     def cleanup_orphaned_artifacts(self, *, dry_run: bool = False) -> int:
-        """Remove stale temporary and partial artifacts from media directories."""
+        """Classify apparent staging artifacts without deleting unknown ownership."""
 
         removed = 0
+        reproducible_cache_roots = {
+            STREAMABLE_VIDEO_ROOT,
+            STREAMABLE_RAW_VIDEO_ROOT,
+            STREAMABLE_PROCESSED_VIDEO_ROOT,
+        }
         scan_dirs = (
             Path(data_paths["sensitive_video"]),
             Path(data_paths["anonym_video"]),
@@ -125,13 +122,21 @@ class ReconciliationService:
                     continue
                 if not self._is_stale(path, self.artifact_stale_seconds):
                     continue
-                if not dry_run:
-                    safe_unlink_file(path, missing_ok=True)
-                removed += 1
-                if dry_run:
-                    logger.warning("Would remove orphaned startup artifact: %s", path)
-                else:
-                    logger.warning("Removed orphaned startup artifact: %s", path)
+                if root in reproducible_cache_roots:
+                    if not dry_run:
+                        safe_unlink_file(path, missing_ok=True)
+                    removed += 1
+                    logger.warning(
+                        "%s stale unpublished streamable-cache artifact: %s",
+                        "Would remove" if dry_run else "Removed",
+                        path,
+                    )
+                    continue
+                logger.warning(
+                    "Retaining apparent orphaned artifact because no durable "
+                    "attempt generation proves cleanup ownership: %s",
+                    path,
+                )
         return removed
 
     def relink_broken_video_raw_files(self) -> int:
@@ -215,32 +220,24 @@ class ReconciliationService:
         return recovered
 
     def reset_incomplete_processing_states(self) -> int:
-        """Reset media states that were left mid-processing by interrupted work.
+        """Retain ambiguous legacy processing states for fenced recovery.
 
-        Only rows that still claim `processing_started=True` while lacking the
-        expected downstream completion flags are reset. A failure entry is also
-        recorded in `ProcessingHistory` so follow-up processing can reason about
-        the interrupted attempt.
+        A media state is not currently linked to the exact import-attempt
+        generation that created it. Resetting it from process startup would let
+        an old process race a current database owner. The reconciliation pass
+        therefore reports these rows and leaves recovery to the attempt-aware
+        upload/report services. Once generation linkage is persisted, this
+        method may auto-repair only a row whose lease and fencing token are
+        proved current in the same database transaction.
         """
-
-        reset = 0
 
         video_states = VideoState.objects.select_related("video_file").filter(
             processing_started=True,
             sensitive_meta_processed=False,
         )
         for state in video_states:
-            with transaction.atomic():
-                state.mark_processing_not_started()
-                video = getattr(state, "video_file", None)
-                if video is not None:
-                    ProcessingHistory.mark_failure(
-                        file_hash=video.video_hash,
-                        obj=video,
-                    )
-            reset += 1
             logger.warning(
-                "Reset incomplete video processing state for video %s",
+                "Retaining incomplete video processing state for fenced recovery: %s",
                 getattr(getattr(state, "video_file", None), "video_hash", None),
             )
 
@@ -249,21 +246,11 @@ class ReconciliationService:
             sensitive_meta_processed=False,
         )
         for state in pdf_states:
-            with transaction.atomic():
-                state.mark_processing_not_started()
-                raw_pdf = getattr(state, "raw_pdf_file", None)
-                if raw_pdf is not None:
-                    ProcessingHistory.mark_failure(
-                        file_hash=raw_pdf.pdf_hash,
-                        obj=raw_pdf,
-                    )
-            reset += 1
             logger.warning(
-                "Reset incomplete report processing state for pdf %s",
+                "Retaining incomplete report processing state for fenced recovery: %s",
                 getattr(getattr(state, "raw_pdf_file", None), "pdf_hash", None),
             )
-
-        return reset
+        return 0
 
     def _is_cleanup_candidate(self, path: Path) -> bool:
         return (

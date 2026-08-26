@@ -320,6 +320,15 @@ missing; it logs the blockers and preserves every raw artifact.
 
 ## Abort and Recovery
 
+The import success boundary is identical across this runbook, the hub ingest
+runbook, and the feature tracker: a video is successful only after the
+canonical master, required raw and processed HLS generations, durable media
+state, and successful processing history all refer to the same validated
+generation under the current fencing token. A failure in any one of those
+steps is not a degraded success. It preserves the previous valid generation
+and leaves the new attempt retryable, failed, lost, or quarantined according to
+the ownership and integrity evidence.
+
 After an error:
 
 1. stop further batches and isolate the affected video record;

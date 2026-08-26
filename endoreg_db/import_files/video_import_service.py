@@ -78,6 +78,23 @@ class _RawSourceIdentity:
     sha256: str
 
 
+@dataclass(frozen=True)
+class VideoImportExecutionFence:
+    """Opaque execution authority supplied by a persisted-attempt wrapper.
+
+    The wrapper owns lease acquisition and the background heartbeat. The video
+    service only invokes ``guard`` at durable mutation and publication
+    checkpoints; it does not acquire, renew, or infer database ownership.
+    """
+
+    attempt_id: str
+    guard: Callable[[], None]
+
+    def __post_init__(self) -> None:
+        if not self.attempt_id.strip():
+            raise ValueError("Video import execution fence requires an attempt_id")
+
+
 class _VideoAnonymizer(Protocol):
     def anonymize_video(self, ctx: ImportContext) -> ImportContext: ...
 
@@ -375,6 +392,17 @@ def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
 class VideoImportService:
     """
     Service for importing and anonymizing video files.
+
+    Durable entrypoints must call :meth:`import_and_anonymize_fenced`. Their
+    wrapper owns the persisted attempt, database-clock lease heartbeat, retry,
+    and terminal state. This service consumes the resulting execution fence
+    and checks it before durable mutations. Its filesystem locks only reduce
+    duplicate work on one host and never establish cluster ownership.
+
+    :meth:`import_and_anonymize` is the explicitly unfenced compatibility path
+    for callers that do not yet have a persisted attempt. It must not be used
+    as evidence of safe distributed ownership.
+
     Uses a central video instance pattern for cleaner state management.
     Responsibility:
         Validate path
@@ -416,13 +444,50 @@ class VideoImportService:
         center_name: str,
         processor_name: str,
         retry: bool = False,
-        *,
-        attempt_id: str | None = None,
-        execution_guard: Callable[[], None] | None = None,
     ) -> "VideoFile | None":
+        """Run the legacy unfenced path without claiming cluster ownership."""
+        return self._import_and_anonymize(
+            file_path=file_path,
+            center_name=center_name,
+            processor_name=processor_name,
+            retry=retry,
+            execution_fence=None,
+        )
+
+    def import_and_anonymize_fenced(
+        self,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        *,
+        execution_fence: VideoImportExecutionFence,
+        retry: bool = False,
+    ) -> "VideoFile | None":
+        """Run under authority maintained by a persisted-attempt wrapper.
+
+        ``execution_fence.guard`` is a checkpoint, not a heartbeat callback.
+        The wrapper must keep its heartbeat active for this method's complete
+        lifetime and must make the guard fail after renewal or ownership loss.
         """
-        Public entrypoint: wrap import_and_anonymize logic.
-        """
+        execution_fence.guard()
+        return self._import_and_anonymize(
+            file_path=file_path,
+            center_name=center_name,
+            processor_name=processor_name,
+            retry=retry,
+            execution_fence=execution_fence,
+        )
+
+    def _import_and_anonymize(
+        self,
+        *,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        execution_fence: VideoImportExecutionFence | None,
+    ) -> "VideoFile | None":
+        """Shared implementation; public callers choose fenced or unfenced."""
         # First, initialize import context. this will be updated during import and keep track of current paths, file type and center and processor.
         context_values: dict[str, object] = {
             "file_path": Path(file_path),
@@ -430,10 +495,12 @@ class VideoImportService:
             "processor_name": processor_name,
             "file_type": "video",
             "defer_video_initialization": True,
-            "execution_guard": execution_guard,
+            "execution_guard": (
+                execution_fence.guard if execution_fence is not None else None
+            ),
         }
-        if attempt_id is not None:
-            context_values["attempt_id"] = attempt_id
+        if execution_fence is not None:
+            context_values["attempt_id"] = execution_fence.attempt_id
         ctx = ImportContext.model_validate(context_values)
         self.logger.info("validating and preparing file")
         if not ctx.file_path.exists():

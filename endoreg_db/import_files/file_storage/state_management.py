@@ -87,6 +87,18 @@ def _require_execution_ownership(ctx: ImportContext) -> None:
         ctx.execution_guard()
 
 
+def _record_successful_video_processing_history(ctx: ImportContext) -> None:
+    """Persist the success receipt while the current attempt still owns execution."""
+    _require_execution_ownership(ctx)
+    with transaction.atomic():
+        if not isinstance(ctx.file_hash, str):
+            ctx.file_hash = sha256_file(ctx.file_path)
+        ProcessingHistory.get_or_create_for_hash(
+            file_hash=ctx.file_hash,
+            success=True,
+        )
+
+
 def _store_existing_final_file(
     field_file: FieldFile,
     final_path: Path,
@@ -389,6 +401,7 @@ def finalize_video_success(
                     missing_ok=True,
                 )
 
+    _require_execution_ownership(ctx)
     existing_meta = dict(instance.meta or {})
     existing_meta["storage_normalization"] = evidence_as_json(
         ctx.storage_normalization_evidence
@@ -397,12 +410,16 @@ def finalize_video_success(
     cast(_StatefulImportInstance, instance).save()
     # HLS readiness is part of import success. A failed transcode must leave the
     # import retryable instead of publishing a successful but unstreamable video.
+    _require_execution_ownership(ctx)
     ensure_video_hls(instance, force=True)
+    _require_execution_ownership(ctx)
 
     # --- Update VideoState flags (mirrors report) ---
     state = _ensure_instance_state(instance)
 
     with transaction.atomic():
+        _require_execution_ownership(ctx)
+        _record_successful_video_processing_history(ctx)
         if state is not None:
             processable_state = cast(_ProcessableState, state)
             if not processable_state.processing_started:
@@ -415,27 +432,12 @@ def finalize_video_success(
 
         cast(_StatefulImportInstance, instance).save()
 
+    _require_execution_ownership(ctx)
     if isinstance(ctx.sensitive_path, Path):
         safe_cleanup_staging_file(
             ctx.sensitive_path,
             label="video sensitive staging copy after success",
             missing_ok=False,
-        )
-
-    # --- ProcessingHistory entry ---
-    try:
-        with transaction.atomic():
-            if not isinstance(ctx.file_hash, str):
-                ctx.file_hash = sha256_file(ctx.file_path)
-            ProcessingHistory.get_or_create_for_hash(
-                file_hash=ctx.file_hash,
-                success=True,
-            )
-    except Exception as e:
-        logger.debug(
-            "Saving not possible for video %s; skipping ProcessingHistory. Error: %s",
-            instance.pk,
-            e,
         )
 
 

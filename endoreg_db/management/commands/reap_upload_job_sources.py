@@ -1,48 +1,139 @@
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
-from pydantic import ValidationError
+import json
+import uuid
+from collections import Counter
 
-from endoreg_db.services.hub.cleanup import reap_upload_job_sources
-from lx_dtypes.models.contracts.management_command import (
-    ReapUploadJobSourcesCommandOptionsPayload,
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from endoreg_db.config.env import upload_job_source_reaper_apply_enabled
+from endoreg_db.services.hub.cleanup import (
+    UploadSourceCleanupItem,
+    UploadSourceReaperResult,
+    run_upload_job_source_reaper,
 )
 
 
+class ReapUploadJobSourcesOptions(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+
+    upload_job_id: uuid.UUID | None = None
+    limit: int | None = Field(default=None, gt=0)
+    repeat_until_empty: bool = False
+    apply: bool = False
+    json_output: bool = False
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "ReapUploadJobSourcesOptions":
+        if self.upload_job_id is not None and self.limit is not None:
+            raise ValueError("--upload-job-id and --limit are mutually exclusive")
+        if self.upload_job_id is None and self.limit is None:
+            raise ValueError("batch selection requires an explicit positive --limit")
+        if self.repeat_until_empty and self.upload_job_id is not None:
+            raise ValueError("--repeat-until-empty cannot be used with --upload-job-id")
+        return self
+
+
+def _payload(result: UploadSourceReaperResult, *, apply: bool) -> dict[str, object]:
+    by_media_type = Counter(item.media_type.value for item in result.items)
+    by_ingest_mode = Counter(item.ingest_mode for item in result.items)
+    by_decision = Counter(item.decision.value for item in result.items)
+    by_blocker = Counter(item.blocker.value for item in result.items)
+    return {
+        "mode": "apply" if apply else "dry_run",
+        "selected": len(result.items),
+        "cleaned": result.cleaned,
+        "reclaimable_bytes": result.reclaimable_bytes,
+        "freed_bytes": result.freed_bytes,
+        "inventory": {
+            "by_media_type": dict(sorted(by_media_type.items())),
+            "by_ingest_mode": dict(sorted(by_ingest_mode.items())),
+            "by_decision": dict(sorted(by_decision.items())),
+            "by_blocker": dict(sorted(by_blocker.items())),
+        },
+        "items": [item.as_dict() for item in result.items],
+    }
+
+
 class Command(BaseCommand):
-    help = "Delete persisted UploadJob source files that are already marked cleanup-eligible."
+    help = (
+        "Inspect persisted UploadJob sources and, with explicit authorization, "
+        "delete only sources whose fenced media-integrity contract is satisfied."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
+        parser.add_argument(
+            "--upload-job-id",
+            type=uuid.UUID,
+            default=None,
+            help="Inspect or apply cleanup to exactly one UploadJob UUID.",
+        )
         parser.add_argument(
             "--limit",
             type=int,
             default=None,
-            help="Maximum number of eligible upload job sources to clean in one batch.",
+            help="Positive maximum number of cleanup candidates in one batch.",
         )
         parser.add_argument(
             "--repeat-until-empty",
             action="store_true",
-            help="Keep reaping in batches until no eligible sources remain.",
+            help="Apply additional explicit batches until no source was cleaned.",
+        )
+        parser.add_argument(
+            "--apply",
+            action="store_true",
+            help="Apply authorized deletions. Without this flag the command is a dry-run.",
+        )
+        parser.add_argument(
+            "--json",
+            action="store_true",
+            dest="json_output",
+            help="Write a machine-readable inventory without sensitive paths.",
         )
 
     def handle(self, *args: object, **options: object) -> None:
         try:
-            command_options = ReapUploadJobSourcesCommandOptionsPayload.model_validate(
-                options
-            )
+            command_options = ReapUploadJobSourcesOptions.model_validate(options)
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc
 
-        limit = command_options.limit
-        repeat_until_empty = command_options.repeat_until_empty
+        if command_options.apply and not upload_job_source_reaper_apply_enabled():
+            raise CommandError(
+                "UploadJob source reaper apply is disabled. Set "
+                "UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true only after reviewing "
+                "a bounded dry-run."
+            )
+        if command_options.repeat_until_empty and not command_options.apply:
+            raise CommandError("--repeat-until-empty requires --apply")
 
-        total_cleaned = 0
+        combined_items: list[UploadSourceCleanupItem] = []
         while True:
-            if limit > 0:
-                cleaned = reap_upload_job_sources(limit=limit)
-            else:
-                cleaned = reap_upload_job_sources()
-            total_cleaned += cleaned
-            self.stdout.write(f"cleaned={cleaned} total_cleaned={total_cleaned}")
-            if not repeat_until_empty or cleaned == 0:
+            result = run_upload_job_source_reaper(
+                apply=command_options.apply,
+                upload_job_id=command_options.upload_job_id,
+                limit=command_options.limit,
+            )
+            combined_items.extend(result.items)
+            if not command_options.repeat_until_empty or result.cleaned == 0:
                 break
+
+        combined = UploadSourceReaperResult(items=tuple(combined_items))
+        payload = _payload(combined, apply=command_options.apply)
+        if command_options.json_output:
+            self.stdout.write(json.dumps(payload, sort_keys=True))
+            return
+
+        self.stdout.write(
+            "mode={mode} selected={selected} cleaned={cleaned} "
+            "reclaimable_bytes={reclaimable_bytes} freed_bytes={freed_bytes}".format(
+                **payload
+            )
+        )
+        for item in combined.items:
+            self.stdout.write(
+                "upload_job_id={upload_job_id} decision={decision} blocker={blocker} "
+                "media_type={media_type} ingest_mode={ingest_mode} "
+                "age_seconds={age_seconds} reclaimable_bytes={reclaimable_bytes} "
+                "receipt_id={receipt_id}".format(**item.as_dict())
+            )

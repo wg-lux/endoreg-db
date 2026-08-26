@@ -116,6 +116,7 @@ class UploadJob(models.Model):
     class CleanupStatus(models.TextChoices):
         PENDING = "pending", "Pending"
         ELIGIBLE = "eligible", "Eligible"
+        DELETING = "deleting", "Deleting"
         COMPLETED = "completed", "Completed"
         SKIPPED = "skipped", "Skipped"
 
@@ -235,6 +236,77 @@ class UploadJob(models.Model):
         choices=CleanupStatus.choices,
         default=CleanupStatus.PENDING,
         help_text="Cleanup state for the persisted source artifact.",
+    )
+
+    cleanup_receipt_id: models.UUIDField[uuid.UUID | None, Any] = models.UUIDField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text="Stable authorization receipt for a source cleanup attempt.",
+    )
+
+    cleanup_started_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="Database time when the current source cleanup was authorized.",
+        )
+    )
+
+    cleanup_completed_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="Database time when source cleanup reconciliation completed.",
+        )
+    )
+
+    cleanup_fencing_token: models.PositiveBigIntegerField[int | None, Any] = (
+        models.PositiveBigIntegerField(
+            null=True,
+            blank=True,
+            editable=False,
+            help_text="Import fencing token captured by the cleanup authorization.",
+        )
+    )
+
+    cleanup_source_name_sha256: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        editable=False,
+        help_text="Opaque storage-name identity captured before source cleanup.",
+    )
+
+    cleanup_source_size_bytes: models.PositiveBigIntegerField[int | None, Any] = (
+        models.PositiveBigIntegerField(
+            null=True,
+            blank=True,
+            editable=False,
+            help_text="Source object size captured before source cleanup.",
+        )
+    )
+
+    cleanup_source_content_sha256: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        editable=False,
+        help_text="Plaintext source digest captured before source cleanup.",
+    )
+
+    cleanup_failure_count: models.PositiveIntegerField[int, Any] = (
+        models.PositiveIntegerField(
+            default=0,
+            help_text="Number of failed source cleanup mutations or reconciliations.",
+        )
+    )
+
+    cleanup_last_error_code: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="Stable non-sensitive classification of the last cleanup failure.",
     )
 
     created_by: models.ForeignKey[Any] = models.ForeignKey(
@@ -426,6 +498,21 @@ class UploadJob(models.Model):
                 ),
                 name="upload_job_lease_state_consistent",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        cleanup_status="deleting",
+                        cleanup_receipt_id__isnull=False,
+                        cleanup_started_at__isnull=False,
+                        cleanup_fencing_token__isnull=False,
+                        cleanup_source_name_sha256__gt="",
+                        cleanup_source_size_bytes__isnull=False,
+                        cleanup_source_content_sha256__gt="",
+                    )
+                    | ~models.Q(cleanup_status="deleting")
+                ),
+                name="upload_job_cleanup_receipt_required",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -459,8 +546,15 @@ class UploadJob(models.Model):
         """Returns True if the job completed successfully."""
         return self.status == self.Status.ANONYMIZED.value
 
+    def _require_cleanup_not_in_progress(self) -> None:
+        if self.cleanup_status == self.CleanupStatus.DELETING.value:
+            raise RuntimeError(
+                f"UploadJob {self.pk} source cleanup exclusively owns the persisted source"
+            )
+
     def mark_processing(self) -> None:
         """Mark the job as processing."""
+        self._require_cleanup_not_in_progress()
         self.status = self.Status.PROCESSING.value
         self.error_code = self.ErrorCode.NONE.value
         self.error_detail = ""
@@ -481,6 +575,7 @@ class UploadJob(models.Model):
 
     def mark_completed(self, sensitive_meta: UploadJobSensitiveMeta = None) -> None:
         """Mark the job as successfully completed."""
+        self._require_cleanup_not_in_progress()
         self.status = self.Status.ANONYMIZED.value
         self.error_code = self.ErrorCode.NONE.value
         self.error_detail = ""
@@ -499,7 +594,12 @@ class UploadJob(models.Model):
         ]
         target_cleanup_status = self.cleanup_status
 
-        if self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS.value:
+        if (
+            self.cleanup_status == self.CleanupStatus.COMPLETED.value
+            and not self.source_file_persisted
+        ):
+            target_cleanup_status = self.CleanupStatus.COMPLETED.value
+        elif self.retention_policy == self.RetentionPolicy.DELETE_AFTER_SUCCESS.value:
             if self.source_file_delete_eligible_at is None:
                 self.source_file_delete_eligible_at = timezone.now()
                 update_fields.append("source_file_delete_eligible_at")
@@ -522,6 +622,7 @@ class UploadJob(models.Model):
         error_code: str = ErrorCode.PROCESSING_FAILED,
     ) -> None:
         """Mark the job as failed with error details."""
+        self._require_cleanup_not_in_progress()
         self.status = self.Status.ERROR.value
         self.error_detail = error_detail
         self.error_code = error_code
@@ -545,6 +646,7 @@ class UploadJob(models.Model):
         error_code: str = ErrorCode.SOURCE_MISSING,
     ) -> None:
         """Mark the job as unrecoverably inconsistent with on-disk state."""
+        self._require_cleanup_not_in_progress()
         self.status = self.Status.LOST.value
         self.error_detail = error_detail
         self.error_code = error_code
@@ -581,6 +683,7 @@ class UploadJob(models.Model):
         max_retries: int | None = None,
     ) -> bool:
         """Persist a bounded retry or transition to a coded terminal error."""
+        self._require_cleanup_not_in_progress()
         retry_limit = self.max_retries if max_retries is None else max_retries
         if retry_limit < 1:
             raise ValueError("max_retries must be positive")

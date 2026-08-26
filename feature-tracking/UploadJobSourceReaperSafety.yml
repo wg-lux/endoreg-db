@@ -1,0 +1,250 @@
+schema_version: '1.0'
+id: upload_job_source_reaper_safety
+name: Sichere Bereinigung persistierter UploadJob-Quellen
+description: Fail-closed Erweiterung des UploadJob-Source-Reapers für gezielte Diagnose, belastbare Löschfreigaben
+  und nachvollziehbare Speicherfreigabe. Erfolgreiche Watcher- und API-Importe sollen ihre entbehrliche
+  Eingangsdatei kontrolliert freigeben können, ohne aktive Versuche, die einzige wiederherstellbare Quelle
+  oder eine gültige Mediengeneration zu gefährden.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Definiert UploadJob-, Watcher-, Retention-, Recovery- und Cleanup-Abläufe.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Definiert fail-closed Cleanup, Mediengenerationen, Integritätsprüfung und Lease-Schutz.
+definition_of_done:
+- id: authoritative_cleanup_contract
+  category: requirements
+  title: Die autoritative Löschfreigabe ist vollständig und medienartspezifisch definiert
+  acceptance:
+  - Eine Quelle ist nur löschbar, wenn der UploadJob erfolgreich und terminal ist, die Retention-Policy
+    DELETE_AFTER_SUCCESS verlangt, source_file_persisted wahr ist, cleanup_status die Löschung erlaubt
+    und source_file_delete_eligible_at nach Datenbankzeit erreicht wurde.
+  - Es bestehen weder eine aktive Processing-Lease noch ein zulässiger Retry, und der aktuelle Fencing-Token
+    wird innerhalb der autoritativen Löschentscheidung erneut geprüft.
+  - Für Video und Report ist vor der Freigabe ein typisierter Integritätsnachweis der jeweils erforderlichen
+    anonymisierten Zielartefakte und Erfolgsevidenz vorhanden; unbekannte oder widersprüchliche Zustände
+    bleiben erhalten und werden sichtbar als blockiert klassifiziert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Zustandsmatrix gegen UploadJob, Video- und Reportfinalisierung, Retention-Policy, Lease
+      und Fencing sowie die Integritätsdienste prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/cleanup.py; endoreg_db/services/hub/media_integrity.py; endoreg_db/models/hub/upload_job.py
+    - kind: command
+      reference: 'Focused Pyright: 0 errors; broader ingest lane: 91 passed, 4 subtests passed'
+    note: Typed decision matrix and media-specific target checks are implemented; independent manual state-matrix
+      review remains outstanding.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T08:54:59.450699Z'
+- id: dry_run_and_scoped_selection
+  category: functionality
+  title: Bediener können Löschkandidaten ohne Mutation gezielt prüfen
+  acceptance:
+  - Der Management-Befehl ist standardmäßig ein Dry-Run und löscht ohne explizites Apply-Flag nichts.
+  - Eine exakte UploadJob-ID kann ausgewählt werden; Batch-Auswahl und Wiederholung bleiben getrennte,
+    explizite Optionen mit positivem Limit.
+  - Die Vorschau meldet pro Job Entscheidung, Sperrgrund, Medienart, Alter und freigebbare Bytes, ohne
+    absolute sensible Pfade, Dateiinhalte oder Patientendaten auszugeben.
+  - Ungültige Selektoren, Null- oder Negativlimits und widersprüchliche Optionen schlagen laut fehl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_reap_upload_job_sources.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/management/commands/test_reap_upload_job_sources.py
+        -q
+      note: Exit-Code 0
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/management/commands/test_reap_upload_job_sources.py
+        -q (9 passed)
+    note: All four selector, dry-run, safe-output and invalid-input acceptance bullets are covered by
+      the command tests.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T09:20:17.280873Z'
+- id: fenced_fail_closed_deletion
+  category: security
+  title: Apply prüft Ownership und Integrität unmittelbar vor jeder Löschung erneut
+  acceptance:
+  - Apply sperrt den UploadJob in einer kurzen Datenbanktransaktion, verwendet Datenbankzeit und bewertet
+    alle Löschprädikate nach der Sperre erneut; ein inzwischen gestarteter Retry oder Lease-Erwerb verhindert
+    die Mutation.
+  - Symlinks, Pfade außerhalb des freigegebenen verschlüsselten Storage-Bereichs, unerwartete Dateitypen
+    und Identitätsabweichungen werden abgelehnt.
+  - Die Dateisystemmutation verwendet ausschließlich die typisierten File-Operations-Wrapper und erzeugt
+    strukturierte JSON-Auditereignisse ohne Geheimnisse oder sensible absolute Pfade.
+  - Die einzige gültige Quelle oder Mediengeneration wird unter keinen Umständen automatisch gelöscht.
+  required: true
+  verification:
+    kind: manual
+    instructions: Implementierung und Auditereignisse gegen Storage-Grenze, Pfadidentität, Lease-/Fencing-Rennen
+      und medienartspezifische Integritätsnachweise prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/cleanup.py; endoreg_db/utils/filesystem/file_operations.py; endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: command
+      reference: 'tests/services/test_hub_cleanup.py: 20 passed; tests/services/test_upload_job_import_lease.py
+        included in 31 passed focused lane'
+    note: Two-phase receipt, row lock, database-time eligibility, fencing, path identity, audited deletion
+      and retry exclusion are implemented; independent security review remains outstanding.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T08:55:01.155989Z'
+- id: crash_safe_idempotent_reconciliation
+  category: data_integrity
+  title: Datei- und Datenbankzustand bleiben nach Abbruch eindeutig reconciliierbar
+  acceptance:
+  - Der Cleanup besitzt einen expliziten, wiederanlauffähigen Zustandsübergang mit stabilem Receipt; ein
+    Abbruch vor oder nach der Dateilöschung erzeugt keinen fälschlich erfolgreichen Zustand.
+  - Bereits fehlende Dateien, wiederholtes Apply und konkurrierende Reaper-Läufe sind idempotent und unterscheiden
+    erfolgreich bereinigte von unerwartet verlorenen Quellen.
+  - Datenbank-only- und Dateisystem-only-Abweichungen werden diagnostiziert; unsichere Abweichungen werden
+    nicht durch stilles Löschen oder pauschales Markieren als completed verdeckt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hub_cleanup.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py -q
+      note: Exit-Code 0
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py -q (25 passed before
+        PostgreSQL-only concurrency test was added)
+    - kind: code
+      reference: endoreg_db/models/hub/upload_job.py cleanup receipt fields; endoreg_db/services/hub/cleanup.py
+        two-phase reconciliation
+    note: All three receipt, missing-file/idempotency and mismatch-diagnosis acceptance bullets are covered,
+      including database failure before/after deletion and process interruption.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T09:20:21.588742Z'
+- id: cleanup_failure_and_concurrency_tests
+  category: testing
+  title: Negative Pfade, Abstürze und konkurrierende Zustandswechsel sind regressionsgetestet
+  acceptance:
+  - Tests decken erfolgreiche Vorschau und Löschung sowie Blockierung bei nicht terminalem Job, falscher
+    Retention-Policy, noch nicht erreichtem Fälligkeitszeitpunkt, Retry, aktiver oder inzwischen erworbener
+    Lease und fehlender Integritätsevidenz ab.
+  - Failure Injection deckt Dateilöschfehler, Datenbankfehler vor und nach der Mutation, Prozessabbruch
+    und zwei konkurrierende Reaper ab.
+  - Video-, Report-, Watcher- und API-UploadJobs sowie bereits fehlende Dateien und manipulierte Pfade
+    werden parametrisiert geprüft.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hub_cleanup.py
+    - tests/management/commands/test_reap_upload_job_sources.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py tests/management/commands/test_reap_upload_job_sources.py
+        -q
+      note: Exit-Code 0
+    - kind: command
+      reference: 'Tracker verifier: 34 passed before PostgreSQL-only two-reaper process test; focused
+        static Pyright 0 errors'
+    - kind: test
+      reference: tests/services/test_hub_cleanup.py::test_two_concurrent_reapers_serialize_one_source_deletion
+        (requires PostgreSQL; SQLite cannot provide select_for_update row-lock evidence)
+    - kind: command
+      reference: 'Focused final lane: 43 passed, 1 skipped, 2 warnings in 98.66s; skip is tests/services/test_hub_cleanup.py::test_two_concurrent_reapers_serialize_one_source_deletion
+        on non-PostgreSQL.'
+    note: State matrix, failure injection and ingest/media coverage pass in the focused lane. The real
+      two-process row-lock test is implemented and skipped under SQLite; PostgreSQL execution remains
+      outstanding.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T09:28:00.219699Z'
+- id: operator_inventory_and_rollout
+  category: operations
+  title: Speicherwirkung und blockierte Altbestände sind vor Apply sichtbar
+  acceptance:
+  - Ein read-only Inventar aggregiert Kandidatenanzahl und freigebbare Bytes nach Medienart, Ingest-Modus,
+    Cleanup-Entscheidung und stabilem Blockiergrund.
+  - Rollout beginnt mit Dry-Run, begrenzten Batches und überprüfbaren Audit-Receipts; Apply kann unabhängig
+    von Import-Workern deaktiviert werden.
+  - Metriken und Alarmierung erfassen wiederholt fehlgeschlagene Bereinigung, alte berechtigte Quellen,
+    Ledger-Dateisystem-Abweichungen und ungewöhnlich große blockierte UploadJobs.
+  - Eine produktionsnahe Übung weist tatsächlich freigegebene Bytes sowie unveränderte Import-, Master-,
+    Derivat- und Wiedergabeintegrität nach.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dry-Run und begrenztes Apply gegen einen freigegebenen produktionsnahen Datenbestand
+      ausführen; Inventar, Audit-Receipts, Byte-Differenz und Medienintegrität gemeinsam prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/management/commands/reap_upload_job_sources.py; endoreg_db/config/env.py
+    - kind: command
+      reference: 'tests/management/commands/test_reap_upload_job_sources.py: 9 passed'
+    - kind: code
+      reference: endoreg_db/management/commands/check_system_health.py cleanup failure/staleness/mismatch/large-blocked
+        alarms
+    - kind: command
+      reference: 'tests/management/commands/test_check_system_health.py plus focused reaper lane: 40 passed'
+    - kind: command
+      reference: 'Focused final lane including health and reaper command tests: 43 passed, 1 PostgreSQL-only
+        concurrency test skipped, 2 warnings in 98.66s.'
+    note: Inventory, independent apply gate, durable failure counters and health alarms are implemented
+      and pass focused tests. Production-like byte/integrity exercise and operational threshold approval
+      remain outstanding.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T09:28:05.339128Z'
+- id: cleanup_runbook
+  category: documentation
+  title: Diagnose, Freigabe, Apply und Recovery sind betrieblich dokumentiert
+  acceptance:
+  - Das Runbook beschreibt Dry-Run, Auswahl einer einzelnen UploadJob-ID, Batch-Limits, Entscheidungscodes,
+    Apply, Audit-Korrelation und erwartete Exit-Codes.
+  - Es enthält Recovery-Verfahren für fehlende Datei, fehlgeschlagene Mutation, Datenbank-Dateisystem-
+    Abweichung, aktive Lease, fehlende Zielintegrität und versehentliche Bedienerunterbrechung.
+  - Direkte Dateisystemlöschung außerhalb des Reapers ist ausdrücklich untersagt; Eskalation und manuelle
+    Freigabe für unsichere Altbestände sind benannt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbook anhand eines sicheren Dry-Runs und einer simulierten Cleanup-Störung durch Betrieb,
+      Security und Storage-Verantwortliche prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md#uploadjob-quellen-reaper
+    note: Dry-run, apply, selectors, decision codes, exit behavior, receipt recovery and separate safe
+      video normalization are documented; operations/security/storage walkthrough remains outstanding.
+    assessed_by: codex-upload-reaper-20260826
+    assessed_at: '2026-08-26T08:55:14.264361Z'

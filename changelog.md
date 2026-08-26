@@ -1,3 +1,11 @@
+# Boundaries were enforced to reduce errors from mixed responsibilities
+
+Persistence, service, and data-model layers were separated where practical. This follows Django's preferred architecture and prevents new model instances from pulling in circular dependencies through services. Validation was strengthened during this work, significantly reducing API error rates.
+
+The newest feature addition, hub transfers, depends on clean validation and anonymization states as well as an existing mutual Transport Layer Security (mTLS) configuration. This remains the largest production blocker.
+
+Report resolution now supports various input knowledge bases.
+
 # Cleaning up API views, moving towards local production use.
 
 In the recent months, tests were cleaned out from most old versions, while ci/cd was reworked by enforcing mypy, ruff and pytest to run locally.

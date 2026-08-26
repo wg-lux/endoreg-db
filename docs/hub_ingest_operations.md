@@ -21,17 +21,22 @@ Fertigstellungsstatus.
 
 ## Import-Monitoring und Zustandsachsen
 
-Import, Anonymisierung, HLS-Materialisierung und Cleanup sind voneinander
-unabhängige Zustandsachsen. Ein erfolgreich importiertes oder anonymisiertes
-Video ist deshalb nicht automatisch streambereit; ebenso ändert ein
-HLS-Fehler nicht rückwirkend den Importstatus.
+Importversuch, Anonymisierung, HLS-Materialisierung und Cleanup werden getrennt
+beobachtet, besitzen für Videoerfolg aber eine gemeinsame Commit-Grenze. Ein
+Videoimport ist erst erfolgreich, wenn kanonischer Master, Raw- und
+Processed-HLS, Zustände und erfolgreiche ProcessingHistory dieselbe validierte
+Generation referenzieren. Ein HLS- oder History-Fehler vor dieser Grenze lässt
+den Versuch fehlgeschlagen beziehungsweise wiederholbar; eine vorherige valide
+Generation bleibt lesbar. Reportimporte benötigen kein HLS, veröffentlichen
+aber PDF, Text, SensitiveMeta, Zustand und Erfolgshistorie unter demselben
+Fencing-Token.
 
 | Importzustand | Bedeutung | Automatik | Bedieneraktion |
 | --- | --- | --- | --- |
 | `pending` | Persistiert und wartet auf Verarbeitung | Worker-Dispatch | Bei ungewöhnlichem Alter Worker und Queue prüfen |
 | `processing` | Ein Worker verarbeitet den Import | keine parallele Verarbeitung | Bei Überschreitung der betrieblichen Laufzeitschwelle eskalieren |
 | `retrying` | Transienter Dispatchfehler, Quelle bleibt geschützt erhalten | begrenzter exponentieller Retry | Bis `next_retry_at` abwarten; Versuchszähler beobachten |
-| `anonymized` | Importverarbeitung erfolgreich | keine | Separate Anonymisierungs-, HLS- und Cleanup-Achsen prüfen |
+| `anonymized` | Generation vollständig veröffentlicht; bei Video sind Raw- und Processed-HLS bereit | keine | Generationskorrelation und Cleanup-Achse prüfen |
 | `error` | Terminaler, stabil codierter Fehler | keine automatische Wiederholung | Fehlercode prüfen; Konfiguration korrigieren oder sicheren Neuimport planen |
 | `lost` | Quelle oder Ledger ist inkonsistent | fail-closed | Logs und Storage sichern, niemals manuell auf Erfolg setzen |
 | Quarantäne | Geschützte Quelle wurde aus dem aktiven Importfluss isoliert | keine automatische Löschung | Ledger abgleichen und Reviewentscheidung dokumentieren |
@@ -93,6 +98,24 @@ Wiederholung muss geprüft werden, dass kein aktiver Job und keine aktive
 Media-Operation-Lease konkurriert. Quarantäne wird zuerst synchronisiert und
 reviewt; Löschung erfolgt ausschließlich nach expliziter Freigabe und separatem
 Reap-Schritt.
+
+### Verbindliche Recovery-Matrix
+
+| Befund | Automatische Aktion | Verbotene Aktion | Bedienerprüfung |
+| --- | --- | --- | --- |
+| Lease abgelaufen, Quelle und Ledger eindeutig | Neuer Versuch mit höherem Fencing-Token und begrenztem Retry | Alten Worker wieder autorisieren | Owner, Token, Datenbankzeit und Quellgeneration korrelieren |
+| Erfolgshistorie fehlt | Versuch nicht als erfolgreich behandeln; sichere Wiederholung oder Reconciliation | History-Fehler unterdrücken oder Status manuell auf Erfolg setzen | Master/PDF, Derivate, Zustände und Attempt-ID vergleichen |
+| Streamable-/HLS-Fehler | Neue Generation unveröffentlicht lassen; vorherige valide Generation behalten | Teilplaylist veröffentlichen oder alten Master löschen | Raw- und Processed-Generation, Playlist, Key und Segmentzahl prüfen |
+| Datenbank-only oder Storage-only | Nur bei eindeutigem Hash und eindeutiger Ownership relinken | Nach Dateiname oder Alter raten | Hash, Storage-Grenze, Center, Generation und History prüfen |
+| Mehrdeutige Quelle, unbekannte Ownership oder Trust-Boundary-Verletzung | `LOST` beziehungsweise Quarantäne; alle Quellen erhalten | automatische Löschung, Export oder schwächeren Codecpfad verwenden | Security-, Storage- und klinisches Review einholen |
+| Voranonymisierte Attestation oder Medienprofil ungültig | Quarantäne und terminaler Integritätsfehler | Als normalen anonymisierten Erfolg übernehmen | Sidecar, Center-Scope, Hash, Profil und Timeline prüfen |
+
+Reconciliation darf lokale Lockdateien nicht anhand ihres Alters als
+Cluster-Ownership interpretieren. Ein lokaler Lock ist nur eine
+Performance-Optimierung; autoritativ sind ausschließlich Attempt-/UploadJob-
+Zeile, Datenbankzeit, Lease-Owner und Fencing-Token. Unbekannte Artefakte werden
+klassifiziert und erhalten, nicht durch einen generischen Startup-Cleanup
+gelöscht.
 
 ## Geltungsbereich und Sicherheitsphase
 
@@ -227,6 +250,71 @@ Integritätsfehler und werden nicht automatisch wiederholt.
   `not_requested` nachvollziehbar.
 - Quarantäne-Löschung benötigt eine dokumentierte Review-Entscheidung,
   anschließende Freigabe und einen separaten Reap-Schritt.
+
+### UploadJob-Quellen-Reaper
+
+Der Quellen-Reaper ist standardmäßig rein lesend. Eine Einzelauswahl verwendet
+die UploadJob-UUID; Batchläufe benötigen immer ein positives Limit. Die Ausgabe
+nennt nur UploadJob-ID, Entscheidungscode, stabilen Blockiergrund, Medienart,
+Ingest-Modus, Alter und Byteanzahl und enthält weder absolute Pfade noch
+Inhalte, Patientendaten oder Content-Hashes.
+
+```sh
+python manage.py reap_upload_job_sources --upload-job-id <uuid> --json
+python manage.py reap_upload_job_sources --limit 25 --json
+```
+
+Vor einem Apply muss `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true` in der
+Laufzeitkonfiguration gesetzt und derselbe begrenzte Dry-Run geprüft werden.
+Das Apply-Flag ist zusätzlich und ausdrücklich erforderlich:
+
+```sh
+python manage.py reap_upload_job_sources --limit 25 --apply --json
+python manage.py reap_upload_job_sources --limit 25 --repeat-until-empty --apply --json
+```
+
+Ungültige oder widersprüchliche Selektoren, deaktiviertes Apply und nicht
+positive Limits enden ungleich null. Ein sicher blockierter Kandidat ist ein
+erfolgreiches Diagnoseergebnis und bleibt mit seinem Blockiercode erhalten.
+Apply autorisiert jede Löschung zunächst unter Datenbanksperre und persistiert
+ein Receipt mit Datenbankzeit, Fencing-Token, opaker Quellidentität und Größe.
+Unmittelbar vor der Mutation werden Status, Retention, Fälligkeit, Retry,
+Processing-Lease, Fencing, Zielintegrität, ProcessingHistory, Video-HLS-
+Generationen, Media-Operation-Leases, Storage-Grenze und Dateiidentität erneut
+geprüft. Die Dateilöschung erfolgt ausschließlich über die auditierten
+File-Operations-Wrapper.
+
+Recovery folgt den stabilen Blockiercodes:
+
+- `source_missing_unexpected` ohne Receipt bleibt erhalten und muss als
+  Ledger-Dateisystem-Abweichung untersucht werden;
+- `delete_failed` verbleibt in `deleting` mit demselben Receipt und kann nach
+  Behebung des Storage-Fehlers erneut angewendet werden;
+- fehlt die Datei im Zustand `deleting`, reconciliiert dasselbe Receipt den
+  nach der Mutation unterbrochenen Lauf idempotent zu `completed`;
+- `active_processing_lease`, `retry_allowed`,
+  `active_media_operation_lease`, `fencing_token_changed`,
+  `target_integrity_failed`, `video_hls_not_ready` und
+  `video_hls_generation_mismatch` verbieten die Mutation bis zur autoritativen
+  Behebung; Fencing- und Identitätsabweichungen benötigen eine neue fachliche
+  Freigabe und werden nicht automatisch überschrieben.
+
+Direkte Dateisystemlöschung außerhalb dieses Reapers ist untersagt. Der Reaper
+transkodiert eine Upload-Quelle nicht in-place, weil sie die einzige
+wiederherstellbare Quelle sein kann. Größenbegrenzte kanonische Videos werden
+über `normalize_video_storage` mit dessen separatem klinischen Qualitäts-,
+Timeline-, Kapazitäts- und Destructive-Migration-Gate erzeugt. Erst ein danach
+vollständig bestandener Zielintegritätsnachweis macht die entbehrliche
+UploadJob-Quelle löschbar.
+
+`check_system_health --json` meldet Cleanup-Fehler, überalterte `eligible`- und
+`deleting`-Zustände, Ledger-Abweichungen sowie ungewöhnlich große blockierte
+Receipts. Die lokalen Alarmgrenzen sind
+`ENDOREG_HEALTH_UPLOAD_SOURCE_ELIGIBLE_MAX_AGE_SECONDS` (Standard 24 Stunden),
+`ENDOREG_HEALTH_UPLOAD_SOURCE_DELETING_MAX_AGE_SECONDS` (Standard eine Stunde)
+und `ENDOREG_HEALTH_UPLOAD_SOURCE_LARGE_BLOCKED_BYTES` (Standard 2 GiB). Ein
+positiver Befund lässt den Health-Check im Local-Study-Server-Profil ungleich
+null enden und muss vor einem weiteren Apply untersucht werden.
 
 Beispiel für die sichere Quarantänefolge:
 

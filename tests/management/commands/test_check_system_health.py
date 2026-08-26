@@ -97,6 +97,21 @@ def _health_command_patches(
         ),
         patch.object(
             health_command,
+            "_upload_source_cleanup_stats",
+            return_value={
+                "failed": 0,
+                "stale_eligible": 0,
+                "stale_deleting": 0,
+                "ledger_mismatches": 0,
+                "unusually_large_blocked": 0,
+                "eligible_max_age_seconds": 24 * 60 * 60,
+                "deleting_max_age_seconds": 60 * 60,
+                "large_blocked_bytes": 2 * 1024 * 1024 * 1024,
+                "error": None,
+            },
+        ),
+        patch.object(
+            health_command,
             "_storage_free_stats",
             return_value={
                 "path": str(storage_root),
@@ -229,3 +244,49 @@ def test_check_system_health_fails_closed_for_anonymization_processing(
     payload = cast(dict[str, Any], json.loads(output.getvalue()))
     assert payload["checks"][failed_check] is False
     assert payload["local_study_server"]["anonymization_processing"] == stats
+
+
+@pytest.mark.django_db
+def test_check_system_health_fails_closed_for_upload_source_cleanup_attention(
+    tmp_path: Path,
+) -> None:
+    audit_status = {
+        "status": "verified",
+        "verified": True,
+        "checked_at": "2026-05-06T12:00:00+00:00",
+        "entry_count": 3,
+        "error": None,
+        "source": "cache",
+    }
+    cleanup_stats = {
+        "failed": 1,
+        "stale_eligible": 0,
+        "stale_deleting": 0,
+        "ledger_mismatches": 0,
+        "unusually_large_blocked": 0,
+        "eligible_max_age_seconds": 24 * 60 * 60,
+        "deleting_max_age_seconds": 60 * 60,
+        "large_blocked_bytes": 2 * 1024 * 1024 * 1024,
+        "error": None,
+    }
+    output = StringIO()
+    patches = _health_command_patches(tmp_path=tmp_path, audit_status=audit_status)
+
+    with ExitStack() as stack:
+        for active_patch in patches:
+            stack.enter_context(active_patch)
+        stack.enter_context(
+            patch.object(
+                health_command,
+                "_upload_source_cleanup_stats",
+                return_value=cleanup_stats,
+            )
+        )
+        with pytest.raises(
+            CommandError,
+            match="local_study_server_no_failed_upload_source_cleanup",
+        ):
+            call_command("check_system_health", "--json", stdout=output)
+
+    payload = cast(dict[str, Any], json.loads(output.getvalue()))
+    assert payload["local_study_server"]["upload_source_cleanup"] == cleanup_stats

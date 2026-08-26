@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -62,6 +63,18 @@ class _AnonymizationProcessingStats(TypedDict):
     failed_reports: int | None
     stale_video_histories: int | None
     stale_timeout_seconds: int
+    error: str | None
+
+
+class _UploadSourceCleanupStats(TypedDict):
+    failed: int | None
+    stale_eligible: int | None
+    stale_deleting: int | None
+    ledger_mismatches: int | None
+    unusually_large_blocked: int | None
+    eligible_max_age_seconds: int
+    deleting_max_age_seconds: int
+    large_blocked_bytes: int
     error: str | None
 
 
@@ -138,6 +151,76 @@ def _upload_job_failure_stats() -> dict[str, int | str | None]:
             "retrying": None,
             "retry_due": None,
             "retry_exhausted": None,
+            "error": str(exc),
+        }
+
+
+def _upload_source_cleanup_stats() -> _UploadSourceCleanupStats:
+    eligible_max_age_seconds = env_int(
+        "ENDOREG_HEALTH_UPLOAD_SOURCE_ELIGIBLE_MAX_AGE_SECONDS",
+        24 * 60 * 60,
+    )
+    deleting_max_age_seconds = env_int(
+        "ENDOREG_HEALTH_UPLOAD_SOURCE_DELETING_MAX_AGE_SECONDS",
+        60 * 60,
+    )
+    large_blocked_bytes = env_int(
+        "ENDOREG_HEALTH_UPLOAD_SOURCE_LARGE_BLOCKED_BYTES",
+        2 * 1024 * 1024 * 1024,
+    )
+    now = timezone.now()
+    try:
+        return {
+            "failed": UploadJob.objects.filter(
+                cleanup_failure_count__gt=0,
+            )
+            .exclude(
+                cleanup_status=UploadJob.CleanupStatus.COMPLETED,
+            )
+            .count(),
+            "stale_eligible": UploadJob.objects.filter(
+                cleanup_status=UploadJob.CleanupStatus.ELIGIBLE,
+                source_file_persisted=True,
+                source_file_delete_eligible_at__lte=(
+                    now - timedelta(seconds=eligible_max_age_seconds)
+                ),
+            ).count(),
+            "stale_deleting": UploadJob.objects.filter(
+                cleanup_status=UploadJob.CleanupStatus.DELETING,
+                cleanup_started_at__lte=(
+                    now - timedelta(seconds=deleting_max_age_seconds)
+                ),
+            ).count(),
+            "ledger_mismatches": UploadJob.objects.filter(
+                models.Q(
+                    cleanup_status=UploadJob.CleanupStatus.COMPLETED,
+                    source_file_persisted=True,
+                )
+                | models.Q(
+                    cleanup_status=UploadJob.CleanupStatus.DELETING,
+                    source_file_persisted=False,
+                )
+            ).count(),
+            "unusually_large_blocked": UploadJob.objects.filter(
+                cleanup_status=UploadJob.CleanupStatus.DELETING,
+                cleanup_last_error_code__gt="",
+                cleanup_source_size_bytes__gte=large_blocked_bytes,
+            ).count(),
+            "eligible_max_age_seconds": eligible_max_age_seconds,
+            "deleting_max_age_seconds": deleting_max_age_seconds,
+            "large_blocked_bytes": large_blocked_bytes,
+            "error": None,
+        }
+    except (OperationalError, ProgrammingError) as exc:
+        return {
+            "failed": None,
+            "stale_eligible": None,
+            "stale_deleting": None,
+            "ledger_mismatches": None,
+            "unusually_large_blocked": None,
+            "eligible_max_age_seconds": eligible_max_age_seconds,
+            "deleting_max_age_seconds": deleting_max_age_seconds,
+            "large_blocked_bytes": large_blocked_bytes,
             "error": str(exc),
         }
 
@@ -334,6 +417,7 @@ def _local_study_server_checks(
     upload_jobs: dict[str, int | str | None],
     hls_materializations: dict[str, int | str | None],
     anonymization_processing: _AnonymizationProcessingStats,
+    upload_source_cleanup: _UploadSourceCleanupStats,
     storage_free: dict[str, int | float | str | None],
     audit_ledger_integrity: _AuditLedgerIntegrityStatus,
     oldest_quarantine_age_seconds: int | float | None | str,
@@ -359,6 +443,21 @@ def _local_study_server_checks(
         ),
         "local_study_server_no_stale_video_processing": (
             anonymization_processing["stale_video_histories"] == 0
+        ),
+        "local_study_server_no_failed_upload_source_cleanup": (
+            upload_source_cleanup["failed"] == 0
+        ),
+        "local_study_server_no_stale_eligible_upload_sources": (
+            upload_source_cleanup["stale_eligible"] == 0
+        ),
+        "local_study_server_no_stale_deleting_upload_sources": (
+            upload_source_cleanup["stale_deleting"] == 0
+        ),
+        "local_study_server_no_upload_source_ledger_mismatch": (
+            upload_source_cleanup["ledger_mismatches"] == 0
+        ),
+        "local_study_server_no_unusually_large_blocked_upload_sources": (
+            upload_source_cleanup["unusually_large_blocked"] == 0
         ),
         "local_study_server_storage_free_above_threshold": _storage_free_above_threshold(
             storage_free["free_bytes"],
@@ -442,6 +541,7 @@ class Command(BaseCommand):
         upload_jobs = _upload_job_failure_stats()
         hls_materializations = _hls_materialization_stats()
         anonymization_processing = _anonymization_processing_stats()
+        upload_source_cleanup = _upload_source_cleanup_stats()
         storage_free = _storage_free_stats()
         audit_ledger_integrity = _audit_ledger_integrity_status()
         oldest_age_seconds = quarantine["oldest_age_seconds"]
@@ -461,6 +561,7 @@ class Command(BaseCommand):
                     upload_jobs=upload_jobs,
                     hls_materializations=hls_materializations,
                     anonymization_processing=anonymization_processing,
+                    upload_source_cleanup=upload_source_cleanup,
                     storage_free=storage_free,
                     audit_ledger_integrity=audit_ledger_integrity,
                     oldest_quarantine_age_seconds=oldest_age_seconds,
@@ -493,6 +594,7 @@ class Command(BaseCommand):
                 "upload_jobs": upload_jobs,
                 "hls_materializations": hls_materializations,
                 "anonymization_processing": anonymization_processing,
+                "upload_source_cleanup": upload_source_cleanup,
                 "storage_free": storage_free,
                 "min_free_bytes": min_free_bytes,
                 "max_quarantine_age_days": max_quarantine_age_days,

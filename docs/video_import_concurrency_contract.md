@@ -79,6 +79,55 @@ persisted representation at the model boundary. The database model contains
 persistence fields and constraints only; lease acquisition, renewal, recovery,
 and publication remain service logic.
 
+Every productive entry point must create or acquire this durable attempt before
+calling `VideoImportService` or `ReportImportService`. This includes the upload
+application programming interface (API), the regular watcher, the
+pre-anonymized watcher, hub transfer receipt, management commands, and direct
+service calls. An upload or transfer ledger may carry the fields itself; a
+report attempt may use its dedicated attempt row. In either case the durable
+record, not an in-memory context object, is the source of cluster ownership.
+
+The `attempt_id` identifies one execution. The `source_generation_id`
+identifies the immutable bytes it was authorized to read. Retrying after lease
+expiry increments the fencing token and uses a new execution identity; it does
+not revive the old worker. File locks, advisory locks, and process-local mutexes
+only reduce duplicate work on one host. They never establish cross-host
+ownership, never permit publication, and must not be reclaimed merely from file
+age. Database time, the persisted lease owner, lease expiry, state, and fencing
+token are authoritative.
+
+### Wrapper heartbeat architecture
+
+The production call boundary deliberately has two layers:
+
+1. The entrypoint wrapper acquires a persisted import attempt and starts one
+   background heartbeat for the complete expensive operation. It owns database
+   clock renewal, the lease owner and fencing token, retry classification, and
+   terminal attempt state.
+2. The wrapper constructs one `VideoImportExecutionFence` containing the
+   opaque attempt identifier and a synchronous `guard` capability, then calls
+   `VideoImportService.import_and_anonymize_fenced`.
+3. The video service calls that guard before durable state changes and
+   publication checkpoints. The guard verifies current database ownership and
+   also surfaces a renewal failure previously observed by the heartbeat.
+4. When the service returns or raises, the wrapper performs its final fenced
+   transition and stops the heartbeat.
+
+The guard is not the heartbeat. Calling it does not replace periodic renewal;
+it is the fail-closed bridge that lets deep processing code prove that the
+wrapper still owns the attempt immediately before a mutation. Conversely, the
+heartbeat does not grant publication authority by itself: every durable write
+still needs a successful guard or an equivalent row-locked fencing check.
+
+`VideoImportService.import_and_anonymize` is intentionally documented as the
+unfenced compatibility path. Productive API, watcher, transfer, command, or job
+wrappers must not call it. Keeping fenced invocation as a separate method
+prevents an attempt identifier from being passed without a guard (or a guard
+without its attempt identifier), which would create misleading partial
+ownership. Migration is incomplete while any productive entrypoint still uses
+the unfenced method; such paths must remain visible in the feature tracker and
+must not be described as cluster-safe.
+
 ## Attempt State Machine
 
 The durable state machine must be explicit and reject invalid transitions:

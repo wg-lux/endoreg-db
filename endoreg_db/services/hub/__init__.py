@@ -34,6 +34,7 @@ __all__ = [
     "process_upload_job",
     "process_watcher_file",
     "reap_upload_job_sources",
+    "run_upload_job_source_reaper",
     "resolve_allowed_center_id",
     "resolve_allowed_center_ids",
     "resolve_api_upload_context",
@@ -63,6 +64,7 @@ _EXPORTS = {
         "local_study_server_mode_enabled",
     ),
     "reap_upload_job_sources": (".cleanup", "reap_upload_job_sources"),
+    "run_upload_job_source_reaper": (".cleanup", "run_upload_job_source_reaper"),
     "assert_environment_readiness": (
         "..environment_readiness",
         "assert_environment_readiness",
@@ -123,7 +125,7 @@ if TYPE_CHECKING:
         check_environment_readiness,
     )
 
-    from .cleanup import reap_upload_job_sources
+    from .cleanup import reap_upload_job_sources, run_upload_job_source_reaper
     from .deployment import (
         deployment_profile_payload,
         get_deployment_role,

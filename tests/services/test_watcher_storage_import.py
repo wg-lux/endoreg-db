@@ -37,8 +37,7 @@ class _VideoImportCallable(Protocol):
         center_name: str,
         processor_name: str,
         retry: bool,
-        attempt_id: str | None = None,
-        execution_guard: Callable[[], None] | None = None,
+        execution_fence: object,
     ) -> VideoFile: ...
 
 
@@ -134,11 +133,12 @@ def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
         center_name: str,
         processor_name: str,
         retry: bool,
-        attempt_id: str | None = None,
-        execution_guard: Callable[[], None] | None = None,
+        execution_fence: object,
     ) -> VideoFile:
+        attempt_id = getattr(execution_fence, "attempt_id", "")
+        execution_guard = getattr(execution_fence, "guard", None)
         assert attempt_id
-        assert execution_guard is not None
+        assert callable(execution_guard)
         execution_guard()
         assert Path(file_path).exists()
         safe_unlink_file(Path(file_path), missing_ok=False)
@@ -476,7 +476,7 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=AssertionError("complete media must be reused"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -506,7 +506,7 @@ def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -541,7 +541,7 @@ def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reinge
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -579,7 +579,7 @@ def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
             return_value=False,
         ),
         patch(
-            "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+            "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
             side_effect=_fake_video_import(video),
         ),
     ):

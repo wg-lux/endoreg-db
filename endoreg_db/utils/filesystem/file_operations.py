@@ -12,6 +12,7 @@ from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_report_source_snapshot,
     atomic_write_file,
+    safe_delete_field_file,
     safe_unlink_file,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "atomic_move_file",
     "atomic_report_source_snapshot",
     "atomic_write_file",
+    "safe_delete_field_file",
     "safe_unlink_file",
 ]

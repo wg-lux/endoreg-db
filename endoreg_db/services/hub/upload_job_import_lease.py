@@ -27,6 +27,10 @@ class UploadJobImportLeaseLost(RuntimeError):
     """Raised when a worker no longer owns the current fencing epoch."""
 
 
+class UploadJobCleanupInProgress(RuntimeError):
+    """Raised when a durable cleanup receipt exclusively owns the source."""
+
+
 @dataclass(frozen=True)
 class UploadJobImportLease:
     upload_job_id: str
@@ -78,6 +82,17 @@ def acquire_upload_job_import_lease(
 
     with transaction.atomic():
         job = _locked_job(upload_job_id)
+        if job.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
+            emit_structured_event(
+                logger,
+                "video_import.lease_cleanup_blocked",
+                level=logging.WARNING,
+                upload_job_id=str(job.pk),
+                fencing_epoch=int(job.processing_fencing_token),
+            )
+            raise UploadJobCleanupInProgress(
+                f"Upload job {job.pk} source cleanup is in progress"
+            )
         database_now = _database_now(upload_job_id)
         current_expiry = job.processing_lease_expires_at
         has_live_owner = (

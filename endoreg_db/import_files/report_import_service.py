@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
@@ -41,14 +42,16 @@ from endoreg_db.services.raw_pdf_files import (
 )
 from endoreg_db.services.report_import_fencing import (
     ReportImportFence,
+    ReportImportFenceHeartbeat,
     StaleReportImportAttemptError,
     acquire_report_import_fence,
     mark_report_import_fence_failed,
     renew_report_import_fence,
     report_import_finalization_guard,
+    report_import_mutation_guard,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 from endoreg_db.utils.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
 )
@@ -300,7 +303,10 @@ class ReportImportService:
 
             fence = acquire_report_import_fence(file_hash)
             try:
-                return self._process_owned_import(ctx, fence, retry)
+                with ReportImportFenceHeartbeat(fence) as heartbeat:
+                    ctx.execution_guard = heartbeat.guard
+                    ctx.mutation_guard = lambda: report_import_mutation_guard(fence)
+                    return self._process_owned_import(ctx, fence, retry)
             except StaleReportImportAttemptError:
                 logger.exception(
                     "Refusing state changes from a stale report import attempt for %s.",
@@ -315,6 +321,9 @@ class ReportImportService:
                 )
                 self._finalize_owned_failure(ctx, fence)
                 raise
+            finally:
+                ctx.execution_guard = None
+                ctx.mutation_guard = None
 
     def _process_owned_import(
         self,
@@ -340,7 +349,9 @@ class ReportImportService:
             self._prepare_retry(ctx, fence)
 
         renew_report_import_fence(fence)
-        mark_instance_processing_started(ctx.current_report, ctx)
+        mutation_guard = ctx.mutation_guard
+        with mutation_guard() if mutation_guard is not None else nullcontext():
+            mark_instance_processing_started(ctx.current_report, ctx)
         ctx = self._anonymize_with_retry(ctx)
 
         renew_report_import_fence(fence)

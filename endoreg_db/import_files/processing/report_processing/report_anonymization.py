@@ -3,14 +3,15 @@ import logging
 import os
 import sys
 from collections.abc import Mapping
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
 
 from django.db import transaction
 
-from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
+from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
@@ -143,6 +144,9 @@ class ReportAnonymizer:
             anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
             report_reader = self._instantiate_report_reader()
 
+            if ctx.execution_guard is not None:
+                ctx.execution_guard()
+
             process_report_v2 = getattr(report_reader, "process_report_v2", None)
             if callable(process_report_v2):
                 contract_module = importlib.import_module(
@@ -215,10 +219,14 @@ class ReportAnonymizer:
                     "Report anonymization did not produce a readable anonymized PDF."
                 )
 
-        report = persist_report_anonymization_result(
-            report_id=report.pk,
-            result=anonymization_result,
-        )
+        if ctx.execution_guard is not None:
+            ctx.execution_guard()
+        mutation_guard = ctx.mutation_guard
+        with mutation_guard() if mutation_guard is not None else nullcontext():
+            report = persist_report_anonymization_result(
+                report_id=report.pk,
+                result=anonymization_result,
+            )
         ctx.current_report = report
         return ctx
 

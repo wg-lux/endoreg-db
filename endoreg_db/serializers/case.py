@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db import models
 from rest_framework import serializers
@@ -126,7 +126,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
         )
         read_only_fields = ("id", "case_id", "created_at", "updated_at")
 
-    def validate(self, attrs: Mapping[str, object]) -> Mapping[str, object]:
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         start_date = cast(
             datetime | None,
             attrs.get("start_date", getattr(self.instance, "start_date", None)),
