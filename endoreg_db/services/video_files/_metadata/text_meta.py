@@ -11,6 +11,10 @@ from endoreg_db.models.metadata.sensitive_meta_logic import (
     update_or_create_sensitive_meta_from_dict,
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.services.sensitive_meta_external_ids import (
+    assign_patient_external_id,
+    split_patient_external_id,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -116,11 +120,19 @@ def _update_text_metadata(
 
             # Pass the Class, the data dict, and the current instance (or None)
             # This function might raise exceptions if data is invalid
+            model_payload, external_id_pair = split_patient_external_id(
+                extracted_data_dict.to_dict()
+            )
             sensitive_meta, created = update_or_create_sensitive_meta_from_dict(
                 SensitiveMeta,  # Pass the class
-                extracted_data_dict.to_dict(),
+                model_payload,
                 instance=sensitive_meta_instance,  # Pass current instance via keyword
             )
+            if external_id_pair is not None:
+                assign_patient_external_id(
+                    sensitive_meta=sensitive_meta,
+                    external_id_pair=external_id_pair,
+                )
 
             # Update VideoFile fields if necessary
             update_fields_video: list[str] = []

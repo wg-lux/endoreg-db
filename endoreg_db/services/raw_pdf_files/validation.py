@@ -6,6 +6,11 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.db import transaction
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
+from endoreg_db.services.sensitive_meta_external_ids import (
+    assign_patient_external_id,
+    split_patient_external_id,
+)
+
 from .integrity import require_usable_completed_report
 from .io import delete_raw_pdf_raw_file
 from .state import (
@@ -63,8 +68,16 @@ def validate_report_metadata_annotation(
         logger.error("No sensitive meta attached to report %s.", report.pk)
         return False
 
+    model_payload, external_id_pair = split_patient_external_id(extracted_data_dict)
     validated_sensitive_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
-    validated_sensitive_meta.update_from_dict(extracted_data_dict)
+    validated_sensitive_meta.update_from_dict(
+        cast(PdfFileMetaJsonObject, model_payload)
+    )
+    if external_id_pair is not None:
+        assign_patient_external_id(
+            sensitive_meta=sensitive_meta,
+            external_id_pair=external_id_pair,
+        )
     validated_sensitive_meta.save()
 
     report.save()

@@ -845,7 +845,11 @@ def create_sensitive_meta_from_dict(
         ValueError: If center_name does not match any Center in database
     """
 
-    selected_data = _selected_model_data(cls, data)
+    selected_data = _selected_model_data(
+        cls,
+        data,
+        excluded_fields=frozenset({"external_id"}),
+    )
     _normalize_create_patient_dob(selected_data)
     _normalize_create_examination_date(selected_data)
     selected_data["center"] = _resolve_create_center(data)
@@ -1184,7 +1188,9 @@ def update_sensitive_meta_from_dict(
     selected_data = _selected_model_data(
         type(instance),
         data,
-        excluded_fields=frozenset({"pseudo_patient", "pseudo_examination"}),
+        excluded_fields=frozenset(
+            {"pseudo_patient", "pseudo_examination", "external_id"}
+        ),
     )
     _update_center(instance, data, selected_data)
 

@@ -4,6 +4,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from endoreg_db.services.sensitive_meta_external_ids import (
+    assign_patient_external_id,
+    split_patient_external_id,
+)
+
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
@@ -50,8 +55,15 @@ def validate_video_metadata_annotation(
         )
         if video.sensitive_meta is not None and extracted_data_dict is not None:
             try:
-                update_payload = extracted_data_dict.to_dict()
+                update_payload, external_id_pair = split_patient_external_id(
+                    extracted_data_dict.to_dict()
+                )
                 video.sensitive_meta.update_from_dict(update_payload)
+                if external_id_pair is not None:
+                    assign_patient_external_id(
+                        sensitive_meta=video.sensitive_meta,
+                        external_id_pair=external_id_pair,
+                    )
                 metadata_updated = True
             except Exception as update_exc:
                 logger.error(

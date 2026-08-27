@@ -71,12 +71,15 @@ definition_of_done:
   title: Anonymisierung, Validierung und Qualitätsmetriken sind regressionsgetestet
   acceptance:
   - Positive, negative und Grenzfälle für Video und Bericht laufen reproduzierbar.
+  - Leere externe ID-Paare werden bei Video- und Berichtsvalidierung ignoriert; vollständige Paare werden
+    als typisierte PatientExternalID-Relation aufgelöst oder angelegt und atomar zugeordnet.
   required: true
   verification:
     kind: command
     command:
     - .devenv/state/venv/bin/pytest
     - tests/services/test_anonymization_quality_evaluation.py
+    - tests/services/test_sensitive_meta_external_id_validation.py
     - tests/views/anonymization
     - -q
     timeout_seconds: 900
@@ -85,8 +88,11 @@ definition_of_done:
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
-        tests/views/anonymization -q
+        tests/services/test_sensitive_meta_external_id_validation.py tests/views/anonymization -q
       note: Exit-Code 0
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_external_ids.py; endoreg_db/services/raw_pdf_files/validation.py;
+        endoreg_db/services/video_files/_metadata/text_meta.py
     - kind: code
       reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
     - kind: command
@@ -98,13 +104,13 @@ definition_of_done:
     - kind: command
       reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrierte Boundary-Kohorte (90
         passed)
-    note: Video- und PDF-PATCH verwenden denselben streng typisierten partiellen Command und einen per
-      select_for_update serialisierten Service. Relationen, Skalare, explizites false, ausgelassene Flags,
-      Nullwerte, unbekannte Legacy-HTTP-Felder, ungültige Referenzen und Whitespace-Namensvalidierung
-      sind regressionsgetestet. Die PDF-Route führt keine zweite Mutation aus und protokolliert keine
-      sensitiven Response-Daten.
-    assessed_by: codex-boundary-cleanup-20260825
-    assessed_at: '2026-08-25T11:51:33.879621Z'
+    note: Die gemeinsame Video-/Berichtsvalidierung trennt externe ID-Werte vor dem generischen SensitiveMeta-Update.
+      Leere Paare bleiben ohne Relation; vollständige, getrimmte Paare werden idempotent als PatientExternalID
+      aufgelöst oder angelegt und typisiert zugeordnet. Positive, negative und Grenzfälle der bestehenden
+      Anonymisierungssuite sowie vier neue Video-/Berichtsregressionen sind erfolgreich. Die bestehende
+      Evidenz für den gemeinsamen streng typisierten Video-/PDF-PATCH-Command bleibt unverändert gültig.
+    assessed_by: codex-external-id-validation
+    assessed_at: '2026-08-27T12:21:43.514636Z'
 - id: privacy_controls
   category: security
   title: Nicht freigegebene Rohdaten können den lokalen Schutzbereich nicht verlassen
