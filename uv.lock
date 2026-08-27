@@ -1146,8 +1146,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.8" },
-    { name = "lx-dtypes", specifier = "==0.2.30" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.9" },
+    { name = "lx-dtypes", specifier = "==0.2.31" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2043,7 +2043,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.3.8"
+version = "0.9.3.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -2059,6 +2059,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pydicom" },
     { name = "pymupdf" },
     { name = "pyspellchecker" },
     { name = "pytesseract" },
@@ -2073,9 +2074,9 @@ dependencies = [
     { name = "verovio" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/e4/bb10dff3356ad5b1050ad213ca4f6e7f508263851b22f0ddcb54668a8528/lx_anonymizer-0.9.3.8.tar.gz", hash = "sha256:0617a38feee886754305de3e00fd1c4705b2e55fd8a5b8d737af8b3965637283", size = 1464722, upload-time = "2026-08-27T08:52:12.765Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/b4/e3dda906d50106f664c5e8c654925e8c490e674602e13f9ee17e05eb52d1/lx_anonymizer-0.9.3.9.tar.gz", hash = "sha256:7bd3a8585d16c71d985589170caf30c84493e46339fbef6dae419c0cb2515880", size = 1467502, upload-time = "2026-08-27T10:06:55.234Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/e5/dd622fed177f10c79b239d5517a2117c15a523fea5d735a9ec907a80857a/lx_anonymizer-0.9.3.8-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:b98b280b0de41e774e934ecd66de9277ede014fcf9f47e3aeca6f2b3a782e0f1", size = 1511641, upload-time = "2026-08-27T08:52:10.504Z" },
+    { url = "https://files.pythonhosted.org/packages/26/89/efec329de90fc0c9befc63c48fb1d9ee5bba519eee9c5c4c4c01b897f184/lx_anonymizer-0.9.3.9-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:fcac6a9f29c8ba78f49a221841ca53f327ee95a66ce5b4e96b3f3d0d8b2b180a", size = 1512771, upload-time = "2026-08-27T10:06:51.71Z" },
 ]
 
 [package.optional-dependencies]
@@ -2091,7 +2092,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.30"
+version = "0.2.31"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2114,9 +2115,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/38/6d73f016d1c332b5abbfa7aa751b5acef9d4e7463fe6092bd15f8b45a8e6/lx_dtypes-0.2.30.tar.gz", hash = "sha256:3f06bf21b06e98f56447e4f827a3b2e2635817d073785f376f53ec80a56d4353", size = 2585494, upload-time = "2026-08-27T08:49:23.042Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/d3/547110dc46800f9c10197131af22b4643b75aaaee5d16ba59d23f41b58d2/lx_dtypes-0.2.31.tar.gz", hash = "sha256:7345b1fd16a1161301ed9411c6e66dbaf8a7e029c510230112e99ac14a88551e", size = 2585085, upload-time = "2026-08-27T10:02:21.183Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7c/a8/f6678a3ac3f37335275f5a3252583df488841615fef522c96312a697e3c1/lx_dtypes-0.2.30-py3-none-any.whl", hash = "sha256:90ff70399144ec3346f2ed70834062ad8f1fc367b9aeef9025007cf436f6b389", size = 783393, upload-time = "2026-08-27T08:49:19.667Z" },
+    { url = "https://files.pythonhosted.org/packages/80/c1/b2e4244cec1c77d78f5e298f19e12e3a6129c87c979bb8a81223820f01d4/lx_dtypes-0.2.31-py3-none-any.whl", hash = "sha256:f516588dbd73fbd396a9e0f249333b93b5d95859bb503e02cb4f6c0ab8a941ea", size = 783392, upload-time = "2026-08-27T10:02:17.235Z" },
 ]
 
 [[package]]
@@ -3204,6 +3205,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/07/60/1d1e59c9c90d54591469ada7d268251f71c24bdb765f1a8a832cee8c6653/pydantic_settings-2.14.1.tar.gz", hash = "sha256:e874d3bec7e787b0c9958277956ed9b4dd5de6a80e162188fdaff7c5e26fd5fa", size = 235551, upload-time = "2026-05-08T13:40:06.542Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ae/8d/f1af3832f5e6eb13ba94ee809e72b8ecb5eef226d27ee0bef7d963d943c7/pydantic_settings-2.14.1-py3-none-any.whl", hash = "sha256:6e3c7edfd8277687cdc598f56e5cff0e9bfff0910a3749deaa8d4401c3a2b9de", size = 60964, upload-time = "2026-05-08T13:40:04.958Z" },
+]
+
+[[package]]
+name = "pydicom"
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/de/52aaf905f1f0ae7aba85996e2592ea2c1fe49157f3cfbcd1871965bdb51d/pydicom-3.0.2.tar.gz", hash = "sha256:5942bfc2d72c6fa4b3b5b62c527f54b7f2355f21d6f5d296df6bb30188df6a4f", size = 2886792, upload-time = "2026-03-19T21:46:20.935Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/e0/60466c6d712dad2cf807df315e39863e91609ffd1064ecb835994460bbda/pydicom-3.0.2-py3-none-any.whl", hash = "sha256:abf971a5440f84dbaf42c4b6758e30e62480902584f8b270b9a5d146e278a07b", size = 2376822, upload-time = "2026-03-19T21:46:19.042Z" },
 ]
 
 [[package]]
