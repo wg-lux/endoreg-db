@@ -15,6 +15,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
 from cryptography.hazmat.primitives import hashes, serialization
@@ -474,6 +475,68 @@ class HubTransferEndpointTests(TestCase):
             == TransferJob.CleanupPolicy.RETAIN_ALL
         )
         assert transfer_job.cleanup_status == TransferJob.CleanupStatus.NOT_REQUESTED
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_postgresql_video_registration_locks_existing_row_with_nullable_relations(
+        self,
+    ):
+        if connection.vendor != "postgresql":
+            self.skipTest("nullable joined-row locking is PostgreSQL-specific")
+        existing_video = VideoFile.objects.create(
+            video_hash="hash-existing-nullable-video",
+            center=self.center,
+        )
+        assert existing_video.state_id is None
+        assert existing_video.sensitive_meta_id is None
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__existing-nullable-video",
+            video_hash=existing_video.video_hash,
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+        existing_video.refresh_from_db()
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        assert transfer_job.target_object_id == existing_video.pk
+        assert existing_video.state_id is not None
+        assert existing_video.sensitive_meta_id is not None
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_postgresql_report_registration_locks_existing_row_with_nullable_relations(
+        self,
+    ):
+        if connection.vendor != "postgresql":
+            self.skipTest("nullable joined-row locking is PostgreSQL-specific")
+        existing_report = RawPdfFile.objects.create(
+            pdf_hash="hash-existing-nullable-report",
+            center=self.center,
+        )
+        assert existing_report.state_id is None
+        assert existing_report.sensitive_meta_id is None
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__existing-nullable-report",
+            pdf_hash=existing_report.pdf_hash,
+        )
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 201, response.content
+        existing_report.refresh_from_db()
+        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        assert transfer_job.target_object_id == existing_report.pk
+        assert existing_report.state_id is not None
+        assert existing_report.sensitive_meta_id is not None
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_returns_typed_model_validation_details(self):

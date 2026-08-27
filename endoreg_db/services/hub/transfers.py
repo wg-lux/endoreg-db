@@ -839,7 +839,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
     with transaction.atomic():
         video = (
-            VideoFile.objects.select_for_update()
+            VideoFile.objects.select_for_update(of=("self",))
             .select_related("state", "sensitive_meta")
             .filter(video_hash=transfer_job.resource_hash)
             .first()
@@ -983,7 +983,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
     with transaction.atomic():
         report = (
-            RawPdfFile.objects.select_for_update()
+            RawPdfFile.objects.select_for_update(of=("self",))
             .select_related("state", "sensitive_meta")
             .filter(pdf_hash=transfer_job.resource_hash)
             .first()
