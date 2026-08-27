@@ -460,13 +460,14 @@ definition_of_done:
     assessed_at: '2026-07-27T08:14:05.205607Z'
 - id: anonymizer_report_contract
   category: documentation
-  title: Die Grenze zu lx-anonymizer ist typisiert, isoliert und kompatibilitätsgeprüft
+  title: Die Grenze zu lx-anonymizer ist kanonisch typisiert und isoliert
   acceptance:
   - endoreg-db besitzt Import, Snapshot, Sperren, Persistenz und kanonische Publikation; lx-anonymizer
     besitzt ausschließlich die inhaltliche Anonymisierung im zugewiesenen Versuchsverzeichnis.
-  - Anfrage, Ergebnis, Fehlerklassen, Provenienz und Versionsaushandlung sind in beiden Repositories deckungsgleich
-    dokumentiert.
-  - Ein Cross-Repository-Vertragstest prüft mindestens die älteste unterstützte und die aktuelle lx-anonymizer-Version.
+  - Anfrage, Ergebnis, Fehlerklassen und Provenienz sind in beiden Repositories deckungsgleich dokumentiert;
+    ältere Reader-Aliase und Tupelverträge werden weder erkannt noch als Laufzeit-Fallback verwendet.
+  - Ein Cross-Repository-Vertragstest prüft, dass jede unterstützte lx-anonymizer-Version den einzigen
+    kanonischen Reader-Vertrag bereitstellt und fehlende Fähigkeiten laut abgelehnt werden.
   required: true
   verification:
     kind: manual
@@ -480,15 +481,16 @@ definition_of_done:
       reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; /home/admin/lx-anonymizer/lx_anonymizer/report_contracts.py;
         /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_report_anonymization.py
-        (5 passed); /home/admin/lx-anonymizer/tests/test_report_reader_contract_v2.py (7 passed)
+      reference: /home/admin/lx-data-models/tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py
+        (5 passed); /home/admin/lx-anonymizer/tests/test_report_reader_contract.py (8 passed)
     - kind: command
       reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer python
         -m pytest tests/import_files/test_report_anonymization_contract.py -q (2 passed)
     - kind: document
       reference: docs/report_import_concurrency_implementation.md; /home/admin/lx-anonymizer/docs/report_pipeline_concurrency_contract.md
-    note: Der serialisierbare V2-Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn ohne
-      lokale Modellduplikate, und der aktuelle lokale Endoreg-Vertragstest besteht. Verifizierung bleibt
+    note: Der einzige serialisierbare Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn
+      ohne lokale Modellduplikate oder ältere Reader-Fallbacks, und der aktuelle lokale Endoreg-Vertragstest
+      besteht. Verifizierung bleibt
       bis zur Veröffentlichung einer neuen, unverbrauchten lx-dtypes-Version und einer CI-Matrix mit installierten
       ältester und aktueller unterstützter lx-anonymizer-Wheel-Version offen.
     assessed_by: Codex

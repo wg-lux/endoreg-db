@@ -2,15 +2,17 @@ import importlib
 import logging
 import os
 import sys
-from collections.abc import Mapping
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
 
 from django.db import transaction
-
-from lx_dtypes.models.contracts.report_anonymization import ReportAnonymizationResult
+from lx_dtypes.models.contracts.report_anonymization import (
+    ReportAnonymizationOptions,
+    ReportAnonymizationRequest,
+    ReportAnonymizationResult,
+)
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
 from endoreg_db.import_files.context import ImportContext
@@ -20,29 +22,17 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
 
 
 class _ReportReader(Protocol):
+    llm_available: bool
+
     def process_report(
-        self,
-        *,
-        pdf_path: Path,
-        create_anonymized_pdf: bool,
-        anonymized_pdf_output_path: str,
-    ) -> tuple[str, str, dict[str, object], Path | None]: ...
-
-
-class _ReportAnonymizationV2Result(Protocol):
-    original_text: str
-    anonymized_text: str
-    extracted_metadata: object
-    artifact_path: Path
-
-
-class _ReportReaderV2(Protocol):
-    def process_report_v2(self, request: object) -> _ReportAnonymizationV2Result: ...
+        self, request: ReportAnonymizationRequest
+    ) -> ReportAnonymizationResult: ...
 
 
 class _ReportReaderClass(Protocol):
@@ -58,11 +48,22 @@ class _ReportStorageRecord(Protocol):
     def save(self, *args: object, **kwargs: object) -> None: ...
 
 
+class _PersistableReportAnonymizationResult(Protocol):
+    @property
+    def original_text(self) -> str: ...
+
+    @property
+    def anonymized_text(self) -> str: ...
+
+    @property
+    def extracted_metadata(self) -> LxSensitiveMeta: ...
+
+
 @transaction.atomic
 def persist_report_anonymization_result(
     *,
     report_id: int,
-    result: ReportAnonymizationResult,
+    result: _PersistableReportAnonymizationResult,
 ) -> RawPdfFile:
     report = RawPdfFile.objects.select_for_update().get(pk=report_id)
 
@@ -106,12 +107,6 @@ class ReportAnonymizer:
         self._ensure_report_reading_available()
 
     @staticmethod
-    def _coerce_extracted_metadata(
-        extracted_metadata: LxSensitiveMeta,
-    ) -> LxSensitiveMeta:
-        return extracted_metadata
-
-    @staticmethod
     def _read_txt_content(txt_path: Path) -> str:
         for encoding in ("utf-8", "cp1252", "latin-1"):
             try:
@@ -139,78 +134,42 @@ class ReportAnonymizer:
         else:
             # Setup anonymized directory
             anonymized_dir = ensure_directory(_processed_report_dir())
-            # Generate output path for anonymized report
-            pdf_hash = report.pdf_hash
-            anonymized_output_path = anonymized_dir / f"{pdf_hash}.pdf"
             report_reader = self._instantiate_report_reader()
+            use_llm = report_reader.llm_available
+            emit_structured_event(
+                logger,
+                (
+                    "report_anonymization.llm_ready_selected"
+                    if use_llm
+                    else "report_anonymization.spacy_fallback_selected"
+                ),
+                llm_available=use_llm,
+                selected_backend="configured_llm" if use_llm else "spacy_regex",
+            )
 
             if ctx.execution_guard is not None:
                 ctx.execution_guard()
 
-            process_report_v2 = getattr(report_reader, "process_report_v2", None)
-            if callable(process_report_v2):
-                contract_module = importlib.import_module(
-                    "lx_anonymizer.report_contracts"
+            attempt_directory = ensure_directory(
+                anonymized_dir / f"attempt-{uuid4().hex}"
+            )
+            if not isinstance(ctx.file_hash, str):
+                raise RuntimeError(
+                    "Stable report snapshot hash is required for anonymization."
                 )
-                request_class = getattr(
-                    contract_module,
-                    "ReportAnonymizationRequestV2",
-                )
-                attempt_directory = ensure_directory(
-                    anonymized_dir / f"attempt-{uuid4().hex}"
-                )
-                if not isinstance(ctx.file_hash, str):
-                    raise RuntimeError(
-                        "Stable report snapshot hash is required for v2 anonymization."
-                    )
-                request = request_class(
-                    attempt_id=uuid4(),
-                    source_path=ctx.file_path,
-                    source_sha256=ctx.file_hash,
-                    source_size_bytes=ctx.file_path.stat().st_size,
-                    output_directory=attempt_directory,
-                )
-                v2_result = cast(
-                    _ReportReaderV2,
-                    report_reader,
-                ).process_report_v2(request)
-                anonymization_result = ReportAnonymizationResult.model_validate(
-                    {
-                        "original_text": v2_result.original_text,
-                        "anonymized_text": v2_result.anonymized_text,
-                        "extracted_metadata": v2_result.extracted_metadata,
-                        "anonymized_path": v2_result.artifact_path,
-                    }
-                )
-            else:
-                logger.warning(
-                    "lx-anonymizer does not expose report_anonymization_v2; "
-                    "using the legacy report tuple contract."
-                )
-                (
-                    original_text,
-                    anonymized_text,
-                    extracted_metadata,
-                    legacy_anonymized_path,
-                ) = report_reader.process_report(
-                    pdf_path=ctx.file_path,
-                    create_anonymized_pdf=True,
-                    anonymized_pdf_output_path=str(anonymized_output_path),
-                )
-                anonymization_result = ReportAnonymizationResult.model_validate(
-                    {
-                        "original_text": original_text,
-                        "anonymized_text": anonymized_text,
-                        "extracted_metadata": extracted_metadata,
-                        "anonymized_path": legacy_anonymized_path,
-                    }
-                )
+            request = ReportAnonymizationRequest(
+                attempt_id=uuid4(),
+                source_path=ctx.file_path,
+                source_sha256=ctx.file_hash,
+                source_size_bytes=ctx.file_path.stat().st_size,
+                output_directory=attempt_directory,
+                options=ReportAnonymizationOptions(use_llm=use_llm),
+            )
+            anonymization_result = report_reader.process_report(request)
             ctx.original_text = anonymization_result.original_text
             ctx.anonymized_text = anonymization_result.anonymized_text
-            ctx.extracted_metadata = self._coerce_extracted_metadata(
-                anonymization_result.extracted_metadata
-            )
-            ctx.anonymized_path = anonymization_result.anonymized_path
+            ctx.extracted_metadata = anonymization_result.extracted_metadata
+            ctx.anonymized_path = anonymization_result.artifact_path
 
             anonymized_path = ctx.anonymized_path
 
@@ -231,32 +190,12 @@ class ReportAnonymizer:
         return ctx
 
     def _instantiate_report_reader(self) -> _ReportReader:
-        """
-        Instantiate ReportReader with a compatibility workaround for broken
-        lx_anonymizer builds that reference a missing module global
-        `lx_anonymizer` in `report_reader.py`.
-        """
+        """Instantiate the canonical report reader."""
         rr_mod = importlib.import_module("lx_anonymizer.report_reader")
         report_reader_class = self._report_reader_class or cast(
             _ReportReaderClass,
             getattr(rr_mod, "ReportReader"),
         )
-        default_settings = cast(
-            Mapping[str, object],
-            getattr(rr_mod, "DEFAULT_SETTINGS", {}),
-        )
-        default_flags = default_settings.get("flags")
-
-        # Work around broken upstream builds that crash in ReportReader.__init__
-        # while resolving default flags from a malformed module expression.
-        if default_flags is not None:
-            try:
-                return report_reader_class(flags=default_flags)
-            except Exception:
-                logger.exception(
-                    "ReportReader(flags=DEFAULT_SETTINGS['flags']) failed; falling back to plain init."
-                )
-
         return report_reader_class()
 
     def _ensure_report_reading_available(self) -> None:
@@ -269,7 +208,9 @@ class ReportAnonymizer:
 
         try:
             # Try direct import first
-            from lx_anonymizer import ReportReader  # pyright: ignore[reportMissingTypeStubs]
+            from lx_anonymizer import (
+                ReportReader,  # pyright: ignore[reportMissingTypeStubs]
+            )
 
             logger.info("Successfully imported lx_anonymizer ReportReader module")
             self._report_reader_available = True

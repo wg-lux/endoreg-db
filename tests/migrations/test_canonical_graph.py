@@ -67,6 +67,6 @@ print(json.dumps({"conflicts": conflicts, "leaf_names": leaf_names, "unapplied":
 
     assert payload == {
         "conflicts": {},
-        "leaf_names": ["0072_patient_examination_report_provenance"],
+        "leaf_names": ["0073_upload_job_cleanup_receipt"],
         "unapplied": [],
     }

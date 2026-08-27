@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # pyright: reportUnknownVariableType=false
-
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
@@ -248,7 +247,7 @@ class UploadJobDispatchTests(TestCase):
         audit_log.assert_called()
         assert "hub.upload_job_created" in audit_log.call_args.args[0]
 
-    def test_process_upload_job_dispatches_report_import_to_llm_queue(self):
+    def test_process_upload_job_dispatches_report_spacy_fallback_to_pipeline(self):
         upload_job = self._create_upload_job()
 
         with patch(
@@ -261,15 +260,15 @@ class UploadJobDispatchTests(TestCase):
         assert processed is True
         assert upload_job.status == UploadJob.Status.PROCESSING
         apply_async.assert_called_once()
-        assert apply_async.call_args.kwargs["queue"] == "llm_inference"
-        assert apply_async.call_args.kwargs["routing_key"] == "llm_inference"
+        assert apply_async.call_args.kwargs["queue"] == "pipeline"
+        assert apply_async.call_args.kwargs["routing_key"] == "pipeline"
         assert ReportLlmInferenceJob.objects.filter(upload_job=upload_job).exists()
         assert upload_job.source_file_delete_eligible_at is None
         assert (
             upload_job.processing_provenance["stored_upload_path"]
             == upload_job.file.name
         )
-        assert upload_job.processing_provenance["llm_queue"] == "llm_inference"
+        assert upload_job.processing_provenance["llm_queue"] == "pipeline"
 
     def test_process_upload_job_reuses_active_video_import_handoff(self):
         upload_job = UploadJob.objects.create(

@@ -290,7 +290,7 @@ definition_of_done:
         tests/rust_backend/test_rust_backend_fallbacks.py -q (65 passed)
     - kind: command
       reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_frame_cleaner_concurrency.py
-        tests/test_ocr_text_native.py tests/test_report_reader_contract_v2.py -q (13 passed)
+        tests/test_ocr_text_native.py tests/test_report_reader_contract.py -q (13 passed)
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright <video ownership files>; .devenv/state/venv/bin/pytest
         tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_dispatch.py tests/services/test_video_import_service.py

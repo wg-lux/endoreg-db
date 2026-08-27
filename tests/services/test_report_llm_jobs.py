@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import cast
-from datetime import timedelta
 
 import pytest
-from pytest import MonkeyPatch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from pytest import MonkeyPatch
 
 from endoreg_db.config.env import EnvironmentValueError
 from endoreg_db.models import Center, RawPdfFile, ReportLlmInferenceJob, UploadJob
@@ -75,7 +75,7 @@ def _make_upload_job(center: Center) -> UploadJob:
     )
 
 
-def test_report_reimport_dispatches_to_llm_queue(
+def test_report_reimport_dispatches_to_pipeline_queue(
     monkeypatch: MonkeyPatch, center: Center
 ) -> None:
     report = _make_report(center)
@@ -87,7 +87,7 @@ def test_report_reimport_dispatches_to_llm_queue(
         return SimpleNamespace(id="report-llm-reimport-task")
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
-    monkeypatch.setenv("CELERY_LLM_INFERENCE_QUEUE", "llm_inference")
+    monkeypatch.setenv("CELERY_PIPELINE_QUEUE", "pipeline")
     monkeypatch.setattr(
         "endoreg_db.tasks.run_report_llm_reimport_task.apply_async",
         apply_async,
@@ -100,13 +100,13 @@ def test_report_reimport_dispatches_to_llm_queue(
 
     assert result.status == "queued"
     assert result.operation == ReportLlmInferenceJob.OPERATION_REIMPORT
-    assert result.queue == "llm_inference"
+    assert result.queue == "pipeline"
     assert result.task_id == "report-llm-reimport-task"
     assert result.poll_url is not None
     assert result.poll_url.endswith(f"/llm-jobs/{result.job_id}/")
     captured_kwargs = cast(dict[str, object], captured["kwargs"])
-    assert captured_kwargs["queue"] == "llm_inference"
-    assert captured_kwargs["routing_key"] == "llm_inference"
+    assert captured_kwargs["queue"] == "pipeline"
+    assert captured_kwargs["routing_key"] == "pipeline"
     job = ReportLlmInferenceJob.objects.get(pdf=report)
     assert job.config["request_payload"] == {"retry": False}
 
@@ -170,15 +170,20 @@ def test_report_reimport_recovers_stale_job(
     assert result.status == "completed"
 
 
-def test_report_upload_import_dispatches_to_llm_queue(
-    monkeypatch: MonkeyPatch, center: Center
+@pytest.mark.parametrize("llm_enabled", ["true", "false"])
+def test_report_upload_import_dispatches_to_pipeline_queue(
+    monkeypatch: MonkeyPatch, center: Center, llm_enabled: str
 ) -> None:
     upload_job = _make_upload_job(center)
+    captured_kwargs: dict[str, object] = {}
 
-    def apply_async(*_args: object, **_kwargs: object) -> SimpleNamespace:
+    def apply_async(*_args: object, **kwargs: object) -> SimpleNamespace:
+        captured_kwargs.update(kwargs)
         return SimpleNamespace(id="report-llm-import-task")
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
+    monkeypatch.setenv("LLM_ENABLED", llm_enabled)
+    monkeypatch.setenv("CELERY_PIPELINE_QUEUE", "pipeline")
     monkeypatch.setattr(
         "endoreg_db.tasks.run_report_llm_import_task.apply_async",
         apply_async,
@@ -188,7 +193,9 @@ def test_report_upload_import_dispatches_to_llm_queue(
 
     assert result.status == "queued"
     assert result.operation == ReportLlmInferenceJob.OPERATION_IMPORT
-    assert result.queue == "llm_inference"
+    assert result.queue == "pipeline"
+    assert captured_kwargs["queue"] == "pipeline"
+    assert captured_kwargs["routing_key"] == "pipeline"
     assert result.report_id is None
     assert result.poll_url is None
     assert "/pdfs/0/" not in str(result.to_dict())

@@ -56,8 +56,8 @@ HEAVY_JOB_QUEUE_BY_KIND: dict[HeavyJobKind, WorkloadQueue] = {
     HeavyJobKind.FRAME_EXTRACTION: WorkloadQueue.FRAME_EXTRACTION,
     HeavyJobKind.VISION_INFERENCE: WorkloadQueue.INFERENCE,
     HeavyJobKind.MODEL_TRAINING: WorkloadQueue.MODEL_TRAINING,
-    HeavyJobKind.REPORT_LLM_REIMPORT: WorkloadQueue.LLM_INFERENCE,
-    HeavyJobKind.REPORT_LLM_IMPORT: WorkloadQueue.LLM_INFERENCE,
+    HeavyJobKind.REPORT_LLM_REIMPORT: WorkloadQueue.PIPELINE,
+    HeavyJobKind.REPORT_LLM_IMPORT: WorkloadQueue.PIPELINE,
     HeavyJobKind.PIPELINE_INGEST: WorkloadQueue.PIPELINE,
     HeavyJobKind.MAINTENANCE: WorkloadQueue.MAINTENANCE,
 }

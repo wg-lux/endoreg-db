@@ -895,18 +895,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-types"
-version = "0.24.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "types-psycopg2" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d7/7b/8e05b8631fa7de84038d4f24fa57e983107aff889a6d88a9c40a21e15d1c/django_types-0.24.0.tar.gz", hash = "sha256:af903de8b9ee963b7594459a7a20cb8eaaab176ae2b3244ecaa089e0c570b0d1", size = 208426, upload-time = "2026-04-22T22:19:01.999Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/ab/f5c37ecc08c396df62579246597796697b58253c8b30206870e8d0f644d0/django_types-0.24.0-py3-none-any.whl", hash = "sha256:ddb478ca733e0dde5475118dd59ab340156980f9659fd92de2083326ae96100a", size = 379436, upload-time = "2026-04-22T22:19:03.368Z" },
-]
-
-[[package]]
 name = "djangorestframework"
 version = "3.17.1"
 source = { registry = "https://pypi.org/simple" }
@@ -930,15 +918,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/9d/a1/45e25dab89b3dfc5da7a138f7e82aca4e970269c53a3fceed1e94b31d390/djangorestframework_stubs-3.17.0.tar.gz", hash = "sha256:74c0307cad304c03c15aee5955ec2fdeab0ac854b5bea569dc124892792e2b96", size = 33115, upload-time = "2026-05-13T18:58:36.554Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/72/ff/6e27d4aea12f67d14e0c0ec41869307ae98ad3816858ddc2a56bc3f4e0b5/djangorestframework_stubs-3.17.0-py3-none-any.whl", hash = "sha256:babe2703f0401507780848439f49f76222a178b4fc73a6dcb30d0952a0a6dbc6", size = 57629, upload-time = "2026-05-13T18:58:34.779Z" },
-]
-
-[[package]]
-name = "djangorestframework-types"
-version = "0.9.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d6/5d/1a21a5fd10ad9980dcb934b8221934dee2b6b97af5edc58cb169558c0831/djangorestframework_types-0.9.0.tar.gz", hash = "sha256:aa6b27fbdab5ff4ab1dfa5376f3b6ec45713ce48dbcdd4226bf3e1410f0deaca", size = 32521, upload-time = "2024-10-10T00:42:04.01Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/5f/d908ce938356b209d4d27a7fb159ab9100b8814396a69c0204bb66e38703/djangorestframework_types-0.9.0-py3-none-any.whl", hash = "sha256:5e4258fe43774d0a3d018780170bd702bf615407fe244453ea5ec6e6676b98c4", size = 54947, upload-time = "2024-10-10T00:42:02.311Z" },
 ]
 
 [[package]]
@@ -1025,7 +1004,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.23.0"
+version = "1.0.25.0"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -1038,9 +1017,7 @@ dependencies = [
     { name = "django-extensions" },
     { name = "django-filter" },
     { name = "django-ninja" },
-    { name = "django-types" },
     { name = "djangorestframework" },
-    { name = "djangorestframework-types" },
     { name = "dotenv" },
     { name = "faker" },
     { name = "ffprobe" },
@@ -1153,10 +1130,8 @@ requires-dist = [
     { name = "django-filter", specifier = ">=25.1" },
     { name = "django-ninja", specifier = "==1.5.3" },
     { name = "django-stubs", marker = "extra == 'dev'", specifier = ">=5.2.8" },
-    { name = "django-types", specifier = ">=0.24.0" },
     { name = "djangorestframework", specifier = ">=3.16.1" },
     { name = "djangorestframework-stubs", marker = "extra == 'dev'", specifier = ">=3.16.6" },
-    { name = "djangorestframework-types", specifier = ">=0.9.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "faker", specifier = ">=37.6.0" },
     { name = "ffprobe", specifier = ">=0.5" },
@@ -1171,8 +1146,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.6" },
-    { name = "lx-dtypes", specifier = "==0.2.28" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.8" },
+    { name = "lx-dtypes", specifier = "==0.2.30" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2068,7 +2043,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.3.6"
+version = "0.9.3.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -2098,9 +2073,9 @@ dependencies = [
     { name = "verovio" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/26/c894e924a7edc59defcf67a4ee8e0dc59ed5d848c5c82025f5613f3bf692/lx_anonymizer-0.9.3.6.tar.gz", hash = "sha256:434506699c17d6f8eba6a9365ea40a9e33e5890e9d6b125364ef225a4bed61f1", size = 1464266, upload-time = "2026-08-26T08:30:31.55Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/e4/bb10dff3356ad5b1050ad213ca4f6e7f508263851b22f0ddcb54668a8528/lx_anonymizer-0.9.3.8.tar.gz", hash = "sha256:0617a38feee886754305de3e00fd1c4705b2e55fd8a5b8d737af8b3965637283", size = 1464722, upload-time = "2026-08-27T08:52:12.765Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/c2/bbf8e38ed45da41a22a0ecc361289c02ac9eb9e332952dc300cc766419fd/lx_anonymizer-0.9.3.6-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:6aa60ced0d3b7be2847720437ae99c7107c534d9f90f42fa81bd5bdd1eaafdfa", size = 1511515, upload-time = "2026-08-26T08:30:29.35Z" },
+    { url = "https://files.pythonhosted.org/packages/36/e5/dd622fed177f10c79b239d5517a2117c15a523fea5d735a9ec907a80857a/lx_anonymizer-0.9.3.8-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:b98b280b0de41e774e934ecd66de9277ede014fcf9f47e3aeca6f2b3a782e0f1", size = 1511641, upload-time = "2026-08-27T08:52:10.504Z" },
 ]
 
 [package.optional-dependencies]
@@ -2116,7 +2091,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.28"
+version = "0.2.30"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2139,9 +2114,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/1f/880909429eae4fea21417a0b41dcea6877fe0a04e2f55f31eb42dd61f173/lx_dtypes-0.2.28.tar.gz", hash = "sha256:a2ad7552925cf2b690e6e4d4b29181d99f61f7227f406088dd1685fe763c7105", size = 2585568, upload-time = "2026-08-26T08:52:18.126Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/38/6d73f016d1c332b5abbfa7aa751b5acef9d4e7463fe6092bd15f8b45a8e6/lx_dtypes-0.2.30.tar.gz", hash = "sha256:3f06bf21b06e98f56447e4f827a3b2e2635817d073785f376f53ec80a56d4353", size = 2585494, upload-time = "2026-08-27T08:49:23.042Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/0d/f889297ad7e5c53cbb55c6304790cce107f473bc0504e6f94dc38630a0c2/lx_dtypes-0.2.28-py3-none-any.whl", hash = "sha256:36177d41f0d1f9e20bb6f35db287a2caead58bc79e4314d92edd181c9baebe85", size = 783458, upload-time = "2026-08-26T08:52:12.674Z" },
+    { url = "https://files.pythonhosted.org/packages/7c/a8/f6678a3ac3f37335275f5a3252583df488841615fef522c96312a697e3c1/lx_dtypes-0.2.30-py3-none-any.whl", hash = "sha256:90ff70399144ec3346f2ed70834062ad8f1fc367b9aeef9025007cf436f6b389", size = 783393, upload-time = "2026-08-27T08:49:19.667Z" },
 ]
 
 [[package]]
@@ -4904,15 +4879,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/46/ec/ca3494b2bcda8f16ceae401fd784e47d7ad68b7f6eb64a67a9e284d4af9b/types_django_filter-25.2.0.20260508.tar.gz", hash = "sha256:7798d6bf8c953d888cb846c5041ffa012f770bb335e6ddb3ac76d1fc01e03a20", size = 15868, upload-time = "2026-05-08T04:52:09.333Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/1d/be62b89749e3e399875f84683774eb21eb932c67178878df7b47b19ea832/types_django_filter-25.2.0.20260508-py3-none-any.whl", hash = "sha256:8f76ec516a10b8e8d2d363015b95a474899001664718b6ebf51c929f3514016e", size = 19330, upload-time = "2026-05-08T04:52:08.458Z" },
-]
-
-[[package]]
-name = "types-psycopg2"
-version = "2.9.21.20260518"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3e/46/61f27369bd1426ea718f759249a5160463522ace6325bcfcbb846305646d/types_psycopg2-2.9.21.20260518.tar.gz", hash = "sha256:8b1f80d90d6799a4fcdac12198b382a8feee9ed4340d5f69b56fc5ffa0644143", size = 27241, upload-time = "2026-05-18T06:01:42.167Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/87/41f48317ec5fea2cc9e881547600f40bcf9021f2b63183d9b0705d0aa72b/types_psycopg2-2.9.21.20260518-py3-none-any.whl", hash = "sha256:2fd728a4fa3860db0a4a9813e5f49c30ed329b3d2e60e73530d9db01b2b98420", size = 24955, upload-time = "2026-05-18T06:01:40.764Z" },
 ]
 
 [[package]]

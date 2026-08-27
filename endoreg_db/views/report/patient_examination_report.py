@@ -455,7 +455,8 @@ class PatientExaminationReportApi:
     ) -> ReportSegmentSelectionMap:
         payload = report_json_safe_dict(getattr(report, "editor_payload", {}))
         selections = payload.get(
-            PatientExaminationReportApi.SEGMENT_FRAME_SELECTIONS_KEY
+            PatientExaminationReportApi.SEGMENT_FRAME_SELECTIONS_KEY,
+            {},
         )
         return validate_segment_selection_map(selections)
 
@@ -476,7 +477,7 @@ class PatientExaminationReportApi:
             payload: ReportJsonObject = report_json_safe_dict(
                 deepcopy(getattr(locked_report, "editor_payload", {}) or {})
             )
-            selections = payload.get(self.SEGMENT_FRAME_SELECTIONS_KEY)
+            selections = payload.get(self.SEGMENT_FRAME_SELECTIONS_KEY, {})
             selection_map = validate_segment_selection_map(selections)
 
             key = str(segment_id)
@@ -1150,30 +1151,6 @@ def make_report(
         )
     except ReportRuntimeValidationError as exc:
         raise HttpError(422, json.dumps(exc.result)) from exc
-    report.runtime_validation_snapshot = runtime_validation
-
-    user = _authenticated_user_from_request(request)
-    if _report_status(report) != "final":
-        report.status = "final"
-        report.finalized_at = timezone.now()
-        _assign_report_user_fields(
-            report,
-            finalized_by=user,
-            updated_by=user,
-        )
-        report.save(
-            update_fields=[
-                "status",
-                "finalized_at",
-                "finalized_by",
-                "updated_by",
-                "updated_at",
-                "runtime_validation_snapshot",
-            ]
-        )
-    else:
-        report.save(update_fields=["runtime_validation_snapshot", "updated_at"])
-
     (
         frame_paths,
         frame_captions,
@@ -1191,19 +1168,43 @@ def make_report(
     )
 
     try:
-        (
-            persisted_report_artifact_id,
-            persisted_pdf_artifact_id,
-        ) = persist_report_pdf_artifact(
-            report,
-            patient_examination,
-            rendered_text=_report_rendered_text(report),
-            section_blocks=section_blocks,
-            frame_image_paths=frame_paths,
-            frame_captions=frame_captions,
-            patient_identity=dict(data["patient"]),
-            strict_renderer=True,
-        )
+        with transaction.atomic():
+            report.runtime_validation_snapshot = runtime_validation
+            user = _authenticated_user_from_request(request)
+            if _report_status(report) != "final":
+                report.status = "final"
+                report.finalized_at = timezone.now()
+                _assign_report_user_fields(
+                    report,
+                    finalized_by=user,
+                    updated_by=user,
+                )
+                report.save(
+                    update_fields=[
+                        "status",
+                        "finalized_at",
+                        "finalized_by",
+                        "updated_by",
+                        "updated_at",
+                        "runtime_validation_snapshot",
+                    ]
+                )
+            else:
+                report.save(update_fields=["runtime_validation_snapshot", "updated_at"])
+
+            (
+                persisted_report_artifact_id,
+                persisted_pdf_artifact_id,
+            ) = persist_report_pdf_artifact(
+                report,
+                patient_examination,
+                rendered_text=_report_rendered_text(report),
+                section_blocks=section_blocks,
+                frame_image_paths=frame_paths,
+                frame_captions=frame_captions,
+                patient_identity=dict(data["patient"]),
+                strict_renderer=True,
+            )
     except Exception as exc:
         return 500, {"detail": f"PDF report generation failed ({type(exc).__name__})."}
 

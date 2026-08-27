@@ -187,12 +187,12 @@ CELERY_TASK_ROUTES = {
         "routing_key": CELERY_TRAINING_QUEUE,
     },
     "endoreg_db.report_llm_reimport": {
-        "queue": CELERY_LLM_INFERENCE_QUEUE,
-        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
+        "queue": CELERY_PIPELINE_QUEUE,
+        "routing_key": CELERY_PIPELINE_QUEUE,
     },
     "endoreg_db.report_llm_import": {
-        "queue": CELERY_LLM_INFERENCE_QUEUE,
-        "routing_key": CELERY_LLM_INFERENCE_QUEUE,
+        "queue": CELERY_PIPELINE_QUEUE,
+        "routing_key": CELERY_PIPELINE_QUEUE,
     },
     "endoreg_db.refresh_audit_ledger_integrity_status": {
         "queue": CELERY_MAINTENANCE_QUEUE,

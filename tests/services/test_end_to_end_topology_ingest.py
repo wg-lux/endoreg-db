@@ -13,7 +13,6 @@ from endoreg_db.services.hub.ingest import process_watcher_file
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
-    safe_unlink_file,
     sha256_file,
 )
 from endoreg_db.utils.storage import save_local_file
@@ -40,8 +39,8 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 name=f"Topology Center {unique_suffix}",
                 display_name="Topology Center",
             )
-            first_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-a.pdf"
-            second_drop = reloaded_paths.WATCHER_REPORT_DROP_DIR / "case-b.pdf"
+            first_drop = reloaded_paths.IMPORT_REPORT_DIR / "case-a.pdf"
+            second_drop = reloaded_paths.IMPORT_REPORT_DIR / "case-b.pdf"
             payload = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
                 "topology ingest"
             )
@@ -87,7 +86,6 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                     )
                     report.save()
                     report.get_or_create_state().mark_anonymization_validated()
-                    safe_unlink_file(normalized_file_path, missing_ok=False)
                     return report
 
             monkeypatch.setattr(
@@ -127,9 +125,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 == UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS
             )
             assert db_job.status == UploadJob.Status.ANONYMIZED
-            assert db_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
+            assert db_job.cleanup_status == UploadJob.CleanupStatus.ELIGIBLE
             assert db_job.source_file_delete_eligible_at is not None
-            assert db_job.source_file_persisted is False
+            assert db_job.source_file_persisted is True
             assert getattr(db_job, "source_center_id") == center.pk
             assert db_job.processing_provenance["entrypoint"] == "watcher"
             assert db_job.processing_provenance["file_type"] == "report"
@@ -140,7 +138,13 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 db_job.processing_provenance["source_center_key"] == center.center_key
             )
             assert db_job.processing_provenance["content_hash"] == db_job.content_hash
-            assert db_job.file.name == ""
+            stored_source_name = db_job.file.name
+            assert stored_source_name is not None
+            assert stored_source_name.startswith("upload_jobs/watcher/")
+            assert Path(db_job.file.path).is_relative_to(
+                reloaded_paths.UPLOAD_WATCHER_DIR
+            )
+            assert Path(db_job.file.path).exists()
             assert first_drop.exists() is False
             assert second_drop.exists() is False
         finally:

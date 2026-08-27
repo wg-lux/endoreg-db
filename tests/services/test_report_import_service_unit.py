@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Protocol, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 from uuid import uuid4
 
 import pymupdf
@@ -93,6 +93,25 @@ class TestInitialization:
         validate_directories.assert_called_once_with()
         assert result.anonymizer is anonymizer and result.current_report is None
 
+    def test_resolves_import_directory_from_environment_paths(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        expected = tmp_path / "report-import"
+        from_environment = Mock(return_value=SimpleNamespace(import_report=expected))
+        monkeypatch.setattr(
+            report_import_module.path_utils.EndoregPathsModel,
+            "from_environment",
+            from_environment,
+        )
+
+        # Act
+        result = report_import_module._import_report_dir()
+
+        # Assert
+        assert result == expected
+        from_environment.assert_called_once_with()
+
 
 class TestTextAndPdfHelpers:
     @pytest.mark.parametrize(
@@ -115,6 +134,35 @@ class TestTextAndPdfHelpers:
 
         # Assert
         assert result == expected
+
+    def test_replaces_invalid_text_when_all_strict_decoders_fail(self) -> None:
+        # Arrange
+        path = Mock(spec=Path)
+        decode_error = UnicodeDecodeError(
+            "utf-8",
+            b"\xff",
+            0,
+            1,
+            "invalid byte",
+        )
+        path.read_text.side_effect = [
+            decode_error,
+            decode_error,
+            decode_error,
+            "replacement text",
+        ]
+
+        # Act
+        result = ReportImportService._read_txt_content(path)
+
+        # Assert
+        assert result == "replacement text"
+        assert path.read_text.call_args_list == [
+            call(encoding="utf-8"),
+            call(encoding="cp1252"),
+            call(encoding="latin-1"),
+            call(encoding="utf-8", errors="replace"),
+        ]
 
     def test_escapes_pdf_control_characters(self) -> None:
         # Arrange / Act
@@ -290,6 +338,30 @@ class TestImportContextValidation:
 
         # Act / Assert
         with pytest.raises(ValidationError, match="requires a PDF or text"):
+            service._create_import_context(source, CENTER_NAME)
+
+    def test_service_guard_rejects_unsupported_extension_after_context_creation(
+        self,
+        service: ReportImportService,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        source = tmp_path / "report.docx"
+        source.touch()
+        monkeypatch.setattr(
+            report_import_module,
+            "ImportContext",
+            Mock(
+                return_value=SimpleNamespace(
+                    file_path=source,
+                    center_name=CENTER_NAME,
+                )
+            ),
+        )
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="only accepts PDF or TXT"):
             service._create_import_context(source, CENTER_NAME)
 
     @pytest.mark.parametrize("center_name", ["", "   ", None])
@@ -835,6 +907,33 @@ class TestFailureFinalization:
 
         # Assert
         finalize.assert_called_once_with(context)
+        release.assert_called_once_with(fence)
+
+    def test_owned_failure_without_report_only_releases_fence(
+        self,
+        service: ReportImportService,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        context = _context(tmp_path / "report.pdf")
+        context.current_report = None
+        fence = _fence()
+        finalize = Mock()
+        release = Mock()
+        monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
+        monkeypatch.setattr(report_import_module, "finalize_failure", finalize)
+        monkeypatch.setattr(
+            report_import_module,
+            "mark_report_import_fence_failed",
+            release,
+        )
+
+        # Act
+        service._finalize_owned_failure(context, fence)
+
+        # Assert
+        finalize.assert_not_called()
         release.assert_called_once_with(fence)
 
 

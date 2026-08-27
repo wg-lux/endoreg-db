@@ -105,7 +105,9 @@ the separate validated-sidecar workflow.
 3. Optional restoration copy for pre-existing records.
    If a `RawPdfFile` record already exists but its stored file is missing, `create_from_file(...)` re-saves the source file into storage from the current import path.
 4. Anonymized report write.
-   `ReportAnonymizer.anonymize_report(...)` asks `lx_anonymizer.ReportReader.process_report(...)` to write `ANONYM_REPORT_DIR/<pdf_hash>.pdf`.
+   `ReportAnonymizer.anonymize_report(...)` passes the immutable snapshot identity
+   to the canonical `lx_anonymizer.ReportReader.process_report(request)` contract,
+   which writes one validated artifact into an attempt-owned directory.
 5. Finalization and integrity verification.
    `finalize_report_success(...)` moves `ctx.anonymized_path` into `ANONYM_REPORT_DIR/<pdf_hash>.pdf` only if the anonymizer wrote somewhere else.
    It then verifies the stored PDF and persists its plaintext SHA-256 before publishing successful state/history.

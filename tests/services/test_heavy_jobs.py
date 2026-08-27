@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from pytest import MonkeyPatch
 
 from endoreg_db.services.jobs.heavy_jobs import (
@@ -26,8 +27,8 @@ def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch: MonkeyPatch) ->
     assert queue_for_job_kind(HeavyJobKind.FRAME_EXTRACTION) == "frame_extraction"
     assert queue_for_job_kind(HeavyJobKind.VISION_INFERENCE) == "inference"
     assert queue_for_job_kind(HeavyJobKind.MODEL_TRAINING) == "model_training"
-    assert queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT) == "llm_inference"
-    assert queue_for_job_kind(HeavyJobKind.REPORT_LLM_IMPORT) == "llm_inference"
+    assert queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT) == "pipeline"
+    assert queue_for_job_kind(HeavyJobKind.REPORT_LLM_IMPORT) == "pipeline"
     assert queue_for_job_kind(HeavyJobKind.PIPELINE_INGEST) == "pipeline"
     assert queue_for_job_kind(HeavyJobKind.MAINTENANCE) == "maintenance"
 
@@ -43,3 +44,15 @@ def test_workload_queue_values_are_stable_public_queue_names() -> None:
         "llm_inference",
         "maintenance",
     }
+
+
+def test_report_tasks_route_to_adaptive_pipeline_worker() -> None:
+    queue = settings.CELERY_PIPELINE_QUEUE
+    for task_name in (
+        "endoreg_db.report_llm_reimport",
+        "endoreg_db.report_llm_import",
+    ):
+        assert settings.CELERY_TASK_ROUTES[task_name] == {
+            "queue": queue,
+            "routing_key": queue,
+        }

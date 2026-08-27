@@ -7,7 +7,9 @@ from typing import Any, Literal, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
+
 from endoreg_db.config.env import env_choice, env_int
+from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import (
@@ -24,15 +26,14 @@ from endoreg_db.schemas.report_llm import (
     build_report_llm_job_config,
     dump_report_llm_reimport_request_payload,
 )
+from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
-from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
 from endoreg_db.services.raw_pdf_files import require_usable_completed_report
+from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.structured_logging import emit_structured_event
@@ -53,6 +54,11 @@ REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
 
 
 JsonValue = ReportLlmJobJsonValue
+
+
+def _queue_for_report_job(kind: HeavyJobKind) -> str:
+    """Route adaptive report work to a worker that is always available."""
+    return queue_for_job_kind(kind)
 
 
 def _record_celery_handoff_failure(
@@ -613,7 +619,7 @@ def dispatch_report_llm_reimport(
 ) -> ReportLlmDispatchResult:
     mode = get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
-    queue = queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT)
+    queue = _queue_for_report_job(HeavyJobKind.REPORT_LLM_REIMPORT)
     operation = REPORT_LLM_REIMPORT_OPERATION
     pdf = RawPdfFile.objects.get(pk=report_id)
     config = _config_from_payload(
@@ -724,7 +730,7 @@ def dispatch_report_llm_import(
 ) -> ReportLlmDispatchResult:
     mode = get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
-    queue = queue_for_job_kind(HeavyJobKind.REPORT_LLM_IMPORT)
+    queue = _queue_for_report_job(HeavyJobKind.REPORT_LLM_IMPORT)
     operation = REPORT_LLM_IMPORT_OPERATION
     upload_job = UploadJob.objects.get(pk=upload_job_id)
     config = _config_from_payload(payload or {}, queue=queue, operation=operation)

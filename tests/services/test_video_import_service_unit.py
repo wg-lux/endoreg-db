@@ -10,6 +10,7 @@ from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import cast
+from unittest.mock import Mock, call
 
 import pytest
 from pydantic import ValidationError
@@ -17,6 +18,10 @@ from pydantic import ValidationError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files import video_import_service as sut
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+
+
+CONTENT_HASH = "a" * 64
 
 
 def _context(path: Path, **values: object) -> ImportContext:
@@ -28,6 +33,29 @@ def _context(path: Path, **values: object) -> ImportContext:
     }
     data.update(values)
     return ImportContext.model_validate(data)
+
+
+def _patch_import_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    existing_video: object | None = None,
+) -> None:
+    """Replace every external import boundary with an in-process unit seam."""
+    monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(sut, "content_hash_lock", lambda _hash, _root: nullcontext())
+    monkeypatch.setattr(
+        sut,
+        "_raw_source_identity",
+        lambda _path: sut._RawSourceIdentity(5, 1, CONTENT_HASH),
+    )
+    monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+    monkeypatch.setattr(sut, "_sensitive_video_dir", lambda: tmp_path / "sensitive")
+    monkeypatch.setattr(
+        sut.VideoImportService,
+        "_get_existing_completed_video",
+        lambda _service, _ctx: existing_video,
+    )
 
 
 class TestVideoAnonymizerDependencyLoading:
@@ -769,3 +797,681 @@ class TestReanonymizationInputBoundaries:
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
             service.reanonymize_existing_video(video)
+
+
+class TestRemainingDependencyBoundaries:
+    def test_reports_unavailable_anonymization_dependencies(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange
+        module_name = (
+            "endoreg_db.import_files.processing.video_processing.video_anonymization"
+        )
+        monkeypatch.setattr(sut, "VideoAnonymizer", None)
+        monkeypatch.setattr(
+            sut,
+            "settings",
+            SimpleNamespace(LX_ANONYMIZER_REQUIRED_NATIVE_CAPABILITIES=()),
+        )
+        monkeypatch.setitem(sys.modules, module_name, None)
+
+        # Act / Assert
+        with pytest.raises(RuntimeError, match="dependencies are unavailable"):
+            sut._load_video_anonymizer_class()
+
+    def test_resolves_video_directories_from_environment_paths(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        paths = SimpleNamespace(
+            storage=tmp_path / "storage",
+            transcoding=tmp_path / "transcoding",
+            import_video=tmp_path / "import-video",
+        )
+        from_environment = Mock(return_value=paths)
+        monkeypatch.setattr(
+            sut.path_utils.EndoregPathsModel,
+            "from_environment",
+            from_environment,
+        )
+
+        # Act
+        results = (
+            sut._storage_dir(),
+            sut._sensitive_video_dir(),
+            sut._video_import_dir(),
+            sut._hash_lock_dir(),
+        )
+
+        # Assert
+        assert results == (
+            paths.storage,
+            paths.transcoding / "sensitive_videos",
+            paths.import_video,
+            paths.storage / "locks" / "video_content",
+        )
+        assert from_environment.call_count == 4
+
+    def test_uses_reported_existing_raw_path(self, tmp_path: Path) -> None:
+        # Arrange
+        raw_path = tmp_path / "raw.mp4"
+        raw_path.write_bytes(b"video")
+        video = SimpleNamespace(get_raw_file_path=lambda: raw_path)
+
+        # Act
+        with sut._local_raw_source_context(video) as result:
+            resolved = result
+
+        # Assert
+        assert resolved == raw_path
+
+    def test_uses_fallback_when_raw_path_provider_returns_none(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange
+        fallback = tmp_path / "fallback.mp4"
+        video = SimpleNamespace(get_raw_file_path=lambda: None)
+
+        # Act
+        with sut._local_raw_source_context(video, fallback_path=fallback) as result:
+            resolved = result
+
+        # Assert
+        assert resolved == fallback
+
+    def test_detects_supported_video_file_initialization(self) -> None:
+        # Arrange
+        video = VideoFile(video_hash="video")
+
+        # Act
+        results = (
+            sut._supports_video_file_initialization(video),
+            sut._supports_video_file_initialization(SimpleNamespace()),
+        )
+
+        # Assert
+        assert results == (True, False)
+
+    def test_rejects_source_changed_while_hashing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "changing.mp4"
+        source_path.write_bytes(b"video")
+        monkeypatch.setattr(sut, "stable_file_identity", lambda _path: None)
+
+        def mutate_during_hash(path: Path) -> str:
+            path.write_bytes(b"changed-video")
+            return CONTENT_HASH
+
+        monkeypatch.setattr(sut, "sha256_file", mutate_during_hash)
+
+        # Act / Assert
+        with pytest.raises(
+            RuntimeError, match="changed while deriving stable identity"
+        ):
+            sut._raw_source_identity(source_path)
+
+    def test_execution_ownership_is_optional_for_legacy_context(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange
+        ctx = _context(tmp_path / "input.mp4")
+
+        # Act
+        sut._require_execution_ownership(ctx)
+
+        # Assert
+        assert ctx.execution_guard is None
+
+    def test_anonymizer_property_accepts_an_explicit_replacement(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService()
+        replacement = Mock()
+
+        # Act
+        service.anonymizer = replacement
+
+        # Assert
+        assert service.anonymizer is replacement
+
+
+class TestNormalizationExecution:
+    @pytest.mark.parametrize("persisted_video", [False, True])
+    def test_normalizes_against_the_validated_source_timeline(
+        self,
+        persisted_video: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        output_path = tmp_path / "anonymized.mp4"
+        reference_path = tmp_path / "raw.mp4"
+        output_path.write_bytes(b"output")
+        reference_path.write_bytes(b"reference")
+        video = VideoFile(
+            id=7 if persisted_video else None,
+            video_hash="video",
+        )
+        ctx = _context(
+            tmp_path / "input.mp4",
+            anonymized_path=output_path,
+            validated_raw_source_path=reference_path,
+        )
+        ctx.current_video = video
+        timeline = object()
+        segments = [object()] if persisted_video else []
+        evidence = VideoStorageNormalizationEvidence.model_construct(
+            profile_name="clinical_h264_bounded_v1"
+        )
+        probe = Mock(return_value=SimpleNamespace(timeline=timeline))
+        segment_references = Mock(return_value=segments)
+        normalize = Mock(return_value=evidence)
+        monkeypatch.setattr(sut, "probe_video_artifact", probe)
+        monkeypatch.setattr(sut, "segment_timeline_references", segment_references)
+        monkeypatch.setattr(
+            sut, "_configured_reimport_transcode_quality_mode", lambda: "balanced"
+        )
+        monkeypatch.setattr(sut, "normalize_video_file", normalize)
+
+        # Act
+        sut._normalize_reimport_video_quality(ctx)
+
+        # Assert
+        assert ctx.storage_normalization_evidence is evidence
+        normalize.assert_called_once_with(
+            input_path=output_path,
+            reference_path=reference_path,
+            quality_mode="balanced",
+            segments=segments,
+        )
+        if persisted_video:
+            probe.assert_called_once_with(reference_path)
+            segment_references.assert_called_once_with(video, timeline=timeline)
+        else:
+            probe.assert_not_called()
+            segment_references.assert_not_called()
+
+
+class TestImportOrchestration:
+    def test_rejects_a_missing_source_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+        source_path = tmp_path / "missing.mp4"
+
+        # Act / Assert
+        with pytest.raises(FileNotFoundError, match="Video file not found"):
+            service.import_and_anonymize(source_path, "test-center", "test-processor")
+
+    def test_returns_newly_anonymized_video_after_all_mutation_checkpoints(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "input.mp4"
+        sensitive_path = tmp_path / "sensitive.mp4"
+        source_path.write_bytes(b"video")
+        video = SimpleNamespace(
+            video_hash=CONTENT_HASH,
+            original_file_name="input.mp4",
+            state=SimpleNamespace(anonymization_validated=False),
+        )
+        events: list[str] = []
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_ensure_pipeline_storage_budget",
+            lambda _service, _path: events.append("budget"),
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_sensitive_copy",
+            lambda _source, _destination, _ctx: sensitive_path,
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_or_retrieve_video_file",
+            lambda _ctx: (video, None, True),
+        )
+        monkeypatch.setattr(
+            sut, "get_or_create_video_state", lambda _video: events.append("state")
+        )
+        monkeypatch.setattr(
+            sut,
+            "mark_instance_processing_started",
+            lambda _video, _ctx: events.append("started"),
+        )
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_verified_local_raw_source",
+            lambda _service, _ctx: nullcontext(),
+        )
+        monkeypatch.setattr(
+            sut,
+            "_normalize_reimport_video_quality",
+            lambda _ctx: events.append("normalized"),
+        )
+        monkeypatch.setattr(
+            sut, "finalize_video_success", lambda _ctx: events.append("finalized")
+        )
+        anonymizer = Mock()
+        anonymizer.anonymize_video.side_effect = lambda ctx: (
+            events.append("anonymized") or ctx
+        )
+        service = sut.VideoImportService(anonymizer=anonymizer)
+
+        # Act
+        result = service.import_and_anonymize(
+            source_path, "test-center", "test-processor"
+        )
+
+        # Assert
+        assert result is video
+        assert events == [
+            "budget",
+            "state",
+            "started",
+            "anonymized",
+            "normalized",
+            "finalized",
+        ]
+
+    def test_returns_existing_unfinished_row_when_processing_is_not_needed(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "input.mp4"
+        source_path.write_bytes(b"video")
+        video = SimpleNamespace(
+            video_hash=CONTENT_HASH,
+            original_file_name="input.mp4",
+            state=SimpleNamespace(anonymization_validated=True),
+        )
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_ensure_pipeline_storage_budget",
+            lambda _service, _path: None,
+        )
+        monkeypatch.setattr(
+            sut, "create_sensitive_copy", lambda _source, _destination, _ctx: None
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_or_retrieve_video_file",
+            lambda _ctx: (video, None, False),
+        )
+        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        ensure_hls = Mock()
+        cleanup = Mock()
+        monkeypatch.setattr(sut, "ensure_video_hls", ensure_hls)
+        monkeypatch.setattr(
+            sut.VideoImportService, "_cleanup_duplicate_staging", cleanup
+        )
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act
+        result = service.import_and_anonymize(
+            source_path, "test-center", "test-processor"
+        )
+
+        # Assert
+        assert result is video
+        ensure_hls.assert_called_once_with(video)
+        cleanup.assert_called_once()
+
+    def test_retry_resets_invalid_processing_before_anonymizing(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "input.mp4"
+        source_path.write_bytes(b"video")
+        video = SimpleNamespace(
+            video_hash=CONTENT_HASH,
+            original_file_name="input.mp4",
+            state=SimpleNamespace(anonymization_validated=False),
+        )
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_ensure_pipeline_storage_budget",
+            lambda _service, _path: None,
+        )
+        monkeypatch.setattr(
+            sut, "create_sensitive_copy", lambda _source, _destination, _ctx: None
+        )
+        create_video = Mock(side_effect=[(video, None, True), (video, None, True)])
+        reset_failure = Mock()
+        monkeypatch.setattr(sut, "create_or_retrieve_video_file", create_video)
+        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        monkeypatch.setattr(sut, "_finalize_video_failure_if_owned", reset_failure)
+        monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_verified_local_raw_source",
+            lambda _service, _ctx: nullcontext(),
+        )
+        monkeypatch.setattr(sut, "_normalize_reimport_video_quality", Mock())
+        monkeypatch.setattr(sut, "finalize_video_success", Mock())
+        anonymizer = Mock()
+        anonymizer.anonymize_video.side_effect = lambda ctx: ctx
+        service = sut.VideoImportService(anonymizer=anonymizer)
+
+        # Act
+        result = service.import_and_anonymize(
+            source_path, "test-center", "test-processor", retry=True
+        )
+
+        # Assert
+        assert result is video
+        assert create_video.call_count == 2
+        reset_failure.assert_called_once()
+
+    def test_rejects_video_without_state_after_initialization(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "input.mp4"
+        source_path.write_bytes(b"video")
+        video = SimpleNamespace(
+            video_hash=CONTENT_HASH,
+            original_file_name="input.mp4",
+            state=None,
+        )
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_ensure_pipeline_storage_budget",
+            lambda _service, _path: None,
+        )
+        monkeypatch.setattr(
+            sut, "create_sensitive_copy", lambda _source, _destination, _ctx: None
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_or_retrieve_video_file",
+            lambda _ctx: (video, None, True),
+        )
+        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act / Assert
+        with pytest.raises(ValueError, match="has no video state"):
+            service.import_and_anonymize(source_path, "test-center", "test-processor")
+
+    @pytest.mark.parametrize("ownership_lost", [False, True])
+    def test_finalizes_processing_failure_or_propagates_lost_ownership(
+        self,
+        ownership_lost: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        source_path = tmp_path / "input.mp4"
+        source_path.write_bytes(b"video")
+        video = SimpleNamespace(
+            video_hash=CONTENT_HASH,
+            original_file_name="input.mp4",
+            state=SimpleNamespace(anonymization_validated=False),
+        )
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService,
+            "_ensure_pipeline_storage_budget",
+            lambda _service, _path: None,
+        )
+        monkeypatch.setattr(
+            sut, "create_sensitive_copy", lambda _source, _destination, _ctx: None
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_or_retrieve_video_file",
+            lambda _ctx: (video, None, True),
+        )
+        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        monkeypatch.setattr(
+            sut,
+            "mark_instance_processing_started",
+            Mock(side_effect=RuntimeError("processing failed")),
+        )
+        finalizer = Mock()
+        if ownership_lost:
+            finalizer.side_effect = RuntimeError("lease lost")
+        monkeypatch.setattr(sut, "_finalize_video_failure_if_owned", finalizer)
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act / Assert
+        expected = "lease lost" if ownership_lost else "processing failed"
+        with pytest.raises(RuntimeError, match=expected) as exc_info:
+            service.import_and_anonymize(source_path, "test-center", "test-processor")
+        finalizer.assert_called_once()
+        if ownership_lost:
+            assert isinstance(exc_info.value.__cause__, RuntimeError)
+            assert str(exc_info.value.__cause__) == "processing failed"
+
+
+class TestVerifiedLocalRawSourceLifecycle:
+    def test_initializes_metadata_and_restores_previous_local_path(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        raw_path = tmp_path / "raw.mp4"
+        previous_path = tmp_path / "previous.mp4"
+        raw_path.write_bytes(b"video")
+        video = VideoFile(video_hash="video")
+        ctx = _context(tmp_path / "input.mp4", local_source_path=previous_path)
+        ctx.current_video = video
+        identity = sut._RawSourceIdentity(5, 1, CONTENT_HASH)
+        initialize = Mock(return_value=video)
+        monkeypatch.setattr(
+            sut,
+            "_local_raw_source_context",
+            lambda _video, **_kwargs: nullcontext(raw_path),
+        )
+        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: identity)
+        monkeypatch.setattr(sut, "initialize_video_file", initialize)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act
+        with service._verified_local_raw_source(ctx):
+            observed_path = ctx.local_source_path
+
+        # Assert
+        assert observed_path == raw_path
+        assert ctx.local_source_path == previous_path
+        assert ctx.validated_raw_source_sha256 == CONTENT_HASH
+        initialize.assert_called_once_with(video, local_raw_path=raw_path)
+
+
+class TestReanonymizationOrchestration:
+    @pytest.mark.parametrize("anonymization_fails", [False, True])
+    def test_reanonymizes_or_preserves_existing_artifacts_on_failure(
+        self,
+        anonymization_fails: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        raw_path = tmp_path / "raw.mp4"
+        raw_path.write_bytes(b"video")
+        video = VideoFile(video_hash="video")
+        identity = sut._RawSourceIdentity(5, 1, CONTENT_HASH)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
+        monkeypatch.setattr(
+            sut, "content_hash_lock", lambda _hash, _root: nullcontext()
+        )
+        monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+        monkeypatch.setattr(
+            sut,
+            "get_video_import_context_names",
+            lambda _video: ("test-center", "test-processor"),
+        )
+        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: identity)
+        monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
+        normalize = Mock()
+        success = Mock()
+        failure = Mock()
+        monkeypatch.setattr(sut, "_normalize_reimport_video_quality", normalize)
+        monkeypatch.setattr(sut, "finalize_video_success", success)
+        monkeypatch.setattr(sut, "finalize_failure", failure)
+        anonymizer = Mock()
+        if anonymization_fails:
+            anonymizer.anonymize_video.side_effect = RuntimeError(
+                "anonymization failed"
+            )
+        else:
+            anonymizer.anonymize_video.side_effect = lambda ctx: ctx
+        service = sut.VideoImportService(anonymizer=anonymizer)
+
+        # Act / Assert
+        if anonymization_fails:
+            with pytest.raises(RuntimeError, match="anonymization failed"):
+                service.reanonymize_existing_video(video, source_path=raw_path)
+            failure.assert_called_once()
+            assert failure.call_args.kwargs == {
+                "preserve_existing_video_artifacts": True
+            }
+            normalize.assert_not_called()
+            success.assert_not_called()
+        else:
+            result = service.reanonymize_existing_video(video, source_path=raw_path)
+            assert result is video
+            normalize.assert_called_once()
+            success.assert_called_once()
+            failure.assert_not_called()
+
+    def test_reanonymization_initializes_metadata_and_rejects_source_change(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        raw_path = tmp_path / "raw.mp4"
+        raw_path.write_bytes(b"video")
+        video = VideoFile(video_hash="video", video_meta_id=1)
+        identities = iter(
+            [
+                sut._RawSourceIdentity(5, 1, CONTENT_HASH),
+                sut._RawSourceIdentity(5, 1, CONTENT_HASH),
+                sut._RawSourceIdentity(6, 2, "b" * 64),
+            ]
+        )
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
+        monkeypatch.setattr(
+            sut, "content_hash_lock", lambda _hash, _root: nullcontext()
+        )
+        monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+        monkeypatch.setattr(
+            sut,
+            "get_video_import_context_names",
+            lambda _video: ("test-center", "test-processor"),
+        )
+        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: next(identities))
+        initialize = Mock(return_value=video)
+        monkeypatch.setattr(sut, "initialize_video_file", initialize)
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act / Assert
+        with pytest.raises(RuntimeError, match="changed during VideoMeta extraction"):
+            service.reanonymize_existing_video(video, source_path=raw_path)
+        initialize.assert_called_once_with(video, local_raw_path=raw_path)
+
+
+class TestCompletedLookupAndDuplicateCleanup:
+    def test_returns_none_without_successful_processing_history(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        ctx = _context(tmp_path / "input.mp4", file_hash=CONTENT_HASH)
+        history = Mock(return_value=False)
+        monkeypatch.setattr(sut.ProcessingHistory, "has_history_for_hash", history)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act
+        result = service._get_existing_completed_video(ctx)
+
+        # Assert
+        assert result is None
+        history.assert_called_once_with(file_hash=CONTENT_HASH, success=True)
+
+    def test_returns_video_with_successful_history_and_valid_integrity(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # Arrange
+        ctx = _context(tmp_path / "input.mp4", file_hash=CONTENT_HASH)
+        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        monkeypatch.setattr(
+            sut.ProcessingHistory, "has_history_for_hash", Mock(return_value=True)
+        )
+        monkeypatch.setattr(sut, "get_video_by_content_hash", Mock(return_value=video))
+        monkeypatch.setattr(
+            sut,
+            "check_video_media_integrity",
+            Mock(return_value=SimpleNamespace(ok=True)),
+        )
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act
+        result = service._get_existing_completed_video(ctx)
+
+        # Assert
+        assert result is video
+
+    @pytest.mark.parametrize("source_in_import_directory", [False, True])
+    def test_cleans_sensitive_and_only_owned_import_source_staging(
+        self,
+        source_in_import_directory: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        # Arrange
+        import_dir = tmp_path / "import"
+        other_dir = tmp_path / "other"
+        source_path = (
+            import_dir if source_in_import_directory else other_dir
+        ) / "input.mp4"
+        sensitive_path = tmp_path / "sensitive.mp4"
+        ctx = _context(
+            source_path,
+            original_path=source_path,
+            sensitive_path=sensitive_path,
+        )
+        cleanup = Mock()
+        monkeypatch.setattr(sut, "safe_cleanup_staging_file", cleanup)
+        monkeypatch.setattr(sut, "_video_import_dir", lambda: import_dir)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        # Act
+        service._cleanup_duplicate_staging(ctx)
+
+        # Assert
+        expected = [
+            call(
+                sensitive_path,
+                label="duplicate video sensitive copy",
+                missing_ok=False,
+            )
+        ]
+        if source_in_import_directory:
+            expected.append(
+                call(
+                    source_path,
+                    label="duplicate video import source",
+                    missing_ok=False,
+                )
+            )
+        assert cleanup.call_args_list == expected

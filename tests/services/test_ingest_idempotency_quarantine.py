@@ -273,7 +273,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=ValueError("Test processing error"),
             ),
         ):
@@ -317,7 +317,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize",
+                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=InsufficientStorageError(
                     "Insufficient pipeline storage. Required: 11.1 GB, "
                     "Available: 2.8 GB",
@@ -539,11 +539,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             upload_job.processing_provenance["quarantined_sidecar_path"],
             str(quarantined_sidecar_path),
         )
-        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
-        self.assertFalse(upload_job.source_file_persisted)
-        self.assertEqual(upload_job.file.name, "")
+        self.assertEqual(upload_job.cleanup_status, UploadJob.CleanupStatus.ELIGIBLE)
+        self.assertTrue(upload_job.source_file_persisted)
+        self.assertTrue(upload_job.file.name)
 
-    def test_stale_watcher_job_reingest_cleans_old_persisted_upload_source(self):
+    def test_stale_watcher_job_reingest_retains_old_persisted_upload_source(self):
         filename = "stale_watcher_report.pdf"
         watched_path = self._create_temp_file(filename, self.pdf_content)
 
@@ -593,9 +593,9 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         new_job.refresh_from_db()
         self.assertNotEqual(new_job.pk, stale_job.pk)
         self.assertEqual(stale_job.status, UploadJob.Status.ERROR)
-        self.assertEqual(stale_job.cleanup_status, UploadJob.CleanupStatus.COMPLETED)
-        self.assertFalse(stale_job.source_file_persisted)
-        self.assertEqual(stale_job.file.name, "")
+        self.assertEqual(stale_job.cleanup_status, UploadJob.CleanupStatus.ELIGIBLE)
+        self.assertTrue(stale_job.source_file_persisted)
+        self.assertTrue(stale_job.file.name)
 
     def test_create_or_reuse_upload_job_concurrency(self):
         """

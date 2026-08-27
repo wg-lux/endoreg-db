@@ -25,6 +25,45 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: report_spacy_fallback_without_llm
+  category: functionality
+  title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex
+    zurück
+  acceptance:
+  - lx-anonymizer prüft beim Start eines Reportimports den konfigurierten LLM-Provider und aktiviert LLM-Metadatenextraktion
+    nur, wenn der Provider erreichbar ist und ein Modell bereitstellt; bei explizit deaktivierter LLM-Verarbeitung
+    wird der Provider nicht kontaktiert.
+  - endoreg-db führt Reportimporte unabhängig von der LLM-Verfügbarkeit im bereits verfügbaren Pipeline-Worker
+    aus und übergibt use_llm=true nur nach erfolgreicher Laufzeitprüfung; andernfalls verwendet der Import
+    die lokale spaCy- und Regex-Pipeline.
+  - Die Auswahl von LLM oder Fallback wird strukturiert protokolliert, startet keinen Dienst und lädt
+    kein Modell automatisch herunter; ein Import wird erst nach der bestehenden Artefakt-, Hash- und Zustandsvalidierung
+    als erfolgreich markiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_llm_jobs.py
+    - tests/services/test_report_import_service_unit.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/jobs/heavy_jobs.py; endoreg_db/config/settings/base.py; endoreg_db/import_files/processing/report_processing/report_anonymization.py;
+        /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
+    - kind: test
+      reference: 'Endoreg packaged-runtime pytest: 42 passed; lx-anonymizer focused pytest: 7 passed'
+    - kind: command
+      reference: lx-anonymizer pyright initially 0 errors/8 warnings; later rerun blocked by 20 concurrent
+        legacy example-test errors; Endoreg pyright environment incomplete, focused runtime tests passed
+    note: Reporttasks run on the pipeline queue. ReportReader probes the configured provider model list
+      at execution and sets use_llm=true only when a usable model is reachable; explicit LLM_ENABLED=false
+      skips probing. Selection is structured-logged and no service/model is auto-started.
+    assessed_by: codex-report-spacy-fallback
+    assessed_at: '2026-08-27T08:21:19.756497Z'
 - id: canonical_import_attempt_contract
   category: requirements
   title: Alle produktiven Importpfade verwenden einen kanonischen Importversuch
