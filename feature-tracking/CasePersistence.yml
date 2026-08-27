@@ -115,6 +115,41 @@ definition_of_done:
       deeper findings/report roundtrips remain.
     assessed_by: Codex
     assessed_at: '2026-07-22T15:27:13.325812Z'
+- id: patient_identity_export_grouping
+  category: data_integrity
+  title: Case-based cohort rows group all follow-up examinations for one patient identity
+  acceptance:
+  - Patient identity matching uses the existing center-scoped patient hash derived from first name, last
+    name, and date of birth; examination date is not part of the row-grouping key.
+  - All qualifying PatientExamination occurrences for one matched patient are retained in the row in reverse
+    chronological order, including their stable IDs, hashes, examination names, and dates.
+  - Reports and videos attached to different initial, follow-up, or re-flare-up examinations for the matched
+    patient are aggregated into one case-based export row without overwriting artifacts.
+  - Different patient identities and identities from another center are never merged, and direct names
+    or dates of birth are not exposed by the pseudonymous cohort response.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_study_cohort.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/views/media/test_study_cohort.py::StudyCohortPreviewViewTests::test_groups_follow_up_examinations_for_same_patient_identity_in_one_row
+        (1 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright endoreg_db/services/study_cohort.py tests/views/media/test_study_cohort.py
+        (0 errors)
+    note: Grouping by the center-scoped patient hash now aggregates duplicate identity records and follow-up
+      examinations into one row while retaining all occurrences and media. The focused grouping regression
+      passed. Full endpoint-file verification is pending because concurrent ColoReg work leaves the installed
+      lx_dtypes package without lx_dtypes.coloreg_export during URL import.
+    assessed_by: codex-patient-case-identity-v1
+    assessed_at: '2026-08-27T14:26:27.339676Z'
 - id: media_attachment_persistence
   category: interoperability
   title: Medien, Dokumente und abgeleitete Artefakte besitzen dauerhafte Fallreferenzen

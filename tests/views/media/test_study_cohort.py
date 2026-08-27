@@ -22,6 +22,10 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
+from endoreg_db.services.study_cohort import (
+    StudyCohortFilters,
+    build_study_cohort_payload,
+)
 
 
 PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -51,7 +55,13 @@ class StudyCohortPreviewViewTests(TestCase):
             hash=f"case-hash-{uuid4().hex}",
         )
 
-    def _validated_report(self, *, raw_text: str = "SENTINEL RAW PHI") -> RawPdfFile:
+    def _validated_report(
+        self,
+        *,
+        patient_examination: PatientExamination | None = None,
+        raw_text: str = "SENTINEL RAW PHI",
+    ) -> RawPdfFile:
+        resolved_examination = patient_examination or self.patient_examination
         state = RawPdfState.objects.create(
             anonymized=True,
             anonymization_validated=True,
@@ -71,15 +81,18 @@ class StudyCohortPreviewViewTests(TestCase):
                 content_type="application/pdf",
             ),
             state=state,
-            patient=self.patient,
-            examination=self.patient_examination,
+            patient=resolved_examination.patient,
+            examination=resolved_examination,
             center=self.center,
             text=raw_text,
             anonymized_text="No identifying content",
             raw_meta={"document_type": "endoscopy-report"},
         )
 
-    def _validated_video(self) -> VideoFile:
+    def _validated_video(
+        self, *, patient_examination: PatientExamination | None = None
+    ) -> VideoFile:
+        resolved_examination = patient_examination or self.patient_examination
         state = VideoState.objects.create(
             anonymized=True,
             anonymization_validated=True,
@@ -96,8 +109,8 @@ class StudyCohortPreviewViewTests(TestCase):
                 content_type="video/mp4",
             ),
             state=state,
-            patient=self.patient,
-            examination=self.patient_examination,
+            patient=resolved_examination.patient,
+            examination=resolved_examination,
             original_file_name="SENTINEL-PATIENT-NAME.mp4",
         )
 
@@ -151,7 +164,17 @@ class StudyCohortPreviewViewTests(TestCase):
         assert len(payload["cases"]) == 1
         case = payload["cases"][0]
         assert case["patient_examination_id"] == self.patient_examination.pk
+        assert case["patient_examination_ids"] == [self.patient_examination.pk]
         assert case["case_hash"] == self.patient_examination.hash
+        assert case["case_hashes"] == [self.patient_examination.hash]
+        assert case["examinations"] == [
+            {
+                "patient_examination_id": self.patient_examination.pk,
+                "case_hash": self.patient_examination.hash,
+                "examination_name": self.examination.name,
+                "examination_date": "2026-06-01",
+            }
+        ]
         assert case["patient_hash"] == self.patient.patient_hash
         assert case["center_keys"] == [self.center.center_key]
         assert case["findings"] == [finding.name]
@@ -183,6 +206,49 @@ class StudyCohortPreviewViewTests(TestCase):
         assert self.patient.first_name not in serialized
         assert self.patient.last_name not in serialized
         assert str(self.patient.dob) not in serialized
+
+    def test_groups_follow_up_examinations_for_same_patient_identity_in_one_row(
+        self,
+    ) -> None:
+        report = self._validated_report()
+        duplicate_identity_record = Patient.objects.create(
+            first_name=self.patient.first_name,
+            last_name=self.patient.last_name,
+            dob=self.patient.dob,
+            center=self.center,
+            is_real_person=False,
+            patient_hash=self.patient.patient_hash,
+        )
+        follow_up = PatientExamination.objects.create(
+            patient=duplicate_identity_record,
+            examination=self.examination,
+            date_start=date(2026, 8, 1),
+            hash=f"follow-up-hash-{uuid4().hex}",
+        )
+        video = self._validated_video(patient_examination=follow_up)
+
+        payload = build_study_cohort_payload(StudyCohortFilters())
+        assert payload["summary"] == {
+            "case_count": 1,
+            "patient_count": 1,
+            "report_count": 1,
+            "video_count": 1,
+        }
+        assert len(payload["cases"]) == 1
+        case = payload["cases"][0]
+        assert case["patient_hash"] == self.patient.patient_hash
+        assert case["patient_examination_ids"] == [
+            follow_up.pk,
+            self.patient_examination.pk,
+        ]
+        assert [
+            examination["examination_date"] for examination in case["examinations"]
+        ] == [
+            "2026-08-01",
+            "2026-06-01",
+        ]
+        assert [row["id"] for row in case["reports"]] == [report.pk]
+        assert [row["id"] for row in case["videos"]] == [video.pk]
 
     def test_excludes_real_patients_unvalidated_media_and_missing_integrity_hashes(
         self,

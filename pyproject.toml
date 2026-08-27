@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.0.28.0"
+version = "1.0.29.0"
 requires-python = ">=3.12,<3.13"
 license = {file = "LICENSE"}
 
@@ -78,7 +78,7 @@ dependencies = [
     "python-magic>=0.4.27",
     "python-jose[cryptography]>=3.5.0",
     "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[gpu]==0.9.3.9",
+    "lx-anonymizer[gpu]==0.9.4.0",
     "googlemaps>=4.10.0",
     "numba>=0.63.1",
     "ziglang>=0.15.2",
@@ -89,7 +89,7 @@ dependencies = [
     "lx-ai-core[torch]==0.0.1",
     "celery-types>=0.26.0",
     "lightning-fabric>=2.6.5",
-    "lx-dtypes==0.2.31",
+    "lx-dtypes==0.2.32",
     "snakemake==9.23.1",
 ]
 

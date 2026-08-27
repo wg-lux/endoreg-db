@@ -1004,7 +1004,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.0.25.0"
+version = "1.0.29.0"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -1146,8 +1146,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.3.9" },
-    { name = "lx-dtypes", specifier = "==0.2.31" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.4.0" },
+    { name = "lx-dtypes", specifier = "==0.2.32" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2043,7 +2043,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "0.9.3.9"
+version = "0.9.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -2074,9 +2074,9 @@ dependencies = [
     { name = "verovio" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9c/b4/e3dda906d50106f664c5e8c654925e8c490e674602e13f9ee17e05eb52d1/lx_anonymizer-0.9.3.9.tar.gz", hash = "sha256:7bd3a8585d16c71d985589170caf30c84493e46339fbef6dae419c0cb2515880", size = 1467502, upload-time = "2026-08-27T10:06:55.234Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/08/66c13feb44f3bdb480442b141006e32f63b465626725c69c7383c58ac0bd/lx_anonymizer-0.9.4.0.tar.gz", hash = "sha256:cfdceb631acb31ec62ecedd68f35aa654060d78da6947cabac841f7960a420df", size = 1467067, upload-time = "2026-08-27T14:57:28.207Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/26/89/efec329de90fc0c9befc63c48fb1d9ee5bba519eee9c5c4c4c01b897f184/lx_anonymizer-0.9.3.9-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:fcac6a9f29c8ba78f49a221841ca53f327ee95a66ce5b4e96b3f3d0d8b2b180a", size = 1512771, upload-time = "2026-08-27T10:06:51.71Z" },
+    { url = "https://files.pythonhosted.org/packages/67/fe/a94b62a196f4ca9633ba4999ddd76ec66fe1c3fc9e0017e614ec87682e49/lx_anonymizer-0.9.4.0-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:ba3aec4878d851eb139dc0344b8dc60b89ddf1dc04c7d446ab452bfc08a4125a", size = 1512767, upload-time = "2026-08-27T14:57:24.026Z" },
 ]
 
 [package.optional-dependencies]
@@ -2092,7 +2092,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.31"
+version = "0.2.32"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2115,9 +2115,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/80/d3/547110dc46800f9c10197131af22b4643b75aaaee5d16ba59d23f41b58d2/lx_dtypes-0.2.31.tar.gz", hash = "sha256:7345b1fd16a1161301ed9411c6e66dbaf8a7e029c510230112e99ac14a88551e", size = 2585085, upload-time = "2026-08-27T10:02:21.183Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/be/f3982547a1a635b2a937924e7d1739b6875b338d77fc209d88f2f9e5ced3/lx_dtypes-0.2.32.tar.gz", hash = "sha256:a5db194902b1922a7634c3da2d12b3c04c38ee62ba4e004babf3bd2b103da4b1", size = 2589964, upload-time = "2026-08-27T14:51:50.129Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/c1/b2e4244cec1c77d78f5e298f19e12e3a6129c87c979bb8a81223820f01d4/lx_dtypes-0.2.31-py3-none-any.whl", hash = "sha256:f516588dbd73fbd396a9e0f249333b93b5d95859bb503e02cb4f6c0ab8a941ea", size = 783392, upload-time = "2026-08-27T10:02:17.235Z" },
+    { url = "https://files.pythonhosted.org/packages/53/a8/19668e95f806f1f15de1fe2c4f9f4ff606988134bfbda168fdc7ba0d36e9/lx_dtypes-0.2.32-py3-none-any.whl", hash = "sha256:8eaf1b11c46b092fa8c88de422419f1259c34dc6717df2d1b4e27f8562282c36", size = 790771, upload-time = "2026-08-27T14:51:47.329Z" },
 ]
 
 [[package]]

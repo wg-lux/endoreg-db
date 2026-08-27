@@ -110,6 +110,7 @@
 - model: endoreg_db.Label
   fields:
     name: "hot_snare"
+    label_type: "classification"
 
 - model: endoreg_db.Label
   fields:

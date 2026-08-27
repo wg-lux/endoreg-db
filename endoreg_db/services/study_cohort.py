@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, TypedDict, cast
 
-from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models import Exists, F, Max, OuterRef, Q, QuerySet, Subquery
 from django.utils.dateparse import parse_date
 
 from endoreg_db.models.label.annotation.image_classification import (
@@ -36,12 +36,22 @@ class StudyReportRow(StudyMediaRow):
     document_type: str
 
 
-class StudyCaseRow(TypedDict):
+class StudyExaminationRow(TypedDict):
     patient_examination_id: int
     case_hash: str
+    examination_name: str
+    examination_date: str | None
+
+
+class StudyCaseRow(TypedDict):
+    patient_examination_id: int
+    patient_examination_ids: list[int]
+    case_hash: str
+    case_hashes: list[str]
     patient_hash: str
     examination_name: str
     examination_date: str | None
+    examinations: list[StudyExaminationRow]
     center_keys: list[str]
     findings: list[str]
     annotation_labels: list[str]
@@ -392,23 +402,34 @@ def _serialize_filters(filters: StudyCohortFilters) -> StudyFiltersPayload:
 
 def _build_cohort_scope(filters: StudyCohortFilters) -> _CohortScope:
     filtered_cases = _apply_filters(_base_case_queryset(), filters)
-    case_count = filtered_cases.count()
-    patient_count = filtered_cases.values("patient_id").distinct().count()
+    patient_count = filtered_cases.values("patient__patient_hash").distinct().count()
     reports = _eligible_report_queryset().filter(_report_case_filter(filtered_cases))
     videos = _eligible_video_queryset().filter(_video_case_filter(filtered_cases))
     report_count = reports.order_by().values("pk").distinct().count()
     video_count = videos.order_by().values("pk").distinct().count()
+    preview_patient_hashes = list(
+        filtered_cases.values("patient__patient_hash")
+        .annotate(
+            latest_examination_date=Max("date_start"),
+            latest_patient_examination_id=Max("pk"),
+        )
+        .order_by(
+            F("latest_examination_date").desc(nulls_last=True),
+            "-latest_patient_examination_id",
+        )
+        .values_list("patient__patient_hash", flat=True)[: filters.limit]
+    )
     preview_cases = list(
-        filtered_cases.order_by(F("date_start").desc(nulls_last=True), "pk")[
-            : filters.limit
-        ]
+        filtered_cases.filter(
+            patient__patient_hash__in=preview_patient_hashes
+        ).order_by(F("date_start").desc(nulls_last=True), "-pk")
     )
     return _CohortScope(
         filtered_cases=filtered_cases,
         reports=reports,
         videos=videos,
         summary={
-            "case_count": case_count,
+            "case_count": patient_count,
             "patient_count": patient_count,
             "report_count": report_count,
             "video_count": video_count,
@@ -576,31 +597,58 @@ def _examination_date(patient_examination: PatientExamination) -> str | None:
 
 
 def _build_case_row(
-    patient_examination: PatientExamination,
+    patient_examinations: list[PatientExamination],
     *,
     media: _PreviewMedia,
     findings_by_case: dict[int, set[str]],
     annotations_by_video: dict[int, set[str]],
 ) -> StudyCaseRow | None:
-    case_id = patient_examination.pk
-    report_rows, video_rows = _sorted_case_media(
-        media,
-        case_id=case_id,
-    )
+    latest_examination = patient_examinations[0]
+    case_ids = [patient_examination.pk for patient_examination in patient_examinations]
+    report_rows: list[StudyReportRow] = []
+    video_rows: list[StudyMediaRow] = []
+    center_keys: set[str] = set()
+    findings: set[str] = set()
+    examination_rows: list[StudyExaminationRow] = []
+    for patient_examination in patient_examinations:
+        case_id = patient_examination.pk
+        case_report_rows, case_video_rows = _sorted_case_media(
+            media,
+            case_id=case_id,
+        )
+        report_rows.extend(case_report_rows)
+        video_rows.extend(case_video_rows)
+        center_keys.update(media.center_keys_by_case.get(case_id, set()))
+        findings.update(findings_by_case.get(case_id, set()))
+        examination_rows.append(
+            {
+                "patient_examination_id": case_id,
+                "case_hash": patient_examination.hash,
+                "examination_name": str(
+                    getattr(patient_examination.examination, "name", "") or ""
+                ).strip(),
+                "examination_date": _examination_date(patient_examination),
+            }
+        )
     if not report_rows and not video_rows:
         return None
-    patient_hash = str(patient_examination.patient.patient_hash or "").strip()
+    report_rows.sort(key=lambda row: row["id"])
+    video_rows.sort(key=lambda row: row["id"])
+    patient_hash = str(latest_examination.patient.patient_hash or "").strip()
     examination_name = str(
-        getattr(patient_examination.examination, "name", "") or ""
+        getattr(latest_examination.examination, "name", "") or ""
     ).strip()
-    return {
-        "patient_examination_id": case_id,
-        "case_hash": patient_examination.hash,
+    row: StudyCaseRow = {
+        "patient_examination_id": latest_examination.pk,
+        "patient_examination_ids": case_ids,
+        "case_hash": latest_examination.hash,
+        "case_hashes": [examination.hash for examination in patient_examinations],
         "patient_hash": patient_hash,
         "examination_name": examination_name,
-        "examination_date": _examination_date(patient_examination),
-        "center_keys": sorted(media.center_keys_by_case.get(case_id, set())),
-        "findings": sorted(findings_by_case.get(case_id, set())),
+        "examination_date": _examination_date(latest_examination),
+        "examinations": examination_rows,
+        "center_keys": sorted(center_keys),
+        "findings": sorted(findings),
         "annotation_labels": _case_annotation_labels(
             video_rows,
             annotations_by_video=annotations_by_video,
@@ -608,6 +656,7 @@ def _build_case_row(
         "reports": report_rows,
         "videos": video_rows,
     }
+    return row
 
 
 def _build_case_rows(
@@ -618,9 +667,15 @@ def _build_case_rows(
     annotations_by_video: dict[int, set[str]],
 ) -> list[StudyCaseRow]:
     cases: list[StudyCaseRow] = []
+    examinations_by_patient: dict[str, list[PatientExamination]] = {}
     for patient_examination in preview_cases:
+        patient_hash = str(patient_examination.patient.patient_hash or "").strip()
+        if not patient_hash:
+            raise ValueError("Study cohort examination must have a patient hash.")
+        examinations_by_patient.setdefault(patient_hash, []).append(patient_examination)
+    for patient_examinations in examinations_by_patient.values():
         case = _build_case_row(
-            patient_examination,
+            patient_examinations,
             media=media,
             findings_by_case=findings_by_case,
             annotations_by_video=annotations_by_video,

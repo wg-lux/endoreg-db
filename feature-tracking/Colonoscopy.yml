@@ -17,14 +17,14 @@ definition_of_done:
   category: requirements
   title: Pflichtdaten und klinische Semantik sind fachlich freigegeben
   acceptance:
-  - Die maßgebliche Fassung der S2k-Leitlinie 021-022 ist mit Status, Datum, Version und Fundstellen
-    eindeutig benannt; Konsultationsfassung und veröffentlichte Langfassung werden nicht gleichgesetzt.
-  - Patient, Indikation, Untersucher, Assistenzpersonal, Gerätetyp, Seriennummer, Prozesszeitpunkte,
-    Monitoring, Untersuchungsabschluss und relevante Bilder sind in typisierten Laufzeitverträgen
-    eindeutig definiert und nicht nur als Template-Anzeigefelder deklariert.
+  - Die maßgebliche Fassung der S2k-Leitlinie 021-022 ist mit Status, Datum, Version und Fundstellen eindeutig
+    benannt; Konsultationsfassung und veröffentlichte Langfassung werden nicht gleichgesetzt.
+  - Patient, Indikation, Untersucher, Assistenzpersonal, Gerätetyp, Seriennummer, Prozesszeitpunkte, Monitoring,
+    Untersuchungsabschluss und relevante Bilder sind in typisierten Laufzeitverträgen eindeutig definiert
+    und nicht nur als Template-Anzeigefelder deklariert.
   - Operierter Situs, unbekannte Werte und unauffälliger Befund haben explizite Semantik.
-  - Patientenbezogene Mindestdokumentation und populationsbezogene Qualitätsindikatoren sind als
-    getrennte Verträge modelliert.
+  - Patientenbezogene Mindestdokumentation und populationsbezogene Qualitätsindikatoren sind als getrennte
+    Verträge modelliert.
   required: true
   verification:
     kind: manual
@@ -46,16 +46,15 @@ definition_of_done:
   category: functionality
   title: Untersuchungszeitpunkte und Vollständigkeit sind korrekt erfassbar
   acceptance:
-  - Betreten des Untersuchungsraums, Untersuchungsbeginn, Rückzugsbeginn am Zökalpol,
-    Untersuchungsende, Verlassen des Untersuchungsraums und Verlassen der Endoskopieabteilung
-    sind validierte Zeitpunkte.
-  - Die Mukosainspektionszeit schließt Biopsie- und Polypektomiezeiten aus; für Vorsorgekoloskopien
-    wird die Mindestzeit pro Untersuchung und für diagnostische Koloskopien die populationsbezogene
-    Durchschnittsregel indikationsgerecht ausgewertet.
+  - Betreten des Untersuchungsraums, Untersuchungsbeginn, Rückzugsbeginn am Zökalpol, Untersuchungsende,
+    Verlassen des Untersuchungsraums und Verlassen der Endoskopieabteilung sind validierte Zeitpunkte.
+  - Die Mukosainspektionszeit schließt Biopsie- und Polypektomiezeiten aus; für Vorsorgekoloskopien wird
+    die Mindestzeit pro Untersuchung und für diagnostische Koloskopien die populationsbezogene Durchschnittsregel
+    indikationsgerecht ausgewertet.
   - Tiefste Intubation bildet Vollständigkeit auch bei operiertem Situs korrekt ab.
-  - Bei nativer Anatomie und dokumentiertem Zökumerreichen sind Appendixostium und Ileozökalklappe
-    mit echten Bildreferenzen verpflichtend; inkomplette Untersuchungen und ileokolische Anastomosen
-    folgen expliziten Alternativregeln.
+  - Bei nativer Anatomie und dokumentiertem Zökumerreichen sind Appendixostium und Ileozökalklappe mit
+    echten Bildreferenzen verpflichtend; inkomplette Untersuchungen und ileokolische Anastomosen folgen
+    expliziten Alternativregeln.
   - Der BBPS-Gesamtwert wird aus den drei Segmentwerten abgeleitet oder gegen deren Summe validiert.
   required: true
   verification:
@@ -83,6 +82,12 @@ definition_of_done:
   - Biopsie, Resektion und Clipversorgung sind eindeutig dokumentiert.
   - Die konkrete Resektionstechnik ist strukturiert erfasst und wird anhand von Größe und Morphologie
     als angemessen oder nicht angemessen auswertbar; ein bloßer Status „Technik dokumentiert“ genügt nicht.
+  - Das eigenständig versionierte ColoReg-Modul ordnet die Segment- und Frame-Labels `cold_snare` und
+    `hot_snare` eindeutig den kanonischen Kalt- beziehungsweise Heißschlingeninterventionen zu; unbekannte
+    Labels werden nicht stillschweigend als Befund interpretiert.
+  - Ein typisierter ColoReg-Studienexport kombiniert ausgewählte Segment- und Frame-Annotationen mit ihrer
+    Befund- und Interventionsprojektion, behält die Evidenzkoordinaten bei und schlägt bei fehlender Untersuchungszuordnung
+    fehl.
   - Präparatebergung, Histologieeinsendung und das verknüpfte Histologieergebnis sind unterscheidbar,
     sodass ein histologisch bestätigtes Adenom berechnet werden kann.
   required: true
@@ -96,17 +101,26 @@ definition_of_done:
     - -q
     timeout_seconds: 600
   assessment:
-    status: blocked
+    status: in_progress
     evidence:
     - kind: code
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_findings/data/02_colonoscopy_observation.yaml
     - kind: code
       reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_classifications/data/02_colonoscopy_baseline.yaml
-    note: 'Review 2026-07-31: Lokalisation, Größe und Morphologie sind weitgehend strukturiert; für Polypen
-      über 5 mm wird jedoch nur der Status Resektionstechnik dokumentiert verlangt. Angemessenheit der
-      konkreten Technik und histologisch bestätigte Adenome sind nicht durchgängig auswertbar.'
-    assessed_by: Codex
-    assessed_at: '2026-07-31T09:18:39.094782Z'
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/data/coloreg/annotation_mappings.yml
+    - kind: test
+      reference: /home/admin/lx-data-models/tests/unit/lx_dtypes/models/contracts/test_coloreg.py
+    - kind: test
+      reference: tests/services/test_coloreg_study_export.py
+    - kind: test
+      reference: tests/label/test_coloreg_labels.py
+    note: 'ColoReg 0.1.0 now owns strict hot/cold-snare mappings and the typed findings projection. Verified:
+      lx-data-models full pytest 817 passed/1 skipped; EndoReg focused Pyright 0 errors and 15 focused
+      tests passed. Remaining pre-existing size/morphology appropriateness and histology requirements
+      keep the broader criterion in progress.'
+    assessed_by: codex-coloreg-package-20260827
+    assessed_at: '2026-08-27T14:33:09.102604Z'
 - id: s2k_report_minimum_documentation
   category: data_integrity
   title: Die Mindestdokumentation nach Statement 2.36 ist durchgängig erzwingbar
@@ -114,13 +128,12 @@ definition_of_done:
   - Patientenidentifikation, Indikation, Untersucher und Assistenzpersonal, Gerätetyp und Seriennummer,
     Medikation, Prozesszeiten, Vollständigkeit und Beurteilbarkeit sind durch persistierte, typisierte
     Felder und Runtime-Validatoren belegt.
-  - Normalbefund und pathologische Befunde enthalten Läsionsattribute, Lokalisation und Ausdehnung;
-    diagnostische und therapeutische Maßnahmen sowie Proben sind ortsbezogen dokumentiert.
-  - Intra- und postprozedurale Komplikationen, Nachsorgeempfehlungen mit Inhalt und Intervall,
-    ICD-/OPS-Kodierung, verwendete Instrumente und Materialien sowie relevante Bilddateien sind
-    strukturiert abbildbar.
-  - Ein Bericht ohne eine Pflichtangabe schlägt in der kombinierten Template-, Ledger- und
-    Runtime-Validierung fehl; unbekannte Template-Feldschlüssel dürfen keine Produktionsfreigabe erhalten.
+  - Normalbefund und pathologische Befunde enthalten Läsionsattribute, Lokalisation und Ausdehnung; diagnostische
+    und therapeutische Maßnahmen sowie Proben sind ortsbezogen dokumentiert.
+  - Intra- und postprozedurale Komplikationen, Nachsorgeempfehlungen mit Inhalt und Intervall, ICD-/OPS-Kodierung,
+    verwendete Instrumente und Materialien sowie relevante Bilddateien sind strukturiert abbildbar.
+  - Ein Bericht ohne eine Pflichtangabe schlägt in der kombinierten Template-, Ledger- und Runtime-Validierung
+    fehl; unbekannte Template-Feldschlüssel dürfen keine Produktionsfreigabe erhalten.
   required: true
   verification:
     kind: manual
@@ -146,15 +159,15 @@ definition_of_done:
   acceptance:
   - Die allgemeinen Indikatoren aus Tabelle 22 umfassen Risikoassessment, Aufklärung und Einwilligung,
     Antibiotikaprophylaxe, Management gerinnungshemmender Medikation, Team-Time-out, Bilddokumentation,
-    kontinuierliches Vitalzeichenmonitoring, Entlassungsmanagement, vollständigen Befund,
-    Nachsorgeempfehlungen und Komplikationsdokumentation.
+    kontinuierliches Vitalzeichenmonitoring, Entlassungsmanagement, vollständigen Befund, Nachsorgeempfehlungen
+    und Komplikationsdokumentation.
   - Die koloskopiespezifischen Indikatoren umfassen Darmvorbereitungsdokumentation, Zökumintubationsrate,
-    Adenomdetektionsrate, Vorsorge-Rückzugszeit, Klassifikationsabdeckung für Polypen über 5 mm,
-    angemessene Resektionstechnik und standardisierte Terminologie mit den leitlinienbezogenen Zielwerten.
+    Adenomdetektionsrate, Vorsorge-Rückzugszeit, Klassifikationsabdeckung für Polypen über 5 mm, angemessene
+    Resektionstechnik und standardisierte Terminologie mit den leitlinienbezogenen Zielwerten.
   - Jeder Indikator definiert Zähler, Nenner, Ausschlüsse, Zeitraum, Datenvollständigkeit und Gruppierung
     nach Untersucher beziehungsweise Einrichtung.
-  - Per-Bericht-Validatoren werden nicht als Erfüllung einer populationsbezogenen Rate ausgegeben;
-    Adenomdetektionsrate setzt ein verknüpftes, histologisch bestätigtes Adenom voraus.
+  - Per-Bericht-Validatoren werden nicht als Erfüllung einer populationsbezogenen Rate ausgegeben; Adenomdetektionsrate
+    setzt ein verknüpftes, histologisch bestätigtes Adenom voraus.
   required: true
   verification:
     kind: manual
@@ -180,15 +193,15 @@ definition_of_done:
   acceptance:
   - Template und Qualitätsindikatoren referenzieren dieselbe eindeutig identifizierte Leitlinienfassung;
     Dateiname, interner Dokumentstatus, Publikationsdatum und zitierte URL widersprechen sich nicht.
-  - Jede klinische Regel nennt Empfehlung oder Statement, Seite beziehungsweise Abschnitt,
-    Empfehlungsstärke und Implementierungsstatus.
-  - Änderungen der Leitlinienfassung erzeugen eine nachvollziehbare fachliche Differenzprüfung und
-    eine neue Template- oder Regelsatzversion.
+  - Jede klinische Regel nennt Empfehlung oder Statement, Seite beziehungsweise Abschnitt, Empfehlungsstärke
+    und Implementierungsstatus.
+  - Änderungen der Leitlinienfassung erzeugen eine nachvollziehbare fachliche Differenzprüfung und eine
+    neue Template- oder Regelsatzversion.
   required: true
   verification:
     kind: manual
-    instructions: PDF-Metadaten, interne Versionsangaben, Citation-Datensatz, Template-Version und
-      Regelquellen gemeinsam prüfen.
+    instructions: PDF-Metadaten, interne Versionsangaben, Citation-Datensatz, Template-Version und Regelquellen
+      gemeinsam prüfen.
     timeout_seconds: 300
   assessment:
     status: blocked
@@ -262,8 +275,7 @@ definition_of_done:
   - Tests decken fehlende Indikation und Personalangaben, widersprüchliche BBPS-Werte, Zökumerreichen
     ohne Landmarkbilder, postoperative Anatomie, inadäquate Vorbereitung, Rückzugszeit nach Indikation,
     fehlende Histologieverknüpfung und unvollständige Komplikations- beziehungsweise Nachsorgedaten ab.
-  - Kohorten-Fixtures prüfen Zähler, Nenner, Ausschlüsse und Zielwerte aller populationsbezogenen
-    Qualitätsindikatoren.
+  - Kohorten-Fixtures prüfen Zähler, Nenner, Ausschlüsse und Zielwerte aller populationsbezogenen Qualitätsindikatoren.
   required: true
   verification:
     kind: command
@@ -317,11 +329,11 @@ definition_of_done:
   title: Klinische Regeln und technische Abbildung sind gemeinsam dokumentiert
   acceptance:
   - Jede Pflichtangabe ist auf Modell, API-Feld und fachliche Begründung abbildbar.
-  - Eine freigegebene Abdeckungsmatrix ordnet jedes Element aus Statement 2.36, Tabelle 22 und den
-    spezifischen Koloskopie-Qualitätsindikatoren einem Template-Feld, Ledger-Objekt, Aggregationsvertrag
-    oder einer ausdrücklich begründeten Nichtanwendbarkeit zu.
-  - Die Dokumentation kennzeichnet getrennt, ob ein Konzept nur deklariert, strukturell ladbar,
-    zur Laufzeit validiert, klinisch freigegeben oder populationsbezogen auswertbar ist.
+  - Eine freigegebene Abdeckungsmatrix ordnet jedes Element aus Statement 2.36, Tabelle 22 und den spezifischen
+    Koloskopie-Qualitätsindikatoren einem Template-Feld, Ledger-Objekt, Aggregationsvertrag oder einer
+    ausdrücklich begründeten Nichtanwendbarkeit zu.
+  - Die Dokumentation kennzeichnet getrennt, ob ein Konzept nur deklariert, strukturell ladbar, zur Laufzeit
+    validiert, klinisch freigegeben oder populationsbezogen auswertbar ist.
   required: true
   verification:
     kind: manual
