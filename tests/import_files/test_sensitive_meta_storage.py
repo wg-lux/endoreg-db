@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+# Direct private-helper coverage is intentional for the row-lock regression.
+# pyright: reportPrivateUsage=false
+
 import uuid
+from unittest.mock import Mock
 
 import pytest
 from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
+    _locked_carrier,
     persist_sensitive_meta_candidate,
 )
 from endoreg_db.models.administration.center.center import Center
@@ -20,6 +25,35 @@ def _report(center: Center) -> RawPdfFile:
         file="sensitive-meta.pdf",
         center=center,
     )
+
+
+@pytest.mark.parametrize(
+    ("carrier", "model"),
+    [
+        (RawPdfFile(id=18), RawPdfFile),
+        (VideoFile(id=19), VideoFile),
+    ],
+)
+def test_locked_carrier_locks_only_the_media_row(
+    carrier: RawPdfFile | VideoFile,
+    model: type[RawPdfFile] | type[VideoFile],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    manager = Mock()
+    locking_queryset = manager.select_for_update.return_value
+    related_queryset = locking_queryset.select_related.return_value
+    related_queryset.get.return_value = carrier
+    monkeypatch.setattr(model, "objects", manager)
+
+    # Act
+    result = _locked_carrier(carrier)
+
+    # Assert
+    assert result is carrier
+    manager.select_for_update.assert_called_once_with(of=("self",))
+    locking_queryset.select_related.assert_called_once_with("center", "sensitive_meta")
+    related_queryset.get.assert_called_once_with(pk=carrier.pk)
 
 
 @pytest.mark.django_db

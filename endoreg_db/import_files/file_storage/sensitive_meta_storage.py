@@ -68,12 +68,12 @@ def _candidate_updates(candidate: LxSensitiveMeta) -> dict[str, object]:
 def _locked_carrier(instance: RawPdfFile | VideoFile) -> RawPdfFile | VideoFile:
     if isinstance(instance, RawPdfFile):
         return (
-            RawPdfFile.objects.select_for_update()
+            RawPdfFile.objects.select_for_update(of=("self",))
             .select_related("center", "sensitive_meta")
             .get(pk=instance.pk)
         )
     return (
-        VideoFile.objects.select_for_update()
+        VideoFile.objects.select_for_update(of=("self",))
         .select_related("center", "sensitive_meta")
         .get(pk=instance.pk)
     )
