@@ -13,6 +13,9 @@ from endoreg_db.models import (
     PatientExamination,
     PatientLabSample,
 )
+from endoreg_db.models.administration.person.patient.patient import (
+    canonical_pseudo_patient_name,
+)
 
 
 class _StoredFileLike(Protocol):
@@ -213,6 +216,34 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertIsInstance(patient_2, Patient)
         self.assertEqual(patient_2, patient)
         self.assertEqual(created_2, False)
+
+    def test_pseudo_patient_name_is_canonical_for_patient_hash(self):
+        center = _as_center(cast(_PatientLike, self.patient).center)
+        gender = get_random_gender()
+        gender_name = str(getattr(gender, "name"))
+        patient_hash = "stable-patient-hash"
+        expected_name = canonical_pseudo_patient_name(
+            patient_hash=patient_hash,
+            gender_name=gender_name,
+        )
+
+        patient, created = Patient.get_or_create_pseudo_patient_by_hash(
+            patient_hash=patient_hash,
+            center=center,
+            gender=gender,
+            birth_month=3,
+            birth_year=1985,
+        )
+
+        self.assertTrue(created)
+        self.assertEqual((patient.first_name, patient.last_name), expected_name)
+        self.assertEqual(
+            canonical_pseudo_patient_name(
+                patient_hash=patient_hash,
+                gender_name=gender_name,
+            ),
+            expected_name,
+        )
 
     def test_create_lab_sample(self):
         """Test if the create_lab_sample method creates a lab sample with a random name and dob."""

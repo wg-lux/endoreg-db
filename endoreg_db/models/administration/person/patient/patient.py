@@ -1,6 +1,7 @@
 from __future__ import annotations
 import logging
 import random
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from types import NoneType
@@ -122,21 +123,47 @@ def _validate_pseudo_patient_creation_input(
 
 def _build_pseudo_patient_profile(
     creation_input: _PseudoPatientCreationInput,
+    *,
+    patient_hash: str,
 ) -> _PseudoPatientProfile:
-    from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
+    from endoreg_db.utils import random_day_by_month_year
 
     pseudo_dob = random_day_by_month_year(
         month=creation_input.birth_month,
         year=creation_input.birth_year,
     )
     gender_name = cast(_PatientGenderSource, creation_input.gender).name
-    first_name, last_name = create_mock_patient_name(gender_name)
+    first_name, last_name = canonical_pseudo_patient_name(
+        patient_hash=patient_hash,
+        gender_name=gender_name,
+    )
     return _PseudoPatientProfile(
         first_name=first_name,
         last_name=last_name,
         dob=pseudo_dob,
         gender=creation_input.gender,
     )
+
+
+def canonical_pseudo_patient_name(
+    *,
+    patient_hash: str,
+    gender_name: str,
+    locale: str = "de_DE",
+) -> tuple[str, str]:
+    """Return the stable display pseudonym owned by a patient identity hash."""
+    normalized_hash = unicodedata.normalize("NFKC", patient_hash).strip().casefold()
+    if not normalized_hash:
+        raise ValueError("patient_hash is required for canonical name generation")
+
+    fake = Faker(locale)
+    fake.seed_instance(normalized_hash)
+    normalized_gender = gender_name.strip().casefold()
+    if normalized_gender == "male":
+        return fake.first_name_male(), fake.last_name_male()
+    if normalized_gender == "female":
+        return fake.first_name_female(), fake.last_name_female()
+    return fake.first_name(), fake.last_name()
 
 
 class Patient(Person):
@@ -224,7 +251,10 @@ class Patient(Person):
             birth_month=birth_month,
             birth_year=birth_year,
         )
-        profile = _build_pseudo_patient_profile(creation_input)
+        profile = _build_pseudo_patient_profile(
+            creation_input,
+            patient_hash=patient_hash,
+        )
 
         logger.info(f"Creating pseudo patient with hash {patient_hash}")
         logger.info(f"Generated name: {profile.first_name} {profile.last_name}")

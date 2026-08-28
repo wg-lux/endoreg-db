@@ -1,3 +1,4 @@
+# pyright: reportMissingTypeStubs=false
 from __future__ import annotations
 
 import uuid
@@ -5,10 +6,12 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from django.test import override_settings
 from pytest import MonkeyPatch
 
 from endoreg_db.models import (
     AIDataSet,
+    AIModelTrainingRun,
     Center,
     Frame,
     ImageClassificationAnnotation,
@@ -17,6 +20,150 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.jobs import model_training_jobs
+
+
+def _phi_training_command_kwargs(
+    dataset_yaml: Path, output_dir: Path
+) -> dict[str, object]:
+    return {
+        "_command_name": "train_phi_region_detector",
+        "dataset_yaml": str(dataset_yaml),
+        "output_dir": str(output_dir),
+        "base_model": "yolov8n.pt",
+        "run_name": "worker-aaa",
+        "epochs": 1,
+        "batch_size": 2,
+        "input_size": 512,
+        "device": "cpu",
+        "workers": 0,
+        "patience": 1,
+        "export_onnx": True,
+        "confidence_threshold": 0.4,
+        "nms_threshold": 0.5,
+        "class_ids": "0",
+    }
+
+
+def _phi_training_run(command_kwargs: dict[str, object]) -> AIModelTrainingRun:
+    return AIModelTrainingRun.objects.create(
+        dataset=None,
+        dataset_name="dataset.yml",
+        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        ai_model_type=model_training_jobs.MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR,
+        backbone_name="yolov8n.pt",
+        feature_mode="yolo_onnx_detector",
+        freeze_backbone=False,
+        epochs=1,
+        batch_size=2,
+        labelset_version=1,
+        treat_unlabeled_as_negative=False,
+        request_payload={"training_target": "phi_region_detector"},
+        command_kwargs=command_kwargs,
+        status=AIModelTrainingRun.STATUS_QUEUED,
+        server_instance_id=model_training_jobs.MODEL_TRAINING_SERVER_INSTANCE_ID,
+    )
+
+
+@pytest.mark.django_db
+def test_phi_retraining_worker_integrates_with_lx_anonymizer_and_persists_result(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    from lx_anonymizer.text_detection import phi_region_detector_training
+
+    dataset_yaml = tmp_path / "dataset.yml"
+    dataset_yaml.write_text(
+        "path: .\ntrain: images/train\nval: images/val\n", encoding="utf-8"
+    )
+    output_dir = tmp_path / "runs"
+    command_kwargs = _phi_training_command_kwargs(dataset_yaml, output_dir)
+    run = _phi_training_run(command_kwargs)
+    captured_configs: list[
+        phi_region_detector_training.PhiRegionDetectorTrainingConfig
+    ] = []
+
+    def fake_train_phi_region_detector(
+        config: phi_region_detector_training.PhiRegionDetectorTrainingConfig,
+    ) -> dict[str, object]:
+        captured_configs.append(config)
+        return {
+            "model_path": str(output_dir / "phi.onnx"),
+            "checkpoint_path": str(output_dir / "best.pt"),
+            "onnx_path": str(output_dir / "phi.onnx"),
+            "meta_path": str(output_dir / "phi.json"),
+        }
+
+    monkeypatch.setattr(
+        phi_region_detector_training,
+        "train_phi_region_detector",
+        fake_train_phi_region_detector,
+    )
+
+    # Act
+    with override_settings(MODEL_TRAINING_STAGING_ROOT=tmp_path / "staging"):
+        model_training_jobs._execute_model_training_run(
+            run.run_key,
+            command_kwargs=command_kwargs,
+        )
+
+    # Assert
+    run.refresh_from_db()
+    assert len(captured_configs) == 1
+    assert captured_configs[0].dataset_yaml == dataset_yaml.resolve()
+    assert captured_configs[0].run_name == "worker-aaa"
+    assert run.status == AIModelTrainingRun.STATUS_COMPLETED
+    assert run.error == ""
+    assert run.result["model_path"] == str(output_dir / "phi.onnx")
+    assert run.artifact_paths == {
+        "model_path": str(output_dir / "phi.onnx"),
+        "checkpoint_path": str(output_dir / "best.pt"),
+        "onnx_path": str(output_dir / "phi.onnx"),
+        "meta_path": str(output_dir / "phi.json"),
+    }
+    assert '"reason": "not_image_multilabel"' in run.stdout
+
+
+@pytest.mark.django_db
+def test_phi_retraining_worker_marks_lx_anonymizer_failure_failed(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    from lx_anonymizer.text_detection import phi_region_detector_training
+
+    dataset_yaml = tmp_path / "dataset.yml"
+    dataset_yaml.write_text(
+        "path: .\ntrain: images/train\nval: images/val\n", encoding="utf-8"
+    )
+    command_kwargs = _phi_training_command_kwargs(dataset_yaml, tmp_path / "runs")
+    run = _phi_training_run(command_kwargs)
+
+    def fail_training(
+        config: phi_region_detector_training.PhiRegionDetectorTrainingConfig,
+    ) -> dict[str, object]:
+        raise RuntimeError("lx-anonymizer training failed")
+
+    monkeypatch.setattr(
+        phi_region_detector_training,
+        "train_phi_region_detector",
+        fail_training,
+    )
+
+    # Act
+    with override_settings(MODEL_TRAINING_STAGING_ROOT=tmp_path / "staging"):
+        model_training_jobs._execute_model_training_run(
+            run.run_key,
+            command_kwargs=command_kwargs,
+        )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_FAILED
+    assert run.error == "lx-anonymizer training failed"
+    assert "RuntimeError: lx-anonymizer training failed" in run.stdout
+    assert run.result is None
+    assert run.artifact_paths == {}
 
 
 @pytest.mark.django_db

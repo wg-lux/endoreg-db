@@ -24,6 +24,18 @@ class PhiRegionDetectorTrainingConfigProtocol(Protocol):
     input_size: int
 
 
+def _normalize_programmatic_path_options(
+    options: dict[str, object],
+) -> dict[str, object]:
+    """Apply argparse's path conversion to programmatic ``call_command`` input."""
+    normalized = dict(options)
+    for field_name in ("dataset_yaml", "output_dir"):
+        value = normalized.get(field_name)
+        if isinstance(value, str):
+            normalized[field_name] = Path(value)
+    return normalized
+
+
 class Command(BaseCommand):
     help = "Train the lx-anonymizer PHI-region detector and export an ONNX artifact."
 
@@ -52,7 +64,9 @@ class Command(BaseCommand):
     def handle(self, *args: object, **options: object) -> None:
         try:
             options_payload = (
-                TrainPhiRegionDetectorCommandOptionsPayload.model_validate(options)
+                TrainPhiRegionDetectorCommandOptionsPayload.model_validate(
+                    _normalize_programmatic_path_options(options)
+                )
             )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc

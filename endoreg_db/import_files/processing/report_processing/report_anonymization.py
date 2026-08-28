@@ -1,3 +1,4 @@
+import hashlib
 import importlib
 import logging
 import os
@@ -20,6 +21,12 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     persist_sensitive_meta_candidate,
 )
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.administration.person.patient.patient import (
+    Patient,
+    canonical_pseudo_patient_name,
+)
+from endoreg_db.models.metadata import sensitive_meta_logic
+from endoreg_db.utils.hashs import get_patient_hash
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.utils.structured_logging import emit_structured_event
@@ -39,11 +46,20 @@ class _ReportReaderClass(Protocol):
     def __call__(self, **kwargs: object) -> _ReportReader: ...
 
 
+class _PatientPseudonymResolver(Protocol):
+    def __call__(self, candidate: LxSensitiveMeta) -> tuple[str, str]: ...
+
+
+class _NamedCenter(Protocol):
+    name: str
+
+
 class _ReportStorageRecord(Protocol):
     pk: int
     pdf_hash: str
     text: str
     anonymized_text: str
+    center: _NamedCenter | None
 
     def save(self, *args: object, **kwargs: object) -> None: ...
 
@@ -123,8 +139,10 @@ class ReportAnonymizer:
         return source_path.suffix.lower() == ".txt"
 
     def anonymize_report(self, ctx: ImportContext) -> ImportContext:
-        assert ctx.current_report is not None
-        report = cast(_ReportStorageRecord, ctx.current_report)
+        if not isinstance(ctx.current_report, RawPdfFile):
+            raise TypeError("Report anonymization requires a persisted RawPdfFile")
+        report_model = ctx.current_report
+        report = cast(_ReportStorageRecord, report_model)
         is_txt_input = self._is_txt_input(ctx)
         if is_txt_input:
             raise ValueError(
@@ -134,7 +152,7 @@ class ReportAnonymizer:
         else:
             # Setup anonymized directory
             anonymized_dir = ensure_directory(_processed_report_dir())
-            report_reader = self._instantiate_report_reader()
+            report_reader = self._instantiate_report_reader(report_model)
             use_llm = report_reader.llm_available
             emit_structured_event(
                 logger,
@@ -189,14 +207,67 @@ class ReportAnonymizer:
         ctx.current_report = report
         return ctx
 
-    def _instantiate_report_reader(self) -> _ReportReader:
+    @staticmethod
+    def _patient_pseudonym_resolver(
+        report: RawPdfFile,
+    ) -> _PatientPseudonymResolver:
+        center = getattr(report, "center", None)
+        center_name = getattr(center, "name", None)
+        if not isinstance(center_name, str) or not center_name.strip():
+            raise ValueError(
+                "Report center is required for canonical pseudonym resolution"
+            )
+
+        def resolve(candidate: LxSensitiveMeta) -> tuple[str, str]:
+            if candidate.dob is None:
+                has_patient_name = any(
+                    value.strip().casefold() not in {"", "unknown"}
+                    for value in (candidate.first_name, candidate.last_name)
+                )
+                if has_patient_name:
+                    raise ValueError(
+                        "Patient DOB is required to resolve a canonical report pseudonym"
+                    )
+                seed = hashlib.sha256(
+                    f"{center_name}|{candidate.first_name}|{candidate.last_name}".encode()
+                ).hexdigest()
+            else:
+                hash_material = get_patient_hash(
+                    first_name=candidate.first_name,
+                    last_name=candidate.last_name,
+                    dob=candidate.dob,
+                    center=center_name,
+                    salt=sensitive_meta_logic.SECRET_SALT,
+                )
+                seed = hashlib.sha256(hash_material.encode()).hexdigest()
+
+            existing = (
+                Patient.objects.filter(patient_hash=seed)
+                .only("first_name", "last_name")
+                .first()
+            )
+            if existing is not None:
+                return existing.first_name, existing.last_name
+            return canonical_pseudo_patient_name(
+                patient_hash=seed,
+                gender_name=candidate.gender,
+            )
+
+        return resolve
+
+    def _instantiate_report_reader(
+        self,
+        report: RawPdfFile,
+    ) -> _ReportReader:
         """Instantiate the canonical report reader."""
         rr_mod = importlib.import_module("lx_anonymizer.report_reader")
         report_reader_class = self._report_reader_class or cast(
             _ReportReaderClass,
             getattr(rr_mod, "ReportReader"),
         )
-        return report_reader_class()
+        return report_reader_class(
+            patient_pseudonym_resolver=self._patient_pseudonym_resolver(report)
+        )
 
     def _ensure_report_reading_available(self) -> None:
         """
@@ -209,8 +280,8 @@ class ReportAnonymizer:
         try:
             # Try direct import first
             from lx_anonymizer import (
-                ReportReader,  # pyright: ignore[reportMissingTypeStubs]
-            )
+                ReportReader,
+            )  # pyright: ignore[reportMissingTypeStubs]
 
             logger.info("Successfully imported lx_anonymizer ReportReader module")
             self._report_reader_available = True

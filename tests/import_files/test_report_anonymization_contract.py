@@ -117,7 +117,11 @@ def test_report_anonymizer_uses_canonical_attempt_contract(
     anonymizer = object.__new__(ReportAnonymizer)
     monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
 
-    def fake_reader(self: ReportAnonymizer) -> _CanonicalReader:
+    def fake_reader(
+        self: ReportAnonymizer,
+        report: RawPdfFile,
+    ) -> _CanonicalReader:
+        del report
         return reader
 
     monkeypatch.setattr(
@@ -193,7 +197,11 @@ def test_report_anonymizer_fails_when_canonical_method_is_missing(
     anonymizer = object.__new__(ReportAnonymizer)
     monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
 
-    def fake_reader(self: ReportAnonymizer) -> _ReaderWithoutCanonicalContract:
+    def fake_reader(
+        self: ReportAnonymizer,
+        report: RawPdfFile,
+    ) -> _ReaderWithoutCanonicalContract:
+        del report
         return reader
 
     monkeypatch.setattr(ReportAnonymizer, "_instantiate_report_reader", fake_reader)
@@ -336,3 +344,36 @@ def test_persist_sensitive_meta_candidate_returns_sensitive_meta_instance(
     assert isinstance(stored_meta, SensitiveMeta)
     assert stored_meta.pk is not None
     assert RawPdfFile.objects.get(pk=report.pk).sensitive_meta_id == stored_meta.pk
+
+
+@pytest.mark.django_db
+def test_report_pseudonym_resolver_reuses_existing_patient_name(
+    base_db_data: bool,
+) -> None:
+    report = _create_report_for_tests()
+    candidate = LxSensitiveMeta.model_validate(
+        {
+            "first_name": "Max",
+            "last_name": "Muster",
+            "dob": "1980-02-03",
+            "gender": "male",
+        }
+    )
+    resolver = ReportAnonymizer._patient_pseudonym_resolver(report)  # pyright: ignore[reportPrivateUsage]
+    first_name, last_name = resolver(candidate)
+
+    stored_meta = persist_sensitive_meta_candidate(
+        instance=report,
+        candidate=candidate,
+    )
+
+    assert stored_meta.pseudo_patient is not None
+    assert (first_name, last_name) == (
+        stored_meta.pseudo_patient.first_name,
+        stored_meta.pseudo_patient.last_name,
+    )
+
+    stored_meta.pseudo_patient.first_name = "Legacy"
+    stored_meta.pseudo_patient.last_name = "Established"
+    stored_meta.pseudo_patient.save(update_fields=["first_name", "last_name"])
+    assert resolver(candidate) == ("Legacy", "Established")

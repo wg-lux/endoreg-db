@@ -73,6 +73,9 @@ definition_of_done:
   - Positive, negative und Grenzfälle für Video und Bericht laufen reproduzierbar.
   - Leere externe ID-Paare werden bei Video- und Berichtsvalidierung ignoriert; vollständige Paare werden
     als typisierte PatientExternalID-Relation aufgelöst oder angelegt und atomar zugeordnet.
+  - Die Modellneutrainingsintegration mit lx-anonymizer ist nach Arrange-Act-Assert strukturiert und prüft
+    Optionsübergabe, Worker- und Management-Command-Grenze, Ergebnispersistenz sowie fail-closed Eingabe-,
+    Ergebnis- und Trainingsfehler.
   required: true
   verification:
     kind: command
@@ -104,13 +107,34 @@ definition_of_done:
     - kind: command
       reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrierte Boundary-Kohorte (90
         passed)
+    - kind: code
+      reference: endoreg_db/management/commands/train_phi_region_detector.py; tests/management/commands/test_train_phi_region_detector.py;
+        tests/services/test_model_training_jobs.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/management/commands/train_phi_region_detector.py
+        tests/management/commands/test_train_phi_region_detector.py tests/services/test_model_training_jobs.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_train_phi_region_detector.py
+        tests/services/test_model_training_jobs.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_phi_region_detector_training_run_endpoints_create_run
+        -q (12 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 pre-existing lx_anonymizer
+        missing-stub warning)
+    - kind: command
+      reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_phi_region_detector_training.py
+        -q (2 passed)
     note: Die gemeinsame Video-/Berichtsvalidierung trennt externe ID-Werte vor dem generischen SensitiveMeta-Update.
       Leere Paare bleiben ohne Relation; vollständige, getrimmte Paare werden idempotent als PatientExternalID
       aufgelöst oder angelegt und typisiert zugeordnet. Positive, negative und Grenzfälle der bestehenden
-      Anonymisierungssuite sowie vier neue Video-/Berichtsregressionen sind erfolgreich. Die bestehende
-      Evidenz für den gemeinsamen streng typisierten Video-/PDF-PATCH-Command bleibt unverändert gültig.
-    assessed_by: codex-external-id-validation
-    assessed_at: '2026-08-27T12:21:43.514636Z'
+      Anonymisierungssuite sowie vier Video-/Berichtsregressionen sind erfolgreich. Zusätzlich ist die
+      lx-anonymizer-Neutrainingsgrenze explizit nach Arrange-Act-Assert getestet. Der Test deckte einen
+      echten call_command-Pfadtypfehler auf; die Management-Command-Grenze normalisiert nun programmgesteuerte
+      Stringpfade vor der strikten gemeinsamen Validierung. Erfolgs-, ungültige Options-/Ergebnis- und
+      Trainerfehlerfälle sowie Worker-Persistenz, API-Übergabe und der native lx-anonymizer-Artefaktvertrag
+      sind grün.
+    assessed_by: codex-anonymizer-retraining-aaa
+    assessed_at: '2026-08-28T09:25:17.083799Z'
 - id: privacy_controls
   category: security
   title: Nicht freigegebene Rohdaten können den lokalen Schutzbereich nicht verlassen

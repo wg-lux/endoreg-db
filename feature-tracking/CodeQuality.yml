@@ -532,3 +532,41 @@ definition_of_done:
       direkte plus Workflow-Regressionen geprüft.
     assessed_by: codex-bucket-dataset-aaa
     assessed_at: '2026-08-28T07:43:12.429965Z'
+- id: segmentation_retraining_lx_ai_core_aaa
+  category: testing
+  title: Segmentierungsmodell-Retraining ist gegen lx-ai-core mit AAA-Tests abgesichert
+  acceptance:
+  - Direkte Arrange-Act-Assert-Tests laden die tatsächlich installierten öffentlichen lx-ai-core-Trainingsverträge.
+  - Ein erfolgreicher Retraining-Lauf erzeugt Manifest, Modellspezifikation, Ergebnis und Artefaktmetadaten,
+    die lx-ai-core erneut strikt validiert.
+  - Stichproben-Gruppierung, Label-Masken, Klassenhäufigkeiten, Metriken, Byte-Größen und SHA-256-Prüfsummen
+    besitzen stabile Assertions.
+  - Entfernte Stichprobenpfade werden vor dem ersten Artefakt-Write abgelehnt; eine fehlende lx-ai-core-Installation
+    schlägt mit der dokumentierten Boundary-Fehlermeldung laut fehl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/ai/test_segmentation_retraining_lx_ai_core.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py -q
+      note: Exit-Code 0
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external lx_anonymizer
+        missing-stub warning)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py
+        tests/ai/test_trainer_multilabel_unit.py tests/ai/test_aidataset_training_manifest.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_train_image_multilabel_model_command_forwards_selected_backbone_and_feature_mode
+        -q (18 passed)
+    note: 'Alle vier Akzeptanzpunkte wurden direkt geprüft: reale installierte lx-ai-core-Verträge, persistierter
+      Manifest-/Ergebnis-Roundtrip, Gruppierungs-, Masken-, Häufigkeits-, Metrik-, Byte- und SHA-256-Assertions
+      sowie fail-closed Fälle für Remote-Pfade und fehlende Abhängigkeit. Der breitere Retraining-Vertragskohortenlauf
+      bestand mit 18 Tests.'
+    assessed_by: codex-seg-retrain-aaa
+    assessed_at: '2026-08-28T09:21:26.440508Z'
