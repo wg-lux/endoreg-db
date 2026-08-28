@@ -217,14 +217,15 @@ def test_apply_deletes_existing_file_and_persists_receipt_events(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("overrides", "blocker"),
+    ("overrides_factory", "blocker"),
     [
-        (
-            {"status": UploadJob.Status.PROCESSING},
+        pytest.param(
+            lambda: {"status": UploadJob.Status.PROCESSING},
             UploadSourceCleanupBlocker.STATUS_NOT_SUCCESSFUL,
+            id="status_not_successful",
         ),
-        (
-            {
+        pytest.param(
+            lambda: {
                 "status": UploadJob.Status.RETRYING,
                 "retryable": True,
                 "retry_count": 1,
@@ -232,30 +233,38 @@ def test_apply_deletes_existing_file_and_persists_receipt_events(
                 "error_code": UploadJob.ErrorCode.DISPATCH_UNAVAILABLE,
             },
             UploadSourceCleanupBlocker.RETRY_ALLOWED,
+            id="retry_allowed",
         ),
-        (
-            {"retention_policy": UploadJob.RetentionPolicy.PRESERVE_SOURCE},
+        pytest.param(
+            lambda: {
+                "retention_policy": UploadJob.RetentionPolicy.PRESERVE_SOURCE,
+            },
             UploadSourceCleanupBlocker.RETENTION_POLICY_BLOCKS,
+            id="retention_policy_blocks",
         ),
-        (
-            {"source_file_delete_eligible_at": timezone.now() + timedelta(days=1)},
+        pytest.param(
+            lambda: {
+                "source_file_delete_eligible_at": timezone.now() + timedelta(days=1),
+            },
             UploadSourceCleanupBlocker.NOT_DUE,
+            id="not_due",
         ),
-        (
-            {
+        pytest.param(
+            lambda: {
                 "processing_lease_owner": "worker",
                 "processing_lease_expires_at": timezone.now() + timedelta(minutes=5),
                 "processing_heartbeat_at": timezone.now(),
             },
             UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE,
+            id="active_processing_lease",
         ),
     ],
 )
 def test_authoritative_state_matrix_blocks_unsafe_jobs(
-    overrides: dict[str, object],
+    overrides_factory: Callable[[], dict[str, object]],
     blocker: UploadSourceCleanupBlocker,
 ) -> None:
-    upload_job = _eligible_report_job(**overrides)
+    upload_job = _eligible_report_job(**overrides_factory())
 
     item = inspect_upload_job_source(upload_job)
 

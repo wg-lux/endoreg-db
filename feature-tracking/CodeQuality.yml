@@ -487,3 +487,48 @@ definition_of_done:
       Fehlertexte, Consumer-Prüfung, Abbruchkriterium und Rollback. Weitere Altbestandsmigrationen bleiben.'
     assessed_by: Codex
     assessed_at: '2026-08-04T17:10:26.541207Z'
+- id: ai_dataset_frame_bucket_unit_coverage
+  category: testing
+  title: AI-Datensatz-Frame-Buckets sind mit AAA-Unit-Tests vollständig abgedeckt
+  acceptance:
+  - Arrange-Act-Assert-Tests decken positive, negative und unbekannte Ziel-Buckets sowie deren Priorität
+    bei mehreren Annotationen desselben Frames ab.
+  - Annotation-, Segment- und zusammengeführte Buckets prüfen Label-Set-Filterung, Prediction-Filterung,
+    extrahierte Frames, exklusive Segmentenden und Deduplizierung.
+  - Leere oder nicht anwendbare Datensätze sowie Metadaten, Sortierung, Label-Verteilung und eindeutige
+    Summary-Zähler besitzen stabile Assertions.
+  - Direkte Arrange-Act-Assert-Tests der Annotation-Queue decken Target-, Annotation-, Segment-, Candidate-
+    und Merge-Builder einschließlich Extraktions- und Prediction-Schaltern ab.
+  - Die fokussierte Testdatei erreicht 100 Prozent Statement-Coverage für den Bucket-Service.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_aidataset_frame_buckets_unit.py
+    - tests/services/test_frame_annotation_bucket_builders_unit.py
+    - --cov=endoreg_db.services.aidataset_frame_buckets
+    - --cov-report=term-missing
+    - --cov-fail-under=100
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_aidataset_frame_buckets_unit.py tests/services/test_frame_annotation_bucket_builders_unit.py
+        --cov=endoreg_db.services.aidataset_frame_buckets --cov-report=term-missing --cov-fail-under=100
+        -q
+      note: Exit-Code 0
+    - kind: test
+      reference: tests/services/test_frame_annotation_bucket_builders_unit.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external missing-stub
+        warning)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest focused bucket-builder and workflow
+        cohort -q (22 passed)
+    note: Alle fünf Akzeptanzpunkte gegen 18 direkte AAA-Tests, 100-Prozent-Service-Coverage und 22 bestandene
+      direkte plus Workflow-Regressionen geprüft.
+    assessed_by: codex-bucket-dataset-aaa
+    assessed_at: '2026-08-28T07:43:12.429965Z'
