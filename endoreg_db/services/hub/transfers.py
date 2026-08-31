@@ -625,7 +625,8 @@ def attach_transfer_media(
 def attach_enveloped_transfer_media(
     *,
     transfer_job: TransferJob,
-    uploaded_file: UploadedFile,
+    ciphertext_stream: BinaryIO,
+    ciphertext_size: int,
     media_role: str,
     envelope_json: str,
 ) -> TransferJob:
@@ -675,7 +676,8 @@ def attach_enveloped_transfer_media(
     try:
         with prepare_inbound_hub_envelope(
             transfer_job=transfer_job,
-            uploaded_file=uploaded_file,
+            ciphertext_stream=ciphertext_stream,
+            ciphertext_size=ciphertext_size,
             envelope_json=envelope_json,
             media_role=media_role,
         ) as prepared:

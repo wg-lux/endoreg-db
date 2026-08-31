@@ -9,7 +9,7 @@ import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypedDict, cast
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -55,6 +55,12 @@ class _ResponseLike(Protocol):
 
 class _StructuredEventRecord(Protocol):
     structured_event: dict[str, object]
+
+
+class _EnvelopedUploadData(TypedDict):
+    media_role: str
+    envelope: str
+    ciphertext: bytes
 
 
 @override_settings(ENDOREG_ENABLE_HUB_TRANSFERS=True)
@@ -137,10 +143,32 @@ class HubTransferEndpointTests(TestCase):
         self,
         path: str,
         *,
-        data: Mapping[str, object] | None,
+        data: Mapping[str, object] | bytes | None,
         content_type: str | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> _ResponseLike:
+        if isinstance(data, Mapping):
+            media_role = data.get("media_role")
+            envelope_json = data.get("envelope")
+            ciphertext = data.get("ciphertext")
+            if (
+                isinstance(media_role, str)
+                and isinstance(envelope_json, str)
+                and isinstance(ciphertext, bytes)
+            ):
+                raw_headers = dict(headers or {})
+                raw_headers["X-Hub-Media-Role"] = media_role
+                raw_headers["X-Hub-Media-Envelope"] = envelope_json
+                return cast(
+                    _ResponseLike,
+                    self.client.post(
+                        path,
+                        data=ciphertext,
+                        secure=True,
+                        content_type="application/octet-stream",
+                        headers=raw_headers,
+                    ),
+                )
         if content_type is None:
             return cast(
                 _ResponseLike,
@@ -183,7 +211,8 @@ class HubTransferEndpointTests(TestCase):
         transfer_key: str,
         plaintext: bytes,
         filename: str,
-    ) -> dict[str, object]:
+    ) -> _EnvelopedUploadData:
+        del filename
         transfer_job = TransferJob.objects.select_related(
             "source_node", "source_center", "target_node"
         ).get(transfer_key=transfer_key)
@@ -263,11 +292,7 @@ class HubTransferEndpointTests(TestCase):
         return {
             "media_role": "processed",
             "envelope": metadata.model_dump_json(),
-            "file": SimpleUploadedFile(
-                filename,
-                ciphertext,
-                content_type="application/octet-stream",
-            ),
+            "ciphertext": ciphertext,
         }
 
     def _video_transfer_payload(
@@ -1555,11 +1580,8 @@ class HubTransferEndpointTests(TestCase):
                 f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
                 data={
                     "media_role": "raw",
-                    "file": SimpleUploadedFile(
-                        "source.mp4",
-                        raw_bytes,
-                        content_type="video/mp4",
-                    ),
+                    "envelope": "{}",
+                    "ciphertext": raw_bytes,
                 },
                 headers=self._auth_headers(),
             )
@@ -1610,7 +1632,7 @@ class HubTransferEndpointTests(TestCase):
         assert "configured size limit" in str(upload_response.json())
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_media_upload_requires_multipart_file(self):
+    def test_transfer_media_upload_rejects_multipart_before_parsing(self):
         processed_hash = self._sha256(b"processed-video")
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__missing-media-file",
@@ -1634,8 +1656,40 @@ class HubTransferEndpointTests(TestCase):
             headers=self._auth_headers(),
         )
 
+        assert upload_response.status_code == 415, upload_response.content
+        assert "multipart/form-data" in str(upload_response.json())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_rejects_oversized_envelope_header(self):
+        processed_bytes = b"processed-video"
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__oversized-envelope-header",
+            video_hash="hash-oversized-envelope-header",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=self._sha256(processed_bytes),
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        upload_response = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data=processed_bytes,
+            content_type="application/octet-stream",
+            headers={
+                **self._auth_headers(),
+                "X-Hub-Media-Role": "processed",
+                "X-Hub-Media-Envelope": "x" * (4 * 1024 + 1),
+            },
+        )
+
         assert upload_response.status_code == 400, upload_response.content
-        assert "multipart file upload is required" in str(upload_response.json())
+        assert "envelope" in upload_response.json()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_media_upload_returns_typed_model_validation_details(self):
@@ -1750,11 +1804,12 @@ class HubTransferEndpointTests(TestCase):
 
         upload_response = self._secure_post(
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data={
-                "media_role": "processed",
-                "file": SimpleUploadedFile("plaintext.mp4", processed_bytes),
+            data=processed_bytes,
+            content_type="application/octet-stream",
+            headers={
+                **self._auth_headers(),
+                "X-Hub-Media-Role": "processed",
             },
-            headers=self._auth_headers(),
         )
 
         assert upload_response.status_code == 400, upload_response.content
@@ -1786,9 +1841,8 @@ class HubTransferEndpointTests(TestCase):
             plaintext=processed_bytes,
             filename="ciphertext.bin",
         )
-        envelope_json = cast(str, upload_data["envelope"])
-        first_upload = cast(SimpleUploadedFile, upload_data["file"])
-        ciphertext = first_upload.read()
+        envelope_json = upload_data["envelope"]
+        ciphertext = upload_data["ciphertext"]
         staging_directory = Path(self._key_directory.name) / "replay-staging"
 
         with patch(
@@ -1800,7 +1854,7 @@ class HubTransferEndpointTests(TestCase):
                 data={
                     "media_role": "processed",
                     "envelope": envelope_json,
-                    "file": SimpleUploadedFile("first.bin", ciphertext),
+                    "ciphertext": ciphertext,
                 },
                 headers=self._auth_headers(),
             )
@@ -1814,7 +1868,7 @@ class HubTransferEndpointTests(TestCase):
                 data={
                     "media_role": "processed",
                     "envelope": envelope_json,
-                    "file": SimpleUploadedFile("renamed.bin", ciphertext),
+                    "ciphertext": ciphertext,
                 },
                 headers=self._auth_headers(),
             )
@@ -1829,7 +1883,7 @@ class HubTransferEndpointTests(TestCase):
                 data={
                     "media_role": "processed",
                     "envelope": envelope_json,
-                    "file": SimpleUploadedFile("changed.bin", changed_ciphertext),
+                    "ciphertext": changed_ciphertext,
                 },
                 headers=self._auth_headers(),
             )
@@ -1874,8 +1928,8 @@ class HubTransferEndpointTests(TestCase):
             plaintext=processed_bytes,
             filename="ciphertext.bin",
         )
-        envelope_json = cast(str, upload_data["envelope"])
-        valid_ciphertext = cast(SimpleUploadedFile, upload_data["file"]).read()
+        envelope_json = upload_data["envelope"]
+        valid_ciphertext = upload_data["ciphertext"]
         tampered_ciphertext = bytes([valid_ciphertext[0] ^ 1]) + valid_ciphertext[1:]
 
         upload_response = self._secure_post(
@@ -1883,7 +1937,7 @@ class HubTransferEndpointTests(TestCase):
             data={
                 "media_role": "processed",
                 "envelope": envelope_json,
-                "file": SimpleUploadedFile("tampered.bin", tampered_ciphertext),
+                "ciphertext": tampered_ciphertext,
             },
             headers=self._auth_headers(),
         )
@@ -1959,11 +2013,8 @@ class HubTransferEndpointTests(TestCase):
             f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
             data={
                 "media_role": "raw",
-                "file": SimpleUploadedFile(
-                    "report.pdf",
-                    report_bytes,
-                    content_type="application/pdf",
-                ),
+                "envelope": "{}",
+                "ciphertext": report_bytes,
             },
             headers=self._auth_headers(),
         )

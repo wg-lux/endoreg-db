@@ -241,6 +241,11 @@ Current transfer-mode rules:
 - `metadata_and_processed_media` is supported
 - raw-media transfer modes are rejected
 - the media upload endpoint accepts only anonymized `processed` media
+- processed-media ciphertext uses a fixed-length `application/octet-stream`
+  body; `X-Hub-Media-Role` and `X-Hub-Media-Envelope` carry size-bounded control
+  metadata
+- the endpoint has no Django REST framework body parsers, rejects multipart,
+  and passes the raw request stream to the atomic encrypted staging boundary
 
 Current replay and ownership rules:
 

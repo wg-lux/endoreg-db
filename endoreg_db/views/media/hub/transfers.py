@@ -2,19 +2,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, BinaryIO, Protocol, TypeAlias, cast
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.exceptions import PermissionDenied, UnsupportedMediaType, ValidationError
+from rest_framework.parsers import BaseParser
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -60,6 +59,11 @@ if TYPE_CHECKING:
     from endoreg_db.services.hub.transfers import TransferProvenance
 
 logger = logging.getLogger(__name__)
+
+_HUB_MEDIA_CONTENT_TYPE = "application/octet-stream"
+_HUB_MEDIA_ROLE_HEADER = "X-Hub-Media-Role"
+_HUB_MEDIA_ENVELOPE_HEADER = "X-Hub-Media-Envelope"
+_MAX_ENVELOPE_HEADER_BYTES = 4 * 1024
 
 _ValidationErrorValue: TypeAlias = str | list[str] | dict[str, "_ValidationErrorValue"]
 
@@ -484,7 +488,7 @@ class HubTransferStatusView(APIView):
 class HubTransferMediaUploadView(APIView):
     authentication_classes: Sequence[type[BaseAuthentication]] = ()
     permission_classes = [AllowAny]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes: Sequence[type[BaseParser]] = ()
 
     def post(
         self,
@@ -517,21 +521,26 @@ class HubTransferMediaUploadView(APIView):
         source_center_id = cast(int | None, getattr(source_center, "id", None))
         _assert_transfer_center_scope(authenticated_node, source_center_id)
 
-        uploaded_file = cast(Mapping[str, UploadedFile], request.FILES).get("file")
-        if not isinstance(uploaded_file, UploadedFile):
-            error("Media upload did not include a multipart file")
-            errors = {"file": "A multipart file upload is required"}
-            _log_transfer_validation_failure(
-                request,
-                event="hub.transfer_media_upload_validation_failed",
-                errors=cast(_ValidationErrorValue, errors),
-                transfer_key=transfer_key,
-                transfer_job=transfer_job,
-            )
-            raise ValidationError(errors)
+        content_type = str(request.content_type or "").partition(";")[0].strip().lower()
+        if content_type != _HUB_MEDIA_CONTENT_TYPE:
+            error("Media upload did not use the raw ciphertext contract")
+            raise UnsupportedMediaType(content_type or "missing")
 
-        request_data = cast(dict[str, object], request.data)
-        media_role = str(request_data.get("media_role", "") or "").strip().lower()
+        content_length_value = str(
+            request.META.get("CONTENT_LENGTH", "") or ""
+        ).strip()
+        try:
+            ciphertext_size = int(content_length_value)
+        except ValueError as exc:
+            raise ValidationError(
+                {"content_length": "A positive fixed ciphertext length is required."}
+            ) from exc
+        if ciphertext_size <= 0:
+            raise ValidationError(
+                {"content_length": "A positive fixed ciphertext length is required."}
+            )
+
+        media_role = _node_header(request, _HUB_MEDIA_ROLE_HEADER).lower()
         if media_role not in {"processed"}:
             error("Unsafe or unsupported media role was rejected")
             errors = {
@@ -548,7 +557,7 @@ class HubTransferMediaUploadView(APIView):
             )
             raise ValidationError(errors)
 
-        envelope_json = str(request_data.get("envelope", "") or "").strip()
+        envelope_json = _node_header(request, _HUB_MEDIA_ENVELOPE_HEADER)
         if not envelope_json:
             errors = {
                 "envelope": (
@@ -564,18 +573,27 @@ class HubTransferMediaUploadView(APIView):
                 transfer_job=transfer_job,
             )
             raise ValidationError(errors)
+        if len(envelope_json.encode("utf-8")) > _MAX_ENVELOPE_HEADER_BYTES:
+            errors = {
+                "envelope": "Hub media envelope metadata exceeds the header limit."
+            }
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=cast(_ValidationErrorValue, errors),
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+            )
+            raise ValidationError(errors)
 
         max_upload_bytes = int(
             getattr(settings, "ENDOREG_HUB_TRANSFER_MAX_UPLOAD_BYTES", 50 * 1024**3)
         )
-        uploaded_size = uploaded_file.size
-        kv("Uploaded size", uploaded_size)
+        kv("Uploaded size", ciphertext_size)
         kv("Requested media role", media_role)
         if (
             max_upload_bytes <= 0
-            or uploaded_size is None
-            or uploaded_size < 0
-            or uploaded_size > max_upload_bytes
+            or ciphertext_size > max_upload_bytes
         ):
             errors = {"file": "Uploaded media exceeds the configured size limit."}
             _log_transfer_validation_failure(
@@ -587,10 +605,15 @@ class HubTransferMediaUploadView(APIView):
             )
             raise ValidationError(errors)
 
+        ciphertext_stream = request.stream
+        if ciphertext_stream is None:
+            raise ValidationError({"file": "A raw ciphertext body is required."})
+
         try:
             transfer_job = attach_enveloped_transfer_media(
                 transfer_job=transfer_job,
-                uploaded_file=uploaded_file,
+                ciphertext_stream=cast(BinaryIO, ciphertext_stream),
+                ciphertext_size=ciphertext_size,
                 media_role=media_role,
                 envelope_json=envelope_json,
             )

@@ -1,0 +1,163 @@
+schema_version: "1.0"
+id: language_support
+name: Unified clinical language support
+description: >-
+  Use one canonical language field to select all localized clinical data-point
+  names and report-template validator runtime messages across lx-dtypes,
+  endoreg-db, and lx-annotate without changing stable semantic identifiers.
+owners:
+  - lx-dtypes maintainers
+  - endoreg_db maintainers
+  - lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+  - path: /home/admin/lx-data-models/docs/guides/cross-layer-validation.md
+    disposition: reference
+    note: >-
+      Canonical ownership rules for localization, report language, terminology
+      labels, validation boundaries, and stable semantic names.
+definition_of_done:
+  - id: canonical_language_contract
+    category: requirements
+    title: One typed language field is authoritative across every reporting boundary
+    acceptance:
+      - The shared lx-dtypes contract defines the supported language values and the explicit default.
+      - Draft, submission, runtime-validation, persistence, and response payloads expose one canonical field named language.
+      - Documented legacy aliases are accepted only at ingress and serialize back as the canonical language field.
+      - A request cannot provide conflicting language selectors at different layers.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Review shared schemas, generated API schemas, persistence adapters, and
+        frontend transport types for one canonical language field and explicit
+        compatibility handling.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: localized_data_point_names
+    category: functionality
+    title: The language field selects every clinical data-point display name
+    acceptance:
+      - Findings, classifications, choices, descriptors, interventions, indications, units, examinations, and report sections expose the selected localized name.
+      - Switching only language changes display names while semantic names, UUIDs, relationships, values, and ordering remain unchanged.
+      - Missing translations use the documented stable semantic-name fallback and are observable; clients never derive labels from snake_case names.
+      - A single response cannot silently mix German and English clinical labels.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Compare deterministic German and English projections of the same
+        versioned knowledge-base reporting context and verify identity-preserving
+        output plus missing-translation behavior.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: localized_validator_runtime_errors
+    category: functionality
+    title: Validator runtime errors use the same selected language
+    acceptance:
+      - Every report-template validator issue retains a stable language-independent code and structured details.
+      - Human-readable messages for template, examination, finding, classification, intervention, and unit validator failures use the selected language.
+      - Nested dependency issues and terminology-boundary failures use the same language as their containing runtime result.
+      - Changing language does not change validation outcome, issue code, severity, validator identity, or structured details.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Execute identical failing report payloads in each supported language and
+        compare localized messages against invariant machine-readable issue data.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: language_persistence_roundtrip
+    category: data_integrity
+    title: Language survives draft, final report, and runtime-result round trips
+    acceptance:
+      - The selected language is persisted as a typed report provenance field rather than only inside editor JSON.
+      - Draft save and restore, final submission, report reload, and PDF generation retain the same language.
+      - Legacy records receive one documented migration default without rewriting knowledge-base identities or clinical values.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Review migration behavior and exercise draft-to-final persistence and PDF
+        generation round trips for every supported language.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: localization_contract_tests
+    category: testing
+    title: Cross-repository tests prove language selection and invariant behavior
+    acceptance:
+      - lx-dtypes tests cover strict language parsing, localized concept names, all validator issue families, and missing translations.
+      - endoreg-db tests cover API validation, persistence round trips, finalization, and report rendering in every supported language.
+      - lx-annotate tests cover selection, draft restoration, localized data points, and localized validator errors without a client translation table.
+      - Negative tests reject unsupported languages, conflicting legacy aliases, and mixed-language payloads.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Run the focused lx-data-models, endoreg-db, and lx-annotate localization
+        test lanes and record exact commands and results as evidence.
+      timeout_seconds: 1200
+    assessment:
+      status: not_assessed
+
+  - id: localization_boundary_security
+    category: security
+    title: Localization remains strict and cannot alter clinical semantics
+    acceptance:
+      - Language input is restricted to the shared allow-list and is not used as an unchecked file, module, template, or translation-resource path.
+      - Localized text cannot override semantic identifiers, validation codes, authorization decisions, or persisted clinical values.
+      - Validator message formatting treats reported values as data and does not evaluate user-controlled templates.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Review all language ingress and message-formatting boundaries and execute
+        negative tests for unsupported values and hostile formatting input.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: localization_operations
+    category: operations
+    title: Missing translations and compatibility fallbacks are observable
+    acceptance:
+      - Missing required translations are detected before knowledge-base publication or emitted through structured diagnostics.
+      - Runtime diagnostics identify the knowledge-base module, version, language, and stable concept or validator name without patient data.
+      - Deployment order and compatibility windows are documented for lx-dtypes, endoreg-db, and lx-annotate releases.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Inspect publication checks, structured diagnostics, and the coordinated
+        release plan; verify that diagnostics contain no patient data.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+
+  - id: localization_documentation
+    category: documentation
+    title: Language ownership and fallback behavior have one canonical description
+    acceptance:
+      - The lx-data-models cross-layer validation guide remains the canonical localization contract.
+      - API and frontend documentation link to that contract and do not define competing translation rules.
+      - Supported languages, defaulting, legacy aliases, fallback behavior, and validator issue semantics are documented in English.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Review documentation governance and all localization references for one
+        canonical topic owner and no conflicting contract.
+      timeout_seconds: 300
+    assessment:
+      status: not_assessed

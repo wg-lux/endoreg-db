@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import os
 import stat
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -39,16 +40,16 @@ def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-class _TrackedUpload(SimpleUploadedFile):
-    requested_chunk_sizes: list[int | None]
+class _TrackedStream(io.BytesIO):
+    requested_read_sizes: list[int | None]
 
     def __init__(self, *, content: bytes) -> None:
-        super().__init__("untrusted-name.exe", content)
-        self.requested_chunk_sizes = []
+        super().__init__(content)
+        self.requested_read_sizes = []
 
-    def chunks(self, chunk_size: int | None = None) -> Iterator[bytes]:
-        self.requested_chunk_sizes.append(chunk_size)
-        yield from cast(Iterator[bytes], super().chunks(chunk_size=chunk_size))
+    def read(self, size: int | None = -1, /) -> bytes:
+        self.requested_read_sizes.append(size)
+        return super().read(-1 if size is None else size)
 
 
 class HubTransferEnvelopeTests(SimpleTestCase):
@@ -167,7 +168,7 @@ class HubTransferEnvelopeTests(SimpleTestCase):
     ) -> None:
         plaintext = b"authenticated-video" * 100
         envelope, ciphertext = self._envelope(plaintext)
-        upload = _TrackedUpload(content=ciphertext)
+        ciphertext_stream = _TrackedStream(content=ciphertext)
 
         with (
             patch(
@@ -177,7 +178,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             patch("endoreg_db.services.hub.transfer_envelope._CHUNK_SIZE", 17),
             prepare_inbound_hub_envelope(
                 transfer_job=self.transfer_job,
-                uploaded_file=upload,
+                ciphertext_stream=ciphertext_stream,
+                ciphertext_size=len(ciphertext),
                 envelope_json=envelope.model_dump_json(),
                 media_role="processed",
             ) as prepared,
@@ -189,7 +191,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             self.assertEqual(bytes(recovered), plaintext)
             self.assertEqual(prepared.ciphertext_sha256, _sha256(ciphertext))
 
-        self.assertEqual(upload.requested_chunk_sizes, [17])
+        self.assertGreater(len(ciphertext_stream.requested_read_sizes), 1)
+        self.assertEqual(set(ciphertext_stream.requested_read_sizes), {17})
         self._assert_staging_empty()
 
     def test_legacy_plaintext_service_entrypoint_rejects_before_staging(self) -> None:
@@ -266,7 +269,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "authentication failed"):
                 with prepare_inbound_hub_envelope(
                     transfer_job=self.transfer_job,
-                    uploaded_file=SimpleUploadedFile("payload.bin", tampered),
+                    ciphertext_stream=io.BytesIO(tampered),
+                    ciphertext_size=len(tampered),
                     envelope_json=envelope.model_dump_json(),
                     media_role="processed",
                 ) as prepared:
@@ -289,7 +293,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "not available"):
                 with prepare_inbound_hub_envelope(
                     transfer_job=self.transfer_job,
-                    uploaded_file=SimpleUploadedFile("payload.bin", ciphertext),
+                    ciphertext_stream=io.BytesIO(ciphertext),
+                    ciphertext_size=len(ciphertext),
                     envelope_json=envelope.model_dump_json(),
                     media_role="processed",
                 ):
@@ -314,7 +319,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             ):
                 with prepare_inbound_hub_envelope(
                     transfer_job=self.transfer_job,
-                    uploaded_file=SimpleUploadedFile("payload.bin", ciphertext),
+                    ciphertext_stream=io.BytesIO(ciphertext),
+                    ciphertext_size=len(ciphertext),
                     envelope_json=tampered.model_dump_json(),
                     media_role="processed",
                 ):
@@ -333,7 +339,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "size does not match"):
                 with prepare_inbound_hub_envelope(
                     transfer_job=self.transfer_job,
-                    uploaded_file=SimpleUploadedFile("payload.bin", ciphertext[:-1]),
+                    ciphertext_stream=io.BytesIO(ciphertext[:-1]),
+                    ciphertext_size=len(ciphertext) - 1,
                     envelope_json=envelope.model_dump_json(),
                     media_role="processed",
                 ):
@@ -358,7 +365,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
                 with self.assertRaisesRegex(HubMediaEnvelopeError, field_name):
                     with prepare_inbound_hub_envelope(
                         transfer_job=self.transfer_job,
-                        uploaded_file=SimpleUploadedFile("payload.bin", ciphertext),
+                        ciphertext_stream=io.BytesIO(ciphertext),
+                        ciphertext_size=len(ciphertext),
                         envelope_json=tampered.model_dump_json(),
                         media_role="processed",
                     ):

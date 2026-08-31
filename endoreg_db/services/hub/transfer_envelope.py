@@ -23,7 +23,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from django.conf import settings
-from django.core.files.uploadedfile import UploadedFile
 from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeMetadata
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -325,18 +324,20 @@ def _unwrap_data_encryption_key(
     return data_encryption_key
 
 
-def _uploaded_chunks(uploaded_file: UploadedFile) -> Iterator[bytes]:
-    chunks = cast(Iterator[bytes], uploaded_file.chunks(chunk_size=_CHUNK_SIZE))
-    for chunk in chunks:
-        if chunk:
-            yield bytes(chunk)
+def _ciphertext_chunks(ciphertext_stream: BinaryIO) -> Iterator[bytes]:
+    while True:
+        chunk = ciphertext_stream.read(_CHUNK_SIZE)
+        if not chunk:
+            return
+        yield bytes(chunk)
 
 
 @contextmanager
 def prepare_inbound_hub_envelope(
     *,
     transfer_job: TransferJob,
-    uploaded_file: UploadedFile,
+    ciphertext_stream: BinaryIO,
+    ciphertext_size: int,
     envelope_json: str,
     media_role: str,
 ) -> Generator[PreparedInboundHubEnvelope]:
@@ -349,11 +350,9 @@ def prepare_inbound_hub_envelope(
         transfer_job=transfer_job,
         media_role=media_role,
     )
-    uploaded_size = uploaded_file.size
     if (
-        uploaded_size is None
-        or uploaded_size <= 0
-        or uploaded_size != metadata.plaintext_size
+        ciphertext_size <= 0
+        or ciphertext_size != metadata.plaintext_size
     ):
         raise HubMediaEnvelopeError(
             "Hub media envelope ciphertext size does not match declared plaintext size"
@@ -362,8 +361,8 @@ def prepare_inbound_hub_envelope(
     destination = TRANSCODING_DIR / f"hub-envelope-{uuid.uuid4().hex}.ciphertext"
     atomic_handoff_file(
         destination=destination,
-        content=_uploaded_chunks(uploaded_file),
-        required_bytes=uploaded_size,
+        content=_ciphertext_chunks(ciphertext_stream),
+        required_bytes=ciphertext_size,
         file_mode=0o600,
         dir_mode=0o700,
     )
@@ -380,7 +379,7 @@ def prepare_inbound_hub_envelope(
             metadata=metadata,
             plaintext_stream=buffered_reader,
             ciphertext_sha256=ciphertext_sha256,
-            ciphertext_size=uploaded_size,
+            ciphertext_size=ciphertext_size,
             envelope_fingerprint_sha256=metadata.envelope_fingerprint_sha256(),
             receiver_node_key=transfer_job.target_node.node_key,
             _reader=reader,
