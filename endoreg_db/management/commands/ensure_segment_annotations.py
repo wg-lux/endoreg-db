@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import Sequence
 from typing import TypedDict, cast
 
@@ -17,8 +16,8 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.segment_annotations import ensure_segment_annotations
 
 
-type _CommandOption = NoneType | bool | int | list[int] | str
-type _IdSequence = NoneType | Sequence[int]
+type _CommandOption = None | bool | int | list[int] | str
+type _IdSequence = None | Sequence[int]
 
 
 class _SegmentAnnotationSummary(TypedDict):

@@ -1,9 +1,11 @@
 from __future__ import annotations
+from collections.abc import Iterable
 from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.base import ModelBase
 
 from endoreg_db.schemas import validate_operation_log_meta
 
@@ -15,12 +17,14 @@ class OperationLog(models.Model):
 
     # actor_id – internal Django user ID (primary key)
     # Who did it
-    actor_user: models.ForeignKey[Any] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="operation_logs",
+    actor_user: models.ForeignKey[models.Model, models.Model | None] = (
+        models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+            settings.AUTH_USER_MODEL,
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="operation_logs",
+        )
     )
     actor_username: models.CharField[Any, Any] = models.CharField(
         max_length=150, blank=True
@@ -86,6 +90,18 @@ class OperationLog(models.Model):
         except ValueError as exc:
             raise ValidationError({"meta": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         self.clean()
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )

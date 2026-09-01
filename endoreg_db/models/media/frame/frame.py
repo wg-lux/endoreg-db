@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 import cv2
@@ -20,7 +19,7 @@ if TYPE_CHECKING:
         def get_frame_dir_path(self) -> Path | None: ...
 
 
-NoFrameTimestampValue: TypeAlias = NoneType
+NoFrameTimestampValue: TypeAlias = None
 FrameTimestamp: TypeAlias = "float | NoFrameTimestampValue"
 FrameImage: TypeAlias = "np.ndarray | NoFrameTimestampValue"
 

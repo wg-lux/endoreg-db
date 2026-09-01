@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from types import NoneType
 from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import requests
@@ -18,7 +17,7 @@ from endoreg_db.utils.file_operations import ensure_directory
 
 # python manage.py import_report tests/assets/lux-gastro-report.pdf --verbose --start_ollama
 # Dynamic import path manipulation to ensure local development version is used
-JsonNull: TypeAlias = NoneType
+JsonNull: TypeAlias = None
 
 
 class ImportReportOptions(TypedDict):

@@ -71,9 +71,6 @@ from .transfer_envelope import (
 logger = logging.getLogger(__name__)
 
 _SAFE_SENSITIVE_META_FIELDS = frozenset({"patient_hash", "examination_hash"})
-_RECEIVER_MANAGED_TRANSFER_PROVENANCE_FIELDS = frozenset(
-    {"media_uploads", "case_resolution"}
-)
 _UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
     {
         "title",
@@ -305,8 +302,8 @@ def _canonical_sender_transfer_provenance(
     provenance: TransferProvenance,
 ) -> TransferProvenance:
     canonical = _transfer_provenance(provenance)
-    for field_name in _RECEIVER_MANAGED_TRANSFER_PROVENANCE_FIELDS:
-        canonical.pop(field_name, None)
+    canonical.pop("media_uploads", None)
+    canonical.pop("case_resolution", None)
     return canonical
 
 
@@ -726,6 +723,7 @@ def attach_enveloped_transfer_media(
                 )
                 prepared.require_verified()
 
+                media_type: Literal["video", "pdf"]
                 if isinstance(target, VideoFile):
                     target.processed_video_hash = expected_hash
                     target.save(

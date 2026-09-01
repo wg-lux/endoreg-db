@@ -56,6 +56,8 @@ def _segments_queryset(
     )
     if segment_ids:
         return segments.filter(pk__in=segment_ids)
+    if video_ids is None:
+        raise ValueError("video_ids must be provided when segment_ids is absent")
     return segments.filter(video_file_id__in=video_ids)
 
 
@@ -332,6 +334,8 @@ def ensure_prediction_segment_annotations(
     if segment_ids:
         segments = segments.filter(pk__in=segment_ids)
     else:
+        if video_ids is None:
+            raise ValueError("video_ids must be provided when segment_ids is absent")
         segments = segments.filter(video_file_id__in=video_ids)
 
     segments = segments.filter(

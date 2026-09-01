@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING, cast, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.subcategory_validation import (
-    NumericalDescriptorContract,
-    SubcategoryDictContract,
-)
+from lx_dtypes.models.contracts.json_types import JsonObject
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     validate_patient_numerical_descriptors,
     validate_patient_subcategories,
@@ -43,12 +41,8 @@ class PatientEvent(models.Model):
         null=True,
     )
 
-    subcategories: models.JSONField[dict[str, SubcategoryDictContract]] = (
-        models.JSONField(default=dict)
-    )
-    numerical_descriptors: models.JSONField[dict[str, NumericalDescriptorContract]] = (
-        models.JSONField(default=dict)
-    )
+    subcategories: models.JSONField[JsonObject] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[JsonObject] = models.JSONField(default=dict)
 
     last_update: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
@@ -90,18 +84,17 @@ class PatientEvent(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 
     def set_subcategories_from_classification_choice(
         self,
-    ) -> dict[str, SubcategoryDictContract]:
+    ) -> JsonObject:
         """Copies subcategory definitions from the linked classification choice."""
         if self.classification_choice:
             self.subcategories = cast(
-                dict[str, SubcategoryDictContract],
-                self.classification_choice.subcategories,
+                JsonObject, self.classification_choice.subcategories
             )
             self.save()
 
@@ -109,12 +102,11 @@ class PatientEvent(models.Model):
 
     def set_numerical_descriptors_from_classification_choice(
         self,
-    ) -> dict[str, NumericalDescriptorContract]:
+    ) -> JsonObject:
         """Copies numerical descriptor definitions from the linked classification choice."""
         if self.classification_choice:
             self.numerical_descriptors = cast(
-                dict[str, NumericalDescriptorContract],
-                self.classification_choice.numerical_descriptors,
+                JsonObject, self.classification_choice.numerical_descriptors
             )
             self.save()
 

@@ -27,12 +27,6 @@ from lx_dtypes.models.contracts.management_command import (
 
 logger = logging.getLogger(__name__)
 
-FRAME_CLEANUP_COMPLETE_STATUSES = (
-    "done_processing_anonymization",
-    "validated",
-    "anonymized",
-)
-
 
 def _video_uuid_text(video: VideoFile) -> str:
     return str(cast(UUID, getattr(video, "uuid")))
@@ -319,7 +313,8 @@ class Command(BaseCommand):
 
         # Find videos that have completed processing
         completed_videos = VideoFile.objects.filter(
-            anonymization_tasks__status__in=FRAME_CLEANUP_COMPLETE_STATUSES
+            state__anonymized=True,
+            state__processing_error=False,
         ).distinct()
 
         for video in completed_videos:
@@ -453,13 +448,11 @@ class Command(BaseCommand):
         # Find old processed videos - fix the date filtering
         try:
             old_videos = VideoFile.objects.filter(
-                created_at__lt=cutoff_date,  # Use created_at instead of date_created
+                date_created__lt=cutoff_date,
                 processed_file__isnull=False,
             ).exclude(
-                anonymization_tasks__status__in=[
-                    "processing_anonymization",
-                    "extracting_frames",
-                ]
+                state__processing_started=True,
+                state__anonymized=False,
             )
 
             self.stdout.write(
@@ -472,10 +465,8 @@ class Command(BaseCommand):
                 old_videos = VideoFile.objects.filter(
                     processed_file__isnull=False
                 ).exclude(
-                    anonymization_tasks__status__in=[
-                        "processing_anonymization",
-                        "extracting_frames",
-                    ]
+                    state__processing_started=True,
+                    state__anonymized=False,
                 )
                 self.stdout.write(
                     f"Using fallback filter, found {old_videos.count()} processed videos"
@@ -618,10 +609,8 @@ class Command(BaseCommand):
             processed_videos = VideoFile.objects.filter(
                 processed_file__isnull=False
             ).exclude(
-                anonymization_tasks__status__in=[
-                    "processing_anonymization",
-                    "extracting_frames",
-                ]
+                state__processing_started=True,
+                state__anonymized=False,
             )
 
             self.stdout.write(

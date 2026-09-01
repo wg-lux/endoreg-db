@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import Protocol, TypeAlias, cast, Any
 
 from django.db import models
 
 # models.py in your main app
 
-NoPortalUserInfoValue: TypeAlias = NoneType
+NoPortalUserInfoValue: TypeAlias = None
 PortalUserInfoFlag: TypeAlias = bool | NoPortalUserInfoValue
 
 

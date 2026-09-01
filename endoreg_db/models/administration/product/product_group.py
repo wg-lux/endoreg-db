@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -9,7 +8,7 @@ if TYPE_CHECKING:
     from .product import Product
     from .reference_product import ReferenceProduct
 
-NoProductGroupValue: TypeAlias = NoneType
+NoProductGroupValue: TypeAlias = None
 ProductGroupReference: TypeAlias = "ReferenceProduct | NoProductGroupValue"
 
 

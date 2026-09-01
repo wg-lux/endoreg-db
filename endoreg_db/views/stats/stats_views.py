@@ -8,8 +8,6 @@ video segment stats, sensitive meta stats, and general overview stats.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import cast
-
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework import status
@@ -51,23 +49,12 @@ class ExaminationStatsView(APIView):
 
             # Recent activity (last 30 days)
             thirty_days_ago = timezone.now() - timedelta(days=30)
-            recent_examinations = (
-                Examination.objects.filter(created_at__gte=thirty_days_ago).count()
-                if hasattr(Examination, "created_at")
-                else 0
-            )
+            recent_examinations = PatientExamination.objects.filter(
+                date_start__gte=thirty_days_ago
+            ).count()
 
             # Status distribution for patient examinations
             status_distribution: StatsDistribution = []
-            if hasattr(PatientExamination, "status"):
-                status_distribution = cast(
-                    StatsDistribution,
-                    list(
-                        PatientExamination.objects.values("status")
-                        .annotate(count=Count("id"))
-                        .order_by("status")
-                    ),
-                )
 
             return Response(
                 {
@@ -105,7 +92,7 @@ class VideoSegmentStatsView(APIView):
             # Total segment counts
             total_segments = LabelVideoSegment.objects.count()
             total_videos_with_segments = (
-                VideoFile.objects.filter(labelvideosegment__isnull=False)
+                VideoFile.objects.filter(label_video_segments__isnull=False)
                 .distinct()
                 .count()
             )
@@ -119,7 +106,7 @@ class VideoSegmentStatsView(APIView):
 
             # Videos without segments
             videos_without_segments = VideoFile.objects.filter(
-                labelvideosegment__isnull=True
+                label_video_segments__isnull=True
             ).count()
 
             # Average segments per video
@@ -166,31 +153,19 @@ class SensitiveMetaStatsView(APIView):
             total_sensitive_meta = SensitiveMeta.objects.count()
 
             # Verification status distribution
-            verified_count = (
-                SensitiveMeta.objects.filter(verified=True).count()
-                if hasattr(SensitiveMeta, "verified")
-                else 0
-            )
+            verified_count = 0
 
             unverified_count = total_sensitive_meta - verified_count
 
             # Videos with sensitive data
             videos_with_sensitive_data = (
-                VideoFile.objects.filter(sensitivemeta__isnull=False).distinct().count()
+                VideoFile.objects.filter(sensitive_meta__isnull=False)
+                .distinct()
+                .count()
             )
 
             # Type distribution (if available)
             type_distribution: StatsDistribution = []
-            if hasattr(SensitiveMeta, "meta_type"):
-                type_distribution = cast(
-                    StatsDistribution,
-                    list(
-                        SensitiveMeta.objects.values("meta_type")
-                        .annotate(count=Count("id"))
-                        .order_by("-count")
-                    ),
-                )
-
             return Response(
                 {
                     "total_sensitive_meta": total_sensitive_meta,
@@ -233,13 +208,15 @@ class GeneralStatsView(APIView):
 
             # Processing status
             videos_with_segments = (
-                VideoFile.objects.filter(labelvideosegment__isnull=False)
+                VideoFile.objects.filter(label_video_segments__isnull=False)
                 .distinct()
                 .count()
             )
 
             videos_with_sensitive_data = (
-                VideoFile.objects.filter(sensitivemeta__isnull=False).distinct().count()
+                VideoFile.objects.filter(sensitive_meta__isnull=False)
+                .distinct()
+                .count()
             )
 
             # Calculate percentages

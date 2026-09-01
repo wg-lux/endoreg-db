@@ -4,9 +4,8 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from types import NoneType
 from collections.abc import Callable, Generator, Iterable
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
+from typing import TYPE_CHECKING, Protocol, TypeAlias, Unpack, cast, Any
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
@@ -14,6 +13,7 @@ from django.db.models.base import ModelBase
 from django.db.models import CheckConstraint, F, Q
 from tqdm import tqdm
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.services.video_files.frames import (
     delete_video_frame_range,
     extract_video_frame_range,
@@ -52,15 +52,15 @@ if TYPE_CHECKING:
         pk: int
 
 
-NoInformationSourceValue: TypeAlias = NoneType
-NoSegmentLabelValue: TypeAlias = NoneType
-NoPredictionMetaValue: TypeAlias = NoneType
-NoModelMetaValue: TypeAlias = NoneType
-NoLabelSetValue: TypeAlias = NoneType
-NoAnnotatorValue: TypeAlias = NoneType
-NoVideoFileValue: TypeAlias = NoneType
-NoStringValue: TypeAlias = NoneType
-NoIterableStringValue: TypeAlias = NoneType
+NoInformationSourceValue: TypeAlias = None
+NoSegmentLabelValue: TypeAlias = None
+NoPredictionMetaValue: TypeAlias = None
+NoModelMetaValue: TypeAlias = None
+NoLabelSetValue: TypeAlias = None
+NoAnnotatorValue: TypeAlias = None
+NoVideoFileValue: TypeAlias = None
+NoStringValue: TypeAlias = None
+NoIterableStringValue: TypeAlias = None
 SegmentInformationSource: TypeAlias = "InformationSource | NoInformationSourceValue"
 SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
 SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
@@ -345,7 +345,7 @@ class LabelVideoSegment(models.Model):
             **kwargs,
         )
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """
         Saves the LabelVideoSegment instance and ensures its associated state object exists.
 

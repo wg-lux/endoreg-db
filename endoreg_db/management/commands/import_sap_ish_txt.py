@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from types import NoneType
 from typing import TypeAlias, TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -26,7 +25,7 @@ from endoreg_db.utils.paths import (
     ensure_within_data_root,
 )
 
-JsonNull: TypeAlias = NoneType
+JsonNull: TypeAlias = None
 
 
 class ImportSapIshTxtOptions(TypedDict):

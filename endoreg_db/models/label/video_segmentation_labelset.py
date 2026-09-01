@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -8,7 +7,7 @@ from django.db import models
 if TYPE_CHECKING:
     from .video_segmentation_label import VideoSegmentationLabel
 
-NoVideoSegmentationLabelSetValue: TypeAlias = NoneType
+NoVideoSegmentationLabelSetValue: TypeAlias = None
 VideoSegmentationLabelSetDescription: TypeAlias = (
     "str | NoVideoSegmentationLabelSetValue"
 )

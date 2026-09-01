@@ -1,32 +1,17 @@
 from __future__ import annotations
 
 from math import isnan
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TypeAlias, Any
 
 from django.db import models
 
-if TYPE_CHECKING:
-    from .product import Product
-    from .product_group import ProductGroup
-
-NoProductWeightValue: TypeAlias = NoneType
+NoProductWeightValue: TypeAlias = None
 ProductWeightValue: TypeAlias = float | NoProductWeightValue
 ProductWeightSource: TypeAlias = str | NoProductWeightValue
 
 
-class ProductWeightManager(models.Manager["ProductWeight"]):
-    def get_by_natural_key(
-        self,
-        product: "Product",
-        product_group: "ProductGroup",
-        weight: float,
-    ) -> "ProductWeight":
-        return self.get(product=product, product_group=product_group, weight=weight)
-
-
 class ProductWeight(models.Model):
-    objects = ProductWeightManager()
+    objects = models.Manager["ProductWeight"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, null=True)
     product: models.ForeignKey[Any] = models.ForeignKey(
@@ -38,9 +23,6 @@ class ProductWeight(models.Model):
     unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )
-
-    if TYPE_CHECKING:
-        pass
 
     @staticmethod
     def _has_weight(value: ProductWeightValue) -> bool:

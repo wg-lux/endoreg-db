@@ -505,6 +505,8 @@ class Command(BaseCommand):
         if version in (None, -1):
             labelset = queryset.order_by("-version").first()
         else:
+            if not isinstance(version, (int, str)) or isinstance(version, bool):
+                raise CommandError("LabelSet version must be an integer or string.")
             labelset = queryset.filter(version=version).first()
 
         if not labelset:

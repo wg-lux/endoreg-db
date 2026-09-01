@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.tag import Tag
 from endoreg_db.serializers.anonymization import (
@@ -74,7 +75,7 @@ class _ValidationState(Protocol):
 class _ValidatedSensitiveMeta(Protocol):
     pk: int | None
     center_id: int | None
-    center: "_CenterLike | None"
+    center: Center | None
     validation_comment: str
     tags: "_TagRelation"
     pseudo_patient_id: object
@@ -90,15 +91,11 @@ class _ValidatedSensitiveMeta(Protocol):
     def create_anonymized_record(self) -> None: ...
 
 
-class _CenterLike(Protocol):
-    name: str
-
-
 class _VideoValidationLike(Protocol):
     meta: object
     state: _ValidationState | None
     sensitive_meta: SensitiveMeta | None
-    center: _CenterLike | None
+    center: Center | None
     state_id: int | None
     anonymization_status: str | None
 
@@ -110,7 +107,7 @@ class _VideoValidationLike(Protocol):
 class _PdfValidationLike(Protocol):
     raw_meta: dict[str, Any] | None
     sensitive_meta: SensitiveMeta | None
-    center: _CenterLike | None
+    center: Center | None
     center_id: int | None
     anonymized_text: str | None
     examination_id: int | None
@@ -343,7 +340,7 @@ def _assign_pdf_center_from_sensitive_meta(
         return False
     if not getattr(sensitive_meta, "center_id", None):
         return False
-    pdf_obj.center = cast(_CenterLike, getattr(sensitive_meta, "center"))
+    pdf_obj.center = cast(Center, getattr(sensitive_meta, "center"))
     return True
 
 

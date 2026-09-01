@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_media_operation_lease_metadata
 
 if TYPE_CHECKING:
@@ -69,6 +70,6 @@ class MediaOperationLease(models.Model):
         except ValueError as exc:
             raise ValidationError({"metadata": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)

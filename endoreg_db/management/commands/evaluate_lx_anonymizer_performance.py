@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import NoneType
 from typing import (
     Literal,
     ParamSpec,
@@ -58,7 +57,7 @@ from endoreg_db.utils.file_operations import (
 
 logger = logging.getLogger(__name__)
 
-JsonNull: TypeAlias = NoneType
+JsonNull: TypeAlias = None
 ForcedMediaType: TypeAlias = Literal["auto", "video", "report"]
 ProcessorRoi: TypeAlias = RoiBoxCore | dict[str, int | JsonNull]
 ImportedMedia: TypeAlias = VideoFile | RawPdfFile

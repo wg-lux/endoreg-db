@@ -3,8 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from datetime import datetime
-from types import NoneType
-from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -24,6 +23,7 @@ from lx_dtypes.models.contracts.aidataset_frame_buckets import (
     AIDataSetTargetFrameBucket,
 )
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     dump_ai_dataset_export_request_payload,
     dump_ai_dataset_export_summary,
@@ -62,9 +62,9 @@ if TYPE_CHECKING:
     )
 
 
-NoAIDataSetTextValue: TypeAlias = NoneType
-NoAIDataSetValue: TypeAlias = NoneType
-NoAIDataSetDateTimeValue: TypeAlias = NoneType
+NoAIDataSetTextValue: TypeAlias = None
+NoAIDataSetValue: TypeAlias = None
+NoAIDataSetDateTimeValue: TypeAlias = None
 AIDataSetText: TypeAlias = "str | NoAIDataSetTextValue"
 AIDataSetRelation: TypeAlias = "AIDataSet | NoAIDataSetValue"
 AIDataSetDateTime: TypeAlias = "datetime | NoAIDataSetDateTimeValue"
@@ -424,7 +424,7 @@ class AIModelTrainingRun(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 
@@ -526,7 +526,7 @@ class AIDataSetExportArtifact(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

@@ -72,7 +72,7 @@ def _django_request(request: Request) -> HttpRequest:
 
 
 def _pdf_pk(pdf: RawPdfFile) -> int:
-    value: object = pdf.pk
+    value: int = pdf.pk
     return int(value)
 
 
@@ -416,11 +416,6 @@ class PdfApplyRedactionsView(APIView):
                     {"error": "unexpected backend failure while applying redactions."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-
-        return Response(
-            {"error": "unexpected processing state while applying redactions."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
 
 
 class PdfProcessingHistoryView(APIView):

@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-OUTSIDE_FRAME_BLACKENING_KIND = "outside_frame_blackening"
 OutsideFrameBlackeningKind = Literal["outside_frame_blackening"]
+OUTSIDE_FRAME_BLACKENING_KIND: OutsideFrameBlackeningKind = "outside_frame_blackening"
 LEGACY_BLACKENING_QUEUE = "inline_or_thread"
 
 

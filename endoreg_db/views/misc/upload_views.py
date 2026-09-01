@@ -20,9 +20,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from kombu.exceptions import OperationalError as KombuOperationalError
 
+
+class _MagicModule(Protocol):
+    def from_buffer(self, buffer: bytes, *, mime: bool) -> str: ...
+
+
 # Try to import python-magic, but provide fallback if not available
 try:
-    import magic as _magic
+    import magic as _magic_module
+
+    _magic: _MagicModule | None = cast(_MagicModule, _magic_module)
 except ImportError:
     _magic = None
 
@@ -485,13 +492,13 @@ class UploadFileView(APIView):
             uploaded_file.seek(0)
 
             # Try python-magic first (more reliable) if available
-            if MAGIC_AVAILABLE:
+            if MAGIC_AVAILABLE and _magic is not None:
                 try:
                     # Read first chunk for magic detection
                     chunk = uploaded_file.read(2048)
                     uploaded_file.seek(0)  # Reset again
 
-                    mime_type = _magic.from_buffer(chunk, mime=True)  # type: ignore[union-attr]
+                    mime_type = _magic.from_buffer(chunk, mime=True)
                     if mime_type and mime_type != "application/octet-stream":
                         return mime_type
                 except Exception:

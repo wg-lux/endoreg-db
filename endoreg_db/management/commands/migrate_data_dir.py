@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
-from types import NoneType
 from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.core.files import File
@@ -113,7 +112,7 @@ class _MigrationFieldFile(Protocol):
     field: _MigrationFileField
 
 
-NoMigrationValue: TypeAlias = NoneType
+NoMigrationValue: TypeAlias = None
 MigrationFieldValue: TypeAlias = str | VideoStorageMode
 MigrationExtensions: TypeAlias = tuple[str, ...] | NoMigrationValue
 

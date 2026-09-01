@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
-from types import NoneType
 
 from django.apps import AppConfig
 from django.conf import settings
@@ -48,8 +47,8 @@ CELERY_MODES = (
     CeleryMode("MODEL_TRAINING_JOB_MODE", "celery", "model training"),
 )
 ALWAYS_CELERY_LABELS = ("upload pipeline ingest",)
-type AppConfigSequence = Sequence[AppConfig] | NoneType
-type DatabaseAliasSequence = Sequence[str] | NoneType
+type AppConfigSequence = Sequence[AppConfig] | None
+type DatabaseAliasSequence = Sequence[str] | None
 type CheckKwargValue = str | bool | int | AppConfigSequence | DatabaseAliasSequence
 
 

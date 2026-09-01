@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast, Any
+from typing import TYPE_CHECKING, Protocol, Unpack, cast, Any
 
 # import endoreg_center_id from django settings
 from django.conf import settings
@@ -13,6 +13,7 @@ ENDOREG_CENTER_ID = int(getattr(settings, "ENDOREG_CENTER_ID", 9999))
 
 # Import the new utility function
 import endoreg_db.utils.ffmpeg_wrapper as ffmpeg_wrapper
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from lx_dtypes.models.contracts.ffmpeg_metadata import (
     FfmpegMetaPayload,
     FfmpegProbeDataPayload,
@@ -166,7 +167,7 @@ class VideoMeta(models.Model):
 
         return result_html
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """Ensures VideoImportMeta exists before saving."""
         if self.import_meta is None:
             self.import_meta = VideoImportMeta.objects.create()
@@ -325,7 +326,7 @@ class FFMpegMeta(models.Model):
             raise ValidationError({"raw_probe_data": str(exc)}) from exc
         self.raw_probe_data = probe_payload.model_dump(mode="json")
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

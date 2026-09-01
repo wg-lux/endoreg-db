@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypeGuard
+
 from django.conf import settings
 from lx_dtypes.models.contracts.application_settings import (
     ApplicationSettingsDeploymentProfilePayload,
@@ -14,10 +16,14 @@ VALID_DEPLOYMENT_ROLES = (
 )
 
 
+def _is_deployment_role(value: str) -> TypeGuard[ApplicationSettingsDeploymentRole]:
+    return value in VALID_DEPLOYMENT_ROLES
+
+
 def get_deployment_role() -> ApplicationSettingsDeploymentRole:
     role = str(getattr(settings, "ENDOREG_DEPLOYMENT_ROLE", "standalone") or "").strip()
     normalized = role.lower() or "standalone"
-    if normalized not in VALID_DEPLOYMENT_ROLES:
+    if not _is_deployment_role(normalized):
         return "standalone"
     return normalized
 

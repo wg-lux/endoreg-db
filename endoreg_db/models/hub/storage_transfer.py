@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.db import models
 from django.db.models import Q
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from endoreg_db.models.hub.storage_placement import (
@@ -173,7 +175,7 @@ class StorageTransferEvidence(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.recipient_key_id = _sha256(
             self.recipient_key_id, field_name="recipient_key_id"
         )

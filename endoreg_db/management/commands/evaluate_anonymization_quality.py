@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from types import NoneType
 from typing import Literal, TypeAlias
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -20,8 +19,8 @@ from endoreg_db.utils.file_operations import atomic_write_file
 
 QualityMediaType: TypeAlias = Literal["all", "video", "pdf"]
 QUALITY_MEDIA_TYPE_CHOICES: tuple[QualityMediaType, ...] = ("all", "video", "pdf")
-type _CommandOption = NoneType | bool | int | list[int] | str
-type _MaybeInt = NoneType | int
+type _CommandOption = None | bool | int | list[int] | str
+type _MaybeInt = None | int
 
 
 @dataclass(frozen=True)

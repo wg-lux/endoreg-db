@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -12,7 +11,7 @@ from ...other.unit import Unit
 from .product_material import ProductMaterial
 from .reference_product import ReferenceProduct
 
-NoProductValue: TypeAlias = NoneType
+NoProductValue: TypeAlias = None
 ProductMetric: TypeAlias = tuple[float, Unit | NoProductValue]
 ProductMetricResult: TypeAlias = ProductMetric | NoProductValue
 ProductMaterialMetricCalculator: TypeAlias = Callable[

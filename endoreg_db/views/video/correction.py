@@ -104,7 +104,7 @@ class ProcessingHistoryRecord(Protocol):
 
 
 try:
-    from lx_anonymizer import FrameCleaner as _FrameCleaner  # type: ignore[reportMissingTypeStubs]
+    from lx_anonymizer import FrameCleaner as _FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
 
     FrameCleaner = cast(Any, _FrameCleaner)
 except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests

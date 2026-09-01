@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
 import torch.nn as nn
 from pytorch_lightning import LightningModule
 from pytorch_lightning.utilities.types import OptimizerLRScheduler
-from safetensors.torch import load_file  # type: ignore
-import sklearn.metrics as sk_metrics  # type: ignore[import-untyped]
-from torchvision import models  # type: ignore
+from numpy.typing import NDArray
+from safetensors import torch as safetensors_torch
+import sklearn.metrics as sk_metrics  # pyright: ignore[reportMissingTypeStubs]
+from torchvision import models  # pyright: ignore[reportMissingTypeStubs]
 
 from lx_dtypes.models.contracts.multilabel_classification import (
     MultiLabelBackboneName,
@@ -21,10 +22,36 @@ from lx_dtypes.models.contracts.multilabel_classification import (
 logger = logging.getLogger(__name__)
 METRICS_ON_STEP = False
 
-# Cast untyped scikit-learn metrics to Any to bypass stub omissions
-precision_score: Any = sk_metrics.precision_score  # type: ignore
-recall_score: Any = sk_metrics.recall_score  # type: ignore
-f1_score: Any = sk_metrics.f1_score  # type: ignore
+
+class _MetricFunction(Protocol):
+    def __call__(
+        self,
+        y_true: object,
+        y_pred: object,
+        *,
+        average: str | None,
+        zero_division: int,
+    ) -> float | NDArray[np.float64]: ...
+
+
+class _SafeTensorLoader(Protocol):
+    def __call__(
+        self, filename: str | Path, device: str = "cpu"
+    ) -> dict[str, torch.Tensor]: ...
+
+
+class _IncompatibleKeys(Protocol):
+    missing_keys: Sequence[str]
+    unexpected_keys: Sequence[str]
+
+
+precision_score = cast(_MetricFunction, getattr(sk_metrics, "precision_score"))
+recall_score = cast(_MetricFunction, getattr(sk_metrics, "recall_score"))
+f1_score = cast(_MetricFunction, getattr(sk_metrics, "f1_score"))
+load_safe_tensors = cast(
+    _SafeTensorLoader,
+    getattr(safetensors_torch, "load_file"),
+)
 
 
 def calculate_metrics(
@@ -34,15 +61,14 @@ def calculate_metrics(
 ) -> dict[str, float | list[float]]:
     pred_array = np.array(np.asarray(pred) > threshold, dtype=float)
 
-    # average=None returns an array; cast to Any to allow list comprehension iteration safely
-    samples_p: Any = precision_score(
-        y_true=target, y_pred=pred_array, average=None, zero_division=0
+    samples_p = np.asarray(
+        precision_score(y_true=target, y_pred=pred_array, average=None, zero_division=0)
     )
-    samples_r: Any = recall_score(
-        y_true=target, y_pred=pred_array, average=None, zero_division=0
+    samples_r = np.asarray(
+        recall_score(y_true=target, y_pred=pred_array, average=None, zero_division=0)
     )
-    samples_f: Any = f1_score(
-        y_true=target, y_pred=pred_array, average=None, zero_division=0
+    samples_f = np.asarray(
+        f1_score(y_true=target, y_pred=pred_array, average=None, zero_division=0)
     )
 
     return {
@@ -79,22 +105,22 @@ def calculate_metrics(
 
 
 def _load_torchvision_backbone(
-    factory: object,
+    factory: Callable[..., nn.Module],
     *,
-    weights_enum: object | None = None,
+    default_weights: object | None = None,
     load_pretrained: bool = False,
 ) -> nn.Module:
-    if weights_enum is not None:
+    if default_weights is not None:
         try:
-            weights = weights_enum.DEFAULT if load_pretrained else None  # type: ignore[attr-defined]
-            return factory(weights=weights)  # type: ignore[call-arg]
-        except (TypeError, AttributeError):
+            weights = default_weights if load_pretrained else None
+            return factory(weights=weights)
+        except TypeError:
             pass
     try:
-        return factory(pretrained=load_pretrained)  # type: ignore[call-arg]
+        return factory(pretrained=load_pretrained)
     except TypeError:
         try:
-            return factory()  # type: ignore[call-arg]
+            return factory()
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to instantiate torchvision backbone with load_pretrained={load_pretrained}."
@@ -140,28 +166,35 @@ class MultiLabelClassificationNet(LightningModule):
         self.sigm = nn.Sigmoid()
 
         if model_type is MultiLabelBackboneName.EFFICIENT_NET_B4:
-            self.model = _load_torchvision_backbone(
-                models.efficientnet_b4,
-                weights_enum=getattr(models, "EfficientNet_B4_Weights", None),
-                load_pretrained=load_imagenet_weights,
+            model = cast(
+                models.EfficientNet,
+                _load_torchvision_backbone(
+                    models.efficientnet_b4,
+                    default_weights=models.EfficientNet_B4_Weights.DEFAULT,
+                    load_pretrained=load_imagenet_weights,
+                ),
             )
-            num_ftrs = self.model.classifier[1].in_features  # type: ignore[index]
-            self.model.classifier[1] = nn.Linear(num_ftrs, len(self.labels))  # type: ignore[index]
+            num_ftrs = model.classifier[1].in_features
+            model.classifier[1] = nn.Linear(num_ftrs, len(self.labels))
+            self.model = model
         elif model_type is MultiLabelBackboneName.REGNET_X_800MF:
-            self.model = _load_torchvision_backbone(
-                models.regnet_x_800mf,
-                weights_enum=getattr(models, "RegNet_X_800MF_Weights", None),
-                load_pretrained=load_imagenet_weights,
+            model = cast(
+                models.RegNet,
+                _load_torchvision_backbone(
+                    models.regnet_x_800mf,
+                    default_weights=models.RegNet_X_800MF_Weights.DEFAULT,
+                    load_pretrained=load_imagenet_weights,
+                ),
             )
-            num_ftrs = self.model.fc.in_features  # type: ignore[attr-defined]
-            self.model.fc = nn.Linear(num_ftrs, len(self.labels))  # type: ignore[attr-defined]
-
+            num_ftrs = model.fc.in_features
+            model.fc = nn.Linear(num_ftrs, len(self.labels))
+            self.model = model
         self.criterion = nn.BCEWithLogitsLoss(
             pos_weight=torch.Tensor([self.pos_weight] * len(self.labels))
         )
 
     @classmethod
-    def load_from_checkpoint(  # type: ignore[override]
+    def load_from_checkpoint(
         cls,
         checkpoint_path: Any,
         *args: Any,
@@ -169,6 +202,11 @@ class MultiLabelClassificationNet(LightningModule):
     ) -> MultiLabelClassificationNet:
         path = Path(checkpoint_path)
         if path.suffix.lower() == ".safetensors":
+            if args:
+                raise TypeError(
+                    "Positional model arguments are not supported for safetensors checkpoints; "
+                    "pass constructor values by keyword."
+                )
             map_location = kwargs.pop("map_location", "cpu")
             strict = bool(kwargs.pop("strict", True))
             labels = kwargs.pop("labels", None)
@@ -182,22 +220,22 @@ class MultiLabelClassificationNet(LightningModule):
             if isinstance(model_type, str):
                 model_type = MultiLabelBackboneName(model_type)
             load_imagenet = bool(kwargs.pop("load_imagenet_weights", False))
-            state_dict = load_file(path, device=str(map_location))
+            state_dict = load_safe_tensors(path, device=str(map_location))
 
-            instance = cls(
+            kwargs.update(
                 labels=cast(Sequence[str], labels),
                 model_type=cast(MultiLabelBackboneName, model_type),
                 load_imagenet_weights=load_imagenet,
                 track_hparams=False,
-                *args,
-                **kwargs,
             )
+            instance = cls(**kwargs)
 
-            # Fix: PyTorch's load_state_dict return properties are poorly typed.
-            # Casting the output to Any resolves the unpacking issues.
-            load_result = cast(Any, instance.load_state_dict(state_dict, strict=strict))
-            missing_keys: list[Any] = list(load_result.missing_keys)
-            unexpected_keys: list[Any] = list(load_result.unexpected_keys)
+            load_result = cast(
+                _IncompatibleKeys,
+                instance.load_state_dict(state_dict, strict=strict),
+            )
+            missing_keys = list(load_result.missing_keys)
+            unexpected_keys = list(load_result.unexpected_keys)
 
             if missing_keys:
                 logger.warning(
@@ -209,9 +247,11 @@ class MultiLabelClassificationNet(LightningModule):
                 )
             return instance
 
-        # Fix: super() resolution in strict Pyright can lose tracking of member types.
-        # Adding a targeted suppression comment resolves the error cleanly.
-        return super().load_from_checkpoint(checkpoint_path, *args, **kwargs)  # type: ignore[reportUnknownMemberType]
+        checkpoint_loader = cast(
+            Callable[..., MultiLabelClassificationNet],
+            getattr(super(), "load_from_checkpoint"),
+        )
+        return checkpoint_loader(checkpoint_path, *args, **kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)

@@ -7,6 +7,7 @@ import json
 import re
 import time
 from collections import Counter
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -55,6 +56,10 @@ class _TensorPredictionLike(Protocol):
 
 
 PredictionActivation: TypeAlias = Callable[[object], _TensorPredictionLike]
+
+
+class _SafeTensorHandle(Protocol):
+    def get_tensor(self, name: str) -> torch.Tensor: ...
 
 
 logger = logging.getLogger(__name__)
@@ -261,8 +266,12 @@ def _infer_output_classes(weights_path: Path) -> Optional[int]:
         return None
 
     try:
-        with safe_open(weights_path, framework="pt", device="cpu") as handle:  # type: ignore
-            return int(handle.get_tensor("model.fc.weight").shape[0])  # type: ignore
+        context = cast(
+            AbstractContextManager[_SafeTensorHandle],
+            safe_open(weights_path, framework="pt", device="cpu"),
+        )
+        with context as handle:
+            return int(handle.get_tensor("model.fc.weight").shape[0])
     except Exception as exc:
         logger.debug("Unable to infer output classes from %s: %s", weights_path, exc)
         return None
@@ -538,7 +547,7 @@ def _stream_predictions_from_video(
     frame_source_file_type: str,
 ) -> Tuple[List[List[float]], List[int], List[float]]:
     from PIL import Image
-    from torchvision import transforms  # type: ignore
+    from torchvision import transforms
     import torch
 
     from endoreg_db.utils.ai.preprocess import Cropper
@@ -727,7 +736,7 @@ def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
 
 def _prediction_weights_path(video: VideoFile, model_meta: ModelMeta) -> Path:
     try:
-        weights_path = Path(model_meta.weights.path)  # type: ignore
+        weights_path = Path(model_meta.weights.path)
         if not weights_path.exists():
             raise FileNotFoundError(
                 f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.video_hash}). Prediction aborted."
@@ -918,11 +927,11 @@ def _model_load_kwargs(
 
 def _model_activation(model_meta: ModelMeta) -> object:
     try:
-        return ModelMeta.get_activation_function(model_meta.activation)  # type: ignore
+        return ModelMeta.get_activation_function(model_meta.activation)
     except ValueError:
         logger.warning(
             "Unsupported activation '%s' for model %s; falling back to sigmoid.",
-            model_meta.activation,  # type: ignore
+            model_meta.activation,
             model_meta.name,
         )
         return ModelMeta.get_activation_function("sigmoid")
@@ -998,8 +1007,8 @@ def _build_classifier_config(
     return AiPredictionConfigPayload.model_validate(
         {
             **dataset_config,
-            "batchsize": model_meta.batchsize or 16,  # type: ignore
-            "num_workers": model_meta.num_workers or 0,  # type: ignore
+            "batchsize": model_meta.batchsize or 16,
+            "num_workers": model_meta.num_workers or 0,
             "activation": _model_activation(model_meta),
             "labels": network_labels,
         }
@@ -1104,9 +1113,9 @@ def _stream_inference_log(
 ) -> None:
     payload: dict[str, object] = {
         "event": event,
-        "video_id": video.pk,  # type: ignore
+        "video_id": video.pk,
         "video_hash": str(video.video_hash),
-        "model_meta_id": model_meta.pk,  # type: ignore
+        "model_meta_id": model_meta.pk,
         "source_kind": source.file_type,
         "device": str(device),
     }
@@ -1561,7 +1570,7 @@ def _predict_video_entry(
             model_meta = ai_model.get_latest_version()
             logger.info(
                 "Using latest ModelMeta version %s for model %s.",
-                model_meta.version,  # type: ignore
+                model_meta.version,
                 model_name,
             )
         else:
@@ -1575,7 +1584,7 @@ def _predict_video_entry(
         logger.info(
             "Using ModelMeta: %s (Version: %s)",
             model_meta.name,
-            model_meta.version,  # type: ignore
+            model_meta.version,
         )
     except Exception:
         logger.error(

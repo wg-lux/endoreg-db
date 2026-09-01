@@ -1,29 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast, Any
+from typing import TYPE_CHECKING, TypeAlias, Unpack, cast, Any
 
 from django.db import models
-from django.db.models.base import ModelBase
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from ..aidataset.aidataset import AIDataSet
     from ..medical.hardware.endoscopy_processor import EndoscopyProcessor
     from .center.center import Center
 
-NoApplicationSettingsSaveValue: TypeAlias = NoneType
-ApplicationSettingsForceInsert: TypeAlias = bool | tuple[ModelBase, ...]
-ApplicationSettingsUsing: TypeAlias = str | NoApplicationSettingsSaveValue
-ApplicationSettingsUpdateFields: TypeAlias = (
-    Iterable[str] | NoApplicationSettingsSaveValue
-)
-ApplicationSettingsSavePositional: TypeAlias = (
-    ApplicationSettingsForceInsert
-    | bool
-    | ApplicationSettingsUsing
-    | ApplicationSettingsUpdateFields
-)
+NoApplicationSettingsSaveValue: TypeAlias = None
 
 
 class ApplicationSettingsManager(models.Manager["ApplicationSettings"]):
@@ -100,10 +88,10 @@ class ApplicationSettings(models.Model):
         verbose_name = "Application Settings"
         verbose_name_plural = "Application Settings"
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         # Enforce singleton row semantics.
         self.pk = 1
-        super().save(*args, **kwargs)
+        super().save(**kwargs)
 
     @classmethod
     def get_solo(cls) -> "ApplicationSettings":

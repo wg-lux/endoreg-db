@@ -20,6 +20,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from endoreg_db.models.administration.ai.model_type import ModelType
+from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
 
@@ -50,6 +51,7 @@ class Command(BaseCommand):
 
         # get or create model type
         model_type = ModelType.objects.get(name=model_meta.model_type)
+        ai_model = AiModel.objects.get(name=model_meta.name, model_type=model_type)
 
         # get or create labelset
         labelset = LabelSet.objects.get(
@@ -74,7 +76,7 @@ class Command(BaseCommand):
                 model_meta_instance = ModelMeta.objects.create(
                     name=model_meta.name,
                     version=model_meta.version,
-                    type=model_type,
+                    model=ai_model,
                     labelset=labelset,
                     weights=weights,
                     description=model_meta.description,

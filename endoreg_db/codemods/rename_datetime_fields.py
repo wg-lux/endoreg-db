@@ -5,7 +5,6 @@ import importlib
 import sys
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from types import NoneType
 from typing import NoReturn, Protocol, Self, cast
 
 import yaml
@@ -20,7 +19,7 @@ RENAMES_YML = BASE / "renames.yml"
 DEFAULT_TARGETS = ("endoreg_db/models",)  # safer default
 EXCLUDE_DIR_NAMES = {"migrations", "__pycache__"}
 
-type CliArgList = Sequence[str] | NoneType
+type CliArgList = Sequence[str] | None
 type PathInput = str | Path
 
 

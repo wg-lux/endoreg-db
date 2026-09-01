@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.conf import settings
@@ -15,8 +14,8 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
-NoMetricRelationValue: TypeAlias = NoneType
-NoMetricFloatValue: TypeAlias = NoneType
+NoMetricRelationValue: TypeAlias = None
+NoMetricFloatValue: TypeAlias = None
 MetricVideo: TypeAlias = "VideoFile | NoMetricRelationValue"
 MetricPdf: TypeAlias = "RawPdfFile | NoMetricRelationValue"
 MetricSensitiveMeta: TypeAlias = "SensitiveMeta | NoMetricRelationValue"

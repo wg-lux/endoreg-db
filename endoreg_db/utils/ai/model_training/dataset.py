@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple, List, Any, cast
+from typing import Optional, Sequence, Tuple, List
 
 import numpy as np
 from PIL import Image
@@ -68,12 +68,8 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         img = img.resize((self.image_size, self.image_size))
         arr = np.array(img, dtype=np.float32) / 255.0  # [H, W, C]
 
-        # Weil PIL und NumPy standardmäßig oft keine strikten Typ-Stubs mitbringen,
-        # casten wir 'arr' zu Any, damit torch.from_numpy nicht über ein "Unknown" stolpert.
-        tensor: Tensor = (
-            cast(Any, torch).from_numpy(cast(Any, arr)).permute(2, 0, 1)
-        )  # [C, H, W]
-        tensor: Tensor = (tensor - self.mean) / self.std
+        tensor = torch.as_tensor(arr).permute(2, 0, 1)  # [C, H, W]
+        tensor = (tensor - self.mean) / self.std
         return tensor
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor]:

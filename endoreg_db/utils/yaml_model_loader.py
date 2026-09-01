@@ -8,7 +8,6 @@ backward compatibility with existing imports.
 from __future__ import annotations
 
 from pathlib import Path
-from types import NoneType
 from typing import TYPE_CHECKING, NotRequired, Protocol, TypeAlias, TypedDict, cast
 
 from django.core.management.base import BaseCommand
@@ -26,7 +25,7 @@ if TYPE_CHECKING:
 
 LoadModelDataModel: TypeAlias = type[models.Model]
 LoadModelDataDirectory: TypeAlias = str | Path
-YamlNull: TypeAlias = NoneType
+YamlNull: TypeAlias = None
 YamlScalar: TypeAlias = str | int | float | bool | YamlNull
 YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
 

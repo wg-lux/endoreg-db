@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import logging
-from types import NoneType
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, Unpack
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.pdf_redaction import PdfRedactionManifest
 from pydantic import ValidationError as PydanticValidationError
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 from .raw_pdf import RawPdfFile
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-NoPdfHistoryActorValue: TypeAlias = NoneType
+NoPdfHistoryActorValue: TypeAlias = None
 PdfHistoryActor: TypeAlias = "AbstractBaseUser | NoPdfHistoryActorValue"
 
 
@@ -99,7 +100,7 @@ class PdfProcessingHistory(models.Model):
             raise ValidationError({"redaction_manifest": str(exc)}) from exc
         self.redaction_manifest = manifest.model_dump(mode="json")
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

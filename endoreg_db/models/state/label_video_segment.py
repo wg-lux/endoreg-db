@@ -1,8 +1,9 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.db import models
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from .abstract import AbstractState
 
 
@@ -28,7 +29,7 @@ class LabelVideoSegmentState(AbstractState):
         verbose_name = "Label Video Segment State"
         verbose_name_plural = "Label Video Segment States"
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         super().save(
             *args,
             **kwargs,

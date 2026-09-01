@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, Any, cast
 
 from django.db import models
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
     from ...person.names.last_name import LastName
     from ..user.portal_user_information import PortalUserInfo
 
-NoExaminerValue: TypeAlias = NoneType
+NoExaminerValue: TypeAlias = None
 ExaminerFirstNameInput: TypeAlias = "str | FirstName"
 ExaminerLastNameInput: TypeAlias = "str | LastName"
 

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid as uuid_lib
-from typing import ClassVar, Literal, TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.report_llm import (
     dump_report_llm_job_config,
     dump_report_llm_job_result,
@@ -142,7 +143,7 @@ class ReportLlmInferenceJob(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

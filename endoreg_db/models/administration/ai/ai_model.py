@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from logging import getLogger
 from pathlib import Path
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
@@ -18,7 +17,7 @@ DEFAULT_HF_MODEL_ID = "wg-lux/colo_segmentation_RegNetX800MF_base"
 DEFAULT_PREDICTION_MODEL_NAME = "image_multilabel_classification_colonoscopy_default"
 DEFAULT_PREDICTION_LABELSET_NAME = "multilabel_classification_colonoscopy_default"
 
-NoAiModelRelationValue: TypeAlias = NoneType
+NoAiModelRelationValue: TypeAlias = None
 
 if TYPE_CHECKING:
     from ...metadata.model_meta import ModelMeta

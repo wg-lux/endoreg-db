@@ -4,7 +4,6 @@ import random
 from datetime import date
 from logging import getLogger
 from pathlib import Path
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypedDict, Unpack, cast
 
 from django.conf import settings  # Import settings
@@ -42,7 +41,7 @@ type ReportMeta = dict[str, ReportMetaValue]
 
 
 class _InformationSourceManager(Protocol):
-    def resolve_by_name(self, name: str) -> InformationSource | NoneType: ...
+    def resolve_by_name(self, name: str) -> InformationSource | None: ...
 
 
 class _GenderManager(Protocol):
@@ -51,7 +50,7 @@ class _GenderManager(Protocol):
         name: str,
         *,
         case_insensitive: bool = True,
-    ) -> Gender | NoneType: ...
+    ) -> Gender | None: ...
 
 
 class _NamedModel(Protocol):
@@ -300,7 +299,7 @@ def get_default_center() -> Center:
 
 
 def _resolve_patient_gender(
-    gender_input: Gender | str | NoneType,
+    gender_input: Gender | str | None,
     *,
     randomize: bool,
 ) -> Gender:
@@ -313,7 +312,7 @@ def _resolve_patient_gender(
     return _get_gender_by_name(DEFAULT_PATIENT_GENDER_NAME)
 
 
-def _resolve_patient_center(center_input: Center | str | NoneType) -> Center:
+def _resolve_patient_center(center_input: Center | str | None) -> Center:
     if isinstance(center_input, Center):
         return center_input
     if center_input is None:

@@ -4,6 +4,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from django.db import OperationalError, ProgrammingError, transaction
 
@@ -520,7 +521,7 @@ class _exclusive_lock:
         self.fd = None
         return self
 
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> Literal[False]:
         if self.fd is not None:
             os.close(self.fd)
         safe_unlink_file(self.path, missing_ok=True)

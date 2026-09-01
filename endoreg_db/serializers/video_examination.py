@@ -55,7 +55,7 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
     # Nested findings data
     findings = serializers.SerializerMethodField()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = PatientExamination
         fields = [
             "id",

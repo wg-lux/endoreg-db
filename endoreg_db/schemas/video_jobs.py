@@ -5,7 +5,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
-VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND = "video_anonymization_correction"
+VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND: Literal["video_anonymization_correction"] = (
+    "video_anonymization_correction"
+)
 MAX_SEGMENTATION_FPS = 50.0
 FPS_NORMALIZATION_CONFIG_OPERATION = "segmentation_fps_normalization"
 

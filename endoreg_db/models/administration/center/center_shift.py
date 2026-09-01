@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -9,7 +8,7 @@ from django.db import models
 if TYPE_CHECKING:
     from ..shift.scheduled_days import ScheduledDays
 
-NoCenterShiftValue: TypeAlias = NoneType
+NoCenterShiftValue: TypeAlias = None
 CenterShiftDescription: TypeAlias = str | NoCenterShiftValue
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -89,6 +90,32 @@ def test_patient_lab_value_normal_range_rejects_invalid_payloads(
         model.clean()
 
     assert "normal_range" in exc_info.value.message_dict
+
+
+@pytest.mark.django_db
+def test_patient_lab_value_builds_valid_uniform_fallback_distribution() -> None:
+    patient = Patient.objects.create(
+        first_name="Distribution",
+        last_name="Patient",
+        patient_hash="patient-lab-value-distribution-fallback",
+        dob=date(1980, 1, 1),
+    )
+    lab_value = LabValue.objects.create(
+        name="distribution-fallback-lab-value",
+        default_normal_range={"min": 1.0, "max": 3.0},
+    )
+    record = PatientLabValue(
+        patient=patient,
+        lab_value=lab_value,
+        normal_range={"min": 1.0, "max": 3.0},
+    )
+
+    with pytest.warns(UserWarning):
+        generated = record.set_value_by_distribution(save=False)
+
+    assert isinstance(generated, float)
+    assert 1.0 <= generated <= 3.0
+    assert record.value == generated
 
 
 @pytest.mark.django_db

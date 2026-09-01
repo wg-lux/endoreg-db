@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import math
 import uuid
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Unpack, cast
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -13,6 +13,8 @@ from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 from lx_dtypes.models.contracts.audit_ledger import AuditLedgerHashPayload
 from lx_dtypes.models.contracts.json_types import JsonObject
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -114,7 +116,7 @@ class AuditLedger(models.Model):
         except ValueError as exc:
             raise ValidationError({"data": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """
         Save a new immutable audit record, computing and linking cryptographic hashes.
 

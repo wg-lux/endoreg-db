@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TypeAlias, Any
 
 from django.db import models
 
-NoCenterWasteValue: TypeAlias = NoneType
+NoCenterWasteValue: TypeAlias = None
 
 
 class CenterWaste(models.Model):

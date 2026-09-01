@@ -57,7 +57,7 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
     patient_name = serializers.SerializerMethodField()
     examination_name = serializers.SerializerMethodField()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = PatientExamination
         fields = [
             "id",

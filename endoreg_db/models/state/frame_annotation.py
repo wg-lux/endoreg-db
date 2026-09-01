@@ -6,7 +6,6 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from types import NoneType
 from typing import (
     TYPE_CHECKING,
     Iterable,
@@ -210,7 +209,7 @@ class LabelVideoSegmentModelLike(Protocol):
 
 class LabelVideoSegmentLike(Protocol):
     pk: int
-    label: LabelLike | None
+    label: Label | None
     label_id: int
     source_id: int | None
     start_frame_number: int
@@ -288,8 +287,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
 PHI_REGION_DATASET_MODEL_TYPE = "phi_region_detector"
 
-NoPredictionMetaIdValue: TypeAlias = NoneType
-NoFrameAnnotationSourceValue: TypeAlias = NoneType
+NoPredictionMetaIdValue: TypeAlias = None
+NoFrameAnnotationSourceValue: TypeAlias = None
 PredictionMetaId: TypeAlias = "int | NoPredictionMetaIdValue"
 FrameAnnotationSource: TypeAlias = (
     "FrameAnnotationSourceName | NoFrameAnnotationSourceValue"

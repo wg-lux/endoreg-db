@@ -34,6 +34,7 @@ from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 from numpy.typing import NDArray
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.models.media.video.storage_mode import (
     VIDEO_STORAGE_MODE_CHOICES,
     VideoStorageMode,
@@ -785,7 +786,7 @@ class VideoFile(models.Model):
             raise ValidationError({"meta": str(exc)}) from exc
         self.meta = cast(VideoFileMetaJsonObject | None, validated_meta)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         # Ensure state exists or is created before the main save operation
         # Now call the original save method
         """

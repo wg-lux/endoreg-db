@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Protocol, cast
@@ -25,7 +25,7 @@ def materialize_remote_processed_report(
     if not dotted_path:
         raise FileNotFoundError("no remote processed-report provider is configured")
     loaded = import_string(dotted_path)
-    if not isinstance(loaded, Callable):
+    if not callable(loaded):
         raise TypeError("configured remote processed-report provider is not callable")
     provider = cast(RemoteProcessedReportProvider, loaded)
     with provider(report_id=report_id) as local_path:

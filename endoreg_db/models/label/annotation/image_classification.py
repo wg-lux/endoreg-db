@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -11,7 +10,7 @@ if TYPE_CHECKING:
     from ...metadata import ModelMeta
     from ...other.information_source import InformationSource
 
-NoImageClassificationAnnotationValue: TypeAlias = NoneType
+NoImageClassificationAnnotationValue: TypeAlias = None
 ImageClassificationAnnotationFloat: TypeAlias = (
     "float | NoImageClassificationAnnotationValue"
 )

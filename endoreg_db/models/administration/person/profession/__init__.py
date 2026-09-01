@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -8,7 +7,7 @@ from django.db import models
 if TYPE_CHECKING:
     from ..user.portal_user_information import PortalUserInfo
 
-NoProfessionValue: TypeAlias = NoneType
+NoProfessionValue: TypeAlias = None
 ProfessionDescription: TypeAlias = str | NoProfessionValue
 
 

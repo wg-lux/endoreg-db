@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import AbstractContextManager
 from importlib import import_module
 from pathlib import Path
-from types import ModuleType, NoneType
+from types import ModuleType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 if TYPE_CHECKING:
@@ -71,8 +71,8 @@ class _ValidateDirectories(Protocol):
 class _DefaultSensitiveMetaFactory(Protocol):
     def __call__(
         self,
-        instance: RawPdfFile | VideoFile | NoneType,
-    ) -> SensitiveMeta | NoneType: ...
+        instance: RawPdfFile | VideoFile | None,
+    ) -> SensitiveMeta | None: ...
 
 
 type ImportFilesExport = (

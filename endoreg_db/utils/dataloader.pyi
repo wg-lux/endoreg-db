@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import NoneType
 from typing import NotRequired, Protocol, TypeAlias, TypedDict
 
 from django.core.management.base import BaseCommand
 from django.db import models
 
-YamlNull: TypeAlias = NoneType
+YamlNull: TypeAlias = None
 YamlScalar: TypeAlias = str | int | float | bool | YamlNull
 YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
 DataLoaderModel: TypeAlias = type[models.Model]

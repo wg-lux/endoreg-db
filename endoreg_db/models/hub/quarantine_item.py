@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from types import NoneType
-from typing import Any, TYPE_CHECKING, TypeAlias
+from typing import Any, TYPE_CHECKING, TypeAlias, Unpack
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_quarantine_item_metadata
 from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 if TYPE_CHECKING:
     from .upload_job import UploadJob
 
-NoQuarantineRelationValue: TypeAlias = NoneType
+NoQuarantineRelationValue: TypeAlias = None
 QuarantineUploadJob: TypeAlias = "UploadJob | NoQuarantineRelationValue"
 QuarantineUser: TypeAlias = "User | NoQuarantineRelationValue"
 QuarantineDateTime: TypeAlias = "datetime | NoQuarantineRelationValue"
@@ -125,6 +125,6 @@ class QuarantineItem(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias, Unpack
 from typing import Any
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     validate_transfer_processing_snapshot,
     validate_transfer_provenance_payload,
@@ -20,8 +20,8 @@ if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
     from .upload_job import UploadJob
 
-NoTransferJobRelationValue: TypeAlias = NoneType
-NoTransferJobIntegerValue: TypeAlias = NoneType
+NoTransferJobRelationValue: TypeAlias = None
+NoTransferJobIntegerValue: TypeAlias = None
 TransferJobCenter: TypeAlias = "Center | NoTransferJobRelationValue"
 TransferJobUploadJob: TypeAlias = "UploadJob | NoTransferJobRelationValue"
 TransferJobUser: TypeAlias = "User | NoTransferJobRelationValue"
@@ -258,6 +258,6 @@ class TransferJob(models.Model):
         except ValueError as exc:
             raise ValidationError({"provenance": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)

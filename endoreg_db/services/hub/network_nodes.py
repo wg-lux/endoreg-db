@@ -81,7 +81,11 @@ def _raw_reference_errors(
         isinstance(center_id, int) and not isinstance(center_id, bool) and center_id > 0
     )
     valid_center_key = bool(normalized_center_key)
-    if valid_center_id and not Center.objects.filter(pk=center_id).exists():
+    if (
+        valid_center_id
+        and isinstance(center_id, int)
+        and not Center.objects.filter(pk=center_id).exists()
+    ):
         errors["owning_center"] = "Owning center not found."
     elif (
         valid_center_key
@@ -130,8 +134,9 @@ def _resolve_owning_center(
 
     center_by_id: Center | None = None
     center_by_key: Center | None = None
-    if has_id and payload.owning_center_id not in (None, 0):
-        center_by_id = Center.objects.filter(pk=payload.owning_center_id).first()
+    owning_center_id = payload.owning_center_id
+    if has_id and owning_center_id is not None and owning_center_id != 0:
+        center_by_id = Center.objects.filter(pk=owning_center_id).first()
         if center_by_id is None:
             errors["owning_center"] = "Owning center not found."
     if has_key and payload.owning_center_key not in (None, ""):

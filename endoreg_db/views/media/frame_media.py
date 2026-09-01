@@ -204,8 +204,11 @@ class FrameStreamView(APIView):
         frame_path = cast(Path, getattr(frame, "file_path"))
         if frame_path.exists() and frame_path.is_file():
             if not bool(getattr(frame, "is_extracted", False)):
+                frame_pk = getattr(frame, "pk", None)
+                if not isinstance(frame_pk, (int, str)):
+                    raise Http404("Frame identifier is invalid")
                 Frame.objects.filter(
-                    pk=getattr(frame, "pk", None),
+                    pk=frame_pk,
                     is_extracted=False,
                 ).update(is_extracted=True)
                 setattr(frame, "is_extracted", True)

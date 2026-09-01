@@ -264,7 +264,7 @@ def _named_setting_exists(
     value: object,
 ) -> bool:
     lookup = {"pk": value} if isinstance(value, int) else {"name": value}
-    return model.objects.filter(**lookup).exists()
+    return model._default_manager.filter(**lookup).exists()
 
 
 def _resolve_optional_named_setting(

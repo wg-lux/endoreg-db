@@ -50,7 +50,7 @@ def _query_str_param(params: Mapping[str, str], key: str, default: str = "") -> 
 
 def _query_int_param(params: Mapping[str, str], key: str, default: int) -> int:
     raw_value = params.get(key)
-    if raw_value in ("", None):
+    if raw_value is None or raw_value == "":
         return default
     try:
         return int(raw_value)

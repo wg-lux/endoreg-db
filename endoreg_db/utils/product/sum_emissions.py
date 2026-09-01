@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from types import NoneType
 from typing import Protocol, TYPE_CHECKING, TypeAlias, cast
 
 if TYPE_CHECKING:
@@ -10,7 +9,7 @@ if TYPE_CHECKING:
     )
     from endoreg_db.models.other.unit import Unit
 
-NoProductMaterialValue: TypeAlias = NoneType
+NoProductMaterialValue: TypeAlias = None
 ProductMaterialMetric: TypeAlias = tuple[float, "Unit | NoProductMaterialValue"]
 
 

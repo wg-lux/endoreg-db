@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, ClassVar, Any, Unpack
 
 from django.db import models
 from django.core.exceptions import ValidationError
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_patient_medication_dosage
 
 # Added imports for type hints
@@ -71,7 +72,7 @@ class PatientMedication(models.Model):
         except ValueError as exc:
             raise ValidationError({"dosage": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

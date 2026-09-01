@@ -87,14 +87,8 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # p
         )
 
     def get_patient_examination_ids(self) -> list[int]:
-        """Hilfsmethode zum Abrufen mehrerer PatientExamination IDs"""
-        return [
-            int(pk)
-            for pk in PatientExamination.objects.filter(all=True).values_list(
-                "id",
-                flat=True,
-            )
-        ]
+        """Hilfsmethode zum Abrufen meherer PatientExamination IDs"""
+        return list(PatientExamination.objects.values_list("id", flat=True))
 
     def get_patient_examination_by_id(
         self,

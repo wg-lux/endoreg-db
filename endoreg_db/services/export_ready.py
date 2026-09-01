@@ -235,7 +235,7 @@ def mark_video_ready_for_export(
         processed_file_sha256=processed_file_sha256,
     )
 
-    state: VideoState = get_or_create_video_state(video)
+    state = get_or_create_video_state(video)
     ready_by = _user_identifier(user)
     state.mark_ready_for_export(
         processed_file_sha256=processed_file_sha256,

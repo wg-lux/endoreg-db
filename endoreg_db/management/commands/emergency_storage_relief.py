@@ -447,6 +447,8 @@ def resource_is_validated(resource: dict[str, Any]) -> bool:
     pk = resource.get("id", resource.get("pk", resource.get("resource_id")))
     if kind is None or pk in {None, ""}:
         return False
+    if not isinstance(pk, (int, str)):
+        return False
     if kind is ReliefResourceKind.VIDEO:
         model = VideoFile
     elif kind is ReliefResourceKind.REPORT:

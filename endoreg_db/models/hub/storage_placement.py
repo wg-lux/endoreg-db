@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.db import models
 from django.db.models import Q
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from endoreg_db.models.hub.network_node import NetworkNode
@@ -110,7 +112,7 @@ class StorageNodeState(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         from endoreg_db.models.hub.network_node import NetworkNode
 
         if self.node_id:
@@ -212,7 +214,7 @@ class StorageReservation(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk:
             persisted_status = (
                 type(self)
@@ -376,7 +378,7 @@ class StorageArtifactPlacement(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.sha256 = _normalize_sha256(self.sha256)
         if self.state == self.State.COMMITTED and self.committed_at is None:
             raise ValueError("committed placement requires committed_at")
@@ -511,7 +513,7 @@ class StorageRotation(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.sha256 = _normalize_sha256(self.sha256)
         if self.pk:
             persisted_state = (
@@ -611,7 +613,7 @@ class StorageRotationVerificationReceipt(models.Model):
     class Meta:
         ordering = ["created_at", "pk"]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.sha256 = _normalize_sha256(self.sha256)
         super().save(*args, **kwargs)
 
@@ -677,7 +679,7 @@ class StorageRotationCleanupReceipt(models.Model):
     class Meta:
         ordering = ["created_at", "pk"]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.sha256 = _normalize_sha256(self.sha256)
         super().save(*args, **kwargs)
 

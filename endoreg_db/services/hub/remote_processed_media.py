@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Protocol, cast
@@ -22,7 +22,7 @@ def configured_remote_processed_video_provider() -> RemoteProcessedVideoProvider
     if not dotted_path:
         return None
     provider = import_string(dotted_path)
-    if not isinstance(provider, Callable):
+    if not callable(provider):
         raise TypeError("configured remote processed-video provider is not callable")
     return cast(RemoteProcessedVideoProvider, provider)
 

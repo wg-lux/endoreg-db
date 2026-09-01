@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.core.exceptions import ValidationError
@@ -19,7 +18,7 @@ if TYPE_CHECKING:
     from ...medical.patient.patient_medication_schedule import (
         PatientMedicationSchedule,
     )
-NoCaseEndDate: TypeAlias = NoneType
+NoCaseEndDate: TypeAlias = None
 CaseEndDate: TypeAlias = datetime | NoCaseEndDate
 
 

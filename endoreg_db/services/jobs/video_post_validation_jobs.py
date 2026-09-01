@@ -12,6 +12,7 @@ from typing import cast
 
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.config.env import (
     celery_broker_transport_error,
@@ -433,9 +434,12 @@ def _reserve_blackening_history(
             operation=VideoProcessingHistory.OPERATION_REPROCESSING,
             status=VideoProcessingHistory.STATUS_PENDING,
             task_id=task_id,
-            config=blackening_history_config(
-                only_validated=only_validated,
-                queue=queue,
+            config=cast(
+                JsonObject,
+                blackening_history_config(
+                    only_validated=only_validated,
+                    queue=queue,
+                ),
             ),
         )
         mark_post_validation_incomplete(locked_video)

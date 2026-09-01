@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, TypeVar
 
 if TYPE_CHECKING:
@@ -11,8 +10,8 @@ if TYPE_CHECKING:
 
 __all__ = ["_create_from_video"]
 
-NoPredictionMetaValue: TypeAlias = NoneType
-NoSegmentLabelValue: TypeAlias = NoneType
+NoPredictionMetaValue: TypeAlias = None
+NoSegmentLabelValue: TypeAlias = None
 SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
 SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
 LabelVideoSegmentT = TypeVar("LabelVideoSegmentT", bound="LabelVideoSegment")

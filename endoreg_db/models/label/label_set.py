@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -8,7 +7,7 @@ from django.db import models
 if TYPE_CHECKING:
     from .label import Label
 
-NoLabelSetValue: TypeAlias = NoneType
+NoLabelSetValue: TypeAlias = None
 LabelSetDescription: TypeAlias = "str | NoLabelSetValue"
 LabelSetVersionLookup: TypeAlias = "int | str | NoLabelSetValue"
 
@@ -28,7 +27,7 @@ class LabelSetManager(models.Manager["LabelSet"]):
         """Retrieves a LabelSet instance by its natural key (name[, version])."""
 
         queryset = self.filter(name=name)
-        if version not in (None, "", -1):
+        if version is not None and version not in ("", -1):
             queryset = queryset.filter(version=version)
 
         labelset = queryset.order_by("-version").first()

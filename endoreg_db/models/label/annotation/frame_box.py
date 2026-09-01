@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TypeAlias, Any, TYPE_CHECKING
 
 from django.db import models
@@ -10,7 +9,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.other.information_source import InformationSource
 
-NoFrameBoxAnnotationValue: TypeAlias = NoneType
+NoFrameBoxAnnotationValue: TypeAlias = None
 FrameBoxAnnotationFloat: TypeAlias = "float | NoFrameBoxAnnotationValue"
 FrameBoxAnnotationText: TypeAlias = "str | NoFrameBoxAnnotationValue"
 FrameBoxAnnotationModelMeta: TypeAlias = "ModelMeta | NoFrameBoxAnnotationValue"

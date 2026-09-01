@@ -639,14 +639,15 @@ def advance_storage_rotation(
             StorageRotation.State.VERIFIED,
             StorageRotation.State.COMMITTED,
         }:
-            verification = StorageRotationVerificationReceipt.objects.filter(
-                pk=verification_receipt_id,
-                rotation=rotation,
-                target_placement=rotation.target_placement,
-                transfer_evidence__placement=rotation.target_placement,
-                transfer_evidence__rotation=rotation,
-                transfer_evidence__state=StorageTransferEvidence.State.VERIFIED,
-            ).first()
+            if verification_receipt_id is not None:
+                verification = StorageRotationVerificationReceipt.objects.filter(
+                    pk=verification_receipt_id,
+                    rotation=rotation,
+                    target_placement=rotation.target_placement,
+                    transfer_evidence__placement=rotation.target_placement,
+                    transfer_evidence__rotation=rotation,
+                    transfer_evidence__state=StorageTransferEvidence.State.VERIFIED,
+                ).first()
             if verification is None:
                 raise RotationError(
                     RotationErrorCode.TARGET_NOT_VERIFIED,
@@ -655,11 +656,12 @@ def advance_storage_rotation(
 
         cleanup = None
         if target_state == StorageRotation.State.CLEANED:
-            cleanup = StorageRotationCleanupReceipt.objects.filter(
-                pk=cleanup_receipt_id,
-                rotation=rotation,
-                source_transfer_evidence__state=StorageTransferEvidence.State.DELETED,
-            ).first()
+            if cleanup_receipt_id is not None:
+                cleanup = StorageRotationCleanupReceipt.objects.filter(
+                    pk=cleanup_receipt_id,
+                    rotation=rotation,
+                    source_transfer_evidence__state=StorageTransferEvidence.State.DELETED,
+                ).first()
             if cleanup is None:
                 raise RotationError(
                     RotationErrorCode.CLEANUP_BLOCKED,

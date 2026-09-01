@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import warnings
 from numbers import Real
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING, cast, Any, Unpack
 
 from django.db import models
 from django.core.exceptions import ValidationError
@@ -11,6 +11,7 @@ from lx_dtypes.models.contracts.lab_value import (
     LabValueNormalRangeBandPayload,
     LabValueNormalRangePayload,
 )
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_lab_value_normal_range
 
 if TYPE_CHECKING:
@@ -377,7 +378,7 @@ class LabValue(models.Model):
         except ValueError as exc:
             raise ValidationError({"default_normal_range": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

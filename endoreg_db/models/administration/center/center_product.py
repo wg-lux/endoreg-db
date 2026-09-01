@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
@@ -10,7 +9,7 @@ if TYPE_CHECKING:
     from ..product.product_group import ProductGroup
     from ..product.reference_product import ReferenceProduct
 
-NoCenterProductValue: TypeAlias = NoneType
+NoCenterProductValue: TypeAlias = None
 CenterProductWeight: TypeAlias = tuple[float, "Unit | NoCenterProductValue"]
 CenterProductReferenceProduct: TypeAlias = "ReferenceProduct | NoCenterProductValue"
 

@@ -142,7 +142,7 @@ class VideoState(models.Model):
         default=True, help_text="True if this state was created for the first time."
     )
 
-    objects: models.Manager[VideoState] = models.Manager()  # type: ignore[assignment]
+    objects: models.Manager[VideoState] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     @property
     def anonymization_status(self) -> AnonymizationState:
@@ -464,8 +464,9 @@ class VideoState(models.Model):
         if self.video_file.state:
             return self.video_file.state
 
-        new_state = VideoState(video_file=self.video_file)
-        new_state.save()
+        new_state = VideoState.objects.create()
+        self.video_file.state = new_state
+        self.video_file.save(update_fields=["state"])
         return new_state
 
     def mark_processing_started(self, *, save: bool = True) -> None:

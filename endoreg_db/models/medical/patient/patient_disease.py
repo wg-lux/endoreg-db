@@ -1,13 +1,11 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from lx_dtypes.models.contracts.subcategory_validation import (
-    NumericalDescriptorContract,
-    SubcategoryDictContract,
-)
+from lx_dtypes.models.contracts.json_types import JsonObject
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     validate_patient_numerical_descriptors,
     validate_patient_subcategories,
@@ -40,12 +38,8 @@ class PatientDisease(models.Model):
     )
     start_date: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
     end_date: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
-    numerical_descriptors: models.JSONField[dict[str, NumericalDescriptorContract]] = (
-        models.JSONField(default=dict)
-    )
-    subcategories: models.JSONField[dict[str, SubcategoryDictContract]] = (
-        models.JSONField(default=dict)
-    )
+    numerical_descriptors: models.JSONField[JsonObject] = models.JSONField(default=dict)
+    subcategories: models.JSONField[JsonObject] = models.JSONField(default=dict)
 
     last_update: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
 
@@ -70,7 +64,7 @@ class PatientDisease(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

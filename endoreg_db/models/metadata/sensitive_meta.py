@@ -5,10 +5,11 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save sensitive_meta_logic)
-from typing import TYPE_CHECKING, ClassVar, Protocol, Type, cast, Any
+from typing import TYPE_CHECKING, ClassVar, Protocol, Type, Unpack, cast, Any
 
 from django.db import models
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
 
 
@@ -401,7 +402,7 @@ class SensitiveMeta(models.Model):
         return sensitive_meta_logic.calculate_examination_hash(self, salt=salt_to_use)
 
     # --- Save method orchestrates calls to sensitive_meta_logic ---
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """
         Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external sensitive_meta_logic.
 

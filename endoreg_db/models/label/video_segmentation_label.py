@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from types import NoneType
 from typing import TypeAlias, Any
 
 from django.db import models
 
-NoVideoSegmentationLabelValue: TypeAlias = NoneType
+NoVideoSegmentationLabelValue: TypeAlias = None
 VideoSegmentationLabelText: TypeAlias = "str | NoVideoSegmentationLabelValue"
 
 

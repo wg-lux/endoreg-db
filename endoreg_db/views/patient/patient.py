@@ -516,7 +516,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
         finding_count = PatientFinding.objects.filter(
             patient_examination__patient=patient
         ).count()
-        video_count = examinations.filter(video__isnull=False).count()
+        video_count = examinations.filter(video_files__isnull=False).count()
         report_count = RawPdfFile.objects.filter(examination__patient=patient).count()
         is_real_person = bool(patient_record.is_real_person)
         can_delete = examination_count == 0 and not is_real_person

@@ -19,7 +19,7 @@ class _ExaminationTypeManagerLike(Protocol):
     def all(self) -> QuerySet[ExaminationType]: ...
 
 
-class _SerializerDataLike:
+class _SerializerDataLike(Protocol):
     @property
     def data(self) -> list[dict[str, object]]: ...
 

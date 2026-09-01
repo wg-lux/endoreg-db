@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import date, time
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any, TypeAlias, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
 from lx_dtypes.models.contracts.report import ReportMetaJsonObject
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_report_file_meta_payload
 
 from ...utils import DOCUMENT_DIR, STORAGE_DIR
@@ -17,11 +17,11 @@ if TYPE_CHECKING:
     from ...medical.patient.patient_examination import PatientExamination
     from ...metadata.sensitive_meta import SensitiveMeta
 
-NoDocumentRelationValue: TypeAlias = NoneType
-NoDocumentTextValue: TypeAlias = NoneType
-NoDocumentDateValue: TypeAlias = NoneType
-NoDocumentTimeValue: TypeAlias = NoneType
-NoDocumentMetaValue: TypeAlias = NoneType
+NoDocumentRelationValue: TypeAlias = None
+NoDocumentTextValue: TypeAlias = None
+NoDocumentDateValue: TypeAlias = None
+NoDocumentTimeValue: TypeAlias = None
+NoDocumentMetaValue: TypeAlias = None
 DocumentDescription: TypeAlias = "str | NoDocumentTextValue"
 DocumentMeta: TypeAlias = ReportMetaJsonObject | NoDocumentMetaValue
 DocumentDate: TypeAlias = "date | NoDocumentDateValue"
@@ -102,7 +102,7 @@ class AbstractDocument(models.Model):
         except ValueError as exc:
             raise ValidationError({"meta": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

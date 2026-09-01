@@ -253,6 +253,7 @@ def plan_storage_balancing(
                 f"Storage node {storage_node.node.node_key} requires fresh telemetry before planning.",
             )
 
+        selected: list[StorageArtifactPlacement]
         if storage_node.is_draining:
             selected = sorted(
                 node_placements,
@@ -265,7 +266,7 @@ def plan_storage_balancing(
             )
             reason = StorageBalanceReason.DRAIN
         else:
-            selected: list[StorageArtifactPlacement] = []
+            selected = []
             target_accounted = (
                 storage_node.policy_usable_bytes
                 * policy.capacity_target_basis_points

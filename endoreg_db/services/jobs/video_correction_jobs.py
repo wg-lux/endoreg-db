@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 import cv2
 from django.conf import settings
@@ -42,6 +42,11 @@ from endoreg_db.utils.storage import ensure_local_file, save_local_file
 
 logger = logging.getLogger(__name__)
 
+_video_writer_fourcc = cast(
+    Callable[[str, str, str, str], int],
+    getattr(cv2, "VideoWriter_fourcc"),
+)
+
 
 @dataclass(frozen=True)
 class VideoAnonymizationCorrectionDispatchResult:
@@ -56,7 +61,7 @@ class VideoAnonymizationCorrectionDispatchResult:
 
 
 try:
-    from lx_anonymizer import FrameCleaner as _FrameCleaner  # type: ignore[reportMissingTypeStubs]
+    from lx_anonymizer import FrameCleaner as _FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
 
     FrameCleaner = cast(Any, _FrameCleaner)
 except ImportError as exc:  # pragma: no cover - dependency-light test environments
@@ -153,7 +158,7 @@ def mask_video_with_detector_compat(
         video_only = Path(temp_dir) / "masked-video.mp4"
         writer = cv2.VideoWriter(
             str(video_only),
-            cv2.VideoWriter_fourcc(*"mp4v"),  # pyright: ignore[reportUnknownMemberType,reportAttributeAccessIssue,reportUnknownArgumentType]
+            _video_writer_fourcc(*"mp4v"),
             fps,
             (width, height),
         )

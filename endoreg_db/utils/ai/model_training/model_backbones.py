@@ -24,7 +24,7 @@ class MultiLabelBackboneHead(nn.Module):
         num_labels: int,
         freeze_backbone: bool = True,
     ):
-        super().__init__()  # type: ignore[reportUnknownMemberType]
+        super().__init__()  # pyright: ignore[reportUnknownMemberType]
         self.backbone = backbone
         self.classifier = nn.Linear(in_features, num_labels)
 
@@ -49,8 +49,10 @@ def _build_resnet50_backbone(
       - backbone: ResNet50 without the final fc
       - in_features: feature dimension (2048)
     """
-    # FIX: Suppress missing type stubs for torchvision
-    from torchvision.models import resnet50, ResNet50_Weights  # type: ignore[import-untyped]
+    from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
+        ResNet50_Weights,
+        resnet50,
+    )
 
     if weights == "imagenet":
         base = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
@@ -106,8 +108,10 @@ def _build_efficientnet_b0_backbone() -> Tuple[nn.Module, int]:
     """
     Example EfficientNet-B0 backbone with ImageNet weights.
     """
-    # FIX: Suppress missing type stubs for torchvision
-    from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights  # type: ignore[import-untyped]
+    from torchvision.models import (  # pyright: ignore[reportMissingTypeStubs]
+        EfficientNet_B0_Weights,
+        efficientnet_b0,
+    )
 
     base = efficientnet_b0(weights=EfficientNet_B0_Weights.IMAGENET1K_V1)
     features = base.features  # this outputs [B, C, H, W]

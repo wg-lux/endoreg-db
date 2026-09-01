@@ -7,27 +7,27 @@ from __future__ import annotations
 # objects contains methods to extract text, extract metadata from text and anonymize text from pdf file uzing agl_report_reader.ReportReader class
 # ------------------------------------------------------------------------------
 import uuid as uuid_lib
-from typing import TYPE_CHECKING, Callable, TypedDict, Unpack, cast, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, TypedDict, Unpack, cast
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_raw_pdf_meta_payload
 from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from endoreg_db.utils.paths import (
     ANONYM_REPORT_DIR,
     SENSITIVE_REPORT_DIR,
 )
-from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from endoreg_db.utils.storage_profile import (
     PayloadKind,
     StoragePolicy,
     resolve_storage_policy,
 )
-
-from pathlib import Path
 
 IMPORT_REPORT_DIR = path_utils.IMPORT_REPORT_DIR
 
@@ -377,7 +377,7 @@ class RawPdfFile(models.Model):
             raise ValidationError({"raw_meta": str(exc)}) from exc
         self.raw_meta = cast(PdfFileMetaJsonObject | None, validated_raw_meta)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         # Ensure hash is calculated before the first save if possible and not already set
         # This is primarily a fallback if instance created manually without using create_from_file
         """

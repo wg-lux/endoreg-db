@@ -3,7 +3,6 @@
 import logging
 import os
 from datetime import date
-from types import NoneType
 from typing import Protocol, cast
 
 from endoreg_db.models.administration.center.center import Center
@@ -28,8 +27,8 @@ class _NamedCenter(Protocol):
 
 class _SensitiveMetaCarrier(Protocol):
     pk: int
-    center: Center | NoneType
-    sensitive_meta: SensitiveMeta | NoneType
+    center: Center | None
+    sensitive_meta: SensitiveMeta | None
 
     def save(self, *, update_fields: list[str]) -> None: ...
 
@@ -38,7 +37,7 @@ class _RawPdfIdentifier(Protocol):
     pdf_hash: str
 
 
-def _center_name(center: Center | NoneType) -> str:
+def _center_name(center: Center | None) -> str:
     if center is None:
         return DEFAULT_CENTER_NAME
     named_center = cast(_NamedCenter, center)
@@ -55,8 +54,8 @@ def _instance_log_identifier(instance: _SensitiveMetaCarrier) -> str:
 
 
 def default_sensitive_meta(
-    instance: RawPdfFile | VideoFile | NoneType,
-) -> SensitiveMeta | NoneType:
+    instance: RawPdfFile | VideoFile | None,
+) -> SensitiveMeta | None:
     """
     Ensure the given instance has a minimal SensitiveMeta attached.
 

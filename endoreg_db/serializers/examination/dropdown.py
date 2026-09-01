@@ -10,7 +10,7 @@ class ExaminationDropdownSerializer(serializers.ModelSerializer[Examination]):
 
     display_name = serializers.SerializerMethodField()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = Examination
         fields = ["id", "name", "display_name"]
 

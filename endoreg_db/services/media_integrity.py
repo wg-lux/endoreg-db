@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -609,7 +609,7 @@ class _FrameDatabaseContract:
 
 
 def _classify_frame_database_contract(
-    frame_rows: list[dict[str, Any]],
+    frame_rows: Sequence[Mapping[str, Any]],
     *,
     frame_dir: Path | None,
     expected_count: int | None,
@@ -640,8 +640,8 @@ def _classify_frame_database_contract(
 
 
 def _extracted_frame_rows(
-    frame_rows: Sequence[dict[str, Any]],
-) -> list[dict[str, Any]]:
+    frame_rows: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
     return [row for row in frame_rows if row["is_extracted"]]
 
 
@@ -666,8 +666,8 @@ def _extracted_contract_is_valid(
 
 
 def _unknown_frame_database_contract(
-    frame_rows: Sequence[dict[str, Any]],
-    extracted_rows: Sequence[dict[str, Any]],
+    frame_rows: Sequence[Mapping[str, Any]],
+    extracted_rows: Sequence[Mapping[str, Any]],
 ) -> _FrameDatabaseContract:
     return _FrameDatabaseContract(
         frame_count=len(frame_rows),
@@ -680,7 +680,7 @@ def _unknown_frame_database_contract(
 
 
 def _frame_paths_by_number(
-    frame_rows: Sequence[dict[str, Any]],
+    frame_rows: Sequence[Mapping[str, Any]],
 ) -> dict[int, str]:
     return {int(row["frame_number"]): str(row["relative_path"]) for row in frame_rows}
 

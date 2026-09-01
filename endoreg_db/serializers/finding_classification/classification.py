@@ -10,6 +10,6 @@ class FindingClassificationSerializer(
 ):
     choices = FindingClassificationChoiceSerializer(many=True, read_only=True)
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = FindingClassification
         fields = ["id", "name", "description", "choices", "classification_types"]

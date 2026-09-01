@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging  # Added import
 
-from types import NoneType
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
@@ -10,8 +9,8 @@ from django.db import models
 if TYPE_CHECKING:
     from .shift import Shift
 
-NoShiftTypeDescriptionValue: TypeAlias = NoneType
-NoShiftTypeValue: TypeAlias = NoneType
+NoShiftTypeDescriptionValue: TypeAlias = None
+NoShiftTypeValue: TypeAlias = None
 ShiftTypeDescription: TypeAlias = "str | NoShiftTypeDescriptionValue"
 ShiftTypeLookupResult: TypeAlias = "ShiftType | NoShiftTypeValue"
 

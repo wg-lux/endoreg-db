@@ -9,7 +9,7 @@ Created as part of Phase 1.1: Video Correction API Endpoints.
 
 import logging
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Unpack
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -17,6 +17,8 @@ from django.db import models
 from django.utils import timezone
 from pydantic import ValidationError as PydanticValidationError
 from lx_dtypes.models.contracts.json_types import JsonObject
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 from lx_dtypes.models.contracts.video_processing_history import (
     VideoProcessingHistoryOperation,
@@ -152,7 +154,7 @@ class VideoProcessingHistory(models.Model):
         except (PydanticValidationError, TypeError, ValueError) as exc:
             raise ValidationError({"config": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

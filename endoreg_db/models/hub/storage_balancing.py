@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.db import models
 from django.db.models import Q
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from endoreg_db.models.hub.storage_placement import (
@@ -135,7 +137,7 @@ class StorageBalanceWorkItem(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         normalized_hash = self.sha256.lower()
         if len(normalized_hash) != 64 or any(
             character not in "0123456789abcdef" for character in normalized_hash
@@ -207,7 +209,7 @@ class StorageBalanceCancellationReceipt(models.Model):
             )
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         normalized_fingerprint = self.request_fingerprint.lower()
         if len(normalized_fingerprint) != 64 or any(
             character not in "0123456789abcdef" for character in normalized_fingerprint
@@ -301,7 +303,7 @@ class StorageReconciliationRun(models.Model):
     class Meta:
         ordering = ["created_at", "pk"]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         normalized_fingerprint = self.request_fingerprint.lower()
         if len(normalized_fingerprint) != 64 or any(
             character not in "0123456789abcdef" for character in normalized_fingerprint
@@ -389,7 +391,7 @@ class StorageReconciliationObservation(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.remote_sha256:
             normalized_hash = self.remote_sha256.lower()
             if len(normalized_hash) != 64 or any(
@@ -451,7 +453,7 @@ class StorageReconciliationOutcome(models.Model):
     class Meta:
         ordering = ["created_at", "pk"]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValueError("storage reconciliation outcomes are immutable")
         super().save(*args, **kwargs)
@@ -518,7 +520,7 @@ class StorageReconciliationEvent(models.Model):
             )
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValueError("storage reconciliation events are immutable")
         super().save(*args, **kwargs)
@@ -565,7 +567,7 @@ class StorageHealthSnapshot(models.Model):
     class Meta:
         ordering = ["created_at", "pk"]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk and type(self).objects.filter(pk=self.pk).exists():
             raise ValueError("storage health snapshots are immutable")
         super().save(*args, **kwargs)
@@ -604,7 +606,7 @@ class StorageBalancingControlState(models.Model):
             )
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.singleton_key != "global":
             raise ValueError("storage balancing control state is a global singleton")
         persisted = type(self).objects.filter(pk="global").first()
@@ -765,7 +767,7 @@ class StorageOperatorControlReceipt(models.Model):
             ),
         ]
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         normalized_fingerprint = self.request_fingerprint.lower()
         if len(normalized_fingerprint) != 64 or any(
             character not in "0123456789abcdef" for character in normalized_fingerprint

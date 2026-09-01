@@ -784,14 +784,13 @@ def _set_create_anonymized_text(
     anonymized_text = data.get("anonymized_text") or data.get("anonym_text")
     if not anonymized_text:
         return
-    selected_data["anonymized_text"] = (
+    normalized_anonymized_text = (
         anonymized_text.decode()
         if isinstance(anonymized_text, bytes)
         else str(anonymized_text)
     )
-    logger.debug(
-        "Set anonymized_text (length=%d)", len(selected_data["anonymized_text"])
-    )
+    selected_data["anonymized_text"] = normalized_anonymized_text
+    logger.debug("Set anonymized_text (length=%d)", len(normalized_anonymized_text))
 
 
 def create_sensitive_meta_from_dict(

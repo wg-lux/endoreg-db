@@ -579,7 +579,7 @@ class TransferJobStatusSerializer(serializers.ModelSerializer[TransferJob]):
         )
         return str(raw_pdf_state.get("processed_file_sha256") or "").strip()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = TransferJob
         fields = [
             "id",

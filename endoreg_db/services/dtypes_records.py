@@ -153,7 +153,7 @@ def persist_patient_examination_dtypes_record_from_ledger(
     module_name = (
         route_module_name
         or host_patient_examination.knowledge_base_module
-        or os.getenv("LX_DTYPES_FINDINGS_MODULE", "lx_knowledge_base")
+        or os.environ.get("LX_DTYPES_FINDINGS_MODULE", "lx_knowledge_base")
     )
     payload = build_p_examination_payload_from_host_ledger(
         patient_examination,

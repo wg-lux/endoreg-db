@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import importlib
-from types import NoneType
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, Unpack, cast
 
 from django.db import models
 from django.utils.text import slugify
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 
 class _PasswordHashers(Protocol):
@@ -22,7 +23,7 @@ _password_hashers = cast(
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
 
-NoNetworkNodeCenterValue: TypeAlias = NoneType
+NoNetworkNodeCenterValue: TypeAlias = None
 NetworkNodeCenter: TypeAlias = "Center | NoNetworkNodeCenterValue"
 
 
@@ -80,7 +81,7 @@ class NetworkNode(models.Model):
             suffix += 1
         return candidate
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk:
             existing = (
                 type(self).objects.filter(pk=self.pk).values("node_key", "role").first()

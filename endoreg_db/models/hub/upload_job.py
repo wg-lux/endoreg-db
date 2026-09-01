@@ -4,14 +4,14 @@ import logging
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
-from types import NoneType
-from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, cast
+from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, Unpack, cast
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_upload_provenance_payload
 from endoreg_db.utils.paths import (
     EndoregPathsModel,
@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
-NoUploadJobRelationValue: TypeAlias = NoneType
-NoUploadJobDateTimeValue: TypeAlias = NoneType
+NoUploadJobRelationValue: TypeAlias = None
+NoUploadJobDateTimeValue: TypeAlias = None
 UploadJobCenter: TypeAlias = "Center | NoUploadJobRelationValue"
 UploadJobUser: TypeAlias = "User | NoUploadJobRelationValue"
 UploadJobSensitiveMeta: TypeAlias = "SensitiveMeta | NoUploadJobRelationValue"
@@ -527,7 +527,7 @@ class UploadJob(models.Model):
         except ValueError as exc:
             raise ValidationError({"processing_provenance": str(exc)}) from exc
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         _sync_upload_job_storage_location(self)
         super().save(*args, **kwargs)

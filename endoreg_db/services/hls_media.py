@@ -299,11 +299,10 @@ def _persisted_hls_boundaries(
         "end_frame_number",
     ):
         segment_id = int(segment["pk"])
-        for coordinate_kind, field_name in (
-            ("segment_start", "start_frame_number"),
-            ("segment_end", "end_frame_number"),
+        for coordinate_kind, frame_number in (
+            ("segment_start", int(segment["start_frame_number"])),
+            ("segment_end", int(segment["end_frame_number"])),
         ):
-            frame_number = int(segment[field_name])
             timestamp = (
                 video.frames.filter(frame_number=frame_number)
                 .values_list(

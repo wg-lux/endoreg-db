@@ -1,9 +1,13 @@
 from __future__ import annotations
+from typing import Unpack
+
 import numpy as np
 from django.db import models
 
-from .base_value_distribution import BaseValueDistribution
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.anonymization import normalize_categorical_distribution
+
+from .base_value_distribution import BaseValueDistribution
 
 
 class SingleCategoricalValueDistributionManager(
@@ -26,9 +30,9 @@ class SingleCategoricalValueDistribution(BaseValueDistribution):
         super().clean()
         self.categories = normalize_categorical_distribution(self.categories)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
-        super().save(*args, **kwargs)
+        super().save(**kwargs)
 
     def generate_value(self, *args: object, **kwargs: object) -> object:
         categories, probabilities = zip(*self.categories.items())

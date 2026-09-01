@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from collections.abc import Callable
 from datetime import datetime
-from typing import cast
+from typing import Unpack, cast
 
 import pytest
 from django.core.files.base import ContentFile
@@ -22,6 +22,7 @@ from endoreg_db.models import (
     UploadJob,
     VideoFile,
 )
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.services.hub import cleanup as cleanup_service
 from endoreg_db.services.hub.cleanup import (
     UploadSourceCleanupBlocker,
@@ -374,7 +375,9 @@ def test_database_failure_before_authorization_preserves_source(
     original_save = UploadJob.save
 
     def fail_authorization_save(
-        self: UploadJob, *args: object, **kwargs: object
+        self: UploadJob,
+        *args: object,
+        **kwargs: Unpack[DjangoModelSaveKwargs],
     ) -> None:
         if self.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
             raise RuntimeError("injected database write failure before deletion")
@@ -400,7 +403,11 @@ def test_database_failure_after_mutation_is_reconciled(
     original_save = UploadJob.save
     failed_once = False
 
-    def fail_completion_save(self: UploadJob, *args: object, **kwargs: object) -> None:
+    def fail_completion_save(
+        self: UploadJob,
+        *args: object,
+        **kwargs: Unpack[DjangoModelSaveKwargs],
+    ) -> None:
         nonlocal failed_once
         if (
             self.cleanup_status == UploadJob.CleanupStatus.COMPLETED.value

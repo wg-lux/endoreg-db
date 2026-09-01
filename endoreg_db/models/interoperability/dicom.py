@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.dicom_export import (
     DICOM_EXPORT_MANIFEST_SCHEMA_VERSION,
     dicom_export_manifest_sha256,
@@ -70,7 +71,7 @@ class DicomExportJob(models.Model):
         self.source_system = str(normalized["source_system"])
         self.manifest_sha256 = dicom_export_manifest_sha256(normalized)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         super().save(*args, **kwargs)
 

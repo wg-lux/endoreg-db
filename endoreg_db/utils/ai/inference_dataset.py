@@ -3,7 +3,7 @@
 from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image
-from torchvision import transforms  # type: ignore
+from torchvision import transforms  # pyright: ignore[reportMissingTypeStubs]
 from .preprocess import Cropper
 import torch
 from typing import Any, Dict, Sequence, cast
@@ -53,6 +53,4 @@ class InferenceDataset(Dataset[torch.Tensor]):
         cropped_pil = Image.fromarray(cropped.astype("uint8"))
 
         # Apply the transformations
-        img = cast(Image, self.transforms(cropped_pil))
-
-        return cast(torch.Tensor, img)
+        return cast(torch.Tensor, self.transforms(cropped_pil))

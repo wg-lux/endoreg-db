@@ -1,8 +1,9 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional, Protocol, Any, cast
+from typing import TYPE_CHECKING, Optional, Protocol, Any, Unpack, cast
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     dump_patient_examination_report_draft,
     validate_dtypes_p_examination_payload,
@@ -139,7 +140,7 @@ class PatientExamination(models.Model):
 
         return _hash
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if not self.hash:
             self.hash = self.generate_default_hash()
         self.clean()

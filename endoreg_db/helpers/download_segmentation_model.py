@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import NoneType
 from typing import Protocol, cast
 
 import huggingface_hub
@@ -13,7 +12,7 @@ class _HfHubDownload(Protocol):
         repo_id: str,
         filename: str,
         *,
-        cache_dir: str | Path | NoneType = None,
+        cache_dir: str | Path | None = None,
         force_download: bool = False,
         resume_download: bool = True,
     ) -> str: ...
@@ -22,7 +21,7 @@ class _HfHubDownload(Protocol):
 def download_segmentation_model(
     repo_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
     filename: str = "model.safetensors",
-    cache_dir: str | Path | NoneType = None,
+    cache_dir: str | Path | None = None,
 ) -> str:
     """
     Downloads a segmentation model from Hugging Face and caches it locally.

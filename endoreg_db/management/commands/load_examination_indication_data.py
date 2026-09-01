@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from types import NoneType
 from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -32,7 +31,7 @@ from endoreg_db.models.other.information_source import InformationSource
 from ...utils import load_model_data_from_yaml
 from ...utils.yaml_model_loader import LoadModelDataMetadata
 
-NullValue: TypeAlias = NoneType
+NullValue: TypeAlias = None
 TextOrNull: TypeAlias = str | NullValue
 StringListSource: TypeAlias = str | Sequence[str]
 LoadExaminationIndicationSource: TypeAlias = Literal["yaml", "dtypes", "hybrid"]

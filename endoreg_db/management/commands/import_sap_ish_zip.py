@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from types import NoneType
 from typing import TypeAlias, TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -30,7 +29,7 @@ from endoreg_db.utils.paths import (
     ensure_within_data_root,
 )
 
-JsonNull: TypeAlias = NoneType
+JsonNull: TypeAlias = None
 
 
 class ImportSapIshZipOptions(TypedDict):

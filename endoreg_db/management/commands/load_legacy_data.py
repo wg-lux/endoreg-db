@@ -2,11 +2,12 @@
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, TypeAlias, TypedDict, Unpack, cast
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -273,9 +274,10 @@ class Command(BaseCommand):
     def _validate_command_options(
         self, options: LegacyDataImportCommandOptions
     ) -> LegacyDataImportCommandOptionsPayload:
-        option_keys = LegacyDataImportCommandOptions.__annotations__.keys()
+        option_mapping = cast(Mapping[str, object], options)
+        option_keys = LegacyDataImportCommandOptions.__annotations__
         return LegacyDataImportCommandOptionsPayload.model_validate(
-            {key: options[key] for key in option_keys}
+            {key: option_mapping[key] for key in option_keys}
         )
 
     def _validate_source_paths(self, *, jsonl_path: Path, images_root: Path) -> None:
@@ -732,7 +734,7 @@ class Command(BaseCommand):
             exc_type: ExceptionTypeOrNull,
             exc_val: ExceptionValueOrNull,
             exc_tb: TracebackOrNull,
-        ) -> bool:
+        ) -> Literal[False]:
             return False
 
     def _resolve_import_context(

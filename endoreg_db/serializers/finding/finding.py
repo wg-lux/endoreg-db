@@ -39,7 +39,7 @@ class FindingSerializer(serializers.ModelSerializer[Finding]):
     morphology_classifications = serializers.SerializerMethodField()
     classifications = serializers.SerializerMethodField()
 
-    class Meta:  # type: ignore[reportIncompatibleVariableOverride]
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = Finding
         fields = [
             "id",

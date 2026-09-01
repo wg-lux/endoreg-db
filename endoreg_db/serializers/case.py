@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from django.db import models
 from rest_framework import serializers
@@ -17,12 +17,6 @@ from endoreg_db.models.medical.patient.patient_medication_schedule import (
 )
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
 from endoreg_db.services.cases import CASE_RELATION_FIELDS, persist_case_graph
-
-if TYPE_CHECKING:
-    _CaseModelSerializer = serializers.ModelSerializer[Case]
-    _ModelSerializerMeta = _CaseModelSerializer.Meta
-else:
-    _ModelSerializerMeta = object
 
 
 class CaseSerializer(serializers.ModelSerializer[Case]):
@@ -99,7 +93,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
         ),
     )
 
-    class Meta(_ModelSerializerMeta):
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         fields = (
             "id",
             "case_id",

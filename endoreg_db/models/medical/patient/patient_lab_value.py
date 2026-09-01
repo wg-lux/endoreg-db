@@ -1,11 +1,16 @@
 from __future__ import annotations
 import numbers
 from datetime import datetime as dt_datetime
-from typing import TYPE_CHECKING, Protocol, cast, Any
+from typing import TYPE_CHECKING, Protocol, cast, Any, Unpack
 
 from django.db import models
 from django.core.exceptions import ValidationError
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
+from lx_dtypes.models.contracts.numeric_value_distribution import (
+    NumericValueDescriptorOperator,
+    NumericValueDistributionType,
+)
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_lab_value_normal_range
 
 if TYPE_CHECKING:
@@ -14,18 +19,6 @@ if TYPE_CHECKING:
     from ...administration.person.patient.patient import Patient
     from endoreg_db.models.other.distribution.base_value_distribution import (
         BaseValueDistribution,
-    )
-    from endoreg_db.models.other.distribution.date_value_distribution import (
-        DateValueDistribution,
-    )
-    from endoreg_db.models.other.distribution.multiple_categorical_value_distribution import (
-        MultipleCategoricalValueDistribution,
-    )
-    from endoreg_db.models.other.distribution.numeric_value_distribution import (
-        NumericValueDistribution,
-    )
-    from endoreg_db.models.other.distribution.single_categorical_value_distribution import (
-        SingleCategoricalValueDistribution,
     )
     from endoreg_db.models.other.unit import Unit
     from ..laboratory.lab_value import LabValue
@@ -192,7 +185,7 @@ class PatientLabValue(models.Model):
             return "value_str"
 
     # customize save method so that if a numeric value exists, we round it to the precision of the lab value
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
         if self.value is not None:
             # only attempt rounding for real numeric types (ints/floats/compatible)
@@ -207,8 +200,21 @@ class PatientLabValue(models.Model):
         self,
         distribution: "BaseValueDistribution | None" = None,
         save: bool = True,
-    ) -> float | str | None:
+    ) -> float | str:
         import warnings
+
+        from endoreg_db.models.other.distribution.date_value_distribution import (
+            DateValueDistribution,
+        )
+        from endoreg_db.models.other.distribution.multiple_categorical_value_distribution import (
+            MultipleCategoricalValueDistribution,
+        )
+        from endoreg_db.models.other.distribution.numeric_value_distribution import (
+            NumericValueDistribution,
+        )
+        from endoreg_db.models.other.distribution.single_categorical_value_distribution import (
+            SingleCategoricalValueDistribution,
+        )
 
         patient = self.patient_safe
         lab_value = self.lab_value_safe
@@ -223,24 +229,23 @@ class PatientLabValue(models.Model):
                     f"No distribution set for lab value {lab_value}, assuming uniform numeric distribution based on normal values"
                 )
 
-                if self.normal_range.min is None or self.normal_range.max is None:
+                normal_range = LabValueNormalRangePayload.model_validate(
+                    self.normal_range
+                )
+                if normal_range.min is None or normal_range.max is None:
                     self.set_norm_values_from_default()
-                _min = (
-                    self.normal_range.min
-                    if self.normal_range.min is not None
-                    else 0.0001
-                )
-                _max = (
-                    self.normal_range.max if self.normal_range.max is not None else 100
-                )
                 _name = (
                     "auto-" + self.lab_value_safe.name + "-distribution-default-uniform"
                 )
                 distribution = NumericValueDistribution(
                     name=_name,
-                    min_descriptor=_min,
-                    max_max_desciptor=_max,
-                    distribution_type="uniform",
+                    min_descriptor=(
+                        f"min_{NumericValueDescriptorOperator.MULTIPLY.value}_1"
+                    ),
+                    max_descriptor=(
+                        f"max_{NumericValueDescriptorOperator.MULTIPLY.value}_1"
+                    ),
+                    distribution_type=NumericValueDistributionType.UNIFORM.value,
                 )
 
                 value = distribution.generate_value(
@@ -280,6 +285,10 @@ class PatientLabValue(models.Model):
             if save:
                 self.save()
             return date_value.isoformat()
+
+        raise TypeError(
+            f"Unsupported lab value distribution: {type(distribution).__name__}"
+        )
 
     @property
     def links(self) -> "ModelLinks":

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING, cast, Any, Unpack
 
 import numpy as np
 from django.core.exceptions import ValidationError
@@ -10,6 +10,7 @@ from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
     PatientFindingClassificationNumericalDescriptorPayload,
 )
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import (
     build_patient_finding_numerical_descriptors,
     build_patient_finding_subcategories,
@@ -115,7 +116,7 @@ class PatientFindingClassification(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """
         Saves the model instance after validating and initializing classification-related fields.
 

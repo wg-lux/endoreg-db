@@ -1,7 +1,7 @@
 # endoreg_db/api/views/anonymization_overview.py
 
 from typing import Any, Protocol, cast
-
+from uuid import UUID
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -336,7 +336,7 @@ class UploadJobRetryView(APIView):
     permission_classes = [PolicyPermission]
 
     @transaction.atomic
-    def post(self, request: Request, job_id: object) -> Response:
+    def post(self, request: Request, job_id: UUID | str) -> Response:
         upload_job = (
             UploadJob.objects.select_for_update()
             .select_related("source_center")
@@ -525,14 +525,6 @@ def start_anonymization(request: Request, file_id: int) -> Response:
                 "processing_locked": True,
             }
         )
-    return Response(
-        {
-            "detail": "Unable to start anonymization",
-            "file_id": file_id,
-            "file_type": status_info.get("media_type") or "unknown",
-        },
-        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
 
 
 # ---------- current with coordination ------------------------------------

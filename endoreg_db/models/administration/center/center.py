@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from types import NoneType
-from typing import TYPE_CHECKING, TypeAlias, cast, Any
+from typing import TYPE_CHECKING, TypeAlias, Unpack, cast, Any
 
 from django.db import models
-from django.db.models.base import ModelBase
 from django.utils.text import slugify
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 
 if TYPE_CHECKING:
     from ...administration import CenterProduct, CenterResource, CenterWaste
@@ -16,14 +15,8 @@ if TYPE_CHECKING:
     from ..person.names.last_name import LastName
 
 
-NoCenterSaveValue: TypeAlias = NoneType
-CenterForceInsert: TypeAlias = bool | tuple[ModelBase, ...]
-CenterUsing: TypeAlias = str | NoCenterSaveValue
-CenterUpdateFields: TypeAlias = Iterable[str] | NoCenterSaveValue
+NoCenterSaveValue: TypeAlias = None
 CenterPk: TypeAlias = int | NoCenterSaveValue
-CenterSavePositional: TypeAlias = (
-    CenterForceInsert | bool | CenterUsing | CenterUpdateFields
-)
 
 
 class CenterManager(models.Manager["Center"]):
@@ -120,7 +113,7 @@ class Center(models.Model):
             suffix += 1
         return candidate
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk:
             existing_key = (
                 type(self)
@@ -139,7 +132,7 @@ class Center(models.Model):
             )
         if not self.display_name:
             self.display_name = self.name
-        super().save(*args, **kwargs)
+        super().save(**kwargs)
 
     def __str__(self) -> str:
         return str(self.display_name or self.name)

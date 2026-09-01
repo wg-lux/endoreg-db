@@ -1,7 +1,6 @@
 import os
 import sys
 from pathlib import Path
-from types import NoneType
 
 from endoreg_db.config.env import env_bool, env_str
 
@@ -129,7 +128,7 @@ if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
         def __contains__(self, item: str) -> bool:
             return True
 
-        def __getitem__(self, item: str) -> NoneType:
+        def __getitem__(self, item: str) -> None:
             return None
 
 

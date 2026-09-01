@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from types import NoneType
 from typing import ClassVar, Protocol, cast, overload
 
 import jwt
@@ -42,7 +41,7 @@ class _AuthenticatedUser(Protocol):
     def save(self, *, update_fields: list[str]) -> None: ...
 
 
-type AuthenticationResult = tuple[_AuthenticatedUser, NoneType] | NoneType
+type AuthenticationResult = tuple[_AuthenticatedUser, None] | None
 
 
 def _required_json_string(payload: Mapping[str, JsonValue], key: str) -> str:
@@ -58,9 +57,9 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
     Creates/updates a Django user and syncs groups if roles are present.
     """
 
-    _jwks_client: ClassVar[PyJWKClient | NoneType] = None
-    _iss: ClassVar[str | NoneType] = None
-    _aud: ClassVar[str | NoneType] = None
+    _jwks_client: ClassVar[PyJWKClient | None] = None
+    _iss: ClassVar[str | None] = None
+    _aud: ClassVar[str | None] = None
 
     @staticmethod
     def _verify_ssl() -> bool:
@@ -140,7 +139,12 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
             discovery_payload = cast(Mapping[str, JsonValue], disc)
             cls._iss = _required_json_string(discovery_payload, "issuer")
         if cls._aud is None:
-            cls._aud = str(settings.OIDC_RP_CLIENT_ID)
+            client_id = getattr(settings, "OIDC_RP_CLIENT_ID", None)
+            if not isinstance(client_id, str) or not client_id:
+                raise exceptions.AuthenticationFailed(
+                    "OIDC_RP_CLIENT_ID is not configured"
+                )
+            cls._aud = client_id
 
     def authenticate(self, request: Request) -> AuthenticationResult:
         raw_auth = request.META.get("HTTP_AUTHORIZATION", "")

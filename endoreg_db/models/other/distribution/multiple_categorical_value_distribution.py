@@ -1,10 +1,13 @@
 from __future__ import annotations
-from typing import Any, cast
+from typing import Any, Unpack, cast
+
 import numpy as np
 from django.db import models
 
-from .base_value_distribution import BaseValueDistribution
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.anonymization import normalize_categorical_distribution
+
+from .base_value_distribution import BaseValueDistribution
 
 
 class MultipleCategoricalValueDistributionManager(
@@ -38,9 +41,9 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
         super().clean()
         self.categories = normalize_categorical_distribution(self.categories)
 
-    def save(self, *args: object, **kwargs: object) -> None:
+    def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
-        super().save(*args, **kwargs)
+        super().save(**kwargs)
 
     @property
     def count_mean_safe(self) -> float:

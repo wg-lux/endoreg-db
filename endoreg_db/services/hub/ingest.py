@@ -14,7 +14,7 @@ from typing import Any, Generator, NotRequired, Protocol, TypedDict, cast
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, User
 from django.core.files import File
 from django.core.files.uploadedfile import UploadedFile
 from django.core.exceptions import ObjectDoesNotExist
@@ -1000,9 +1000,9 @@ def _audit_reused_upload_job(
     )
 
 
-def _authenticated_upload_creator(created_by: object | None) -> object | None:
+def _authenticated_upload_creator(created_by: object | None) -> User | None:
     if getattr(created_by, "is_authenticated", False):
-        return created_by
+        return cast(User, created_by)
     return None
 
 

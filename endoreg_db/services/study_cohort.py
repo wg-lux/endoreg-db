@@ -278,9 +278,9 @@ def _apply_filters(
             patient_findings__finding__name__iexact=filters.finding,
         )
     if filters.has_report is not None:
-        queryset = queryset.filter(cohort_has_report=filters.has_report)
+        queryset = queryset.filter(Q(cohort_has_report=filters.has_report))
     if filters.has_video is not None:
-        queryset = queryset.filter(cohort_has_video=filters.has_video)
+        queryset = queryset.filter(Q(cohort_has_video=filters.has_video))
 
     if filters.center_key:
         matching_report = _eligible_report_queryset().filter(

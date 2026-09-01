@@ -4,7 +4,6 @@ import random
 import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from types import NoneType
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
@@ -37,7 +36,7 @@ if TYPE_CHECKING:
     from ...center.center import Center
     from .patient_external_id import PatientExternalID
 
-NoPatientValue: TypeAlias = NoneType
+NoPatientValue: TypeAlias = None
 PatientDateValue: TypeAlias = date | NoPatientValue
 PatientTextValue: TypeAlias = str | NoPatientValue
 PatientDateTimeValue: TypeAlias = datetime | NoPatientValue

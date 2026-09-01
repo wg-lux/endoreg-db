@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from collections.abc import Callable
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Literal, Optional, cast
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -339,7 +339,7 @@ class ProcessingLockContext:
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: object | None,
-    ) -> bool:
+    ) -> Literal[False]:
         if self.acquired:
             PollingCoordinator.release_processing_lock(self.file_id, self.file_type)
         return False  # Don't suppress exceptions

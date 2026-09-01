@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import NoneType
 from typing import Literal, TypeAlias, TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -26,7 +25,7 @@ from endoreg_db.export.frames.export_frames_with_labels import (
 #   --transcode-frames \
 #   --transcode-fps 50
 
-JsonNull: TypeAlias = NoneType
+JsonNull: TypeAlias = None
 ExportFormat: TypeAlias = Literal["csv", "json"]
 
 
