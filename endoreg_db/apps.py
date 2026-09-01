@@ -19,6 +19,7 @@ class _ConnectionCreatedReceiver(Protocol):
         signal: Signal,
         sender: type[BaseDatabaseWrapper],
         connection: BaseDatabaseWrapper,
+        **kwargs: object,
     ) -> None: ...
 
 
@@ -79,6 +80,7 @@ class EndoregDbConfig(AppConfig):
                 signal: Signal,
                 sender: type[BaseDatabaseWrapper],
                 connection: BaseDatabaseWrapper,
+                **_kwargs: object,
             ) -> None:
                 ReconciliationService().run_once()
 
