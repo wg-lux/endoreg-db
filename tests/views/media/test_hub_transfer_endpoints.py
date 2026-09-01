@@ -43,6 +43,7 @@ from endoreg_db.models import (
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
+from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
 from tests.helpers.data_loader import load_gender_data
 
 
@@ -1733,6 +1734,61 @@ class HubTransferEndpointTests(TestCase):
                 "processed_file": ["Processed artifact state is inconsistent."]
             },
         }
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_returns_and_logs_safe_envelope_rejection(self):
+        processed_bytes = b"processed-video"
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__envelope-rejection",
+            video_hash="hash-envelope-rejection",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=self._sha256(processed_bytes),
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        with (
+            patch(
+                "endoreg_db.views.media.hub.transfers.attach_enveloped_transfer_media",
+                side_effect=HubMediaEnvelopeError(
+                    "sensitive receiver detail",
+                    rejection_code="recipient_key_unavailable",
+                    rejection_phase="recipient_key_unwrap",
+                ),
+            ),
+            self.assertLogs(
+                "endoreg_db.views.media.hub.transfers", level="WARNING"
+            ) as transfer_logs,
+        ):
+            upload_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data=self._enveloped_upload_data(
+                    transfer_key=cast(str, payload["transfer_key"]),
+                    plaintext=processed_bytes,
+                    filename="processed.bin",
+                ),
+                headers=self._auth_headers(),
+            )
+
+        assert upload_response.status_code == 400, upload_response.content
+        assert upload_response.json() == {
+            "detail": "Encrypted media envelope validation failed.",
+            "error_fields": ["envelope"],
+            "rejection_code": "recipient_key_unavailable",
+            "rejection_phase": "recipient_key_unwrap",
+        }
+        event = self._structured_event(transfer_logs.records[-1])
+        assert event["event"] == "hub.transfer_media_upload_validation_failed"
+        assert event["error_fields"] == ["envelope"]
+        assert event["rejection_code"] == "recipient_key_unavailable"
+        assert event["rejection_phase"] == "recipient_key_unwrap"
+        assert "sensitive receiver detail" not in "\n".join(transfer_logs.output)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_video_upload_preserves_sender_state(self):

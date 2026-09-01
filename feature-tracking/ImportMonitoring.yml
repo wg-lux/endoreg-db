@@ -311,9 +311,19 @@ definition_of_done:
     evidence:
     - kind: runbook
       reference: docs/hub_ingest_operations.md
-    note: Retry-Dispatcher, HLS-Recovery und Runbook implementiert; produktionsnahe Incident-Übung ausstehend.
-    assessed_by: Codex
-    assessed_at: '2026-07-21T08:30:00.489642Z'
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py::_reserve_video_upload_import_handoff; tests/services/test_hub_ingest_dispatch.py::UploadJobDispatchTests::test_process_upload_job_redispatches_video_retry_with_stale_task_id
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 1 pre-existing missing-stub warning); devenv
+        shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py tests/services/test_import_monitoring.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_import_job_contract.py
+        -q (27 passed)
+    note: 'Retry-Handoff regression fixed: a processing video UploadJob with retry_count greater than
+      zero no longer takes the lease-less legacy first-attempt short-circuit solely because an old video_import_task_id
+      remains. The existing database lease still serializes concurrent redispatch. Focused and adjacent
+      tests pass; production-like incident exercise remains in progress.'
+    assessed_by: codex-import-ninjau-t009
+    assessed_at: '2026-08-31T10:51:31.988242Z'
 - id: operator_documentation
   category: documentation
   title: Zustände, Anzeigen und Betriebsabläufe sind verständlich dokumentiert

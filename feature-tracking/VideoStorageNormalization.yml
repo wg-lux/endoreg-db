@@ -373,6 +373,11 @@ definition_of_done:
   - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
     sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
     klinischen Bildinhalt.
+  - Die Nachverarbeitung nach Segmentvalidierung extrahiert nach erfolgreichem Outside-Frame-Rebuild
+    den vollständigen stabilen Frame-Satz zwingend aus der neu veröffentlichten Processed-Generation.
+    Sie markiert die Validierung erst nach Prüfung von positivem Frame-Count, lückenlosen nullbasierten
+    Framezeilen, kanonischen Dateinamen, gesetztem Extraktionsstatus und vorhandenen Dateien als abgeschlossen;
+    ein fehlender oder unvollständiger Frame-Cache schlägt laut und wiederholbar fehl.
   - Der Einzelbild-Decode verwendet den autoritativen Präsentationszeitstempel und einen nur an Loopback
     gebundenen, nicht erratbaren Byte-Range-Zugriff auf das ausgewählte verschlüsselte Artefakt. Er erzeugt
     keine vollständige temporäre Klartextkopie, entschlüsselt nur die von FFmpeg angeforderten Chunks

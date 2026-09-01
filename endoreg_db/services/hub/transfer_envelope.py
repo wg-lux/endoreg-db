@@ -11,7 +11,7 @@ from collections.abc import Buffer, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, cast
+from typing import BinaryIO, Literal, cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes, serialization
@@ -38,12 +38,54 @@ _CHUNK_SIZE = 1024 * 1024
 _WRAP_INFO = b"lx-hub-media-envelope-wrap-v1"
 
 
+HubMediaEnvelopeRejectionCode = Literal[
+    "ciphertext_size_mismatch",
+    "envelope_identity_mismatch",
+    "envelope_metadata_invalid",
+    "envelope_payload_authentication_failed",
+    "envelope_plaintext_integrity_mismatch",
+    "envelope_stream_incomplete",
+    "recipient_key_authentication_failed",
+    "recipient_key_configuration_invalid",
+    "recipient_key_unavailable",
+    "replay_conflict",
+]
+HubMediaEnvelopeRejectionPhase = Literal[
+    "ciphertext_staging",
+    "envelope_identity",
+    "envelope_metadata",
+    "payload_authentication",
+    "plaintext_integrity",
+    "recipient_key_configuration",
+    "recipient_key_unwrap",
+    "replay_validation",
+]
+
+
 class HubMediaEnvelopeError(ValueError):
     """An inbound envelope failed identity, key, or integrity validation."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        rejection_code: HubMediaEnvelopeRejectionCode = "envelope_metadata_invalid",
+        rejection_phase: HubMediaEnvelopeRejectionPhase = "envelope_metadata",
+    ) -> None:
+        super().__init__(message)
+        self.rejection_code = rejection_code
+        self.rejection_phase = rejection_phase
 
 
 class HubMediaEnvelopeReplayConflict(HubMediaEnvelopeError):
     """An applied transfer received a different envelope or ciphertext."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message,
+            rejection_code="replay_conflict",
+            rejection_phase="replay_validation",
+        )
 
 
 def _decode_base64url(value: str, *, expected_size: int, field_name: str) -> bytes:
@@ -68,10 +110,16 @@ def _private_key_identifier(private_key: X25519PrivateKey) -> str:
 
 def _load_recipient_private_key(path: Path) -> X25519PrivateKey:
     if not path.is_absolute():
-        raise HubMediaEnvelopeError("Hub envelope private key paths must be absolute")
+        raise HubMediaEnvelopeError(
+            "Hub envelope private key paths must be absolute",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
+        )
     if path.is_symlink() or not path.is_file():
         raise HubMediaEnvelopeError(
-            "Hub envelope private keys must be regular non-symlink files"
+            "Hub envelope private keys must be regular non-symlink files",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
         )
     file_stat = path.stat()
     if (
@@ -85,20 +133,32 @@ def _load_recipient_private_key(path: Path) -> X25519PrivateKey:
         and file_stat.st_uid != 0
     ):
         raise HubMediaEnvelopeError(
-            "Hub envelope private keys must be owned by the root account"
+            "Hub envelope private keys must be owned by the root account",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
         )
     file_mode = stat.S_IMODE(file_stat.st_mode)
     if file_mode & 0o007 or file_mode & 0o020:
         raise HubMediaEnvelopeError(
             "Hub envelope private keys must not be accessible by other users "
-            "or writable by the group"
+            "or writable by the group",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
         )
     try:
         key = serialization.load_pem_private_key(path.read_bytes(), password=None)
     except (TypeError, ValueError, OSError) as exc:
-        raise HubMediaEnvelopeError("Hub envelope private key is invalid") from exc
+        raise HubMediaEnvelopeError(
+            "Hub envelope private key is invalid",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
+        ) from exc
     if not isinstance(key, X25519PrivateKey):
-        raise HubMediaEnvelopeError("Hub envelope private key must use X25519")
+        raise HubMediaEnvelopeError(
+            "Hub envelope private key must use X25519",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
+        )
     return key
 
 
@@ -109,7 +169,9 @@ def _configured_recipient_private_keys() -> dict[str, X25519PrivateKey]:
     )
     if not configured:
         raise HubMediaEnvelopeError(
-            "Hub media envelope recipient private key files are not configured"
+            "Hub media envelope recipient private key files are not configured",
+            rejection_code="recipient_key_configuration_invalid",
+            rejection_phase="recipient_key_configuration",
         )
     keyring: dict[str, X25519PrivateKey] = {}
     for configured_path in configured:
@@ -117,7 +179,9 @@ def _configured_recipient_private_keys() -> dict[str, X25519PrivateKey]:
         key_identifier = _private_key_identifier(private_key)
         if key_identifier in keyring:
             raise HubMediaEnvelopeError(
-                "Hub envelope recipient key identifiers must be unique"
+                "Hub envelope recipient key identifiers must be unique",
+                rejection_code="recipient_key_configuration_invalid",
+                rejection_phase="recipient_key_configuration",
             )
         keyring[key_identifier] = private_key
     return keyring
@@ -170,7 +234,10 @@ def validate_envelope_identity(
     ]
     if mismatches:
         raise HubMediaEnvelopeError(
-            "Hub media envelope identity mismatch for: " + ", ".join(sorted(mismatches))
+            "Hub media envelope identity mismatch for: "
+            + ", ".join(sorted(mismatches)),
+            rejection_code="envelope_identity_mismatch",
+            rejection_phase="envelope_identity",
         )
 
 
@@ -224,7 +291,9 @@ class _AuthenticatedEnvelopeReader(io.RawIOBase):
             self._observe_plaintext(self._decryptor.finalize())
         except InvalidTag as exc:
             raise HubMediaEnvelopeError(
-                "Hub media envelope authentication failed"
+                "Hub media envelope authentication failed",
+                rejection_code="envelope_payload_authentication_failed",
+                rejection_phase="payload_authentication",
             ) from exc
         self._finalized = True
         if (
@@ -232,7 +301,9 @@ class _AuthenticatedEnvelopeReader(io.RawIOBase):
             or self._plaintext_digest.hexdigest() != self._metadata.plaintext_sha256
         ):
             raise HubMediaEnvelopeError(
-                "Hub media envelope plaintext digest or size mismatch"
+                "Hub media envelope plaintext digest or size mismatch",
+                rejection_code="envelope_plaintext_integrity_mismatch",
+                rejection_phase="plaintext_integrity",
             )
         self.verified = True
 
@@ -266,7 +337,9 @@ class PreparedInboundHubEnvelope:
     def require_verified(self) -> None:
         if not self._reader.verified and not self.replay_accepted:
             raise HubMediaEnvelopeError(
-                "Hub media envelope plaintext stream was not fully authenticated"
+                "Hub media envelope plaintext stream was not fully authenticated",
+                rejection_code="envelope_stream_incomplete",
+                rejection_phase="payload_authentication",
             )
 
     def accept_exact_replay(self) -> None:
@@ -280,7 +353,9 @@ def _unwrap_data_encryption_key(
     private_key = keyring.get(metadata.recipient_key_id)
     if private_key is None:
         raise HubMediaEnvelopeError(
-            "Hub media envelope recipient key is not available on this receiver"
+            "Hub media envelope recipient key is not available on this receiver",
+            rejection_code="recipient_key_unavailable",
+            rejection_phase="recipient_key_unwrap",
         )
     ephemeral_public_key = X25519PublicKey.from_public_bytes(
         _decode_base64url(
@@ -315,11 +390,15 @@ def _unwrap_data_encryption_key(
         )
     except InvalidTag as exc:
         raise HubMediaEnvelopeError(
-            "Hub media envelope data-encryption key authentication failed"
+            "Hub media envelope data-encryption key authentication failed",
+            rejection_code="recipient_key_authentication_failed",
+            rejection_phase="recipient_key_unwrap",
         ) from exc
     if len(data_encryption_key) != 32:
         raise HubMediaEnvelopeError(
-            "Hub media envelope data-encryption key has an invalid length"
+            "Hub media envelope data-encryption key has an invalid length",
+            rejection_code="recipient_key_authentication_failed",
+            rejection_phase="recipient_key_unwrap",
         )
     return data_encryption_key
 
@@ -350,12 +429,11 @@ def prepare_inbound_hub_envelope(
         transfer_job=transfer_job,
         media_role=media_role,
     )
-    if (
-        ciphertext_size <= 0
-        or ciphertext_size != metadata.plaintext_size
-    ):
+    if ciphertext_size <= 0 or ciphertext_size != metadata.plaintext_size:
         raise HubMediaEnvelopeError(
-            "Hub media envelope ciphertext size does not match declared plaintext size"
+            "Hub media envelope ciphertext size does not match declared plaintext size",
+            rejection_code="ciphertext_size_mismatch",
+            rejection_phase="ciphertext_staging",
         )
 
     destination = TRANSCODING_DIR / f"hub-envelope-{uuid.uuid4().hex}.ciphertext"
@@ -395,6 +473,8 @@ def prepare_inbound_hub_envelope(
 
 __all__ = [
     "HubMediaEnvelopeError",
+    "HubMediaEnvelopeRejectionCode",
+    "HubMediaEnvelopeRejectionPhase",
     "HubMediaEnvelopeReplayConflict",
     "PreparedInboundHubEnvelope",
     "prepare_inbound_hub_envelope",

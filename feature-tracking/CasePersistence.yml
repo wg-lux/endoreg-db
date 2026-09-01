@@ -146,8 +146,7 @@ definition_of_done:
         (0 errors)
     note: Grouping by the center-scoped patient hash now aggregates duplicate identity records and follow-up
       examinations into one row while retaining all occurrences and media. The focused grouping regression
-      passed. Full endpoint-file verification is pending because concurrent ColoReg work leaves the installed
-      lx_dtypes package without lx_dtypes.coloreg_export during URL import.
+      passed. 
     assessed_by: codex-patient-case-identity-v1
     assessed_at: '2026-08-27T14:26:27.339676Z'
 - id: media_attachment_persistence

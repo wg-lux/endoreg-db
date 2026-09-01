@@ -295,3 +295,44 @@ class UploadJobDispatchTests(TestCase):
 
         assert processed is True
         apply_async.assert_not_called()
+
+    def test_process_upload_job_redispatches_video_retry_with_stale_task_id(self):
+        upload_job = UploadJob.objects.create(
+            file=SimpleUploadedFile(
+                name="retry.mp4",
+                content=b"\x00\x00\x00\x18ftypmp42",
+                content_type="video/mp4",
+            ),
+            content_type="video/mp4",
+            source_center=self.center,
+            source_system="watcher",
+            status=UploadJob.Status.PROCESSING,
+            retry_count=1,
+            processing_provenance={
+                "entrypoint": "watcher",
+                "video_import_task_id": "stale-video-import-task",
+                "video_import_queue": "ffmpeg_media",
+            },
+        )
+
+        with patch(
+            "endoreg_db.tasks.run_video_upload_import_task.apply_async",
+            return_value=Mock(id="retry-video-import-task"),
+        ) as apply_async:
+            processed = process_upload_job(str(upload_job.id))
+
+        upload_job.refresh_from_db()
+        assert processed is True
+        apply_async.assert_called_once()
+        assert apply_async.call_args.kwargs["queue"] == "ffmpeg_media"
+        assert apply_async.call_args.kwargs["routing_key"] == "ffmpeg_media"
+        assert (
+            upload_job.processing_provenance["video_import_task_id"]
+            == "retry-video-import-task"
+        )
+        assert apply_async.call_args.kwargs["task_id"] != "stale-video-import-task"
+        assert (
+            upload_job.processing_provenance["video_import_task_id"]
+            != "stale-video-import-task"
+        )
+        assert upload_job.processing_fencing_token == 1

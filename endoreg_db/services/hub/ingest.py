@@ -813,6 +813,7 @@ def _reserve_video_upload_import_handoff(
         existing_task_id = provenance.get("video_import_task_id")
         if (
             job.status == UploadJob.Status.PROCESSING.value
+            and job.retry_count == 0
             and not job.processing_lease_owner
             and isinstance(existing_task_id, str)
             and existing_task_id.strip()

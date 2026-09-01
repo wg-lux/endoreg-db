@@ -12,7 +12,11 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.exceptions import PermissionDenied, UnsupportedMediaType, ValidationError
+from rest_framework.exceptions import (
+    PermissionDenied,
+    UnsupportedMediaType,
+    ValidationError,
+)
 from rest_framework.parsers import BaseParser
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -46,6 +50,7 @@ from endoreg_db.services.hub.transfer_logging import (
     transfer_summary,
     warning,
 )
+from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
@@ -176,6 +181,8 @@ def _log_transfer_validation_failure(
     errors: _ValidationErrorValue,
     transfer_key: str | None = None,
     transfer_job: TransferJob | None = None,
+    rejection_code: str | None = None,
+    rejection_phase: str | None = None,
 ) -> None:
     error_fields = sorted(set(_validation_error_fields(errors)))
     payload = _safe_request_context(request)
@@ -202,6 +209,8 @@ def _log_transfer_validation_failure(
         transfer_key_sha256=structured_payload.transfer_key_sha256,
         transfer_job_id=structured_payload.transfer_job_id,
         resource_kind=structured_payload.resource_kind,
+        rejection_code=rejection_code,
+        rejection_phase=rejection_phase,
     )
 
 
@@ -526,9 +535,7 @@ class HubTransferMediaUploadView(APIView):
             error("Media upload did not use the raw ciphertext contract")
             raise UnsupportedMediaType(content_type or "missing")
 
-        content_length_value = str(
-            request.META.get("CONTENT_LENGTH", "") or ""
-        ).strip()
+        content_length_value = str(request.META.get("CONTENT_LENGTH", "") or "").strip()
         try:
             ciphertext_size = int(content_length_value)
         except ValueError as exc:
@@ -591,10 +598,7 @@ class HubTransferMediaUploadView(APIView):
         )
         kv("Uploaded size", ciphertext_size)
         kv("Requested media role", media_role)
-        if (
-            max_upload_bytes <= 0
-            or ciphertext_size > max_upload_bytes
-        ):
+        if max_upload_bytes <= 0 or ciphertext_size > max_upload_bytes:
             errors = {"file": "Uploaded media exceeds the configured size limit."}
             _log_transfer_validation_failure(
                 request,
@@ -639,6 +643,27 @@ class HubTransferMediaUploadView(APIView):
             payload = _transfer_status_response_payload(transfer_job)
             payload["detail"] = str(exc)
             return Response(payload, status=status.HTTP_409_CONFLICT)
+        except HubMediaEnvelopeError as exc:
+            error("Encrypted media envelope was rejected")
+            errors = {"envelope": "Encrypted media envelope validation failed."}
+            _log_transfer_validation_failure(
+                request,
+                event="hub.transfer_media_upload_validation_failed",
+                errors=cast(_ValidationErrorValue, errors),
+                transfer_key=transfer_key,
+                transfer_job=transfer_job,
+                rejection_code=exc.rejection_code,
+                rejection_phase=exc.rejection_phase,
+            )
+            return Response(
+                {
+                    "detail": "Encrypted media envelope validation failed.",
+                    "error_fields": ["envelope"],
+                    "rejection_code": exc.rejection_code,
+                    "rejection_phase": exc.rejection_phase,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except ValueError as exc:
             error("Media integrity or attachment validation failed")
             _log_transfer_validation_failure(

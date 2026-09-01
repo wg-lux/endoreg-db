@@ -640,6 +640,226 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
 
 
 @pytest.mark.django_db
+def test_run_video_post_validation_rebuild_extracts_missing_processed_frames_before_censoring(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    video = _create_video_for_post_validation(tmp_path)
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    outside_label, _ = Label.objects.get_or_create(name="outside")
+    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
+    outside_frame = Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=False,
+    )
+    ImageClassificationAnnotation.objects.create(
+        frame=outside_frame,
+        label=outside_label,
+        information_source=source,
+        value=True,
+    )
+    state = video.get_or_create_state()
+    assert state.frames_extracted is False
+
+    def fake_rebuild(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        assert only_validated is False
+        assert outside_intervals == [(0, 1)]
+        return True
+
+    def fake_ensure_local_processed_video_file(
+        video_obj: VideoFile,
+    ) -> _ProcessedVideoContext:
+        return _ensure_local_processed_context(video_obj, tmp_path)
+
+    extraction_calls: list[tuple[bool, bool]] = []
+
+    def fake_extract_video_frames(
+        video_obj: VideoFile,
+        quality: int = 2,
+        overwrite: bool = False,
+        ext: str = "jpg",
+        verbose: bool = False,
+        from_processed: bool = False,
+    ) -> bool:
+        del quality, verbose
+        extraction_calls.append((overwrite, from_processed))
+        assert ext == "jpg"
+
+        import cv2
+        import numpy as np
+
+        for frame_number in range(2):
+            relative_path = f"frame_{frame_number:07d}.jpg"
+            assert cv2.imwrite(
+                (frame_dir / relative_path).as_posix(),
+                np.full((4, 4, 3), 255, dtype=np.uint8),
+            )
+            Frame.objects.update_or_create(
+                video=video_obj,
+                frame_number=frame_number,
+                defaults={
+                    "relative_path": relative_path,
+                    "is_extracted": True,
+                },
+            )
+        extracted_state = video_obj.get_or_create_state()
+        extracted_state.frame_count = 2
+        extracted_state.frames_extracted = True
+        extracted_state.save(update_fields=["frame_count", "frames_extracted"])
+        return True
+
+    def fake_capture_frame(_path: Path, _frame_number: int) -> object:
+        return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
+
+    monkeypatch.setattr(
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
+        fake_rebuild,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "ensure_local_processed_video_file",
+        fake_ensure_local_processed_video_file,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.ffmpeg_wrapper.get_stream_info",
+        _valid_video_stream_info,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_capture_frame",
+        fake_capture_frame,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "extract_video_frames",
+        fake_extract_video_frames,
+        raising=False,
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=blackening.blackening_history_config(only_validated=False),
+    )
+
+    # Act
+    rebuilt = jobs._run_video_post_validation_rebuild(
+        video.pk,
+        history_id=history.pk,
+    )
+
+    # Assert
+    assert rebuilt is True
+    assert extraction_calls == [(True, True)]
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_SUCCESS
+    state.refresh_from_db()
+    assert state.frames_extracted is True
+    outside_image = __import__("cv2").imread(outside_frame.file_path.as_posix())
+    assert outside_image is not None
+    assert int(outside_image.max()) == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("extraction_result", "expected_error"),
+    [
+        (False, "could not extract processed frames"),
+        (True, "did not extract frames"),
+    ],
+)
+def test_run_video_post_validation_rebuild_rejects_incomplete_extraction(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    extraction_result: bool,
+    expected_error: str,
+) -> None:
+    # Arrange
+    video = _create_video_for_post_validation(tmp_path)
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=VideoProcessingHistory.STATUS_PENDING,
+        config=blackening.blackening_history_config(only_validated=False),
+    )
+
+    def fake_merge_outside_frame_intervals(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+    ) -> list[tuple[int, int]]:
+        return [(0, 1)]
+
+    def fake_rebuild(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> bool:
+        return True
+
+    def fake_verify_processed_video_contract(
+        _video: VideoFile,
+        *,
+        only_validated: bool = False,
+        outside_intervals: Sequence[tuple[int, int]] | None = None,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        jobs,
+        "_merge_outside_frame_intervals",
+        fake_merge_outside_frame_intervals,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "rebuild_processed_video_without_outside_frames",
+        fake_rebuild,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_verify_processed_video_contract",
+        fake_verify_processed_video_contract,
+    )
+    extract_frames = Mock(return_value=extraction_result)
+    censor_frames = Mock(side_effect=AssertionError("incomplete cache must not censor"))
+    monkeypatch.setattr(jobs, "extract_video_frames", extract_frames)
+    monkeypatch.setattr(jobs, "censor_outside_video_frames", censor_frames)
+
+    # Act
+    with pytest.raises(RuntimeError, match=expected_error):
+        jobs._run_video_post_validation_rebuild(
+            video.pk,
+            history_id=history.pk,
+        )
+
+    # Assert
+    extract_frames.assert_called_once_with(
+        video,
+        overwrite=True,
+        from_processed=True,
+    )
+    censor_frames.assert_not_called()
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.frames_extracted is False
+    assert state.segment_annotations_validated is False
+    assert state.outside_segments_removed is False
+
+
+@pytest.mark.django_db
 def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -718,6 +938,8 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     monkeypatch.setattr(
         jobs, "_verify_outside_frames_blackened", fake_verify_outside_frames_blackened
     )
+    monkeypatch.setattr(jobs, "extract_video_frames", Mock(return_value=True))
+    monkeypatch.setattr(jobs, "_verify_extracted_frame_contract", Mock())
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -814,6 +1036,8 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         "_verify_outside_frames_blackened",
         fake_verify_outside_frames_blackened,
     )
+    monkeypatch.setattr(jobs, "extract_video_frames", Mock(return_value=True))
+    monkeypatch.setattr(jobs, "_verify_extracted_frame_contract", Mock())
 
     history = VideoProcessingHistory.objects.create(
         video=video,

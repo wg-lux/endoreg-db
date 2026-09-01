@@ -41,6 +41,7 @@ from endoreg_db.services.media_operation_gate import (
 from endoreg_db.services.video_files import (
     censor_outside_video_frames,
     ensure_local_processed_video_file,
+    extract_video_frames,
 )
 from endoreg_db.services.video_post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
@@ -210,6 +211,85 @@ def _verify_outside_frames_blackened(
             f"video {video.pk}: missing_files={missing_files[:10]}, "
             f"unreadable_files={unreadable_files[:10]}, "
             f"non_black_frames={non_black_frames[:10]}"
+        )
+
+
+def _verify_extracted_frame_contract(
+    video: VideoFile, *, extension: str = "jpg"
+) -> None:
+    """Require one complete, stable frame file for every persisted frame index."""
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    if not state.frames_extracted:
+        raise RuntimeError(
+            f"Post-validation rebuild did not extract frames for video {video.pk}."
+        )
+
+    video_frame_count = video.frame_count
+    state_frame_count = state.frame_count
+    if (
+        video_frame_count is not None
+        and state_frame_count is not None
+        and int(video_frame_count) != int(state_frame_count)
+    ):
+        raise RuntimeError(
+            "Post-validation frame count mismatch for video "
+            f"{video.pk}: video={video_frame_count}, state={state_frame_count}."
+        )
+    expected_frame_count = (
+        int(video_frame_count)
+        if video_frame_count is not None
+        else int(state_frame_count)
+        if state_frame_count is not None
+        else 0
+    )
+    if expected_frame_count <= 0:
+        raise RuntimeError(
+            f"Post-validation rebuild has no positive frame count for video {video.pk}."
+        )
+
+    frame_dir = video.get_frame_dir_path()
+    if frame_dir is None or not frame_dir.is_dir():
+        raise RuntimeError(
+            f"Post-validation rebuild has no frame directory for video {video.pk}."
+        )
+
+    invalid_numbers: list[tuple[int, int]] = []
+    invalid_names: list[int] = []
+    unextracted_frames: list[int] = []
+    missing_files: list[int] = []
+    observed_frame_count = 0
+    frames = video.frames.only(
+        "frame_number",
+        "relative_path",
+        "is_extracted",
+    ).order_by("frame_number")
+    for expected_frame_number, frame in enumerate(frames.iterator(chunk_size=2000)):
+        observed_frame_count += 1
+        frame_number = int(frame.frame_number)
+        if frame_number != expected_frame_number and len(invalid_numbers) < 10:
+            invalid_numbers.append((expected_frame_number, frame_number))
+        expected_name = f"frame_{frame_number:07d}.{extension}"
+        if str(frame.relative_path) != expected_name and len(invalid_names) < 10:
+            invalid_names.append(frame_number)
+        if not frame.is_extracted and len(unextracted_frames) < 10:
+            unextracted_frames.append(frame_number)
+        if not (frame_dir / expected_name).is_file() and len(missing_files) < 10:
+            missing_files.append(frame_number)
+
+    if (
+        observed_frame_count != expected_frame_count
+        or invalid_numbers
+        or invalid_names
+        or unextracted_frames
+        or missing_files
+    ):
+        raise RuntimeError(
+            "Post-validation rebuild left an incomplete frame cache for video "
+            f"{video.pk}: expected_count={expected_frame_count}, "
+            f"observed_count={observed_frame_count}, "
+            f"invalid_numbers={invalid_numbers}, invalid_names={invalid_names}, "
+            f"unextracted_frames={unextracted_frames}, missing_files={missing_files}."
         )
 
 
@@ -452,6 +532,17 @@ def _run_video_post_validation_rebuild(
             outside_intervals=rebuild_outside_intervals,
         )
         if has_applicable_outside_segments:
+            frames_extracted = extract_video_frames(
+                video,
+                overwrite=True,
+                from_processed=True,
+            )
+            if not frames_extracted:
+                raise RuntimeError(
+                    "Post-validation rebuild could not extract processed frames "
+                    f"for video {video.pk}."
+                )
+            _verify_extracted_frame_contract(video)
             frames_blackened = censor_outside_video_frames(
                 video,
                 only_validated=run_config.only_validated,

@@ -279,19 +279,19 @@ class ReportAnonymizer:
 
         try:
             # Try direct import first
-            from lx_anonymizer import (
-                ReportReader,
-            )  # pyright: ignore[reportMissingTypeStubs]
+            module = importlib.import_module("lx_anonymizer")
+            report_reader_class = cast(
+                _ReportReaderClass,
+                getattr(module, "ReportReader"),
+            )
 
             logger.info("Successfully imported lx_anonymizer ReportReader module")
             self._report_reader_available = True
-            self._report_reader_class = cast(_ReportReaderClass, ReportReader)
+            self._report_reader_class = report_reader_class
             return
 
-        except ImportError:
+        except (AttributeError, ImportError):
             # Optional: honor LX_ANONYMIZER_PATH=/abs/path/to/src
-            import importlib
-
             extra = os.getenv("LX_ANONYMIZER_PATH")
             if extra and extra not in sys.path and Path(extra).exists():
                 sys.path.insert(0, extra)

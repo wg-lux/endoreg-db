@@ -16,10 +16,6 @@ from lx_dtypes.models.ledger.p_video.Pydantic import PatientVideoFile
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 
 if TYPE_CHECKING:
-    from lx_dtypes.models.contracts.coloreg_study_export import (
-        ColoRegStudyDatasetExportPayload,
-    )
-
     from endoreg_db.models.aidataset.aidataset import AIDataSet
     from endoreg_db.models.label.annotation.image_classification import (
         ImageClassificationAnnotation,
@@ -41,9 +37,7 @@ __all__ = [
     "AIDataSetFrameLabelExport",
     "build_export_payload",
     "build_frame_annotation_export",
-    "build_coloreg_study_dataset_payload",
     "build_patient_videos_export",
-    "export_coloreg_study_dataset",
     "export_to_standardized_structure",
     "validate_export_scope",
 ]
@@ -415,56 +409,6 @@ def export_to_standardized_structure(
             exclude={
                 "patient_videos": {
                     "__all__": {"sensitive_meta"},
-                }
-            },
-        ),
-    )
-
-
-def build_coloreg_study_dataset_payload(
-    dataset: AIDataSet,
-    *,
-    center_key: str | None = None,
-    all_centers: bool = False,
-    only_validated: bool = False,
-) -> ColoRegStudyDatasetExportPayload:
-    """Build the typed ColoReg study projection from either annotation modality."""
-
-    from lx_dtypes.coloreg_export import build_coloreg_study_dataset_export
-
-    annotation_dataset = build_export_payload(
-        dataset,
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-    )
-    return build_coloreg_study_dataset_export(annotation_dataset)
-
-
-def export_coloreg_study_dataset(
-    dataset: AIDataSet,
-    *,
-    center_key: str | None = None,
-    all_centers: bool = False,
-    only_validated: bool = False,
-) -> JsonObject:
-    """Return a data-minimized JSON ColoReg study dataset."""
-
-    payload = build_coloreg_study_dataset_payload(
-        dataset,
-        center_key=center_key,
-        all_centers=all_centers,
-        only_validated=only_validated,
-    )
-    return cast(
-        JsonObject,
-        payload.model_dump(
-            mode="json",
-            exclude={
-                "dataset": {
-                    "patient_videos": {
-                        "__all__": {"sensitive_meta"},
-                    }
                 }
             },
         ),
