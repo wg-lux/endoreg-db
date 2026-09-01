@@ -43,6 +43,7 @@ from endoreg_db.services.video_files import (
     censor_outside_video_frames,
     ensure_local_processed_video_file,
     extract_video_frames,
+    get_video_frame_dir_path,
 )
 from endoreg_db.services.video_post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
@@ -249,7 +250,7 @@ def _verify_extracted_frame_contract(
             f"Post-validation rebuild has no positive frame count for video {video.pk}."
         )
 
-    frame_dir = video.get_frame_dir_path()
+    frame_dir = get_video_frame_dir_path(video)
     if frame_dir is None or not frame_dir.is_dir():
         raise RuntimeError(
             f"Post-validation rebuild has no frame directory for video {video.pk}."
