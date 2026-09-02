@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from importlib import import_module
 from logging import getLogger
 from pathlib import Path
+from django.core.files.base import ContentFile
 from collections.abc import Iterable, Sequence
 from typing import TYPE_CHECKING, Generator, Protocol, Unpack, cast
 from uuid import uuid4
@@ -16,7 +17,6 @@ from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
 from ..utils import STORAGE_DIR, WEIGHTS_DIR
 from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
     ensure_directory,
     safe_rmtree,
 )
@@ -228,19 +228,6 @@ def create_from_file_logic(
         Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
         / f"{meta_name}_v{target_version}_{weights_filename}"
     )
-    # Full path for the managed copy
-    full_dest_path = STORAGE_DIR / relative_dest_path
-
-    # Ensure the destination directory exists
-    ensure_directory(full_dest_path.parent)
-
-    # Copy the file
-    try:
-        atomic_copy_file(source=source_weights_path, destination=full_dest_path)
-        logger.info(f"Copied weights from {source_weights_path} to {full_dest_path}")
-    except Exception as e:
-        raise IOError(f"Failed to copy weights file: {e}") from e
-
     # --- Create/Update ModelMeta Instance ---
     model_meta_kwargs = ModelMetaCreateFromFileKwargsPayload.model_validate(kwargs)
     defaults = {
@@ -260,6 +247,16 @@ def create_from_file_logic(
         logger.info(f"Created new ModelMeta: {model_meta}")
     else:
         logger.info(f"Updated existing ModelMeta: {model_meta}")
+
+    try:
+        with source_weights_path.open("rb") as source_file:
+            saved_name = model_meta.weights.storage.save(
+                relative_dest_path.as_posix(), ContentFile(source_file.read())
+            )
+        model_meta.weights.name = saved_name
+        model_meta.save(update_fields=["weights"])
+    except Exception as e:
+        raise IOError("Failed to store model weights through encrypted storage") from e
 
     # --- Optionally update AiModel's active_meta ---
     # You might want to add logic here to automatically set the newly created/updated
@@ -443,8 +440,10 @@ def _model_meta_weights_exist(model_meta: "ModelMeta") -> bool:
     if not model_meta.weights:
         return False
     try:
-        return Path(model_meta.weights.path).exists()
-    except (OSError, ValueError):
+        return bool(model_meta.weights.name) and model_meta.weights.storage.exists(
+            model_meta.weights.name
+        )
+    except (OSError, ValueError, RuntimeError):
         return False
 
 
@@ -456,17 +455,17 @@ def _copy_weights_to_existing_model_meta(
     current_name = str(model_meta.weights.name or "").strip()
     if current_name:
         relative_dest_path = Path(current_name)
-        full_dest_path = Path(model_meta.weights.path)
     else:
         relative_dest_path = (
             Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
             / f"{model_meta.name}_v{model_meta.version}_{source_weights_path.name}"
         )
-        full_dest_path = STORAGE_DIR / relative_dest_path
 
-    ensure_directory(full_dest_path.parent)
-    atomic_copy_file(source=source_weights_path, destination=full_dest_path)
-    model_meta.weights.name = relative_dest_path.as_posix()
+    with source_weights_path.open("rb") as source_file:
+        saved_name = model_meta.weights.storage.save(
+            relative_dest_path.as_posix(), ContentFile(source_file.read())
+        )
+    model_meta.weights.name = saved_name
     model_meta.save(update_fields=["weights"])
     return model_meta
 

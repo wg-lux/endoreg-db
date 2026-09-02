@@ -10,6 +10,7 @@ from django.db import IntegrityError
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from endoreg_db.services import model_meta_from_hf
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 
 
 def _fake_hf_download_factory(source_weights: Path) -> object:
@@ -65,7 +66,10 @@ def test_ensure_model_meta_from_hf_repairs_existing_missing_weights(
 
     assert result.pk == model_meta.pk
     assert result.weights.name == "model_weights/missing.safetensors"
-    assert Path(result.weights.path).read_bytes() == b"downloaded weights"
+    assert isinstance(result.weights.storage, LazyEncryptedStorage)
+    assert result.weights.storage.is_encrypted(result.weights.name) is True
+    with result.weights.open("rb") as weights_file:
+        assert weights_file.read() == b"downloaded weights"
     assert ai_model.active_meta == result
 
 

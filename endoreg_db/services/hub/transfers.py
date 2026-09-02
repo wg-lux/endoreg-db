@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 from functools import partial
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, NotRequired, TypedDict, cast
@@ -11,7 +14,15 @@ from typing import Any, BinaryIO, Literal, NotRequired, TypedDict, cast
 from django.core.files import File
 from django.db.models.fields.files import FieldFile
 from django.core.files.uploadedfile import UploadedFile
-from django.db import DatabaseError, IntegrityError, connection, models, transaction
+from django.db import (
+    DatabaseError,
+    IntegrityError,
+    close_old_connections,
+    connection,
+    models,
+    transaction,
+)
+from django.db.models.functions import Now
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.hub_media_envelope import (
     HubMediaEnvelopeReceipt,
@@ -51,6 +62,11 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
+from endoreg_db.services.lifecycle_state_machine import (
+    OperationLifecycleEvent,
+    OperationLifecycleState,
+    reduce_operation_lifecycle,
+)
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
@@ -69,6 +85,201 @@ from .transfer_envelope import (
 )
 
 logger = logging.getLogger(__name__)
+
+TRANSFER_OPERATION_LEASE_SECONDS = 30 * 60
+
+
+@dataclass(frozen=True)
+class TransferOperationFence:
+    transfer_job_id: uuid.UUID
+    attempt_id: uuid.UUID
+    owner_id: str
+    fencing_token: int
+    orphaned_candidate_name: str = ""
+
+
+class TransferOperationBusy(RuntimeError):
+    pass
+
+
+def _transfer_operation_state(status: str) -> OperationLifecycleState:
+    mapping = {
+        TransferJob.TransferStatus.PENDING.value: OperationLifecycleState.QUEUED,
+        TransferJob.TransferStatus.AWAITING_MEDIA.value: OperationLifecycleState.QUEUED,
+        TransferJob.TransferStatus.CLAIMED.value: OperationLifecycleState.CLAIMED,
+        TransferJob.TransferStatus.RUNNING.value: OperationLifecycleState.RUNNING,
+        TransferJob.TransferStatus.RETRY_WAIT.value: OperationLifecycleState.RETRY_WAIT,
+        TransferJob.TransferStatus.APPLIED.value: OperationLifecycleState.SUCCEEDED,
+        TransferJob.TransferStatus.FAILED.value: OperationLifecycleState.FAILED,
+        TransferJob.TransferStatus.LOST.value: OperationLifecycleState.LOST,
+    }
+    try:
+        return mapping[status]
+    except KeyError as exc:
+        raise ValueError(f"unknown TransferJob status: {status}") from exc
+
+
+def _transfer_database_now(transfer_job_id: uuid.UUID) -> datetime:
+    value = (
+        TransferJob.objects.filter(pk=transfer_job_id)
+        .annotate(database_now=Now())
+        .values_list("database_now", flat=True)
+        .get()
+    )
+    if not isinstance(value, datetime):
+        raise RuntimeError("database did not return a transfer lease timestamp")
+    return value
+
+
+def _claim_transfer_operation(
+    transfer_job_id: uuid.UUID,
+    *,
+    lease_seconds: int = TRANSFER_OPERATION_LEASE_SECONDS,
+) -> tuple[TransferJob, TransferOperationFence]:
+    if lease_seconds < 1:
+        raise ValueError("lease_seconds must be positive")
+    owner_id = uuid.uuid4().hex
+    attempt_id = uuid.uuid4()
+    with transaction.atomic():
+        transfer_job = TransferJob.objects.select_for_update().get(pk=transfer_job_id)
+        if (
+            transfer_job.transfer_status
+            == TransferJob.TransferStatus.INCONSISTENT.value
+        ):
+            raise ValueError(
+                "inconsistent transfer cannot be reclaimed without explicit repair"
+            )
+        now = _transfer_database_now(transfer_job_id)
+        current = _transfer_operation_state(transfer_job.transfer_status)
+        orphaned_candidate_name = transfer_job.operation_candidate_name
+        if current is OperationLifecycleState.RUNNING:
+            if (
+                transfer_job.operation_lease_expires_at is not None
+                and transfer_job.operation_lease_expires_at > now
+            ):
+                raise TransferOperationBusy(
+                    "transfer operation already has a live owner"
+                )
+            current = reduce_operation_lifecycle(
+                current, (OperationLifecycleEvent.OWNERSHIP_LOST,)
+            )
+            transfer_job.transfer_status = TransferJob.TransferStatus.LOST
+            transfer_job.attempt_id = None
+            transfer_job.operation_owner = ""
+            transfer_job.operation_heartbeat_at = None
+            transfer_job.operation_lease_expires_at = None
+        if current is OperationLifecycleState.LOST:
+            current = reduce_operation_lifecycle(
+                current, (OperationLifecycleEvent.RECONCILE_RETRY,)
+            )
+        elif current is OperationLifecycleState.FAILED:
+            current = reduce_operation_lifecycle(
+                current, (OperationLifecycleEvent.RETRY_REQUESTED,)
+            )
+        if current is OperationLifecycleState.RETRY_WAIT:
+            current = reduce_operation_lifecycle(
+                current, (OperationLifecycleEvent.RETRY_READY,)
+            )
+        current = reduce_operation_lifecycle(
+            current,
+            (OperationLifecycleEvent.CLAIM, OperationLifecycleEvent.START),
+        )
+        if current is not OperationLifecycleState.RUNNING:
+            raise RuntimeError("transfer claim did not reduce to RUNNING")
+        transfer_job.transfer_status = TransferJob.TransferStatus.RUNNING
+        transfer_job.attempt_id = attempt_id
+        transfer_job.operation_owner = owner_id
+        transfer_job.operation_fencing_token += 1
+        transfer_job.operation_heartbeat_at = now
+        transfer_job.operation_lease_expires_at = now + timedelta(seconds=lease_seconds)
+        transfer_job.operation_candidate_name = ""
+        transfer_job.save(
+            update_fields=[
+                "transfer_status",
+                "attempt_id",
+                "operation_owner",
+                "operation_fencing_token",
+                "operation_heartbeat_at",
+                "operation_lease_expires_at",
+                "operation_candidate_name",
+                "updated_at",
+            ]
+        )
+        return transfer_job, TransferOperationFence(
+            transfer_job_id=transfer_job_id,
+            attempt_id=attempt_id,
+            owner_id=owner_id,
+            fencing_token=int(transfer_job.operation_fencing_token),
+            orphaned_candidate_name=orphaned_candidate_name,
+        )
+
+
+def _renew_transfer_operation(fence: TransferOperationFence) -> None:
+    now = _transfer_database_now(fence.transfer_job_id)
+    updated = TransferJob.objects.filter(
+        pk=fence.transfer_job_id,
+        transfer_status=TransferJob.TransferStatus.RUNNING,
+        attempt_id=fence.attempt_id,
+        operation_owner=fence.owner_id,
+        operation_fencing_token=fence.fencing_token,
+        operation_lease_expires_at__gt=now,
+    ).update(
+        operation_heartbeat_at=now,
+        operation_lease_expires_at=now
+        + timedelta(seconds=TRANSFER_OPERATION_LEASE_SECONDS),
+        updated_at=Now(),
+    )
+    if updated != 1:
+        raise RuntimeError("transfer operation ownership fence is no longer current")
+
+
+def _record_transfer_candidate(
+    fence: TransferOperationFence,
+    *,
+    candidate_name: str,
+) -> None:
+    updated = TransferJob.objects.filter(
+        pk=fence.transfer_job_id,
+        transfer_status=TransferJob.TransferStatus.RUNNING,
+        attempt_id=fence.attempt_id,
+        operation_owner=fence.owner_id,
+        operation_fencing_token=fence.fencing_token,
+        operation_lease_expires_at__gt=Now(),
+    ).update(operation_candidate_name=candidate_name, updated_at=Now())
+    if updated != 1:
+        raise RuntimeError("transfer candidate rejected by ownership fence")
+
+
+class TransferOperationHeartbeat:
+    def __init__(self, fence: TransferOperationFence) -> None:
+        self._fence = fence
+        self._stop = threading.Event()
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=65)
+
+    def guard(self) -> None:
+        if self._failure is not None:
+            raise RuntimeError("transfer operation heartbeat failed") from self._failure
+        _renew_transfer_operation(self._fence)
+
+    def _run(self) -> None:
+        close_old_connections()
+        try:
+            while not self._stop.wait(60):
+                _renew_transfer_operation(self._fence)
+        except BaseException as exc:
+            self._failure = exc
+            self._stop.set()
+        finally:
+            close_old_connections()
+
 
 _SAFE_SENSITIVE_META_FIELDS = frozenset({"patient_hash", "examination_hash"})
 _UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
@@ -667,10 +878,21 @@ def attach_enveloped_transfer_media(
     if not expected_hash:
         raise ValueError("Processed media hash is missing from transfer metadata")
 
+    operation_fence: TransferOperationFence | None = None
+    operation_heartbeat: TransferOperationHeartbeat | None = None
+    if transfer_job.transfer_status != TransferJob.TransferStatus.APPLIED.value:
+        transfer_job, operation_fence = _claim_transfer_operation(transfer_job.pk)
+        operation_heartbeat = TransferOperationHeartbeat(operation_fence)
+        operation_heartbeat.start()
+
     field_file = getattr(target, field_name)
     original_name = str(getattr(field_file, "name", "") or "")
     candidate_name = ""
     try:
+        if operation_fence is not None and operation_fence.orphaned_candidate_name:
+            field_file.name = operation_fence.orphaned_candidate_name
+            safe_delete_field_file(field_file, missing_ok=True)
+            field_file.name = original_name
         with prepare_inbound_hub_envelope(
             transfer_job=transfer_job,
             ciphertext_stream=ciphertext_stream,
@@ -714,15 +936,26 @@ def attach_enveloped_transfer_media(
                 )
                 raise HubMediaEnvelopeReplayConflict(transfer_job.status_detail)
 
+            if operation_fence is None:
+                raise RuntimeError("non-replay transfer upload has no operation fence")
+            if operation_heartbeat is None:
+                raise RuntimeError("transfer operation heartbeat was not started")
+            operation_heartbeat.guard()
+            candidate_name = _store_model_stream(
+                instance=target,
+                field_name=field_name,
+                source=prepared.plaintext_stream,
+                stored_name=(
+                    f"{expected_hash}.{operation_fence.attempt_id.hex}.candidate{suffix}"
+                ),
+            )
+            prepared.require_verified()
+            _record_transfer_candidate(
+                operation_fence,
+                candidate_name=candidate_name,
+            )
+            operation_heartbeat.guard()
             with transaction.atomic():
-                candidate_name = _store_model_stream(
-                    instance=target,
-                    field_name=field_name,
-                    source=prepared.plaintext_stream,
-                    stored_name=f"{expected_hash}{suffix}",
-                )
-                prepared.require_verified()
-
                 media_type: Literal["video", "pdf"]
                 if isinstance(target, VideoFile):
                     target.processed_video_hash = expected_hash
@@ -786,6 +1019,7 @@ def attach_enveloped_transfer_media(
                         "Envelope-authenticated processed media uploaded and sender "
                         "processing state preserved"
                     ),
+                    operation_fence=operation_fence,
                 )
                 if original_name and original_name != candidate_name:
                     _delete_replaced_generation_after_commit(
@@ -794,13 +1028,30 @@ def attach_enveloped_transfer_media(
                         replaced_name=original_name,
                     )
                 return applied_transfer_job
-    except Exception:
+    except Exception as exc:
         if candidate_name and candidate_name != original_name:
             candidate_field = getattr(target, field_name)
             candidate_field.name = candidate_name
             safe_delete_field_file(candidate_field, missing_ok=True)
             candidate_field.name = original_name
+        if operation_fence is not None:
+            try:
+                _fail_transfer_operation(
+                    transfer_job=transfer_job,
+                    operation_fence=operation_fence,
+                    target_object_id=target.pk,
+                    processing_decision=transfer_job.processing_decision,
+                    status_detail=str(exc),
+                )
+            except RuntimeError:
+                logger.warning(
+                    "Transfer failure was rejected by an expired or replaced fence: %s",
+                    transfer_job.transfer_key,
+                )
         raise
+    finally:
+        if operation_heartbeat is not None:
+            operation_heartbeat.stop()
 
 
 def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
@@ -1350,26 +1601,40 @@ def _handle_video_processing_after_raw_upload(
             status_detail="No default EndoscopyProcessor is configured for video processing",
         )
 
+    operation_fence: TransferOperationFence
+    transfer_job, operation_fence = _claim_transfer_operation(transfer_job.pk)
+    operation_heartbeat = TransferOperationHeartbeat(operation_fence)
+    operation_heartbeat.start()
     try:
-        from endoreg_db.import_files.video_import_service import VideoImportService
+        from endoreg_db.import_files.video_import_service import (
+            VideoImportExecutionFence,
+            VideoImportService,
+        )
 
-        VideoImportService().import_and_anonymize(
+        VideoImportService().import_and_anonymize_fenced(
             file_path=import_path,
             center_name=video.center.name,
             processor_name=processor_name,
             retry=True,
+            execution_fence=VideoImportExecutionFence(
+                attempt_id=operation_fence.attempt_id.hex,
+                guard=lambda: _renew_transfer_operation(operation_fence),
+            ),
         )
+        operation_heartbeat.guard()
     except Exception as exc:
+        operation_heartbeat.stop()
         logger.exception(
             "Hub video transfer processing failed for %s", transfer_job.transfer_key
         )
-        return _save_transfer_job_state(
+        return _fail_transfer_operation(
             transfer_job=transfer_job,
+            operation_fence=operation_fence,
             target_object_id=video.pk,
-            transfer_status=TransferJob.TransferStatus.FAILED,
             processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
             status_detail=f"Raw video uploaded but processing failed: {exc}",
         )
+    operation_heartbeat.stop()
 
     video.refresh_from_db()
     _apply_case_resolution_for_media(
@@ -1383,6 +1648,7 @@ def _handle_video_processing_after_raw_upload(
         transfer_status=TransferJob.TransferStatus.APPLIED,
         processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
         status_detail="Raw video uploaded and processing completed on the hub",
+        operation_fence=operation_fence,
     )
 
 
@@ -1506,24 +1772,105 @@ def _save_transfer_job_state(
     transfer_status: str,
     processing_decision: str,
     status_detail: str,
+    operation_fence: TransferOperationFence | None = None,
 ) -> TransferJob:
     transfer_job.target_object_id = target_object_id
     transfer_job.transfer_status = transfer_status
     transfer_job.processing_decision = processing_decision
     transfer_job.status_detail = status_detail
-    transfer_job.save(
-        update_fields=[
-            "target_object_id",
-            "transfer_status",
-            "processing_decision",
-            "status_detail",
-            "linked_patient_id",
-            "linked_patient_examination_id",
-            "case_resolution_status",
-            "provenance",
-            "updated_at",
-        ]
+    update_fields = [
+        "target_object_id",
+        "transfer_status",
+        "processing_decision",
+        "status_detail",
+        "linked_patient_id",
+        "linked_patient_examination_id",
+        "case_resolution_status",
+        "provenance",
+        "updated_at",
+    ]
+    if operation_fence is None:
+        transfer_job.save(update_fields=update_fields)
+        return transfer_job
+
+    if transfer_status != TransferJob.TransferStatus.APPLIED.value:
+        raise ValueError("fenced transfer success must publish APPLIED status")
+    reduced = reduce_operation_lifecycle(
+        OperationLifecycleState.RUNNING,
+        (OperationLifecycleEvent.SUCCEED,),
     )
+    if reduced is not OperationLifecycleState.SUCCEEDED:
+        raise RuntimeError("transfer completion did not reduce to SUCCEEDED")
+    transfer_job.clean()
+    updated = TransferJob.objects.filter(
+        pk=operation_fence.transfer_job_id,
+        transfer_status=TransferJob.TransferStatus.RUNNING,
+        attempt_id=operation_fence.attempt_id,
+        operation_owner=operation_fence.owner_id,
+        operation_fencing_token=operation_fence.fencing_token,
+        operation_lease_expires_at__gt=Now(),
+    ).update(
+        target_object_id=target_object_id,
+        transfer_status=transfer_status,
+        processing_decision=processing_decision,
+        status_detail=status_detail,
+        linked_patient_id=transfer_job.linked_patient_id,
+        linked_patient_examination_id=transfer_job.linked_patient_examination_id,
+        case_resolution_status=transfer_job.case_resolution_status,
+        provenance=transfer_job.provenance,
+        attempt_id=None,
+        operation_owner="",
+        operation_heartbeat_at=None,
+        operation_lease_expires_at=None,
+        operation_candidate_name="",
+        updated_at=Now(),
+    )
+    if updated != 1:
+        raise RuntimeError("transfer completion rejected by ownership fence")
+    transfer_job.refresh_from_db()
+    return transfer_job
+
+
+def _fail_transfer_operation(
+    *,
+    transfer_job: TransferJob,
+    operation_fence: TransferOperationFence,
+    target_object_id: int | None,
+    processing_decision: str,
+    status_detail: str,
+) -> TransferJob:
+    reduced = reduce_operation_lifecycle(
+        OperationLifecycleState.RUNNING,
+        (OperationLifecycleEvent.FAIL,),
+    )
+    if reduced is not OperationLifecycleState.FAILED:
+        raise RuntimeError("transfer failure did not reduce to FAILED")
+    updated = TransferJob.objects.filter(
+        pk=operation_fence.transfer_job_id,
+        transfer_status=TransferJob.TransferStatus.RUNNING,
+        attempt_id=operation_fence.attempt_id,
+        operation_owner=operation_fence.owner_id,
+        operation_fencing_token=operation_fence.fencing_token,
+        operation_lease_expires_at__gt=Now(),
+    ).update(
+        target_object_id=target_object_id,
+        transfer_status=TransferJob.TransferStatus.FAILED,
+        processing_decision=processing_decision,
+        status_detail=status_detail,
+        linked_patient_id=transfer_job.linked_patient_id,
+        linked_patient_examination_id=transfer_job.linked_patient_examination_id,
+        case_resolution_status=transfer_job.case_resolution_status,
+        provenance=transfer_job.provenance,
+        attempt_id=None,
+        operation_owner="",
+        operation_heartbeat_at=None,
+        operation_lease_expires_at=None,
+        operation_candidate_name="",
+        updated_at=Now(),
+    )
+    if updated != 1:
+        raise RuntimeError("transfer failure rejected by ownership fence")
+    transfer_job.refresh_from_db()
     return transfer_job
 
 

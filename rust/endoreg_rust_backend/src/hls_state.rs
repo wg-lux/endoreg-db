@@ -27,7 +27,9 @@ pub(crate) fn derive_hls_reservation_action(
 ) -> PyResult<&'static str> {
     validate_optional_in_flight_status(active_status)?;
     if is_in_flight(active_status) {
-        let _ = active_is_stale;
+        if active_is_stale {
+            return Ok("queue");
+        }
         return Ok("already_in_flight");
     }
     if ready_matches_source && !force {
@@ -83,7 +85,7 @@ mod tests {
         );
         assert_eq!(
             derive_hls_reservation_action("validated", true, true, true).unwrap(),
-            "already_in_flight"
+            "queue"
         );
         assert_eq!(
             derive_hls_reservation_action("", false, true, false).unwrap(),

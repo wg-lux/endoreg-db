@@ -7,6 +7,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_processing,
+    schedule_upload_job_retry,
+)
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 import logging
@@ -67,7 +71,8 @@ def retry_delay_seconds(retry_count: int) -> int:
 
 def schedule_dispatch_retry(upload_job: UploadJob, *, technical_detail: str) -> bool:
     delay_seconds = retry_delay_seconds(upload_job.retry_count)
-    scheduled = upload_job.schedule_retry(
+    scheduled = schedule_upload_job_retry(
+        upload_job,
         technical_detail,
         error_code=UploadJob.ErrorCode.DISPATCH_UNAVAILABLE.value,
         delay_seconds=delay_seconds,
@@ -104,7 +109,8 @@ def is_retryable_storage_failure(upload_job: UploadJob) -> bool:
 def schedule_storage_retry(upload_job: UploadJob, *, technical_detail: str) -> bool:
     """Retain a managed source and schedule bounded recovery from disk pressure."""
     delay_seconds = retry_delay_seconds(upload_job.retry_count)
-    scheduled = upload_job.schedule_retry(
+    scheduled = schedule_upload_job_retry(
+        upload_job,
         technical_detail,
         error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
         delay_seconds=delay_seconds,
@@ -133,7 +139,8 @@ def schedule_storage_retry(upload_job: UploadJob, *, technical_detail: str) -> b
 def schedule_processing_retry(upload_job: UploadJob, *, technical_detail: str) -> bool:
     """Retain a managed source and schedule bounded recovery from processing faults."""
     delay_seconds = retry_delay_seconds(upload_job.retry_count)
-    scheduled = upload_job.schedule_retry(
+    scheduled = schedule_upload_job_retry(
+        upload_job,
         technical_detail,
         error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
         delay_seconds=delay_seconds,
@@ -187,7 +194,7 @@ def dispatch_due_upload_job_retries(
                 or upload_job.next_retry_at > timezone.now()
             ):
                 continue
-            upload_job.mark_processing()
+            mark_upload_job_processing(upload_job)
         try:
             dispatcher.apply_async(
                 args=(str(upload_job.pk),),

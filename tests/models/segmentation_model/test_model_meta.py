@@ -10,6 +10,7 @@ from pytest_django.fixtures import SettingsWrapper
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from endoreg_db.models.metadata import model_meta_logic
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from lx_dtypes.models.contracts.model_meta_logic import (
     ModelMetaCreateFromFileKwargsData,
     ModelMetaInferredDefaultsPayload,
@@ -299,7 +300,10 @@ def test_setup_default_from_huggingface_repairs_existing_missing_weights(
 
     assert result.pk == model_meta.pk
     assert result.weights.name == "model_weights/missing.safetensors"
-    assert Path(result.weights.path).read_bytes() == b"downloaded weights"
+    assert isinstance(result.weights.storage, LazyEncryptedStorage)
+    assert result.weights.storage.is_encrypted(result.weights.name) is True
+    with result.weights.open("rb") as weights_file:
+        assert weights_file.read() == b"downloaded weights"
     active_meta = cast(_AiModelWithActiveMeta, unique_ai_model).active_meta
     assert active_meta is not None
     assert active_meta == result

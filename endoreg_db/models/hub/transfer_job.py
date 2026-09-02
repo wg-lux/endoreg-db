@@ -47,10 +47,14 @@ class TransferJob(models.Model):
 
     class TransferStatus(models.TextChoices):
         PENDING = "pending", "Pending"
+        CLAIMED = "claimed", "Claimed"
+        RUNNING = "running", "Running"
+        RETRY_WAIT = "retry_wait", "Retry wait"
         AWAITING_MEDIA = "awaiting_media", "Awaiting Media"
         APPLIED = "applied", "Applied"
         FAILED = "failed", "Failed"
         INCONSISTENT = "inconsistent", "Inconsistent"
+        LOST = "lost", "Lost"
 
     class ProcessingPolicy(models.TextChoices):
         REPROCESS_ALWAYS = "reprocess_always", "Reprocess Always"
@@ -158,6 +162,24 @@ class TransferJob(models.Model):
         choices=TransferStatus.choices,
         default=TransferStatus.PENDING,
     )
+    attempt_id: models.UUIDField[uuid.UUID | None, Any] = models.UUIDField(
+        null=True, blank=True, editable=False
+    )
+    operation_owner: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True, default="", editable=False
+    )
+    operation_fencing_token: models.PositiveBigIntegerField[int, Any] = (
+        models.PositiveBigIntegerField(default=0, editable=False)
+    )
+    operation_heartbeat_at: models.DateTimeField[datetime | None, Any] = (
+        models.DateTimeField(null=True, blank=True, editable=False)
+    )
+    operation_lease_expires_at: models.DateTimeField[datetime | None, Any] = (
+        models.DateTimeField(null=True, blank=True, db_index=True, editable=False)
+    )
+    operation_candidate_name: models.CharField[str, Any] = models.CharField(
+        max_length=1024, blank=True, default="", editable=False
+    )
     processing_policy: models.CharField[str, Any] = models.CharField(
         max_length=48,
         choices=ProcessingPolicy.choices,
@@ -234,6 +256,29 @@ class TransferJob(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        transfer_status="running",
+                        attempt_id__isnull=False,
+                        operation_heartbeat_at__isnull=False,
+                        operation_lease_expires_at__isnull=False,
+                    )
+                    & ~models.Q(operation_owner="")
+                )
+                | (
+                    ~models.Q(transfer_status="running")
+                    & models.Q(
+                        attempt_id__isnull=True,
+                        operation_owner="",
+                        operation_heartbeat_at__isnull=True,
+                        operation_lease_expires_at__isnull=True,
+                    )
+                ),
+                name="transfer_operation_lease_consistent",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.transfer_key} ({self.transfer_status})"

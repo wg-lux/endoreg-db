@@ -67,6 +67,32 @@ def test_current_owner_can_renew_and_failure_release_is_conditional() -> None:
     assert not mark_report_import_fence_failed(fence)
 
 
+def test_failed_attempt_is_automatically_retried_with_new_fence() -> None:
+    content_hash = "1" * 64
+    failed = acquire_report_import_fence(content_hash)
+    assert mark_report_import_fence_failed(failed)
+
+    retried = acquire_report_import_fence(content_hash)
+
+    attempt = ReportImportAttempt.objects.get(content_hash=content_hash)
+    assert retried.fencing_token == failed.fencing_token + 1
+    assert attempt.status == ReportImportAttempt.STATUS_ACTIVE
+    assert attempt.owner_id == retried.owner_id
+
+
+def test_succeeded_attempt_accepts_explicit_new_import_attempt() -> None:
+    content_hash = "2" * 64
+    completed = acquire_report_import_fence(content_hash)
+    with report_import_finalization_guard(completed):
+        pass
+
+    retried = acquire_report_import_fence(content_hash)
+
+    attempt = ReportImportAttempt.objects.get(content_hash=content_hash)
+    assert retried.fencing_token == completed.fencing_token + 1
+    assert attempt.status == ReportImportAttempt.STATUS_ACTIVE
+
+
 def test_expired_owner_cannot_mutate_report_metadata() -> None:
     content_hash = "d" * 64
     stale = acquire_report_import_fence(content_hash)

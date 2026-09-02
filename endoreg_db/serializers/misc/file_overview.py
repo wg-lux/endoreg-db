@@ -142,6 +142,29 @@ class _HlsArtifactManager(Protocol):
     def all(self) -> Iterable[VideoHlsArtifact]: ...
 
 
+def _current_overview_hls_artifacts(
+    artifacts: Iterable[VideoHlsArtifact],
+) -> list[VideoHlsArtifact]:
+    """Select one current, non-superseded materialization per artifact kind."""
+    current_by_kind: dict[str, VideoHlsArtifact] = {}
+    for artifact in artifacts:
+        if artifact.status == VideoHlsArtifact.Status.SUPERSEDED.value:
+            continue
+        current = current_by_kind.get(artifact.artifact_kind)
+        if current is None or (artifact.updated_at, artifact.pk) > (
+            current.updated_at,
+            current.pk,
+        ):
+            current_by_kind[artifact.artifact_kind] = artifact
+    return [current_by_kind[kind] for kind in sorted(current_by_kind)]
+
+
+def _overview_hls_status(artifact: VideoHlsArtifact) -> str:
+    if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
+        return "materializing"
+    return artifact.status
+
+
 class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     id = serializers.IntegerField(read_only=True)
     filename = serializers.CharField(read_only=True)
@@ -202,13 +225,13 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         if not isinstance(instance, VideoFile):
             return []
         manager = cast(_HlsArtifactManager, getattr(instance, "hls_artifacts"))
-        artifacts = list(manager.all())
+        artifacts = _current_overview_hls_artifacts(manager.all())
         upload_job = self._overview_upload_job(instance)
         return [
             OverviewHlsMaterializationPayload.model_validate(
                 {
                     "artifact_kind": artifact.artifact_kind,
-                    "status": artifact.status,
+                    "status": _overview_hls_status(artifact),
                     "triggering_upload_job_id": (
                         upload_job.id if upload_job is not None else None
                     ),
@@ -220,7 +243,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
                     "updated_at": artifact.updated_at,
                 }
             ).to_data()
-            for artifact in sorted(artifacts, key=lambda item: item.artifact_kind)
+            for artifact in artifacts
         ]
 
     def _hash_display(self, value: str | None) -> str | None:

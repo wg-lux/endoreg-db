@@ -202,6 +202,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
     },
+    "endoreg_db.retry_due_model_training_runs": {
+        "queue": CELERY_MAINTENANCE_QUEUE,
+        "routing_key": CELERY_MAINTENANCE_QUEUE,
+    },
 }
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_TRACK_STARTED = True
@@ -212,6 +216,15 @@ CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
 CELERY_BEAT_SCHEDULE["retry-due-upload-jobs"] = DjangoBeatScheduleEntryPayload(
     task="endoreg_db.retry_due_upload_jobs",
+    schedule=60,
+    options=DjangoBeatScheduleOptionsPayload(
+        queue=CELERY_MAINTENANCE_QUEUE,
+        routing_key=CELERY_MAINTENANCE_QUEUE,
+        expires=55,
+    ),
+).model_dump(by_alias=True, mode="python")
+CELERY_BEAT_SCHEDULE["retry-due-model-training-runs"] = DjangoBeatScheduleEntryPayload(
+    task="endoreg_db.retry_due_model_training_runs",
     schedule=60,
     options=DjangoBeatScheduleOptionsPayload(
         queue=CELERY_MAINTENANCE_QUEUE,

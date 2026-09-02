@@ -7,7 +7,7 @@
 ## Why Two Modules Exist
 There are currently two similarly named modules with different responsibilities:
 
-- `endoreg_db.utils.data_loading.dataloader`
+- `endoreg_db.utils.dataloader`
   - Core YAML-to-model loading engine.
   - Handles parsing, FK/M2M resolution, create/update logic, retry-on-lock behavior, and warning logging.
   - Used by management commands such as `load_*_data`.
@@ -26,8 +26,8 @@ Both names read like they do the same thing (`dataloader` vs `data_loader`) and 
 Use names that encode layer and responsibility directly.
 
 ### Layer 1: Engine (YAML -> ORM)
-- Legacy path: `endoreg_db.utils.data_loading.dataloader`
-- Canonical path: `endoreg_db.utils.data_loading.yaml_model_loader`
+- Legacy path: `endoreg_db.utils.dataloader`
+- Canonical path: `endoreg_db.utils.yaml_model_loader`
 
 Function naming guideline:
 - `load_model_data_from_yaml` can stay as-is (already explicit).
@@ -45,7 +45,7 @@ Function naming guideline:
 
 ## Migration Plan (Non-Breaking)
 1. Canonical modules are added:
-   - `endoreg_db/utils/data_loading/yaml_model_loader.py`
+   - `endoreg_db/utils/yaml_model_loader.py`
    - `endoreg_db/helpers/data_load_orchestrator.py`
 2. Legacy modules remain as compatibility paths.
 3. Internal imports are migrated incrementally to canonical names.
@@ -59,7 +59,7 @@ Compatibility rule:
 Prefer importing from canonical modules in new code:
 
 ```python
-from endoreg_db.utils.data_loading.yaml_model_loader import load_model_data_from_yaml
+from endoreg_db.utils.yaml_model_loader import load_model_data_from_yaml
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 ```
 

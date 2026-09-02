@@ -58,6 +58,11 @@ class VideoHlsArtifact(models.Model):
         editable=False,
         help_text="Opaque generation identifier for the source snapshot of this HLS attempt.",
     )
+    source_content_hash: models.CharField[str, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="SHA-256 digest of the exact plaintext source generation.",
+    )
     encoding_profile_name: models.CharField[str, Any] = models.CharField(
         max_length=64,
         default="clinical_h264_libx264_crf_v1",
@@ -129,6 +134,18 @@ class VideoHlsArtifact(models.Model):
 
     def clean(self) -> None:
         errors: dict[str, ValidationErrorMessageArg] = {}
+        if self.status in {
+            self.Status.QUEUED.value,
+            self.Status.MATERIALIZING.value,
+            self.Status.VALIDATED.value,
+            self.Status.READY.value,
+        } and (
+            len(self.source_content_hash) != 64
+            or any(char not in "0123456789abcdef" for char in self.source_content_hash)
+        ):
+            errors["source_content_hash"] = (
+                "Active and ready HLS artifacts require a lowercase SHA-256 source hash."
+            )
         if self.key_nonce is not None and len(self.key_nonce) != 12:
             errors["key_nonce"] = "HLS key nonce must be 12 bytes."
         if self.iv_hex:

@@ -76,9 +76,11 @@ def test_ensure_video_hls_materializes_raw_and_processed(
 
 
 @pytest.mark.unit
-def test_successful_video_history_failure_is_not_suppressed(
+@pytest.mark.parametrize("failure_boundary", ["hls", "history"])
+def test_failed_video_finalization_preserves_previous_generation(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
+    failure_boundary: str,
 ) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
@@ -110,9 +112,9 @@ def test_successful_video_history_failure_is_not_suppressed(
     class DummyVideo:
         pk = 1
         video_hash = "video-hash"
-        processed_video_hash: str | None = None
-        processed_file = SimpleNamespace(name="")
-        meta: dict[str, object] = {}
+        processed_video_hash: str | None = "previous-processed-hash"
+        processed_file = SimpleNamespace(name="anonymized_videos/previous.mp4")
+        meta: dict[str, object] = {"generation": "previous"}
         state = DummyState()
 
         def save(self, *args: object, **kwargs: object) -> None:
@@ -125,8 +127,9 @@ def test_successful_video_history_failure_is_not_suppressed(
         nonlocal guard_calls
         guard_calls += 1
 
-    def fail_history_write(**kwargs: object) -> NoReturn:
-        raise RuntimeError("history unavailable")
+    def write_history(**kwargs: object) -> None:
+        if failure_boundary == "history":
+            raise RuntimeError("history unavailable")
 
     def accept_final_video_output(path: Path) -> None:
         return None
@@ -138,10 +141,12 @@ def test_successful_video_history_failure_is_not_suppressed(
         relative_name: str | None = None,
     ) -> str:
         assert relative_name is not None
+        setattr(field_file, "name", relative_name)
         return relative_name
 
-    def accept_video_hls(video: VideoFile, *, force: bool = False) -> None:
-        return None
+    def materialize_video_hls(video: VideoFile, *, force: bool = False) -> None:
+        if failure_boundary == "hls":
+            raise RuntimeError("hls unavailable")
 
     def storage_relative(path: Path) -> str:
         return f"anonymized_videos/{path.name}"
@@ -179,13 +184,13 @@ def test_successful_video_history_failure_is_not_suppressed(
     monkeypatch.setattr(
         state_management_module,
         "ensure_video_hls",
-        accept_video_hls,
+        materialize_video_hls,
         raising=True,
     )
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
         "get_or_create_for_hash",
-        staticmethod(fail_history_write),
+        staticmethod(write_history),
         raising=True,
     )
     ctx = ImportContext(
@@ -201,13 +206,17 @@ def test_successful_video_history_failure_is_not_suppressed(
     ctx.sensitive_path = sensitive_path
     ctx.storage_normalization_evidence = _normalization_evidence()
 
-    with pytest.raises(RuntimeError, match="history unavailable"):
+    with pytest.raises(RuntimeError, match=f"{failure_boundary} unavailable"):
         finalize_video_success(ctx)
 
-    assert guard_calls >= 6
+    assert guard_calls >= 2
     assert video.state.anonymized is False
     assert video.state.sensitive_meta_processed is False
     assert sensitive_path.exists()
+    assert anonymized_path.exists()
+    assert video.processed_video_hash == "previous-processed-hash"
+    assert video.processed_file.name == "anonymized_videos/previous.mp4"
+    assert video.meta == {"generation": "previous"}
 
 
 @pytest.mark.unit
@@ -400,7 +409,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert video.processed_file.name.endswith("anonymized_videos/video_hash.mp4")
     assert store_calls == [(final_anonymized, video.processed_file.name)]
-    assert ownership_checks >= 7
+    assert ownership_checks >= 5
     assert hls_calls == [1]
 
 

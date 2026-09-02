@@ -292,6 +292,34 @@ inventory::submit! {
 
 inventory::submit! {
     PyFunctionInfo {
+        name: "transition_service_lifecycle",
+        args: &[
+            ArgInfo { name: "current_state", r#type: stub_type_str },
+            ArgInfo { name: "event", r#type: stub_type_str },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("current_state: str, event: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "transition_operation_lifecycle",
+        args: &[
+            ArgInfo { name: "current_state", r#type: stub_type_str },
+            ArgInfo { name: "event", r#type: stub_type_str },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("current_state: str, event: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
         name: "derive_segment_annotation_status",
         args: &[
             ArgInfo { name: "segment_annotations_created", r#type: stub_type_bool },

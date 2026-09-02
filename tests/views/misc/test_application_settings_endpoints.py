@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import timedelta
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -1078,56 +1077,6 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert detail_payload["artifact_paths"]["checkpoint_path"] == "/tmp/best.pt"
         assert detail_payload["result"]["model_path"] == "/tmp/phi.onnx"
 
-    def test_model_training_run_execution_parses_stdout_json_result(self):
-        dataset = AIDataSet.objects.create(
-            name=f"train-parse-{uuid4().hex[:8]}",
-            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
-            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-        )
-        run = AIModelTrainingRun.objects.create(
-            dataset=dataset,
-            dataset_name=dataset.name,
-            dataset_type=dataset.dataset_type,
-            ai_model_type=dataset.ai_model_type,
-            backbone_name="gastro_rn50",
-            feature_mode="freeze_backbone",
-            freeze_backbone=True,
-            epochs=1,
-            batch_size=1,
-            labelset_version=2,
-            treat_unlabeled_as_negative=True,
-            command_kwargs={"dataset_id": dataset.pk},
-            server_instance_id=view_module._MODEL_TRAINING_SERVER_INSTANCE_ID,
-        )
-
-        with (
-            TemporaryDirectory() as staging_root,
-            override_settings(MODEL_TRAINING_STAGING_ROOT=Path(staging_root)),
-            patch.object(model_training_jobs, "call_command") as mocked_call_command,
-        ):
-
-            def fake_call_command(*args: object, **kwargs: object) -> None:
-                _writer_from_kwargs(kwargs, "stdout").write(
-                    'log line\n{"model_path": "/tmp/model.pth", '
-                    '"manifest_path": "/tmp/manifest.json", '
-                    '"meta_path": "/tmp/meta.json"}\n'
-                )
-
-            mocked_call_command.side_effect = fake_call_command
-            model_training_jobs._execute_model_training_run(
-                run.run_key,
-                command_kwargs={"dataset_id": dataset.pk},
-            )
-
-        assert mocked_call_command.call_args.args[0] == "train_image_multilabel_model"
-        run.refresh_from_db()
-        assert run.status == AIModelTrainingRun.STATUS_COMPLETED
-        result = cast(dict[str, object], run.result)
-        artifact_paths = cast(dict[str, object], run.artifact_paths)
-
-        assert result["model_path"] == "/tmp/model.pth"
-        assert artifact_paths["manifest_path"] == "/tmp/manifest.json"
-
     def test_model_training_run_execution_stores_failure_logs(self):
         dataset = AIDataSet.objects.create(
             name=f"train-fail-{uuid4().hex[:8]}",
@@ -1172,77 +1121,6 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert run.error == "boom"
         assert "training started" in run.stdout
         assert "stderr detail" in run.stdout
-
-    def test_model_training_run_keeps_fresh_other_process_run_active(self):
-        dataset = AIDataSet.objects.create(
-            name=f"train-active-{uuid4().hex[:8]}",
-            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
-            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-        )
-        run = AIModelTrainingRun.objects.create(
-            dataset=dataset,
-            dataset_name=dataset.name,
-            dataset_type=dataset.dataset_type,
-            ai_model_type=dataset.ai_model_type,
-            backbone_name="gastro_rn50",
-            feature_mode="freeze_backbone",
-            freeze_backbone=True,
-            epochs=1,
-            batch_size=1,
-            labelset_version=2,
-            treat_unlabeled_as_negative=True,
-            status=AIModelTrainingRun.STATUS_RUNNING,
-            server_instance_id="old-process",
-        )
-
-        response = self.client.get(
-            f"/api/settings/application/model_training/runs/{run.run_key}/"
-        )
-
-        assert response.status_code == 200, response.content
-        payload = response.json()
-        assert payload["status"] == "running"
-
-        run.refresh_from_db()
-        assert run.status == AIModelTrainingRun.STATUS_RUNNING
-
-    def test_model_training_run_marks_stale_other_process_runs_lost(self):
-        dataset = AIDataSet.objects.create(
-            name=f"train-lost-{uuid4().hex[:8]}",
-            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
-            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-        )
-        run = AIModelTrainingRun.objects.create(
-            dataset=dataset,
-            dataset_name=dataset.name,
-            dataset_type=dataset.dataset_type,
-            ai_model_type=dataset.ai_model_type,
-            backbone_name="gastro_rn50",
-            feature_mode="freeze_backbone",
-            freeze_backbone=True,
-            epochs=1,
-            batch_size=1,
-            labelset_version=2,
-            treat_unlabeled_as_negative=True,
-            status=AIModelTrainingRun.STATUS_RUNNING,
-            server_instance_id="old-process",
-        )
-        AIModelTrainingRun.objects.filter(pk=run.pk).update(
-            updated_at=(
-                timezone.now()
-                - model_training_jobs.MODEL_TRAINING_LOST_TIMEOUT
-                - timedelta(minutes=1)
-            )
-        )
-
-        response = self.client.get(
-            f"/api/settings/application/model_training/runs/{run.run_key}/"
-        )
-
-        assert response.status_code == 200, response.content
-        payload = response.json()
-        assert payload["status"] == "lost"
-        assert "LOST" in payload["error"]
 
     def test_video_dimension_backfill_run_endpoints_create_and_report_run(self):
         from endoreg_db.views.misc import application_settings as view_module

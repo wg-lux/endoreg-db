@@ -22,6 +22,7 @@ from lx_dtypes.models.contracts.model_meta_logic import (
 )
 
 from ..utils import WEIGHTS_DIR
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from . import model_meta_logic
 
 if TYPE_CHECKING:
@@ -90,6 +91,7 @@ class ModelMeta(models.Model):
     )
     weights: models.FileField = models.FileField(
         upload_to=WEIGHTS_DIR.name,
+        storage=LazyEncryptedStorage(),
         validators=[
             FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])
         ],

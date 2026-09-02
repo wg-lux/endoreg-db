@@ -154,7 +154,12 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
             tasks.video_hls_materialization,
             "endoreg_db.services.hls_media.materialize_video_hls",
             ("42",),
-            {"artifact_kind": "processed", "force": False},
+            {
+                "artifact_kind": "processed",
+                "force": False,
+                "reserved_artifact_id": 7,
+                "reservation_key_id": "11111111-1111-1111-1111-111111111111",
+            },
             "video_hls_materialization",
         ),
     ],
@@ -230,10 +235,49 @@ def test_video_hls_materialization_task_delegates_with_normalized_args() -> None
             "42",
             artifact_kind="processed",
             force=1,
+            reserved_artifact_id=7,
+            reservation_key_id="11111111-1111-1111-1111-111111111111",
         )
 
     assert result == {"video_id": 42, "status": "materialized"}
-    runner.assert_called_once_with(42, artifact_kind="processed", force=True)
+    runner.assert_called_once_with(
+        42,
+        artifact_kind="processed",
+        force=True,
+        reserved_artifact_id=7,
+        reservation_key_id="11111111-1111-1111-1111-111111111111",
+    )
+
+
+def test_video_hls_materialization_task_requires_reservation_identity() -> None:
+    with pytest.raises(ValueError, match="durable reservation identity"):
+        cast(Any, tasks.video_hls_materialization).run("42")
+
+
+def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 42, "status": "already_materializing"}
+
+    current_task = _current_task(tasks.video_hls_materialization)
+    retry_error = RuntimeError("retry scheduled")
+    with (
+        patch(
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            return_value=_Result(),
+        ),
+        patch.object(current_task, "retry", side_effect=retry_error) as retry,
+        pytest.raises(RuntimeError, match="retry scheduled"),
+    ):
+        cast(Any, tasks.video_hls_materialization).run(
+            "42",
+            reserved_artifact_id=7,
+            reservation_key_id="11111111-1111-1111-1111-111111111111",
+        )
+
+    retry.assert_called_once()
+    assert retry.call_args.kwargs["countdown"] == 60
+    assert retry.call_args.kwargs["max_retries"] is None
 
 
 def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
@@ -256,8 +300,16 @@ def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
         ),
         patch.object(current_task, "retry") as retry,
     ):
-        failed = cast(Any, tasks.video_hls_materialization).run("44")
-        subsequent = cast(Any, tasks.video_hls_materialization).run("43")
+        failed = cast(Any, tasks.video_hls_materialization).run(
+            "44",
+            reserved_artifact_id=44,
+            reservation_key_id="44444444-4444-4444-4444-444444444444",
+        )
+        subsequent = cast(Any, tasks.video_hls_materialization).run(
+            "43",
+            reserved_artifact_id=43,
+            reservation_key_id="33333333-3333-3333-3333-333333333333",
+        )
 
     assert failed == {
         "video_id": 44,

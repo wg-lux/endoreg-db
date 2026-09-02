@@ -219,11 +219,17 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
         tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
         -q
-    note: Health-Check meldet unresolved Video-/Berichtsfehler und länger als sieben Stunden aktive Processing-Historien
-      fail-closed; Healthy-, Failed- und Stale-Fälle sind getestet. Ausstehend ist der Lauf im produktionsnahen
-      Deploymentprofil.
-    assessed_by: Codex
-    assessed_at: '2026-07-17T12:43:48.369989Z'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
+        tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
+    note: Der fokussierte Recovery- und Monitoring-Lauf belegt operator-sichtbare Failed-/Stale-Zähler,
+      fail-closed Health-Fehler, idempotente Retry-Reservierung und Zustandsrücksetzung sowie den Erhalt
+      von AuditLedger- und AnonymizationValidationMetric-Evidenz über einen erfolgreichen Wiederanlauf.
+      Ein Video mit Integritätsstatus lost bleibt fail-closed. Das Kriterium bleibt in_progress, bis das
+      dokumentierte Fehler- und Korrekturszenario im produktionsnahen local_study_server-Deploymentprofil
+      mit paketierter Python-Umgebung durchgeführt wurde.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T11:47:24.022168Z'
 - id: operator_documentation
   category: documentation
   title: Schutzmodell, Qualitätsschwellen und Bedienabläufe sind aktuell

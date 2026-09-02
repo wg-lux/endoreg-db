@@ -120,7 +120,7 @@ def test_correction_job_marks_success_only_after_processed_hls_is_ready(
 
     def _materialize(*_args: object, **kwargs: object) -> SimpleNamespace:
         events.append(f"hls:{kwargs['artifact_kind']}:{kwargs['force']}")
-        return SimpleNamespace(status="ready", segment_count=8)
+        return SimpleNamespace(status="materialized", segment_count=8)
 
     monkeypatch.setattr(video_correction_jobs, "materialize_video_hls", _materialize)
 

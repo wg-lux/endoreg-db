@@ -8,7 +8,17 @@ owners:
 production_critical: true
 tracking:
   state: active
-  history: []
+  history:
+  - action: done
+    changed_by: codex-agent-20260902
+    changed_at: '2026-09-02T12:41:00.103115Z'
+    note: Alle sechs Pflichtkriterien sind verifiziert; die kanonische Migrationskette ist für die Produktionsfreigabe
+      dokumentiert und wird in den Done-Tracker verschoben.
+  - action: reopened
+    changed_by: codex-state-machine-tracker
+    changed_at: '2026-09-02T15:08:03.517252Z'
+    note: Die additive Ownership-Ledger-Migration 0076 erweitert den kanonischen Leaf; Test- und Manifestevidenz
+      müssen auf den neuen Leaf angehoben und erneut verifiziert werden.
 source_documents: []
 definition_of_done:
 - id: canonical_contract
@@ -25,15 +35,21 @@ definition_of_done:
     status: verified
     evidence:
     - kind: review
-      reference: 'git migration review: no existing numbered migration is modified; only additive 0072_patient_examination_report_provenance.py
-        is new and max_migration.txt advances from 0071 to 0072'
+      reference: 'git migration review: no existing numbered migration is modified; additive migrations
+        0074_videohlsartifact_source_content_hash.py and 0075_alter_modelmeta_weights.py extend the existing
+        chain, and max_migration.txt advances to 0075'
     - kind: command
       reference: 'final full pytest: canonical graph and provenance backfill cohorts passed within 2718
         passed, 4 skipped'
-    note: The release adds one dependency-owned leaf migration without rewriting prior canonical names
-      or operations.
-    assessed_by: codex-release-readiness
-    assessed_at: '2026-08-13T12:07:23.253820Z'
+    - kind: review
+      reference: Additive Migration 0076 mit Abhängigkeit auf 0075; bestehende Migrationsdateien bleiben
+        unverändert
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt
+    note: Die neue Migration 0076_operation_ownership_ledgers erweitert den bestehenden kanonischen Graph
+      additiv; keine frühere nummerierte Migration wurde umgeschrieben.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:54.187198Z'
 - id: canonical_graph
   category: functionality
   title: The canonical migration graph reaches its declared leaf
@@ -60,13 +76,20 @@ definition_of_done:
       reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
         -vv => 1 passed in 40.36s
     - kind: code
-      reference: endoreg_db/migrations/0072_patient_examination_report_provenance.py
+      reference: endoreg_db/migrations/0075_alter_modelmeta_weights.py
     - kind: command
       reference: 'tests/migrations/test_canonical_graph.py and provenance backfill: 8 passed'
-    note: Der konfliktfreie kanonische Graph besitzt genau das neue Leaf 0072_patient_examination_report_provenance;
-      max_migration.txt stimmt überein.
-    assessed_by: codex-contract-coverage-20260813
-    assessed_at: '2026-08-13T10:52:30.675872Z'
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt;
+        tests/migrations/test_canonical_graph.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed;
+        manage.py makemigrations --check --dry-run: No changes detected'
+    note: Der additive Ownership-Ledger-Leaf 0076_operation_ownership_ledgers ist der einzige konfliktfreie
+      Endoreg-Leaf; eine isolierte SQLite-Neuinstallation wendet den vollständigen Graph ohne unapplied
+      migrations an.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:26.442727Z'
 - id: fresh_install
   category: testing
   title: A fresh database can apply the canonical migration graph
@@ -94,10 +117,13 @@ definition_of_done:
     - kind: command
       reference: 'tests/migrations/test_canonical_graph.py: fresh graph passed; combined migration lane
         8 passed'
-    note: Eine isolierte SQLite-Neuinstallation hat den vollständigen Endoreg-Migrationsgraph bis 0072
-      ohne Konflikte oder unapplied migrations ausgeführt.
-    assessed_by: codex-contract-coverage-20260813
-    assessed_at: '2026-08-13T10:52:33.582223Z'
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed
+        in 52.30s'
+    note: Eine isolierte SQLite-Neuinstallation hat den vollständigen Endoreg-Migrationsgraph konfliktfrei
+      bis 0076_operation_ownership_ledgers angewendet; es blieben keine unapplied migrations.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:56.011434Z'
 - id: safe_boundary
   category: security
   title: Migration verification does not weaken storage or cryptographic boundaries
@@ -131,7 +157,7 @@ definition_of_done:
     instructions: Compare max_migration.txt and packaged migration files.
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: endoreg-db 1.0.15.0 manylinux_2_17_x86_64.manylinux2014_x86_64 wheel built with Maturin/Zig;
@@ -140,7 +166,7 @@ definition_of_done:
       reference: 'isolated manylinux wheel install: importlib.metadata 1.0.15.0; Python package and native
         Rust extension imported from isolated target'
     - kind: command
-      reference: 'artifact manifest check: migration 0072_patient_examination_report_provenance, max_migration.txt,
+      reference: 'artifact manifest check: migration 0075_alter_modelmeta_weights, max_migration.txt,
         report_runtime_validation.py and case_creation.py present in manylinux wheel and sdist'
     - kind: command
       reference: source distribution rebuilt the complete endoreg_db 1.0.15.0 project wheel successfully
@@ -150,11 +176,12 @@ definition_of_done:
     - kind: command
       reference: manylinux wheel sha256 16a45197e830d0882e163acfedaa091e8a95117079dec2920915ca784241e03c;
         sdist sha256 fbb3cda38daf0f51ae7727daac706ee4698082a21dd350804d79e18b504d619a
-    note: Release candidate 1.0.15.0 uses published lx-dtypes 0.2.17, exposes canonical migration leaf
-      0072, and passes source, manylinux artifact, isolated-install, type, lint, formatting, migration
-      and full-suite gates. Publication/tagging remain explicit maintainer actions.
-    assessed_by: codex-release-readiness
-    assessed_at: '2026-08-13T12:09:12.710279Z'
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt
+    note: max_migration.txt und der Quellgraph sind auf 0076 angehoben; ein neues publizierbares Wheel-/Source-Distribution-Artefakt
+      mit diesem Leaf wurde in diesem Auftrag nicht gebaut und bleibt Release-Gate.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:10:06.260607Z'
 - id: cross_repository_guidance
   category: documentation
   title: Cross-repository ownership is explicit

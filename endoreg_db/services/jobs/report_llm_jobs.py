@@ -27,6 +27,13 @@ from endoreg_db.schemas.report_llm import (
     dump_report_llm_reimport_request_payload,
 )
 from endoreg_db.services.hub.cleanup import cleanup_upload_job_source
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_completed,
+    mark_upload_job_error,
+    mark_upload_job_integrity_lost,
+    mark_upload_job_processing,
+    validate_upload_job_status_transition,
+)
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -160,36 +167,84 @@ def _report_upload_jobs(pdf: _RawPdfLike):
 
 
 def _mark_report_upload_jobs_processing(pdf: _RawPdfLike) -> int:
-    return _report_upload_jobs(pdf).update(
-        status=UploadJob.Status.PROCESSING,
-        error_detail="",
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
+        for upload_job in upload_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=UploadJob.Status.PROCESSING.value,
+            )
+        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
+        return (
+            _report_upload_jobs(pdf)
+            .filter(pk__in=upload_job_ids)
+            .update(
+                status=UploadJob.Status.PROCESSING,
+                error_detail="",
+                updated_at=timezone.now(),
+            )
+        )
 
 
 def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
-    return _report_upload_jobs(pdf).update(
-        status=UploadJob.Status.ANONYMIZED,
-        error_detail="",
-        sensitive_meta_id=pdf.sensitive_meta_id,
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
+        for upload_job in upload_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=UploadJob.Status.ANONYMIZED.value,
+            )
+        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
+        return (
+            _report_upload_jobs(pdf)
+            .filter(pk__in=upload_job_ids)
+            .update(
+                status=UploadJob.Status.ANONYMIZED,
+                error_detail="",
+                sensitive_meta_id=pdf.sensitive_meta_id,
+                updated_at=timezone.now(),
+            )
+        )
 
 
 def _mark_report_upload_jobs_error(pdf: _RawPdfLike, error_detail: str) -> int:
-    return _report_upload_jobs(pdf).update(
-        status=UploadJob.Status.ERROR,
-        error_detail=error_detail,
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
+        for upload_job in upload_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=UploadJob.Status.ERROR.value,
+            )
+        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
+        return (
+            _report_upload_jobs(pdf)
+            .filter(pk__in=upload_job_ids)
+            .update(
+                status=UploadJob.Status.ERROR,
+                error_detail=error_detail,
+                updated_at=timezone.now(),
+            )
+        )
 
 
 def _mark_report_upload_jobs_lost(pdf: _RawPdfLike, error_detail: str) -> int:
-    return _report_upload_jobs(pdf).update(
-        status=UploadJob.Status.LOST,
-        error_detail=error_detail,
-        updated_at=timezone.now(),
-    )
+    with transaction.atomic():
+        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
+        for upload_job in upload_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=UploadJob.Status.LOST.value,
+            )
+        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
+        return (
+            _report_upload_jobs(pdf)
+            .filter(pk__in=upload_job_ids)
+            .update(
+                status=UploadJob.Status.LOST,
+                error_detail=error_detail,
+                updated_at=timezone.now(),
+            )
+        )
 
 
 def _config_from_payload(
@@ -517,24 +572,24 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         config = ReportLlmJobConfig.model_validate(job.config)
     except Exception as exc:
         error_detail = f"Invalid report LLM import job config: {exc}"
-        upload_job.mark_error(error_detail)
+        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
         job.mark_failure(error_detail)
         raise RuntimeError(error_detail) from exc
 
     if not upload_job.file or not getattr(upload_job.file, "name", None):
         error_detail = "Upload job has no stored report file."
-        upload_job.mark_lost(error_detail)
+        mark_upload_job_integrity_lost(cast(UploadJob, upload_job), error_detail)
         job.mark_lost(error_detail)
         raise FileNotFoundError(error_detail)
 
     center = upload_job.source_center
     if center is None:
         error_detail = "Upload job has no resolved source center."
-        upload_job.mark_error(error_detail)
+        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
         job.mark_failure(error_detail)
         raise RuntimeError(error_detail)
 
-    upload_job.mark_processing()
+    mark_upload_job_processing(cast(UploadJob, upload_job))
     try:
         with ensure_local_file(upload_job.file) as file_path:
             report = ReportImportService().import_and_anonymize(
@@ -552,7 +607,10 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         sensitive_meta = typed_report.sensitive_meta
         job.pdf = report
         job.save(update_fields=["pdf", "updated_at"])
-        upload_job.mark_completed(sensitive_meta=sensitive_meta)
+        mark_upload_job_completed(
+            cast(UploadJob, upload_job),
+            sensitive_meta=sensitive_meta,
+        )
         cleanup_upload_job_source(cast(UploadJob, upload_job))
         result: ReportLlmJobJsonObject = cast(
             ReportLlmJobJsonObject,
@@ -581,7 +639,7 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         error_detail = (
             f"Stored report source could not be materialized from storage. {exc}"
         )
-        upload_job.mark_lost(error_detail)
+        mark_upload_job_integrity_lost(cast(UploadJob, upload_job), error_detail)
         job.mark_lost(error_detail)
         logger.exception("Stored source missing during report LLM import %s.", job_id)
         raise
@@ -589,7 +647,8 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         typed_upload_job = cast(UploadJob, upload_job)
         typed_upload_job.storage_class = UploadJob.StorageClass.QUARANTINE
         typed_upload_job.save(update_fields=["storage_class", "updated_at"])
-        typed_upload_job.mark_error(
+        mark_upload_job_error(
+            typed_upload_job,
             str(exc),
             error_code=UploadJob.ErrorCode.INVALID_INPUT,
         )
@@ -606,7 +665,7 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         raise
     except Exception as exc:
         error_detail = str(exc)
-        upload_job.mark_error(error_detail)
+        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
         job.mark_failure(error_detail)
         logger.exception("Report LLM import job %s failed: %s", job_id, exc)
         raise

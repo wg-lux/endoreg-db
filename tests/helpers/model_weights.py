@@ -4,10 +4,9 @@ import posixpath
 from pathlib import Path
 from typing import BinaryIO, Literal, Protocol, cast
 
+from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-
 from endoreg_db.models import ModelMeta
-from endoreg_db.utils.file_operations import atomic_write_file
 
 MANAGED_STUB_WEIGHT_PAYLOAD = b"stub-weights"
 
@@ -92,10 +91,21 @@ def ensure_managed_stub_weights(
         meta.save(update_fields=["weights"])
 
     cleanup_managed_stub_weight_collisions(weights_name)
-    if not default_storage.exists(weights_name):
-        atomic_write_file(
-            destination=Path(default_storage.path(weights_name)),
-            content=[MANAGED_STUB_WEIGHT_PAYLOAD],
-            required_bytes=len(MANAGED_STUB_WEIGHT_PAYLOAD),
+    storage = meta.weights.storage
+    is_encrypted = getattr(storage, "is_encrypted", None)
+    if (
+        storage.exists(weights_name)
+        and callable(is_encrypted)
+        and not is_encrypted(weights_name)
+    ):
+        storage.delete(weights_name)
+    if not storage.exists(weights_name):
+        stored_name = storage.save(
+            weights_name,
+            ContentFile(MANAGED_STUB_WEIGHT_PAYLOAD),
         )
+        if stored_name != weights_name:
+            raise RuntimeError(
+                "Managed stub weights were stored under an unexpected name"
+            )
     cleanup_managed_stub_weight_collisions(weights_name)

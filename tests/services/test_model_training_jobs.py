@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import cast
 
 import pytest
 from django.test import override_settings
+from django.utils import timezone
 from pytest import MonkeyPatch
 
 from endoreg_db.models import (
@@ -64,6 +66,89 @@ def _phi_training_run(command_kwargs: dict[str, object]) -> AIModelTrainingRun:
     )
 
 
+@pytest.mark.parametrize(
+    ("current_status", "target_status"),
+    [
+        (AIModelTrainingRun.STATUS_QUEUED, AIModelTrainingRun.STATUS_RUNNING),
+        (AIModelTrainingRun.STATUS_RUNNING, AIModelTrainingRun.STATUS_COMPLETED),
+        (AIModelTrainingRun.STATUS_RUNNING, AIModelTrainingRun.STATUS_FAILED),
+        (AIModelTrainingRun.STATUS_QUEUED, AIModelTrainingRun.STATUS_LOST),
+        (AIModelTrainingRun.STATUS_RUNNING, AIModelTrainingRun.STATUS_LOST),
+    ],
+)
+def test_model_training_status_transition_uses_native_operation_reducer(
+    current_status: str,
+    target_status: str,
+) -> None:
+    model_training_jobs._validate_model_training_status_transition(
+        current_status=current_status,
+        target_status=target_status,
+    )
+
+
+def test_model_training_status_transition_rejects_skipped_completion() -> None:
+    with pytest.raises(ValueError, match="invalid model-training status transition"):
+        model_training_jobs._validate_model_training_status_transition(
+            current_status=AIModelTrainingRun.STATUS_QUEUED,
+            target_status=AIModelTrainingRun.STATUS_COMPLETED,
+        )
+
+
+@pytest.mark.django_db
+def test_stale_queued_model_training_run_enters_retry_wait() -> None:
+    # Arrange
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+    AIModelTrainingRun.objects.filter(pk=run.pk).update(
+        server_instance_id="previous-backend-process",
+        updated_at=(
+            timezone.now()
+            - model_training_jobs.MODEL_TRAINING_LOST_TIMEOUT
+            - timedelta(seconds=1)
+        ),
+    )
+
+    # Act
+    model_training_jobs._mark_lost_model_training_runs()
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RETRY_WAIT
+    assert run.next_retry_at is not None
+    assert "not acknowledged" in run.dispatch_error
+
+
+@pytest.mark.django_db
+def test_expired_running_model_training_run_is_lost_before_retry() -> None:
+    # Arrange
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+    fence = model_training_jobs._claim_model_training_run(run.run_id)
+    assert fence is not None
+    expired_at = timezone.now() - timedelta(seconds=1)
+    AIModelTrainingRun.objects.filter(pk=run.pk).update(
+        heartbeat_at=expired_at,
+        lease_expires_at=expired_at,
+        updated_at=expired_at,
+    )
+
+    # Act
+    model_training_jobs._mark_lost_model_training_runs()
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_LOST
+    assert run.finished_at is not None
+    assert run.attempt_id is None
+    assert run.owner_id == ""
+
+    # Act: a later reconciliation may schedule the explicit retry.
+    model_training_jobs._mark_lost_model_training_runs()
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RETRY_WAIT
+    assert run.next_retry_at is not None
+
+
 @pytest.mark.django_db
 def test_phi_retraining_worker_integrates_with_lx_anonymizer_and_persists_result(
     tmp_path: Path,
@@ -87,6 +172,9 @@ def test_phi_retraining_worker_integrates_with_lx_anonymizer_and_persists_result
         config: phi_region_detector_training.PhiRegionDetectorTrainingConfig,
     ) -> dict[str, object]:
         captured_configs.append(config)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for artifact_name in ("phi.onnx", "best.pt", "phi.json"):
+            (output_dir / artifact_name).write_bytes(b"training-artifact")
         return {
             "model_path": str(output_dir / "phi.onnx"),
             "checkpoint_path": str(output_dir / "best.pt"),
@@ -122,6 +210,167 @@ def test_phi_retraining_worker_integrates_with_lx_anonymizer_and_persists_result
         "meta_path": str(output_dir / "phi.json"),
     }
     assert '"reason": "not_image_multilabel"' in run.stdout
+
+
+@pytest.mark.django_db
+def test_live_model_training_claim_cannot_be_taken_twice() -> None:
+    # Arrange
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+
+    # Act
+    first_fence = model_training_jobs._claim_model_training_run(run.run_id)
+    second_fence = model_training_jobs._claim_model_training_run(run.run_id)
+
+    # Assert
+    assert first_fence is not None
+    assert second_fence is None
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RUNNING
+    assert run.fencing_token == first_fence.fencing_token
+
+
+@pytest.mark.django_db
+def test_stale_model_training_completion_is_rejected() -> None:
+    # Arrange
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+    stale_fence = model_training_jobs._claim_model_training_run(run.run_id)
+    assert stale_fence is not None
+    AIModelTrainingRun.objects.filter(pk=run.pk).update(
+        attempt_id=uuid.uuid4(),
+        owner_id="replacement-worker",
+        fencing_token=stale_fence.fencing_token + 1,
+    )
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match="ownership fence"):
+        model_training_jobs._finish_model_training_run(
+            stale_fence,
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+            result={"model_path": "/replacement/model.onnx"},
+            artifact_paths={"model_path": "/replacement/model.onnx"},
+        )
+
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RUNNING
+    assert run.owner_id == "replacement-worker"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "target_status",
+    [AIModelTrainingRun.STATUS_COMPLETED, AIModelTrainingRun.STATUS_FAILED],
+)
+def test_expired_model_training_lease_rejects_completion(
+    target_status: str,
+) -> None:
+    # Arrange
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+    fence = model_training_jobs._claim_model_training_run(run.run_id)
+    assert fence is not None
+    expired_at = timezone.now() - timedelta(minutes=1)
+    AIModelTrainingRun.objects.filter(pk=run.pk).update(
+        heartbeat_at=expired_at,
+        lease_expires_at=expired_at,
+    )
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match="ownership fence"):
+        model_training_jobs._finish_model_training_run(
+            fence,
+            status=target_status,
+            error="worker result after lease expiry",
+        )
+
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RUNNING
+    assert run.attempt_id == fence.attempt_id
+    assert run.fencing_token == fence.fencing_token
+
+
+@pytest.mark.django_db
+def test_model_training_dispatch_failure_enters_durable_retry_wait(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    from endoreg_db import tasks
+
+    run = _phi_training_run({"_command_name": "train_phi_region_detector"})
+
+    def accept_secure_transport(_kind: object) -> None:
+        return None
+
+    monkeypatch.setattr(
+        model_training_jobs,
+        "ensure_secure_transport_for_job_kind",
+        accept_secure_transport,
+    )
+
+    def fail_dispatch(*args: object, **kwargs: object) -> None:
+        raise ConnectionError("training broker unavailable")
+
+    monkeypatch.setattr(tasks.run_model_training_task, "apply_async", fail_dispatch)
+
+    # Act
+    with (
+        override_settings(MODEL_TRAINING_JOB_MODE="celery"),
+        pytest.raises(ConnectionError, match="broker unavailable"),
+    ):
+        model_training_jobs._launch_model_training_run(
+            run.run_key,
+            command_kwargs=cast(dict[str, object], run.command_kwargs),
+        )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RETRY_WAIT
+    assert run.retry_count == 1
+    assert run.next_retry_at is not None
+    assert run.dispatch_error == "training broker unavailable"
+
+
+@pytest.mark.django_db
+def test_model_training_cannot_complete_with_missing_artifacts(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    from lx_anonymizer.text_detection import phi_region_detector_training
+
+    dataset_yaml = tmp_path / "dataset.yml"
+    dataset_yaml.write_text("path: .\ntrain: train\nval: val\n", encoding="utf-8")
+    output_dir = tmp_path / "missing-output"
+    command_kwargs = _phi_training_command_kwargs(dataset_yaml, output_dir)
+    run = _phi_training_run(command_kwargs)
+
+    def return_missing_artifacts(
+        _config: phi_region_detector_training.PhiRegionDetectorTrainingConfig,
+    ) -> dict[str, object]:
+        return {
+            "model_path": str(output_dir / "missing.onnx"),
+            "checkpoint_path": str(output_dir / "missing.pt"),
+            "onnx_path": str(output_dir / "missing.onnx"),
+            "meta_path": str(output_dir / "missing.json"),
+        }
+
+    monkeypatch.setattr(
+        phi_region_detector_training,
+        "train_phi_region_detector",
+        return_missing_artifacts,
+    )
+
+    # Act
+    with override_settings(MODEL_TRAINING_STAGING_ROOT=tmp_path / "staging"):
+        model_training_jobs._execute_model_training_run(
+            run.run_key,
+            command_kwargs=command_kwargs,
+        )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_FAILED
+    assert run.result is None
+    assert run.artifact_paths == {}
+    assert "artifact" in run.error.lower()
 
 
 @pytest.mark.django_db
@@ -243,6 +492,77 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
     assert calls[0]["from_processed"] is True
     assert calls[0]["start_frame"] == 7
     assert calls[0]["end_frame"] == 8
+
+
+@pytest.mark.django_db
+def test_failed_training_frame_extraction_does_not_publish_database_state(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    center = Center.objects.create(
+        name=f"training-atomic-center-{uuid.uuid4().hex[:8]}",
+        display_name="Training Atomic Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"training-atomic-video-{uuid.uuid4().hex}",
+        frame_dir=str(tmp_path / "frames"),
+        processed_file="anonymized_videos/processed.mp4",
+    )
+    state = video.get_or_create_state()
+    state.sensitive_meta_processed = True
+    state.anonymized = True
+    state.anonymization_validated = True
+    state.outside_segments_removed = True
+    state.save(
+        update_fields=[
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+        ]
+    )
+    frame = Frame.objects.create(
+        video=video,
+        frame_number=13,
+        relative_path="legacy-frame.jpg",
+        is_extracted=False,
+    )
+    label = Label.objects.create(name=f"atomic-label-{uuid.uuid4().hex[:8]}")
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=label,
+        value=True,
+    )
+    dataset = AIDataSet.objects.create(
+        name=f"atomic-dataset-{uuid.uuid4().hex[:8]}",
+        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+    )
+    dataset.image_annotations.add(annotation)
+
+    def omit_extracted_frame(
+        _video: VideoFile,
+        **_kwargs: object,
+    ) -> list[Path]:
+        return []
+
+    monkeypatch.setattr(
+        model_training_jobs,
+        "extract_frame_range_to_directory",
+        omit_extracted_frame,
+    )
+
+    # Act
+    with pytest.raises(RuntimeError, match="did not create required training frame"):
+        model_training_jobs.prepare_model_training_inputs({"dataset_id": dataset.pk})
+
+    # Assert
+    frame.refresh_from_db()
+    assert frame.relative_path == "legacy-frame.jpg"
+    assert frame.is_extracted is False
+    assert not (tmp_path / "frames" / "frame_0000013.jpg").exists()
 
 
 @pytest.mark.django_db

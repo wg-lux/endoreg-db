@@ -20,5 +20,10 @@ pub(crate) fn native_capabilities() -> Vec<(String, String, String)> {
             "hls_state_v1".to_owned(),
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
         ),
+        (
+            "lifecycle_state_machine".to_owned(),
+            "lifecycle_state_v3".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
     ]
 }

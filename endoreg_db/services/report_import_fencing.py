@@ -12,6 +12,12 @@ from django.db import close_old_connections, transaction
 from django.db.models.functions import Now
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
+from endoreg_db.services.report_import_state_machine import (
+    validate_report_import_claim,
+    validate_report_import_failure,
+    validate_report_import_ownership_lost,
+    validate_report_import_success,
+)
 
 DEFAULT_REPORT_IMPORT_LEASE_SECONDS: Final = 30 * 60
 
@@ -79,6 +85,36 @@ def acquire_report_import_fence(
     normalized_hash = _validate_content_hash(content_hash)
     if lease_seconds < 1:
         raise ValueError("lease_seconds must be positive")
+    with transaction.atomic():
+        expired_attempt = (
+            ReportImportAttempt.objects.select_for_update()
+            .filter(content_hash=normalized_hash)
+            .first()
+        )
+        if expired_attempt is not None:
+            now = _database_now(normalized_hash)
+            if (
+                expired_attempt.status == ReportImportAttempt.STATUS_ACTIVE
+                and expired_attempt.lease_expires_at is not None
+                and expired_attempt.lease_expires_at <= now
+            ):
+                validate_report_import_ownership_lost(
+                    current_status=expired_attempt.status
+                )
+                expired_attempt.status = ReportImportAttempt.STATUS_LOST
+                expired_attempt.owner_id = None
+                expired_attempt.heartbeat_at = None
+                expired_attempt.lease_expires_at = None
+                expired_attempt.save(
+                    update_fields=[
+                        "status",
+                        "owner_id",
+                        "heartbeat_at",
+                        "lease_expires_at",
+                        "updated_at",
+                    ]
+                )
+
     owner_id = uuid.uuid4()
     with transaction.atomic():
         attempt, _created = (
@@ -96,6 +132,7 @@ def acquire_report_import_fence(
                 "Another report import attempt holds a non-expired lease "
                 f"for content_hash={normalized_hash}."
             )
+        validate_report_import_claim(current_status=attempt.status, interrupted=False)
         attempt.fencing_token = int(attempt.fencing_token) + 1
         attempt.owner_id = owner_id
         attempt.status = ReportImportAttempt.STATUS_ACTIVE
@@ -151,6 +188,7 @@ def report_import_finalization_guard(
             database_now=_database_now(fence.content_hash),
         )
         yield
+        validate_report_import_success(current_status=attempt.status)
         attempt.status = ReportImportAttempt.STATUS_SUCCEEDED
         attempt.owner_id = None
         attempt.heartbeat_at = None
@@ -185,6 +223,9 @@ def report_import_mutation_guard(
 
 def mark_report_import_fence_failed(fence: ReportImportFence) -> bool:
     """Release this attempt only if its token still owns the row."""
+    validate_report_import_failure(
+        current_status=ReportImportAttempt.STATUS_ACTIVE,
+    )
     updated = ReportImportAttempt.objects.filter(
         content_hash=fence.content_hash,
         fencing_token=fence.fencing_token,

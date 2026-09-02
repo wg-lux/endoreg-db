@@ -39,6 +39,7 @@ from endoreg_db.services.hub import (
     HubMediaEnvelopeReplayConflict,
     transfer_api_enabled,
 )
+from endoreg_db.services.hub.transfers import TransferOperationBusy
 from endoreg_db.services.hub.transfer_logging import (
     decision,
     error,
@@ -637,6 +638,12 @@ class HubTransferMediaUploadView(APIView):
                     "details": details,
                 }
             ) from exc
+        except TransferOperationBusy:
+            info("Concurrent media attachment rejected while transfer lease is active")
+            transfer_job.refresh_from_db()
+            payload = _transfer_status_response_payload(transfer_job)
+            payload["detail"] = "Transfer media attachment is already in progress."
+            return Response(payload, status=status.HTTP_409_CONFLICT)
         except HubMediaEnvelopeReplayConflict as exc:
             error("Conflicting replay of an applied media envelope was rejected")
             transfer_job.refresh_from_db()

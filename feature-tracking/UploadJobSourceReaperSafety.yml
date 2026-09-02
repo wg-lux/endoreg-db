@@ -38,16 +38,29 @@ definition_of_done:
       und Fencing sowie die Integritätsdienste prüfen.
     timeout_seconds: 600
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: code
       reference: endoreg_db/services/hub/cleanup.py; endoreg_db/services/hub/media_integrity.py; endoreg_db/models/hub/upload_job.py
     - kind: command
       reference: 'Focused Pyright: 0 errors; broader ingest lane: 91 passed, 4 subtests passed'
-    note: Typed decision matrix and media-specific target checks are implemented; independent manual state-matrix
-      review remains outstanding.
-    assessed_by: codex-upload-reaper-20260826
-    assessed_at: '2026-08-26T08:54:59.450699Z'
+    - kind: review
+      reference: Independent state-matrix review of UploadJob eligibility, database time, retry and processing/media
+        lease exclusion, fencing receipt, report/video integrity, and fail-closed blockers.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
+        endoreg_db/services/hub/media_integrity.py endoreg_db/models/hub/upload_job.py tests/services/test_hub_cleanup.py
+        (0 errors)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+        -q (25 passed, 1 PostgreSQL-only concurrency test skipped)
+    note: Independent review confirmed that deletion eligibility is re-evaluated under a row lock using
+      database time, retries and active processing/media leases block cleanup, the fencing token and source
+      identity are captured and rechecked, and report/video cleanup requires validated anonymized targets
+      plus matching current HLS generations. Unknown, missing, or conflicting states return stable blockers
+      without deleting the source.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:41:07.039730Z'
 - id: dry_run_and_scoped_selection
   category: functionality
   title: Bediener können Löschkandidaten ohne Mutation gezielt prüfen
@@ -99,17 +112,32 @@ definition_of_done:
       und medienartspezifische Integritätsnachweise prüfen.
     timeout_seconds: 600
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: code
       reference: endoreg_db/services/hub/cleanup.py; endoreg_db/utils/filesystem/file_operations.py; endoreg_db/services/hub/upload_job_import_lease.py
     - kind: command
       reference: 'tests/services/test_hub_cleanup.py: 20 passed; tests/services/test_upload_job_import_lease.py
         included in 31 passed focused lane'
-    note: Two-phase receipt, row lock, database-time eligibility, fencing, path identity, audited deletion
-      and retry exclusion are implemented; independent security review remains outstanding.
-    assessed_by: codex-upload-reaper-20260826
-    assessed_at: '2026-08-26T08:55:01.155989Z'
+    - kind: review
+      reference: Independent security review of row-lock/database-time revalidation, import-lease exclusion,
+        fencing receipt, protected-root and source identity checks, typed deletion wrapper, structured
+        audit events, and video/report target preservation.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
+        endoreg_db/services/hub/upload_job_import_lease.py endoreg_db/utils/file_operations.py endoreg_db/utils/filesystem/file_operations.py
+        tests/services/test_hub_cleanup.py tests/services/test_upload_job_import_lease.py (0 errors)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+        tests/services/test_upload_job_import_lease.py -q (27 passed, 1 PostgreSQL-only concurrency test
+        skipped)
+    note: Independent review confirmed that apply authorizes and revalidates under a row lock using database
+      time; a durable deleting receipt excludes late retries and import leases; protected-root, suffix,
+      regular-file, symlink, content hash, size and fencing checks fail closed; deletion uses the typed
+      filesystem wrapper and structured events without absolute source paths; and report/video integrity
+      plus current HLS-generation checks preserve the only valid source or generation.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:49:47.959133Z'
 - id: crash_safe_idempotent_reconciliation
   category: data_integrity
   title: Datei- und Datenbankzustand bleiben nach Abbruch eindeutig reconciliierbar
@@ -165,7 +193,7 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py tests/management/commands/test_reap_upload_job_sources.py
@@ -180,11 +208,17 @@ definition_of_done:
     - kind: command
       reference: 'Focused final lane: 43 passed, 1 skipped, 2 warnings in 98.66s; skip is tests/services/test_hub_cleanup.py::test_two_concurrent_reapers_serialize_one_source_deletion
         on non-PostgreSQL.'
-    note: State matrix, failure injection and ingest/media coverage pass in the focused lane. The real
-      two-process row-lock test is implemented and skipped under SQLite; PostgreSQL execution remains
-      outstanding.
-    assessed_by: codex-upload-reaper-20260826
-    assessed_at: '2026-08-26T09:28:00.219699Z'
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_NAME=endoregDbLocal TEST_DB_USER=postgres
+        TEST_DB_HOST=/run/postgresql /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+        tests/management/commands/test_reap_upload_job_sources.py -q (35 passed, 2 warnings in 10.60s;
+        PostgreSQL two-reaper row-lock test executed)
+    note: 'PostgreSQL-backed verification completed with the administrator role over the local Unix socket:
+      the two-process row-lock test passed (1 passed in 60.40s), and the complete focused cleanup/reaper
+      lane passed (35 passed). All negative-path, failure-injection, idempotency, media-type, and concurrency
+      acceptance bullets now have executable evidence.'
+    assessed_by: codex-feature-advance-20260902-2
+    assessed_at: '2026-09-02T12:42:47.058819Z'
 - id: operator_inventory_and_rollout
   category: operations
   title: Speicherwirkung und blockierte Altbestände sind vor Apply sichtbar
@@ -218,11 +252,14 @@ definition_of_done:
     - kind: command
       reference: 'Focused final lane including health and reaper command tests: 43 passed, 1 PostgreSQL-only
         concurrency test skipped, 2 warnings in 98.66s.'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
+        tests/management/commands/test_reap_upload_job_sources.py -q (14 passed, 1 warning in 57.76s)
     note: Inventory, independent apply gate, durable failure counters and health alarms are implemented
-      and pass focused tests. Production-like byte/integrity exercise and operational threshold approval
-      remain outstanding.
-    assessed_by: codex-upload-reaper-20260826
-    assessed_at: '2026-08-26T09:28:05.339128Z'
+      and pass focused tests. The fresh health/reaper regression lane passed; production-like byte/integrity
+      exercise and operational threshold approval remain outstanding, so this criterion stays in_progress.
+    assessed_by: codex-feature-advance
+    assessed_at: '2026-09-02T13:51:00Z'
 - id: cleanup_runbook
   category: documentation
   title: Diagnose, Freigabe, Apply und Recovery sind betrieblich dokumentiert
@@ -240,11 +277,21 @@ definition_of_done:
       Security und Storage-Verantwortliche prüfen.
     timeout_seconds: 900
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: runbook
       reference: docs/hub_ingest_operations.md#uploadjob-quellen-reaper
-    note: Dry-run, apply, selectors, decision codes, exit behavior, receipt recovery and separate safe
-      video normalization are documented; operations/security/storage walkthrough remains outstanding.
-    assessed_by: codex-upload-reaper-20260826
-    assessed_at: '2026-08-26T08:55:14.264361Z'
+    - kind: review
+      reference: Independent operator/security/storage walkthrough of docs/hub_ingest_operations.md#uploadjob-quellen-reaper
+        against the management command, cleanup service, stable blocker enum, receipts, health alarms,
+        and video normalization boundary.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_reap_upload_job_sources.py
+        -q (9 passed)
+    note: 'The runbook matches the implemented operator contract: read-only default, exact UUID and bounded
+      batch selection, explicit gated apply, repeat behavior, safe output and exit semantics, stable blocker-specific
+      recovery, receipt-based restart after interruption, health alarms, and the separate video normalization
+      gate. It prohibits direct filesystem deletion and requires investigation plus renewed domain approval
+      for unsafe fencing, identity, integrity, and legacy discrepancies.'
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:51:50.213646Z'

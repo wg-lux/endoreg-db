@@ -4,6 +4,7 @@ from datetime import date, datetime, time
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
@@ -132,6 +133,30 @@ class StatsEndpointTests(TestCase):
         assert payload["status"] == "verified"
         assert payload["verified"] is True
         assert payload["source"] == "cache"
+
+    def test_audit_ledger_integrity_endpoint_is_read_only_and_requires_auth_in_production(
+        self,
+    ):
+        with patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False):
+            get_response = self.client.get("/api/audit-ledger/integrity/")
+            post_response = self.client.post(
+                "/api/audit-ledger/integrity/",
+                data={},
+                content_type="application/json",
+            )
+
+            assert get_response.status_code == 403
+            assert post_response.status_code == 403
+
+            user = User.objects.create_user(username="audit-status-reader")
+            self.client.force_login(user)
+            authenticated_post = self.client.post(
+                "/api/audit-ledger/integrity/",
+                data={},
+                content_type="application/json",
+            )
+
+        assert authenticated_post.status_code == 405
 
     def test_audit_ledger_integrity_refresh_detects_tampering(self):
         first = AuditLedger.append_identity_commit(

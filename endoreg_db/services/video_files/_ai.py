@@ -7,7 +7,7 @@ import json
 import re
 import time
 from collections import Counter
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -16,6 +16,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generator,
     List,
     Literal,
     Optional,
@@ -34,6 +35,9 @@ from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
+from endoreg_db.utils.encryption.storage_materialization import (
+    materialized_plaintext_field_file,
+)
 from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 
 GLOBAL_TEST_RUN: bool = _GLOBAL_TEST_RUN
@@ -734,25 +738,21 @@ def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
     return frame_dir
 
 
-def _prediction_weights_path(video: VideoFile, model_meta: ModelMeta) -> Path:
-    try:
-        weights_path = Path(model_meta.weights.path)
-        if not weights_path.exists():
-            raise FileNotFoundError(
-                f"Model weights file {weights_path} not found for {model_meta.name} (Video: {video.video_hash}). Prediction aborted."
-            )
-        return weights_path
-    except Exception as error:
-        logger.error(
-            "Error accessing model weights path for %s (Video: %s): %s",
-            model_meta.name,
-            video.video_hash,
-            error,
-            exc_info=True,
+@contextmanager
+def _materialized_prediction_weights(
+    video: VideoFile, model_meta: ModelMeta
+) -> Generator[Path, None, None]:
+    """Expose authenticated model plaintext only for the inference lifetime."""
+    weights = model_meta.weights
+    if not weights or not weights.name:
+        raise FileNotFoundError(
+            f"Model weights are not configured for {model_meta.name} "
+            f"(Video: {video.video_hash}). Prediction aborted."
         )
-        raise RuntimeError(
-            f"Error accessing model weights for {model_meta.name}"
-        ) from error
+
+    suffix = Path(weights.name).suffix
+    with materialized_plaintext_field_file(weights, suffix=suffix) as path:
+        yield path
 
 
 def _validate_prediction_model(video: VideoFile, model_meta: ModelMeta) -> None:
@@ -1091,13 +1091,12 @@ def _load_inference_model(
         return _LoadedInferenceModel(model_instance, classifier, device)
     except Exception as error:
         logger.error(
-            "Failed to load AI model for video %s from %s: %s",
+            "Failed to construct AI model for video %s: %s",
             video.video_hash,
-            weights_path,
             error,
             exc_info=True,
         )
-        raise RuntimeError(f"Failed to load AI model from {weights_path}") from error
+        raise RuntimeError("AI model construction failed") from error
 
 
 def _stream_inference_log(
@@ -1471,77 +1470,78 @@ def _predict_video_pipeline(
         frame_source_file_type=frame_source_file_type,
     )
     _validate_prediction_model(video, model_meta)
-    weights_path = _prediction_weights_path(video, model_meta)
     _ensure_video_prediction_meta(video, model_meta)
-    label_names = _prediction_label_names(model_meta)
-    network_labels = _network_label_names(
-        model_meta=model_meta,
-        weights_path=weights_path,
-        label_names=label_names,
-    )
-    label_mapping = _build_label_mapping(network_labels, label_names)
-
-    if _is_stub_weights_file(weights_path):
-        logger.info(
-            "Detected stub weights at %s for video %s; skipping model inference and returning empty predictions.",
-            weights_path,
-            video.video_hash,
-        )
-        return _stub_prediction_result(
-            label_names=label_names,
-            return_frame_scores=return_frame_scores,
-        )
-
-    cache_inputs = _cache_inference_inputs(
-        video=video,
-        source=source,
-        test_run=test_run,
-        n_test_frames=n_test_frames,
-    )
-    classifier_config = _classifier_config(
-        video=video,
-        model_meta=model_meta,
-        components=components,
-        source=source,
-        cache_inputs=cache_inputs,
-        dataset_name=dataset_name,
-        network_labels=network_labels,
-    )
-    runtime_classifier_config = AiPredictionConfigPayload.model_validate(
-        classifier_config.model_dump(mode="python")
-    )
-    loaded_model = _load_inference_model(
-        video=video,
-        weights_path=weights_path,
-        components=components,
-        classifier_config=runtime_classifier_config,
-        load_kwargs=_model_load_kwargs(
+    with _materialized_prediction_weights(video, model_meta) as weights_path:
+        label_names = _prediction_label_names(model_meta)
+        network_labels = _network_label_names(
             model_meta=model_meta,
             weights_path=weights_path,
+            label_names=label_names,
+        )
+        label_mapping = _build_label_mapping(network_labels, label_names)
+
+        if _is_stub_weights_file(weights_path):
+            logger.info(
+                "Detected stub model weights for model %s and video %s; "
+                "skipping model inference.",
+                model_meta.name,
+                video.video_hash,
+            )
+            return _stub_prediction_result(
+                label_names=label_names,
+                return_frame_scores=return_frame_scores,
+            )
+
+        cache_inputs = _cache_inference_inputs(
+            video=video,
+            source=source,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+        classifier_config = _classifier_config(
+            video=video,
+            model_meta=model_meta,
+            components=components,
+            source=source,
+            cache_inputs=cache_inputs,
+            dataset_name=dataset_name,
             network_labels=network_labels,
-        ),
-    )
-    inference_output = _run_inference_with_fallback(
-        video=video,
-        model_meta=model_meta,
-        source=source,
-        cache_inputs=cache_inputs,
-        loaded_model=loaded_model,
-        classifier_config=classifier_config,
-        components=components,
-        test_run=test_run,
-        n_test_frames=n_test_frames,
-    )
-    return _postprocess_predictions(
-        video=video,
-        inference_output=inference_output,
-        label_names=label_names,
-        label_mapping=label_mapping,
-        return_frame_scores=return_frame_scores,
-        smooth_window_size_s=smooth_window_size_s,
-        binarize_threshold=binarize_threshold,
-        components=components,
-    )
+        )
+        runtime_classifier_config = AiPredictionConfigPayload.model_validate(
+            classifier_config.model_dump(mode="python")
+        )
+        loaded_model = _load_inference_model(
+            video=video,
+            weights_path=weights_path,
+            components=components,
+            classifier_config=runtime_classifier_config,
+            load_kwargs=_model_load_kwargs(
+                model_meta=model_meta,
+                weights_path=weights_path,
+                network_labels=network_labels,
+            ),
+        )
+        inference_output = _run_inference_with_fallback(
+            video=video,
+            model_meta=model_meta,
+            source=source,
+            cache_inputs=cache_inputs,
+            loaded_model=loaded_model,
+            classifier_config=classifier_config,
+            components=components,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+        )
+        return _postprocess_predictions(
+            video=video,
+            inference_output=inference_output,
+            label_names=label_names,
+            label_mapping=label_mapping,
+            return_frame_scores=return_frame_scores,
+            smooth_window_size_s=smooth_window_size_s,
+            binarize_threshold=binarize_threshold,
+            components=components,
+        )
 
 
 # ==========================================

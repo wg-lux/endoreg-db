@@ -42,6 +42,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
 from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
+from endoreg_db.services.hub.upload_job_state_machine import (
+    validate_upload_job_status_transition,
+)
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import (
@@ -176,7 +179,7 @@ def _reimport_upload_job_queryset(video: VideoFile):
     return queryset
 
 
-def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
+def _select_reimport_upload_jobs(video: VideoFile) -> list[UploadJob]:
     selected_by_scope: dict[tuple[int | None, str], UploadJob] = {}
     total_count = 0
     queryset = (
@@ -201,8 +204,8 @@ def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
         ):
             selected_by_scope[scope] = upload_job
 
-    selected_ids = [upload_job.pk for upload_job in selected_by_scope.values()]
-    skipped_count = total_count - len(selected_ids)
+    selected_jobs = list(selected_by_scope.values())
+    skipped_count = total_count - len(selected_jobs)
     if skipped_count > 0:
         logger.info(
             "Skipped %d duplicate inactive UploadJob row(s) for video %s "
@@ -210,14 +213,23 @@ def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
             skipped_count,
             video.video_hash,
         )
-    return selected_ids
+    return selected_jobs
 
 
 def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
+    target_status = updates.get("status")
+    if not isinstance(target_status, str):
+        raise ValueError("video re-import UploadJob update requires a status")
     with transaction.atomic():
-        selected_ids = _select_reimport_upload_job_ids(video)
-        if not selected_ids:
+        selected_jobs = _select_reimport_upload_jobs(video)
+        if not selected_jobs:
             return 0
+        for upload_job in selected_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=target_status,
+            )
+        selected_ids = [upload_job.pk for upload_job in selected_jobs]
         return UploadJob.objects.filter(pk__in=selected_ids).update(
             **updates,
             updated_at=timezone.now(),

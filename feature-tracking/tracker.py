@@ -756,6 +756,39 @@ def _validate_feature_location(
         )
 
 
+def _reconcile_evaluated_feature_location(
+    feature: FeatureDefinition,
+    *,
+    path: Path,
+    directory: Path,
+) -> None:
+    if (
+        feature.tracking.state is not FeatureTrackingState.DONE
+        or path.parent != directory
+    ):
+        _validate_feature_location(feature, path=path, directory=directory)
+        return
+
+    destination = directory / DONE_DIRECTORY_NAME / path.name
+    mutex_path = directory / LOCK_DIRECTORY_NAME / LOCK_MUTEX_FILE_NAME
+    with advisory_file_lock(lock_path=mutex_path, timeout_seconds=10):
+        if destination.exists():
+            raise TrackerError(
+                f"{feature.id}: Zieldatei für automatische Done-Ablage existiert "
+                f"bereits: {destination}"
+            )
+        if not path.is_file():
+            raise TrackerError(
+                f"{feature.id}: Feature-Datei ist vor automatischer Done-Ablage "
+                f"verschwunden: {path}"
+            )
+        atomic_move_file(
+            source=path,
+            destination=destination,
+            file_mode=0o644,
+        )
+
+
 def validate_feature_against_policy(
     feature: FeatureDefinition,
     policy: ReadinessPolicy,
@@ -850,13 +883,18 @@ def load_registry(
     policy = load_policy(directory)
     feature_paths = _feature_paths(directory)
     features = tuple(load_feature_file(path) for path in feature_paths)
-    for path, feature in zip(feature_paths, features, strict=True):
-        _validate_feature_location(feature, path=path, directory=directory)
-    return _validate_registry(
+    validated = _validate_registry(
         policy,
         features,
         source_exists=lambda source: (REPOSITORY_ROOT / source).is_file(),
     )
+    for path, feature in zip(feature_paths, features, strict=True):
+        _reconcile_evaluated_feature_location(
+            feature,
+            path=path,
+            directory=directory,
+        )
+    return validated
 
 
 def _run_git(

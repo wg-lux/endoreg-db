@@ -293,12 +293,20 @@ def test_materialize_video_hls_command_dispatches_each_artifact_once(
         stderr=StringIO(),
     )
 
-    assert dispatched == [(video.pk, "processed", False)]
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert dispatched == [
+        (
+            video.pk,
+            "processed",
+            False,
+            artifact.pk,
+            str(artifact.key_id),
+        )
+    ]
     assert json.loads(first_stdout.getvalue())["results"][0]["status"] == "queued"
     assert (
         json.loads(second_stdout.getvalue())["results"][0]["status"] == "already_queued"
     )
-    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
 
 

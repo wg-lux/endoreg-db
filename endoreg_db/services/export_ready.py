@@ -166,14 +166,12 @@ def _append_ready_audit(
     *,
     video: VideoFile,
     user: Any,
-    processed_path: Path,
     processed_file_sha256: str,
     center_key: str,
 ) -> None:
     data = {
         "center_key": center_key,
         "processed_file": getattr(video.processed_file, "name", None),
-        "processed_file_path": str(processed_path),
         "processed_file_sha256": processed_file_sha256,
         "ready_for_export": True,
     }
@@ -220,7 +218,7 @@ def mark_video_ready_for_export(
     _verify_state(video)
 
     processed_file = _processed_file(video)
-    processed_path = _verify_processed_path(processed_file)
+    _verify_processed_path(processed_file)
     processed_file_sha256 = sha256_file(processed_file)
 
     expected_sha = str(expected_processed_file_sha256 or "").strip().lower()
@@ -244,7 +242,6 @@ def mark_video_ready_for_export(
     _append_ready_audit(
         video=video,
         user=user,
-        processed_path=processed_path,
         processed_file_sha256=processed_file_sha256,
         center_key=center.center_key,
     )

@@ -45,6 +45,8 @@ _derive_report_anonymization_status: (
 _derive_hls_reservation_action: Callable[[str, bool, bool, bool], str] | None
 _derive_hls_publication_action: Callable[[str, bool, bool, bool], str] | None
 _derive_hls_reconciliation_action: Callable[[str, bool], str] | None
+_transition_service_lifecycle: Callable[[str, str], str] | None
+_transition_operation_lifecycle: Callable[[str, str], str] | None
 _derive_segment_annotation_status: Callable[[bool, bool, bool], str] | None
 _derive_frame_annotation_status: Callable[[bool, bool, bool, bool, bool], str] | None
 _normalize_frame_task_mode_token: Callable[[str], str] | None
@@ -80,6 +82,12 @@ try:
     )
     _derive_hls_reconciliation_action = getattr(
         rust_backend, "derive_hls_reconciliation_action", None
+    )
+    _transition_service_lifecycle = getattr(
+        rust_backend, "transition_service_lifecycle", None
+    )
+    _transition_operation_lifecycle = getattr(
+        rust_backend, "transition_operation_lifecycle", None
     )
     _derive_segment_annotation_status = getattr(
         rust_backend, "derive_segment_annotation_status", None
@@ -132,6 +140,8 @@ except Exception as exc:
     _derive_hls_reservation_action = None
     _derive_hls_publication_action = None
     _derive_hls_reconciliation_action = None
+    _transition_service_lifecycle = None
+    _transition_operation_lifecycle = None
     _derive_segment_annotation_status = None
     _derive_frame_annotation_status = None
     _normalize_frame_task_mode_token = None
@@ -487,6 +497,8 @@ def derive_hls_reservation_action(
     force: bool,
 ) -> HlsReservationAction:
     _validate_hls_in_flight_status(active_status)
+    if active_status and active_is_stale:
+        return "queue"
     if _derive_hls_reservation_action is None:
         if active_status:
             return "already_in_flight"
@@ -566,6 +578,175 @@ def derive_hls_reconciliation_action(
             f"Rust returned unsupported HLS reconciliation action: {action}"
         )
     return cast(HlsReconciliationAction, action)
+
+
+ServiceLifecycleStateToken = Literal[
+    "stopped",
+    "starting",
+    "running",
+    "degraded",
+    "stopping",
+    "failed",
+    "lost",
+]
+ServiceLifecycleEventToken = Literal[
+    "start_requested",
+    "start_succeeded",
+    "start_failed",
+    "health_degraded",
+    "health_restored",
+    "stop_requested",
+    "stop_succeeded",
+    "stop_failed",
+    "runtime_failed",
+    "ownership_lost",
+    "reconcile_stopped",
+]
+OperationLifecycleStateToken = Literal[
+    "queued",
+    "claimed",
+    "running",
+    "retry_wait",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "lost",
+]
+OperationLifecycleEventToken = Literal[
+    "claim",
+    "start",
+    "succeed",
+    "fail",
+    "retry_scheduled",
+    "retry_ready",
+    "retry_requested",
+    "cancel",
+    "ownership_lost",
+    "integrity_lost",
+    "reconcile_retry",
+    "reconcile_fail",
+]
+
+_SERVICE_LIFECYCLE_STATES = frozenset(
+    {
+        "stopped",
+        "starting",
+        "running",
+        "degraded",
+        "stopping",
+        "failed",
+        "lost",
+    }
+)
+_SERVICE_LIFECYCLE_EVENTS = frozenset(
+    {
+        "start_requested",
+        "start_succeeded",
+        "start_failed",
+        "health_degraded",
+        "health_restored",
+        "stop_requested",
+        "stop_succeeded",
+        "stop_failed",
+        "runtime_failed",
+        "ownership_lost",
+        "reconcile_stopped",
+    }
+)
+_OPERATION_LIFECYCLE_STATES = frozenset(
+    {
+        "queued",
+        "claimed",
+        "running",
+        "retry_wait",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "lost",
+    }
+)
+_OPERATION_LIFECYCLE_EVENTS = frozenset(
+    {
+        "claim",
+        "start",
+        "succeed",
+        "fail",
+        "retry_scheduled",
+        "retry_ready",
+        "retry_requested",
+        "cancel",
+        "ownership_lost",
+        "integrity_lost",
+        "reconcile_retry",
+        "reconcile_fail",
+    }
+)
+_LIFECYCLE_STATE_MACHINE_CAPABILITY = "lifecycle_state_machine"
+_LIFECYCLE_STATE_MACHINE_CONTRACT = "lifecycle_state_v3"
+
+
+def _require_lifecycle_state_machine_capability() -> None:
+    if (
+        _transition_service_lifecycle is None
+        or _transition_operation_lifecycle is None
+        or not has_native_capability(
+            _LIFECYCLE_STATE_MACHINE_CAPABILITY,
+            _LIFECYCLE_STATE_MACHINE_CONTRACT,
+        )
+    ):
+        raise RuntimeError(
+            "required Rust lifecycle_state_machine capability is unavailable"
+        )
+
+
+def transition_service_lifecycle(
+    *,
+    current_state: ServiceLifecycleStateToken,
+    event: ServiceLifecycleEventToken,
+) -> ServiceLifecycleStateToken:
+    if current_state not in _SERVICE_LIFECYCLE_STATES:
+        raise ValueError(f"unsupported service lifecycle state: {current_state}")
+    if event not in _SERVICE_LIFECYCLE_EVENTS:
+        raise ValueError(f"unsupported service lifecycle event: {event}")
+    _require_lifecycle_state_machine_capability()
+    assert _transition_service_lifecycle is not None
+    try:
+        target_state = str(_transition_service_lifecycle(current_state, event))
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    except (OSError, RuntimeError, TypeError, OverflowError) as exc:
+        raise RuntimeError(f"Rust transition_service_lifecycle failed: {exc}") from exc
+    if target_state not in _SERVICE_LIFECYCLE_STATES:
+        raise RuntimeError(
+            f"Rust returned unsupported service lifecycle state: {target_state}"
+        )
+    return cast(ServiceLifecycleStateToken, target_state)
+
+
+def transition_operation_lifecycle(
+    *,
+    current_state: OperationLifecycleStateToken,
+    event: OperationLifecycleEventToken,
+) -> OperationLifecycleStateToken:
+    if current_state not in _OPERATION_LIFECYCLE_STATES:
+        raise ValueError(f"unsupported operation lifecycle state: {current_state}")
+    if event not in _OPERATION_LIFECYCLE_EVENTS:
+        raise ValueError(f"unsupported operation lifecycle event: {event}")
+    _require_lifecycle_state_machine_capability()
+    assert _transition_operation_lifecycle is not None
+    try:
+        target_state = str(_transition_operation_lifecycle(current_state, event))
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+    except (OSError, RuntimeError, TypeError, OverflowError) as exc:
+        raise RuntimeError(
+            f"Rust transition_operation_lifecycle failed: {exc}"
+        ) from exc
+    if target_state not in _OPERATION_LIFECYCLE_STATES:
+        raise RuntimeError(
+            f"Rust returned unsupported operation lifecycle state: {target_state}"
+        )
+    return cast(OperationLifecycleStateToken, target_state)
 
 
 def derive_segment_annotation_status(

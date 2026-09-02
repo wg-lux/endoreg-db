@@ -36,14 +36,25 @@ definition_of_done:
     instructions: Feldownership und Versionsvertrag gegen Host-Modelle und Service prüfen.
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: docs/dtypes_lookup_module_entrypoint.md
-    note: Die bisherige Dokumentation belegt die allgemeine Contract-Grenze. Der neue frontend-eigene
-      Auswahl- und Persistenzvertrag muss nach Abschluss der Migration ergänzt und erneut geprüft werden.
-    assessed_by: codex-frontend-kb-resolution
-    assessed_at: '2026-08-20T11:30:00Z'
+    - kind: review
+      reference: Feldownership und Versionsvertrag gegen PatientExamination, PatientExaminationReport,
+        Serializer, report_persistence-Service und lx-dtypes-Vertragsimporte geprüft.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        -q (8 passed)
+    note: Der Leitfaden ordnet persistierte und exportierte Daten den verantwortlichen Systemgrenzen zu,
+      dokumentiert den lx-dtypes-Kompatibilitätsbereich und beschreibt explizit lx-dtypes als Besitzer
+      der Identitätssemantik, lx-annotate als Besitzer der Benutzerauswahl sowie endoreg_db als Validierungs-
+      und Persistenzgrenze.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:29:18.973392Z'
 - id: contract_usage_audit
   category: requirements
   title: LXDM-Contract-Nutzung ist vollständig inventarisiert und priorisiert
@@ -550,8 +561,28 @@ definition_of_done:
       Wissensbasis-Versionen prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    - kind: review
+      reference: Upgrade, backfill, explicit migration, failure, and rollback paths reviewed against PatientExamination,
+        report_persistence, dtypes_records, and focused database/API tests; persisted identities are never
+        replaced by the active registry selection.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+        tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_rejects_unknown_identity
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_delete_rolls_back_when_dtypes_refresh_fails
+        -q (5 passed)
+    note: Upgrade and recovery procedures inventory persisted identities, require exact candidate-registry
+      resolution, preserve each bound pair during rebuilds, fail closed on incompatibility, and restore
+      the prior resolving registry on rollback. Focused tests prove active-version changes cannot override
+      persistence, invalid pairs remain unpersisted, controlled migration is atomic, and validation or
+      ledger-refresh failures roll back.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T11:48:36.521460Z'
 - id: integration_documentation
   category: documentation
   title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert
@@ -565,11 +596,21 @@ definition_of_done:
     instructions: Dokumentation gegen aktuellen Import- und Persistenzpfad prüfen.
     timeout_seconds: 300
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: docs/dtypes_lookup_module_entrypoint.md
-    note: Die bestehende Dokumentation deckt den bisherigen Import- und Persistenzpfad ab. Der strengere
-      frontend-eigene Auswahl- und Migrationsvertrag muss nach Implementierungsabschluss nachgeführt werden.
-    assessed_by: codex-frontend-kb-resolution
-    assessed_at: '2026-08-20T11:30:00Z'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        -q (8 passed)
+    - kind: review
+      reference: Dokumentation gegen PatientExamination-Modell, DRF-Serializer, report_persistence-Service,
+        Ninja-API-Schemas und Export-Identitätsprüfung abgeglichen.
+    note: Der Integrationsleitfaden beschreibt jetzt die frontend-eigene Auswahl, den vollständigen Modul-/Versionsvertrag,
+      die transaktionale Bindung an PatientExamination und Report, sichtbare Fehler ohne Default-Fallback
+      sowie Upgrade-, Backfill- und Rollbackregeln für persistierte Identitäten.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:27:53.864884Z'

@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from django.core.management.base import BaseCommand
 from django.db import OperationalError
-from pytest import MonkeyPatch
+import pytest
 
 from endoreg_db.utils import dataloader
 
@@ -84,12 +84,12 @@ def _dataloader_module() -> Any:
     return cast(Any, dataloader)
 
 
-def _disable_database_transaction(monkeypatch: MonkeyPatch) -> None:
+def _disable_database_transaction(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_dataloader_module().transaction, "atomic", nullcontext)
 
 
 def test_load_data_validates_raw_fields_and_sets_many_to_many_relationships(
-    monkeypatch: MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _disable_database_transaction(monkeypatch)
     first_tag, second_tag = object(), object()
@@ -136,7 +136,7 @@ def test_load_data_validates_raw_fields_and_sets_many_to_many_relationships(
 
 
 def test_load_data_updates_an_existing_named_instance(
-    monkeypatch: MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _disable_database_transaction(monkeypatch)
     instance = _Instance(name="target", enabled=False)
@@ -158,7 +158,7 @@ def test_load_data_updates_an_existing_named_instance(
 
 
 def test_load_data_retries_locked_database_writes(
-    monkeypatch: MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _disable_database_transaction(monkeypatch)
     manager = _ModelManager()
@@ -179,3 +179,63 @@ def test_load_data_retries_locked_database_writes(
 
     assert manager.create_attempts == 3
     assert sleep_delays == [0.05, 0.1]
+
+
+def test_load_data_propagates_validation_failure_before_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_database_transaction(monkeypatch)
+    manager = _ModelManager()
+    _TargetModel.objects = manager
+
+    def reject_entry(
+        fields: dict[str, dataloader.YamlValue],
+        *,
+        entry: dataloader.YamlEntry,
+        model: Any,
+    ) -> None:
+        _ = fields
+        _ = entry
+        _ = model
+        raise ValueError("invalid loader entry")
+
+    with pytest.raises(ValueError, match="invalid loader entry"):
+        dataloader.load_data_with_foreign_keys(
+            BaseCommand(),
+            cast(Any, _TargetModel),
+            [{"fields": {"name": "invalid"}}],
+            [],
+            [],
+            [reject_entry],
+            False,
+        )
+
+    assert manager.create_attempts == 0
+
+
+def test_load_data_does_not_retry_non_lock_database_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_database_transaction(monkeypatch)
+    manager = _ModelManager()
+    _TargetModel.objects = manager
+
+    def fail_create(**kwargs: object) -> _Instance:
+        _ = kwargs
+        manager.create_attempts += 1
+        raise OperationalError("connection dropped")
+
+    monkeypatch.setattr(manager, "create", fail_create)
+
+    with pytest.raises(OperationalError, match="connection dropped"):
+        dataloader.load_data_with_foreign_keys(
+            BaseCommand(),
+            cast(Any, _TargetModel),
+            [{"fields": {"name": "target"}}],
+            [],
+            [],
+            [],
+            False,
+        )
+
+    assert manager.create_attempts == 1

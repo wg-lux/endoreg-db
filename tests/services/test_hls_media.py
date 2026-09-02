@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import tempfile
 from datetime import timedelta
@@ -346,11 +347,44 @@ def test_hls_dispatch_reservation_deduplicates_queued_artifact(
     assert first.status == "queued"
     assert second.status == "already_queued"
     assert first.artifact_id == second.artifact_id
+    assert first.attempt_key_id == second.attempt_key_id
     artifact = VideoHlsArtifact.objects.get(pk=first.artifact_id)
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
 
 
-def test_hls_dispatch_reservation_preserves_stale_materializing_artifact(
+def test_late_hls_delivery_cannot_claim_replacement_reservation(
+    hls_center: Center,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    first = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    stale_at = timezone.now() - timedelta(
+        seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+        + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+        + 1
+    )
+    VideoHlsArtifact.objects.filter(pk=first.artifact_id).update(updated_at=stale_at)
+    replacement = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+
+    with pytest.raises(RuntimeError, match="no longer active"):
+        hls_media.materialize_video_hls(
+            video.pk,
+            artifact_kind="processed",
+            reserved_artifact_id=first.artifact_id,
+            reservation_key_id=first.attempt_key_id,
+        )
+
+    replacement_artifact = VideoHlsArtifact.objects.get(pk=replacement.artifact_id)
+    assert replacement_artifact.status == VideoHlsArtifact.Status.QUEUED.value
+    assert replacement_artifact.key_id == replacement.attempt_key_id
+
+
+def test_hls_dispatch_reservation_replaces_stale_materializing_artifact(
     hls_center: Center,
 ) -> None:
     video = _create_processed_video(center=hls_center)
@@ -372,13 +406,14 @@ def test_hls_dispatch_reservation_preserves_stale_materializing_artifact(
     )
 
     artifact.refresh_from_db()
-    assert reservation.status == "already_queued"
-    assert reservation.artifact_id == artifact.pk
-    assert artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value
-    assert artifact.last_error == ""
+    assert reservation.status == "queued"
+    assert reservation.artifact_id != artifact.pk
+    artifact.refresh_from_db()
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
 
 
-def test_hls_dispatch_reservation_preserves_stale_queued_artifact(
+def test_hls_dispatch_reservation_replaces_stale_queued_artifact(
     hls_center: Center,
 ) -> None:
     video = _create_processed_video(center=hls_center)
@@ -400,10 +435,11 @@ def test_hls_dispatch_reservation_preserves_stale_queued_artifact(
     )
 
     artifact.refresh_from_db()
-    assert reservation.status == "already_queued"
-    assert reservation.artifact_id == artifact.pk
-    assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert artifact.last_error == ""
+    assert reservation.status == "queued"
+    assert reservation.artifact_id != artifact.pk
+    artifact.refresh_from_db()
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.error_code == VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
 
 
 def test_stale_forced_queue_preserves_active_attempt_and_previous_ready_artifact(
@@ -444,10 +480,10 @@ def test_stale_forced_queue_preserves_active_attempt_and_previous_ready_artifact
         status=VideoHlsArtifact.Status.READY.value,
     )
     assert first_reservation.status == "queued"
-    assert second_reservation.status == "already_queued"
-    assert second_reservation.artifact_id == first_reservation.artifact_id
-    assert active_artifact.status == VideoHlsArtifact.Status.QUEUED.value
-    assert active_artifact.last_error == ""
+    assert second_reservation.status == "queued"
+    assert second_reservation.artifact_id != first_reservation.artifact_id
+    assert active_artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert active_artifact.error_code == VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
     assert str(ready_artifact.key_id) == ready_result.key_id
     assert ready_artifact.playlist_relative_path == ready_result.playlist_relative_path
     assert (
@@ -471,6 +507,8 @@ def test_queued_hls_worker_claims_reservation_and_materializes(
     result = hls_media.materialize_video_hls(
         video.pk,
         artifact_kind="processed",
+        reserved_artifact_id=reservation.artifact_id,
+        reservation_key_id=reservation.attempt_key_id,
     )
 
     assert reservation.status == "queued"
@@ -478,6 +516,40 @@ def test_queued_hls_worker_claims_reservation_and_materializes(
     artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
     assert artifact.status == VideoHlsArtifact.Status.READY.value
     assert str(artifact.key_id) == result.key_id
+
+
+def test_redelivered_hls_task_reclaims_stale_matching_attempt(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    VideoHlsArtifact.objects.filter(pk=reservation.artifact_id).update(
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        updated_at=timezone.now()
+        - timedelta(
+            seconds=getattr(hls_media, "get_ffmpeg_transcode_timeout_seconds")()
+            + hls_media.HLS_MATERIALIZATION_STALE_GRACE_SECONDS
+            + 1
+        ),
+    )
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        reserved_artifact_id=reservation.artifact_id,
+        reservation_key_id=reservation.attempt_key_id,
+    )
+
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert result.status == "materialized"
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert artifact.key_id == reservation.attempt_key_id
 
 
 @pytest.mark.parametrize("force", [False, True])
@@ -540,6 +612,7 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
         artifact_kind=cast(Any, hls_media).VideoArtifactKind.PROCESSED,
         source_file_name=str(video.processed_file.name),
         source_generation_id=uuid4(),
+        source_content_hash=hashlib.sha256(b"plaintext mp4 payload").hexdigest(),
         requested_encoding_profile_name="clinical_h264_libx264_crf_v1",
         key_id=new_key_id,
         key_ciphertext=b"new wrapped key",
@@ -703,6 +776,8 @@ def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
             video.pk,
             artifact_kind="processed",
             force=True,
+            reserved_artifact_id=reservation.artifact_id,
+            reservation_key_id=reservation.attempt_key_id,
         )
 
     failed_artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
@@ -906,6 +981,27 @@ def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
     )
 
     assert resolved.pk == artifact.pk
+
+
+def test_ready_hls_lookup_rejects_legacy_blank_source_hash(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_raw_video(center=hls_center, payload=b"legacy raw source")
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(source_content_hash="")
+    artifact.refresh_from_db()
+
+    with pytest.raises(FileNotFoundError, match="source identity is stale"):
+        hls_media.get_ready_hls_artifact(video=video, artifact_kind="raw")
+    with pytest.raises(FileNotFoundError, match="source identity is stale"):
+        hls_media.get_ready_hls_artifact_by_key(
+            video=video,
+            key_id=artifact.key_id,
+        )
 
 
 def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(

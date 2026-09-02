@@ -140,8 +140,27 @@ definition_of_done:
     instructions: Routenmatrix gegen Permission-Klassen und negative Authz-Tests prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_center_group_sync.py
+        tests/authz/test_dynamic_permissions.py tests/authz/test_video_media_policy.py tests/services/test_center_access.py
+        tests/views/media/test_center_scoped_reads.py tests/views/media/test_video_media_view.py tests/views/misc/test_upload_endpoints.py
+        tests/views/test_center_access_matrix.py tests/views/video/test_annotation_access_controls.py
+        tests/deployment/test_prod_settings_contract.py -q (103 passed, 2 warnings in 67.03s)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_hls_stream.py::test_centerless_hub_user_can_read_processed_playlist_key_and_segment
+        tests/views/video/test_hls_stream.py::test_central_hub_processed_playlist_rejects_anonymous_user
+        -q (2 passed, 2 warnings in 48.60s)
+    note: Die fokussierte Zugriffskontroll-Lane belegt fail-closed Keycloak-Center-Synchronisierung, Null-/Ein-/Mehrfach-Center-Auflösung,
+      Patienten-, Report-, Upload- und Raw-Media-Scope, den eingeschränkten anonymisierten Central-Hub-Lesezugriff,
+      serverseitige Annotator-Identität und Rollenprüfung sowie die Ablehnung von DEBUG in Produktion.
+      Das Kriterium ist von not_assessed auf in_progress vorgerückt. Für verified fehlen noch ein vollständiger
+      routeweiser Abgleich aller produktionskritischen Admin- und Reporting-Endpunkte sowie explizite
+      Negativnachweise für AIDataSet-Zuordnung beziehungsweise Dataset-Scope an den center-übergreifenden
+      Annotationsrouten.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T11:53:51.773011Z'
 - id: deprecation_control
   category: maintainability
   title: Legacy-Routen und Serializer-Shims haben ein kontrolliertes Ende

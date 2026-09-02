@@ -48,6 +48,7 @@ from tracker import (
     find_feature_references,
     guard_commit_message,
     load_feature_file,
+    load_policy,
     load_registry,
     load_registry_from_git_index,
     main,
@@ -651,6 +652,72 @@ def test_save_feature_moves_done_and_reopened_definitions(tmp_path: Path) -> Non
     assert reopened_path == active_path
     assert active_path.exists()
     assert not done_path.exists()
+
+
+def test_evaluation_moves_done_definition_out_of_active_tracking(
+    tmp_path: Path,
+) -> None:
+    policy = load_policy(TRACKING_DIR)
+    source = _unassessed_feature(load_feature_file(TRACKING_DIR / "done" / "DICOM.yml"))
+    completed = mark_feature_done(
+        _verified_feature(source),
+        changed_by="reviewer@example.org",
+        note="Release freigegeben.",
+    )
+    tracking_dir = tmp_path / "feature-tracking"
+    tracking_dir.mkdir()
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    active_path = tracking_dir / "DICOM.yml"
+    active_path.write_text(
+        yaml.safe_dump(completed.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    assert main(["--directory", str(tracking_dir), "overview"]) == 0
+
+    done_path = tracking_dir / "done" / active_path.name
+    assert done_path.is_file()
+    assert not active_path.exists()
+    assert load_feature_file(done_path).tracking.state is FeatureTrackingState.DONE
+
+
+def test_evaluation_does_not_move_active_definition_out_of_done_directory(
+    tmp_path: Path,
+) -> None:
+    policy = load_policy(TRACKING_DIR)
+    feature = _unassessed_feature(
+        load_feature_file(TRACKING_DIR / "done" / "DICOM.yml")
+    )
+    tracking_dir = tmp_path / "feature-tracking"
+    done_dir = tracking_dir / "done"
+    done_dir.mkdir(parents=True)
+    (tracking_dir / "policy.yml").write_text(
+        yaml.safe_dump(
+            policy.model_copy(update={"migrated_markdown_trackers": ()}).model_dump(
+                mode="json"
+            ),
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    misplaced_path = done_dir / "DICOM.yml"
+    misplaced_path.write_text(
+        yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(TrackerError, match="erfordert Ablage"):
+        load_registry(tracking_dir)
+
+    assert misplaced_path.is_file()
 
 
 def _lockable_feature(features: tuple[FeatureDefinition, ...]) -> FeatureDefinition:

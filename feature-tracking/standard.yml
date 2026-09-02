@@ -72,6 +72,8 @@ definition_of_done:
   - overview, show, validate, check, update, verify, done, reopen und lock haben getrennte Verantwortlichkeiten.
   - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
   - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
+  - Bei der Evaluation werden valide Feature-Dateien mit tracking.state done atomar aus dem aktiven
+    Verzeichnis nach feature-tracking/done verschoben; aktive Dateien im done-Verzeichnis bleiben ungültig.
   - Ein Agent erwirbt vor Änderungen atomar einen zeitlich begrenzten Lock für ein Feature, ein Kriterium,
     eine oder mehrere Repository-Dateien oder deren Kombination und gibt ihn nach der Arbeit wieder frei.
   - Featureweite, identische Kriteriums- und überlappende Dateiscopes werden abgelehnt; unabhängige Kriteriums-

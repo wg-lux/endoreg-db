@@ -9,8 +9,13 @@ owners:
 - lx-annotate frontend maintainers
 production_critical: false
 tracking:
-  state: active
-  history: []
+  state: done
+  history:
+  - action: done
+    changed_by: codex-root-20260902-a
+    changed_at: '2026-09-02T11:30:50.006744Z'
+    note: Alle sieben Pflichtkriterien sind verifiziert; der Produktionsreife-Check bestand und das Feature
+      wird formal abgeschlossen.
 source_documents:
 - path: docs/ai_dataset_attachment_contract.md
   disposition: reference
@@ -186,20 +191,23 @@ definition_of_done:
       prüfen.
     timeout_seconds: 900
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: code
-      reference: pyproject.toml
+      reference: 'pyproject.toml: lx-dtypes>=0.2.34'
     - kind: code
-      reference: uv.lock
+      reference: 'uv.lock: lx-dtypes 0.2.34 published wheel and source distribution'
     - kind: command
-      reference: installed lx_dtypes AIDataSetAttachVideoContract.video_id is required; source-coordinated
-        tests therefore use PYTHONPATH=/home/admin/lx-data-models
-    note: The shared source contract is complete, but it is not yet published and selected by endoreg_db.
-      Do not deploy the backend source delta until the compatible lx-dtypes release is adopted and the
-      endpoint suite passes without PYTHONPATH.
-    assessed_by: codex-contract-standardization
-    assessed_at: '2026-08-13T09:23:51.562670Z'
+      reference: '.devenv/state/venv/bin/python contract inspection: lx-dtypes 0.2.34, video_id required=False,
+        default=None'
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/views/misc/test_application_settings_endpoints.py
+        -q (49 passed, exit 0)
+    note: Published lx-dtypes 0.2.34 supplies the nullable bulk attachment contract, endoreg_db requires
+      and locks that release, and the complete endpoint suite passes against the installed package without
+      a PYTHONPATH override.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:22:48.170660Z'
 - id: contributor_contract_guide
   category: documentation
   title: Contributor-Dokumentation erklärt Wire-, Persistenz- und Releasegrenzen

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,6 +11,7 @@ from django.db import OperationalError, connection, transaction
 from django.db import models
 from django.db.models.options import Options
 
+from endoreg_db.data import DATA_DIR as BASE_DATA_DIR
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
@@ -85,6 +85,42 @@ _TRANSLATION_FIELDS = (
     "description_de",
     "description_en",
 )
+_BASE_DATA_ROOT = BASE_DATA_DIR.resolve()
+
+
+class DataLoaderSourceError(ValueError):
+    """Raised when YAML input escapes the packaged base-data boundary."""
+
+
+def _approved_yaml_directory(directory: str | Path) -> Path:
+    source = Path(directory)
+    if source.is_symlink():
+        raise DataLoaderSourceError("YAML source directories must not be symlinks")
+
+    resolved_source = source.resolve()
+    try:
+        resolved_source.relative_to(_BASE_DATA_ROOT.resolve())
+    except ValueError as exc:
+        raise DataLoaderSourceError(
+            "YAML source directory must resolve within the packaged base-data root"
+        ) from exc
+    return resolved_source
+
+
+def _approved_yaml_file(path: Path) -> Path:
+    if path.is_symlink():
+        raise DataLoaderSourceError("YAML source files must not be symlinks")
+
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(_BASE_DATA_ROOT.resolve())
+    except ValueError as exc:
+        raise DataLoaderSourceError(
+            "YAML source file must resolve within the packaged base-data root"
+        ) from exc
+    if not resolved_path.is_file():
+        raise DataLoaderSourceError("YAML source must be a regular file")
+    return resolved_path
 
 
 def _get_warning_log_path() -> Path:
@@ -156,7 +192,8 @@ def load_model_data_from_yaml(
         )
         return
 
-    if not os.path.isdir(dir_path):
+    source_directory = _approved_yaml_directory(dir_path)
+    if not source_directory.is_dir():
         _record_warning(
             command,
             f"Skipping load because YAML data directory is missing: {dir_path}",
@@ -165,10 +202,12 @@ def load_model_data_from_yaml(
         )
         return
 
-    _files: list[str] = [f for f in os.listdir(dir_path) if f.endswith(".yaml")]
-    _files.sort()
-    for filename in _files:
-        with open(os.path.join(dir_path, filename), "r", encoding="utf-8") as fh:
+    yaml_files = sorted(
+        path for path in source_directory.iterdir() if path.suffix == ".yaml"
+    )
+    for yaml_path in yaml_files:
+        approved_path = _approved_yaml_file(yaml_path)
+        with approved_path.open("r", encoding="utf-8") as fh:
             yaml_data = cast(list[YamlEntry], yaml.safe_load(fh) or [])
 
         load_data_with_foreign_keys(

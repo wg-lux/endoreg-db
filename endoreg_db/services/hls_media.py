@@ -10,7 +10,7 @@ import time
 from collections import deque
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -96,6 +96,12 @@ from endoreg_db.utils.rust_backend import (
 logger = logging.getLogger(__name__)
 
 HlsArtifactKind = Literal["raw", "processed"]
+HLS_READY_STATUSES = frozenset({"materialized", "already_ready"})
+
+
+def hls_result_is_ready(status: object) -> bool:
+    return str(status) in HLS_READY_STATUSES
+
 
 HLS_CONTENT_KEY_BYTES = 16
 HLS_IV_HEX_LENGTH = 32
@@ -164,6 +170,7 @@ class _ArtifactSnapshot:
     segment_directory_relative_path: str
     segment_count: int
     source_file_name: str
+    source_content_hash: str
 
 
 @dataclass(frozen=True)
@@ -179,6 +186,7 @@ class _PreparedArtifact:
 @dataclass(frozen=True)
 class HlsMaterializationDispatchReservation:
     artifact_id: int
+    attempt_key_id: UUID
     artifact_kind: HlsArtifactKind
     status: Literal["queued", "already_queued", "already_ready"]
 
@@ -231,6 +239,7 @@ class _HlsTimelineValidation:
     proof: ProvenResampledHlsContext | None
     expected_content_hash: str | None
     source_generation_id: UUID
+    source_content_hash: str
 
 
 @dataclass(frozen=True)
@@ -287,6 +296,15 @@ def _hls_source(video: VideoFile, artifact_kind: VideoArtifactKind) -> _HlsSourc
         source_file_name=str(field_file.name),
         field_file=field_file,
     )
+
+
+def _source_content_hash(source: _HlsSource) -> str:
+    digest = get_video_hash(source.field_file).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise VideoStorageNormalizationError(
+            "HLS source content identity is missing or invalid"
+        )
+    return digest
 
 
 def _persisted_hls_boundaries(
@@ -367,6 +385,7 @@ def _hls_timeline_validation(
             proof=None,
             expected_content_hash=expected_content_hash or None,
             source_generation_id=source_generation_id,
+            source_content_hash=expected_content_hash or "",
         )
     meta = VideoFileMetaPayload.model_validate(video.meta or {})
     provenance = meta.fps_normalization
@@ -383,6 +402,7 @@ def _hls_timeline_validation(
         proof=proof,
         expected_content_hash=expected_content_hash or None,
         source_generation_id=source_generation_id,
+        source_content_hash=expected_content_hash or "",
     )
 
 
@@ -479,6 +499,7 @@ def _artifact_snapshot(
         segment_directory_relative_path=str(artifact.segment_directory_relative_path),
         segment_count=int(artifact.segment_count),
         source_file_name=str(artifact.source_file_name),
+        source_content_hash=str(artifact.source_content_hash),
     )
 
 
@@ -500,6 +521,7 @@ def _restore_artifact_snapshot(
     artifact.segment_directory_relative_path = snapshot.segment_directory_relative_path
     artifact.segment_count = snapshot.segment_count
     artifact.source_file_name = snapshot.source_file_name
+    artifact.source_content_hash = snapshot.source_content_hash
     artifact.last_error = last_error
     artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
     artifact.save(
@@ -516,6 +538,7 @@ def _restore_artifact_snapshot(
             "segment_directory_relative_path",
             "segment_count",
             "source_file_name",
+            "source_content_hash",
             "last_error",
             "error_code",
             "updated_at",
@@ -561,7 +584,7 @@ def _mark_artifact_failed(
         artifact.playlist_relative_path = ""
         artifact.segment_directory_relative_path = ""
         artifact.segment_count = 0
-        artifact.last_error = error[:4000]
+        artifact.last_error = _redacted_hls_error(error, error_code)
         artifact.error_code = error_code
         artifact.save(
             update_fields=[
@@ -585,6 +608,12 @@ def _materialization_stale_before() -> datetime:
         seconds=get_ffmpeg_transcode_timeout_seconds()
         + HLS_MATERIALIZATION_STALE_GRACE_SECONDS
     )
+
+
+def _redacted_hls_error(error: str, error_code: str) -> str:
+    """Keep operator context while preventing storage paths from being persisted."""
+    redacted = re.sub(r"(?:[A-Za-z]:)?/[^\s]+", "<redacted-path>", str(error))
+    return f"{error_code}: {redacted[:3900]}"
 
 
 def _recover_stale_in_flight_artifact(
@@ -681,6 +710,13 @@ def reserve_hls_materialization_dispatch(
     """Atomically reserve one HLS task per video and artifact kind."""
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     encoding_profile = configured_hls_encoding_profile()
+    source_video = VideoFile.objects.get(pk=int(video_id))
+    source_ref = _hls_source(source_video, parsed_kind)
+    source_file_name = source_ref.source_file_name
+    source_content_hash = _source_content_hash(source_ref)
+    source_generation_id = _hls_timeline_validation(
+        source_video, parsed_kind
+    ).source_generation_id
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=int(video_id))
         artifacts = VideoHlsArtifact.objects.select_for_update().filter(
@@ -689,10 +725,11 @@ def reserve_hls_materialization_dispatch(
         )
         active = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
         ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
-        source_file_name = _hls_source(video, parsed_kind).source_file_name
         ready_matches_source = bool(
             ready is not None
             and ready.source_file_name == source_file_name
+            and ready.source_content_hash == source_content_hash
+            and ready.source_generation_id == source_generation_id
             and ready.encoding_profile_name == encoding_profile.name.value
             and _ready_artifact_paths_exist(ready)
         )
@@ -706,15 +743,24 @@ def reserve_hls_materialization_dispatch(
             ready_matches_source=ready_matches_source,
             force=force,
         )
+        if action == "queue" and active is not None and active_is_stale:
+            _recover_stale_in_flight_artifact(
+                active,
+                video_id=int(video.pk),
+                artifact_kind=parsed_kind,
+                include_queued=True,
+            )
         if action == "already_in_flight" and active is not None:
             return HlsMaterializationDispatchReservation(
                 artifact_id=int(active.pk),
+                attempt_key_id=active.key_id,
                 artifact_kind=parsed_kind.value,
                 status="already_queued",
             )
         if action == "already_ready" and ready is not None:
             return HlsMaterializationDispatchReservation(
                 artifact_id=int(ready.pk),
+                attempt_key_id=ready.key_id,
                 artifact_kind=parsed_kind.value,
                 status="already_ready",
             )
@@ -723,16 +769,24 @@ def reserve_hls_materialization_dispatch(
             artifact_kind=parsed_kind.value,
             status=VideoHlsArtifact.Status.QUEUED.value,
             source_file_name=source_file_name,
+            source_generation_id=source_generation_id,
+            source_content_hash=source_content_hash,
             encoding_profile_name=encoding_profile.name.value,
         )
         return HlsMaterializationDispatchReservation(
             artifact_id=int(artifact.pk),
+            attempt_key_id=artifact.key_id,
             artifact_kind=parsed_kind.value,
             status="queued",
         )
 
 
-def mark_hls_materialization_dispatch_failed(*, artifact_id: int, error: str) -> None:
+def mark_hls_materialization_dispatch_failed(
+    *,
+    artifact_id: int,
+    expected_key_id: UUID,
+    error: str,
+) -> None:
     """Release a reservation when publishing its Celery task failed."""
     with transaction.atomic():
         artifact = VideoHlsArtifact.objects.select_for_update().get(pk=artifact_id)
@@ -742,6 +796,7 @@ def mark_hls_materialization_dispatch_failed(*, artifact_id: int, error: str) ->
             artifact_id=artifact_id,
             error=error,
             previous=None,
+            expected_key_id=expected_key_id,
             expected_status=VideoHlsArtifact.Status.QUEUED.value,
             error_code=VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value,
         )
@@ -785,13 +840,20 @@ def dispatch_video_hls_materialization(
         dispatcher = cast(_HlsTaskDispatcher, video_hls_materialization)
     try:
         async_result = dispatcher.apply_async(
-            args=[int(video_id), reservation.artifact_kind, bool(force)],
+            args=[
+                int(video_id),
+                reservation.artifact_kind,
+                bool(force),
+                reservation.artifact_id,
+                str(reservation.attempt_key_id),
+            ],
             queue=queue,
             routing_key=queue,
         )
     except Exception as exc:
         mark_hls_materialization_dispatch_failed(
             artifact_id=reservation.artifact_id,
+            expected_key_id=reservation.attempt_key_id,
             error="Celery HLS dispatch failed",
         )
         from endoreg_db.utils.structured_logging import (
@@ -836,7 +898,14 @@ def _prepare_artifact_record(
     key_nonce: bytes,
     iv_hex: str,
     force: bool,
+    source_content_hash: str = "",
+    reserved_artifact_id: int | None = None,
+    expected_reservation_key_id: UUID | None = None,
 ) -> _PreparedArtifact:
+    if (reserved_artifact_id is None) != (expected_reservation_key_id is None):
+        raise ValueError(
+            "HLS reservation artifact ID and attempt key must be supplied together"
+        )
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=video_id)
         artifacts = VideoHlsArtifact.objects.select_for_update().filter(
@@ -844,12 +913,60 @@ def _prepare_artifact_record(
             artifact_kind=artifact_kind.value,
         )
         ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
+        artifact: VideoHlsArtifact | None = None
+        if reserved_artifact_id is not None:
+            artifact = artifacts.filter(pk=reserved_artifact_id).first()
+            if artifact is None or artifact.key_id != expected_reservation_key_id:
+                raise RuntimeError("HLS task does not own the reserved attempt")
+            if (
+                artifact.source_file_name != source_file_name
+                or artifact.source_generation_id != source_generation_id
+                or artifact.source_content_hash != source_content_hash
+                or artifact.encoding_profile_name != requested_encoding_profile_name
+            ):
+                raise RuntimeError("HLS reserved source identity changed before claim")
+            if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
+                if artifact.updated_at > _materialization_stale_before():
+                    return _PreparedArtifact(
+                        artifact_id=int(artifact.pk),
+                        key_id=artifact.key_id,
+                        encoding_profile_name=str(artifact.encoding_profile_name),
+                        previous=None,
+                        should_materialize=False,
+                    )
+                logger.warning(
+                    "Reclaiming stale HLS delivery with matching attempt identity: video=%s kind=%s artifact=%s",
+                    video_id,
+                    artifact_kind.value,
+                    artifact.pk,
+                )
+                # The same fenced attempt may resume after its heartbeat became
+                # stale. Normalize the in-memory state so the common claim path
+                # below refreshes its wrapped key material and timestamp instead
+                # of treating it as a competing active worker.
+                artifact.status = VideoHlsArtifact.Status.QUEUED.value
+            if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
+                return _PreparedArtifact(
+                    artifact_id=int(artifact.pk),
+                    key_id=artifact.key_id,
+                    encoding_profile_name=str(artifact.encoding_profile_name),
+                    previous=None,
+                    should_materialize=False,
+                    publish_only=True,
+                )
+            if artifact.status not in {
+                VideoHlsArtifact.Status.QUEUED.value,
+                VideoHlsArtifact.Status.MATERIALIZING.value,
+            }:
+                raise RuntimeError("HLS reserved attempt is no longer active")
         if (
-            ready is not None
+            reserved_artifact_id is None
+            and ready is not None
             and not force
             and _ready_artifact_paths_exist(ready)
             and ready.source_file_name == source_file_name
             and ready.source_generation_id == source_generation_id
+            and ready.source_content_hash == source_content_hash
             and ready.encoding_profile_name == requested_encoding_profile_name
         ):
             return _PreparedArtifact(
@@ -865,8 +982,10 @@ def _prepare_artifact_record(
                 error_code=VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value,
                 source_file_name=source_file_name,
                 source_generation_id=source_generation_id,
+                source_content_hash=source_content_hash,
+                encoding_profile_name=requested_encoding_profile_name,
             ).first()
-            if not force
+            if not force and reserved_artifact_id is None
             else None
         )
         if deterministic_failure is not None:
@@ -877,8 +996,9 @@ def _prepare_artifact_record(
                 previous=None,
                 should_materialize=False,
             )
-        artifact = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
-        if artifact is not None:
+        if artifact is None:
+            artifact = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
+        if artifact is not None and reserved_artifact_id is None:
             recovered = _recover_stale_in_flight_artifact(
                 artifact,
                 video_id=video_id,
@@ -888,6 +1008,17 @@ def _prepare_artifact_record(
             if recovered:
                 artifact = None
         if artifact is not None:
+            if (
+                artifact.status == VideoHlsArtifact.Status.QUEUED.value
+                and reserved_artifact_id is None
+            ):
+                return _PreparedArtifact(
+                    artifact_id=int(artifact.pk),
+                    key_id=artifact.key_id,
+                    encoding_profile_name=str(artifact.encoding_profile_name),
+                    previous=None,
+                    should_materialize=False,
+                )
             if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
                 return _PreparedArtifact(
                     artifact_id=int(artifact.pk),
@@ -915,7 +1046,8 @@ def _prepare_artifact_record(
         selected_encoding_profile_name = str(artifact.encoding_profile_name)
         hls_encoding_profile_by_name(selected_encoding_profile_name)
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
-        artifact.key_id = key_id
+        if reserved_artifact_id is None:
+            artifact.key_id = key_id
         artifact.source_generation_id = source_generation_id
         artifact.encoding_profile_name = selected_encoding_profile_name
         artifact.source_generation_id = source_generation_id
@@ -927,6 +1059,7 @@ def _prepare_artifact_record(
         artifact.segment_directory_relative_path = ""
         artifact.segment_count = 0
         artifact.source_file_name = source_file_name
+        artifact.source_content_hash = source_content_hash
         artifact.last_error = ""
         artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
         artifact.full_clean()
@@ -1010,6 +1143,17 @@ def _publish_validated_artifact(
                 "HLS materialization ownership was lost before READY publication: "
                 f"artifact={artifact_id} expected_key={expected_key_id} "
                 f"current_key={artifact.key_id} current_status={artifact.status}"
+            )
+
+        current_source = _hls_source(video, artifact_kind)
+        current_timeline = _hls_timeline_validation(video, artifact_kind)
+        if (
+            artifact.source_file_name != current_source.source_file_name
+            or artifact.source_content_hash != _source_content_hash(current_source)
+            or artifact.source_generation_id != current_timeline.source_generation_id
+        ):
+            raise VideoStorageNormalizationError(
+                "HLS source generation changed before publication"
             )
 
         playlist_path = target_dir / "playlist.m3u8"
@@ -1650,6 +1794,7 @@ def _run_ffmpeg_hls(
                 ),
                 expected_content_hash=timeline_validation.expected_content_hash,
                 source_generation_id=timeline_validation.source_generation_id,
+                source_content_hash=timeline_validation.source_content_hash,
             )
         normalization_evidence = normalize_video_file(
             input_path=source_path,
@@ -1822,6 +1967,33 @@ def _ready_artifact_paths_exist(artifact: VideoHlsArtifact) -> bool:
         return False
     if int(artifact.segment_count) <= 0:
         return False
+    try:
+        playlist_lines = playlist_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    referenced_segments = [
+        urlsplit(line.strip()).path
+        for line in playlist_lines
+        if line.strip() and not line.startswith("#")
+    ]
+    referenced_segment_names = [
+        Path(segment_path).name for segment_path in referenced_segments
+    ]
+    if any(
+        urlsplit(segment_path).scheme or urlsplit(segment_path).netloc
+        for segment_path in referenced_segments
+    ):
+        return False
+    if len(referenced_segment_names) != int(artifact.segment_count):
+        return False
+    for segment_name in referenced_segment_names:
+        if (
+            not segment_name.startswith("seg_")
+            or Path(segment_name).name != segment_name
+            or Path(segment_name).suffix != ".ts"
+            or not (segment_dir / segment_name).is_file()
+        ):
+            return False
     return True
 
 
@@ -1862,7 +2034,12 @@ def _existing_ready_result(
         return None
 
     source_ref = _hls_source(artifact.video, artifact_kind)
+    timeline_validation = _hls_timeline_validation(artifact.video, artifact_kind)
     if artifact.source_file_name != source_ref.source_file_name:
+        return None
+    if artifact.source_content_hash != _source_content_hash(source_ref):
+        return None
+    if artifact.source_generation_id != timeline_validation.source_generation_id:
         return None
     if artifact.encoding_profile_name != encoding_profile_name:
         return None
@@ -2046,10 +2223,19 @@ def materialize_video_hls(
     *,
     artifact_kind: object = VideoArtifactKind.PROCESSED,
     force: bool = False,
+    reserved_artifact_id: int | None = None,
+    reservation_key_id: UUID | str | None = None,
 ) -> HlsMaterializationResult:
+    if (reserved_artifact_id is None) != (reservation_key_id is None):
+        raise ValueError(
+            "HLS reservation artifact ID and attempt key must be supplied together"
+        )
+    expected_reservation_key_id = (
+        UUID(str(reservation_key_id)) if reservation_key_id is not None else None
+    )
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     requested_encoding_profile = configured_hls_encoding_profile()
-    if not force:
+    if not force and reserved_artifact_id is None:
         existing = _existing_ready_result(
             video_id=video_id,
             artifact_kind=parsed_kind,
@@ -2065,10 +2251,41 @@ def materialize_video_hls(
     video = VideoFile.objects.get(pk=int(video_id))
     source_ref = _hls_source(video, parsed_kind)
     timeline_validation = _hls_timeline_validation(video, parsed_kind)
+    source_content_hash = _source_content_hash(source_ref)
+    timeline_validation = replace(
+        timeline_validation,
+        source_content_hash=source_content_hash,
+    )
     source_file_name = source_ref.source_file_name
 
+    if reserved_artifact_id is not None:
+        reserved = VideoHlsArtifact.objects.get(pk=reserved_artifact_id)
+        if (
+            int(reserved.video_id) != int(video.pk)
+            or reserved.artifact_kind != parsed_kind.value
+            or reserved.key_id != expected_reservation_key_id
+        ):
+            raise RuntimeError("HLS task does not own the reserved attempt")
+        if (
+            reserved.source_file_name != source_file_name
+            or reserved.source_generation_id != timeline_validation.source_generation_id
+            or reserved.source_content_hash != source_content_hash
+            or reserved.encoding_profile_name != requested_encoding_profile.name.value
+        ):
+            _mark_artifact_failed(
+                artifact_id=int(reserved.pk),
+                error="HLS reserved source identity changed before claim",
+                previous=None,
+                expected_key_id=expected_reservation_key_id,
+                expected_status=VideoHlsArtifact.Status.QUEUED.value,
+                error_code=VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value,
+            )
+            raise VideoStorageNormalizationError(
+                "HLS reserved source identity changed before claim"
+            )
+
     cek = os.urandom(HLS_CONTENT_KEY_BYTES)
-    key_id = uuid4()
+    key_id = expected_reservation_key_id or uuid4()
     iv_hex = os.urandom(HLS_CONTENT_KEY_BYTES).hex()
     if len(iv_hex) != HLS_IV_HEX_LENGTH:
         raise RuntimeError("Generated HLS IV has invalid length")
@@ -2083,12 +2300,15 @@ def materialize_video_hls(
         artifact_kind=parsed_kind,
         source_file_name=source_file_name,
         source_generation_id=timeline_validation.source_generation_id,
+        source_content_hash=source_content_hash,
         requested_encoding_profile_name=requested_encoding_profile.name.value,
         key_id=key_id,
         key_ciphertext=key_ciphertext,
         key_nonce=key_nonce,
         iv_hex=iv_hex,
         force=force,
+        reserved_artifact_id=reserved_artifact_id,
+        expected_reservation_key_id=expected_reservation_key_id,
     )
 
     if not prepared.should_materialize and not prepared.publish_only:
@@ -2244,6 +2464,8 @@ def get_ready_hls_artifact(
     if key_id is not None:
         filters["key_id"] = key_id
     artifact = VideoHlsArtifact.objects.get(**filters)
+    if not _ready_artifact_matches_current_source(video=video, artifact=artifact):
+        raise FileNotFoundError("HLS artifact source identity is stale")
     if not _ready_artifact_paths_exist(artifact):
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
@@ -2260,9 +2482,36 @@ def get_ready_hls_artifact_by_key(
         status=VideoHlsArtifact.Status.READY.value,
     )
 
+    if not _ready_artifact_matches_current_source(video=video, artifact=artifact):
+        raise FileNotFoundError("HLS artifact source identity is stale")
     if not _ready_artifact_paths_exist(artifact):
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
+
+
+def _ready_artifact_matches_current_source(
+    *,
+    video: VideoFile,
+    artifact: VideoHlsArtifact,
+) -> bool:
+    """Reject legacy or superseded READY rows at every playback boundary."""
+    try:
+        artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
+        source = _hls_source(video, artifact_kind)
+        timeline = _hls_timeline_validation(video, artifact_kind)
+        expected_hash = str(timeline.expected_content_hash or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
+            expected_hash = _source_content_hash(source)
+        return bool(
+            artifact.source_content_hash
+            and artifact.source_content_hash == expected_hash
+            and artifact.source_file_name == source.source_file_name
+            and artifact.source_generation_id == timeline.source_generation_id
+            and artifact.encoding_profile_name
+            == configured_hls_encoding_profile().name.value
+        )
+    except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
+        return False
 
 
 def hls_playlist_path(artifact: VideoHlsArtifact) -> Path:

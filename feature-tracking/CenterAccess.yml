@@ -35,8 +35,7 @@ definition_of_done:
   verification:
     kind: command
     commands:
-    - working_directory: /home/admin/endoreg-db
-      command:
+    - command:
       - devenv
       - shell
       - --
@@ -49,8 +48,8 @@ definition_of_done:
       - tests/views/test_center_access_matrix.py
       - tests/views/media/test_center_scoped_reads.py
       - -q
-    - working_directory: /home/admin/dev/lx-annotate/frontend
-      command:
+      working_directory: /home/admin/endoreg-db
+    - command:
       - nix
       - develop
       - .
@@ -62,6 +61,7 @@ definition_of_done:
       - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
       - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
       - --run
+      working_directory: /home/admin/dev/lx-annotate/frontend
     timeout_seconds: 600
   assessment:
     status: verified
@@ -167,8 +167,7 @@ definition_of_done:
   verification:
     kind: command
     commands:
-    - working_directory: /home/admin/endoreg-db
-      command:
+    - command:
       - devenv
       - shell
       - --
@@ -190,8 +189,8 @@ definition_of_done:
       - tests/views/report/test_report_llm_status.py
       - tests/views/test_center_access_matrix.py
       - -q
-    - working_directory: /home/admin/dev/lx-annotate/frontend
-      command:
+      working_directory: /home/admin/endoreg-db
+    - command:
       - nix
       - develop
       - .
@@ -203,6 +202,7 @@ definition_of_done:
       - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
       - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
       - --run
+      working_directory: /home/admin/dev/lx-annotate/frontend
     timeout_seconds: 1200
   assessment:
     status: in_progress
@@ -297,3 +297,53 @@ definition_of_done:
       aus.
     assessed_by: Codex
     assessed_at: '2026-07-22T11:43:03.438866Z'
+- id: administration_assignment_and_host_tracker
+  category: functionality
+  title: Global administrators can manage user centers and inspect every registered host
+  acceptance:
+  - The administration page lists every local user and supports audited assignment and revocation of plural
+    center memberships.
+  - The exact Keycloak realm role center_scope:global_admin grants global center administration without
+    requiring a Django superuser flag; center_scope:admin remains delegated to one unambiguous center.
+  - Global administrators see every registered NetworkNode, including inactive hosts, with role, owning
+    center, activation state, URL and HTTPS configuration state, and last local update time.
+  - Host inventory responses expose neither configured base URLs nor shared-secret material and do not
+    trigger remote network probes.
+  - Non-global users do not receive the cross-center host inventory, and broad roles such as admin, data:write,
+    or Django staff do not substitute for an exact center-scope role.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - .devenv/state/venv/bin/pytest
+      - tests/api/test_administration_api.py
+      - tests/api/test_administration_unit.py
+      - -q
+      working_directory: /home/admin/dev/lx-annotate
+    - command:
+      - devenv
+      - shell
+      - --
+      - npm
+      - run
+      - test:unit
+      - --
+      - --run
+      - src/views/__tests__/AdministrationPage.test.ts
+      working_directory: /home/admin/dev/lx-annotate/frontend
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'LX-Annotate pyright: 0 errors, 0 warnings; pytest tests/api/test_administration_api.py
+        tests/api/test_administration_unit.py -q: 25 passed'
+    - kind: command
+      reference: 'Frontend npm run type-check: passed; vitest AdministrationPage.test.ts: 10 passed'
+    - kind: document
+      reference: docs/center_access_operations.md
+    note: Center assignment and exact Keycloak realm-role behavior were retained; the global administration
+      overview now lists all registered hosts without exposing URLs or secrets or initiating remote probes.
+    assessed_by: Codex
+    assessed_at: '2026-09-02T11:49:55.402720Z'

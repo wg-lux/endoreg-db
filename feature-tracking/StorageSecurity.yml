@@ -67,8 +67,16 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_environment_readiness.py
+        tests/views/video/test_video_stream.py tests/views/report/test_report_stream.py -q (19 passed,
+        2 warnings in 93.36s)
+    note: Die fokussierte Verifikationslane bestätigt fail-closed Produktions-Readiness, authentifizierte
+      Video- und Berichtsauslieferung, Proxy-Offload sowie verschlüsseltes Range-, Chunk- und Fehlerverhalten.
+    assessed_by: codex-root-feature-c7f4a9
+    assessed_at: '2026-09-02T11:41:27.078817Z'
 - id: filesystem_integrity
   category: data_integrity
   title: Alle Mutationen sind atomar, typisiert und strukturiert protokolliert

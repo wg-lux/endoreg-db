@@ -2,20 +2,30 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from pytest import MonkeyPatch
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
+    AIDataSet,
+    AIModelTrainingRun,
     Center,
     Frame,
     ImageClassificationAnnotation,
     Label,
+    LabelVideoSegment,
+    UploadJob,
     VideoFile,
 )
-from endoreg_db.services.media_integrity import reconcile_media_integrity
+from endoreg_db.services.media_integrity import (
+    MediaIntegrityOptions,
+    reconcile_media_integrity,
+    reconcile_upload_job_integrity,
+    reconcile_video_integrity,
+)
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
@@ -23,6 +33,198 @@ from endoreg_db.utils.file_operations import (
 
 
 pytestmark = pytest.mark.django_db
+
+
+def test_missing_upload_source_uses_integrity_lifecycle_event(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    upload_job = cast(
+        UploadJob,
+        SimpleNamespace(
+            pk="missing-upload-job",
+            file=SimpleNamespace(name="uploads/missing.pdf"),
+            source_file_persisted=True,
+            content_hash="a" * 64,
+        ),
+    )
+    transitions: list[tuple[UploadJob, str]] = []
+
+    def record_integrity_lost(job: UploadJob, detail: str) -> None:
+        transitions.append((job, detail))
+
+    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(
+        media_integrity,
+        "mark_upload_job_integrity_lost",
+        record_integrity_lost,
+    )
+
+    repaired, lost, report = reconcile_upload_job_integrity(upload_job)
+
+    assert repaired == 0
+    assert lost == 1
+    assert report["action"] == "lost"
+    assert transitions == [(upload_job, report["detail"])]
+
+
+def test_blank_persisted_upload_source_is_lost(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    upload_job = cast(
+        UploadJob,
+        SimpleNamespace(
+            pk="blank-upload-job",
+            file=SimpleNamespace(name=""),
+            source_file_persisted=True,
+            content_hash="b" * 64,
+        ),
+    )
+    transitions: list[str] = []
+
+    def record_blank_source_loss(_job: UploadJob, detail: str) -> None:
+        transitions.append(detail)
+
+    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(
+        media_integrity,
+        "mark_upload_job_integrity_lost",
+        record_blank_source_loss,
+    )
+
+    # Act
+    repaired, lost, report = reconcile_upload_job_integrity(upload_job)
+
+    # Assert
+    assert repaired == 0
+    assert lost == 1
+    assert report["action"] == "lost"
+    assert transitions == [report["detail"]]
+    assert "storage reference" in transitions[0]
+
+
+def _video_with_successful_lifecycle_state() -> VideoFile:
+    center = Center.objects.create(
+        name=f"successful-video-center-{uuid.uuid4().hex[:8]}",
+        display_name="Successful Video Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"successful-video-{uuid.uuid4().hex}",
+        processed_file="",
+    )
+    state = video.get_or_create_state()
+    state.sensitive_meta_processed = True
+    state.anonymized = True
+    state.anonymization_validated = True
+    state.outside_segments_removed = True
+    state.save(
+        update_fields=[
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+        ]
+    )
+    return video
+
+
+def test_successful_video_without_processed_file_is_lost() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+
+    # Act
+    repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert repaired == 0
+    assert lost == 1
+    assert report["status"] == "lost"
+
+
+def test_processing_failure_without_integrity_evidence_is_not_lost() -> None:
+    # Arrange
+    center = Center.objects.create(
+        name=f"failed-video-center-{uuid.uuid4().hex[:8]}",
+        display_name="Failed Video Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=f"failed-video-{uuid.uuid4().hex}",
+    )
+    state = video.get_or_create_state()
+    state.processing_error = True
+    state.save(update_fields=["processing_error"])
+
+    # Act
+    _repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert lost == 0
+    assert report.get("status") != "lost"
+
+
+def test_preexisting_integrity_loss_is_counted_on_every_inventory() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    video.meta = {
+        "integrity_status": "lost",
+        "integrity_error": "processed generation disappeared",
+    }
+    video.save(update_fields=["meta"])
+    state = video.get_or_create_state()
+    state.processing_error = True
+    state.processing_started = False
+    state.ready_for_export = False
+    state.processed_file_sha256 = ""
+    state.save()
+
+    # Act
+    _repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert lost == 1
+    assert report["status"] == "lost"
+
+
+def test_video_integrity_loss_propagates_to_dependent_training_ledger() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    dataset = AIDataSet.objects.create(name="integrity-dependent-training")
+    dataset.video_annotations.add(segment)
+    run = AIModelTrainingRun.objects.create(
+        dataset=dataset,
+        backbone_name="test-backbone",
+        feature_mode="test-features",
+        status=AIModelTrainingRun.STATUS_COMPLETED,
+    )
+
+    # Act
+    media_integrity.mark_video_integrity_lost(
+        video,
+        "Canonical processed video is missing.",
+    )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_LOST
+    assert "training input video artifact was lost" in run.error
 
 
 def _video_with_initialized_frames(

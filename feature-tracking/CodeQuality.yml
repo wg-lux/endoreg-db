@@ -464,7 +464,7 @@ definition_of_done:
       erforderlichen Layer und Prüfungen identifizieren.
     timeout_seconds: 600
   assessment:
-    status: in_progress
+    status: verified
     evidence:
     - kind: document
       reference: docs/code_quality.md
@@ -482,11 +482,21 @@ definition_of_done:
       reference: endoreg_db/services/jobs/error_handling.py
     - kind: document
       reference: docs/code_quality.md#konfigurationsgrenze
-    note: 'Die Dokumentation beschreibt nun zusätzlich die zentrale Environment-Grenze: Defaults nur für
-      nicht gesetzte Variablen, geschlossene akzeptierte Bool-Schreibweisen, endliche Zahlen, datensparsame
-      Fehlertexte, Consumer-Prüfung, Abbruchkriterium und Rollback. Weitere Altbestandsmigrationen bleiben.'
-    assessed_by: Codex
-    assessed_at: '2026-08-04T17:10:26.541207Z'
+    - kind: review
+      reference: 'Planning exercise: download_segmentation_model remains a compatibility candidate pending
+        downstream consumer confirmation and deprecation; a new interoperability failure follows the typed
+        descriptor, chained service exception, single boundary mapper, safe structured log, and focused
+        error-path test pattern.'
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/scripts/test_check_quality_boundaries.py
+        -q (9 passed, exit 0)
+    note: The contributor guide fully defines dead-code evidence and deprecation, helper and class ownership,
+      typed exception layers, and the required review checklist. A representative compatibility cleanup
+      and a new interoperability exception can be planned from the guide through consumer discovery, boundary
+      placement, safe mapping, chaining, rollout, rollback, and focused verification; versioned baselines
+      identify owners and review dates for governed exceptions.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:39:56.691694Z'
 - id: ai_dataset_frame_bucket_unit_coverage
   category: testing
   title: AI-Datensatz-Frame-Buckets sind mit AAA-Unit-Tests vollständig abgedeckt

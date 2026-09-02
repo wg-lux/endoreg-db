@@ -11,6 +11,8 @@ YamlScalar: TypeAlias = str | int | float | bool | YamlNull
 YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
 DataLoaderModel: TypeAlias = type[models.Model]
 
+class DataLoaderSourceError(ValueError): ...
+
 class YamlEntry(TypedDict):
     fields: dict[str, YamlValue]
 

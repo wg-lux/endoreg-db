@@ -322,13 +322,39 @@ definition_of_done:
     kind: command
     command:
     - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_export_boundary.py
     - tests/authz/test_report_llm_policy.py
     - tests/views/report/test_report_stream.py
+    - tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_reimport_returns_404_for_cross_center_access
+    - tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_llm_job_status_returns_404_for_cross_center_access
+    - tests/views/media/test_center_scoped_reads.py::CenterScopedReadTests::test_report_stream_is_denied_outside_center_scope
+    - tests/views/media/test_hub_transfer_endpoints.py::HubTransferEndpointTests::test_raw_report_upload_is_rejected
     - -q
     timeout_seconds: 600
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_export_boundary.py
+        tests/authz/test_report_llm_policy.py tests/views/report/test_report_stream.py tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_reimport_returns_404_for_cross_center_access
+        tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_llm_job_status_returns_404_for_cross_center_access
+        tests/views/media/test_center_scoped_reads.py::CenterScopedReadTests::test_report_stream_is_denied_outside_center_scope
+        tests/views/media/test_hub_transfer_endpoints.py::HubTransferEndpointTests::test_raw_report_upload_is_rejected
+        -q (21 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright tests/services/test_report_export_boundary.py
+        (0 errors)
+    - kind: code
+      reference: endoreg_db/views/report/report_stream.py; endoreg_db/views/report/reimport.py; endoreg_db/views/media/hub/transfers.py;
+        endoreg_db/services/hub/transfers.py; endoreg_db/services/hub/storage_artifact_resolution.py
+    - kind: test
+      reference: tests/services/test_report_export_boundary.py
+    note: Patientenrollen und negative Center-Scope-Tests schützen Streaming, Reimport und LLM-Jobstatus.
+      Die externe Mediengrenze akzeptiert ausschließlich verschlüsselte processed-Artefakte; raw wird
+      vor Staging abgelehnt. Die typisierte Storage-Auflösung kennt für Berichte nur processed_report
+      und verlangt eine menschlich validierte Anonymisierung.
+    assessed_by: codex-root-20260902-ft1
+    assessed_at: '2026-09-02T11:53:05.552359Z'
 - id: artifact_integrity
   category: data_integrity
   title: Berichtsversionen und PDF-Artefakte sind atomar und nachvollziehbar
@@ -490,9 +516,9 @@ definition_of_done:
       reference: docs/report_import_concurrency_implementation.md; /home/admin/lx-anonymizer/docs/report_pipeline_concurrency_contract.md
     note: Der einzige serialisierbare Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn
       ohne lokale Modellduplikate oder ältere Reader-Fallbacks, und der aktuelle lokale Endoreg-Vertragstest
-      besteht. Verifizierung bleibt
-      bis zur Veröffentlichung einer neuen, unverbrauchten lx-dtypes-Version und einer CI-Matrix mit installierten
-      ältester und aktueller unterstützter lx-anonymizer-Wheel-Version offen.
+      besteht. Verifizierung bleibt bis zur Veröffentlichung einer neuen, unverbrauchten lx-dtypes-Version
+      und einer CI-Matrix mit installierten ältester und aktueller unterstützter lx-anonymizer-Wheel-Version
+      offen.
     assessed_by: Codex
     assessed_at: '2026-07-27T08:10:05.924121Z'
 - id: operational_readiness

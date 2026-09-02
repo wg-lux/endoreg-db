@@ -68,14 +68,18 @@ definition_of_done:
     - -q
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: blocked
     evidence:
-    - kind: command
-      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/management/commands/test_materialize_video_hls.py
-        -q
-      note: Exit-Code 0
-    assessed_by: Codex
-    assessed_at: '2026-07-17T13:27:36.721716Z'
+    - kind: code
+      reference: endoreg_db/services/hls_media.py:675-824; rust/endoreg_rust_backend/src/hls_state.rs:22-36;
+        endoreg_db/utils/rust_backend.py:482-503
+    - kind: test
+      reference: tests/services/test_hls_media.py:353-406; tests/management/commands/test_materialize_video_hls.py:246-302
+    note: 'Static analysis and gc-10 evidence invalidate the prior verified assessment: stale active attempts
+      remain already_queued after broker delivery loss, and redelivered work can acknowledge already_materializing
+      without reclaiming the orphan. Remediation is tracked as WP-ER-01 and WP-ER-06 in video_storage_normalization.'
+    assessed_by: codex-gc10-hls-investigate
+    assessed_at: '2026-09-02T09:02:07.028418Z'
 - id: end_to_end_tests
   category: testing
   title: Kritische Workflows sind end-to-end und als API-Vertrag getestet

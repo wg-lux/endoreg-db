@@ -128,6 +128,18 @@ def test_anonymization_overview_mixed_content():
         status=VideoHlsArtifact.Status.READY,
         segment_count=2,
     )
+    VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.RAW,
+        status=VideoHlsArtifact.Status.SUPERSEDED,
+        segment_count=1,
+    )
+    VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind=VideoHlsArtifact.ArtifactKind.PROCESSED,
+        status=VideoHlsArtifact.Status.VALIDATED,
+        segment_count=2,
+    )
 
     # 2. Execute Request
     url = "/api/anonymization/items/overview/"
@@ -176,11 +188,15 @@ def test_anonymization_overview_mixed_content():
     assert "idempotency_key" not in data[1]["upload_job"]
     assert "content_hash" not in data[1]["upload_job"]
     assert "file" not in data[1]["upload_job"]
-    assert data[1]["hls_materializations"][0]["artifact_kind"] == "raw"
-    assert data[1]["hls_materializations"][0]["status"] == "ready"
-    assert data[1]["hls_materializations"][0]["segment_count"] == 2
-    assert data[1]["hls_materializations"][0]["source_generation_id"]
-    assert data[1]["hls_materializations"][0]["target_generation_id"]
+    materializations = {
+        item["artifact_kind"]: item for item in data[1]["hls_materializations"]
+    }
+    assert set(materializations) == {"raw", "processed"}
+    assert materializations["raw"]["status"] == "ready"
+    assert materializations["raw"]["segment_count"] == 2
+    assert materializations["raw"]["source_generation_id"]
+    assert materializations["raw"]["target_generation_id"]
+    assert materializations["processed"]["status"] == "materializing"
 
     # Verify Statuses
     assert (

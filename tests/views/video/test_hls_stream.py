@@ -248,9 +248,72 @@ def test_hls_playlist_demand_dispatches_one_materialization_task(
     assert second.status_code == 202
     assert first["Retry-After"] == str(hls_stream.HLS_PENDING_RETRY_AFTER_SECONDS)
     assert first["Cache-Control"] == "no-store, private"
-    assert dispatched == [(video.pk, "processed", False)]
     artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert dispatched == [
+        (
+            video.pk,
+            "processed",
+            False,
+            artifact.pk,
+            str(artifact.key_id),
+        )
+    ]
     assert artifact.status == VideoHlsArtifact.Status.QUEUED.value
+
+
+def test_hls_playlist_rejects_legacy_ready_and_queues_identity_bound_attempt(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db import tasks as task_module
+
+    VideoHlsArtifact.objects.filter(pk=hls_artifact.pk).update(source_content_hash="")
+    video = hls_artifact.video
+    user = User.objects.create_user(username="hls-legacy-identity-reader")
+    dispatched: list[tuple[object, ...]] = []
+
+    class FakeTaskDispatcher:
+        def apply_async(
+            self,
+            *,
+            args: list[object],
+            queue: str,
+            routing_key: str,
+        ) -> SimpleNamespace:
+            assert queue == "ffmpeg_media"
+            assert routing_key == queue
+            dispatched.append(tuple(args))
+            return SimpleNamespace(id="legacy-replacement-task")
+
+    monkeypatch.setattr(
+        task_module,
+        "video_hls_materialization",
+        FakeTaskDispatcher(),
+    )
+
+    response = hls_stream.HLSPlaylistView.as_view()(
+        _authenticated_request(
+            f"/endoreg-api/media/videos/{video.pk}/hls/playlist/",
+            user,
+        ),
+        pk=video.pk,
+    )
+
+    replacement = VideoHlsArtifact.objects.get(
+        video=video,
+        artifact_kind="processed",
+        status=VideoHlsArtifact.Status.QUEUED.value,
+    )
+    assert response.status_code == 202
+    assert dispatched == [
+        (
+            video.pk,
+            "processed",
+            False,
+            replacement.pk,
+            str(replacement.key_id),
+        )
+    ]
 
 
 def test_hls_playlist_dispatch_failure_is_private_and_retryable(

@@ -8,6 +8,7 @@ mod frames;
 mod hashing;
 mod hls_state;
 mod import_state;
+mod lifecycle_state;
 mod pdf;
 mod state_enums;
 mod storage_profile;
@@ -74,6 +75,14 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         import_state::derive_report_anonymization_status,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        lifecycle_state::transition_service_lifecycle,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        lifecycle_state::transition_operation_lifecycle,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(

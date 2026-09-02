@@ -204,14 +204,18 @@ definition_of_done:
     - kind: command
       reference: 'devenv shell -- pyright: 0 errors; tests/views/media/test_video_ready_export.py: 13
         passed, 4 subtests passed (2026-08-14)'
-    note: The explicit ready-for-export action repairs missing or stale processed-content hash metadata
-      only after anonymization validation and final segment blackening/cleanup. It locks the video, hashes
-      the final managed processed artifact once, atomically aligns VideoFile.processed_video_hash and
-      VideoState.processed_file_sha256, rejects client-proof mismatch and duplicate digest collisions,
-      and leaves polling side-effect free. This covers the legacy Video 2 inconsistency without requiring
-      a separate integrity command when the operator presses Exportfreigabe pruefen.
-    assessed_by: codex-hub-bulk-video-offload
-    assessed_at: '2026-08-14T07:14:36.399848Z'
+    - kind: code
+      reference: endoreg_db/models/hub/transfer_job.py; endoreg_db/services/hub/transfers.py; endoreg_db/views/media/hub/transfers.py
+    - kind: test
+      reference: tests/services/test_transfer_job_contract.py; tests/views/media/test_hub_transfer_endpoints.py::HubTransferEndpointTests::test_transfer_media_upload_returns_conflict_for_live_operation_lease
+    - kind: command
+      reference: 'Fokussierter Pyright: 0 Fehler; TransferJob-Vertrag: 38 passed, 3 subtests passed; HTTP-409-Regression:
+        1 passed'
+    - kind: command
+      reference: 'Finale gemeinsame Transfer-/Training-Lane: 76 passed, 3 subtests passed, 2 warnings;
+        fokussierter Pyright 0 Fehler'
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:15:19.669508Z'
 - id: envelope_encrypted_media_transfer
   category: security
   title: Standalone processed media uses a replay-safe recipient envelope

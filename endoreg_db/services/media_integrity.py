@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from django.db.models import Q
@@ -18,7 +18,9 @@ from django.utils import timezone
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.models.aidataset.aidataset import AIModelTrainingRun
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.video_meta import FFMpegMeta, VideoMeta
@@ -39,6 +41,14 @@ from endoreg_db.services.video_files._frames._manage_frame_range import (
 from endoreg_db.services.streamable_media import (
     STREAMABLE_FILE_MODE,
     sync_video_streamable_artifacts,
+)
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_integrity_lost,
+)
+from endoreg_db.services.lifecycle_state_machine import (
+    OperationLifecycleEvent,
+    OperationLifecycleState,
+    transition_operation_lifecycle,
 )
 from endoreg_db.services.video_files import (
     ensure_local_processed_video_file,
@@ -70,6 +80,78 @@ from endoreg_db.utils.structured_logging import (
 from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_applied_transfer_jobs_lost(
+    *,
+    detail: str,
+    resource_hash: str | None = None,
+    upload_job_id: object | None = None,
+) -> int:
+    if not resource_hash and upload_job_id is None:
+        raise ValueError("transfer integrity propagation requires a resource identity")
+    reduced = transition_operation_lifecycle(
+        OperationLifecycleState.SUCCEEDED,
+        OperationLifecycleEvent.INTEGRITY_LOST,
+    )
+    if reduced is not OperationLifecycleState.LOST:
+        raise RuntimeError("transfer integrity loss did not reduce to LOST")
+    queryset = TransferJob.objects.filter(
+        transfer_status=TransferJob.TransferStatus.APPLIED
+    )
+    if resource_hash:
+        queryset = queryset.filter(resource_hash=resource_hash)
+    if upload_job_id is not None:
+        queryset = queryset.filter(upload_job_id=upload_job_id)
+    return queryset.update(
+        transfer_status=TransferJob.TransferStatus.LOST,
+        status_detail=detail,
+        updated_at=timezone.now(),
+    )
+
+
+def _mark_upload_job_transfer_dependencies_lost(
+    upload_job: UploadJob,
+    *,
+    detail: str,
+) -> int:
+    upload_job_id = getattr(upload_job, "pk", None)
+    if not isinstance(upload_job_id, UUID):
+        return 0
+    return _mark_applied_transfer_jobs_lost(
+        upload_job_id=upload_job_id,
+        detail=detail,
+    )
+
+
+def _mark_video_training_dependencies_lost(video: VideoFile) -> int:
+    reduced = transition_operation_lifecycle(
+        OperationLifecycleState.SUCCEEDED,
+        OperationLifecycleEvent.INTEGRITY_LOST,
+    )
+    if reduced is not OperationLifecycleState.LOST:
+        raise RuntimeError("training dependency loss did not reduce to LOST")
+    run_ids = list(
+        AIModelTrainingRun.objects.filter(
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+        )
+        .filter(
+            Q(dataset__image_annotations__frame__video_id=video.pk)
+            | Q(dataset__video_annotations__video_file_id=video.pk)
+        )
+        .values_list("run_id", flat=True)
+        .distinct()
+    )
+    if not run_ids:
+        return 0
+    return AIModelTrainingRun.objects.filter(run_id__in=run_ids).update(
+        status=AIModelTrainingRun.STATUS_LOST,
+        error=(
+            "A confirmed training input video artifact was lost after successful "
+            "training."
+        ),
+        updated_at=timezone.now(),
+    )
 
 
 class FrameCacheStatus(StrEnum):
@@ -288,8 +370,6 @@ def _video_integrity_detail(video: VideoFile) -> str:
     detail = str(payload.get("integrity_error") or "").strip()
     if detail:
         return detail
-    if bool(getattr(getattr(video, "state", None), "processing_error", False)):
-        return "video state is marked failed/lost"
     return ""
 
 
@@ -299,9 +379,7 @@ def _video_integrity_is_lost(video: VideoFile) -> bool:
         payload = cast(dict[str, object], video.meta)
     else:
         payload = cast(dict[str, object], {})
-    return payload.get("integrity_status") == "lost" or bool(
-        getattr(getattr(video, "state", None), "processing_error", False)
-    )
+    return payload.get("integrity_status") == "lost"
 
 
 def _mark_video_state_failed(
@@ -363,6 +441,11 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
         payload["integrity_checked_at"] = timezone.now().isoformat()
         video.meta = payload
         video.save(update_fields=["meta", "date_modified"])
+        _mark_applied_transfer_jobs_lost(
+            resource_hash=video.video_hash,
+            detail=detail,
+        )
+        _mark_video_training_dependencies_lost(video)
     emit_structured_event(
         logger,
         "media.integrity_lost",
@@ -1518,10 +1601,10 @@ def _mark_existing_integrity_loss(
     if not _video_integrity_is_lost(video):
         return None
     detail = _video_integrity_detail(video) or "video is marked lost"
-    changed = _mark_video_state_failed(video, detail, dry_run=dry_run)
+    _mark_video_state_failed(video, detail, dry_run=dry_run)
     report["status"] = "lost"
     report["detail"] = detail
-    return int(changed)
+    return 1
 
 
 def _ensure_processed_file_available(
@@ -1628,6 +1711,21 @@ def _reconcile_processed_file(
 ) -> tuple[int, bool]:
     processed_name = getattr(video.processed_file, "name", "") or ""
     if not processed_name:
+        state = getattr(video, "state", None)
+        requires_processed_artifact = bool(
+            state is not None
+            and (
+                getattr(state, "anonymized", False)
+                or getattr(state, "anonymization_validated", False)
+                or getattr(state, "ready_for_export", False)
+            )
+        )
+        if requires_processed_artifact:
+            detail = "validated video has no canonical processed-file reference"
+            _mark_video_lost(video, detail, dry_run=dry_run)
+            report["status"] = "lost"
+            report["detail"] = detail
+            return 0, True
         return 0, False
 
     processed_path = _storage_absolute_path(processed_name)
@@ -1816,13 +1914,28 @@ def reconcile_upload_job_integrity(
     report: dict[str, Any] = {"upload_job_id": upload_job.pk}
     file_name = getattr(upload_job.file, "name", "") or ""
     if not file_name:
+        if upload_job.source_file_persisted:
+            detail = "persisted upload source has no storage reference"
+            if not dry_run:
+                mark_upload_job_integrity_lost(upload_job, detail)
+                _mark_upload_job_transfer_dependencies_lost(upload_job, detail=detail)
+            report["action"] = "lost"
+            report["detail"] = detail
+            return repaired, 1, report
         return repaired, lost, report
 
     upload_path = _storage_absolute_path(file_name)
     should_exist = bool(upload_job.source_file_persisted)
     if should_exist and not upload_path.is_file():
         if not dry_run:
-            upload_job.mark_lost(f"upload file missing: {upload_path}")
+            mark_upload_job_integrity_lost(
+                upload_job,
+                f"upload file missing: {upload_path}",
+            )
+            _mark_upload_job_transfer_dependencies_lost(
+                upload_job,
+                detail=f"upload file missing: {upload_path}",
+            )
         report["action"] = "lost"
         report["detail"] = f"upload file missing: {upload_path}"
         return repaired, 1, report
@@ -1839,8 +1952,13 @@ def reconcile_upload_job_integrity(
         repaired += 1
     elif expected_hash != actual_hash:
         if not dry_run:
-            upload_job.mark_lost(
-                f"content hash mismatch for {upload_path}: expected={expected_hash} actual={actual_hash}"
+            mark_upload_job_integrity_lost(
+                upload_job,
+                f"content hash mismatch for {upload_path}: expected={expected_hash} actual={actual_hash}",
+            )
+            _mark_upload_job_transfer_dependencies_lost(
+                upload_job,
+                detail="upload source content hash mismatch",
             )
         report["action"] = "lost"
         report["detail"] = (

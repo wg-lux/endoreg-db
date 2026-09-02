@@ -12,11 +12,13 @@ class ReportImportAttempt(models.Model):
     STATUS_ACTIVE = "active"
     STATUS_SUCCEEDED = "succeeded"
     STATUS_FAILED = "failed"
+    STATUS_LOST = "lost"
     STATUS_CHOICES = (
         (STATUS_IDLE, "Idle"),
         (STATUS_ACTIVE, "Active"),
         (STATUS_SUCCEEDED, "Succeeded"),
         (STATUS_FAILED, "Failed"),
+        (STATUS_LOST, "Lost"),
     )
 
     content_hash: models.CharField[Any, Any] = models.CharField(

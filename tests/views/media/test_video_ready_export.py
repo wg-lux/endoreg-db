@@ -125,11 +125,18 @@ class VideoReadyExportEndpointTests(TestCase):
         assert state.ready_for_export_by == self.user.username
         assert state.processed_file_sha256 == self.processed_sha
         assert state.ready_for_export_at is not None
-        assert AuditLedger.objects.filter(
+        audit_entry = AuditLedger.objects.get(
             object_type="VideoFile",
             object_pk=str(video.pk),
             action="ready_for_export",
-        ).exists()
+        )
+        assert audit_entry.data == {
+            "center_key": self.center.center_key,
+            "processed_file": video.processed_file.name,
+            "processed_file_sha256": self.processed_sha,
+            "ready_for_export": True,
+        }
+        assert "processed_file_path" not in audit_entry.data
 
     def test_rejects_non_object_payload_before_ready_promotion(self):
         video = self._video()

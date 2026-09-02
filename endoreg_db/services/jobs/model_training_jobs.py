@@ -6,6 +6,7 @@ import threading
 import traceback
 from collections import defaultdict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
@@ -14,6 +15,9 @@ from uuid import UUID, uuid4
 
 from django.conf import settings
 from django.core.management import call_command
+from django.db import close_old_connections, transaction
+from django.db.models import Q
+from django.db.models.functions import Now
 from django.utils import timezone
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet, AIModelTrainingRun
@@ -25,6 +29,11 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
+)
+from endoreg_db.services.lifecycle_state_machine import (
+    OperationLifecycleEvent,
+    OperationLifecycleState,
+    reduce_operation_lifecycle,
 )
 from endoreg_db.services.video_files._frames._manage_frame_range import (
     extract_frame_range_to_directory,
@@ -46,12 +55,21 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     uses_frame_annotations,
     uses_segment_annotations,
 )
-from endoreg_db.utils.file_operations import ensure_directory, safe_rmtree
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_rmtree,
+)
 
 MODEL_TRAINING_TARGET_IMAGE_MULTILABEL = "image_multilabel"
 MODEL_TRAINING_TARGET_PHI_REGION_DETECTOR = "phi_region_detector"
 MODEL_TRAINING_SERVER_INSTANCE_ID = uuid4().hex
 MODEL_TRAINING_LOST_TIMEOUT = timedelta(hours=25)
+MODEL_TRAINING_DISPATCH_TIMEOUT = timedelta(minutes=10)
+MODEL_TRAINING_LEASE_SECONDS = 30 * 60
+MODEL_TRAINING_HEARTBEAT_SECONDS = 60
+MODEL_TRAINING_RETRY_BASE_SECONDS = 60
+MODEL_TRAINING_RETRY_MAX_SECONDS = 60 * 60
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = Path("/mnt/fast-nvme-cache/endoreg-training")
 
 
@@ -87,6 +105,314 @@ def _validated_model_training_run_updates(
 def _update_model_training_run(run_uuid: UUID, **updates: Any) -> int:
     normalized = _validated_model_training_run_updates(updates)
     return AIModelTrainingRun.objects.filter(run_id=run_uuid).update(**normalized)
+
+
+_MODEL_TRAINING_STATES: dict[str, OperationLifecycleState] = {
+    AIModelTrainingRun.STATUS_QUEUED: OperationLifecycleState.QUEUED,
+    AIModelTrainingRun.STATUS_RUNNING: OperationLifecycleState.RUNNING,
+    AIModelTrainingRun.STATUS_RETRY_WAIT: OperationLifecycleState.RETRY_WAIT,
+    AIModelTrainingRun.STATUS_COMPLETED: OperationLifecycleState.SUCCEEDED,
+    AIModelTrainingRun.STATUS_FAILED: OperationLifecycleState.FAILED,
+    AIModelTrainingRun.STATUS_LOST: OperationLifecycleState.LOST,
+}
+
+_MODEL_TRAINING_EVENTS: dict[
+    tuple[OperationLifecycleState, OperationLifecycleState],
+    tuple[OperationLifecycleEvent, ...],
+] = {
+    (OperationLifecycleState.QUEUED, OperationLifecycleState.RUNNING): (
+        OperationLifecycleEvent.CLAIM,
+        OperationLifecycleEvent.START,
+    ),
+    (OperationLifecycleState.QUEUED, OperationLifecycleState.RETRY_WAIT): (
+        OperationLifecycleEvent.RETRY_SCHEDULED,
+    ),
+    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.RUNNING): (
+        OperationLifecycleEvent.RETRY_READY,
+        OperationLifecycleEvent.CLAIM,
+        OperationLifecycleEvent.START,
+    ),
+    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.QUEUED): (
+        OperationLifecycleEvent.RETRY_READY,
+    ),
+    (OperationLifecycleState.RUNNING, OperationLifecycleState.SUCCEEDED): (
+        OperationLifecycleEvent.SUCCEED,
+    ),
+    (OperationLifecycleState.RUNNING, OperationLifecycleState.FAILED): (
+        OperationLifecycleEvent.FAIL,
+    ),
+    (OperationLifecycleState.QUEUED, OperationLifecycleState.LOST): (
+        OperationLifecycleEvent.OWNERSHIP_LOST,
+    ),
+    (OperationLifecycleState.RUNNING, OperationLifecycleState.LOST): (
+        OperationLifecycleEvent.OWNERSHIP_LOST,
+    ),
+    (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.LOST): (
+        OperationLifecycleEvent.INTEGRITY_LOST,
+    ),
+    (OperationLifecycleState.LOST, OperationLifecycleState.RETRY_WAIT): (
+        OperationLifecycleEvent.RECONCILE_RETRY,
+    ),
+    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.FAILED): (
+        OperationLifecycleEvent.FAIL,
+    ),
+    (OperationLifecycleState.QUEUED, OperationLifecycleState.FAILED): (
+        OperationLifecycleEvent.FAIL,
+    ),
+}
+
+_MODEL_TRAINING_IDEMPOTENT_EVENTS: dict[
+    OperationLifecycleState,
+    OperationLifecycleEvent,
+] = {
+    OperationLifecycleState.QUEUED: OperationLifecycleEvent.RETRY_READY,
+    OperationLifecycleState.FAILED: OperationLifecycleEvent.FAIL,
+    OperationLifecycleState.RETRY_WAIT: OperationLifecycleEvent.RETRY_SCHEDULED,
+    OperationLifecycleState.LOST: OperationLifecycleEvent.OWNERSHIP_LOST,
+}
+
+
+def _validate_model_training_status_transition(
+    *,
+    current_status: str,
+    target_status: str,
+) -> None:
+    try:
+        current_state = _MODEL_TRAINING_STATES[current_status]
+        target_state = _MODEL_TRAINING_STATES[target_status]
+    except KeyError as exc:
+        raise ValueError(f"unknown model-training status: {exc.args[0]}") from exc
+
+    if current_state is target_state:
+        try:
+            events = (_MODEL_TRAINING_IDEMPOTENT_EVENTS[current_state],)
+        except KeyError as exc:
+            raise ValueError(
+                "non-idempotent model-training status transition: "
+                f"{current_status} -> {target_status}"
+            ) from exc
+    else:
+        try:
+            events = _MODEL_TRAINING_EVENTS[(current_state, target_state)]
+        except KeyError as exc:
+            raise ValueError(
+                "invalid model-training status transition: "
+                f"{current_status} -> {target_status}"
+            ) from exc
+
+    reduced_state = reduce_operation_lifecycle(current_state, events)
+    if reduced_state is not target_state:
+        raise RuntimeError(
+            "native model-training lifecycle reduction produced unexpected state: "
+            f"{reduced_state.value}"
+        )
+
+
+def _transition_model_training_run(
+    run_uuid: UUID,
+    *,
+    status: str,
+    **updates: Any,
+) -> int:
+    current_status = (
+        AIModelTrainingRun.objects.filter(run_id=run_uuid)
+        .values_list(
+            "status",
+            flat=True,
+        )
+        .first()
+    )
+    if current_status is None:
+        return 0
+    _validate_model_training_status_transition(
+        current_status=current_status,
+        target_status=status,
+    )
+    normalized = _validated_model_training_run_updates({"status": status, **updates})
+    updated = AIModelTrainingRun.objects.filter(
+        run_id=run_uuid,
+        status=current_status,
+    ).update(**normalized)
+    if updated != 1:
+        raise RuntimeError(
+            "model-training status changed concurrently before persistence: "
+            f"run_id={run_uuid} expected_status={current_status}"
+        )
+    return updated
+
+
+@dataclass(frozen=True)
+class ModelTrainingFence:
+    run_id: UUID
+    attempt_id: UUID
+    owner_id: str
+    fencing_token: int
+
+
+def _model_training_database_now(run_uuid: UUID) -> datetime:
+    value = (
+        AIModelTrainingRun.objects.filter(run_id=run_uuid)
+        .annotate(database_now=Now())
+        .values_list("database_now", flat=True)
+        .get()
+    )
+    if not isinstance(value, datetime):
+        raise RuntimeError("database did not return a training lease timestamp")
+    return value
+
+
+def _claim_model_training_run(
+    run_uuid: UUID,
+    *,
+    lease_seconds: int = MODEL_TRAINING_LEASE_SECONDS,
+) -> ModelTrainingFence | None:
+    if lease_seconds < 1:
+        raise ValueError("lease_seconds must be positive")
+    owner_id = uuid4().hex
+    attempt_id = uuid4()
+    with transaction.atomic():
+        run = AIModelTrainingRun.objects.select_for_update().get(run_id=run_uuid)
+        now = _model_training_database_now(run_uuid)
+        if run.status == AIModelTrainingRun.STATUS_RUNNING:
+            if run.lease_expires_at is not None and run.lease_expires_at > now:
+                return None
+            _validate_model_training_status_transition(
+                current_status=run.status,
+                target_status=AIModelTrainingRun.STATUS_LOST,
+            )
+            run.status = AIModelTrainingRun.STATUS_LOST
+            run.attempt_id = None
+            run.owner_id = ""
+            run.heartbeat_at = None
+            run.lease_expires_at = None
+        if run.status == AIModelTrainingRun.STATUS_LOST:
+            _validate_model_training_status_transition(
+                current_status=run.status,
+                target_status=AIModelTrainingRun.STATUS_RETRY_WAIT,
+            )
+            run.status = AIModelTrainingRun.STATUS_RETRY_WAIT
+        _validate_model_training_status_transition(
+            current_status=run.status,
+            target_status=AIModelTrainingRun.STATUS_RUNNING,
+        )
+        run.status = AIModelTrainingRun.STATUS_RUNNING
+        run.attempt_id = attempt_id
+        run.owner_id = owner_id
+        run.fencing_token += 1
+        run.heartbeat_at = now
+        run.lease_expires_at = now + timedelta(seconds=lease_seconds)
+        run.started_at = now
+        run.finished_at = None
+        run.next_retry_at = None
+        run.dispatch_error = ""
+        run.server_instance_id = MODEL_TRAINING_SERVER_INSTANCE_ID
+        run.save(
+            update_fields=[
+                "status",
+                "attempt_id",
+                "owner_id",
+                "fencing_token",
+                "heartbeat_at",
+                "lease_expires_at",
+                "started_at",
+                "finished_at",
+                "next_retry_at",
+                "dispatch_error",
+                "server_instance_id",
+                "updated_at",
+            ]
+        )
+        return ModelTrainingFence(
+            run_id=run_uuid,
+            attempt_id=attempt_id,
+            owner_id=owner_id,
+            fencing_token=int(run.fencing_token),
+        )
+
+
+def _renew_model_training_fence(
+    fence: ModelTrainingFence,
+    *,
+    lease_seconds: int = MODEL_TRAINING_LEASE_SECONDS,
+) -> None:
+    if lease_seconds < 1:
+        raise ValueError("lease_seconds must be positive")
+    with transaction.atomic():
+        run = AIModelTrainingRun.objects.select_for_update().get(run_id=fence.run_id)
+        now = _model_training_database_now(fence.run_id)
+        if (
+            run.status != AIModelTrainingRun.STATUS_RUNNING
+            or run.attempt_id != fence.attempt_id
+            or run.owner_id != fence.owner_id
+            or int(run.fencing_token) != fence.fencing_token
+            or run.lease_expires_at is None
+            or run.lease_expires_at <= now
+        ):
+            raise RuntimeError("model-training ownership fence is no longer current")
+        run.heartbeat_at = now
+        run.lease_expires_at = now + timedelta(seconds=lease_seconds)
+        run.save(update_fields=["heartbeat_at", "lease_expires_at", "updated_at"])
+
+
+def _finish_model_training_run(
+    fence: ModelTrainingFence,
+    *,
+    status: str,
+    **updates: Any,
+) -> None:
+    _validate_model_training_status_transition(
+        current_status=AIModelTrainingRun.STATUS_RUNNING,
+        target_status=status,
+    )
+    normalized = _validated_model_training_run_updates(
+        {
+            "status": status,
+            "attempt_id": None,
+            "owner_id": "",
+            "heartbeat_at": None,
+            "lease_expires_at": None,
+            **updates,
+        }
+    )
+    updated = AIModelTrainingRun.objects.filter(
+        run_id=fence.run_id,
+        attempt_id=fence.attempt_id,
+        owner_id=fence.owner_id,
+        fencing_token=fence.fencing_token,
+        status=AIModelTrainingRun.STATUS_RUNNING,
+        lease_expires_at__gt=Now(),
+    ).update(**normalized)
+    if updated != 1:
+        raise RuntimeError("model-training completion rejected by ownership fence")
+
+
+class ModelTrainingFenceHeartbeat:
+    def __init__(self, fence: ModelTrainingFence) -> None:
+        self._fence = fence
+        self._stop = threading.Event()
+        self._failure: BaseException | None = None
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "ModelTrainingFenceHeartbeat":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=MODEL_TRAINING_HEARTBEAT_SECONDS + 5)
+        if self._failure is not None:
+            raise RuntimeError("model-training heartbeat failed") from self._failure
+
+    def _run(self) -> None:
+        close_old_connections()
+        try:
+            while not self._stop.wait(MODEL_TRAINING_HEARTBEAT_SECONDS):
+                _renew_model_training_fence(self._fence)
+        except BaseException as exc:
+            self._failure = exc
+            self._stop.set()
+        finally:
+            close_old_connections()
 
 
 class _TrainingResult(TypedDict, total=False):
@@ -147,6 +473,19 @@ def _model_training_artifact_paths(result: dict[str, Any] | None) -> dict[str, s
                 if kind and isinstance(path, str) and path:
                     paths[f"{kind}_path"] = path
     return paths
+
+
+def _require_model_training_artifacts(artifact_paths: Mapping[str, str]) -> None:
+    if not artifact_paths:
+        raise RuntimeError("Model training completed without an artifact manifest.")
+    missing = sorted(
+        path for path in artifact_paths.values() if not Path(path).is_file()
+    )
+    if missing:
+        raise RuntimeError(
+            "Model training artifact verification failed before publication: "
+            f"missing_count={len(missing)}"
+        )
 
 
 def _model_training_staging_root() -> Path:
@@ -280,6 +619,7 @@ def _materialize_missing_multilabel_frames(
     dataset_id: int,
     *,
     annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
+    attempt_staging_dir: Path | None = None,
 ) -> dict[str, Any]:
     dataset = AIDataSet.objects.get(id=dataset_id)
     source_scope: AnnotationSourceScope = normalize_annotation_source_scope(
@@ -350,42 +690,61 @@ def _materialize_missing_multilabel_frames(
                 f"Cannot determine frame directory path for video {video.video_hash}."
             )
         ensure_directory(frame_dir, dir_mode=0o750)
+        extraction_dir = frame_dir
+        if attempt_staging_dir is not None:
+            extraction_dir = ensure_directory(
+                attempt_staging_dir / f"video-{video.pk}",
+                dir_mode=0o750,
+            )
 
         for start_frame, end_frame in _consecutive_ranges(missing_numbers):
             extract_frame_range_to_directory(
                 video,
-                output_dir=frame_dir,
+                output_dir=extraction_dir,
                 start_frame=start_frame,
                 end_frame=end_frame,
                 ext="jpg",
                 from_processed=True,
             )
 
-        materialized_frame_ids: list[int] = []
+        verified_candidates: list[tuple[Frame, str, Path, Path]] = []
         for frame_number in missing_numbers:
             frame = frame_by_number[frame_number]
             expected_relative_path = _expected_frame_relative_path(frame_number)
-            update_fields: list[str] = []
-            if frame.relative_path != expected_relative_path:
-                frame.relative_path = expected_relative_path
-                update_fields.append("relative_path")
-            if not frame.is_extracted:
-                frame.is_extracted = True
-                update_fields.append("is_extracted")
-            if update_fields:
-                frame.save(update_fields=update_fields)
-            if not frame.file_path.is_file():
+            extracted_path = extraction_dir / expected_relative_path
+            if not extracted_path.is_file():
                 raise RuntimeError(
                     "Processed-video frame extraction did not create required "
                     f"training frame {frame_number} for video {video.video_hash}."
                 )
-            materialized_frame_ids.append(frame.pk)
-
-        if materialized_frame_ids:
-            Frame.objects.filter(pk__in=materialized_frame_ids).update(
-                is_extracted=True
+            expected_path = frame_dir / expected_relative_path
+            verified_candidates.append(
+                (frame, expected_relative_path, extracted_path, expected_path)
             )
-            materialized_count += len(materialized_frame_ids)
+
+        verified_frames: list[tuple[Frame, str]] = []
+        for (
+            frame,
+            expected_relative_path,
+            extracted_path,
+            expected_path,
+        ) in verified_candidates:
+            if extracted_path != expected_path:
+                atomic_move_file(source=extracted_path, destination=expected_path)
+            if not expected_path.is_file():
+                raise RuntimeError(
+                    "Verified training frame was not published to its canonical path: "
+                    f"{expected_relative_path}."
+                )
+            verified_frames.append((frame, expected_relative_path))
+
+        if verified_frames:
+            with transaction.atomic():
+                for frame, expected_relative_path in verified_frames:
+                    frame.relative_path = expected_relative_path
+                    frame.is_extracted = True
+                    frame.save(update_fields=["relative_path", "is_extracted"])
+            materialized_count += len(verified_frames)
 
     return {
         "dataset_id": dataset_id,
@@ -396,7 +755,11 @@ def _materialize_missing_multilabel_frames(
     }
 
 
-def prepare_model_training_inputs(command_kwargs: dict[str, Any]) -> dict[str, Any]:
+def prepare_model_training_inputs(
+    command_kwargs: dict[str, Any],
+    *,
+    attempt_staging_dir: Path | None = None,
+) -> dict[str, Any]:
     command_name = str(
         command_kwargs.get("_command_name") or "train_image_multilabel_model"
     )
@@ -414,28 +777,77 @@ def prepare_model_training_inputs(command_kwargs: dict[str, Any]) -> dict[str, A
         **_materialize_missing_multilabel_frames(
             int(dataset_id),
             annotation_source_scope=annotation_source_scope,
+            attempt_staging_dir=attempt_staging_dir,
         ),
     }
 
 
 def _mark_lost_model_training_runs() -> None:
     now = timezone.now()
-    stale_before = now - MODEL_TRAINING_LOST_TIMEOUT
-    AIModelTrainingRun.objects.filter(
-        status__in=[
-            AIModelTrainingRun.STATUS_QUEUED,
-            AIModelTrainingRun.STATUS_RUNNING,
-        ],
-        updated_at__lt=stale_before,
-    ).exclude(server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID).update(
-        status=AIModelTrainingRun.STATUS_LOST,
-        finished_at=now,
-        error=(
-            "Training run remained queued/running without an update after "
-            "backend process ownership changed. Marked LOST so the result is "
-            "not silently hidden."
-        ),
+    stale_before = now - MODEL_TRAINING_DISPATCH_TIMEOUT
+    candidate_ids = list(
+        AIModelTrainingRun.objects.filter(
+            status__in=[
+                AIModelTrainingRun.STATUS_QUEUED,
+                AIModelTrainingRun.STATUS_RUNNING,
+                AIModelTrainingRun.STATUS_LOST,
+            ]
+        )
+        .filter(
+            Q(status=AIModelTrainingRun.STATUS_LOST)
+            | Q(updated_at__lt=stale_before)
+            | Q(lease_expires_at__lte=now)
+        )
+        .values_list("run_id", flat=True)
     )
+    for run_uuid in candidate_ids:
+        with transaction.atomic():
+            run = AIModelTrainingRun.objects.select_for_update().get(run_id=run_uuid)
+            database_now = _model_training_database_now(run_uuid)
+            if run.status == AIModelTrainingRun.STATUS_RUNNING:
+                if (
+                    run.lease_expires_at is not None
+                    and run.lease_expires_at > database_now
+                ):
+                    continue
+                _validate_model_training_status_transition(
+                    current_status=run.status,
+                    target_status=AIModelTrainingRun.STATUS_LOST,
+                )
+                run.status = AIModelTrainingRun.STATUS_LOST
+                run.attempt_id = None
+                run.owner_id = ""
+                run.heartbeat_at = None
+                run.lease_expires_at = None
+                run.finished_at = database_now
+                run.error = "Training ownership lease expired before completion."
+                run.save(
+                    update_fields=[
+                        "status",
+                        "attempt_id",
+                        "owner_id",
+                        "heartbeat_at",
+                        "lease_expires_at",
+                        "finished_at",
+                        "error",
+                        "updated_at",
+                    ]
+                )
+                continue
+            if run.status == AIModelTrainingRun.STATUS_LOST:
+                _validate_model_training_status_transition(
+                    current_status=run.status,
+                    target_status=AIModelTrainingRun.STATUS_RETRY_WAIT,
+                )
+                run.status = AIModelTrainingRun.STATUS_RETRY_WAIT
+                run.next_retry_at = database_now
+                run.save(update_fields=["status", "next_retry_at", "updated_at"])
+                continue
+            if run.status == AIModelTrainingRun.STATUS_QUEUED:
+                _schedule_model_training_dispatch_retry(
+                    run_uuid,
+                    error="Training dispatch was not acknowledged before timeout.",
+                )
 
 
 def _model_training_run_payload(run: AIModelTrainingRun) -> dict[str, Any]:
@@ -513,50 +925,54 @@ def _execute_model_training_run(
     if run_uuid is None:
         return
 
-    _update_model_training_run(
-        run_uuid,
-        status=AIModelTrainingRun.STATUS_RUNNING,
-        started_at=timezone.now(),
-        server_instance_id=MODEL_TRAINING_SERVER_INSTANCE_ID,
-    )
+    fence = _claim_model_training_run(run_uuid)
+    if fence is None:
+        return
     staging_dir: Path | None = None
     stdout = StringIO()
     stderr = StringIO()
     try:
-        staging_dir = _create_run_staging_dir(run_id)
-        preparation = prepare_model_training_inputs(command_kwargs)
-        stdout.write(f"[TRAINING_JOB] input_preparation={json.dumps(preparation)}\n")
-        command_name = str(
-            command_kwargs.get("_command_name") or "train_image_multilabel_model"
-        )
-        command_options = {
-            key: value
-            for key, value in command_kwargs.items()
-            if not key.startswith("_")
-        }
-        call_command(
-            command_name,
-            stdout=stdout,
-            stderr=stderr,
-            **command_options,
-        )
-        output = stdout.getvalue()
-        error_output = stderr.getvalue()
-        result = _parse_model_training_result(output)
-        validated_result = validate_ai_model_training_result_payload(result)
-        artifact_paths = validate_ai_model_training_artifact_paths(
-            _model_training_artifact_paths(validated_result)
-        )
-        _update_model_training_run(
-            run_uuid,
-            status=AIModelTrainingRun.STATUS_COMPLETED,
-            finished_at=timezone.now(),
-            stdout=output,
-            stderr=error_output,
-            result=validated_result,
-            artifact_paths=artifact_paths,
-            error="",
-        )
+        with ModelTrainingFenceHeartbeat(fence):
+            staging_dir = _create_run_staging_dir(run_id)
+            preparation = prepare_model_training_inputs(
+                command_kwargs,
+                attempt_staging_dir=staging_dir,
+            )
+            stdout.write(
+                f"[TRAINING_JOB] input_preparation={json.dumps(preparation)}\n"
+            )
+            command_name = str(
+                command_kwargs.get("_command_name") or "train_image_multilabel_model"
+            )
+            command_options = {
+                key: value
+                for key, value in command_kwargs.items()
+                if not key.startswith("_")
+            }
+            call_command(
+                command_name,
+                stdout=stdout,
+                stderr=stderr,
+                **command_options,
+            )
+            output = stdout.getvalue()
+            error_output = stderr.getvalue()
+            result = _parse_model_training_result(output)
+            validated_result = validate_ai_model_training_result_payload(result)
+            artifact_paths = validate_ai_model_training_artifact_paths(
+                _model_training_artifact_paths(validated_result)
+            )
+            _require_model_training_artifacts(artifact_paths)
+            _finish_model_training_run(
+                fence,
+                status=AIModelTrainingRun.STATUS_COMPLETED,
+                finished_at=timezone.now(),
+                stdout=output,
+                stderr=error_output,
+                result=validated_result,
+                artifact_paths=artifact_paths,
+                error="",
+            )
     except Exception as exc:
         output = stdout.getvalue()
         error_output = stderr.getvalue()
@@ -564,16 +980,20 @@ def _execute_model_training_run(
         combined_output = "\n".join(
             chunk for chunk in (output, error_output, trace) if chunk
         ).strip()
-        _update_model_training_run(
-            run_uuid,
-            status=AIModelTrainingRun.STATUS_FAILED,
-            finished_at=timezone.now(),
-            stdout=combined_output,
-            stderr=error_output,
-            error=str(exc),
-            result=None,
-            artifact_paths={},
-        )
+        try:
+            _finish_model_training_run(
+                fence,
+                status=AIModelTrainingRun.STATUS_FAILED,
+                finished_at=timezone.now(),
+                stdout=combined_output,
+                stderr=error_output,
+                error=str(exc),
+                result=None,
+                artifact_paths={},
+            )
+        except RuntimeError:
+            if raise_on_error:
+                raise
         if raise_on_error:
             raise
     finally:
@@ -591,11 +1011,19 @@ def _launch_model_training_run(
         from endoreg_db.tasks import run_model_training_task
 
         ensure_secure_transport_for_job_kind(HeavyJobKind.MODEL_TRAINING)
-        run_model_training_task.apply_async(
-            args=(run_id, command_kwargs),
-            queue=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
-            routing_key=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
-        )
+        try:
+            run_model_training_task.apply_async(
+                args=(run_id, command_kwargs),
+                queue=getattr(settings, "CELERY_TRAINING_QUEUE", "model_training"),
+                routing_key=getattr(
+                    settings, "CELERY_TRAINING_QUEUE", "model_training"
+                ),
+            )
+        except Exception as exc:
+            run_uuid = _coerce_uuid(run_id)
+            if run_uuid is not None:
+                _schedule_model_training_dispatch_retry(run_uuid, error=str(exc))
+            raise
         return
     if mode == "inline":
         _execute_model_training_run(run_id, command_kwargs=command_kwargs)
@@ -609,3 +1037,116 @@ def _launch_model_training_run(
         daemon=True,
     )
     thread.start()
+
+
+def _model_training_retry_delay(retry_count: int) -> int:
+    exponent = max(0, min(int(retry_count), 10))
+    return min(
+        MODEL_TRAINING_RETRY_BASE_SECONDS * (2**exponent),
+        MODEL_TRAINING_RETRY_MAX_SECONDS,
+    )
+
+
+def _schedule_model_training_dispatch_retry(run_uuid: UUID, *, error: str) -> None:
+    with transaction.atomic():
+        run = AIModelTrainingRun.objects.select_for_update().get(run_id=run_uuid)
+        if run.status != AIModelTrainingRun.STATUS_QUEUED:
+            return
+        now = _model_training_database_now(run_uuid)
+        if run.retry_count >= run.max_retries:
+            _validate_model_training_status_transition(
+                current_status=run.status,
+                target_status=AIModelTrainingRun.STATUS_FAILED,
+            )
+            run.status = AIModelTrainingRun.STATUS_FAILED
+            run.finished_at = now
+            run.next_retry_at = None
+        else:
+            _validate_model_training_status_transition(
+                current_status=run.status,
+                target_status=AIModelTrainingRun.STATUS_RETRY_WAIT,
+            )
+            run.retry_count += 1
+            run.status = AIModelTrainingRun.STATUS_RETRY_WAIT
+            run.next_retry_at = now + timedelta(
+                seconds=_model_training_retry_delay(run.retry_count - 1)
+            )
+        run.dispatch_error = error
+        run.save(
+            update_fields=[
+                "status",
+                "retry_count",
+                "next_retry_at",
+                "dispatch_error",
+                "finished_at",
+                "updated_at",
+            ]
+        )
+
+
+def dispatch_due_model_training_retries(*, limit: int = 25) -> int:
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    dispatched = 0
+    now = timezone.now()
+    due_ids = list(
+        AIModelTrainingRun.objects.filter(
+            status=AIModelTrainingRun.STATUS_RETRY_WAIT,
+            next_retry_at__lte=now,
+        )
+        .order_by("next_retry_at")
+        .values_list("run_id", flat=True)[:limit]
+    )
+    for run_uuid in due_ids:
+        with transaction.atomic():
+            run = AIModelTrainingRun.objects.select_for_update().get(run_id=run_uuid)
+            if (
+                run.status != AIModelTrainingRun.STATUS_RETRY_WAIT
+                or run.next_retry_at is None
+                or run.next_retry_at > timezone.now()
+            ):
+                continue
+            _validate_model_training_status_transition(
+                current_status=run.status,
+                target_status=AIModelTrainingRun.STATUS_QUEUED,
+            )
+            run.status = AIModelTrainingRun.STATUS_QUEUED
+            run.next_retry_at = None
+            run.save(update_fields=["status", "next_retry_at", "updated_at"])
+            command_kwargs = cast(dict[str, Any], run.command_kwargs)
+        try:
+            _launch_model_training_run(run.run_key, command_kwargs=command_kwargs)
+        except Exception:
+            continue
+        dispatched += 1
+    return dispatched
+
+
+def reconcile_model_training_artifacts(*, limit: int = 100) -> int:
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    lost = 0
+    runs = AIModelTrainingRun.objects.filter(
+        status=AIModelTrainingRun.STATUS_COMPLETED
+    ).order_by("updated_at")[:limit]
+    for run in runs:
+        artifact_paths = validate_ai_model_training_artifact_paths(run.artifact_paths)
+        if artifact_paths and all(
+            Path(path).is_file() for path in artifact_paths.values()
+        ):
+            continue
+        _validate_model_training_status_transition(
+            current_status=run.status,
+            target_status=AIModelTrainingRun.STATUS_LOST,
+        )
+        updated = AIModelTrainingRun.objects.filter(
+            pk=run.pk,
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+        ).update(
+            status=AIModelTrainingRun.STATUS_LOST,
+            error="Confirmed model-training artifact loss after successful publication.",
+            finished_at=Now(),
+            updated_at=Now(),
+        )
+        lost += int(updated == 1)
+    return lost

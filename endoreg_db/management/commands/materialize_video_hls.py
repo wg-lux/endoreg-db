@@ -334,12 +334,12 @@ class Command(BaseVideoCommand):
                 artifact_kind=artifact_kind,
                 force=force,
             ).as_dict()
-        except Exception as exc:
+        except Exception:
             return {
                 "video_id": video_id,
                 "artifact_kind": artifact_kind,
                 "status": "failed",
-                "error": str(exc),
+                "error": "materialization_failed",
             }, fail_fast
         return result, False
 
@@ -423,7 +423,16 @@ class Command(BaseVideoCommand):
             if parsed_kind == VideoArtifactKind.RAW
             else video.processed_file
         )
-        return bool(getattr(source, "name", ""))
+        name = str(getattr(source, "name", "") or "")
+        if not name:
+            return False
+        storage = getattr(source, "storage", None)
+        if storage is None or not hasattr(storage, "exists"):
+            return True
+        try:
+            return bool(storage.exists(name))
+        except OSError:
+            return False
 
     @staticmethod
     def _queryset(

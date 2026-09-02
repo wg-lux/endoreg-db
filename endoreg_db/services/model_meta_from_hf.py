@@ -13,9 +13,6 @@ from endoreg_db.models.utils import WEIGHTS_DIR
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
-from endoreg_db.utils.file_operations import (
-    atomic_copy_file,
-)
 from lx_dtypes.models.contracts.huggingface_model_meta import (
     HuggingFaceModelMetaCommandPayload,
 )
@@ -63,8 +60,8 @@ def _model_meta_weights_exist(model_meta: ModelMeta) -> bool:
         return False
     weights = cast(_WeightsFieldFile, model_meta.weights)
     try:
-        return Path(weights.path).exists()
-    except (OSError, ValueError):
+        return bool(weights.name) and weights.storage.exists(weights.name)
+    except (OSError, ValueError, RuntimeError):
         return False
 
 
@@ -84,9 +81,11 @@ def _store_downloaded_weights(
         )
 
     try:
-        destination = Path(weights.storage.path(relative_name))
-        atomic_copy_file(source=weights_path, destination=destination)
-        weights.name = relative_name
+        with weights_path.open("rb") as source_file:
+            saved_name = weights.storage.save(
+                relative_name, ContentFile(source_file.read())
+            )
+        weights.name = saved_name
         model_meta.save(update_fields=["weights"])
     except TypeError:
         with weights_path.open("rb") as source_file:

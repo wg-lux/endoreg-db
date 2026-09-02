@@ -294,6 +294,7 @@ class AIDataSet(models.Model):
 class AIModelTrainingRun(models.Model):
     STATUS_QUEUED = "queued"
     STATUS_RUNNING = "running"
+    STATUS_RETRY_WAIT = "retry_wait"
     STATUS_COMPLETED = "completed"
     STATUS_FAILED = "failed"
     STATUS_LOST = "lost"
@@ -301,6 +302,7 @@ class AIModelTrainingRun(models.Model):
     STATUS_CHOICES = [
         (STATUS_QUEUED, "Queued"),
         (STATUS_RUNNING, "Running"),
+        (STATUS_RETRY_WAIT, "Retry wait"),
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
         (STATUS_LOST, "Lost"),
@@ -358,6 +360,31 @@ class AIModelTrainingRun(models.Model):
     server_instance_id: models.CharField[str, Any] = models.CharField(
         max_length=64, blank=True, db_index=True
     )
+    attempt_id: models.UUIDField[uuid.UUID | None, Any] = models.UUIDField(
+        blank=True, null=True, editable=False
+    )
+    owner_id: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True, default="", editable=False
+    )
+    fencing_token: models.PositiveBigIntegerField[int, Any] = (
+        models.PositiveBigIntegerField(default=0, editable=False)
+    )
+    heartbeat_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+        blank=True, null=True, editable=False
+    )
+    lease_expires_at: models.DateTimeField[AIDataSetDateTime, Any] = (
+        models.DateTimeField(blank=True, null=True, db_index=True, editable=False)
+    )
+    retry_count: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=0
+    )
+    max_retries: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=3
+    )
+    next_retry_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+        blank=True, null=True, db_index=True
+    )
+    dispatch_error: models.TextField[str, Any] = models.TextField(blank=True)
     result: models.JSONField[Any, Any] = models.JSONField(blank=True, null=True)
     artifact_paths: models.JSONField[dict[str, str]] = models.JSONField(
         default=dict, blank=True
@@ -385,6 +412,29 @@ class AIModelTrainingRun(models.Model):
                 fields=["server_instance_id", "status"],
                 name="aid_train_server_idx",
             ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="running",
+                        attempt_id__isnull=False,
+                        heartbeat_at__isnull=False,
+                        lease_expires_at__isnull=False,
+                    )
+                    & ~models.Q(owner_id="")
+                )
+                | (
+                    ~models.Q(status="running")
+                    & models.Q(
+                        attempt_id__isnull=True,
+                        owner_id="",
+                        heartbeat_at__isnull=True,
+                        lease_expires_at__isnull=True,
+                    )
+                ),
+                name="aid_train_lease_state_consistent",
+            )
         ]
         ordering = ["-created_at", "-id"]
 

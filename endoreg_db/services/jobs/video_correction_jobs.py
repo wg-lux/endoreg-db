@@ -21,7 +21,7 @@ from endoreg_db.schemas.video_jobs import (
     VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND,
     VideoAnonymizationCorrectionJobConfig,
 )
-from endoreg_db.services.hls_media import materialize_video_hls
+from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -39,6 +39,7 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
+from endoreg_db.utils.hashs import get_video_hash
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +109,12 @@ def _promote_output(temp_path: Path, final_path: Path) -> Path:
 
 
 def update_processed_file(video: VideoFile, output_path: Path) -> str:
+    content_hash = get_video_hash(output_path)
     processed_file: FieldFile = video.processed_file
     if not hasattr(processed_file, "field"):
         processed_file.name = str(output_path)
-        cast(Any, video).save(update_fields=["processed_file"])
+        video.processed_video_hash = content_hash
+        cast(Any, video).save(update_fields=["processed_file", "processed_video_hash"])
         return str(processed_file.name)
 
     canonical_path = (
@@ -124,7 +127,8 @@ def update_processed_file(video: VideoFile, output_path: Path) -> str:
         save=False,
         overwrite=True,
     )
-    cast(Any, video).save(update_fields=["processed_file"])
+    video.processed_video_hash = content_hash
+    cast(Any, video).save(update_fields=["processed_file", "processed_video_hash"])
     safe_unlink_file(output_path, missing_ok=True)
     sync_video_streamable_artifacts(
         video,
@@ -410,7 +414,7 @@ def run_video_anonymization_correction(
         hls_result = materialize_video_hls(
             int(video_id), artifact_kind="processed", force=True
         )
-        if hls_result.status != "ready":
+        if not hls_result_is_ready(hls_result.status):
             raise RuntimeError(
                 f"Processed HLS materialization ended with {hls_result.status}."
             )

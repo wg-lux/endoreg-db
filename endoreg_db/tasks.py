@@ -179,15 +179,20 @@ def run_video_post_validation_rebuild_task(
     soft_time_limit=60 * 60 * 5,
 )
 def video_hls_materialization(
-    _task: Task[[int, str, bool], dict[str, object]],
+    _task: Task[[int, str, bool, int, str], dict[str, object]],
     video_id: int,
     artifact_kind: str = "processed",
     force: bool = False,
+    reserved_artifact_id: int | None = None,
+    reservation_key_id: str | None = None,
 ) -> dict[str, object]:
     import logging
 
     from endoreg_db.exceptions import MediaOperationDeferred
-    from endoreg_db.services.hls_media import materialize_video_hls
+    from endoreg_db.services.hls_media import (
+        hls_result_is_ready,
+        materialize_video_hls,
+    )
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.video_storage_normalization import (
         VideoStorageNormalizationError,
@@ -197,11 +202,16 @@ def video_hls_materialization(
         hash_identifier,
     )
 
+    if reserved_artifact_id is None or reservation_key_id is None:
+        raise ValueError("HLS Celery tasks require a durable reservation identity")
+
     try:
         result = materialize_video_hls(
             int(video_id),
             artifact_kind=str(artifact_kind),
             force=bool(force),
+            reserved_artifact_id=int(reserved_artifact_id),
+            reservation_key_id=str(reservation_key_id),
         )
     except MediaOperationDeferred as exc:
         retry_deferred_media_operation(
@@ -227,7 +237,18 @@ def video_hls_materialization(
             "status": "failed_validation",
             "retryable": False,
         }
-    return result.as_dict()
+    result_payload = result.as_dict()
+    if result_payload.get("status") == "already_materializing":
+        raise _task.retry(
+            exc=RuntimeError("HLS reservation is still materializing"),
+            countdown=60,
+            max_retries=None,
+        )
+    if not hls_result_is_ready(result_payload.get("status")):
+        raise RuntimeError(
+            "HLS materialization ended with a non-ready terminal status."
+        )
+    return result_payload
 
 
 @shared_task(
@@ -422,6 +443,25 @@ def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int
         "dispatched_count": result.dispatched_count,
         "failed_count": result.failed_count,
     }
+
+
+@shared_task(
+    name="endoreg_db.retry_due_model_training_runs",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def retry_due_model_training_runs_task(_task: Task[[], int]) -> int:
+    from endoreg_db.services.jobs.model_training_jobs import (
+        _mark_lost_model_training_runs,
+        dispatch_due_model_training_retries,
+        reconcile_model_training_artifacts,
+    )
+
+    _mark_lost_model_training_runs()
+    reconcile_model_training_artifacts()
+    return dispatch_due_model_training_retries()
 
 
 @shared_task(

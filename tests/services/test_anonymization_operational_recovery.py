@@ -15,6 +15,7 @@ from endoreg_db.management.commands.check_system_health import (
     _anonymization_processing_stats,
 )
 from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.anonymization_metrics import (
     AnonymizationValidationMetric,
 )
@@ -62,6 +63,14 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
         state=state,
         video_hash="anonymization-operational-recovery",
         meta={"integrity_status": "ok"},
+    )
+    upload_job = UploadJob.objects.create(
+        content_hash=video.video_hash,
+        content_type="video/mp4",
+        source_center=center,
+        source_system="test",
+        processing_provenance={"entrypoint": "test"},
+        status=UploadJob.Status.ANONYMIZED,
     )
     original_metric = AnonymizationValidationMetric.objects.create(
         media_type="video",
@@ -117,11 +126,13 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
         _reset_reimport_state(video)
 
     state.refresh_from_db()
+    upload_job.refresh_from_db()
     assert state.processing_error is False
     assert state.processing_started is False
     assert state.anonymization_validated is False
     assert state.outside_segments_removed is False
     assert state.ready_for_export is False
+    assert upload_job.status == UploadJob.Status.PROCESSING
     assert _anonymization_processing_stats()["stale_video_histories"] == 0
 
     assert AnonymizationValidationMetric.objects.filter(pk=original_metric.pk).exists()

@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -16,7 +17,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.hls_media import materialize_video_hls
+from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
 )
@@ -26,6 +27,7 @@ from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_move_path,
+    safe_delete_field_file,
     safe_rmtree,
     safe_unlink_file,
     sha256_file,
@@ -153,6 +155,10 @@ def ensure_video_hls(
             artifact_kind=artifact_kind,
             force=force,
         )
+        if not hls_result_is_ready(result.status):
+            raise RuntimeError(
+                f"{artifact_kind} HLS materialization ended with {result.status}."
+            )
         logger.info(
             "%s HLS is ready: video=%s status=%s",
             artifact_kind.capitalize(),
@@ -324,16 +330,7 @@ def finalize_report_success(
 def finalize_video_success(
     ctx: ImportContext,
 ) -> None:
-    """
-    Finalize a successful video import/anonymization.
-
-    - Move anonymized video from temp to canonical anonymized dir
-    - Update VideoFile.processed_file
-    - Update VideoFile.processed_video_hash
-    - Mark VideoState as anonymized + sensitive_meta_processed
-    - Mark ProcessingHistory.success = True
-    """
-
+    """Validate and publish one versioned processed-video generation."""
     instance = ctx.current_video
     if not isinstance(instance, VideoFile):
         logger.warning("finalize_video_success called with non-VideoFile instance")
@@ -342,97 +339,89 @@ def finalize_video_success(
         logger.warning("finalize_video_success called with unsaved instance")
         return
 
-    # --- Move anonymized path into final storage ---
     if ctx.anonymized_path is None:
         raise RuntimeError(
             "Cannot finalize video import without anonymized output "
             f"(instance={instance.pk}, hash={getattr(instance, 'video_hash', None)})."
         )
-    else:
-        # Use a stable naming convention: <video_hash>.mp4
-        video_hash = getattr(instance, "video_hash", None) or instance.pk
-        expected_final_path = _processed_video_dir() / f"{video_hash}.mp4"
-
-        src = Path(ctx.anonymized_path)
-
-        logger.debug(
-            "finalize_video_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
-            src,
-            src.exists(),
-            src.resolve(),
-            expected_final_path,
+    src = Path(ctx.anonymized_path)
+    if not src.exists():
+        raise RuntimeError(
+            f"Cannot finalize video import because anonymized output is missing: {src}"
+        )
+    _verify_final_video_output(src)
+    if ctx.storage_normalization_evidence is None:
+        raise RuntimeError(
+            "Cannot finalize video without storage-normalization evidence."
         )
 
-        # If anonymizer already wrote to the final path, don't move
-        try:
-            same_target = src.resolve() == expected_final_path.resolve()
-        except FileNotFoundError:
-            # src might not exist anymore
-            same_target = False
-
-        if not src.exists():
-            logger.error(
-                "Anonymized video %s does not exist; cannot finalize to %s",
-                src,
-                expected_final_path,
-            )
-            raise RuntimeError(
-                f"Cannot finalize video import because anonymized output is missing: {src}"
-            )
-        else:
-            _verify_final_video_output(src)
-            if ctx.storage_normalization_evidence is None:
-                raise RuntimeError(
-                    "Cannot finalize video without storage-normalization evidence."
-                )
-            instance.processed_video_hash = sha256_file(src)
-            relative_name = path_utils.to_storage_relative(expected_final_path)
-            _require_execution_ownership(ctx)
-            saved_name = _store_existing_final_file(
-                instance.processed_file,
-                src,
-                relative_name=relative_name,
-            )
-            logger.info("Updated video processed_file to %s", saved_name)
-            if not same_target:
-                safe_cleanup_staging_file(
-                    src,
-                    label="processed video staging output",
-                    missing_ok=True,
-                )
-
-    _require_execution_ownership(ctx)
-    existing_meta = dict(instance.meta or {})
-    existing_meta["storage_normalization"] = evidence_as_json(
-        ctx.storage_normalization_evidence
+    previous_name = str(getattr(instance.processed_file, "name", "") or "")
+    previous_hash = instance.processed_video_hash
+    previous_meta = dict(instance.meta or {})
+    video_hash = getattr(instance, "video_hash", None) or instance.pk
+    candidate_path = (
+        _processed_video_dir() / f"{video_hash}.mp4"
+        if not previous_name
+        else _processed_video_dir()
+        / ".generations"
+        / f"{video_hash}-{uuid.uuid4().hex}.mp4"
     )
-    instance.meta = existing_meta
-    cast(_StatefulImportInstance, instance).save()
-    # HLS readiness is part of import success. A failed transcode must leave the
-    # import retryable instead of publishing a successful but unstreamable video.
-    _require_execution_ownership(ctx)
-    ensure_video_hls(instance, force=True)
-    _require_execution_ownership(ctx)
+    candidate_name = path_utils.to_storage_relative(candidate_path)
 
-    # --- Update VideoState flags (mirrors report) ---
-    state = _ensure_instance_state(instance)
-
-    with transaction.atomic():
+    try:
         _require_execution_ownership(ctx)
-        _record_successful_video_processing_history(ctx)
-        if state is not None:
-            processable_state = cast(_ProcessableState, state)
-            if not processable_state.processing_started:
-                processable_state.mark_processing_started()
-
-            processable_state.mark_anonymized()
-            processable_state.mark_sensitive_meta_processed()
-
-            processable_state.save()
-
+        saved_name = _store_existing_final_file(
+            instance.processed_file,
+            src,
+            relative_name=candidate_name,
+        )
+        instance.processed_video_hash = sha256_file(src)
+        next_meta = dict(previous_meta)
+        next_meta["storage_normalization"] = evidence_as_json(
+            ctx.storage_normalization_evidence
+        )
+        next_meta["processed_generation"] = saved_name
+        instance.meta = next_meta
         cast(_StatefulImportInstance, instance).save()
+        _require_execution_ownership(ctx)
+        ensure_video_hls(instance, force=True)
+        _require_execution_ownership(ctx)
 
-    _require_execution_ownership(ctx)
+        state = _ensure_instance_state(instance)
+        with transaction.atomic():
+            _require_execution_ownership(ctx)
+            _record_successful_video_processing_history(ctx)
+            if state is not None:
+                processable_state = cast(_ProcessableState, state)
+                if not processable_state.processing_started:
+                    processable_state.mark_processing_started()
+                processable_state.mark_anonymized()
+                processable_state.mark_sensitive_meta_processed()
+                processable_state.save()
+            cast(_StatefulImportInstance, instance).save()
+    except Exception:
+        candidate_field = instance.processed_file
+        candidate_field.name = candidate_name
+        if getattr(candidate_field, "storage", None) is not None:
+            safe_delete_field_file(candidate_field, missing_ok=True)
+        candidate_field.name = previous_name
+        instance.processed_video_hash = previous_hash
+        instance.meta = previous_meta
+        cast(_StatefulImportInstance, instance).save(
+            update_fields=[
+                "processed_file",
+                "processed_video_hash",
+                "meta",
+                "date_modified",
+            ]
+        )
+        raise
+
+    safe_cleanup_staging_file(
+        src,
+        label="processed video staging output",
+        missing_ok=True,
+    )
     if isinstance(ctx.sensitive_path, Path):
         safe_cleanup_staging_file(
             ctx.sensitive_path,

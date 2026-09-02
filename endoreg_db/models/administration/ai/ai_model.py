@@ -5,7 +5,6 @@ Django model for AI models.
 from __future__ import annotations
 
 from logging import getLogger
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
@@ -150,8 +149,10 @@ class AiModel(models.Model):
         if not model_meta.weights:
             return False
         try:
-            return Path(model_meta.weights.path).exists()
-        except (OSError, ValueError):
+            return bool(model_meta.weights.name) and model_meta.weights.storage.exists(
+                model_meta.weights.name
+            )
+        except (OSError, ValueError, RuntimeError):
             return False
 
     def _ensure_default_huggingface_weights(self, model_meta: ModelMeta) -> ModelMeta:

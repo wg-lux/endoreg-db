@@ -70,6 +70,12 @@ from endoreg_db.services.hub.upload_job_import_lease import (
     locked_upload_job_import_lease,
     release_upload_job_import_lease,
 )
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_completed,
+    mark_upload_job_error,
+    mark_upload_job_integrity_lost,
+    mark_upload_job_processing,
+)
 from endoreg_db.services.hub.quarantine import index_quarantine_file
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
@@ -798,10 +804,11 @@ def _reserve_video_upload_import_handoff(
         if job.status == UploadJob.Status.ANONYMIZED.value:
             return job, None, False
         if not job.file or not job.file.name:
-            job.mark_lost("Upload job has no stored file")
+            mark_upload_job_integrity_lost(job, "Upload job has no stored file")
             return job, None, False
         if job.source_center is None:
-            job.mark_error(
+            mark_upload_job_error(
+                job,
                 "Upload job has no resolved source center",
                 error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
             )
@@ -831,7 +838,7 @@ def _reserve_video_upload_import_handoff(
         except UploadJobImportLeaseBusy:
             return job, None, False
 
-        job.mark_processing()
+        mark_upload_job_processing(job)
         _update_upload_provenance(
             job,
             stored_upload_path=job.file.name,
@@ -1167,12 +1174,14 @@ def _mark_invalid_upload_job(
     invalid_reuse: _InvalidUploadJobReuse,
 ) -> None:
     if invalid_reuse.status == UploadJob.Status.LOST.value:
-        invalid_job.mark_lost(
+        mark_upload_job_integrity_lost(
+            invalid_job,
             invalid_reuse.reason,
             error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED.value,
         )
         return
-    invalid_job.mark_error(
+    mark_upload_job_error(
+        invalid_job,
         invalid_reuse.reason,
         error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED.value,
     )
@@ -1980,12 +1989,13 @@ def process_upload_job(job_id: str) -> bool:
         return True
 
     if not job.file or not job.file.name:
-        job.mark_lost("Upload job has no stored file")
+        mark_upload_job_integrity_lost(job, "Upload job has no stored file")
         return False
 
     center = job.source_center
     if center is None:
-        job.mark_error(
+        mark_upload_job_error(
+            job,
             "Upload job has no resolved source center",
             error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
         )
@@ -1994,7 +2004,7 @@ def process_upload_job(job_id: str) -> bool:
     if job.content_type == "application/pdf":
         from endoreg_db.services.jobs.report_llm_jobs import dispatch_report_llm_import
 
-        job.mark_processing()
+        mark_upload_job_processing(job)
         provenance = _update_upload_provenance(job, stored_upload_path=job.file.name)
         provenance.setdefault("stored_upload_path", job.file.name)
         job.save(update_fields=["processing_provenance", "updated_at"])
@@ -2014,9 +2024,15 @@ def process_upload_job(job_id: str) -> bool:
         if dispatch_result.status in {"queued", "already_queued", "completed"}:
             return True
         if dispatch_result.status == "lost":
-            job.mark_lost(dispatch_result.reason or "Report LLM source is missing")
+            mark_upload_job_integrity_lost(
+                job,
+                dispatch_result.reason or "Report LLM source is missing",
+            )
             return False
-        job.mark_error(dispatch_result.reason or "Report LLM dispatch failed")
+        mark_upload_job_error(
+            job,
+            dispatch_result.reason or "Report LLM dispatch failed",
+        )
         return False
 
     reserved_lease: UploadJobImportLease | None = None
@@ -2066,7 +2082,8 @@ def process_upload_job(job_id: str) -> bool:
                             technical_detail=f"Failed to start video import: {exc}",
                         )
                     else:
-                        owned_job.mark_error(
+                        mark_upload_job_error(
+                            owned_job,
                             f"Failed to start video import: {exc}",
                             error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
                         )
@@ -2082,7 +2099,8 @@ def process_upload_job(job_id: str) -> bool:
                 technical_detail=f"Failed to start video import: {exc}",
             )
         else:
-            job.mark_error(
+            mark_upload_job_error(
+                job,
                 f"Failed to start video import: {exc}",
                 error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
             )
@@ -2119,10 +2137,14 @@ def _validate_fenced_video_upload_source(
 ) -> tuple[UploadJob, Center] | None:
     with locked_upload_job_import_lease(lease) as owned_job:
         if not owned_job.file or not owned_job.file.name:
-            owned_job.mark_lost("Upload job has no stored file")
+            mark_upload_job_integrity_lost(
+                owned_job,
+                "Upload job has no stored file",
+            )
             return None
         if owned_job.source_center is None:
-            owned_job.mark_error(
+            mark_upload_job_error(
+                owned_job,
                 "Upload job has no resolved source center",
                 error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
             )
@@ -2134,7 +2156,7 @@ def _mark_fenced_video_upload_processing(
     lease: UploadJobImportLease,
 ) -> tuple[UploadJob, UploadProvenance]:
     with locked_upload_job_import_lease(lease) as owned_job:
-        owned_job.mark_processing()
+        mark_upload_job_processing(owned_job)
         stored_upload_path = owned_job.file.name or ""
         provenance = _update_upload_provenance(
             owned_job,
@@ -2192,7 +2214,7 @@ def _complete_fenced_video_upload(
     sensitive_meta: SensitiveMeta | None,
 ) -> UploadJob:
     with locked_upload_job_import_lease(lease) as owned_job:
-        owned_job.mark_completed(sensitive_meta=sensitive_meta)
+        mark_upload_job_completed(owned_job, sensitive_meta=sensitive_meta)
         return owned_job
 
 
@@ -2323,7 +2345,8 @@ def _mark_duplicate_video_upload(
     logger.warning("Duplicate upload content rejected for job %s", attempt.job_id)
     _mutate_fenced_failed_video_upload(
         attempt=attempt,
-        mutation=lambda owned_job: owned_job.mark_error(
+        mutation=lambda owned_job: mark_upload_job_error(
+            owned_job,
             str(exc),
             error_code=UploadJob.ErrorCode.DUPLICATE_CONTENT.value,
         ),
@@ -2362,7 +2385,10 @@ def _mark_video_upload_source_lost(
     )
     _mutate_fenced_failed_video_upload(
         attempt=attempt,
-        mutation=lambda owned_job: owned_job.mark_lost(error_detail),
+        mutation=lambda owned_job: mark_upload_job_integrity_lost(
+            owned_job,
+            error_detail,
+        ),
         fenced_message="Missing-source worker was fenced: job=%s",
     )
 
@@ -2442,7 +2468,7 @@ def _run_watcher_upload_job_inline(
     processor_name: str | None = None,
 ) -> UploadJob:
     upload_job.refresh_from_db()
-    upload_job.mark_processing()
+    mark_upload_job_processing(upload_job)
     _update_upload_provenance(
         upload_job,
         processing_handoff="inline",
@@ -2472,20 +2498,17 @@ def _run_watcher_upload_job_inline(
     elif normalized_type == "video":
         if not processor_name:
             raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
-        from endoreg_db.services.video_import import VideoImportService
-
-        video = VideoImportService().import_and_anonymize(
-            file_path=watched_path,
-            center_name=source_center.name,
-            processor_name=processor_name,
-            retry=False,
-        )
-        imported_media = video if isinstance(video, VideoFile) else None
-        sensitive_meta = video.sensitive_meta if isinstance(video, VideoFile) else None
+        _update_upload_provenance(upload_job, processor_name=processor_name)
+        upload_job.save(update_fields=["processing_provenance", "updated_at"])
+        if not process_upload_job(str(upload_job.pk)):
+            raise RuntimeError("Fenced inline watcher video import failed")
+        upload_job.refresh_from_db()
+        safe_unlink_file(watched_path, missing_ok=True)
+        return upload_job
     else:
         raise ValueError(f"Unsupported watcher file type: {normalized_type}")
 
-    upload_job.mark_completed(sensitive_meta=sensitive_meta)
+    mark_upload_job_completed(upload_job, sensitive_meta=sensitive_meta)
     _cleanup_persisted_watcher_source(upload_job)
     safe_unlink_file(watched_path, missing_ok=True)
 
@@ -2584,7 +2607,8 @@ def start_upload_job_processing(
                     technical_detail=f"Failed to start processing: {exc}",
                 )
             else:
-                upload_job.mark_error(
+                mark_upload_job_error(
+                    upload_job,
                     f"Failed to start processing: {exc}",
                     error_code=UploadJob.ErrorCode.INVALID_CONFIGURATION.value,
                 )
@@ -2712,8 +2736,9 @@ def _reuse_watcher_upload_job(
         safe_unlink_file(watched_path, missing_ok=True)
         return upload_job
 
-    upload_job.mark_error(
-        "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
+    mark_upload_job_integrity_lost(
+        upload_job,
+        "Upload job marked complete but no usable media artifact was found. Forcing re-ingest.",
     )
     return None
 
@@ -2723,7 +2748,7 @@ def _mark_watcher_upload_job_processing(
     upload_job: UploadJob,
     watched_path: Path,
 ) -> None:
-    upload_job.mark_processing()
+    mark_upload_job_processing(upload_job)
     _ = _update_upload_provenance(
         upload_job,
         watcher_processing_path=str(watched_path),
@@ -3021,8 +3046,9 @@ def _reuse_preanonymized_upload_job(
             sidecar_path=sidecar_path,
         )
         return upload_job
-    upload_job.mark_error(
-        "Upload job marked complete but no usable media artifact was found. Forcing re-ingest."
+    mark_upload_job_integrity_lost(
+        upload_job,
+        "Upload job marked complete but no usable media artifact was found. Forcing re-ingest.",
     )
     return None
 
@@ -3068,7 +3094,7 @@ def _complete_preanonymized_watcher_job(
 ) -> UploadJob:
     safe_unlink_file(context.sidecar_path, missing_ok=True)
     upload_job.save(update_fields=["processing_provenance", "updated_at"])
-    upload_job.mark_completed(sensitive_meta=sensitive_meta)
+    mark_upload_job_completed(upload_job, sensitive_meta=sensitive_meta)
     cleanup_upload_job_source(upload_job)
     emit_hub_audit_event(
         "hub.preanonymized_drop_accepted",
@@ -3160,7 +3186,7 @@ def _handle_preanonymized_watcher_failure(
         file=path_reference(watched_path),
         error=safe_log_value(exc, key="error"),
     )
-    upload_job.mark_error(str(exc))
+    mark_upload_job_error(upload_job, str(exc))
     emit_hub_audit_event(
         "hub.preanonymized_drop_rejected",
         upload_job_id=str(upload_job.id),
@@ -3254,7 +3280,7 @@ def _mark_preanonymized_job_processing(
     upload_job: UploadJob,
     watched_path: Path,
 ) -> None:
-    upload_job.mark_processing()
+    mark_upload_job_processing(upload_job)
     _update_upload_provenance(
         upload_job,
         watcher_processing_path=str(watched_path),

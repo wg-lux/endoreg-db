@@ -157,6 +157,15 @@ private, non-cacheable `202 Accepted` response with `Retry-After`; broker
 failure returns `503 Service Unavailable`. It never performs synchronous
 transcoding in the web process.
 
+Legacy HLS rows without a persisted source-content SHA-256 identity are never
+served as READY. Playlist lookup treats them as stale and uses the same bounded
+demand fallback to reserve an identity-bound replacement. Direct key and segment
+lookups reject the legacy generation. The schema migration deliberately does not
+decrypt and hash the full production corpus. Every enabled production host runs
+the mandatory startup backfill over the complete eligible raw and processed
+corpus without per-machine opt-in or selection, while the demand fallback covers
+requests arriving before that automatic replacement has completed.
+
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50
 frames per second. Import, reimport, storage normalization, and HLS

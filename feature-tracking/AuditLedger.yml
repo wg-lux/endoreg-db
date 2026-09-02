@@ -1,87 +1,237 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: audit_ledger
 name: Audit-Ledger
 description: Manipulationserkennbares, center-bezogenes und betrieblich überprüfbares Audit-Ledger.
 owners:
-  - endoreg_db maintainers
+- endoreg_db maintainers
 production_critical: true
-source_documents: []
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/audit_ledger_operations.md
+  disposition: reference
+  note: Definiert Ereignisformat, Produzenten, Datenminimierung, Integritätszustände, Prüffrequenz, Aufbewahrung
+    und Incident-Verfahren.
 definition_of_done:
-  - id: documented_scope
-    category: requirements
-    title: Auditereignisse, Verkettung und Vertrauensgrenzen sind festgelegt
-    acceptance:
-      - Auditpflichtige Aktionen und bewusst ausgeschlossene Daten sind dokumentiert.
-      - Integritätsstatus, Fehlerzustand und Verifikationsfrequenz sind eindeutig.
-    required: true
-    verification:
-      kind: manual
-      instructions: Auditvertrag gegen Modell, Service, Tasks und Betriebsanforderungen prüfen.
-    assessment: &not_assessed
-      status: not_assessed
-  - id: ledger_behavior
-    category: functionality
-    title: Ereignisse werden deterministisch verkettet und verifiziert
-    acceptance:
-      - Neue Ereignisse referenzieren den korrekten Vorgänger und Manipulation wird erkannt.
-      - Wiederholte Verifikation verändert das Ledger nicht.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/models/state/test_audit_ledger.py, tests/services/test_audit_integrity.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: automated_tests
-    category: testing
-    title: Modell, Integritätsservice, Hub-Audit und Refresh-Kommando sind getestet
-    acceptance:
-      - Manipulation, Locking, Fehler und Cache-Zustände haben Regressionstests.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/models/state/test_audit_ledger.py, tests/services/test_audit_integrity.py, tests/services/test_hub_audit.py, tests/management/commands/test_refresh_audit_ledger_integrity.py, -q]
-      timeout_seconds: 900
-    assessment: *not_assessed
-  - id: security_controls
-    category: security
-    title: Auditdaten sind unveränderbar zugriffsgeschützt und center-bezogen
-    acceptance:
-      - Unautorisierte Nutzer können Integritätsdetails nicht lesen oder verändern.
-      - Geheimnisse und direkte unnötige Patientendaten werden nicht protokolliert.
-    required: true
-    verification:
-      kind: manual
-      instructions: Berechtigungs-, Datenminimierungs- und Manipulationsreview durchführen.
-    assessment: *not_assessed
-  - id: integrity_evidence
-    category: data_integrity
-    title: Ledger-Kopf und Verifikationsergebnis sind konsistent nachvollziehbar
-    acceptance:
-      - Status enthält einen überprüfbaren Kopf-Snapshot und meldet unbekannte oder defekte Zustände laut.
-    required: true
-    verification:
-      kind: command
-      command: [.devenv/state/venv/bin/pytest, tests/services/test_audit_integrity.py, -q]
-      timeout_seconds: 600
-    assessment: *not_assessed
-  - id: operational_readiness
-    category: operations
-    title: Periodische Prüfung, Alarmierung und Reparaturprozess sind eingerichtet
-    acceptance:
-      - Verifikation läuft getrennt, verhindert parallele Läufe und alarmiert bei Fehlern.
-      - Betreiber haben ein Verfahren zur Beweissicherung ohne unsafe Auto-Recovery.
-    required: true
-    verification:
-      kind: manual
-      instructions: Manipulation simulieren, Alarm und Beweissicherungs-Runbook prüfen.
-    assessment: *not_assessed
-  - id: audit_documentation
-    category: documentation
-    title: Auditmodell und Incident-Verfahren sind dokumentiert
-    acceptance:
-      - Ereignisformat, Aufbewahrung, Verifikation und Incident-Ablauf sind aktuell beschrieben.
-    required: true
-    verification:
-      kind: manual
-      instructions: Dokumentation mit Security und Betrieb reviewen.
-    assessment: *not_assessed
+- id: documented_scope
+  category: requirements
+  title: Auditereignisse, Verkettung und Vertrauensgrenzen sind festgelegt
+  acceptance:
+  - Auditpflichtige Aktionen und bewusst ausgeschlossene Daten sind dokumentiert.
+  - Integritätsstatus, Fehlerzustand und Verifikationsfrequenz sind eindeutig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Auditvertrag gegen Modell, Service, Tasks und Betriebsanforderungen prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: review
+      reference: Vertrag gegen AuditLedger/LedgerHead, Ereignisproduzenten, audit_integrity-Service, Celery-Planung,
+        Status-API, Management-Befehl und System-Health abgeglichen.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
+        -q (44 passed)
+    note: Das autoritative Runbook definiert persistiertes Ereignisformat und Produzenten, getrennte strukturierte
+      Hub-Logs, Vertrauensgrenzen, bewusst ausgeschlossene Daten, Integritätszustände, fünfminütige Standardprüfung,
+      Locking und fail-closed Fehlerentscheidungen. Der zuvor persistierte absolute ready_for_export-Pfad
+      wurde entfernt und der minimierte Vertrag regressionsgetestet.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:58:26.421023Z'
+- id: ledger_behavior
+  category: functionality
+  title: Ereignisse werden deterministisch verkettet und verifiziert
+  acceptance:
+  - Neue Ereignisse referenzieren den korrekten Vorgänger und Manipulation wird erkannt.
+  - Wiederholte Verifikation verändert das Ledger nicht.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/state/test_audit_ledger.py
+    - tests/services/test_audit_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/state/audit_ledger.py::AuditLedger.save,verify_chain; LedgerHead.lock
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: Die verkettete Speicherung sperrt den Singleton-Ledger-Kopf, berechnet den Hash über den gemeinsamen
+      typisierten lx_dtypes-Vertrag und aktualisiert Kopf und Eintrag atomar. Die reine Kettenprüfung
+      erkennt Payload- und Kopfmanipulation; wiederholte Prüfungen ändern keine Ledgerzeilen.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:39:42.512643Z'
+- id: automated_tests
+  category: testing
+  title: Modell, Integritätsservice, Hub-Audit und Refresh-Kommando sind getestet
+  acceptance:
+  - Manipulation, Locking, Fehler und Cache-Zustände haben Regressionstests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/state/test_audit_ledger.py
+    - tests/services/test_audit_integrity.py
+    - tests/services/test_hub_audit.py
+    - tests/management/commands/test_refresh_audit_ledger_integrity.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/models/state/test_audit_ledger.py; tests/services/test_audit_integrity.py; tests/services/test_hub_audit.py;
+        tests/management/commands/test_refresh_audit_ledger_integrity.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: Die kombinierte Lane deckt Initialisierung und Verkettung, strikte JSON-Validierung, Unveränderbarkeit,
+      Payload- und Kopfmanipulation, Cache-Zustände, Refresh-Locking und Lock-Freigabe bei Fehlern, Hub-Audit-Fallback
+      sowie Management-Command-Erfolg und fail-on-non-verified ab.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:40:33.441281Z'
+- id: security_controls
+  category: security
+  title: Auditdaten sind unveränderbar zugriffsgeschützt und center-bezogen
+  acceptance:
+  - Unautorisierte Nutzer können Integritätsdetails nicht lesen oder verändern.
+  - Geheimnisse und direkte unnötige Patientendaten werden nicht protokolliert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Berechtigungs-, Datenminimierungs- und Manipulationsreview durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/views/misc/audit_integrity.py; endoreg_db/services/export_ready.py; endoreg_db/services/validated_identity.py;
+        endoreg_db/management/commands/bootstrap_center_admin.py; endoreg_db/management/commands/migrate_media_storage.py
+    - kind: test
+      reference: tests/views/misc/test_stats_endpoints.py::StatsEndpointTests::test_audit_ledger_integrity_endpoint_is_read_only_and_requires_auth_in_production;
+        tests/views/media/test_video_ready_export.py::VideoReadyExportEndpointTests::test_marks_existing_managed_video_ready
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/export_ready.py
+        tests/views/media/test_video_ready_export.py tests/views/misc/test_stats_endpoints.py (0 errors,
+        0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+        tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
+        tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/ruff check <changed Python files>; ruff
+        format --check <changed Python files> (passed)
+    note: Der globale Integritätsendpunkt gibt nur den gecachten Kopfstatus aus, erfordert im Produktionsmodus
+      Authentifizierung und ist auch authentifiziert read-only. Die persistierten Produzenten wurden auf
+      Datenminimierung geprüft; ready_for_export persistiert keinen absoluten Pfad mehr, Identitätsereignisse
+      enthalten ausschließlich für die pseudonyme Korrelation erforderliche Hashes und IDs, und Geheimnisse
+      oder direkte Patientendaten werden nicht aufgenommen.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:57:07.434909Z'
+- id: integrity_evidence
+  category: data_integrity
+  title: Ledger-Kopf und Verifikationsergebnis sind konsistent nachvollziehbar
+  acceptance:
+  - Status enthält einen überprüfbaren Kopf-Snapshot und meldet unbekannte oder defekte Zustände laut.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_audit_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/audit_integrity.py::_ledger_head_snapshot,get_audit_ledger_integrity_status,refresh_audit_ledger_integrity_status
+    - kind: test
+      reference: tests/services/test_audit_integrity.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: Der Status liefert bei leerem oder ungültigem Cache fail-closed unknown/verified=false und bindet
+      stets Ledger-Kopf-Hash sowie letzte Eintrags-ID ein. Vollprüfungen unterscheiden verified, failed
+      und error, persistieren den Snapshot und melden Manipulation oder Prüfungsfehler sichtbar.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:41:25.689839Z'
+- id: operational_readiness
+  category: operations
+  title: Periodische Prüfung, Alarmierung und Reparaturprozess sind eingerichtet
+  acceptance:
+  - Verifikation läuft getrennt, verhindert parallele Läufe und alarmiert bei Fehlern.
+  - Betreiber haben ein Verfahren zur Beweissicherung ohne unsafe Auto-Recovery.
+  required: true
+  verification:
+    kind: manual
+    instructions: Manipulation simulieren, Alarm und Beweissicherungs-Runbook prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: code
+      reference: endoreg_db/config/settings/base.py audit-ledger-integrity-refresh; endoreg_db/services/audit_integrity.py;
+        endoreg_db/management/commands/check_system_health.py
+    - kind: test
+      reference: tests/services/test_audit_integrity.py; tests/management/commands/test_refresh_audit_ledger_integrity.py;
+        tests/management/commands/test_check_system_health.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+        tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
+        tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
+    note: Celery Beat plant die vollständige Prüfung standardmäßig alle 300 Sekunden auf der separaten
+      Maintenance-Queue; ein 30-Minuten-Cache-Lock verhindert parallele Scans. Failed/error erzeugen strukturierte
+      Fehlerereignisse, und der Local-Study-Server-Health-Check scheitert bei nicht verifiziertem Status.
+      Das Runbook definiert Beweissicherung, begrenzte Wiederholungsprüfung und Wiederherstellung ohne
+      Rehashing, Kürzung oder unsichere Auto-Recovery.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:57:46.291858Z'
+- id: audit_documentation
+  category: documentation
+  title: Auditmodell und Incident-Verfahren sind dokumentiert
+  acceptance:
+  - Ereignisformat, Aufbewahrung, Verifikation und Incident-Ablauf sind aktuell beschrieben.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation mit Security und Betrieb reviewen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: review
+      reference: Technischer Abgleich gegen Modell, Services, Tasks, API, Management Commands, Health-Gate
+        und bestehende Tests.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
+        -q (44 passed)
+    note: Ereignisformat, Produzenten, Vertrauensgrenze, Datenminimierung, Integritätszustände, Prüffrequenz,
+      Aufbewahrung und fail-closed Incident-Ablauf sind im autoritativen Runbook dokumentiert und technisch
+      gegengeprüft. Der absolute ready_for_export-Pfad wurde aus Code und Dokumentation entfernt. Die
+      im Kriterium geforderte formale gemeinsame Abnahme durch Security und Betrieb steht noch aus.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:58:52.683428Z'

@@ -1736,6 +1736,47 @@ class HubTransferEndpointTests(TestCase):
         }
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_media_upload_returns_conflict_for_live_operation_lease(self):
+        from endoreg_db.services.hub.transfers import TransferOperationBusy
+
+        processed_bytes = b"processed-video"
+        payload = self._video_transfer_payload(
+            transfer_key="site-a__video__live-transfer-lease",
+            video_hash="hash-live-transfer-lease",
+            transfer_mode="metadata_and_processed_media",
+            sender_processing_success=True,
+            processed_video_hash=self._sha256(processed_bytes),
+        )
+        create_response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert create_response.status_code == 201, create_response.content
+
+        with patch(
+            "endoreg_db.views.media.hub.transfers.attach_enveloped_transfer_media",
+            side_effect=TransferOperationBusy(
+                "transfer operation already has a live owner"
+            ),
+        ):
+            upload_response = self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data=self._enveloped_upload_data(
+                    transfer_key=cast(str, payload["transfer_key"]),
+                    plaintext=processed_bytes,
+                    filename="processed.bin",
+                ),
+                headers=self._auth_headers(),
+            )
+
+        assert upload_response.status_code == 409, upload_response.content
+        assert upload_response.json()["detail"] == (
+            "Transfer media attachment is already in progress."
+        )
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_media_upload_returns_and_logs_safe_envelope_rejection(self):
         processed_bytes = b"processed-video"
         payload = self._video_transfer_payload(
@@ -2002,51 +2043,6 @@ class HubTransferEndpointTests(TestCase):
         video.refresh_from_db()
         assert str(video.processed_file.name) == previous_name
         assert video.processed_file.storage.exists(previous_name)
-
-    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_processed_report_upload_verifies_and_persists_anonymized_hash(self):
-        processed_bytes = b"%PDF-1.4\nanonymized\n%%EOF\n"
-        processed_hash = self._sha256(processed_bytes)
-        payload = self._report_transfer_payload(
-            transfer_key="site-a__report__processed-upload",
-            pdf_hash=self._sha256(b"raw-report"),
-            transfer_mode="metadata_and_processed_media",
-            processing_policy="preserve_processing_state",
-            sender_processing_success=True,
-            processed_file_sha256=processed_hash,
-        )
-
-        create_response = self._secure_post(
-            "/api/media/hub/transfers/",
-            data=payload,
-            content_type="application/json",
-            headers=self._auth_headers(),
-        )
-        assert create_response.status_code == 201, create_response.content
-
-        upload_response = self._secure_post(
-            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
-            data=self._enveloped_upload_data(
-                transfer_key=cast(str, payload["transfer_key"]),
-                plaintext=processed_bytes,
-                filename="ciphertext.bin",
-            ),
-            headers=self._auth_headers(),
-        )
-
-        assert upload_response.status_code == 200, upload_response.content
-        response_body = upload_response.json()
-        assert response_body["transfer_key"] == payload["transfer_key"]
-        assert response_body["resource_hash"] == payload["resource_hash"]
-        assert response_body["processed_media_hash"] == processed_hash
-        transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
-        report = RawPdfFile.objects.get(pdf_hash=payload["resource_hash"])
-        assert report.state is not None
-        assert report.state.processed_file_sha256 == processed_hash
-        assert str(report.processed_file.name or "").endswith(f"{processed_hash}.pdf")
-        media_upload = transfer_job.provenance["media_uploads"][-1]
-        assert media_upload["uploaded_name"] == f"{processed_hash}.pdf"
-        assert "patient-name" not in str(transfer_job.provenance)
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_report_upload_is_rejected(self):

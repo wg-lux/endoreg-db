@@ -35,6 +35,7 @@ from endoreg_db.services.hub.deployment import (
     transfer_api_enabled,
 )
 from endoreg_db.services.jobs.stale_recovery import VIDEO_PROCESSING_STALE_TIMEOUT
+from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import (
     LOG_DIR,
@@ -226,7 +227,9 @@ def _upload_source_cleanup_stats() -> _UploadSourceCleanupStats:
 
 
 def _hls_materialization_stats() -> dict[str, int | str | None]:
-    stale_before = timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT
+    stale_before = timezone.now() - timedelta(
+        seconds=get_ffmpeg_transcode_timeout_seconds() + 60
+    )
     try:
         return {
             "queued": VideoHlsArtifact.objects.filter(
@@ -257,14 +260,14 @@ def _hls_materialization_stats() -> dict[str, int | str | None]:
             ).count(),
             "error": None,
         }
-    except (OperationalError, ProgrammingError) as exc:
+    except (OperationalError, ProgrammingError):
         return {
             "queued": None,
             "materializing": None,
             "ready": None,
             "failed": None,
             "stale_in_flight": None,
-            "error": str(exc),
+            "error": "hls_health_query_failed",
         }
 
 

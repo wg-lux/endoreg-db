@@ -11,6 +11,7 @@ from endoreg_db.services.hub.import_monitoring import (
     dispatch_due_upload_job_retries,
     retry_delay_seconds,
     safe_import_error_detail,
+    schedule_processing_retry,
 )
 
 
@@ -60,3 +61,23 @@ def test_due_retry_is_dispatched_once_and_marked_processing() -> None:
         queue="pipeline",
         routing_key="pipeline",
     )
+
+
+@pytest.mark.django_db
+def test_processing_failure_is_scheduled_through_native_retry_state() -> None:
+    upload_job = UploadJob.objects.create(
+        file=SimpleUploadedFile("retry.mp4", b"video"),
+        content_type="video/mp4",
+        status=UploadJob.Status.PROCESSING,
+    )
+
+    scheduled = schedule_processing_retry(
+        upload_job,
+        technical_detail="worker interrupted",
+    )
+
+    upload_job.refresh_from_db()
+    assert scheduled is True
+    assert upload_job.status == UploadJob.Status.RETRYING
+    assert upload_job.retryable is True
+    assert upload_job.next_retry_at is not None

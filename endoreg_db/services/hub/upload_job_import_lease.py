@@ -12,6 +12,9 @@ from django.db import close_old_connections, transaction
 from django.db.models.functions import Now
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.hub.upload_job_state_machine import (
+    validate_upload_job_interrupted_retry,
+)
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
@@ -111,6 +114,9 @@ def acquire_upload_job_import_lease(
             raise UploadJobImportLeaseBusy(
                 f"Upload job {job.pk} has another active import owner"
             )
+
+        if job.processing_lease_owner and not has_live_owner:
+            validate_upload_job_interrupted_retry(current_status=job.status)
 
         if job.processing_lease_owner != normalized_owner or not has_live_owner:
             job.processing_fencing_token += 1

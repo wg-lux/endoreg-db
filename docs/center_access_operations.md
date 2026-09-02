@@ -86,6 +86,21 @@ den Benutzer zum Django-Superuser zu machen. `center_scope:admin` bleibt auf
 das eine eindeutig zugeordnete eigene Center beschränkt. Breite Rollen wie
 `data:write`, `admin` oder ein bloßer Staff-Status reichen nicht aus.
 
+Beide Administratorrechte werden als exakt benannte **Keycloak-Realm-Rollen**
+zugewiesen. Für die globale Administrationsansicht wird
+`center_scope:global_admin` verwendet; für delegierte Center-Verwaltung
+`center_scope:admin`. Die Anwendung synchronisiert diese Rollen bei der
+Anmeldung in gleichnamige Django-Gruppen, legt oder entzieht aber selbst keine
+Keycloak-Rollen.
+
+Globale Administratoren sehen auf der Administrationsseite zusätzlich alle in
+`NetworkNode` registrierten Hosts, einschließlich inaktiver Einträge, Rolle,
+Center, URL-/HTTPS-Konfigurationsstatus und Zeitpunkt der letzten lokalen
+Änderung. Die Ansicht gibt weder URL noch Shared Secret aus und führt beim
+Öffnen keinen Remote-Liveness-Probe aus. Sie zeigt damit bewusst den lokalen
+Registrierungs- und Konfigurationsstatus; die Laufzeit-Telemetrie der
+Storage-Knoten bleibt separat gekennzeichnet.
+
 Jede Änderung benötigt eine Begründung und einen Konfliktschutz auf Basis der
 zuvor gelesenen Center-Schlüssel und wird dauerhaft auditiert. Änderungen des
 eigenen Kontos sind verboten. Die API ändert keine Keycloak-Rollen oder
