@@ -1,36 +1,41 @@
 # Hub Ingest Gap Closure
 
-> Status tracking was migrated to `feature-tracking/done/HubIngest.yml`. This
-> document is retained as protocol and design context and must not carry an
-> independent completion status.
+> This is a historical design record, not a current implementation plan or
+> operator runbook. Status tracking moved to
+> `feature-tracking/done/HubIngest.yml`; current repository behavior is
+> documented in `docs/wiki/hub_ingest_current_state.md`. Statements below such
+> as "add", "required", "next", and "missing" describe the pre-implementation
+> design and must not be read as current production status.
 
 ## Purpose
 
-This page defines the next concrete architecture needed to move the current
-`hub_ingest` implementation from "single central ingest endpoint" toward a real
+This page recorded the proposed architecture for moving the former
+`hub_ingest` implementation from a single central ingest endpoint toward a
 study-network hub model.
 
-It addresses the missing pieces called out in:
+It addressed gaps that were identified in:
 
 - `docs/wiki/hub_ingest_current_state.md`
 - `endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`
 
-This document is implementation-oriented. It specifies what should be built,
-what identifiers should be used, how row-plus-media transfer should work, and
-how the receiver decides whether processing must run again.
+This document preserves the implementation proposal: what was to be built,
+which identifiers were proposed, how row-plus-media transfer was intended to
+work, and how the receiver was to decide whether processing must run again.
 
-The key missing capability is explicit data transfer for resources that include
-both:
+The key missing capability at the time was explicit data transfer for resources
+that included both:
 
 - the database rows that describe a video or report
 - the corresponding media payload
 
-Without that, a hub can only receive bytes. It cannot reliably decide whether
-processing should start, resume, or be skipped.
+At that time, the hub could only receive bytes and could not reliably decide
+whether processing should start, resume, or be skipped. The current transfer
+ledger and decision services described in `hub_ingest_current_state.md` now
+implement this boundary.
 
-## Design Goals
+## Historical Design Goals
 
-The next version of hub ingest must support:
+The proposed next version of hub ingest was intended to support:
 
 - authenticated remote site to hub transfer
 - transfer of database row payloads together with the referenced video or report
@@ -40,9 +45,9 @@ The next version of hub ingest must support:
 - storage policies that allow central cleanup after durable synchronization
 - explicit identification of the central node versus the submitting site
 
-## Current Foundation To Reuse
+## Foundation Available When This Design Was Written
 
-The repository already contains the right primitives for an incremental design:
+The repository already contained these primitives for an incremental design:
 
 - `Center.center_key` as a durable site identity key
 - `UploadJob` metadata fields for source and provenance
@@ -51,13 +56,14 @@ The repository already contains the right primitives for an incremental design:
   content hash
 - `VideoState` and `RawPdfState` as process state holders
 
-These must be reused rather than replaced.
+The design called for reusing these primitives rather than replacing them.
 
-## Required New Concepts
+## Concepts Proposed At The Time
 
 ### 1. Deployment node identity
 
-The application currently models centres, but not network nodes.
+At the time, the application modeled centers but not network nodes. The current
+repository now implements `NetworkNode`.
 
 Add a separate model for deployment identity.
 
@@ -621,7 +627,7 @@ For first implementation:
   - required derived artifacts exist
   - backup or object-store durability precondition is satisfied
 
-## API Surface To Add
+## Historically Proposed API Surface
 
 ### 1. Transfer creation endpoint
 
@@ -681,7 +687,7 @@ Required behavior:
 - transfer metadata must record both `source_node_key` and `source_center_key`
 - status access must be node-scoped and centre-scoped
 
-## Implementation Order
+## Historical Implementation Order
 
 ### Phase 1: Data model and docs
 
@@ -718,9 +724,10 @@ Build next:
 - safe central raw deletion
 - backup verification hooks
 
-## Acceptance Criteria
+## Historical Acceptance Criteria
 
-The design is only complete when all of the following are true:
+The design defined completion as all of the following being true. Current
+verification status belongs exclusively to the feature tracker:
 
 - one site can transfer a video row bundle plus video bytes to the hub
 - the hub can match the transfer by `video_hash`
@@ -733,9 +740,9 @@ The design is only complete when all of the following are true:
 - central cleanup policy can remove transferred raw media only after apply and
   durability checks
 
-## Recommended First Concrete Build Slice
+## Historically Recommended First Build Slice
 
-If implementation starts now, the first slice should be:
+The first proposed implementation slice was:
 
 - add `NetworkNode`
 - add `TransferJob`
@@ -747,12 +754,12 @@ If implementation starts now, the first slice should be:
     according to `processing_policy`
   - if `video_hash` does not exist, create pending ingest and await media upload
 
-This slice gives the project the missing processing-decision contract before the
-larger media-transfer work lands.
+This slice was intended to establish the processing-decision contract before
+the larger media-transfer work landed.
 
-## Minimal Implementation Notes
+## Historical Implementation Notes
 
-To keep the first implementation compatible with the current repository:
+The proposal recommended the following compatibility choices:
 
 - reuse `UploadJob` as the local ingest execution record behind a `TransferJob`
 - reuse `ProcessingHistory` as the canonical replay identity
@@ -760,5 +767,5 @@ To keep the first implementation compatible with the current repository:
 - use the existing reconciliation service to relink transferred artifacts if the
   apply step is interrupted
 
-The important change is not a new ingest pipeline. The important change is that
-the pipeline becomes transfer-aware and policy-driven.
+The intended change was not a new ingest pipeline; it was to make the existing
+pipeline transfer-aware and policy-driven.

@@ -1,85 +1,84 @@
-# FHIR-R4-Export: Integrationsvertrag und Betrieb
+# FHIR R4 Export: Integration Contract and Operations
 
-## Freigegebenes Exportprofil
+## Approved Export Profile
 
-`endoreg_db` stellt Untersuchungen als read-only FHIR-R4-`Bundle` vom Typ
-`collection` bereit. Freigegeben ist ausschließlich das Profil
-`pseudonymized`. Der Endpunkt lautet:
+`endoreg_db` provides examinations as a read-only FHIR R4 `Bundle` of type
+`collection`. Only the
+`pseudonymized` profile is approved. The endpoint is:
 
 ```text
-GET /api/patient-examinations/{id}/fhir/
+GET /endoreg-api/patient-examinations/{id}/fhir/
 Content-Type: application/fhir+json
 ```
 
-In Produktion erfordert der Zugriff Authentisierung und die durch
-`PolicyPermission` verlangte Leserolle. Nicht privilegierte Nutzer dürfen nur
-Untersuchungen ihres zugeordneten Centers exportieren. Ein fremder oder nicht
-auflösbarer Center-Scope wird wie eine nicht vorhandene Ressource behandelt.
+In production, access requires authentication and the reader role required by
+`PolicyPermission`. Non-privileged users may export only examinations from
+their assigned center. A foreign or unresolvable center scope is treated as a
+nonexistent resource.
 
-Der Export enthält keine Namen, Geburtsdaten, externen Krankenhaus-IDs,
-Datenbank-Primärschlüssel oder freien Berichtstext. Voraussetzung ist ein
-persistierter `patient_hash`. Fehlt dieses Pseudonym, schlägt der gesamte
-Export fehl; es gibt keinen identifizierenden Fallback.
+The export contains no names, dates of birth, external hospital IDs, database
+primary keys, or free-form report text. A persisted `patient_hash` is required.
+If this pseudonym is missing, the entire export fails; there is no identifying
+fallback.
 
-## Ressourcen und Kardinalitäten
+## Resources and Cardinalities
 
-| Ressource | Anzahl | Quelle und Abbildung |
+| Resource | Count | Source and mapping |
 | --- | ---: | --- |
-| `Patient` | genau 1 | gehashter `patient_hash`; keine direkten demografischen Identifikatoren |
-| `Procedure` | genau 1 | Untersuchungsart, Status und vorhandener Untersuchungszeitraum |
-| `Observation` | 0..n | aktive Befunde und aktive Klassifikationen |
-| `ImagingStudy` | 0..n | vollständig importierte DICOM Studies, Series und Instanzanzahlen |
-| `DiagnosticReport` | 0..n | aktive Berichte, Status und Referenzen; kein freier Schlussbericht |
+| `Patient` | exactly 1 | Hashed `patient_hash`; no direct demographic identifiers |
+| `Procedure` | exactly 1 | Examination type, status, and available examination period |
+| `Observation` | 0..n | Active findings and active classifications |
+| `ImagingStudy` | 0..n | Fully imported DICOM studies, series, and instance counts |
+| `DiagnosticReport` | 0..n | Active reports, status, and references; no free-form final report |
 
-Das Bundle validiert jede interne `subject`-, `partOf`-, `result`- und
-`imagingStudy`-Referenz gegen die tatsächlich enthaltenen Einträge. Doppelte
-`fullUrl`-Werte, doppelte Ressourcenidentitäten und nicht auflösbare
-Referenzen werden abgewiesen.
+The bundle validates every internal `subject`, `partOf`, `result`, and
+`imagingStudy` reference against the entries actually included. Duplicate
+`fullUrl` values, duplicate resource identities, and unresolvable references
+are rejected.
 
-## Terminologien
+## Terminologies
 
-Die derzeit verwendeten kanonischen Systeme sind:
+The canonical systems currently used are:
 
 - `https://wg-lux.de/fhir/CodeSystem/lx-examination-cs`
 - `https://wg-lux.de/fhir/CodeSystem/lx-finding-cs`
 - `https://wg-lux.de/fhir/CodeSystem/lx-classification-cs`
 - `https://wg-lux.de/fhir/CodeSystem/lx-classification-choice-cs`
-- `http://dicom.nema.org/resources/ontology/DCM` für Modalitäten
-- `urn:dicom:uid` für DICOM Study Instance UIDs
+- `http://dicom.nema.org/resources/ontology/DCM` for modalities
+- `urn:dicom:uid` for DICOM Study Instance UIDs
 
-Lokale Namen werden deterministisch in FHIR-Codes normalisiert. Eine leere
-oder nicht normalisierbare Terminologiebezeichnung lässt den Export fehlschlagen.
-Eine externe Terminologieserver-Validierung oder nationale Profilkonformität
-ist noch nicht Bestandteil dieses Integrationsvertrags.
+Local names are normalized deterministically into FHIR codes. An empty or
+non-normalizable terminology name causes the export to fail. External
+terminology-server validation and national profile conformance are not yet
+part of this integration contract.
 
-## Identität, Provenienz und Versionierung
+## Identity, Provenance, and Versioning
 
-Bundle und Ressourcen erhalten stabile, opake FHIR-IDs aus SHA-256 über
-Ressourcentyp und stabile Quellidentität. Interne Datenbank-IDs erscheinen
-nicht im Wire-Format. Das Bundle enthält zusätzlich:
+The bundle and resources receive stable, opaque FHIR IDs derived from SHA-256
+over the resource type and stable source identity. Internal database IDs do not
+appear in the wire format. The bundle also contains:
 
-- `meta.profile` mit
+- `meta.profile` with
   `https://wg-lux.de/fhir/StructureDefinition/lx-pseudonymized-endoscopy-bundle`
-- `meta.tag` mit Exportvertragsversion `1.0`
-- `identifier` als SHA-256-basierte Referenz auf die Quelluntersuchung
+- `meta.tag` with export contract version `1.0`
+- `identifier` as a SHA-256-based reference to the source examination
 
-Zwei Exporte desselben Datenbankzustands sind semantisch und byteweise nach
-kanonischer JSON-Sortierung stabil. Nach einer fachlichen Änderung an der
-Quelle bleibt die Ressourcenidentität stabil, während sich der Inhalt
-entsprechend ändert.
+Two exports of the same database state are semantically and byte-for-byte
+stable after canonical JSON sorting. After a domain change to the source, the
+resource identity remains stable while its content changes accordingly.
 
-## Fehlende Daten
+## Missing Data
 
-- Eine fehlende Untersuchungsdefinition erzeugt eine `Procedure` mit
-  neutralem Text und Status `unknown`.
-- Fehlende Start- und Enddaten lassen `performedPeriod` weg.
-- Ohne aktive Befunde gibt es keine `Observation`.
-- Ohne vollständig importierte DICOM-Daten gibt es keine `ImagingStudy`.
-- Ohne aktive Berichte gibt es keinen `DiagnosticReport`.
-- Ein fehlendes Patientenpseudonym, eine ungültige Zeitspanne, ungültige
-  Terminologie oder eine inkonsistente Referenz bricht den gesamten Export ab.
+- A missing examination definition produces a `Procedure` with neutral text
+  and status `unknown`.
+- Missing start and end dates omit `performedPeriod`.
+- No `Observation` is produced without active findings.
+- No `ImagingStudy` is produced without fully imported DICOM data.
+- No `DiagnosticReport` is produced without active reports.
+- A missing patient pseudonym, invalid time period, invalid terminology, or
+  inconsistent reference aborts the entire export.
 
-## Beispielstruktur
+## Example Structure
 
 ```json
 {
@@ -119,39 +118,38 @@ entsprechend ändert.
 }
 ```
 
-Das gekürzte Beispiel zeigt nicht die verpflichtende `Procedure`, die im
-realen Bundle immer vorhanden ist.
+The shortened example does not show the mandatory `Procedure`, which is always
+present in the real bundle.
 
-## Beobachtbarkeit und Wiederanlauf
+## Observability and Recovery
 
-Der Logger `endoreg_db.interoperability.fhir` erzeugt strukturierte Ereignisse:
+The `endoreg_db.interoperability.fhir` logger emits structured events:
 
-| Ereignis | Bedeutung |
+| Event | Meaning |
 | --- | --- |
-| `fhir.export_completed` | Bundle vollständig aufgebaut und validiert |
-| `fhir.export_rejected` | Quelle, Ressource oder Bundlevertrag ungültig |
+| `fhir.export_completed` | Bundle fully built and validated |
+| `fhir.export_rejected` | Source, resource, or bundle contract invalid |
 
-Ereignisse enthalten nur einen gehashten Untersuchungsbezug, das Exportprofil,
-den festen Reason-Code und bei Fehlern den Exception-Typ. Direkte
-Patientenidentifikatoren oder klinische Freitexte werden nicht protokolliert.
+Events contain only a hashed examination reference, the export profile, the
+fixed reason code, and, for errors, the exception type. Direct patient
+identifiers and clinical free text are not logged.
 
-Bei `bundle_build_failed` muss die Quellkonstellation korrigiert werden. Da der
-Service erst nach vollständiger Validierung ein Bundle zurückgibt, kann kein
-partielles Bundle freigegeben werden. Nach Korrektur ist ein identischer
-GET-Aufruf ausreichend; es existiert kein serverseitiger Exportzustand, der
-zurückgesetzt werden müsste.
+For `bundle_build_failed`, correct the source state. Because the service
+returns a bundle only after complete validation, no partial bundle can be
+released. After correction, an identical GET request is sufficient; no
+server-side export state needs to be reset.
 
-Empfohlenes Monitoring:
+Recommended monitoring:
 
-- Alarmierung auf `fhir.export_rejected`, gruppiert nach `error_type`
-- Verhältnis `completed` zu `rejected` pro Deployment
-- regelmäßiger Abruf eines pseudonymisierten Testfalls mit Schema- und
-  Referenzvalidierung
+- Alert on `fhir.export_rejected`, grouped by `error_type`
+- `completed`-to-`rejected` ratio per deployment
+- Regular retrieval of a pseudonymized test case with schema and reference
+  validation
 
-## Bewusste Grenzen
+## Deliberate Boundaries
 
-Nicht unterstützt werden FHIR-Write, Transaktionsbundles, Search, Subscriptions,
-Bulk Data, freie Patientendemografie, freie Berichtstexte, externe
-Terminologieserver-Validierung und eine Konformitätszusage zu nationalen
-Implementation Guides. Neue Felder oder Profile benötigen eine neue
-Vertragsversion, Datenschutzprüfung und Trackerbewertung.
+FHIR Write, transaction bundles, Search, Subscriptions, Bulk Data, free-form
+patient demographics, free-form report text, external terminology-server
+validation, and a conformance claim against national Implementation Guides are
+not supported. New fields or profiles require a new contract version, a data
+protection review, and tracker assessment.

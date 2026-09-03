@@ -26,3 +26,4 @@ graph TD;
     X1(["**Example: Frame classified as 'Polyp Present'**"]) -.-> A;
     X2(["**Example: Segment starts at frame 100, ends at frame 200**"]) -.-> F;
     X3(["**Example: Legacy Video used for segmentation**"]) -.-> G;
+```

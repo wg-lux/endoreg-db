@@ -7,7 +7,7 @@ from typing import Protocol, TypeAlias, cast
 from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.request import Request
@@ -32,8 +32,6 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.views.interoperability_errors import interoperability_error_response
 
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 RouteKwarg: TypeAlias = str | int | bool
 
 

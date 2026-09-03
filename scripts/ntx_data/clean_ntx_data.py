@@ -17,23 +17,6 @@ patient_data_list, readout_data_list, lab_data_list = patient_df_etl(
 # fu_tx_data_list = []
 fu_tx_data_list = fu_tx_distance_df_etl(patient_data_list)
 
-
-# Export all DataFrames to a dictionary
-# exported_dfs = export2dfs(
-#     patient_data_list=patient_data_list,
-#     readout_data_list=readout_data_list,
-#     lab_data_list=lab_data_list,
-#     fu_tx_data_list=fu_tx_data_list
-# )
-
-# for key, df in exported_dfs.items():
-#     output_path = processed_data_dir / f"{key}.xlsx"
-#     df.to_excel(output_path, index=False)
-
-# # Additionally, export to csv
-#     output_path_csv = processed_data_dir / f"{key}.csv"
-#     df.to_csv(output_path_csv, index=False)
-
 # Export all Data to JSONL strings
 exported_jsonl = export2json(
     patient_data_list=patient_data_list,

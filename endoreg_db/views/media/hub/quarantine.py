@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, cast
 
 from django.http import Http404
+from lx_dtypes.models.contracts.json_types import JsonValue
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -28,9 +29,6 @@ from endoreg_db.services.hub.quarantine import (
     sync_quarantine_inventory,
     user_or_none,
 )
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 class _SerializerLike(Protocol):

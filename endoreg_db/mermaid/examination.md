@@ -6,3 +6,4 @@ graph TD;
     C --> D["Save in endoreg_db_patientexamination with Patient ID"]
     D --> E["Link Patient to Examination via Foreign Key"]
     E --> F["Examination Process Completed"]
+```

@@ -1,13 +1,16 @@
 # Local Study Server Deployment
 
-Der verbindliche Schutzumfang, die Qualitätsgrenzen, Reviewer-Schritte und das
-Fehler-/Korrekturszenario stehen im
-[Anonymisierungs- und Freigabe-Contract](anonymization_contract.md).
+The binding protection scope, quality limits, reviewer steps, and
+failure/correction scenario are defined in the
+[anonymization and release contract](anonymization_contract.md).
 
-`local_study_server` is a production profile for one encrypted host. It accepts
-center-scoped authenticated API uploads, external preanonymized imports, and
-explicit promotion of existing managed processed media into an export-ready
-state. It is not a federation or transfer role.
+`local_study_server` is a production-settings profile for one encrypted host. It
+accepts center-scoped authenticated API uploads, external preanonymized imports,
+and explicit promotion of existing managed processed media into an export-ready
+state. It is not a federation or transfer role. Availability of the profile in
+code does not by itself establish production readiness: the required criteria in
+`feature-tracking/StorageSecurity.yml` and `feature-tracking/Anonymization.yml`
+remain authoritative.
 
 ## Required Profile
 
@@ -37,6 +40,10 @@ Transfer APIs remain disabled in Django and should also be blocked before
 requests reach Python:
 
 ```nginx
+location ^~ /endoreg-api/media/hub/transfers/ {
+    return 404;
+}
+
 location ^~ /api/media/hub/transfers/ {
     return 404;
 }

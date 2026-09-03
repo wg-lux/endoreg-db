@@ -4,16 +4,14 @@ This repository is a reusable Django app. It ships a small, robust settings pack
 
 ## Settings modules
 
-- config/settings/base.py: shared defaults; driven by environment variables.
-- config/settings/dev.py: local development; SQLite by default.
-- config/settings/test.py: tests; persistent SQLite test DB by default.
-- config/settings/prod.py: production defaults; fully env-driven.
-
-Legacy settings (prod_settings.py, dev/dev_settings.py, tests/test_settings.py) are thin wrappers and can be removed after consumers update.
+- `endoreg_db/config/settings/base.py`: shared defaults driven by environment variables.
+- `endoreg_db/config/settings/dev.py`: local development; SQLite by default.
+- `endoreg_db/config/settings/test.py`: tests; an isolated, process-specific SQLite database by default. Set `TEST_DB_REUSE=true` to reuse a stable file.
+- `endoreg_db/config/settings/prod.py`: production defaults; fully environment driven.
 
 For a concise downstream upgrade checklist covering center identity, hub-role
 transfer gating, and cleanup semantics, see
-[`docs/deployment_note_hub_contract.md`](/home/admin/endoreg-db/docs/deployment_note_hub_contract.md).
+[`docs/deployment_note_hub_contract.md`](../docs/deployment_note_hub_contract.md).
 
 ## Centralized environment handling
 
@@ -24,7 +22,7 @@ transfer gating, and cleanup semantics, see
 ## Key environment variables
 
 General
-- DJANGO_SETTINGS_MODULE: choose settings module (defaults used in manage.py/wsgi.py/pytest.ini).
+- DJANGO_SETTINGS_MODULE: choose the settings module. `manage.py` does not supply a default; `pytest.ini` selects `endoreg_db.config.settings.test`, while Celery and packaged production entry points select `endoreg_db.config.settings.prod`.
 - LX_ANNOTATE_ENCRYPTED_DATA_DIR: canonical protected runtime root. `STORAGE_DIR` must resolve inside this root.
 - STORAGE_DIR: absolute path to protected managed media storage. Defaults to `${LX_ANNOTATE_ENCRYPTED_DATA_DIR}/storage`.
 - STATIC_URL, STATIC_ROOT, MEDIA_URL: override static/media paths if embedding.
@@ -44,16 +42,18 @@ Development (endoreg_db.config.settings.dev)
 
 Testing (endoreg_db.config.settings.test)
 - TEST_DB_ENGINE: default django.db.backends.sqlite3
-- TEST_DB_NAME: default data/tests/db/test_db.sqlite3
+- TEST_DB_NAME: overrides the database name. Under pytest, the default SQLite filename is process-specific unless `TEST_DB_REUSE=true`.
 - TEST_DB_FILE: alternative way to set SQLite DB path
+- TEST_DB_REUSE: true|false; defaults to false under pytest and true for ordinary management commands using test settings.
 - TEST_DISABLE_MIGRATIONS: true|false (default false)
 
 Production (endoreg_db.config.settings.prod)
 - DJANGO_SECRET_KEY: required (must be a strong random value; never commit real secrets)
-- DJANGO_DEBUG: true|false (use false in production)
+- DJANGO_DEBUG: must be false in production
 - DJANGO_ALLOWED_HOSTS: comma-separated
 - DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT
-- ENDOREG_DEPLOYMENT_ROLE: `standalone`|`site_node`|`central_hub`. `central_hub` enables strict API ingest policy and exposes the transfer endpoints.
+- ENDOREG_DEPLOYMENT_ROLE: `standalone`|`site_node`|`local_study_server`|`central_hub`. `central_hub` enables strict API ingest policy; transfer endpoints additionally require `ENDOREG_ENABLE_HUB_TRANSFERS=true`.
+- ENDOREG_ENABLE_HUB_TRANSFERS: true|false. Defaults to false and enables incoming transfer endpoints only in `central_hub` deployments.
 - ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT: true|false. Defaults to true. Refuses insecure transfer requests.
 - ENDOREG_HUB_TRANSFER_REQUIRE_MTLS: true|false. Defaults to `true` for `central_hub` deployments and is required in production `central_hub` settings.
 - ENDOREG_HUB_TRANSFER_MTLS_META_KEY, ENDOREG_HUB_TRANSFER_MTLS_META_VALUE: proxy-attested client-certificate verification contract for Django when mTLS is terminated before the app.
@@ -116,14 +116,15 @@ Cleanup semantics are intentional:
 ## Transfer support
 
 The package also includes a node-to-node transfer API under
-`/api/media/hub/transfers/`.
+`/endoreg-api/media/hub/transfers/`. The `/api/` mount is a compatibility alias.
 
-- Default hub boundary: upload-job API ingest at `/api/upload/`
-- Optional secondary boundary: transfer-job ingest at `/api/media/hub/transfers/`
+- Default hub boundary: upload-job API ingest at `/endoreg-api/upload/`
+- Optional secondary boundary: transfer-job ingest at `/endoreg-api/media/hub/transfers/`
 
 Enable transfer support only when you are intentionally operating authenticated site-node to hub synchronization:
 
 - set `ENDOREG_DEPLOYMENT_ROLE=central_hub`
+- set `ENDOREG_ENABLE_HUB_TRANSFERS=true`
 - keep `ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT=true`
 - require proxy-verified mTLS with `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true`
 - configure `ENDOREG_HUB_TRANSFER_MTLS_META_KEY` and `ENDOREG_HUB_TRANSFER_MTLS_META_VALUE`
@@ -136,9 +137,9 @@ Phase 1 transport protection for transfer support is:
 - node-authenticated transfer requests must present proxy-verified mTLS attestation
 - `NetworkNode.shared_secret` remains request authentication only and does not replace transport security
 
-If `ENDOREG_DEPLOYMENT_ROLE` is not `central_hub`, the transfer endpoints
-return `404`. This is deliberate and prevents accidental exposure of a second
-ingress boundary in non-hub deployments.
+If `ENDOREG_DEPLOYMENT_ROLE` is not `central_hub`, or incoming transfers are
+not explicitly enabled, the transfer endpoints return `404`. This is deliberate
+and prevents accidental exposure of a second ingress boundary.
 
 ## Central Hub Role
 
@@ -162,11 +163,11 @@ fast instead of guessing center identity from mutable names or local defaults.
 For hub deployments, treat the following as required:
 
 - PostgreSQL or another durable multi-user production database. SQLite is not acceptable in hub mode.
-- Protected managed storage rooted under `LX_ANNOTATE_ENCRYPTED_DATA_DIR`, with `STORAGE_DIR` and inside that root.
+- Protected managed storage rooted under `LX_ANNOTATE_ENCRYPTED_DATA_DIR`, with `STORAGE_DIR` inside that root.
 - Durable shared or object-backed storage semantics for managed media and upload artifacts. Node-local ephemeral disks are not sufficient for a multi-node hub.
 - Host-project encryption, backup, retention, and access-control controls around the managed storage root.
 - OIDC/session or token authentication configured for API access in production.
-- If transfer ingest is used, `ENDOREG_DEPLOYMENT_ROLE=central_hub` plus network-node secret management and rotation procedures.
+- If transfer ingest is used, set `ENDOREG_DEPLOYMENT_ROLE=central_hub` and `ENDOREG_ENABLE_HUB_TRANSFERS=true`, and establish network-node secret management and rotation procedures.
 
 This package provides the ingest and API contract, but the host deployment remains responsible for encrypted-at-rest guarantees and operational controls around the storage system.
 
@@ -176,15 +177,15 @@ AI and automation clients should consume approved read APIs, not direct filesyst
 
 Preferred read surfaces:
 
-- `GET /api/media/patients/{patient_id}/timeline/`
+- `GET /endoreg-api/media/patients/{patient_id}/timeline/`
   Returns a center-scoped summary of the patient media timeline, including latest reports, latest videos, and frame stream URLs.
-- `GET /api/media/pdfs/{id}/`
+- `GET /endoreg-api/media/pdfs/{id}/`
   Returns report metadata and anonymized text availability.
-- `GET /api/media/pdfs/{id}/stream/?type=processed`
+- `GET /endoreg-api/media/pdfs/{id}/stream/?type=processed`
   Streams processed report media through the API boundary.
-- `GET /api/media/videos/{id}/stream/?type=processed`
+- `GET /endoreg-api/media/videos/{id}/stream/?type=processed`
   Streams processed video media through the API boundary.
-- `GET /api/media/videos/{video_id}/frames/{frame_number}/stream/`
+- `GET /endoreg-api/media/videos/{video_id}/frames/{frame_number}/stream/`
   Streams extracted frames through the API boundary.
 
 Center-scoped callers must only receive resources for their own center. The package now enforces center scoping on the core timeline and media read endpoints, so downstream AI services should rely on those APIs instead of `STORAGE_DIR` access.
@@ -198,12 +199,17 @@ As an embedded app in a host project:
 - Run migrations in the host project (this app contributes its migrations).
 - Run the complete setup command: `python manage.py setup_endoreg_db`
 
-The `setup_endoreg_db` command performs all necessary initialization:
+After migrations, the `setup_endoreg_db` command performs repository setup:
 1. Loads base database data (medical vocabularies, centers, etc.)
 2. Creates Django cache table for API functionality (only when using database-backed caching)
 3. Sets up AI models and labels (unless --skip-ai-setup is used)
-4. Creates AI model metadata with weights
-5. Verifies the setup was successful
+4. Creates AI model metadata; weights are attached when a configured local file or Hugging Face fallback is available
+5. Runs its built-in table and metadata checks
+
+The built-in table check currently queries SQLite's `sqlite_master`; it is not
+a database-independent production readiness check and currently fails on
+PostgreSQL. See `setup/AI_MODEL_SETUP.md` for the exact limitation and a manual
+verification command.
 
 The command automatically detects your cache configuration:
 - For LocMemCache (default): Skips cache table creation
@@ -213,19 +219,22 @@ Use `--skip-ai-setup` if AI video processing features are not needed, or `--forc
 
 This repo standalone (local):
 - Development server: DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.dev python manage.py runserver
-- Tests (persistent test DB): pytest --reuse-db --create-db
+- Tests (isolated process-specific test DB by default): pytest
+- Reused test DB (explicit opt-in): TEST_DB_REUSE=true pytest --reuse-db --create-db
 - Clean test DB: rm -f data/tests/db/test_db.sqlite3
 
 CI tips
 - Use DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test
-- First run use --create-db to run migrations once; subsequent runs can cache the database file.
+- Set `TEST_DB_REUSE=true` before using `--reuse-db`; otherwise pytest selects a process-specific database file.
 - Override TEST_DB_NAME to a workspace cache path if needed.
 
 ## Direnv/Devenv
 - Ensure devenv.nix and direnv don’t mutate repo files. Editor should inherit direnv env if used.
 
-## Removing legacy settings
-- Replace imports of prod_settings, dev/dev_settings.py, tests/test_settings.py with endoreg_db.config.settings.prod/dev/test.
+## Settings selection
+- The repository contains only the `endoreg_db.config.settings.prod`, `.dev`,
+  `.test`, and `.case_gen` settings modules; it does not ship legacy settings
+  wrappers.
 - Run maintenance through the registered Django management commands with
   `DJANGO_SETTINGS_MODULE` set to `endoreg_db.config.settings.dev` or
   `endoreg_db.config.settings.test` as appropriate.
@@ -239,15 +248,17 @@ The system looks for model weights in these locations (in order of preference):
 1. `STORAGE_DIR/model_weights/` (recommended for production)
 2. `tests/assets/` (for development/testing)
 3. `assets/` (fallback location)
+4. `model_weights/` (repository-relative fallback)
 
 ### Required Model Files
-For colonoscopy video processing, the following model file is required:
-- `colo_segmentation_RegNetX800MF_6.safetensors` - Multilabel classification model for colonoscopy
+Accepted filenames are governed by `weights_search_patterns` in
+`endoreg_db/data/setup_config.yaml`; no single repository-local filename is the
+production contract.
 
 ### Automatic Setup
 The `setup_endoreg_db` command automatically:
 - Loads AI model definitions and labels
-- Creates model metadata with weights
+- Creates model metadata and attaches weights when a configured source is available
 - Sets up the default AI model for video processing
 
 ### Manual Setup (if needed)
@@ -255,14 +266,16 @@ If automatic setup fails, run these commands individually:
 ```bash
 python manage.py load_ai_model_data
 python manage.py load_ai_model_label_data
-python manage.py createcachetable
-python manage.py create_multilabel_model_meta --model_name image_multilabel_classification_colonoscopy_default --model_meta_version 1 --image_classification_labelset_name multilabel_classification_colonoscopy_default
+python manage.py create_multilabel_model_meta --model_name image_multilabel_classification_colonoscopy_default --model_meta_version 1 --image_classification_labelset_name multilabel_classification_colonoscopy_default --model_path /absolute/path/to/model.safetensors
 ```
+
+Run `createcachetable` separately only when the configured cache backend is
+database backed.
 
 ### Troubleshooting AI Setup
 - **"Model file not found"**: Ensure model weights are in one of the expected locations
 - **"No model metadata found"**: Run the setup commands or use `--force-recreate`
-- **Import errors**: Check that the `EndoscopyProcessor` import fix is applied in `video_import.py`
+- **Import errors**: inspect the current traceback and the service modules under `endoreg_db/services/video_files/`; there is no `video_import.py` compatibility step to apply.
 
 ## Production checklist
 - Set DJANGO_SECRET_KEY to a strong random value (never commit). 
@@ -270,6 +283,6 @@ python manage.py create_multilabel_model_meta --model_name image_multilabel_clas
 - Enforce HTTPS: SECURE_SSL_REDIRECT=true, cookie secure flags true.
 - Consider HSTS: set SECURE_HSTS_SECONDS (e.g., 31536000) only when ready; include subdomains/preload as appropriate.
 - For hub deployments, set `ENDOREG_DEPLOYMENT_ROLE=central_hub` and use PostgreSQL or another non-SQLite production database.
-- Use the transfer endpoints only in `central_hub` deployments that intentionally support node-to-node synchronization.
-- Keep `STORAGE_DIR` and inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
-- For remote ingest, provision authentication before exposing `/api/upload/`.
+- Use the transfer endpoints only with `ENDOREG_DEPLOYMENT_ROLE=central_hub` and `ENDOREG_ENABLE_HUB_TRANSFERS=true`.
+- Keep `STORAGE_DIR` inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`.
+- For remote ingest, provision authentication before exposing `/endoreg-api/upload/` (`/api/upload/` remains a compatibility alias).

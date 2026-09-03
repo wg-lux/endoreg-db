@@ -1,7 +1,7 @@
 schema_version: '1.0'
 id: standard
-name: Feature-Tracking-Standard
-description: Selbstprüfung des zentralen, YAML-basierten Produktionsreife-Trackers.
+name: Feature tracking standard
+description: Self-assessment of the central YAML-based production-readiness tracker.
 owners:
 - endoreg_db maintainers
 production_critical: true
@@ -11,27 +11,27 @@ tracking:
   - action: done
     changed_by: Codex
     changed_at: '2026-07-31T09:11:32.852237Z'
-    note: Definition of Done vollständig verifiziert; der Feature-Tracking-Standard wird aus dem aktiven
-      Tracking abgeschlossen.
+    note: Definition of Done fully verified; the feature tracking standard is completed and removed from
+      active tracking.
   - action: reopened
     changed_by: Codex
     changed_at: '2026-07-31T10:12:18.056160Z'
-    note: Feature-Lock mit atomarer Konfliktprüfung für Feature-, Kriteriums- und Dateiscopes wird ergänzt;
-      Bootstrap-Änderung, da der Lock-Befehl vor dieser Implementierung noch nicht existiert.
+    note: Adds feature locks with atomic conflict checks for feature, criterion, and file scopes; this is
+      a bootstrap change because the lock command did not exist before this implementation.
   - action: done
     changed_by: Codex
     changed_at: '2026-07-31T10:20:34.707220Z'
-    note: Feature-Lock mit atomarer Feature-, Kriteriums- und Dateikoordination ist implementiert, dokumentiert
-      und mit 34 fokussierten Tests verifiziert.
+    note: Feature locking with atomic feature, criterion, and file coordination is implemented, documented,
+      and verified by 34 focused tests.
   - action: reopened
     changed_by: codex/root
     changed_at: '2026-07-31T10:32:26.102809Z'
-    note: Lokale, owner-adressierte Koordinations-API für unabhängige Codex-CLI-Prozesse ergänzen.
+    note: Add a local, owner-addressed coordination API for independent Codex command-line processes.
   - action: done
     changed_by: codex/root
     changed_at: '2026-07-31T10:39:30.927919Z'
-    note: Codex-CLI-Koordination mit atomarem lokalem Nachrichtenpostfach, Owner-Bindung, Ablauf, Dokumentation
-      und 37 fokussierten Tests verifiziert.
+    note: Codex command-line coordination verified with an atomic local mailbox, owner binding, expiration,
+      documentation, and 37 focused tests.
   - action: reopened
     changed_by: codex-root-20260803-topology
     changed_at: '2026-08-03T10:06:42.365155Z'
@@ -40,15 +40,15 @@ tracking:
 source_documents:
 - path: feature-tracking/README.md
   disposition: reference
-  note: Bedien- und Governancevertrag des Trackers.
+  note: Tracker usage and governance contract.
 definition_of_done:
 - id: defined_structure
   category: requirements
-  title: Struktur und Produktionsgate sind strikt definiert
+  title: Structure and production gate are strictly defined
   acceptance:
-  - Feature, Kriterien, Verifikation, Bewertung und Evidenz besitzen ein versioniertes Schema.
-  - Das Produktionsgate liefert binär produktionsreif oder nicht produktionsreif.
-  - Ein Prozentwert kann das binäre Gate nicht ersetzen.
+  - Features, criteria, verification, assessment, and evidence use a versioned schema.
+  - The production gate returns a binary production-ready or not-production-ready result.
+  - A percentage cannot replace the binary gate.
   required: true
   verification:
     kind: command
@@ -62,34 +62,34 @@ definition_of_done:
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/python feature-tracking/tracker.py validate
-      note: Exit-Code 0
+      note: Exit code 0
     assessed_by: Codex
     assessed_at: '2026-07-20T14:11:35.220778Z'
 - id: terminal_commands
   category: functionality
-  title: Kleine, testbare Terminalbefehle decken den Workflow ab
+  title: Small, testable terminal commands cover the workflow
   acceptance:
-  - overview, show, validate, check, update, verify, done, reopen und lock haben getrennte Verantwortlichkeiten.
-  - check liefert Exit-Code 0 nur bei vollständig verifizierter Definition of Done.
-  - Valide aktive Features erscheinen ohne Argumente als evaluiert; done blendet sie standardmäßig aus.
-  - Bei der Evaluation werden valide Feature-Dateien mit tracking.state done atomar aus dem aktiven
-    Verzeichnis nach feature-tracking/done verschoben; aktive Dateien im done-Verzeichnis bleiben ungültig.
-  - Ein Agent erwirbt vor Änderungen atomar einen zeitlich begrenzten Lock für ein Feature, ein Kriterium,
-    eine oder mehrere Repository-Dateien oder deren Kombination und gibt ihn nach der Arbeit wieder frei.
-  - Featureweite, identische Kriteriums- und überlappende Dateiscopes werden abgelehnt; unabhängige Kriteriums-
-    und Dateiscopes dürfen parallel bearbeitet werden.
-  - Lock-Status, Ablauf, Erneuerung und owner-gebundene Freigabe sind explizit prüfbar; abgelaufene Locks
-    blockieren keine neue Arbeit.
-  - Owner-adressierte Codex-CLI-Nachrichten unterstützen Send, Inbox, Acknowledge und Reply mit optionalem
-    Feature-/Kriteriumsbezug; Lock-Akquisition zeigt ungelesene Nachrichten desselben Owners an.
-  - Nachrichten werden atomar und owner-privat im lokalen Runtime-Verzeichnis gespeichert, laufen begrenzt
-    ab, lehnen Terminal-Steuerzeichen ab und erzeugen keinen parallelen Readiness- oder Status-Tracker.
-  - Orchestrierungsverträge wählen für sequenzielle Arbeit genau einen Agenten und erlauben zentralisierte
-    Multi-Agent-Ausführung nur für mindestens zwei unabhängig ausführbare Zweige.
-  - Jede Work-Unit besitzt genau eine Verantwortung, höchstens zwei Turns, ein explizites Token-Budget,
-    ein schema-validiertes Ergebnis und atomare idempotente Checkpoints.
-  - Zentralisierte Läufe wählen explizit native Codex-Subagents oder externe codex-exec-Worker; beide
-    Backends bewahren dieselben Hub-and-Spoke-, Lock-, Budget-, Ergebnis- und Checkpoint-Grenzen.
+  - overview, show, validate, check, update, verify, done, reopen, and lock have separate responsibilities.
+  - check returns exit code 0 only for a fully verified Definition of Done.
+  - Valid active features appear as evaluated when no arguments are provided; done hides them by default.
+  - During evaluation, valid feature files with tracking.state set to done are moved atomically from the
+    active directory to feature-tracking/done; active files in the done directory remain invalid.
+  - Before changes, an agent atomically acquires a time-limited lock for a feature, a criterion, one or more
+    repository files, or a combination of these, and releases it after completing the work.
+  - Feature-wide, identical criterion, and overlapping file scopes are rejected; independent criterion and
+    file scopes may be edited in parallel.
+  - Lock status, expiration, renewal, and owner-bound release are explicitly inspectable; expired locks do
+    not block new work.
+  - Owner-addressed Codex command-line messages support send, inbox, acknowledge, and reply operations with
+    optional feature or criterion context; lock acquisition displays unread messages for the same owner.
+  - Messages are stored atomically and privately for the owner in the local runtime directory, expire after
+    a bounded period, reject terminal control characters, and do not create a parallel readiness or status tracker.
+  - Orchestration contracts select exactly one agent for sequential work and permit centralized multi-agent
+    execution only for at least two independently executable branches.
+  - Each work unit has exactly one responsibility, at most two turns, an explicit token budget, a
+    schema-validated result, and atomic idempotent checkpoints.
+  - Centralized runs explicitly select native Codex subagents or external codex-exec workers; both backends
+    preserve the same hub-and-spoke, lock, budget, result, and checkpoint boundaries.
   required: true
   verification:
     kind: command
@@ -137,10 +137,10 @@ definition_of_done:
     assessed_at: '2026-08-03T12:12:09.534904Z'
 - id: automated_tests
   category: testing
-  title: Schema, Ableitung und Updates sind fokussiert getestet
+  title: Schema, derivation, and updates are covered by focused tests
   acceptance:
-  - Ungültige Bewertungen, unvollständige Migration und falsche Produktionsfreigabe schlagen fehl.
-  - Update und atomarer YAML-Roundtrip sind getestet.
+  - Invalid assessments, incomplete migration, and incorrect production approval fail.
+  - Updates and the atomic YAML round trip are tested.
   required: true
   verification:
     kind: command
@@ -157,15 +157,15 @@ definition_of_done:
     evidence:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py -q
-      note: Exit-Code 0
+      note: Exit code 0
     assessed_by: Codex
     assessed_at: '2026-07-23T08:01:22.134957Z'
 - id: safe_execution
   category: security
-  title: YAML kann keine implizite Shellausführung oder Freigabe einschleusen
+  title: YAML cannot inject implicit shell execution or approval
   acceptance:
-  - Prüfkommandos werden als Argumentlisten ohne Shell ausgeführt.
-  - Unbekannte Felder und ungültige Zustände werden strikt abgelehnt.
+  - Verification commands run as argument lists without a shell.
+  - Unknown fields and invalid states are rejected strictly.
   required: true
   verification:
     kind: command
@@ -186,16 +186,16 @@ definition_of_done:
       reference: 'feature-tracking/tracker.py: Verification, FeatureDefinition, run_verification'
     - kind: test
       reference: feature-tracking/test_tracker.py
-    note: Pydantic-Modelle verbieten unbekannte Felder; Verifikationskommandos sind typisierte Argumentlisten
-      und werden mit subprocess.run ohne Shell-Expansion ausgeführt.
+    note: Pydantic models prohibit unknown fields; verification commands are typed argument lists and run
+      with subprocess.run without shell expansion.
     assessed_by: Codex
     assessed_at: '2026-07-23T08:01:37.612032Z'
 - id: atomic_updates
   category: operations
-  title: Terminalupdates sind atomar und strukturiert protokolliert
+  title: Terminal updates are atomic and logged in a structured format
   acceptance:
-  - Updates verwenden die zentralen Dateioperations-Wrapper.
-  - Ein fehlgeschlagener Write hinterlässt keine gültig aussehende Teildatei.
+  - Updates use the central file-operation wrappers.
+  - A failed write does not leave a partial file that appears valid.
   required: true
   verification:
     kind: command
@@ -213,15 +213,15 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py::test_update_and_atomic_save_round_trip
         -q
-      note: Exit-Code 0
+      note: Exit code 0
     assessed_by: Codex
     assessed_at: '2026-07-23T08:01:26.661552Z'
 - id: governance_documentation
   category: documentation
-  title: Nutzung und Agentenpflichten sind zentral dokumentiert
+  title: Usage and agent responsibilities are documented centrally
   acceptance:
-  - README erklärt Authoring, Evidenz, Exit-Codes und Updateprozess.
-  - AGENTS.md verbietet parallele Markdown-Statustracker.
+  - The README explains authoring, evidence, exit codes, and the update process.
+  - AGENTS.md prohibits parallel Markdown status trackers.
   required: true
   verification:
     kind: command
@@ -240,7 +240,7 @@ definition_of_done:
       reference: feature-tracking/README.md
     - kind: review
       reference: 'AGENTS.md: Feature Readiness Tracking'
-    note: README beschreibt Authoring, Evidenz, Exit-Codes, atomare Updates und den Pflegeprozess; AGENTS.md
-      erklärt feature-tracking als einzige Statusquelle und verbietet parallele Tracker.
+    note: The README describes authoring, evidence, exit codes, atomic updates, and the maintenance process;
+      AGENTS.md identifies feature tracking as the only status source and prohibits parallel trackers.
     assessed_by: Codex
     assessed_at: '2026-07-23T08:01:38.520989Z'

@@ -498,7 +498,7 @@ def test_update_verified_requires_each_acceptance_bullet(tmp_path: Path) -> None
         )
 
 
-def test_tracker_governance_documentation_contract() -> None:
+def test_tracker_readme_documents_governance_contracts() -> None:
     readme = (TRACKING_DIR / "README.md").read_text(encoding="utf-8")
     agent_rules = (REPOSITORY_ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
@@ -513,13 +513,13 @@ def test_tracker_governance_documentation_contract() -> None:
         "./feature-tracking/tracker.py message send",
         "./feature-tracking/tracker.py message inbox",
         "feature-tracking/.messages/",
-        "Exit-Code `1`",
-        "Exit-Code `2`",
-        "atomaren und strukturiert protokollierten Dateioperationen",
-        "Automatische Kommandos sind als Argumentliste gespeichert",
+        "`check` exits `1`",
+        "unsafe commands exit `2`",
+        "atomic, structured-logging file-operation wrappers",
+        "Commands are argument lists executed without a shell",
     ):
         assert required_readme_contract in readme
-    assert "repositoryübergreifende" in readme.casefold()
+    assert "Multi-repository checks use ordered commands" in readme
     assert "Do not create or maintain parallel TODO" in agent_rules
     assert "tracker.py message inbox --owner <agent_id>" in agent_rules
 

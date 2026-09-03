@@ -283,13 +283,13 @@ pulling broad subpackages into otherwise small imports.
 
 | Area | Current role | First files to inspect |
 | --- | --- | --- |
-| Video file lifecycle | central video model plus wrappers for IO, streaming, metadata, frames, anonymization, prediction, state | `endoreg_db/models/media/video/video_file.py:44`, `endoreg_db/services/video_files/__init__.py:3` |
-| Raw PDF lifecycle | report model plus wrappers for IO, metadata, state, validation, creation, deletion | `endoreg_db/models/media/pdf/raw_pdf.py:32`, `endoreg_db/services/raw_pdf_files/__init__.py:3` |
+| Video file lifecycle | central video model plus wrappers for IO, streaming, metadata, frames, anonymization, prediction, state | `endoreg_db/models/media/video/video_file.py`, `endoreg_db/services/video_files/__init__.py` |
+| Raw PDF lifecycle | report model plus wrappers for IO, metadata, state, validation, creation, deletion | `endoreg_db/models/media/pdf/raw_pdf.py`, `endoreg_db/services/raw_pdf_files/__init__.py` |
 | Frame extraction | frame cache manifests, validation, staging, record sync | `endoreg_db/services/video_files/_frames/_extract_frames.py` |
 | Video anonymization | processed artifact generation, outside-frame blackening, raw cleanup | `endoreg_db/services/video_files/_anonymization.py` |
-| Segment annotations | segment lifecycle, validation, frame extraction/deletion, generated annotations | `endoreg_db/models/label/label_video_segment/label_video_segment.py:33` |
-| Frame annotation queue | task queueing, selection, serialization, annotation sync | `endoreg_db/models/state/frame_annotation.py:83` |
-| AI datasets | active learning, manifests, frame buckets, export artifacts | `endoreg_db/models/aidataset/aidataset.py:123` |
+| Segment annotations | segment lifecycle, validation, frame extraction/deletion, generated annotations | `endoreg_db/models/label/label_video_segment/label_video_segment.py` |
+| Frame annotation queue | task queueing, selection, serialization, annotation sync | `endoreg_db/models/state/frame_annotation.py` |
+| AI datasets | active learning, manifests, frame buckets, export artifacts | `endoreg_db/models/aidataset/aidataset.py` |
 | Sensitive metadata | patient and examination identity, hashes, pseudo-patient creation | `endoreg_db/models/metadata/sensitive_meta.py:27`, `endoreg_db/models/metadata/sensitive_meta_logic.py:153` |
 | Hub uploads/transfers | persisted provenance JSON, transfer status, raw-transfer policy surface | `endoreg_db/models/hub/upload_job.py:149`, `endoreg_db/models/hub/transfer_job.py:17` |
 
@@ -339,14 +339,15 @@ for persistence access, but should not import workflow implementation from
 administration, labels, media, medical, metadata, state, datasets, and hub
 models. See `endoreg_db/models/__init__.py:1`.
 
-Current broad import count found during this map:
+Current broad import count from `rg '^\\s*from endoreg_db\\.models import ' endoreg_db -g '*.py'`:
 
-- 309 total `from endoreg_db.models import ...` imports.
-- 113 inside `endoreg_db/models`.
-- 50 inside `endoreg_db/services`.
-- 47 inside `endoreg_db/views`.
-- 40 inside management commands.
-- 35 inside serializers.
+- 41 matching import statements, all inside `endoreg_db/models`.
+- No matching statements in `endoreg_db/services`, `endoreg_db/views`,
+  management commands, or serializers.
+
+This is a source snapshot, not a quality target. Re-run the command before using
+the number as evidence because multiline imports and dynamic imports require
+separate review.
 
 Do not add more. When touching a file, prefer replacing only the imports already
 needed for that local change.
@@ -430,11 +431,11 @@ route neutral contract types back through those service modules.
 
 This ranking is based on workflow responsibility, not just line count.
 
-1. `endoreg_db/models/media/video/video_file.py:44` - central video schema and compatibility facade for video lifecycle operations.
-2. `endoreg_db/models/media/pdf/raw_pdf.py:32` - report schema and compatibility facade for report lifecycle operations.
-3. `endoreg_db/models/aidataset/aidataset.py:123` - active learning, manifests, exports, training runs, artifacts.
-4. `endoreg_db/models/state/frame_annotation.py:83` - frame task queue, serialization, annotation sync.
-5. `endoreg_db/models/label/label_video_segment/label_video_segment.py:33` - segment lifecycle, validation, frame actions, generated annotations.
+1. `endoreg_db/models/media/video/video_file.py` - central video schema and compatibility facade for video lifecycle operations.
+2. `endoreg_db/models/media/pdf/raw_pdf.py` - report schema and compatibility facade for report lifecycle operations.
+3. `endoreg_db/models/aidataset/aidataset.py` - active learning, manifests, exports, training runs, artifacts.
+4. `endoreg_db/models/state/frame_annotation.py` - frame task queue, serialization, annotation sync.
+5. `endoreg_db/models/label/label_video_segment/label_video_segment.py` - segment lifecycle, validation, frame actions, generated annotations.
 6. `endoreg_db/services/video_files/_anonymization.py` - anonymized artifact generation and raw cleanup.
 7. `endoreg_db/services/video_files/_frames/_extract_frames.py` - frame extraction and cache integrity.
 8. `endoreg_db/models/metadata/sensitive_meta_logic.py:153` - patient identity and pseudonymization workflow logic.
@@ -443,21 +444,19 @@ This ranking is based on workflow responsibility, not just line count.
 
 ## Security And Storage Notes
 
-- `VideoFile.raw_file` and `processed_file` use `LazyEncryptedStorage` at
-  `endoreg_db/models/media/video/video_file.py:51` and `:58`.
-- `RawPdfFile.file` and `processed_file` use `LazyEncryptedStorage` at
-  `endoreg_db/models/media/pdf/raw_pdf.py:66` and `:72`.
+- `VideoFile.raw_file` and `processed_file` use `LazyEncryptedStorage` in
+  `endoreg_db/models/media/video/video_file.py`.
+- `RawPdfFile.file` and `processed_file` use `LazyEncryptedStorage` in
+  `endoreg_db/models/media/pdf/raw_pdf.py`.
 - `VideoStorageMode` is typed in
   `endoreg_db/models/media/video/storage_mode.py:8`.
 - Raw media transfer enum values exist in
   `endoreg_db/models/hub/transfer_job.py:17`, but the API rejects raw media
   transfer modes in `endoreg_db/serializers/hub/transfer_job.py:64`.
-- `UploadJob.processing_provenance` is a `JSONField` at
-  `endoreg_db/models/hub/upload_job.py:149` and is validated in `clean()` at
-  `endoreg_db/models/hub/upload_job.py:274`.
-- `TransferJob.provenance` is a `JSONField` at
-  `endoreg_db/models/hub/transfer_job.py:163` and is validated in `clean()` at
-  `endoreg_db/models/hub/transfer_job.py:198`.
+- `UploadJob.processing_provenance` is a `JSONField` validated in `clean()` in
+  `endoreg_db/models/hub/upload_job.py`.
+- `TransferJob.provenance` is a `JSONField` validated in `clean()` in
+  `endoreg_db/models/hub/transfer_job.py`.
 - Hub provenance schemas live in
   `endoreg_db/services/hub/payloads.py:117` and
   `endoreg_db/services/hub/payloads.py:181`.

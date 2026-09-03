@@ -19,9 +19,11 @@ the repositories use a different local layout:
 ```
 
 The command discovers every file below each `docs/` tree plus the repository
-`README.md` and `AGENTS.md`. It emits a machine-readable inventory with a stable
-artifact class, owner, lifecycle, visibility, canonical source, review fields,
-and optional Wiki slug:
+`README.md` and `AGENTS.md`. A repository may register further maintained
+documentation through `additional_documentation_paths`; `endoreg-db` uses this
+for setup guides, changelogs, design logs, and Markdown maintained beside code.
+It emits a machine-readable inventory with a stable artifact class, owner,
+lifecycle, visibility, canonical source, review fields, and optional Wiki slug:
 
 ```bash
 .devenv/state/venv/bin/python scripts/check_documentation_governance.py \
@@ -35,6 +37,28 @@ Topics that legitimately span repositories are registered under
 `canonical_topics`. Each topic names one canonical repository and source path.
 Related component documents must declare a narrower role; they do not become a
 second source of truth. Missing canonical or related paths fail validation.
+
+## Language and production-state claims
+
+English is the canonical language for maintained `endoreg-db` documentation.
+The policy declares this with `canonical_language: en`, and the governance check
+rejects a source whose prose is predominantly German. Code blocks, identifiers,
+commands, clinical terminology, and quoted external values may retain their
+required spelling; surrounding explanations must be English.
+
+Documentation must distinguish three states:
+
+- **implemented** means the behavior is present in the current repository;
+- **verified** means the feature tracker identifies reproducible evidence and an
+  assessor for the relevant criterion;
+- **deployed** means an operator has confirmed the behavior in a named runtime
+  environment.
+
+Tests and source inspection can establish implementation or verification, but
+they do not prove deployment. Avoid unqualified phrases such as "production is"
+or "currently deployed" unless runtime evidence and its scope are cited. The
+authoritative readiness assessment remains the corresponding feature YAML; a
+runbook describes how the checked-in implementation is intended to operate.
 
 ## Artifact classes and lifecycle
 

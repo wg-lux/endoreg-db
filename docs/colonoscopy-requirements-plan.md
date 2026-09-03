@@ -1,60 +1,86 @@
-# Colonoscopy Requirements Plan
+# Colonoscopy Requirements Context
 
-> Status tracking was migrated to `feature-tracking/Colonoscopy.yml`. This
-> document is retained as requirements context and must not carry an independent
-> completion status.
+> Status tracking lives in `feature-tracking/Colonoscopy.yml`. This historical
+> requirements page does not carry an independent completion status.
 
-* Patientendaten: Eindeutige Identifikation des Patienten (z.B. Name, Geburtsdatum, Patienten-ID).
-* Indikation: Der klinische Grund für die Durchführung der Endoskopie muss klar dokumentiert sein.
-* Untersucher und Assistenz: Namentliche Nennung des verantwortlichen ärztlichen und des assistierenden Fachpersonals.
-* Verwendetes Gerät: Exakte Angabe des Endoskoptyps sowie der eindeutigen Geräteidentifikation (Seriennummer).
-* Datum (und Uhrzeit) des Untersuchungs-Beginns und -endes: Diese Zeitstempel sind essenziell für die Prozessdokumentation und die Abrechnung.
+The intended report content includes:
 
+- unambiguous patient identification, including name, date of birth, and
+  patient ID where the applicable privacy boundary permits it;
+- the clinical indication for endoscopy;
+- the responsible examiner and assisting staff;
+- the endoscope type and unique device identifier;
+- examination start and end date and time;
+- bowel preparation, for example the Boston Bowel Preparation Scale (BBPS);
+- a detailed description of every pathological finding, including location,
+  size, and morphology, or an explicit statement that no abnormal finding was
+  observed.
 
-Zeit Dokumentation
-Zeitpunkt	Bedeutung und Notwendigkeit
-E1: Patient betritt Untersuchungsraum	Start der Personal- und Raumbelegung.
-E2: Beginn der Endoskopie	Zeitpunkt, an dem das Gerät in die Körperöffnung eingeführt wird.
-E3: Beginn Rückzug des Endoskops	Pflichtangabe: Essentiell zur Qualitätssicherung und Berechnung der Rückzugszeit.
-E4: Ende der Endoskopie	Zeitpunkt, an dem das Gerät aus der Körperöffnung entfernt wird.
+## Time documentation
 
-- Zökumintubation (bool) - CAVE: Bei operiertem Situs nicht unbedingt sinnvoll, im Verlauf eher "vollständig" definieren und aus automatischer Dokumentatino der Visualisierten Dokumente ableiten
-- Ileum Intubation (bool) - s.o.
+| Event | Meaning |
+| --- | --- |
+| E1: Patient enters examination room | Start of staff and room occupancy |
+| E2: Endoscopy begins | The device enters the body opening |
+| E3: Endoscope withdrawal begins | Required for quality assurance and withdrawal-time calculation |
+| E4: Endoscopy ends | The device is removed from the body opening |
 
-- Darmvorbereitung (z.B. Boston Bowel Preparation Scale - BBPS)
+Cecal and ileal intubation may be recorded as booleans. Cecal intubation is not
+necessarily meaningful after surgery; a future reviewed requirement should
+define examination completeness and its relationship to documented visualized
+anatomy.
 
-Der Befundbericht muss eine detaillierte Beschreibung aller pathologischen Befunde enthalten, einschließlich Lokalisation, Größe und Morphologie. Ein unauffälliger Befund ist explizit zu dokumentieren.
+The morphology context includes the Paris classification, the NBI International
+Colorectal Endoscopic Classification (NICE), and the Japan NBI Expert Team
+(JNET) classification. Their exact clinical use and required combinations must
+be governed by the tracked, reviewed requirements rather than inferred from
+this historical page.
 
-* Paris-Klassifikation: Dient der morphologischen Beurteilung der Wuchsform und ist entscheidend für die Einschätzung der initialen Resektabilität.
-* NICE-Klassifikation (NBI International Colorectal Endoscopic Classification): Ermöglicht mittels virtueller Chromoendoskopie eine optische Differenzierung zwischen hyperplastischen und adenomatösen Polypen in Echtzeit.
-* J-NET-Klassifikation (Japan NBI Expert Team): Erlaubt eine detaillierte Beurteilung von Gefäß- und Oberflächenmustern zur präziseren Einschätzung des Malignitätspotenzials und der Invasionstiefe, was die Wahl der Resektionstechnik (z.B. EMR vs. ESD) maßgeblich beeinflusst.
+## Historical configuration sketch
 
----
+The following sketch is retained as source context. It is not guaranteed to be
+valid loader YAML and is not a production schema:
+
+```yaml
 coloreg_colonoscopy_requirements:
-
-- patient_data:
-    - patient_id: true - skip for now
-    - patient_first_name: true
-    - patient_last_name: true
-    - patient_birth_date: true
-    - previous bowel_surgery (cat yes no unknown)
-    - last_known_colonoscopy_date (None, unknown or date)
-- examination_data
-    - examination
-    - examination_indication (for now with categories "screening", "symptomatic", "planned_resection", "follow_up", "surveillance", "other", "unknown")
-    - sedation (for now as finding with categories "propofol", "midazolam", "none", "other", "unknown")
-    - Times: ExaminationStart, WithdrawalStart, ExaminationEnd
-    - bowel prep (BBPS)
-    - deepest_intubatino (new finding, maps to colon_location)
-- findings_data (focus on polyp for now):
-    - location (colonoscopy_default)
-        - if location is rectum or sigmoid, location_cm is also required
-    - size
-        - preferred: size_mm, if not available, size_categorical
-    - morphology:
-        - polyps < 10 mm: paris_classification
-        - polyps >= 10 mm: paris_classification, nice_classification
-        - polyps >= 20 mm: LST_classification, nice_classification
-    - intervention
-        - biopsy / resection?
-        - clip?
+  patient_data:
+    patient_id: "required, but previously marked to skip"
+    patient_first_name: true
+    patient_last_name: true
+    patient_birth_date: true
+    previous_bowel_surgery: "yes | no | unknown"
+    last_known_colonoscopy_date: "date | none | unknown"
+  examination_data:
+    examination: true
+    examination_indication:
+      - screening
+      - symptomatic
+      - planned_resection
+      - follow_up
+      - surveillance
+      - other
+      - unknown
+    sedation:
+      - propofol
+      - midazolam
+      - none
+      - other
+      - unknown
+    times:
+      - ExaminationStart
+      - WithdrawalStart
+      - ExaminationEnd
+    bowel_preparation: BBPS
+    deepest_intubation: colon_location
+  findings_data:
+    focus: polyp
+    location: colonoscopy_default
+    rectum_or_sigmoid_requires: location_cm
+    preferred_size: size_mm
+    fallback_size: size_categorical
+    morphology:
+      under_10_mm: [paris_classification]
+      at_least_10_mm: [paris_classification, nice_classification]
+      at_least_20_mm: [LST_classification, nice_classification]
+    intervention: [biopsy_or_resection, clip]
+```

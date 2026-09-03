@@ -1,72 +1,76 @@
-Quelle: https://register.awmf.org/assets/guidelines/021-022l_S2k_KF_Qualitaetsanforderungen-gastrointestinale-Endoskopie_2025-01.pdf
+# Bleeding risk in endoscopic procedures
 
-## 4.2 Endoskopische Prozeduren bei erhöhtem Blutungsrisiko
+Source: [AWMF guideline 021-022, January 2025](https://register.awmf.org/assets/guidelines/021-022l_S2k_KF_Qualitaetsanforderungen-gastrointestinale-Endoskopie_2025-01.pdf)
 
-### 4.2.1 Laborchemie vor Endoskopie
+This is an English summary of sections 4.2.1–4.2.3 of the cited guideline. The recommendation and table identifiers are retained for traceability. Consult the source guideline for clinical decisions.
 
-Empfehlung 2.13:
+## 4.2 Endoscopic procedures in patients with increased bleeding risk
 
-- Ein Routinescreening vor Endoskopie mit niedrigem Blutungsrisiko (INR, PTT, Blutungszeit) sollte in Abwesenheit einer klinischen Anamnese für ein Blutungsereignis, einer Risikoerkrankung oder eines klinischen Verdachtes nicht vorgenommen werden.
-- Ebenso sollte keine Routinetestung bzgl Anämie, Nieren-, Leberfunktionsstörung oder anderer Serumparameter ohne eine klinische Anamnese erfolgen
+### 4.2.1 Laboratory testing before endoscopy
 
-Empfehlung 2.14:
+Recommendation 2.13:
 
-- Zur Labordiagnostik vor Eingriffen mit hohem Blutungsrisiko kann aufgrund mangelnder Evidenz keine eindeutige Empfehlung abgegeben werden
+- In the absence of a clinical history of bleeding, a condition associated with bleeding risk, or clinical suspicion, routine screening with the international normalized ratio (INR), partial thromboplastin time (PTT), or bleeding time should not be performed before low-bleeding-risk endoscopy.
+- Routine testing for anemia, impaired kidney or liver function, or other serum parameters should likewise not be performed without a relevant clinical history.
 
-Empfehlung 2.15:
+Recommendation 2.14:
 
-- Gerrinungsdiagnostik soll bei Vorliegen von anamnestischen Faktoren und Vorerkrankungen erfolgen die auf ein erhöhtes Blutungsrisiko hinweisen sofern hier nicht bereits Befunde vorliegen
-- Beinhaltet: 
-  - Pos. Blutungsanamnese nach stattgehabten Eingriffen
-  - Internistische Vorerkrankungen mit erhöhtem Blutungsrisiko 
-    - Vaskulär Hämorrhagische Diathesen (M. Osler, Ehlers Danlos Syndrom, Marfan Syndrom)
-    - Angeborene Thrombozytopathien
-    - Angeborene plasmatische Gerinnungsstörungen (von-Willebrand-Syndrom, Faktor VIII o. IX Mangel
-    - Erworbene Thrombozytenfunktionsstörungen / plasmatische Gerinnungsstörungen bspw. bei 
-      - Lebererkrankung
-      - Nierenerkrankung
-      - prolongierter biliärer Obstruktion
-      - prolongierter Antibiotikaeinnahme
-      - malnutrition
-      - myeloproliferative Erkrankungen
-    - Medikamentenanamnese 
-      - "ob die Einnahme von Thrombozytenaggregationshemmern oder oralen Antikoagulatien gerinnungsphysiologische Untersuchungen indiziert ist im Einzelfall zu Entscheiden.
+- Because evidence is insufficient, no definitive recommendation can be made regarding laboratory testing before high-bleeding-risk procedures.
 
-### 4.2.2 Blutungsrisiko endoskopischer Eingriffe
+Recommendation 2.15:
 
-Empfehlung 2.16 / Tabelle 14:
+- Coagulation testing should be performed when history or pre-existing conditions indicate an increased bleeding risk and relevant results are not already available.
+- Relevant factors include:
+  - A positive history of bleeding after previous procedures.
+  - Medical conditions associated with increased bleeding risk:
+    - Vascular hemorrhagic diatheses, including Osler disease, Ehlers-Danlos syndrome, and Marfan syndrome.
+    - Congenital platelet disorders.
+    - Congenital plasma coagulation disorders, including von Willebrand syndrome and factor VIII or factor IX deficiency.
+    - Acquired platelet-function or plasma coagulation disorders, for example in association with:
+      - Liver disease.
+      - Kidney disease.
+      - Prolonged biliary obstruction.
+      - Prolonged antibiotic treatment.
+      - Malnutrition.
+      - Myeloproliferative disorders.
+  - Medication history:
+    - Whether coagulation studies are indicated for patients taking antiplatelet agents or oral anticoagulants should be decided case by case.
 
-Um eine (Nutzen-)Risiko Abwägung für den Patienten treffen zu können, soll eine Einschätzung des Blutungsrisikos des jeweiligen endoskopischen Eingriffes in Eingriffe mit niedrigem Blutungsrisiko und Eingriffe mit hohem Blutungsrisiko erfolgen.
+### 4.2.2 Bleeding risk of endoscopic procedures
 
-Niedriges Blutungsrisiko
+Recommendation 2.16 / Table 14:
 
-- Diagnostische Endoskopie mit / ohne Biopsie 
-  - Gastroskopie
-  - Kolonoskopie
-  - Ballnenteroskopie
-  - Kapsel
-- ERCP ohne EST mit /ohne Stent
-- EUS ohne Feinnadelpunktion
-- Enterale Stentimplantation ohne Dilatation
-- APC von GI Blutungen
+To support an individual benefit-risk assessment, the bleeding risk of the planned endoscopic procedure should be classified as low or high.
 
-Hohes Blutungsrisiko
+Low bleeding risk:
 
-- Polypektomie
-- EMR/ESD/POEM
-- ERCP mit EST oder Ballondilatation
-- EUS mit Feinnadelpunktion oder EUS gesteuerte interventionelle Therapie
-- Ballondilatation/Bougierung
-- Varizentherapie (Ligatur, Sklerosierung)
-- PEG
-- Diagnostische Laparoskopie mit Organbiopsie
-- PTC / PTCD
-- Radiofrequenzablation
+- Diagnostic endoscopy with or without biopsy:
+  - Gastroscopy.
+  - Colonoscopy.
+  - Balloon enteroscopy.
+  - Capsule endoscopy.
+- Endoscopic retrograde cholangiopancreatography (ERCP) without endoscopic sphincterotomy (EST), with or without stent placement.
+- Endoscopic ultrasound (EUS) without fine-needle aspiration.
+- Enteral stent placement without dilation.
+- Argon plasma coagulation (APC) of gastrointestinal bleeding.
 
-### 4.2.3 Medikation mit Thrombozytenaggregationshemmern, Heparinen, (direkten) oralen Antikoagulatien
+High bleeding risk:
 
-Empfehlung 2.17
+- Polypectomy.
+- Endoscopic mucosal resection (EMR), endoscopic submucosal dissection (ESD), or peroral endoscopic myotomy (POEM).
+- ERCP with EST or balloon dilation.
+- EUS with fine-needle aspiration or EUS-guided interventional therapy.
+- Balloon dilation or bougienage.
+- Variceal treatment by ligation or sclerotherapy.
+- Percutaneous endoscopic gastrostomy (PEG).
+- Diagnostic laparoscopy with organ biopsy.
+- Percutaneous transhepatic cholangiography or drainage (PTC/PTCD).
+- Radiofrequency ablation.
 
-Bei geplanten endoskopischen Eingriffen unter Medikation mit Thrombozytenaggregationshemmern und/oder oralen Antikoagulantien soll das individuelle Blutungsrisiko des Patienten unter Berücksichtigung des endoskopischen Eingriffes und der bestehenden Medikation gegen das individuelle Risiko für eine thrombembolische Komplikation durch ein Pausieren der Medikation abgewogen werden. Dies gilt auch für die Wiederaufnahme der Medikation. Im Einzelfall sollte das Vorgehen mit den Ärzten abgestimmt werden, die die Indikation für diese Medikation gestellt haben.
+### 4.2.3 Antiplatelet agents, heparins, and direct or other oral anticoagulants
 
-Starke Empfehlung, Empfehlung, starker Konsens
+Recommendation 2.17:
+
+For planned endoscopic procedures in patients taking antiplatelet agents and/or oral anticoagulants, the patient's individual bleeding risk—considering the procedure and current medication—should be weighed against the individual risk of thromboembolic complications caused by interrupting treatment. The same assessment applies when treatment is resumed. When appropriate, the plan should be coordinated with the physicians who prescribed the medication.
+
+Recommendation strength: strong recommendation; strong consensus.

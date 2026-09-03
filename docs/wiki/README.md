@@ -3,7 +3,7 @@
 ## Purpose
 This folder contains setup and workflow pages that may be selected for a future
 generated GitHub Wiki. Repository Markdown remains the source of truth. Feature
-status and readiness evidence live in [`feature-tracking/`](../../feature-tracking/README.md).
+status and readiness evidence live in [`feature-tracking/`](../../feature-tracking/).
 
 ## Pages
 - [New setup overview](new_setup_overview.md)

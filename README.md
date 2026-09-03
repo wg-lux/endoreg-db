@@ -89,8 +89,8 @@ This keeps ingest behavior idempotent, auditable, and safe for production cleanu
 
 ### Security & Data Management
 
-- **Data Encryption**: All sensitive data is encrypted, and privacy policies are enforced.
-- **Impermanence**: Stateless system configuration with persistence for critical data.
+- **Protected storage**: Media artifacts use application-encrypted storage or an approved encrypted-filesystem streaming mode, depending on their typed storage profile. Production operators must provide the encrypted storage boundary.
+- **Fail-closed production configuration**: Production roles validate their database, authentication, transport, and protected-storage settings at startup.
 - **Access Control**: Role-based access and identity management integration.
 
 ### Data and Processing Environment
@@ -125,8 +125,7 @@ This keeps ingest behavior idempotent, auditable, and safe for production cleanu
    ```
 
 2. Set up your Python environment
-   We need to have a `devenv.nix` file.  
-   This Nix `devenv.nix` configuration sets up a Python development environment for a Django-based project using `uv` for dependency management. It defines project directories, environment variables, runtime packages, and several development tasks and scripts.
+   The checked-in `devenv.nix` configures the Python 3.12 development environment and uses `uv` for dependency management.
 
    **Some available Test Shortcuts**
 
@@ -219,39 +218,29 @@ This keeps ingest behavior idempotent, auditable, and safe for production cleanu
 
 Before running tests, dev mode needs to be activated.
 
-```
-bash
+```bash
 direnv allow
-uv sync --extra-dev
+devenv tasks run agent:sync
 ```
 
-This installs pytest and publishing dependencies.
+This synchronizes the development environment and installs the configured development dependencies.
 
 For testing, this repository provides a general skip condition.
 
-```
-bash
-SKIP_EXPENSIVE_TESTS=True
+```bash
+export SKIP_EXPENSIVE_TESTS=true
 ```
 
 If you want to run a full suite, run in your shell:
 
-```
-bash
-export SKIP_EXPENSIVE_TESTS=False
+```bash
+export SKIP_EXPENSIVE_TESTS=false
 ```
 
 or change the default.
 
-Run tests using:
-```
-bash
-pytest
-```
-
-We offer various devenv tasks to run tests.
-```
-bash
+Use the repository's devenv tasks to synchronize and run the intended test lane.
+```bash
 devenv tasks run test:sync # syncs the uv dev dependencies
 devenv tasks run test:fast
 devenv tasks run test:heavy
@@ -260,50 +249,15 @@ devenv tasks run test:clean
 ```
 
 To run profiling, use the following command:
-```
-bash
+```bash
 scripts/run_profiling_suite.sh --master-key-file tests/assets/test_master_key.txt
 ```
 
 ## 📦 Database Backup and Restore
 
-This project includes two shell scripts to **export** and **import** database data in JSON format using Django's management commands.
+The repository still contains legacy `export_db.sh` and `import_db.sh` fixture scripts, but they are not currently operational: both invoke the absent `fix_endoreg_db_backup_json.py` helper. Do not use them as a production backup or restore mechanism until that workflow is repaired and verified.
 
-###  Setup
-
-First, make the scripts executable:
-
-```bash
-chmod +x import_db.sh
-chmod +x export_db.sh
-```
-###  Export (Backup) the Database
-
-To export the current database into a JSON file:
-
-```bash
-./export_db.sh
-```
-This will create a backup file such as `endoreg_db_backup.json`.
-
-#### List of the comands in 'export_db.sh'
-1. `python manage.py dumpdata --indent 4 --output=endoreg_db_backup.json` (if migrate comand generates and stores data in database table then wee nee dto exclude those tables from dumping)
-
-2. `python manage.py shell < fix_endoreg_db_backup_json.py`
-
-###  Import (Restore) the Database
-
-To load the data back into the database
-```bash
-./import_db.sh
-```
-####  List of the comands in 'import_db.sh'
-1. `rm dev_db.sqlite3`
-2. `python manage.py migrate`
-3. `python manage.py shell < fix_endoreg_db_backup_json.py`
-4. `python manage.py loaddata endoreg_db_backup_fixed.json`
-
----
+Use the backup and recovery procedure defined for the active deployment environment. Django JSON fixtures do not replace database backups or protected-media recovery.
 
 
 
@@ -325,9 +279,9 @@ endoreg-db/
 
 ## 🔒 Security Features
 
-- **Data Encryption**: All sensitive patient data is encrypted.
+- **Protected media storage**: Sensitive media uses application encryption or an approved encrypted filesystem, according to its storage profile.
 - **Role-Based Access Control**: Configurable roles for managing access to various parts of the system.
-- **Logging & Auditing**: Comprehensive logging system that tracks user activities and data changes.
+- **Audit records**: Security-relevant workflows emit structured logs and selected state changes are recorded in the audit ledger; coverage is workflow-specific.
 
 ---
 
@@ -356,33 +310,28 @@ GNU General Public License v3.0 - see [LICENSE](LICENSE).
 
 ## 📖 Further Documentation
 
-All extended documentation lives in the project **Wiki** → **[Browse the Wiki »](https://github.com/wg-lux/endoreg-db/wiki)**
+Repository-maintained documentation lives under [`docs/`](docs/). The project **[Wiki](https://github.com/wg-lux/endoreg-db/wiki)** also contains historical and supplementary material; wiki pages are not authoritative for current production readiness.
 
 ### Standalone Modules In This Checkout
 
-The local development layout uses two standalone LX modules for report rendering
-and terminology bundle authoring:
+The local development layout includes a report renderer and can use a companion terminology editor checkout:
 
-- [lx-report-generator](lx-report-generator): standalone Rust PDF renderer
+- `tools/report_pdf_renderer_rust`: Rust PDF renderer source used by the repository Make targets
 - `lx-terminology-editor`: companion checkout expected next to this repository
 
-#### `lx-report-generator` with Nix
+#### Report PDF renderer with Nix
 
-From the `endoreg-db` repository root, with the companion checkout available:
+From the `endoreg-db` repository root:
 
 ```bash
-cd lx-report-generator
-direnv allow   # optional
-devenv shell
-./target/release/report_pdf_renderer \
-  --input examples/report_payload.json \
-  --output /tmp/report_example.pdf
+make report-renderer-run-example-devenv
 ```
 
 To wire it into `endoreg_db`:
 
 ```bash
-export ENDOREG_REPORT_PDF_RENDERER_BIN="$PWD/target/release/report_pdf_renderer"
+make report-renderer-install-devenv
+eval "$(make -s report-renderer-env)"
 ```
 
 #### `lx-terminology-editor` with Nix
@@ -438,8 +387,8 @@ and writes a registry file at:
 
 ---
 
-### Frame-Anonymisierung
-- [Frame-Anonymisierung](https://github.com/wg-lux/endoreg-db/wiki/Frame-Anonymisierung)
+### Frame Anonymization
+- [Frame Anonymization](https://github.com/wg-lux/endoreg-db/wiki/Frame-Anonymisierung)
 
 ---
 
@@ -467,7 +416,7 @@ and writes a registry file at:
 - [Coloreg](https://github.com/wg-lux/endoreg-db/wiki/Coloreg)
 - [EndoReg Framework](https://github.com/wg-lux/endoreg-db/wiki/EndoReg-Framework)
 - [EndoReg Data Collection Workflow](https://github.com/wg-lux/endoreg-db/wiki/EndoReg-Data-Collection-Workflow)
-- [Eine gemeinsame Datenplattform für Klinik & Forschung](https://github.com/wg-lux/endoreg-db/wiki/Eine-gemeinsame-Datenplattform-für-Klinik-&-Forschung)
+- [A Shared Data Platform for Clinical Care and Research](https://github.com/wg-lux/endoreg-db/wiki/Eine-gemeinsame-Datenplattform-für-Klinik-&-Forschung)
 
 ---
 

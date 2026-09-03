@@ -18,6 +18,85 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_POLICY = PROJECT_ROOT / "quality" / "documentation_governance.yml"
 MARKDOWN_LINK = re.compile(r"!?\[[^\]]*\]\((?P<target><[^>]+>|[^)\s]+)")
+WORD = re.compile(r"[A-Za-zÄÖÜäöüß]+")
+FENCED_CODE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE = re.compile(r"`[^`]*`")
+MARKDOWN_LINK_TARGET = re.compile(r"\]\([^)]*\)")
+
+GERMAN_MARKERS = frozenset(
+    {
+        "aber",
+        "alle",
+        "als",
+        "auch",
+        "auf",
+        "aus",
+        "bei",
+        "das",
+        "dem",
+        "den",
+        "der",
+        "des",
+        "die",
+        "dies",
+        "diese",
+        "durch",
+        "ein",
+        "eine",
+        "einer",
+        "eines",
+        "für",
+        "gegen",
+        "ist",
+        "kein",
+        "keine",
+        "mit",
+        "muss",
+        "müssen",
+        "nach",
+        "nicht",
+        "nur",
+        "oder",
+        "sich",
+        "sind",
+        "über",
+        "und",
+        "von",
+        "vor",
+        "werden",
+        "wird",
+        "zu",
+        "zum",
+        "zur",
+    }
+)
+ENGLISH_MARKERS = frozenset(
+    {
+        "a",
+        "all",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "must",
+        "not",
+        "of",
+        "on",
+        "only",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "with",
+    }
+)
 
 
 class ArtifactClass(StrEnum):
@@ -62,6 +141,8 @@ class RepositoryPolicy(BaseModel):
     agents_path: str = Field(min_length=1)
     documentation_entrypoint: str | None
     owner: str = Field(min_length=1)
+    canonical_language: Literal["en"] | None = None
+    additional_documentation_paths: list[str] = Field(default_factory=list)
 
 
 class RelatedDocument(BaseModel):
@@ -342,6 +423,16 @@ def discover_repository(
             for path in docs_root.rglob("*")
             if path.is_file()
         )
+    for configured_path in repository.additional_documentation_paths:
+        candidate = root / configured_path
+        if candidate.is_file():
+            paths.add(candidate.relative_to(root).as_posix())
+        elif candidate.is_dir():
+            paths.update(
+                path.relative_to(root).as_posix()
+                for path in candidate.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".md", ".rst"}
+            )
     tracked = _tracked_paths(root) if tracked_paths is None else tracked_paths
     return [
         build_entry(
@@ -540,6 +631,60 @@ def validate_local_links(
     return issues
 
 
+def _prose_words(content: str) -> list[str]:
+    prose_lines: list[str] = []
+    in_fence = False
+    for line in content.splitlines():
+        if FENCED_CODE.match(line):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            prose_lines.append(line)
+    prose = "\n".join(prose_lines)
+    prose = INLINE_CODE.sub(" ", prose)
+    prose = MARKDOWN_LINK_TARGET.sub("]", prose)
+    return [match.group(0).casefold() for match in WORD.finditer(prose)]
+
+
+def _is_predominantly_german(content: str) -> bool:
+    words = _prose_words(content)
+    german_count = sum(word in GERMAN_MARKERS for word in words)
+    english_count = sum(word in ENGLISH_MARKERS for word in words)
+    return german_count >= 8 and german_count > english_count
+
+
+def validate_canonical_language(
+    root: Path,
+    repository: RepositoryPolicy,
+    entries: list[InventoryEntry],
+) -> list[ValidationIssue]:
+    if repository.canonical_language is None:
+        return []
+    issues: list[ValidationIssue] = []
+    for entry in entries:
+        if entry.artifact_class not in {
+            ArtifactClass.ENTRYPOINT,
+            ArtifactClass.SOURCE_DOCUMENT,
+        }:
+            continue
+        source = root / entry.path
+        try:
+            content = source.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if _is_predominantly_german(content):
+            issues.append(
+                ValidationIssue(
+                    severity=Severity.ERROR,
+                    rule="non_english_source",
+                    repository=repository.id,
+                    path=entry.path,
+                    message="canonical documentation must be written in English",
+                )
+            )
+    return issues
+
+
 def _parse_overrides(values: list[str]) -> dict[str, Path]:
     overrides: dict[str, Path] = {}
     for value in values:
@@ -595,6 +740,9 @@ def main() -> int:
         )
         entries.extend(repository_entries)
         link_issues.extend(validate_local_links(root, repository, repository_entries))
+        link_issues.extend(
+            validate_canonical_language(root, repository, repository_entries)
+        )
     inventory = Inventory(generated_on=date.today(), entries=entries)
     issues = (
         validate_inventory(

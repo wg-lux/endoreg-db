@@ -93,23 +93,6 @@ class _FileOverviewPayload(TypedDict):
     pseudo_examination_id: int | None
 
 
-class _FileOverviewInstanceLike(Protocol):
-    pk: int | str | None
-    state: object | None
-    sensitive_meta: object | None
-
-
-class _FileOverviewVideoLike(_FileOverviewInstanceLike, Protocol):
-    raw_file: object | None
-    original_file_name: str | None
-    uploaded_at: datetime
-
-
-class _FileOverviewPdfLike(_FileOverviewInstanceLike, Protocol):
-    file: object | None
-    date_created: datetime
-
-
 class _FileOverviewUploadJobLike(Protocol):
     id: int | str
     status: str

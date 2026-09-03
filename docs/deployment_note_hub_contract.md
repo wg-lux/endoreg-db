@@ -58,6 +58,7 @@ Supported roles:
 
 - `central_hub`
 - `site_node`
+- `local_study_server`
 - `standalone`
 
 When role is `central_hub`:
@@ -66,7 +67,19 @@ When role is `central_hub`:
 - API uploads must declare `center_key`
 - API uploads do not fall back to the default center
 - SQLite is rejected in production settings
-- transfer API is enabled and must run with secure transport plus mTLS
+- transfer API may be enabled explicitly and, when enabled, must run with secure
+  transport plus mutual Transport Layer Security (mTLS)
+
+`central_hub` does not enable transfer ingest by itself. Transfer endpoints are
+disabled by default and require:
+
+```bash
+ENDOREG_ENABLE_HUB_TRANSFERS=true
+```
+
+The implementation and its production-readiness approval are separate. Before
+enabling this boundary, check `feature-tracking/HubTransfer.yml`; any required
+criterion that is not `verified` remains an unmet production gate.
 
 Watcher ingestion remains supported in hub deployments and keeps trusted
 local-drop behavior.
@@ -186,7 +199,8 @@ Before promoting an upgrade, verify the following in the host environment:
 5. watcher ingest still works for the local trusted drop zone
 6. upload-job status and media-read endpoints respect center scope
 7. cleanup jobs do not delete retained source artifacts unexpectedly
-8. hub transfer registration, status and processed-media upload succeed with
+8. if `ENDOREG_ENABLE_HUB_TRANSFERS=true` is part of the approved deployment,
+   hub transfer registration, status and processed-media upload succeed with
    valid node credentials without a Django user and reject node/center mismatch
 
 ## What downstream projects can remove

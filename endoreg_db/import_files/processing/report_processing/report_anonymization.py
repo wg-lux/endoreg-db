@@ -115,21 +115,11 @@ def _processed_report_dir() -> Path:
 
 
 class ReportAnonymizer:
-    _report_reader_available: bool
     _report_reader_class: _ReportReaderClass | None
 
     def __init__(self) -> None:
         self._report_reader_class = None
         self._ensure_report_reading_available()
-
-    @staticmethod
-    def _read_txt_content(txt_path: Path) -> str:
-        for encoding in ("utf-8", "cp1252", "latin-1"):
-            try:
-                return txt_path.read_text(encoding=encoding)
-            except UnicodeDecodeError:
-                continue
-        return txt_path.read_text(encoding="utf-8", errors="replace")
 
     @staticmethod
     def _is_txt_input(ctx: ImportContext) -> bool:
@@ -286,7 +276,6 @@ class ReportAnonymizer:
             )
 
             logger.info("Successfully imported lx_anonymizer ReportReader module")
-            self._report_reader_available = True
             self._report_reader_class = report_reader_class
             return
 
@@ -304,7 +293,6 @@ class ReportAnonymizer:
                     logger.info(
                         "Imported lx_anonymizer.ReportReader via LX_ANONYMIZER_PATH"
                     )
-                    self._report_reader_available = True
                     self._report_reader_class = ReportReader
                     return
                 except Exception as e:
@@ -314,5 +302,4 @@ class ReportAnonymizer:
 
                     return
 
-        self._report_reader_available = False
         self._report_reader_class = None

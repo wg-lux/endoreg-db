@@ -1,210 +1,222 @@
-# LXDM-Contract-Nutzungsprüfung
+# LXDM Contract Usage Audit
 
-Der Status dieser Prüfung wird ausschließlich im Kriterium
-`contract_usage_audit` in `feature-tracking/LXDM.yml` geführt. Dieses Dokument
-ist eine technische Prüfspezifikation und enthält keinen eigenen
-Abschlussstatus.
+The status of this audit is maintained exclusively by the
+`contract_usage_audit` criterion in
+[`feature-tracking/LXDM.yml`](../feature-tracking/LXDM.yml). This document is a
+technical audit specification and evidence summary; it does not assert an
+independent completion or production-readiness state.
 
-## Ziel
+## Objective
 
-Die öffentlichen Typing-Contracts unter
-`/home/admin/lx-data-models/lx_dtypes/models/contracts` werden vollständig
-inventarisiert und mit ihrer tatsächlichen oder möglichen Nutzung in
-`endoreg-db` verknüpft. Daraus entstehen kleine, priorisierte
-Migrationskohorten, die die LXDM-Nutzung verbessern, ohne Ownership-Grenzen,
-persistierte Formate oder klinische und sicherheitsrelevante Invarianten
-unbeabsichtigt zu verändern.
+Inventory the public typing contracts under the repository-configured sibling
+checkout `../lx-parse/lx-data-models/lx_dtypes/models/contracts` and connect
+them to their actual or potential use in `endoreg-db`. The result groups work
+into small, prioritized migration cohorts that improve LXDM use without
+accidentally changing ownership boundaries, persisted formats, or clinical and
+security invariants.
 
-## Prüfumfang
+## Audit Scope
 
-Einbezogen werden:
+The audit includes:
 
-- alle Nicht-Test-Pythonmodule im Contract-Verzeichnis sowie öffentliche
-  Re-Exports aus `__init__.py`;
-- die zugehörigen Contract-Tests als Nachweis bestehender Invarianten;
-- statische Imports, Re-Exports und dynamische Consumer in Quellcode, Tests und
-  Konfiguration von `endoreg-db`;
-- relevante API-, Persistenz-, Job-, Import-/Export-, Authentifizierungs- und
-  Mediengrenzen;
-- Abhängigkeits- und Versionsgrenzen in den Paket- und Lockdateien.
+- every non-test Python module in the contracts directory and every public
+  re-export from `__init__.py`;
+- associated contract tests as evidence of existing invariants;
+- static imports, re-exports, and dynamic consumers in Endoreg source, tests,
+  and configuration;
+- relevant application programming interface (API), persistence, job,
+  import/export, authentication, and media boundaries;
+- dependency and version boundaries in package and lock files.
 
-Die Prüfung implementiert noch keine Contract- oder Consumer-Änderungen.
-Generierte Dateien und Migrationen dürfen als Nutzungsnachweis dienen, sind
-aber nicht automatisch Änderungsziele.
+The audit itself does not implement contract or consumer changes. Generated
+files and migrations may provide usage evidence but are not automatically
+change targets.
 
-## Leitfragen
+## Audit Questions
 
-Für jeden Contract wird geprüft:
+For every contract, determine:
 
-1. Welche öffentlichen Typen, validierten Felder und Invarianten stellt das
-   Modul bereit?
-2. Wo wird der Contract in `endoreg-db` importiert, re-exportiert, indirekt
-   aufgelöst oder inhaltlich nachgebildet?
-3. Existieren parallele Pydantic-Modelle, Dataclasses, TypedDicts oder
-   untypisierte Dictionaries mit derselben fachlichen Bedeutung?
-4. Liegt die Ownership des Schemas bei LXDM, bei `endoreg-db` oder an einer
-   expliziten Adaptergrenze?
-5. Welche Lücken bestehen bei Boundary-Validierung, Versionierung,
-   Rückwärtskompatibilität und automatisierten Tests?
+1. Which public types, validated fields, and invariants does the module expose?
+2. Where does Endoreg import, re-export, resolve dynamically, or reproduce the
+   contract's semantic shape?
+3. Are there parallel Pydantic models, dataclasses, `TypedDict` definitions, or
+   untyped dictionaries with the same domain meaning?
+4. Is schema ownership in LXDM, Endoreg, or an explicit adapter boundary?
+5. Which boundary-validation, versioning, backward-compatibility, and test gaps
+   remain?
 
-## Vorgehen
+## Method
 
-1. Contract-Module, öffentliche Typen, Re-Exports und bestehende Tests werden
-   maschinenunterstützt inventarisiert.
-2. Consumer und semantisch parallele lokale Typen in `endoreg-db` werden mit
-   statischer Suche und gezielter Callsite-Prüfung ermittelt.
-3. Jede Nutzung wird einer konkreten Systemgrenze und einem Owner zugeordnet.
-4. Jeder Fund wird als `direct_use`, `adapter_required`,
-   `candidate_for_adoption`, `endoreg_owned`, `unused_or_uncertain` oder
-   `deprecation_candidate` klassifiziert.
-5. Verbesserungen werden nach Risiko und Nutzen in kleine Migrationskohorten
-   gegliedert. Jede Kohorte benennt Zielcontract, betroffene Dateien,
-   Kompatibilitätsanforderungen und Verifikation.
-6. Vor einer späteren Umsetzung werden die bestehenden LXDM-Contract-Tests,
-   Pyright und die jeweils engsten Endoreg-Tests als Ausgangsbasis festgehalten.
+1. Machine-inventory contract modules, public types, re-exports, and tests.
+2. Locate Endoreg consumers and semantically parallel local types through
+   static search and focused call-site review.
+3. Assign each use to a concrete system boundary and owner.
+4. Classify it as `direct_use`, `adapter_required`,
+   `candidate_for_adoption`, `endoreg_owned`, `unused_or_uncertain`, or
+   `deprecation_candidate`.
+5. Group improvements into small cohorts with a target contract, affected
+   files, compatibility requirements, and verification.
+6. Before implementation, record the existing LXDM contract tests, Pyright,
+   and narrowest Endoreg tests as the baseline.
 
-## Erforderliche Ergebnisfelder
+## Required Result Fields
 
-Das Prüfergebnis muss pro öffentlichem Contract mindestens folgende Felder
-enthalten:
+Each public contract result contains at least:
 
-| Feld | Inhalt |
+| Field | Content |
 | --- | --- |
-| `contract_module` | Vollständiger Modulpfad |
-| `public_type` | Öffentlicher Typ oder Re-Export |
-| `contract_owner` | Zuständiges Repository oder Team |
-| `endoreg_consumer` | Konkrete Consumer-Datei oder begründet `keiner` |
-| `boundary` | Betroffene System- oder Persistenzgrenze |
-| `current_shape` | Aktuelle Repräsentation in `endoreg-db` |
-| `classification` | Eine der definierten Nutzungsklassen |
-| `gap_or_risk` | Typing-, Validierungs-, Kompatibilitäts- oder Ownership-Risiko |
-| `recommended_action` | Begrenzte, umsetzbare Verbesserung |
-| `verification` | Pyright-, Test- oder Review-Nachweis |
+| `contract_module` | Full module path |
+| `public_type` | Public type or re-export |
+| `contract_owner` | Responsible repository or team |
+| `endoreg_consumer` | Concrete consumer file, or a reasoned `none` |
+| `boundary` | Affected system or persistence boundary |
+| `current_shape` | Current Endoreg representation |
+| `classification` | One of the defined usage classifications |
+| `gap_or_risk` | Typing, validation, compatibility, or ownership risk |
+| `recommended_action` | Bounded, actionable improvement |
+| `verification` | Pyright, test, or review evidence |
 
-## Architektur- und Sicherheitsleitplanken
+## Architecture and Security Guardrails
 
-- Contract-Daten werden an externen und persistierten Grenzen einmal validiert
-  und intern in einer eindeutigen typisierten Form weitergegeben.
-- `Any`, offene Dictionaries oder optionale Felder dürfen nicht allein zur
-  Kompatibilisierung ausgeweitet werden.
-- Contract-Änderungen in LXDM und deren Adoption in `endoreg-db` werden als
-  getrennte Änderungen mit eigener Ownership bewertet.
-- Öffentliche und persistierte Verträge benötigen eine explizite Versions- und
-  Rückwärtskompatibilitätsstrategie.
-- Bei Video-Contracts gelten zusätzlich die kanonischen Regeln für
-  Präsentationszeitstempel, Speicherprofile, Verschlüsselungsgrenzen und
-  fehlersichere Bereinigung.
+- Validate contract data once at external and persistence boundaries, then
+  pass one unambiguous typed form inward.
+- Do not broaden `Any`, open dictionaries, or optional fields solely for
+  compatibility.
+- Assess LXDM contract changes and their Endoreg adoption as separate changes
+  with separate ownership.
+- Give public and persisted contracts an explicit versioning and backward-
+  compatibility strategy.
+- For video contracts, also preserve the canonical presentation-timestamp,
+  storage-profile, encryption-boundary, and fail-closed cleanup rules.
 
-## Erwartete Liefergegenstände
+## Deliverables
 
-- vollständiges Contract-zu-Consumer-Inventar mit begründeten Nullfunden;
-- Liste paralleler lokaler Schemata und untypisierter Boundary-Payloads;
-- priorisierte Migrationskohorten mit Owner, Risiko und betroffenen Dateien;
-- reproduzierbare Pyright-, Test- und Review-Nachweise je Kohorte.
+- a complete contract-to-consumer inventory with reasoned negative findings;
+- a list of parallel local schemas and untyped boundary payloads;
+- prioritized migration cohorts with owners, risks, and affected files;
+- reproducible Pyright, test, and review evidence for each cohort.
 
-Fortschritt und Verifikation dieser Liefergegenstände werden ausschließlich
-über `feature-tracking/LXDM.yml` aktualisiert.
+Progress and verification for these deliverables are updated only in
+[`feature-tracking/LXDM.yml`](../feature-tracking/LXDM.yml).
 
-## Vollständiges Inventar und Ergebnis
+## Generated Inventory and Recorded Evidence
 
-Das reproduzierbare Ergebnis liegt in
-[`lxdm_contract_inventory.md`](lxdm_contract_inventory.md). Es wird durch
-`feature-tracking/audit_lxdm_contracts.py` direkt aus beiden Repositories
-erzeugt und erfasst alle 111 öffentlichen Nicht-Test-Contract-Module samt
-Exporten/Re-Exports, statisch erkennbaren Invarianten, LXDM-Tests,
-Endoreg-Consumern und Boundary-Klassifikation.
+The reproducible output is
+[`lxdm_contract_inventory.md`](lxdm_contract_inventory.md), generated by
+`feature-tracking/audit_lxdm_contracts.py` from both repositories.
 
-Der aktuelle Stand ordnet 79 Module als `direct_use`, vier als
-`candidate_for_adoption`, vier als `adapter_required` und 24 als
-`unused_or_uncertain` ein. `unused_or_uncertain` ist ausdrücklich kein
-Löschsignal; diese Module bleiben LXDM-owned, bis ein fachlicher Owner ihren
-Einsatz oder eine Deprecation bestätigt.
+The feature tracker records a verified historical run that inventoried 111
+public non-test contract modules. Its assessed snapshot classified 79 modules
+as `direct_use`, four as `candidate_for_adoption`, four as `adapter_required`,
+and 24 as `unused_or_uncertain`. Preserve those figures as historical
+verification evidence, not as a live production assertion.
 
-## Priorisierte Migrationskohorten
+The currently checked-in generated table contains 110 classified module rows:
+79 `direct_use`, four `candidate_for_adoption`, four `adapter_required`, and 23
+`unused_or_uncertain`. Regenerate the inventory and update tracker evidence
+before making a new current-count claim. `unused_or_uncertain` is never a
+deletion signal; LXDM retains ownership until a domain owner confirms use or
+deprecation.
 
-1. **P0 – persistierter klinischer LXDM-Datensatz.** Zielcontract:
-   `dtypes_record_persistence`. Consumer: `schemas/persisted_json.py`,
-   `services/dtypes_records.py`, PatientExamination-Modell/API. Risiko: der
-   0.2.0-Contract war offen und unvollständig. Maßnahme: vollständiger strikt
-   verschachtelter 0.2.1-Contract, ein Parser am Rand, Host-ID-Prüfung und
-   Roundtrip/Unknown-field-Tests. Owner: lx-data-models für die Form,
-   endoreg-db für ORM, Autorisierung und Persistenz.
-2. **P0 – Hub-Segmentaustausch.** Zielcontract: `hub_transfer`. Consumer:
-   TransferJob-Schema/Serializer und Sender-Payload. Risiko: parallele lokale
-   Segmentmodelle können auseinanderlaufen. Maßnahme: Endoreg-Kompatibilitätsname
-   erbt vom kanonischen LXDM-Segmentvertrag; vollständige Transfer-DTO-Adoption
-   folgt nach 0.2.1-Pin. Verifikation: Contract-, Transferjob- und Hub-Endpunkttests.
-3. **P1 – Authentifizierte Finding-Mutationen.** Zielcontracts: `authz`,
-   `permission_runtime`, `patient_finding*`; Host-Callback-Grenze bleibt
-   Endoreg-owned. Maßnahme: Authentifizierung, Center-404, Akteur/Zeit und
-   atomaren Record-Refresh gemeinsam regressionsprüfen.
-4. **P2 – Medien-, Anonymisierungs- und Exportcontracts.** Die direkt genutzten
-   Module werden boundaryweise beibehalten; lokale Dicts werden nur in kleinen
-   Kohorten mit Pyright und dem jeweils engsten Medien-/Exporttest ersetzt.
-5. **P3 – ungenutzte oder dynamische Contracts.** Keine spekulative Adoption.
-   Pro Domäne Owner bestimmen, semantische Duplikate prüfen und anschließend
-   `direct_use`, `endoreg_owned` oder `deprecation_candidate` begründet setzen.
+Run the generator from the Endoreg repository with the current sibling
+checkout:
 
-Contract-Änderungen werden zuerst in lx-data-models mit Contract-Tests und
-SemVer dokumentiert. Die Endoreg-Adoption bleibt ein separater Adapter-Schritt
-und wird gegen den Kandidaten geprüft, bevor die veröffentlichte Version im
-Lockfile angehoben wird.
+```bash
+.devenv/state/venv/bin/python feature-tracking/audit_lxdm_contracts.py \
+  --lxdm-root ../lx-parse/lx-data-models \
+  --output docs/lxdm_contract_inventory.md
+```
 
-## Bearbeitete Kohorte: Application Settings
+## Prioritized Migration Cohorts
 
-| Feld | Ergebnis |
+1. **P0: persisted clinical LXDM record.** Target contract:
+   `dtypes_record_persistence`. Consumers: `schemas/persisted_json.py`,
+   `services/dtypes_records.py`, and the `PatientExamination` model and API.
+   Historical risk: the 0.2.0 contract was open and incomplete. The planned
+   boundary is a complete, strictly nested contract, one edge parser, host-ID
+   checks, and round-trip and unknown-field tests. LXDM owns the portable shape;
+   Endoreg owns the object-relational mapper, authorization, and persistence.
+2. **P0: hub segment exchange.** Target: `hub_transfer`. Consumers:
+   `TransferJob` schema and serializer plus the sender payload. Parallel local
+   segment models can diverge. The Endoreg compatibility name should derive
+   from the canonical LXDM segment contract, with complete transfer data-object
+   adoption gated by the pinned package version. Verify contracts, transfer
+   jobs, and hub endpoints.
+3. **P1: authenticated finding mutation.** Targets: `authz`,
+   `permission_runtime`, and `patient_finding*`; the host callback remains
+   Endoreg-owned. Verify authentication, center-masked `404` behavior, actor and
+   time attribution, and atomic record refresh together.
+4. **P2: media, anonymization, and export contracts.** Retain directly used
+   modules by boundary. Replace local dictionaries only in small cohorts with
+   Pyright and the narrowest media or export test.
+5. **P3: unused or dynamic contracts.** Do not adopt speculatively. Assign a
+   domain owner, inspect semantic duplicates, and then justify `direct_use`,
+   `endoreg_owned`, or `deprecation_candidate`.
+
+Contract changes land first in lx-data-models with contract tests and Semantic
+Versioning evidence. Endoreg adoption is a separate adapter change tested
+against the candidate before the published dependency is raised. The current
+Endoreg package constraint is `lx-dtypes>=0.2.35`; historical notes about a
+0.2.0 or 0.2.1 pin do not describe the present dependency.
+
+## Assessed Cohort: Application Settings
+
+| Field | Result |
 | --- | --- |
 | `contract_module` | `lx_dtypes.models.contracts.application_settings` |
-| `public_type` | Backup-Source, Backup-Status, Datensatz-Eintrag, Deployment-Profil und Gesamt-Payload |
-| `contract_owner` | LXDM für transportierbare Payloads; `endoreg-db` für Django-Produktion und API-Ausgabe |
-| `endoreg_consumer` | `endoreg_db.views.misc.application_settings` und `endoreg_db.services.hub.deployment` |
-| `boundary` | Application-Settings-API und Backup-Vorprüfung |
-| `current_shape` | Pydantic-Payloads; das Deployment-Profil war zuvor ein offenes Dictionary |
-| `classification` | `direct_use` mit notwendiger Contract-Erweiterung |
-| `gap_or_risk` | Lose Deployment-Daten erlaubten unbekannte Felder und veröffentlichten interne mTLS-Metadaten; Backup-Zähler hatten keine Konsistenzprüfung |
-| `recommended_action` | Deployment-Profil strikt typisieren, abgeleitete Flags validieren, interne mTLS-Metadaten nicht veröffentlichen und Backup-Zähler gegeneinander prüfen |
-| `verification` | LXDM-Contract-Tests, Endoreg-Pyright sowie fokussierte Service- und API-Tests |
+| `public_type` | Backup source, backup status, dataset entry, deployment profile, and complete payload |
+| `contract_owner` | LXDM for portable payloads; Endoreg for Django production behavior and API output |
+| `endoreg_consumer` | `endoreg_db.views.misc.application_settings` and `endoreg_db.services.hub.deployment` |
+| `boundary` | Application Settings API and backup preflight |
+| `current_shape` | Pydantic payloads; the deployment profile was previously an open dictionary |
+| `classification` | `direct_use` with a required contract extension |
+| `gap_or_risk` | Loose deployment data allowed unknown fields and exposed internal mutual Transport Layer Security metadata; backup counters lacked consistency checks |
+| `recommended_action` | Strictly type the deployment profile, validate derived flags, omit internal mTLS metadata from public output, and cross-check backup counters |
+| `verification` | LXDM contract tests, Endoreg Pyright, and focused service and API tests |
 
-Das Contract-Modul wird von `endoreg-db` benötigt und bleibt bestehen. Die
-Kohorte erweitert und nutzt es direkt; gelöscht werden ausschließlich die für
-den öffentlichen Settings-Payload nicht erforderlichen mTLS-Metadatenfelder.
+This contract module is required by Endoreg and remains in use. The cohort
+extended and adopted it directly; only mTLS metadata fields unnecessary for the
+public settings payload were removed from that payload.
 
-Nachweise der Kohorte:
+Historical cohort evidence recorded in the feature work:
 
-- LXDM-Pyright für Contract und Contract-Test: 0 Fehler;
-- LXDM-Contract-Tests: 10 bestanden;
-- vollständiger Endoreg-Pyright-Lauf mit lokalem LXDM-Checkout: 0 Fehler;
-- fokussierte Endoreg-Service- und API-Tests: 42 bestanden.
+- LXDM Pyright for the contract and its test: zero errors;
+- LXDM contract tests: 10 passed;
+- complete Endoreg Pyright with the sibling LXDM checkout: zero errors;
+- focused Endoreg service and API tests: 42 passed.
 
-Vor einer getrennten Auslieferung von `endoreg-db` muss die erweiterte
-LXDM-Version veröffentlicht und die derzeitige Abhängigkeit
-`lx-dtypes==0.2.0` kontrolliert angehoben werden. Der lokale Geschwisterpfad in
-`pyrightconfig.json` dient ausschließlich der gemeinsamen Entwicklung und
-ersetzt keine Paketversionierung.
+These results remain evidence of that assessed revision. Current maturity and
+release status must be read from
+[`feature-tracking/LXDM.yml`](../feature-tracking/LXDM.yml); rerun the commands
+before applying them to a newer revision.
 
-## Bearbeitete Kohorte: Authentifizierung und Autorisierung
+## Assessed Cohort: Authentication and Authorization
 
-| Feld | Ergebnis |
+| Field | Result |
 | --- | --- |
 | `contract_module` | `lx_dtypes.models.contracts.authz` |
-| `public_type` | Keycloak-Claims, Rollencontainer, Token-Response, Route-Lookup und Validatoren |
-| `contract_owner` | LXDM für die normalisierten Identity-Provider-Payloads; `endoreg-db` für Policy und Gruppensynchronisation |
-| `endoreg_consumer` | `endoreg_db.authz.auth`, `endoreg_db.authz.backends`, `endoreg_db.authz.policy`, `endoreg_db.authz.views_auth` und `endoreg_db.views.auth.keycloak` |
-| `boundary` | OIDC-Login, Bearer-JWT-Authentifizierung, Token-Austausch und Route-Autorisierung |
-| `current_shape` | Direkte Pydantic-Validierung; Bearer-JWT und Browser-OIDC verwendeten unterschiedliche Client-Rollenregeln |
-| `classification` | `direct_use` mit notwendiger Contract-Erweiterung |
-| `gap_or_risk` | `role_names` übernahm Rollen aus allen Keycloak-Ressourcen und konnte gleichnamige Rollen eines fremden Clients autorisieren |
-| `recommended_action` | Flat- und Realm-Rollen als sicheren Default normalisieren; Client-Rollen nur über eine explizit ausgewählte Ressource zugänglich machen; beide Endoreg-Loginpfade vereinheitlichen |
-| `verification` | LXDM-Contract-Tests, Endoreg-Pyright sowie fokussierte JWT- und Policy-Tests |
+| `public_type` | Keycloak claims, role container, token response, route lookup, and validators |
+| `contract_owner` | LXDM for normalized identity-provider payloads; Endoreg for policy and group synchronization |
+| `endoreg_consumer` | `endoreg_db.authz.auth`, `endoreg_db.authz.backends`, `endoreg_db.authz.policy`, `endoreg_db.authz.views_auth`, and `endoreg_db.views.auth.keycloak` |
+| `boundary` | OIDC login, Bearer JWT authentication, token exchange, and route authorization |
+| `current_shape` | Direct Pydantic validation; Bearer JWT and browser OIDC previously used different client-role rules |
+| `classification` | `direct_use` with a required contract extension |
+| `gap_or_risk` | `role_names` accepted roles from every Keycloak resource and could authorize a same-named role belonging to another client |
+| `recommended_action` | Normalize flat and realm roles as the safe default, expose client roles only for one explicitly selected resource, and align both Endoreg login paths |
+| `verification` | LXDM contract tests, Endoreg Pyright, and focused JWT and policy tests |
 
-Das Contract-Modul wird vollständig benötigt und bleibt bestehen. Endoreg nutzt
-den sicheren `role_names`-Default direkt. `resource_access` bleibt im Contract
-erhalten, kann aber nur über `role_names_for_resource` für genau einen explizit
-benannten Client in die Autorisierung einbezogen werden.
+This contract module is required and remains in use. Endoreg directly uses the
+safe `role_names` default. `resource_access` remains represented by the
+contract but can contribute authorization roles only through
+`role_names_for_resource` for one explicitly named client.
 
-Nachweise der Kohorte:
+Historical cohort evidence recorded in the feature work:
 
-- LXDM-Pyright für Contract und Contract-Test: 0 Fehler;
-- LXDM-Contract-Tests: 6 bestanden;
-- vollständiger Endoreg-Pyright-Lauf mit lokalem LXDM-Checkout: 0 Fehler;
-- fokussierte JWT-, OIDC- und Policy-Tests: 7 bestanden.
+- LXDM Pyright for the contract and its test: zero errors;
+- LXDM contract tests: six passed;
+- complete Endoreg Pyright with the sibling LXDM checkout: zero errors;
+- focused JWT, OIDC, and policy tests: seven passed.
+
+These results remain evidence of that assessed revision. Read current status
+from [`feature-tracking/LXDM.yml`](../feature-tracking/LXDM.yml) and rerun the
+commands before treating the evidence as current.

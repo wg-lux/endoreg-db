@@ -56,13 +56,6 @@ def _root_provider(path: Path) -> Callable[[], Path]:
     return provide_path
 
 
-def _relative_path_provider(root: Path) -> Callable[[Path], str]:
-    def relative_path(path: Path) -> str:
-        return Path(path).relative_to(root).as_posix()
-
-    return relative_path
-
-
 def _fs_streamable_policy(kind: PayloadKind) -> StoragePolicy:
     return StoragePolicy.FS_STREAMABLE
 
@@ -165,12 +158,6 @@ def streamable_roots(
         sm,
         "_streamable_processed_video_root",
         _root_provider(processed_root),
-    )
-
-    monkeypatch.setattr(
-        sm,
-        "_streamable_relative_path",
-        _relative_path_provider(tmp_path),
     )
 
     return StreamableRoots(

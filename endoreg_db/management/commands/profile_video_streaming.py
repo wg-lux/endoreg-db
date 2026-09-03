@@ -19,6 +19,7 @@ from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.management.commands._profiling import (
     add_profiling_arguments,
     command_profiling_config_from_options,
+    positive_int_option,
     profiling_metadata,
     run_with_optional_profile,
 )
@@ -254,7 +255,7 @@ def _command_options_from_raw_options(
         endpoint=_endpoint_option(options.get("endpoint")),
         video_ids=command.selected_video_ids_from_options(options),
         limit=command.positive_limit_from_options(options),
-        iterations=_positive_int_option(options.get("iterations"), "--iterations"),
+        iterations=positive_int_option(options.get("iterations"), "--iterations"),
         user_id=_optional_int_option(options.get("user_id"), "--user-id"),
         origin=_optional_str(options.get("origin")),
         frontend_hls_support=_frontend_hls_support_option(
@@ -1186,16 +1187,6 @@ def _frontend_hls_playlist_url(video_id: int) -> str:
 
 def _frontend_fallback_stream_url(video_id: int) -> str:
     return f"/endoreg-api/media/videos/{video_id}/stream/?type=processed"
-
-
-def _positive_int_option(value: object, label: str) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise CommandError(f"{label} must be a positive integer.") from exc
-    if result <= 0:
-        raise CommandError(f"{label} must be a positive integer.")
-    return result
 
 
 def _optional_int_option(value: object, label: str) -> int | None:

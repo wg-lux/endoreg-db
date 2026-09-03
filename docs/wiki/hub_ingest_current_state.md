@@ -172,7 +172,7 @@ without re-running the full anonymization pipeline.
 
 Relevant files:
 
-- `/home/admin/dev/lx-annotate/lx_annotate/file_watcher.py`
+- `lx_annotate/file_watcher.py` in the lx-annotate repository
 - `endoreg_db/services/hub/ingest.py`
 - `endoreg_db/services/hub/watcher_handoff.py`
 
@@ -395,9 +395,14 @@ Implemented today:
 - center-scoped status reads
 - structured provenance and audit output
 
+Implemented in the repository but not yet production-verified:
+
+- production verification of the implemented recipient-envelope media transfer;
+  the receiver contract and focused tests are implemented, but the feature
+  tracker still records the production rehearsal as in progress
+
 Not implemented yet:
 
-- envelope encryption for transferred blobs
 - KMS-backed key management
 - full peer discovery or topology negotiation
 - automatic transfer cleanup execution

@@ -21,7 +21,7 @@ Used by VideoExaminationAnnotation.vue for annotation workflow.
 
 import logging
 from collections.abc import Mapping
-from typing import Any, Protocol, TypeAlias, cast
+from typing import Any, Protocol, cast
 
 from django.db import transaction
 from django.db.models import QuerySet
@@ -31,6 +31,7 @@ from lx_dtypes.models.contracts import (
     validate_video_examination_list_query,
     validate_video_examination_path_payload,
 )
+from lx_dtypes.models.contracts.json_types import JsonValue
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -53,9 +54,6 @@ from ...serializers.video_examination import (
 )
 
 logger = logging.getLogger(__name__)
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 class _SerializerDataLike(Protocol):

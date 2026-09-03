@@ -43,13 +43,18 @@ Function naming guideline:
   - `load_base_db_data`
   - `load_all_reference_data` (preferred successor to generic `load_data`)
 
-## Migration Plan (Non-Breaking)
-1. Canonical modules are added:
-   - `endoreg_db/utils/yaml_model_loader.py`
-   - `endoreg_db/helpers/data_load_orchestrator.py`
-2. Legacy modules remain as compatibility paths.
-3. Internal imports are migrated incrementally to canonical names.
-4. Keep old paths for one release cycle, then remove after grep confirms no usages.
+## Current Migration State
+
+The non-breaking module migration has established these canonical modules:
+
+- `endoreg_db/utils/yaml_model_loader.py`
+- `endoreg_db/helpers/data_load_orchestrator.py`
+
+Application call sites use the canonical paths. The canonical modules still
+delegate to `endoreg_db.utils.dataloader` and
+`endoreg_db.helpers.data_loader`, which remain the compatibility
+implementations. Do not remove those legacy modules until there are no external
+consumers and the deprecation window has been explicitly completed.
 
 Compatibility rule:
 - No behavior changes during rename.
@@ -65,7 +70,7 @@ from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
 Avoid ambiguous imports like:
 - `from ... import dataloader`
-- new call sites to `helpers.data_loader` after migration starts
+- new call sites to `helpers.data_loader`
 
 ## Scope Clarification
 This naming schema is for `endoreg_db` only.

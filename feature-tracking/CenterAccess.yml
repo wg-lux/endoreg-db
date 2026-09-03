@@ -14,7 +14,7 @@ tracking:
 source_documents:
 - path: docs/center_access_operations.md
   disposition: reference
-  note: Zugriffsmatrix, Identity-Provider-Gruppen, Diagnose sowie Rollout- und Rücknahmeablauf.
+  note: Access matrix, identity-provider groups, diagnostics, and rollout and rollback procedures.
 definition_of_done:
 - id: deployment_access_matrix
   category: requirements
@@ -73,9 +73,8 @@ definition_of_done:
         tests/services/test_transfer_job_contract.py tests/services/test_fhir_r4_export.py tests/views/misc/test_patient_center_contract.py
         tests/views/report/test_report_llm_status.py tests/views/test_center_access_matrix.py tests/views/media/test_center_scoped_reads.py
         -q (80 passed)
-    note: Die Zugriffsmatrix wurde um Node-authentifizierte Hub-Transfers, anonymen Debug-Zugriff, FHIR,
-      Reports, Patientenerstellung und 404-Existenzverschleierung erweitert und gegen 80 fokussierte Tests
-      geprüft.
+    note: The access matrix was extended to cover node-authenticated hub transfers, anonymous debug access,
+      FHIR, reports, patient creation, and 404 existence concealment, and was checked against 80 focused tests.
     assessed_by: Codex
     assessed_at: '2026-07-22T12:43:32.411430Z'
 - id: identity_center_memberships
@@ -208,9 +207,9 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: Erweiterte Center-/Hub-/FHIR-/Patient-/Report-Regressionssuite (80 passed)
-    note: Die zuvor fehlenden Hub-Transfer-, FHIR-, Patientenerstellungs-, Report- und Existenzverschleierungsfälle
-      sind grün. Die vorgeschriebene manuelle Prüfung jeder Ressourcenzeile bleibt ausstehend.
+      reference: Extended center/hub/FHIR/patient/report regression suite (80 passed)
+    note: The previously missing hub-transfer, FHIR, patient-creation, report, and existence-concealment
+      cases pass. The required manual review of every resource row remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-22T12:43:33.535623Z'
 - id: authorization_boundaries
@@ -235,9 +234,9 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: pyright; 117 fokussierte Backend-Tests
-    note: Die Hub-Ausnahme und Metadatenminimierung wurden implementiert und geprüft; die vollständige
-      manuelle Sicherheitsfreigabe bleibt ausstehend.
+      reference: pyright; 117 focused backend tests
+    note: The hub exception and metadata minimization were implemented and tested; the complete manual
+      security approval remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-22T11:43:01.009171Z'
 - id: deployment_and_migration_readiness
@@ -265,8 +264,8 @@ definition_of_done:
     evidence:
     - kind: document
       reference: docs/center_access_operations.md
-    note: Runbook und strukturierte Ereignisse sind vorhanden; produktionsnahe Vorwärts-/Rückmigration,
-      Alerts und Rollout wurden nicht ausgeführt.
+    note: The runbook and structured events are available; production-like forward and reverse migration,
+      alerts, and rollout have not been exercised.
     assessed_by: Codex
     assessed_at: '2026-07-22T11:43:02.376082Z'
 - id: administrator_and_operator_documentation
@@ -293,8 +292,7 @@ definition_of_done:
     evidence:
     - kind: document
       reference: docs/center_access_operations.md
-    note: Das Runbook ist veröffentlicht; die vorgeschriebene Übung durch Administrator und Operator steht
-      aus.
+    note: The runbook is published; the required administrator and operator exercise remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-22T11:43:03.438866Z'
 - id: administration_assignment_and_host_tracker

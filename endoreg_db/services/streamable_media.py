@@ -40,7 +40,6 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.paths import (
     protected_media_root,
-    to_protected_media_relative,
     to_storage_relative,
 )
 from endoreg_db.utils.storage_profile import resolve_storage_policy
@@ -117,36 +116,6 @@ _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT = STREAMABLE_RAW_VIDEO_ROOT
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT = STREAMABLE_PROCESSED_VIDEO_ROOT
 _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
 _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
-
-
-def _streamable_relative_path(  # pyright: ignore[reportUnusedFunction]
-    target_path: Path,
-) -> str:
-    resolved_target = Path(target_path).resolve()
-
-    storage_roots = (
-        Path(path_utils.STORAGE_DIR).resolve(),
-        path_utils.EndoregPathsModel.from_environment().storage.resolve(),
-    )
-    for storage_root in dict.fromkeys(storage_roots):
-        try:
-            return resolved_target.relative_to(storage_root).as_posix()
-        except ValueError:
-            continue
-
-    try:
-        storage_relative = to_storage_relative(resolved_target)
-        if not Path(storage_relative).is_absolute():
-            return storage_relative
-    except ValueError:
-        pass
-
-    try:
-        return to_protected_media_relative(resolved_target)
-    except ValueError as protected_exc:
-        raise ValueError(
-            f"Could not derive streamable relative path for {resolved_target}"
-        ) from protected_exc
 
 
 def _is_sha256_hex(value: str) -> bool:

@@ -142,13 +142,14 @@ shared compliance contract:
    A complete current HLS generation is returned idempotently without starting
    FFmpeg.
 
-Import, reimport, and reanonymization require raw and processed HLS readiness
-before reporting success. This deliberate write amplification keeps immediate
-playback latency bounded in time-critical environments. The existing typed HLS
-materializer remains idempotent, atomically publishes complete generations,
-and fails the import loudly when either required rendition cannot be prepared.
-Completed-duplicate paths also call the same readiness helper so a missing or
-reconciled derivative is repaired before returning the existing video.
+Raw and processed HLS readiness is the required import, reimport, and
+reanonymization contract, but this is not yet enforced consistently by every
+caller. The materializer has typed results and atomically publishes complete
+generations; however, the feature tracker currently records caller/result
+mismatches that can allow false import success or cause a correction job to
+reject a successful publication. Completed-duplicate and repair paths must not
+be treated as production-ready until the `hls_callers_require_terminal_readiness`
+criterion is verified.
 
 The authenticated playlist boundary retains its idempotent demand fallback for
 legacy, evicted, or reconciled records whose HLS is unexpectedly absent. While
@@ -161,10 +162,12 @@ Legacy HLS rows without a persisted source-content SHA-256 identity are never
 served as READY. Playlist lookup treats them as stale and uses the same bounded
 demand fallback to reserve an identity-bound replacement. Direct key and segment
 lookups reject the legacy generation. The schema migration deliberately does not
-decrypt and hash the full production corpus. Every enabled production host runs
-the mandatory startup backfill over the complete eligible raw and processed
-corpus without per-machine opt-in or selection, while the demand fallback covers
-requests arriving before that automatic replacement has completed.
+decrypt and hash the full production corpus. Enabled LuxNix hosts can dispatch
+automatic raw and processed replacement work, while the demand fallback covers
+requests arriving before replacement. This repository does not yet contain
+production evidence that the full corpus has converged, and the tracker records
+open backfill admission and accounting defects; therefore automatic dispatch
+must not be described as completed production backfill.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50

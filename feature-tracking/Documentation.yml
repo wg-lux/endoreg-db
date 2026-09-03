@@ -1,8 +1,8 @@
 schema_version: '1.0'
 id: documentation
-name: Zentrale Dokumentations-Governance
-description: Repository-übergreifende Verwaltung, Validierung, Bereinigung und Veröffentlichung der Dokumentation,
-  README.md- und AGENTS.md-Einstiegspunkte für endoreg-db, lx-annotate, lx-data-models und lx-anonymizer.
+name: Central documentation governance
+description: Cross-repository management, validation, cleanup, and publication of documentation and the
+  README.md and AGENTS.md entry points for endoreg-db, lx-annotate, lx-data-models, and lx-anonymizer.
 owners:
 - endoreg_db maintainers
 - lx-annotate maintainers
@@ -15,41 +15,40 @@ tracking:
 source_documents:
 - path: README.md
   disposition: reference
-  note: Der EndoRegDB-Einstiegspunkt muss auf kanonische, aktuelle Dokumentation verweisen.
+  note: The EndoRegDB entry point must link to canonical, current documentation.
 - path: AGENTS.md
   disposition: reference
-  note: Verbindliche Arbeits- und Sicherheitsregeln für automatisierte und menschliche Maintainer.
+  note: Binding work and security rules for automated and human maintainers.
 - path: docs/README.md
   disposition: reference
-  note: Bestehender Dokumentationsindex und Ausgangspunkt für die zentrale Navigation.
+  note: Existing documentation index and starting point for central navigation.
 - path: docs/wiki/README.md
   disposition: reference
-  note: Bestehende Wiki-Auswahl, die in das zentrale Publikationskonzept eingeordnet werden muss.
+  note: Existing wiki selection that must be incorporated into the central publication model.
 definition_of_done:
 - id: inventory_and_classification
   category: requirements
-  title: Alle Dokumentationsartefakte sind zentral inventarisiert und klassifiziert
+  title: All documentation artifacts are centrally inventoried and classified
   acceptance:
-  - Ein maschinenlesbares Inventar deckt /home/admin/endoreg-db/docs, /home/admin/dev/lx-annotate/docs,
-    /home/admin/lx-parse/lx-data-models/docs und /home/admin/lx-anonymizer/docs sowie die jeweiligen README.md-
-    und AGENTS.md-Dateien ab.
-  - 'Der Baseline-Snapshot vom 2026-07-31 ist nachvollziehbar erfasst: endoreg-db enthält 222 Dateien
-    mit 47 gepflegten Markdown/ReStructuredText-Quellen und 167 lokalen Build-Dateien; lx-annotate enthält
-    122 Dateien mit 21 gepflegten Markdown-Quellen und 97 derzeit versionierten Build-Dateien; lx-data-models
-    enthält 46 Dateien mit 22 Markdown/ReStructuredText-Quellen und 20 Diagrammquellen beziehungsweise
-    Diagramm-Renderings; lx-anonymizer enthält 22 Dateien mit 7 Markdown-Quellen sowie 15 Binär-, Publikations-
-    oder Capture-Artefakten.'
-  - Jeder Eintrag besitzt mindestens Repository, relativen Pfad, Dokumenttyp, Titel, Zielgruppe, fachlichen
-    Owner, Lebenszyklusstatus, kanonische Quelle, Sichtbarkeit, letzte Prüfung, nächsten Prüftermin, Nachfolger
-    und optionalen Wiki-Slug.
-  - Quellen, generierte Ausgaben, Diagrammquellen, gerenderte Diagramme, Test-Fixtures, Forschungsnachweise,
-    Publikationsentwürfe und sensible Diagnose-Captures werden unterscheidbar klassifiziert und nicht
-    pauschal als publizierbare Dokumentation behandelt.
+  - A machine-readable inventory covers /home/admin/endoreg-db/docs, /home/admin/dev/lx-annotate/docs,
+    /home/admin/lx-parse/lx-data-models/docs, and /home/admin/lx-anonymizer/docs, including each repository's
+    README.md and AGENTS.md files.
+  - 'The 2026-07-31 baseline snapshot is recorded reproducibly: endoreg-db contains 222 files with 47
+    maintained Markdown/ReStructuredText sources and 167 local build files; lx-annotate contains 122 files
+    with 21 maintained Markdown sources and 97 currently tracked build files; lx-data-models contains 46
+    files with 22 Markdown/ReStructuredText sources and 20 diagram sources or rendered diagrams;
+    lx-anonymizer contains 22 files with 7 Markdown sources and 15 binary, publication, or capture artifacts.'
+  - Every entry includes at least the repository, relative path, document type, title, audience, domain
+    owner, lifecycle status, canonical source, visibility, last review, next review date, successor, and an
+    optional wiki slug.
+  - Sources, generated outputs, diagram sources, rendered diagrams, test fixtures, research evidence,
+    publication drafts, and sensitive diagnostic captures are classified distinctly and are not treated
+    wholesale as publishable documentation.
   required: true
   verification:
     kind: manual
-    instructions: Inventar gegen git ls-files und den Dateibaum aller vier Repositories abgleichen; Stichproben
-      aus jeder Artefaktklasse auf Metadatenvollständigkeit prüfen.
+    instructions: Compare the inventory with git ls-files and the file trees of all four repositories;
+      sample every artifact class for metadata completeness.
     timeout_seconds: 600
   assessment:
     status: in_progress
@@ -58,29 +57,29 @@ definition_of_done:
       reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py
     - kind: document
       reference: quality/documentation_governance.yml
-    note: Reproduzierbares Inventar über alle vier Repositories läuft ohne Governance-Fehler oder Ausnahmen.
-      Es inventarisiert bewusst auch lokale generierte Build-Ausgaben, daher ist die Gesamtzahl buildabhängig;
-      fachliche Triage und Review-Metadaten je Quelldokument stehen aus.
+    note: The reproducible inventory across all four repositories runs without governance errors or
+      exceptions. It intentionally inventories local generated build outputs, so the total depends on the
+      build state; domain triage and review metadata for each source document remain outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T10:03:36.139210Z'
 - id: canonical_ownership_and_navigation
   category: functionality
-  title: Kanonische Dokumente, Ownership und Navigation werden aus einer Quelle verwaltet
+  title: Canonical documents, ownership, and navigation are managed from one source
   acceptance:
-  - Für jedes Thema existiert genau ein als kanonisch markiertes Dokument; Duplikate verweisen auf dieses
-    Dokument, werden zusammengeführt oder erhalten einen klar abgegrenzten repository-spezifischen Zweck.
-  - Mindestens die doppelten Pydantic- und Datumsleitfäden in lx-annotate und lx-data-models, die zwei
-    Reporting-Template-Seiten in lx-annotate sowie die repository-übergreifenden Video-Concurrency-Verträge
-    besitzen eine dokumentierte kanonische Ownership-Entscheidung.
-  - Ein zentraler Einstiegspunkt erzeugt eine Navigation nach Zielgruppe und Aufgabe und verlinkt verlässlich
-    in repository-spezifische Entwickler-, Betriebs-, Sicherheits-, API- und Forschungsdokumentation.
-  - README.md, AGENTS.md, Sphinx-Toctrees und Wiki-Navigation werden gegen dasselbe Inventar validiert;
-    handgepflegte Indizes können keine gelöschten oder nicht kanonischen Seiten dauerhaft weiterführen.
+  - Exactly one document is marked canonical for each topic; duplicates link to it, are merged, or have a
+    clearly bounded repository-specific purpose.
+  - At minimum, the duplicate Pydantic and date guides in lx-annotate and lx-data-models, the two reporting
+    template pages in lx-annotate, and the cross-repository video-concurrency contracts have a documented
+    canonical ownership decision.
+  - A central entry point generates navigation by audience and task and reliably links to repository-specific
+    developer, operations, security, API, and research documentation.
+  - README.md, AGENTS.md, Sphinx toctrees, and wiki navigation are validated against the same inventory;
+    manually maintained indexes cannot permanently retain deleted or noncanonical pages.
   required: true
   verification:
     kind: manual
-    instructions: Themen- und Navigationsgraph aus dem Inventar erzeugen und auf doppelte kanonische Einträge,
-      verwaiste Seiten, Zyklen und tote Einstiegspunkte prüfen.
+    instructions: Generate the topic and navigation graph from the inventory and check for duplicate
+      canonical entries, orphaned pages, cycles, and dead entry points.
     timeout_seconds: 600
   assessment:
     status: in_progress
@@ -93,33 +92,33 @@ definition_of_done:
       reference: /home/admin/lx-anonymizer/docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
     - kind: test
       reference: tests/scripts/test_check_documentation_governance.py
-    note: Kanonische Ownership ist für Assisted Reporting, Datumsregeln, Pydantic-Muster und Videoimport-Concurrency
-      maschinenlesbar registriert. Der Videovertrag bleibt kanonisch in endoreg-db; lx-anonymizer enthält
-      ausschließlich den strengeren Komponentenvertrag und dokumentiert Konflikt- sowie Änderungsregeln.
-      Vollständige Topic-Triage und generierter Zielgruppenindex stehen aus.
+    note: Canonical ownership is registered in machine-readable form for assisted reporting, date rules,
+      Pydantic patterns, and video-import concurrency. The video contract remains canonical in endoreg-db;
+      lx-anonymizer contains only the stricter component contract and documents conflict and change rules.
+      Complete topic triage and a generated audience index remain outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T10:16:11.271206Z'
 - id: automated_validation
   category: testing
-  title: Dokumentation, README.md und AGENTS.md besitzen reproduzierbare Validierungsgates
+  title: Documentation, README.md, and AGENTS.md have reproducible validation gates
   acceptance:
-  - Ein repository-übergreifend ausführbarer Check validiert interne und externe Links, Sphinx-Builds
-    mit Warnungen als Fehler, Toctrees, Markdown-Struktur, Codebeispiele, Inventarmetadaten und die Existenz
-    aller referenzierten Dateien.
-  - Jede Repository-README nennt Zweck, unterstützte Einrichtung, kanonische Befehle, Dokumentationseinstieg,
-    Supportgrenzen und Feature-Tracking; veraltete Befehle, lokale absolute Pfade, fehlende Bilder und
-    Platzhalter wie "coming soon" schlagen fehl oder benötigen eine explizite, befristete Ausnahme.
-  - Jedes Repository besitzt eine AGENTS.md oder eine explizit dokumentierte und testbare Vererbung; Regeln
-    nennen Scope, Sicherheitsinvarianten, Pflichtdokumente, Testbefehle, Feature-Tracking und widersprechen
-    einander an Repository-Grenzen nicht.
-  - Pull Requests führen die Checks nur für relevante Änderungen aus, ein periodischer Vollcheck erkennt
-    externe Link-Rot und Drift, und Ausnahmen enthalten Owner, Grund und Ablaufdatum.
+  - A cross-repository executable check validates internal and external links, Sphinx builds with warnings
+    treated as errors, toctrees, Markdown structure, code examples, inventory metadata, and the existence
+    of every referenced file.
+  - Every repository README states its purpose, supported setup, canonical commands, documentation entry
+    point, support boundaries, and feature tracking; obsolete commands, local absolute paths, missing images,
+    and placeholders such as "coming soon" fail or require an explicit time-limited exception.
+  - Every repository has an AGENTS.md file or explicitly documented and testable inheritance; rules name
+    scope, security invariants, required documents, test commands, and feature tracking and do not conflict
+    across repository boundaries.
+  - Pull requests run checks only for relevant changes, a periodic full check detects external link rot and
+    drift, and exceptions include an owner, reason, and expiration date.
   required: true
   verification:
     kind: manual
-    instructions: Die lokale Sammelprüfung und die CI-Jobs in allen vier Repositories ausführen; anschließend
-      je einen defekten Link, fehlenden Toctree-Eintrag, ungültigen Inventareintrag und eine veraltete
-      Ausnahme als negative Tests nachweisen.
+    instructions: Run the aggregate local check and continuous-integration jobs in all four repositories;
+      then demonstrate a broken link, missing toctree entry, invalid inventory entry, and expired exception
+      as negative tests.
     timeout_seconds: 1200
   assessment:
     status: in_progress
@@ -130,30 +129,30 @@ definition_of_done:
       reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py
     - kind: command
       reference: 'lx-annotate and lx-data-models: sphinx html/linkcheck -W'
-    note: Sieben Governance-Tests prüfen Artefaktklassen, Entry-Points, lokale Links, Workstation-Links,
-      sensitive Captures, Generated-Output-Ausnahmen sowie kanonische und zugehörige Dokumentpfade. Live-Inventar
-      und strikte Sphinx-Lanes sind grün; CI-Integration und ausführbare Beispiele stehen aus.
+    note: Seven governance tests check artifact classes, entry points, local links, workstation links,
+      sensitive captures, generated-output exceptions, and canonical and related document paths. The live
+      inventory and strict Sphinx lanes pass; continuous-integration wiring and executable examples remain outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T10:16:13.256884Z'
 - id: publication_safety
   category: security
-  title: Nur freigegebene und bereinigte Inhalte können öffentlich publiziert werden
+  title: Only approved and sanitized content can be published publicly
   acceptance:
-  - Die Veröffentlichung verwendet eine explizite Allow-List und schließt Geheimnisse, personenbezogene
-    oder geschützte Gesundheitsdaten, absolute Hostpfade, interne Infrastrukturdetails, Browser-HAR-Captures,
-    Rohdatensätze und ungeprüfte Binärdateien aus.
-  - Insbesondere die HAR-Datei und die Publikationsentwürfe unter lx-anonymizer/docs werden vor jeder
-    weiteren Aufbewahrungs- oder Publikationsentscheidung auf Credentials, Patientenbezug, Lizenz, Einwilligung
-    und erforderliche Zugriffsbeschränkung geprüft.
-  - Secret-, personenbezogene-Daten- und Lizenzprüfungen laufen vor Preview und Publish; ein Fehler verhindert
-    die Veröffentlichung ohne stillen Fallback.
-  - Forschungsnachweise und klinische oder sicherheitsrelevante Verträge benennen Version, Reviewstatus
-    und Provenienz; redaktionelle Bereinigung darf Audit-Evidenz nicht vernichten.
+  - Publication uses an explicit allowlist and excludes secrets, personal or protected health information,
+    absolute host paths, internal infrastructure details, browser HTTP Archive (HAR) captures, raw datasets,
+    and unreviewed binary files.
+  - In particular, the HAR file and publication drafts under lx-anonymizer/docs are reviewed for credentials,
+    patient linkage, licensing, consent, and required access restrictions before any further retention or
+    publication decision.
+  - Secret, personal-data, and license checks run before preview and publication; a failure prevents
+    publication without a silent fallback.
+  - Research evidence and clinical or security-relevant contracts identify their version, review status,
+    and provenance; editorial cleanup must not destroy audit evidence.
   required: true
   verification:
     kind: manual
-    instructions: Allow-List, Ausschlussregeln und negative Testartefakte mit Security, Datenschutz und
-      den Dokument-Ownern prüfen; einen absichtlich sensitiven Fixture-Publish fail-closed testen.
+    instructions: Review the allowlist, exclusion rules, and negative test artifacts with security, privacy,
+      and document owners; test that publication of an intentionally sensitive fixture fails closed.
     timeout_seconds: 900
   assessment:
     status: in_progress
@@ -162,35 +161,32 @@ definition_of_done:
       reference: scripts/check_documentation_governance.py
     - kind: code
       reference: /home/admin/lx-anonymizer/.gitignore
-    note: Der HAR-Capture ist aus dem Git-Index entfernt, lokal erhalten und durch *.har dauerhaft ignoriert;
-      der Governance-Lauf ist fail-closed und grün. Secret-, PHI- und Lizenzprüfung der Publish-Auswahl
-      sowie die explizite Wiki-Allow-List stehen aus.
+    note: The HAR capture was removed from the Git index, retained locally, and permanently ignored through
+      *.har; the governance run fails closed and passes. Secret, protected-health-information, and license
+      review of the publication selection and the explicit wiki allowlist remain outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T09:57:13.176215Z'
 - id: pruning_and_lifecycle
   category: maintainability
-  title: Veraltete Dokumentation wird messbar entfernt, ersetzt oder archiviert
+  title: Obsolete documentation is measurably removed, replaced, or archived
   acceptance:
-  - 'Jeder Lebenszyklusstatus ist definiert: current, review_due, deprecated, superseded, archived, generated
-    und restricted; Statusübergänge verlangen Owner, Begründung, Datum und gegebenenfalls einen kanonischen
-    Nachfolger.'
-  - Plan-, TODO-, Gap-, Current-State-, Migration- und Readiness-Dokumente tragen keinen unabhängigen
-    Fertigstellungsstatus; offene Arbeit wird in feature-tracking YAML geführt, dauerhafter Architektur-
-    oder Betriebskontext wird in aktuelle Referenzdokumente überführt.
-  - Alte Seiten werden bevorzugt gelöscht oder in eine klar getrennte, nicht publizierte Historie verschoben;
-    Stub-Seiten und ewige Deprecation-Banner gelten nicht als Bereinigung.
-  - Generierte Sphinx-Ausgaben werden reproduzierbar gebaut und nicht neben ihren Quellen versioniert;
-    insbesondere die 97 getrackten lx-annotate Build-Dateien werden nach bestätigtem Build- und Packaging-Vertrag
-    aus der Quellverwaltung entfernt.
-  - Eine initiale Triage entscheidet für jedes inventarisierte Artefakt keep, improve, merge, replace,
-    archive, restrict oder delete und priorisiert irreführende Setup-, Security- und Operations-Anweisungen
-    vor kosmetischen Verbesserungen.
+  - 'Every lifecycle status is defined: current, review_due, deprecated, superseded, archived, generated,
+    and restricted; status transitions require an owner, rationale, date, and a canonical successor when applicable.'
+  - Planning, TODO, gap, current-state, migration, and readiness documents carry no independent completion
+    status; open work is tracked in feature-tracking YAML, while durable architecture or operations context
+    is moved into current reference documents.
+  - Old pages are preferably deleted or moved into clearly separated, unpublished history; stub pages and
+    permanent deprecation banners do not count as cleanup.
+  - Generated Sphinx outputs are built reproducibly and are not versioned beside their sources; in particular,
+    the 97 tracked lx-annotate build files are removed from source control after the build and packaging
+    contract is confirmed.
+  - Initial triage assigns keep, improve, merge, replace, archive, restrict, or delete to every inventoried
+    artifact and prioritizes misleading setup, security, and operations instructions over cosmetic improvements.
   required: true
   verification:
     kind: manual
-    instructions: Initiale Triage und zwei Reviewzyklen prüfen; nachweisen, dass alle fälligen Einträge
-      entschieden sind, generierte Ausgaben nicht erneut eingecheckt werden und entfernte Seiten keine
-      eingehenden Links ohne Ersatz hinterlassen.
+    instructions: Review the initial triage and two review cycles; demonstrate that every due entry has a
+      decision, generated outputs are not recommitted, and removed pages leave no incoming links without replacements.
     timeout_seconds: 900
   assessment:
     status: in_progress
@@ -201,52 +197,51 @@ definition_of_done:
       reference: /home/admin/dev/lx-annotate/docs/guides/reporting-template-requirements-page.md
     - kind: document
       reference: /home/admin/lx-parse/lx-data-models/docs/index.md
-    note: 97 generierte Sphinx-Dateien aus Git entfernt; drei doppelte lx-annotate Seiten in kanonische
-      Guides konsolidiert; elf zuvor verborgene oder fehlerhaft behandelte lx-data-models Seiten/Assets
-      in Navigation beziehungsweise Ausschlussregeln eingeordnet. Repositoryweite Triage bleibt offen.
+    note: Removed 97 generated Sphinx files from Git; consolidated three duplicate lx-annotate pages into
+      canonical guides; classified eleven previously hidden or incorrectly handled lx-data-models pages and
+      assets in navigation or exclusion rules. Repository-wide triage remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T10:03:14.613306Z'
 - id: wiki_publication
   category: operations
-  title: Kuratierte Dokumentation wird reproduzierbar in ein zentrales GitHub Wiki publiziert
+  title: Curated documentation is published reproducibly to a central GitHub wiki
   acceptance:
-  - Die bevorzugte Zielarchitektur publiziert freigegebene Seiten in das endoreg-db GitHub Wiki und behält
-    die repository-eigenen Markdown-Dateien als Source of Truth; direkte Wiki-Edits werden verhindert
-    oder beim nächsten Lauf eindeutig als Drift gemeldet.
-  - Ein deterministischer Build löst repository-übergreifende Links, Dateinamen, Wiki-Slugs, Navigation,
-    Bilder und Versionshinweise auf und erzeugt vor dem Push ein reviewbares Preview- und Änderungsartefakt.
-  - Veröffentlichungen sind an einen freigegebenen Commit gebunden, verwenden minimale GitHub-Berechtigungen,
-    sind wiederholbar und können auf die letzte bekannte gute Version zurückgesetzt werden.
-  - Falls GitHub Wiki die erforderlichen Zugriffs-, Review-, Such- oder Artefaktanforderungen nicht erfüllt,
-    dokumentiert eine explizite Entscheidung den Blocker und einen gleichwertig validierten GitHub-Pages-Fallback,
-    ohne eine zweite handgepflegte Dokumentationsquelle zu schaffen.
+  - The preferred target architecture publishes approved pages to the endoreg-db GitHub wiki and retains
+    repository-owned Markdown files as the source of truth; direct wiki edits are prevented or reported
+    unambiguously as drift on the next run.
+  - A deterministic build resolves cross-repository links, filenames, wiki slugs, navigation, images, and
+    version notices and produces reviewable preview and change artifacts before pushing.
+  - Publications are bound to an approved commit, use minimal GitHub permissions, are repeatable, and can
+    be rolled back to the last known-good version.
+  - If the GitHub wiki does not meet the required access, review, search, or artifact requirements, an
+    explicit decision documents the blocker and an equivalently validated GitHub Pages fallback without
+    creating a second manually maintained documentation source.
   required: true
   verification:
     kind: manual
-    instructions: Preview aus einem unveröffentlichten Commit erzeugen, Security-Gates prüfen, in eine
-      Test- oder Wiki-Zielumgebung publizieren, Drift erkennen und Rollback demonstrieren.
+    instructions: Generate a preview from an unpublished commit, check security gates, publish to a test or
+      wiki target environment, detect drift, and demonstrate rollback.
     timeout_seconds: 1200
   assessment:
     status: not_assessed
     evidence: []
 - id: contributor_documentation
   category: documentation
-  title: Pflege-, Review- und Publikationsablauf ist für alle Zielgruppen verständlich
+  title: The maintenance, review, and publication workflow is clear to every audience
   acceptance:
-  - Ein kurzer Maintainer-Leitfaden erklärt neue Seiten, Metadaten, kanonische Ownership, Cross-Repository-Links,
-    Diagramme, Deprecation, Archivierung, Ausnahmen und Wiki-Publishing.
-  - Jede Zielgruppe findet vom zentralen Einstieg in höchstens drei Navigationsebenen eine aktuelle Anleitung;
-    Setup- und Störungsabläufe werden durch einen frischen Nutzer beziehungsweise Operator nachvollzogen.
-  - README.md bleibt eine knappe Projekt- und Bootstrap-Seite, AGENTS.md enthält verbindliche Arbeitsregeln,
-    und ausführliche Konzepte oder Runbooks liegen in der kanonischen Dokumentation statt zwischen diesen
-    Rollen dupliziert zu werden.
-  - Dashboards oder Reports zeigen mindestens Inventarabdeckung, review_due-Anzahl, tote Links, Duplikate,
-    veraltete Ausnahmen, nicht zugeordnete Seiten und Publish-Status.
+  - A concise maintainer guide explains new pages, metadata, canonical ownership, cross-repository links,
+    diagrams, deprecation, archiving, exceptions, and wiki publication.
+  - Every audience can reach current guidance from the central entry point within no more than three navigation
+    levels; a new user or operator walks through setup and incident workflows.
+  - README.md remains a concise project and bootstrap page, AGENTS.md contains binding work rules, and detailed
+    concepts or runbooks live in canonical documentation instead of being duplicated across these roles.
+  - Dashboards or reports show at least inventory coverage, the review_due count, dead links, duplicates,
+    expired exceptions, unassigned pages, and publication status.
   required: true
   verification:
     kind: manual
-    instructions: Leitfaden mit je einem Maintainer aus allen vier Repositories sowie einem neuen Entwickler
-      und einem Operator durchspielen; Navigation und Report-Metriken abnehmen.
+    instructions: Walk through the guide with one maintainer from each of the four repositories, one new
+      developer, and one operator; approve the navigation and report metrics.
     timeout_seconds: 900
   assessment:
     status: in_progress
@@ -259,8 +254,8 @@ definition_of_done:
       reference: docs/wiki/README.md
     - kind: document
       reference: /home/admin/lx-parse/lx-data-models/AGENTS.md
-    note: Zentrale Navigation trennt verbindliche Verträge, Betrieb, generierte Referenzen und migrierte
-      Planung; Wiki-Kandidaten und Source-of-Truth sind erklärt. Zielgruppen-Review, Navigationsmetrik
-      und Publish-Report stehen aus.
+    note: Central navigation separates binding contracts, operations, generated references, and migrated
+      planning; wiki candidates and the source of truth are explained. Audience review, navigation metrics,
+      and the publication report remain outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-31T10:11:28.875645Z'

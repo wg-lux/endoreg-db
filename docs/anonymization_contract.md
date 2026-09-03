@@ -1,46 +1,45 @@
-# Anonymisierungs- und Freigabe-Contract
+# Anonymization and Release Contract
 
-Diese Referenz definiert den Schutzumfang, die Freigabegrenzen und die
-Betriebsrollen für Videos, Frames und Berichte. Die Produktionsreife wird
-ausschließlich im Feature-Tracker unter `feature-tracking/Anonymization.yml`
-bewertet.
+This reference defines the protection scope, release boundaries, and
+operational roles for videos, frames, and reports. Production readiness is
+assessed only in `feature-tracking/Anonymization.yml`.
 
-## Gesamtbild
+## Overview
 
 ```text
-Rohmedium
+Raw medium
 +-- Video
-|   +-- Frame-Extraktion
-|   +-- Anonymisierung und Korrektur
-|   +-- verarbeitetes Video
-|       +-- menschliche Validierung
-|       +-- Qualitätsnachweis
-|       +-- Export-/Streaming-Freigabe
-+-- Bericht
-    +-- Text- und PDF-Anonymisierung
-    +-- verarbeiteter Bericht
-        +-- menschliche Validierung
-        +-- Qualitätsnachweis
-        +-- kontrollierte Bereitstellung
+|   +-- Frame extraction
+|   +-- Anonymization and correction
+|   +-- Processed video
+|       +-- Human validation
+|       +-- Quality evidence
+|       +-- Export and streaming approval
++-- Report
+    +-- Text and PDF anonymization
+    +-- Processed report
+        +-- Human validation
+        +-- Quality evidence
+        +-- Controlled release
 ```
 
-## Schutzumfang
+## Protection Scope
 
-Direkte Identifikatoren umfassen mindestens Vor- und Nachnamen von Patient und
-Untersucher, Geburtsdatum, Untersuchungsdatum und -zeit, Fallnummer,
-Endoskop-Seriennummer, externe IDs, Dateipfade sowie identifizierenden Roh- und
-Freitext. Bei Videos gehören eingeblendete PHI-Regionen innerhalb und außerhalb
-des Endoskopbildes zum Schutzumfang. Bei Berichten gehören PDF-Inhalt,
-extrahierter Text und strukturierte Metadaten dazu.
+Direct identifiers include, at minimum, patient and examiner names, date of
+birth, examination date and time, case number, endoscope serial number,
+external identifiers, file paths, and identifying raw or free text. For video,
+the scope includes visible protected-health-information regions both inside
+and outside the endoscopic image. For reports, it includes Portable Document
+Format (PDF) content, extracted text, and structured metadata.
 
-Rohvideos, Rohframes und Rohberichte dürfen den lokalen verschlüsselten
-Speicherbereich nicht verlassen. Export, Hub-Transfer und externes Streaming
-verwenden ausschließlich verarbeitete, menschlich validierte Artefakte. Der
-langfristige Master-Key bleibt lokal und wird weder in Payloads noch in
-Anwendungskonfiguration oder Datenbank gespeichert. `NetworkNode.shared_secret`
-dient ausschließlich der Request-Authentisierung.
+Raw videos, raw frames, and raw reports must not leave the local encrypted
+storage boundary. Export, hub transfer, and external streaming use only
+processed artifacts that have been validated by a human. The long-lived
+master key remains local and is not stored in payloads, application
+configuration, or the database. `NetworkNode.shared_secret` is used only for
+request authentication.
 
-## Zustands- und Freigabemodell
+## State and Release Model
 
 ```mermaid
 flowchart LR
@@ -50,91 +49,89 @@ flowchart LR
   D --> E[done_processing_anonymization]
   E --> F[validated]
   A & B & C & D & E --> X[failed]
-  X -->|explizite Korrektur oder Wiederanlauf| B
+  X -->|explicit correction or restart| B
 ```
 
-Nur `validated` erlaubt die fachliche Freigabe. Im Profil
-`local_study_server` kommen `outside_segments_removed`, `ready_for_export` und
-ein passender SHA-256-Nachweis des aktuellen `processed_file` hinzu. Fehlende,
-widersprüchliche oder veraltete Evidenz führt fail-closed zur Ablehnung. Eine
-Korrektur oder ein Artefaktwechsel hebt die Exportfreigabe auf; frühere
-Verarbeitungs- und Auditdaten werden nicht überschrieben.
+Only `validated` permits clinical release. In the `local_study_server`
+profile, release additionally requires `outside_segments_removed`,
+`ready_for_export`, and matching Secure Hash Algorithm 256-bit (SHA-256)
+evidence for the current `processed_file`. Missing, contradictory, or stale
+evidence fails closed. A correction or artifact replacement revokes export
+approval; earlier processing and audit records are preserved.
 
-Nach der Validierung eines Outside-Segments baut der Post-Validation-Job das
-verarbeitete Video ausschließlich mit den validierten Outside-Intervallen neu
-auf. Zusätzlich werden sämtliche bereits extrahierten Frame-Dateien in diesen
-Intervallen atomar vollständig schwarz geschrieben. Der Job prüft Video und
-Frame-Dateien; fehlende, unlesbare oder nicht schwarze Outside-Frames verhindern
-`outside_segments_removed` und damit jede Exportfreigabe.
+After validation of an outside segment, the post-validation job rebuilds the
+processed video using only validated outside intervals. It also atomically
+blackens every already extracted frame file in those intervals. The job checks
+the video and frame files; missing, unreadable, or non-black outside frames
+prevent `outside_segments_removed` and therefore prevent export approval.
 
-## Qualitätsgrenzen
+## Quality Boundaries
 
-Eine Freigabe ist nur zulässig, wenn alle folgenden Grenzen erfüllt sind:
+Release is permitted only when all of these conditions hold:
 
-- menschliche Anonymisierungsvalidierung ist abgeschlossen;
-- das verarbeitete Artefakt existiert und sein SHA-256 ist nachvollziehbar;
-- keine bekannten direkten Identifikatoren verbleiben im geprüften Korpus;
-- für Video-PHI-Regionen beträgt die Zahl falsch-negativer Regionen `0`;
-- fehlende Sensitive-Meta-, OCR-, Modellversions- oder Hash-Evidenz wird nicht
-  als erfolgreicher Qualitätsnachweis interpretiert;
-- Medien im Zustand `failed` oder `lost` werden weder freigegeben noch exportiert.
+- human anonymization validation is complete;
+- the processed artifact exists and has traceable SHA-256 evidence;
+- no known direct identifiers remain in the reviewed corpus;
+- the number of false-negative protected-health-information regions in video
+  is zero;
+- missing sensitive-metadata, optical-character-recognition, model-version,
+  or hash evidence is not treated as successful quality evidence;
+- media in `failed` or `lost` state is neither released nor exported.
 
-Die Qualitätsauswertung persistiert Status, Metriken, Modell-/Informationsquelle,
-Artefakthash, menschliche Validierung und Warnungen. Warnungen wie
-`residual_ocr_not_measurable` oder `processed_artifact_hash_not_available`
-müssen vor einer klinischen Freigabe geklärt werden.
+Quality assessment persists status, metrics, model or information source,
+artifact hash, human validation, and warnings. Warnings such as
+`residual_ocr_not_measurable` or `processed_artifact_hash_not_available` must
+be resolved before clinical release.
 
-## Anleitung für Entwickler
+## Developer Guidance
 
-Zustandsübergänge werden über die vorhandenen State- und Service-Helfer
-ausgeführt. Neue Workflowlogik gehört nicht in Persistenzmodelle. Export- und
-Transferpfade müssen serverseitig auf `anonymization_validated`, das aktuelle
-`processed_file` und die profilabhängigen Freigaben prüfen. Direkte
-Identifikatoren, Rohtext und Rohmedien sind an jeder externen Grenze abzulehnen.
+Use the existing state and service helpers for state transitions. New workflow
+logic belongs in services, not persistence models. Export and transfer paths
+must enforce `anonymization_validated`, the current `processed_file`, and all
+profile-specific release gates on the server. Every external boundary must
+reject direct identifiers, raw text, and raw media.
 
-Vor Änderungen sind Pyright und die in `feature-tracking/Anonymization.yml`
-hinterlegten Testkommandos auszuführen. Sicherheitsgrenzen werden zusätzlich
-durch `tests/services/test_export_frames_contract.py`,
-`tests/services/test_transfer_job_contract.py` und
-`tests/views/media/test_hub_transfer_endpoints.py` abgedeckt.
+Before changes, run Pyright and the tests recorded in
+`feature-tracking/Anonymization.yml`. Additional security-boundary coverage is
+in `tests/services/test_export_frames_contract.py`,
+`tests/services/test_transfer_job_contract.py`, and
+`tests/views/media/test_hub_transfer_endpoints.py`.
 
-## Anleitung für klinische Reviewer
+## Clinical Reviewer Guidance
 
-Reviewer prüfen das verarbeitete Video beziehungsweise den verarbeiteten
-Bericht vollständig gegen die zugehörigen sensiblen Metadaten. Zu bestätigen
-sind die Entfernung direkter Identifikatoren, aller sichtbaren PHI-Regionen und
-der außerhalb liegenden Videosegmente. Qualitätswarnungen oder fehlende Evidenz
-führen zur Ablehnung und dokumentierten Korrektur, niemals zur Freigabe.
+Reviewers compare the complete processed video or report with its associated
+sensitive metadata. They confirm removal of direct identifiers, every visible
+protected-health-information region, and video content outside the accepted
+intervals. A warning or missing evidence requires rejection and documented
+correction, never release.
 
-Die Validierung erfolgt ausschließlich über den authentisierten
-Anonymisierungsworkflow. Reviewer dokumentieren Entscheidung und Kommentar;
-Zeitpunkt und Akteur werden serverseitig in Audit- und Qualitätsdaten erfasst.
-Nach jeder Korrektur oder Neuberechnung ist erneut zu prüfen.
+Validation occurs only through the authenticated anonymization workflow. The
+server records the reviewer, time, decision, and comment in audit and quality
+data. Every correction or recomputation requires a new review.
 
-## Anleitung für Betreiber
+## Operator Guidance
 
-Der tägliche Health-Check liefert unter
-`local_study_server.anonymization_processing` die Zähler `failed_videos`,
-`failed_reports` und `stale_video_histories`. Pending- oder Running-Historien
-gelten nach sieben Stunden als stale. Jeder Wert größer null setzt den
-entsprechenden Check auf `false`, erzeugt einen Nicht-Null-Exit-Code und ist über
-systemd/journald alarmierbar.
+The daily health check reports `failed_videos`, `failed_reports`, and
+`stale_video_histories` under `local_study_server.anonymization_processing`.
+Pending or running histories older than seven hours are stale. Any nonzero
+counter marks the corresponding check unhealthy and produces a nonzero exit
+code suitable for systemd and journald alerting.
 
-Bei einem Fehler bleibt die Evidenz erhalten. Betreiber prüfen History,
-strukturiertes Log, Quarantäne und Audit-Ledger, beheben die Ursache und starten
-den vorhandenen idempotenten Korrektur-/Reimport-Workflow. Ein manueller
-Datenbankeingriff oder das Löschen von Fehlerhistorie ist keine zulässige
-Wiederherstellung. Erst ein erfolgreicher Neuaufbau, erneute menschliche
-Validierung, Qualitätsprüfung und Exportfreigabe schließen den Vorgang.
+On failure, evidence is preserved. Operators inspect history, structured logs,
+quarantine, and the audit ledger; repair the cause; and start the existing
+idempotent correction or reimport workflow. Manual database changes or deletion
+of failure history are not valid recovery. Recovery is complete only after a
+successful rebuild, renewed human validation, quality assessment, and export
+approval.
 
-Der produktionsnahe Abnahmetest umfasst mindestens:
+A production-like acceptance exercise includes at least:
 
-1. Healthy Health-Check mit Zählern `0` und Exit-Code `0`.
-2. Ein Medium mit `processing_error=true`; Health-Check muss fehlschlagen.
-3. Eine länger als sieben Stunden aktive Processing-History; Health-Check muss
-   fehlschlagen.
-4. Expliziten Wiederanlauf; alte History und Auditdaten bleiben erhalten.
-5. Erneute Validierung und Qualitätsprüfung; erst danach Exportfreigabe.
+1. A healthy health check with all counters at zero and exit code zero.
+2. A medium with `processing_error=true`; the health check must fail.
+3. Processing history that has remained active for more than seven hours; the
+   health check must fail.
+4. An explicit restart that preserves the old history and audit data.
+5. Renewed validation and quality assessment before export approval.
 
-Deployment, systemd-Timer, Quarantäne und konkrete Kommandos sind in
-`docs/local_study_server_deployment.md` beschrieben.
+Deployment, systemd timers, quarantine, and concrete commands are documented
+in `docs/local_study_server_deployment.md`.

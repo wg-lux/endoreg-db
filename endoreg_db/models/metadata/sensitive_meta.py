@@ -38,26 +38,6 @@ class _ExternalIdLike(Protocol):
     origin: str
 
 
-class _SensitiveMetaStateLike(Protocol):
-    is_verified: bool
-
-    def mark_dob_verified(self) -> None: ...
-
-    def mark_names_verified(self) -> None: ...
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _ExaminersRelationLike(Protocol):
-    def first(self) -> "Examiner | None": ...
-
-    def all(self) -> object: ...
-
-    def filter(self, *args: object, **kwargs: object) -> object: ...
-
-    def add(self, *objs: object) -> None: ...
-
-
 logger = logging.getLogger(__name__)  # Add logger instance
 
 # SECRET_SALT moved to sensitive_meta_logic

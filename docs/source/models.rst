@@ -34,7 +34,7 @@ Person
 
 Product
 ====================
-.. automodule:: endoreg_db.models.administration.person
+.. automodule:: endoreg_db.models.administration.product
    :members:
    :undoc-members:
    :show-inheritance:

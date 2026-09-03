@@ -1,9 +1,10 @@
 import logging
 from collections.abc import Mapping
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, cast
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from django.db import transaction
 from rest_framework import generics, status
@@ -13,9 +14,6 @@ from rest_framework.response import Response
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 class _SerializerDataLike(Protocol):

@@ -1,8 +1,8 @@
-# Authoring-Beispiel. Diese Datei wird vom Tracker nicht als Feature geladen.
+# Authoring example. The tracker does not load this file as a feature.
 schema_version: "1.0"
 id: audit_ledger_example
-name: Audit-Ledger-Beispiel
-description: Zeigt die vollständige Struktur einer Feature-Definition.
+name: Audit ledger example
+description: Shows the complete structure of a feature definition.
 owners:
   - endoreg_db maintainers
 production_critical: true
@@ -12,18 +12,18 @@ tracking:
 source_documents:
   - path: docs/model_layer_map_for_agents.md
     disposition: reference
-    note: Architekturkontext; enthält keinen verbindlichen Fertigstellungsstatus.
+    note: Architecture context; does not contain an authoritative completion status.
 definition_of_done:
   - id: documented_scope
     category: requirements
-    title: Unterstützter Funktionsumfang ist eindeutig beschrieben
+    title: Supported scope is clearly documented
     acceptance:
-      - Unterstützte und nicht unterstützte Abläufe sind dokumentiert.
-      - Fehler- und Sicherheitsverhalten sind als überprüfbare Anforderungen formuliert.
+      - Supported and unsupported workflows are documented.
+      - Failure and security behavior are expressed as verifiable requirements.
     required: true
     verification:
       kind: manual
-      instructions: Dokument gegen Implementierung, API-Vertrag und Betriebsprofil prüfen.
+      instructions: Review the document against the implementation, API contract, and deployment profile.
       timeout_seconds: 300
     assessment:
       status: not_assessed

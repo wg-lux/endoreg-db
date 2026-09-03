@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, time
 from typing import TYPE_CHECKING, Any, TypeAlias, Unpack
 
 from django.core.exceptions import ValidationError
@@ -13,24 +12,11 @@ from endoreg_db.schemas import validate_report_file_meta_payload
 from ...utils import DOCUMENT_DIR, STORAGE_DIR
 
 if TYPE_CHECKING:
-    from ...administration import Center, Examiner, Patient
+    from ...administration import Examiner
     from ...medical.patient.patient_examination import PatientExamination
-    from ...metadata.sensitive_meta import SensitiveMeta
 
-NoDocumentRelationValue: TypeAlias = None
-NoDocumentTextValue: TypeAlias = None
-NoDocumentDateValue: TypeAlias = None
-NoDocumentTimeValue: TypeAlias = None
-NoDocumentMetaValue: TypeAlias = None
-DocumentDescription: TypeAlias = "str | NoDocumentTextValue"
-DocumentMeta: TypeAlias = ReportMetaJsonObject | NoDocumentMetaValue
-DocumentDate: TypeAlias = "date | NoDocumentDateValue"
-DocumentTime: TypeAlias = "time | NoDocumentTimeValue"
-DocumentCenter: TypeAlias = "Center | NoDocumentRelationValue"
-DocumentTypeRelation: TypeAlias = "DocumentType | NoDocumentRelationValue"
-DocumentPatient: TypeAlias = "Patient | NoDocumentRelationValue"
-DocumentPatientExamination: TypeAlias = "PatientExamination | NoDocumentRelationValue"
-DocumentSensitiveMeta: TypeAlias = "SensitiveMeta | NoDocumentRelationValue"
+DocumentMeta: TypeAlias = ReportMetaJsonObject | None
+DocumentPatientExamination: TypeAlias = "PatientExamination | None"
 
 
 class DocumentTypeManager(models.Manager["DocumentType"]):

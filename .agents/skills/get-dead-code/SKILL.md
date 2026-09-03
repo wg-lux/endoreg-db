@@ -5,7 +5,24 @@ description: Inventory, investigate, classify, and optionally remove dead code a
 
 # Get Dead Code
 
-Produce an evidence-backed repository-wide dead-code inventory. Treat static-tool output as candidates, never as deletion authority. Default to read-only analysis; modify or remove code only when the user explicitly requests it.
+Produce an evidence-backed repository-wide dead-code and duplication inventory. Treat static-tool output as candidates, never as deletion authority. Default to read-only analysis; modify or remove code only when the user explicitly requests it.
+
+When the request is to reduce code without changing behavior, also inspect for
+duplicate type aliases, private functions, classes, and documentation. Use
+Radon complexity measurements as a prioritization signal, not as deletion
+authority. Before removing or consolidating a candidate, derive its callers
+with repository search and, where runtime reachability matters, run an
+isolated `python -m trace --count -C <absolute-output-directory>` invocation
+against the narrowest reproducible command or test. Preserve the command,
+working directory, revision, and relevant output as evidence; tracing one
+scenario does not prove global non-use.
+
+Behavior-preserving refactors require focused Arrange–Act–Assert tests for
+each changed contract, including meaningful valid and invalid cases. Run
+Pyright before the focused tests for any non-trivial change, then run the
+repository dead-code and relevant quality guards. Do not claim unchanged test
+coverage from a passing test alone: compare the affected test surface and
+coverage evidence when coverage is part of the request.
 
 ## Establish scope and policy
 
@@ -14,6 +31,12 @@ Produce an evidence-backed repository-wide dead-code inventory. Treat static-too
 3. Read `feature-tracking/policy.yml`, `feature-tracking/CodeQuality.yml`, and `docs/code_quality.md` before changing tracked code-quality behavior or removing code.
 4. Inventory source roots and language manifests with `rg --files`. Do not infer repository coverage from filenames alone.
 5. State the exact files to change and what will remain unchanged before editing.
+
+For a code-reduction cohort, record the baseline line count, Radon complexity
+for affected functions or classes, and the candidate's static, dynamic, public,
+and documentation consumers. Keep duplicate documentation only when it is a
+deliberate audience-specific contract; otherwise nominate one owning source
+and link or remove the duplicate as part of the same reviewed cohort.
 
 ## Run the existing Python guard
 
@@ -40,6 +63,12 @@ For each file or symbol, gather multiple independent forms of evidence where app
 5. Treat migrations, settings, generated code, typing-only imports, framework callbacks, and test fixtures as special surfaces requiring explicit proof.
 6. Distinguish an unused implementation from an intentionally retained parameter or import. Do not broaden types, add ignores, suppress errors, or create silent fallbacks.
 7. Run the narrowest relevant import, collection, framework, or focused test check when static evidence is insufficient.
+8. For duplicate aliases, private functions, classes, or documentation, compare
+   signatures, annotations, defaults, exceptions, side effects, ordering,
+   framework registration, and public import paths before consolidating.
+9. Use `radon cc` and `radon raw` (or the repository's configured Radon task)
+   to identify complexity and line-count hotspots. Record exact commands and
+   do not introduce Radon as a new dependency solely for one finding.
 
 Classify each candidate as one of:
 
@@ -75,6 +104,11 @@ When removal is explicitly requested:
 4. Keep workflow logic out of Django models and respect all clinical, storage, cryptographic, filesystem, and video invariants in `AGENTS.md`.
 5. Update the reviewed baseline only when a removed or changed finding makes an entry stale, retaining schema-valid owner, reason, classification, and review data for exceptions.
 6. For tracked feature status, use `feature-tracking/tracker.py update` or `verify --update`; never hand-edit assessment status.
+7. For a behavior-preserving consolidation, keep the cohort small, preserve
+   public names through an explicit compatibility path when required, and
+   compare focused AAA tests, Pyright output, relevant coverage, and Radon
+   metrics before and after. If callers cannot be ruled out, retain the code
+   and classify it as `uncertain` or `compatibility_contract`.
 
 ## Verify changes
 
@@ -85,6 +119,21 @@ For code changes, run Pyright before pytest:
 /home/admin/endoreg-db/.devenv/state/venv/bin/pytest <focused-path-or-nodeid>
 devenv tasks run quality:dead-code
 ```
+
+For a complexity-reduction cohort, the required evidence also includes:
+
+- a shell-free, reproducible Radon measurement before and after;
+- caller searches plus an isolated `python -m trace --count -C` run where
+  runtime reachability is relevant;
+- focused AAA tests covering the preserved behavior and invalid-input
+  invariants; and
+- Pyright before pytest, with coverage comparison when test coverage is in
+  scope.
+
+If a required tracker command cannot run because an unrelated feature YAML is
+already invalid, do not repair or bypass that unrelated feature and do not
+edit the requested scope without a lock. Report the exact validation error as
+the blocker and preserve the working tree.
 
 If the change crosses module boundaries, run the relevant broader repository task. Before a broad pytest lane, check `pgrep -af 'pytest|py.test'` and do not stack another suite on an unrelated run.
 

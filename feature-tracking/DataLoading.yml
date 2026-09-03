@@ -1,7 +1,7 @@
 schema_version: '1.0'
 id: data_loading
-name: YAML-Datenladen
-description: Deterministisches, typisiertes und idempotentes Laden der fachlichen Basisdaten aus YAML.
+name: YAML Data Loading
+description: Deterministic, typed, and idempotent loading of domain base data from YAML.
 owners:
 - endoreg_db maintainers
 production_critical: true
@@ -11,24 +11,24 @@ tracking:
 source_documents:
 - path: docs/wiki/dataloader_layers_and_naming.md
   disposition: migrated
-  note: Der bisherige Migrationsplan ist jetzt Teil der verbindlichen DoD.
+  note: The previous migration plan is now part of the binding definition of done.
 - path: docs/wiki/dataloader_yaml_authoring.md
   disposition: reference
-  note: Autorenvertrag für YAML-Basisdaten.
+  note: Authoring contract for YAML base data.
 - path: docs/supported_formats_csv.md
   disposition: reference
-  note: Vertrag der unterstützten CSV-Importformate.
+  note: Contract for supported CSV import formats.
 definition_of_done:
 - id: documented_scope
   category: requirements
-  title: Engine, Orchestrierung und Namenskonvention sind getrennt definiert
+  title: Engine, orchestration, and naming conventions are defined separately
   acceptance:
-  - YAML-zu-ORM-Engine und Command-Orchestrierung haben eindeutige Verantwortlichkeiten.
-  - Kanonische Importpfade und Legacy-Kompatibilität sind festgelegt.
+  - The YAML-to-ORM engine and command orchestration have unambiguous responsibilities.
+  - Canonical import paths and legacy compatibility are defined.
   required: true
   verification:
     kind: manual
-    instructions: Modulgrenzen gegen Dokumentation und alle Importaufrufe prüfen.
+    instructions: Review module boundaries against the documentation and all import calls.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -55,37 +55,37 @@ definition_of_done:
     assessed_at: '2026-09-02T11:33:57.543459Z'
 - id: deterministic_loading
   category: functionality
-  title: Basisdaten werden in stabiler Reihenfolge idempotent geladen
+  title: Base data is loaded idempotently in a stable order
   acceptance:
-  - Wiederholtes load_base_db_data erzeugt denselben fachlichen Zustand ohne Duplikate.
-  - Abhängigkeiten werden explizit aufgelöst und ungültige YAML-Daten laut abgelehnt.
+  - Repeated load_base_db_data runs produce the same domain state without duplicates.
+  - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
   required: true
   verification:
     kind: manual
-    instructions: Leere Datenbank zweimal laden und Zustände sowie natürliche Schlüssel vergleichen.
+    instructions: Load an empty database twice and compare states and natural keys.
     timeout_seconds: 300
   assessment:
     status: not_assessed
     evidence: []
 - id: schema_validation
   category: data_integrity
-  title: YAML wird vor ORM-Mutation in eine typisierte interne Form überführt
+  title: YAML is converted to a typed internal form before ORM mutation
   acceptance:
-  - Erforderliche Felder, Enums, Referenzen und Duplikate werden vor Persistenz validiert.
-  - Teilfehler hinterlassen keinen still akzeptierten Mischzustand.
+  - Required fields, enums, references, and duplicates are validated before persistence.
+  - Partial failures leave no silently accepted mixed state.
   required: true
   verification:
     kind: manual
-    instructions: Gültige und absichtlich ungültige YAML-Beispiele am Loader-Rand prüfen.
+    instructions: Test valid and intentionally invalid YAML examples at the loader boundary.
     timeout_seconds: 300
   assessment:
     status: not_assessed
     evidence: []
 - id: automated_tests
   category: testing
-  title: Loader, Abhängigkeiten und Idempotenz sind automatisiert getestet
+  title: Loader, dependencies, and idempotency are tested automatically
   acceptance:
-  - Repräsentative gültige Varianten und alle wichtigen Boundary-Fehler haben Tests.
+  - Representative valid variants and all important boundary failures have tests.
   required: true
   verification:
     kind: command
@@ -113,14 +113,14 @@ definition_of_done:
     assessed_at: '2026-09-02T11:48:18.686270Z'
 - id: safe_inputs
   category: security
-  title: YAML-Laden führt keinen Code aus und überschreitet keine Datenquelle
+  title: YAML loading executes no code and does not escape its data source
   acceptance:
-  - Ausschließlich sichere YAML-Parser und freigegebene Datenroots werden verwendet.
-  - Eingaben können weder beliebige Imports noch Dateizugriffe auslösen.
+  - Only safe YAML parsers and approved data roots are used.
+  - Inputs cannot trigger arbitrary imports or file access.
   required: true
   verification:
     kind: manual
-    instructions: Parser, Pfadauflösung und dynamische Importgrenzen sicherheitstechnisch reviewen.
+    instructions: Perform a security review of the parser, path resolution, and dynamic import boundaries.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -137,39 +137,39 @@ definition_of_done:
       reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed,
         1 warning in 38.52s)
     - kind: review
-      reference: Alle load_model_data_from_yaml-Aufrufer verwenden paketierte Verzeichnisse aus endoreg_db.data;
-        die erzwungene Root-Prüfung gilt unabhängig vom Aufrufer. Kein importlib, __import__, eval, exec
-        oder unsicherer yaml.load-Aufruf an der Loader-Grenze.
-    note: Der gemeinsame YAML-Loader erzwingt nun vor jedem Dateizugriff den paketierten endoreg_db/data-Root,
-      lehnt Verzeichnis- und Datei-Symlinks fail-closed ab und liest ausschließlich reguläre .yaml-Dateien.
-      PyYAML safe_load bleibt die einzige Parsergrenze; Python-Objekttags werden vor jeder ORM-Delegation
-      abgelehnt. Ein Repository-Abgleich der Loader- und load_*_data-Grenzen fand keine dynamischen Imports,
-      eval-/exec-Aufrufe oder unsicheren PyYAML-Loader.
+      reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data; the
+        enforced root check applies independently of the caller. No importlib, __import__, eval, exec, or
+        unsafe yaml.load call exists at the loader boundary.
+    note: The shared YAML loader now enforces the packaged endoreg_db/data root before every file access,
+      rejects directory and file symlinks fail-closed, and reads only regular .yaml files. PyYAML safe_load
+      remains the only parser boundary; Python object tags are rejected before any ORM delegation. A repository
+      review of loader and load_*_data boundaries found no dynamic imports, eval/exec calls, or unsafe PyYAML
+      loaders.
     assessed_by: codex-root-20260902
     assessed_at: '2026-09-02T12:38:06.598243Z'
 - id: operational_readiness
   category: operations
-  title: Ladefehler und Wiederholung sind für Betreiber beherrschbar
+  title: Loading failures and retries are manageable for operators
   acceptance:
-  - Command-Ausgabe benennt Datei, Entität und Ursache; Wiederholung ist sicher.
-  - Backup-, Migrations- und Rollbackanforderungen sind dokumentiert.
+  - Command output identifies the file, entity, and cause; retry is safe.
+  - Backup, migration, and rollback requirements are documented.
   required: true
   verification:
     kind: manual
-    instructions: Fehler in einer abhängigen YAML-Datei provozieren und Wiederanlauf prüfen.
+    instructions: Trigger an error in a dependent YAML file and verify restart behavior.
     timeout_seconds: 300
   assessment:
     status: not_assessed
     evidence: []
 - id: author_documentation
   category: documentation
-  title: YAML-Autorinnen und Entwickler haben einen aktuellen Vertrag
+  title: YAML authors and developers have a current contract
   acceptance:
-  - Layer, Namen, Schema, Referenzen, Beispiele und Validierungsfehler sind dokumentiert.
+  - Layers, names, schema, references, examples, and validation errors are documented.
   required: true
   verification:
     kind: manual
-    instructions: Neue Basiskonfiguration ausschließlich anhand der Dokumentation erstellen und laden.
+    instructions: Create and load a new base configuration using only the documentation.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -179,10 +179,9 @@ definition_of_done:
     - kind: document
       reference: docs/wiki/dataloader_yaml_authoring.md
     - kind: command
-      reference: './feature-tracking/tracker.py validate (OK: 34 Feature-Definition(en) sind gültig)'
-    note: Die beiden autoritativen Dataloader-Guides decken Layer und Verantwortlichkeiten, kanonische
-      und Legacy-Namen, YAML-Schema und Feldkonventionen, Referenzen, Beispiele sowie Validierungs- und
-      Fehlerhinweise ab. Der Abgleich mit dem Loader-Vertrag und die YAML-Validierung zeigen keine offene
-      Pflichtarbeit für dieses Kriterium.
+      reference: './feature-tracking/tracker.py validate (OK: 34 feature definitions are valid)'
+    note: The two authoritative data-loader guides cover layers and responsibilities, canonical and legacy
+      names, the YAML schema and field conventions, references, examples, and validation and error guidance.
+      Comparison with the loader contract and YAML validation confirms that this criterion is complete.
     assessed_by: codex-20260902-feature
     assessed_at: '2026-09-02T12:50:21.562034Z'

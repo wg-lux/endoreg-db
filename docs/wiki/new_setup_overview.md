@@ -61,8 +61,8 @@ Examples:
 ### 4. Reporting Workflow Integration
 The new reporting flow depends on:
 - lookup session endpoints (`/api/lookup/...`)
-- report persistence (`/api/patient-examination-reports/save-submission/`)
-- history context (`/api/patient-examination-reports/history-context/`)
+- report persistence (`/api/patient-examination-reports/save-submission`)
+- history context (`/api/patient-examination-reports/history-context`)
 - media artifacts (`/api/media/pdfs/...`, `/api/media/patients/.../timeline/`)
 
 ## Setup Order (Recommended)

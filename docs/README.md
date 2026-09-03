@@ -95,7 +95,13 @@ linked feature definition for current status and evidence.
 
 ## Authoring Rules
 
+- Write maintained documentation in English. Preserve exact identifiers,
+  commands, protocol values, and clinical terms where translation would change
+  their meaning.
 - Write current behavior as a contract or runbook, not as a completion claim.
+- Use **implemented** for behavior evidenced in this repository, **verified**
+  only when the feature tracker records reproducible evidence and an assessor,
+  and **deployed** only for an explicitly identified runtime environment.
 - Put new scope, acceptance criteria, and readiness evidence in the relevant
   feature YAML before implementation.
 - Use repository-relative Markdown links; do not publish workstation paths.

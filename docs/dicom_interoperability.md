@@ -1,158 +1,175 @@
-# DICOM-Interoperabilität: Integrationsvertrag und Runbook
+# DICOM interoperability: integration contract and runbook
 
-## Zweck und Freigabegrenze
+## Purpose and release boundary
 
-`endoreg_db` katalogisiert pseudonymisierte DICOM-Exporte aus
-`lx-anonymizer` anhand des strikt validierten Manifestvertrags Version 2. Die
-Artefakte müssen bereits anonymisierte, verarbeitete Medien innerhalb der
-geschützten Storage-Grenze sein. Vor jeder Datenbankänderung prüft ein vom
-aufrufenden Storage-Adapter bereitgestellter Verifier SHA-256 und Dateigröße.
+`endoreg_db` catalogs pseudonymized Digital Imaging and Communications in
+Medicine (DICOM) exports from `lx-anonymizer` using the strictly validated
+version 2 manifest contract. Artifacts must already be anonymized, processed
+media inside the protected storage boundary. Before any database mutation, a
+verifier supplied by the calling storage adapter receives the expected SHA-256
+digest and file size and must confirm artifact integrity.
 
-Der aktuelle Stand ist ein Import- und Metadatenkatalog, kein vollständiger
-DICOM-Knoten. Insbesondere gehören folgende Abläufe noch nicht zum
-freigegebenen Umfang:
+The current implementation is an import and metadata catalog, not a complete
+DICOM node. In particular, the following workflows are outside the implemented
+and approved scope:
 
-- Erzeugung von DICOM-Dateien aus MP4 oder anderen Rohformaten
-- C-STORE, C-FIND, C-MOVE oder andere DIMSE-Dienste
-- DICOMweb mit STOW-RS, QIDO-RS oder WADO-RS
-- PACS-Routing und automatische Übertragung an externe Systeme
-- FHIR-Write oder bidirektionale Synchronisation
-- Export von Rohmedien, direkten Patientenidentifikatoren oder Schlüsseln
+- creating DICOM files from MPEG-4 Part 14 (MP4) or other raw formats;
+- C-STORE, C-FIND, C-MOVE, or other DICOM Message Service Element (DIMSE)
+  services;
+- DICOMweb with STOW-RS, QIDO-RS, or WADO-RS;
+- Picture Archiving and Communication System (PACS) routing and automatic
+  transfer to external systems;
+- Fast Healthcare Interoperability Resources (FHIR) writes or bidirectional
+  synchronization; and
+- export of raw media, direct patient identifiers, or keys.
 
-Es wird gegenwärtig die im Endoskopie-Testvertrag verwendete Video Endoscopic
-Image Storage SOP Class `1.2.840.10008.5.1.4.1.1.77.1.1.1` mit Explicit VR
-Little Endian `1.2.840.10008.1.2.1` nachgewiesen. Das Schema akzeptiert weitere
-syntaktisch gültige SOP- und Transfer-Syntax-UIDs, doch diese gelten ohne
-separaten Integrationsnachweis nicht als betrieblich freigegeben.
+Repository tests demonstrate the Video Endoscopic Image Storage Service-Object
+Pair (SOP) Class `1.2.840.10008.5.1.4.1.1.77.1.1.1` with Explicit Value
+Representation (VR) Little Endian `1.2.840.10008.1.2.1`. The schema accepts
+other syntactically valid SOP and transfer-syntax Unique Identifiers (UIDs), but
+they are not operationally approved without separate integration evidence.
 
-## Manifestvertrag Version 2
+## Repository and deployment status
 
-Der Import erfolgt über
-`import_dicom_export_manifest(patient_examination, payload, artifact_verifier)`.
-Pflichtbestandteile sind:
+The `dicom` feature tracker is marked `done`, and every criterion is recorded as
+`verified`. Its operational evidence is an exercise in an isolated, migrated
+test database, including failure recovery, idempotent replay, audit evidence,
+and version 2 backfill rollback. This verifies the repository contract; it does
+not prove that a particular production deployment has enabled the integration,
+completed a local backup, or run its rollout and recovery exercises.
 
-- `schema_version: 2`, eine UUID als `export_id`, ein zeitzonenbehafteter
-  `created_at`-Zeitpunkt und `source_system`
-- ein Deidentifikationsnachweis mit `patient_identity_removed: true` und der
-  Artefaktklasse `anonymized_processed`
-- ein erfolgreiches vorgelagertes Validierungsergebnis
-- Study-, Series- und SOP-Instance-UIDs sowie Transfer-Syntax-UIDs
-- relative Storage-Referenz, SHA-256 und positive Dateigröße je Instanz
+## Version 2 manifest contract
 
-Unbekannte Felder sind verboten. Absolute Pfade und `..`-Segmente werden
-abgewiesen. Direkte Original-Identifikatoren passen nicht in den Vertrag und
-führen zu einem Validierungsfehler. Das Manifest enthält Metadaten und
-Storage-Referenzen, aber weder DICOM-Nutzdaten noch kryptografische Schlüssel.
+Import uses
+`import_dicom_export_manifest(patient_examination=..., payload=..., artifact_verifier=...)`.
+Required elements are:
 
-`export_id` identifiziert einen Export idempotent. Ein identisches Manifest für
-dieselbe Untersuchung ist ein erfolgreicher Replay und erzeugt keine weiteren
-Datensätze. Eine wiederverwendete Export-ID mit anderem Inhalt oder andere
-bereits belegte Study-, Series- oder SOP-Instance-UIDs führen zu einem lauten
-Konflikt. Teilpersistenz wird durch eine Datenbanktransaktion verhindert.
+- `schema_version: 2`, a Universally Unique Identifier (UUID) as `export_id`, a
+  timezone-aware `created_at` value, and `source_system`;
+- de-identification evidence with `patient_identity_removed: true` and artifact
+  class `anonymized_processed`;
+- a successful upstream validation result;
+- Study, Series, and SOP Instance UIDs and transfer-syntax UIDs; and
+- a relative storage reference, SHA-256 digest, and positive file size for each
+  instance.
 
-## Deployment und Migration
+Unknown fields are forbidden. Absolute paths and `..` segments are rejected.
+Direct original identifiers do not fit the contract and cause validation to
+fail. The manifest contains metadata and storage references, but no DICOM
+payloads or cryptographic keys.
 
-Vor Aktivierung des Imports muss die Django-Migration
-`0046_dicom_interoperability` angewendet sein. Artefakte bleiben innerhalb der
-lokalen verschlüsselten Storage-Grenze. Ein aufrufender Adapter muss die
-relative `artifact_reference` ausschließlich dort auflösen und Hash sowie
-Größe prüfen. Der Service selbst verschiebt oder kopiert keine Dateien.
+`export_id` identifies an export idempotently. An identical manifest for the
+same examination is a successful replay and creates no additional records. A
+reused export ID with different content, or Study, Series, or SOP Instance UIDs
+that are already assigned, causes an explicit conflict. A database transaction
+prevents partial persistence.
 
-Es gibt keine DICOM-spezifischen Umgebungsvariablen und keinen unsicheren
-Fallback. Sobald eine spätere Ausbaustufe Daten zwischen Knoten transportiert,
-gelten mTLS und die Envelope-Encryption-Vorgaben des jeweiligen
-Deploymentprofils; der Master-Key darf nie übertragen werden.
+## Deployment and migration
 
-### Versions- und Backfillvertrag
+Django migration `0046_dicom_interoperability` must be applied before enabling
+import. Artifacts remain inside the local encrypted storage boundary. A calling
+adapter must resolve the relative `artifact_reference` only within that boundary
+and verify its digest and size. The service itself neither moves nor copies
+files.
 
-Die Runtime akzeptiert ausschließlich Manifestversion 2. Eine fehlende,
-stringförmige oder unbekannte `schema_version` wird vor der weiteren
-Payloadvalidierung mit der unterstützten Version abgewiesen. Insbesondere wird
-Version 1 nicht implizit ergänzt oder geraten; dafür existiert kein sicher
-definierter Quellvertrag.
+There are no DICOM-specific environment variables and no unsafe fallback. If a
+later phase transports data between nodes, the deployment profile's mTLS and
+envelope-encryption requirements apply; the master key must never be
+transmitted.
 
-Bestehende V2-JSON-Datensätze werden mit folgendem Command geprüft:
+### Version and backfill contract
+
+The runtime accepts only manifest version 2. A missing, string-valued, or
+unknown `schema_version` is rejected with the supported version before the rest
+of the payload is validated. In particular, version 1 is not implicitly added
+or inferred because no safe source contract exists for it.
+
+Check existing version 2 JSON records with:
 
 ```text
 python manage.py backfill_dicom_manifest_v2
 ```
 
-Der Default ist ein schreibfreier Dry-run. Er validiert jeden Datensatz,
-vergleicht `export_id` mit dem Primärschlüssel und meldet, wie viele Manifeste
-kanonisiert werden müssten. `--apply` sperrt die betroffenen Zeilen und schreibt
-kanonisches Manifest, Version und SHA-256 gemeinsam in genau einer
-Datenbanktransaktion. Ein einziger unbekannter oder ungültiger Datensatz bricht
-die gesamte Kohorte ab; Teilupdates werden zurückgerollt. Fehlermeldungen
-enthalten nur einen gehashten Datensatzbezug und niemals Manifestinhalt,
-Patientenpseudonym, DICOM-UID oder Artefaktpfad.
+The default is a read-only dry run. It validates every record, compares
+`export_id` with the primary key, and reports how many manifests would require
+canonicalization. `--apply` locks affected rows and writes the canonical
+manifest, version, source system, and SHA-256 digest together in one database
+transaction. One unknown or invalid record aborts the entire cohort; partial
+updates are rolled back. Command-facing errors contain a stable safe error code,
+while service-level backfill errors identify records only by a hashed reference;
+neither exposes manifest content, patient pseudonyms, DICOM UIDs, or artifact
+paths in structured logs.
 
-Die Deploymentprobe verwendet
-`tests/fixtures/dicom_manifest_v2_existing.json` als versionierten
-Bestandsdatensatz und weist Dry-run, Apply, vollständigen Transaktionsrollback
-und die klare Ablehnung unbekannter Versionen nach. Sie läuft über
-`devenv tasks run quality:type-safety-operational`.
+The repository exercise uses
+`tests/fixtures/dicom_manifest_v2_existing.json` as a versioned existing record
+and covers dry run, apply, complete transaction rollback, and clear rejection of
+unknown versions. Run the focused backfill test through:
 
-### Rollout, Kompatibilitätsdauer und Rollback
+```text
+devenv tasks run quality:type-safety-operational
+```
 
-Vor `--apply` wird ein verschlüsseltes Datenbankbackup der betroffenen
-`DicomExportJob`-Zeilen nach dem freigegebenen Datenbank-Runbook erstellt. Der
-Dry-run muss ohne Validierungsfehler enden. Die Ausführung erfolgt in einem
-Wartungsfenster; Abbruchkriterien sind jeder Versions-/Validierungsfehler, eine
-unerwartete Anzahl zu ändernder Datensätze oder ein Digest-Konflikt. Erst nach
-erfolgreichem Apply werden Importworker wieder freigegeben.
+### Rollout, compatibility period, and rollback
 
-Der Backfill verändert nur die kanonische Darstellung desselben V2-Vertrags.
-Ein Code-Rollback ist deshalb ohne Datenrückmigration möglich. Falls dennoch
-die vorherige JSON-Darstellung benötigt wird, werden ausschließlich
-`schema_version`, `manifest` und `manifest_sha256` aus dem verschlüsselten
-Backup wiederhergestellt; Artefakte und Schlüssel werden nicht kopiert.
+Before `--apply`, create an encrypted database backup of the affected
+`DicomExportJob` rows according to the approved database runbook. The dry run
+must finish without validation errors. Run it in a maintenance window and abort
+on any version or validation error, an unexpected update count, or a digest
+conflict. Resume import workers only after a successful apply.
 
-Version 2 bleibt mindestens zwölf Monate nach der ersten produktiven Freigabe
-einer späteren Version lesbar. Ein konkretes V2-Enddatum darf erst gemeinsam
-mit dem Nachfolgeschema, dessen explizitem Backfill und einer erfolgreichen
-Rollbackprobe festgelegt werden. Bis dahin gibt es kein V2-Enddatum; spätere
-unbekannte Versionen schlagen weiterhin fail-closed fehl.
+The backfill changes only the canonical representation of the same version 2
+contract, so a code rollback requires no data reverse migration. If the earlier
+JSON representation is nevertheless required, restore only `schema_version`,
+`manifest`, and `manifest_sha256` from the encrypted backup; do not copy
+artifacts or keys.
 
-## Beobachtbarkeit
+Version 2 is the documented compatibility baseline. The policy is to retain
+read support for at least twelve months after the first production release of a
+later version. Set a concrete version 2 end date only together with the successor
+schema, its explicit backfill, and a successful rollback exercise. No version 2
+end date is currently defined; later unknown versions continue to fail closed.
 
-Der Logger `endoreg_db.interoperability.dicom` erzeugt strukturierte Ereignisse:
+## Observability
 
-| Ereignis | Bedeutung | Erwartete Reaktion |
+The `endoreg_db.interoperability.dicom` logger emits structured events:
+
+| Event | Meaning | Expected response |
 | --- | --- | --- |
-| `dicom.import_completed` | Import vollständig committed | Export als verarbeitet bestätigen |
-| `dicom.import_replayed` | identischer Export bereits importiert | als erfolgreichen idempotenten Retry behandeln |
-| `dicom.import_rejected` / `invalid_manifest` | Schema oder Datenschutzvertrag verletzt | Payload beim Sender korrigieren; nicht blind wiederholen |
-| `dicom.import_rejected` / `artifact_integrity_failed` | Hash oder Größe stimmt nicht | Artefakt isolieren, Quelle und geschützten Storage prüfen |
-| `dicom.import_rejected` / `identity_conflict` | Export- oder DICOM-UID kollidiert | keine UID umschreiben; Konflikt fachlich untersuchen |
-| `dicom.import_rejected` / `concurrent_identity_conflict` | paralleler Import kollidiert | Zustand prüfen und anschließend identisch wiederholen |
+| `dicom.import_completed` | Import fully committed | Confirm the export as processed |
+| `dicom.import_replayed` | Identical export already imported | Treat as a successful idempotent retry |
+| `dicom.import_rejected` / `invalid_manifest` | Schema or privacy contract violated | Correct the sender payload; do not retry blindly |
+| `dicom.import_rejected` / `artifact_integrity_failed` | Digest or size does not match | Isolate the artifact and inspect its source and protected storage |
+| `dicom.import_rejected` / `identity_conflict` | Export or DICOM UID conflicts | Do not rewrite a UID; investigate the conflict with the responsible clinical and technical teams |
+| `dicom.import_rejected` / `concurrent_identity_conflict` | Concurrent import conflicts | Inspect state, then retry the identical payload |
 
-Zur Korrelation enthalten Ereignisse nur SHA-256-gehashte Export- und
-Untersuchungsbezüge. Patientenpseudonyme, DICOM-UIDs und Artefaktpfade werden
-nicht als Betriebsfelder protokolliert.
+For correlation, events contain only SHA-256-hashed export and examination
+references. Patient pseudonyms, DICOM UIDs, and artifact paths are not emitted
+as operational event fields.
 
-Empfohlenes Monitoring:
+Recommended monitoring, which must be configured and verified by each
+deployment:
 
-- Alarm auf jede Zunahme von `dicom.import_rejected`, gruppiert nach `reason`
-- Warnung bei wiederholten `artifact_integrity_failed` aus derselben Quelle
-- Dashboard für `completed`, `replayed` und `rejected`
-- periodische Prüfung, dass die strukturierte Produktions-Logging-Konfiguration
-  die Ereignisse im vorgesehenen geschützten Logziel erfasst
+- alert on every increase in `dicom.import_rejected`, grouped by `reason`;
+- warn on repeated `artifact_integrity_failed` events from the same source;
+- provide a dashboard for `completed`, `replayed`, and `rejected`; and
+- periodically confirm that the structured production logging configuration
+  captures events in the intended protected log destination.
 
-## Wiederanlauf und Betriebsübung
+## Recovery and operational exercise
 
-1. Migrationen und Erreichbarkeit des geschützten Storages prüfen.
-2. Einen bekannten, anonymisierten Testexport erfolgreich importieren und das
-   `dicom.import_completed`-Ereignis nachweisen.
-3. Dasselbe Manifest erneut senden. Es muss `dicom.import_replayed` entstehen;
-   Study, Series und Instance dürfen nicht dupliziert werden.
-4. Eine Testkopie mit abweichendem Hash verwenden. Der Import muss vor jeder
-   Persistenz mit `artifact_integrity_failed` scheitern.
-5. Nach Reparatur des Artefakts exakt dasselbe ursprüngliche Manifest erneut
-   importieren. Es muss vollständig erfolgreich sein.
-6. Datenbankanzahl, strukturierte Ereignisse und den aufrufenden Jobstatus
-   gemeinsam dokumentieren.
+1. Check migrations and protected-storage availability.
+2. Import a known anonymized test export successfully and confirm the
+   `dicom.import_completed` event.
+3. Send the same manifest again. It must produce `dicom.import_replayed`; Study,
+   Series, and Instance records must not be duplicated.
+4. Use a test copy with a different digest. The import must fail with
+   `artifact_integrity_failed` before any persistence.
+5. After repairing the artifact, import exactly the same original manifest
+   again. It must succeed completely.
+6. Record database counts, structured events, and the calling job status
+   together.
 
-Automatische Wiederholung ist nur für unveränderte Payloads sinnvoll.
-Validierungs- und Identitätskonflikte erfordern zuerst eine fachliche Klärung.
-Artefakte mit Integritätsfehlern dürfen nicht automatisch als gültig markiert,
-umbenannt oder durch ungesicherte Quellen ersetzt werden.
+Automatic retry is appropriate only for unchanged payloads. Validation and
+identity conflicts first require responsible review. Artifacts with integrity
+failures must not be marked valid automatically, renamed, or replaced from
+untrusted sources.

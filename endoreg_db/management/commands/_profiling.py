@@ -80,7 +80,7 @@ def add_profiling_arguments(parser: CommandParser) -> None:
 def command_profiling_config_from_options(
     options: Mapping[str, object],
 ) -> CommandProfilingConfig:
-    limit = _positive_int_option(options.get("profile_limit"), "--profile-limit")
+    limit = positive_int_option(options.get("profile_limit"), "--profile-limit")
     sort_by = _sort_key_option(options.get("profile_sort"))
     return CommandProfilingConfig(
         output_path=_optional_path(options.get("profile_output")),
@@ -186,7 +186,7 @@ def _sort_key_option(value: object) -> str:
     return text
 
 
-def _positive_int_option(value: object, label: str) -> int:
+def positive_int_option(value: object, label: str) -> int:
     try:
         result = int(str(value))
     except (TypeError, ValueError) as exc:

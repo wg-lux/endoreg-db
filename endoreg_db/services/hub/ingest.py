@@ -122,12 +122,6 @@ class DelayTaskDispatcher(Protocol):
     def delay(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
-class _SensitiveMetaLinkIds(Protocol):
-    external_id_id: int | None
-    pseudo_patient_id: int | None
-    pseudo_examination_id: int | None
-
-
 def _video_upload_import_task_dispatcher() -> CeleryTaskDispatcher:
     # Local import avoids the task/service cycle:
     # ingest -> endoreg_db.tasks.run_video_upload_import_task ->

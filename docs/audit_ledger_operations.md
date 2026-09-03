@@ -1,175 +1,168 @@
-# Audit-Ledger: Vertrag und Betrieb
+# Audit Ledger: Contract and Operations
 
-Dieses Dokument beschreibt den verbindlichen Anwendungs- und Betriebsvertrag
-des persistierten `AuditLedger` in `endoreg_db`. Der Umsetzungs- und
-Freigabestatus wird ausschließlich in
-[`feature-tracking/AuditLedger.yml`](../feature-tracking/AuditLedger.yml)
-geführt.
+This document describes the binding application and operational contract
+of the persisted `AuditLedger` in `endoreg_db`. Implementation and
+approval status is maintained exclusively in
+[`feature-tracking/AuditLedger.yml`](../feature-tracking/AuditLedger.yml).
 
-## Zweck und Vertrauensgrenze
+## Purpose and Trust Boundary
 
-Das Ledger weist nach, dass ausgewählte sicherheits- und freigaberelevante
-Aktionen in einer bestimmten Reihenfolge persistiert wurden und anschließend
-nicht unbemerkt verändert wurden. Jeder Eintrag enthält den Hash seines
-Vorgängers. Der Singleton `LedgerHead` wird beim Anhängen innerhalb derselben
-Datenbanktransaktion gesperrt und auf den neuen Eintrag gesetzt.
+The ledger demonstrates that selected security- and approval-relevant
+actions were persisted in a particular order and were not subsequently
+changed without detection. Each entry contains the hash of its predecessor.
+The `LedgerHead` singleton is locked during append within the same database
+transaction and set to the new entry.
 
-Das Ledger ist manipulationserkennend, aber keine digitale Signatur und kein
-externer Zeitstempeldienst. Wer sowohl Ledgerzeilen als auch den Ledger-Kopf und
-alle Backups kontrolliert, liegt außerhalb des nachgewiesenen Vertrauensmodells.
-Die Datenbank, ihre Berechtigungen, Backups und der verschlüsselte
-Speicherbereich müssen deshalb unabhängig geschützt werden.
+The ledger detects tampering, but it is neither a digital signature nor an
+external timestamping service. Anyone who controls both ledger rows and the
+ledger head, as well as all backups, is outside the demonstrated trust model.
+The database, its permissions, backups, and the encrypted storage area must
+therefore be protected independently.
 
-Der Integritätsstatus ist global für die lokale Ledgerkette. Er gibt keine
-Ledgerzeilen aus und ist keine center-gefilterte Ereignissuche. Der
-produktionsseitig authentifizierte Statusendpunkt
-`GET /api/audit-ledger/integrity/` liefert ausschließlich das Ergebnis der
-letzten Hintergrundprüfung. Eine vollständige Kettenprüfung im Webprozess ist
-ausgeschlossen.
+The integrity status is global for the local ledger chain. It does not return
+ledger rows and is not a center-filtered event search. The
+production-authenticated status endpoint
+`GET /endoreg-api/audit-ledger/integrity/` returns only the result of the
+most recent background check. A full chain check in the web process is
+excluded.
 
-Strukturierte Hub-Ereignisse unter dem Logger `endoreg_db.hub.audit` sind ein
-separater betrieblicher Logkanal. Sie werden nicht automatisch zu
-`AuditLedger`-Zeilen und besitzen nicht dessen Hashkettennachweis.
+Structured hub events under the logger `endoreg_db.hub.audit` are a
+separate operational log channel. They do not automatically become
+`AuditLedger` rows and do not have its hash-chain proof.
 
-## Persistiertes Ereignisformat
+## Persisted Event Format
 
-Eine Ledgerzeile besteht aus:
+A ledger row consists of:
 
-- unveränderlicher UUID und serverseitigem Zeitstempel;
-- optionalem authentifiziertem Django-Benutzer;
-- `object_type`, `object_pk` und stabilem `action`-Code;
-- einem kanonischen JSON-Objekt `data`;
-- `prev_hash` und `hash` als SHA-256-Hexwerte.
+- immutable UUID and server-side timestamp;
+- optional authenticated Django user;
+- `object_type`, `object_pk`, and stable `action` code;
+- a canonical JSON object `data`;
+- `prev_hash` and `hash` as SHA-256 hexadecimal values.
 
-Die Hash-Nutzlast wird durch
-`lx_dtypes.models.contracts.audit_ledger.AuditLedgerHashPayload` definiert.
-`data` akzeptiert nur endliche, JSON-kompatible Werte mit Stringschlüsseln.
-Bestehende Zeilen dürfen über den Modellpfad nicht aktualisiert werden.
+The hash payload is defined by
+`lx_dtypes.models.contracts.audit_ledger.AuditLedgerHashPayload`.
+`data` accepts only finite, JSON-compatible values with string keys.
+Existing rows must not be updated through the model path.
 
-## Auditpflichtige Aktionen
+## Actions Requiring Auditing
 
-Die derzeit bewusst persistierten Produzenten sind:
+The currently intentional persisted producers are:
 
-| Aktion | Fachlicher Anlass | Erforderliche Evidenz | Fehlerverhalten |
+| Action | Business rationale | Required evidence | Error behavior |
 | --- | --- | --- | --- |
-| `identity_committed` | Bindung validierter Medienmetadaten an pseudonyme Fallidentitäten | Medienart und -ID, SensitiveMeta-ID, Hashidentitäten, pseudonyme und verknüpfte IDs, Resolution-Ergebnis und Nutzlast-Hash | Die Identitätsauflösung bleibt transaktional; die generische Append-Hilfe kann bei noch nicht migrierter Ledger-Tabelle keinen Eintrag erzeugen und protokolliert dies |
-| `ready_for_export` | Freigabe eines validierten, geschwärzten Processed-Videoartefakts | Center-Key, persistierter relativer Artefaktname, SHA-256 und Freigabestatus; kein absoluter Pfad | Ein nicht nachweisbar persistierter Ledger-Eintrag bricht die Exportfreigabe mit HTTP 503 ab und rollt den Zustandswechsel zurück |
-| `center_admin_bootstrapped` | Promotion eines bereits Keycloak-synchronisierten Mitglieds von `center_scope:admin` | Zielbenutzer, erforderliche Gruppe, vorherige und neue Rollen sowie Initiator | Ein fehlender Ledgernachweis bricht die Promotion ab und rollt die Transaktion zurück |
-| `media_storage_migrated` / `media_storage_failed` | Idempotente Medien-Storage-Migration oder deren klassifizierter Fehler | Objektbezug und Migrationsnachweis des Management-Befehls | Nicht verfügbare Ledger-Tabellen werden als Warnung sichtbar; der Migrationsbefehl verwaltet seine eigene Fehlerentscheidung |
+| `identity_committed` | Binding validated media metadata to pseudonymous case identities | Media type and ID, SensitiveMeta-ID, hash identities, pseudonymous and linked IDs, resolution result, and payload hash | Identity resolution remains transactional; the generic append helper cannot create an entry when the ledger table has not yet been migrated and logs this |
+| `ready_for_export` | Approval of a validated, redacted processed video artifact | Center key, persisted relative artifact name, SHA-256, and approval status; no absolute path | A ledger entry that cannot be proven persisted aborts export approval with HTTP 503 and rolls back the state change |
+| `center_admin_bootstrapped` | Promotion of an already Keycloak-synchronized member from `center_scope:admin` | Target user, required group, previous and new roles, and initiator | A missing ledger proof aborts the promotion and rolls back the transaction |
+| `media_storage_migrated` / `media_storage_failed` | Idempotent media storage migration or its classified failure | Object reference and migration evidence from the management command | Unavailable ledger tables are surfaced as a warning; the migration command manages its own failure decision |
 
-Neue auditpflichtige Aktionen benötigen vor ihrer Einführung einen stabilen
-Action-Code, einen benannten Produzenten, eine minimale typisierte Nutzlast,
-eine klare Transaktionsgrenze und negative Tests für den Ausfall des Ledgers.
-Ein allgemeiner Request-, ORM- oder Debug-Mitschnitt gehört nicht in das
-Ledger.
+New actions requiring auditing need a stable action code, a named producer, a
+minimal typed payload, a clear transaction boundary, and negative tests for
+ledger failure before their introduction. A general request, ORM, or debug
+capture does not belong in the ledger.
 
-## Datenminimierung und bekannte Grenze
+## Data Minimization and Known Limit
 
-Bewusst ausgeschlossen sind Rohmedien, Dateiinhalt, Large-Language-Model-
-Prompts, vollständige Request-Payloads, Klartext-Secrets, der Master-Key,
-Passwörter, Tokens, Private Keys, Stacktraces und direkte, für den Nachweis
-nicht erforderliche Patientenidentifikatoren. Pseudonyme IDs und Hashwerte
-dürfen nur aufgenommen werden, wenn sie für die konkrete Korrelation notwendig
-sind. Das Ledger darf niemals als Ersatz für klinische Primärdaten verwendet
-werden.
+Raw media, file content, Large-Language-Model prompts, complete request
+payloads, plaintext secrets, the master key, passwords, tokens, private keys,
+stack traces, and direct patient identifiers not required for the proof are
+intentionally excluded. Pseudonymous IDs and hash values may be included only
+when necessary for the specific correlation. The ledger must never be used as
+a substitute for primary clinical data.
 
-Das `ready_for_export`-Ereignis persistiert nur den relativen verwalteten
-Storage-Namen und den Inhalts-Hash, nicht den absoluten aufgelösten Pfad. Neue
-Ereignisse dürfen ebenfalls keine absoluten Pfade aufnehmen. Der globale
-Integritätsendpunkt gibt weder diese Nutzlast noch einzelne Ledgerzeilen aus,
-ist im Produktionsmodus authentifizierungspflichtig und stellt ausschließlich
-eine `GET`-Operation bereit.
+The `ready_for_export` event persists only the relative managed storage name
+and content hash, not the absolute resolved path. New events must likewise not
+include absolute paths. The global integrity endpoint returns neither this
+payload nor individual ledger rows, requires authentication in production
+mode, and provides only a `GET` operation.
 
-## Integritätszustände und Prüffrequenz
+## Integrity States and Check Frequency
 
-Die Hintergrundprüfung unterscheidet folgende Zustände:
+The background check distinguishes the following states:
 
-| Status | Bedeutung | Betriebsentscheidung |
+| Status | Meaning | Operational decision |
 | --- | --- | --- |
-| `verified` | Jede Zeile, jeder Vorgängerlink und der Ledger-Kopf stimmen überein | Regulärer Betrieb darf fortfahren |
-| `failed` | Die Kette oder der Kopf stimmt nicht mit den persistierten Hashwerten überein | Fail-closed Incident; keine Reparatur oder Überschreibung |
-| `error` | Die Prüfung konnte wegen eines Laufzeit- oder Infrastrukturfehlers nicht abgeschlossen werden | Ursache beheben und erneut prüfen; bis dahin nicht als verifiziert behandeln |
-| `unknown` | Es liegt kein gültiges gecachtes Prüfergebnis vor | Nicht als verifiziert behandeln; Hintergrund- oder Operatorprüfung ausführen |
+| `verified` | Every row, every predecessor link, and the ledger head match | Regular operation may continue |
+| `failed` | The chain or head does not match the persisted hash values | Fail-closed incident; no repair or overwrite |
+| `error` | The check could not be completed because of a runtime or infrastructure error | Resolve the cause and check again; until then, do not treat it as verified |
+| `unknown` | No valid cached check result is available | Do not treat it as verified; perform a background or operator check |
 
-Standardmäßig plant Celery Beat alle 300 Sekunden den Task
-`endoreg_db.refresh_audit_ledger_integrity_status` auf der separaten
-Maintenance-Queue. Der Wert ist über
-`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS` konfigurierbar, muss aber
-mindestens 60 Sekunden betragen. Die Planung ist standardmäßig aktiv und kann
-über `CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED` deaktiviert werden; ein
-Produktionsprofil benötigt dann einen gleichwertigen dokumentierten externen
-Aufruf.
+By default, Celery Beat schedules the task
+`endoreg_db.refresh_audit_ledger_integrity_status` every 300 seconds on the
+separate maintenance queue. The value is configurable through
+`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS`, but must be at least 60
+seconds. Scheduling is enabled by default and can be disabled through
+`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED`; a production profile then
+requires an equivalent documented external invocation.
 
-Ein Cache-Lock mit 30 Minuten Laufzeit verhindert parallele vollständige
-Prüfungen. Wird der Lock bereits gehalten, bleibt der letzte Status sichtbar
-und erhält die Quelle `skipped_locked`. Fehlender oder nicht als Objekt
-lesbarer Cacheinhalt führt fail-closed zu `unknown` und `verified=false`.
+A cache lock with a 30-minute lifetime prevents parallel full checks. If the
+lock is already held, the last status remains visible and receives the source
+`skipped_locked`. Missing cache content, or cache content that cannot be read
+as an object, results in `unknown` and `verified=false` fail-closed.
 
-## Bedienung und Alarmierung
+## Operation and Alerting
 
-Eine explizite, lock-bewusste Prüfung wird im installierten Runtime-Environment
-ausgeführt:
+An explicit lock-aware check is run in the installed runtime environment:
 
 ```sh
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
   refresh_audit_ledger_integrity --once --fail-on-non-verified
 ```
 
-Maschinenlesbare Ausgabe ist JSON. `--pretty` formatiert sie für die manuelle
-Diagnose. `--fail-on-non-verified` liefert einen Fehlercode für jeden anderen
-Status als `verified` und ist für Deployment- und Recovery-Gates erforderlich.
+Machine-readable output is JSON. `--pretty` formats it for manual
+diagnostics. `--fail-on-non-verified` returns an error code for every status
+other than `verified` and is required for deployment and recovery gates.
 
-Anschließend prüft der allgemeine Health-Check den gecachten Zustand:
+The general health check then checks the cached state:
 
 ```sh
 /opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
   check_system_health --json
 ```
 
-Im `local_study_server`-Profil ist ein nicht verifiziertes Ledger ein
-fehlgeschlagener Health-Check. `audit_ledger.integrity_failed` und
-`audit_ledger.integrity_error` werden als strukturierte Fehlerereignisse mit
-Kopf-Hash, letzter Eintrags-ID und – soweit verfügbar – Eintragsanzahl
-ausgegeben. Die Fehlerausgabe darf keine Ledger-Nutzlast oder Patientendaten
-enthalten.
+In the `local_study_server` profile, an unverified ledger causes the health
+check to fail. `audit_ledger.integrity_failed` and
+`audit_ledger.integrity_error` are emitted as structured error events with
+head hash, last entry ID, and—where available—entry count. Error output must
+not contain ledger payloads or patient data.
 
-## Incident-Verfahren
+## Incident Procedure
 
-Bei `failed`, `error` oder einem unerwartet alten `unknown` gilt:
+For `failed`, `error`, or an unexpectedly old `unknown`, the following applies:
 
-1. Schreibende Freigabe-, Admin- und Migrationsworkflows stoppen; den Zustand
-   nicht manuell auf `verified` setzen.
-2. Datenbank-Snapshot, Ledgertabellen, `LedgerHead`, relevante strukturierte
-   Logs, Task-ID, Hostzeit und Deploymentversion beweissichernd erfassen.
-3. Den lock-bewussten Management-Befehl genau einmal erneut ausführen und JSON,
-   Exit-Code sowie Ledger-Kopf vergleichen. Keine parallelen Vollscans starten.
-4. Bei `error` zuerst Cache-, Datenbank-, Migrations- oder Workerursache beheben.
-   Bei `failed` von Manipulation oder Korruption ausgehen und Security sowie
-   Betrieb einbeziehen.
-5. Datenbank und Ledger nicht automatisch reparieren, neu hashen, kürzen oder
-   aus einer teilweise passenden Quelle zusammenführen. Rohzeilen und
-   vorherige Backups unverändert erhalten.
-6. Wiederherstellung nur aus einem zusammengehörigen, verifizierten
-   Datenbank-Backup durchführen. Danach die vollständige Kette prüfen und erst
-   nach dokumentierter Freigabe schreibende Workflows wieder öffnen.
+1. Stop write-capable approval, admin, and migration workflows; do not
+   manually set the state to `verified`.
+2. Capture the database snapshot, ledger tables, `LedgerHead`, relevant
+   structured logs, task ID, host time, and deployment version for evidentiary
+   preservation.
+3. Run the lock-aware management command exactly once more and compare the
+   JSON, exit code, and ledger head. Do not start parallel full scans.
+4. For `error`, first resolve the cache, database, migration, or worker cause.
+   For `failed`, assume tampering or corruption and involve Security and
+   Operations.
+5. Do not automatically repair, rehash, truncate, or merge the database and
+   ledger from a partially matching source. Preserve raw rows and previous
+   backups unchanged.
+6. Restore only from a matching, verified database backup. Then check the
+   complete chain and reopen write-capable workflows only after documented
+   approval.
 
-## Aufbewahrung und Änderungskontrolle
+## Retention and Change Control
 
-Es gibt derzeit keinen automatischen Retention- oder Löschpfad für
-`AuditLedger`-Zeilen. Sie werden zusammen mit der Datenbank gesichert. Eine
-spätere Aufbewahrungs- oder Archivierungsregel benötigt ein versioniertes
-Ketten-/Checkpoint-Konzept, Security- und Betriebsfreigabe sowie eine
-Wiederherstellungsprobe; gewöhnliche Datenbereinigung darf keine Ledgerzeilen
-löschen.
+There is currently no automatic retention or deletion path for
+`AuditLedger` rows. They are backed up together with the database. A future
+retention or archival rule requires a versioned chain/checkpoint concept,
+Security and Operations approval, and a restoration test; ordinary data
+cleanup must not delete ledger rows.
 
-Änderungen am Hashformat, an Action-Codes oder an bestehenden Nutzlastfeldern
-sind Persistenzvertragsänderungen. Sie benötigen eine lx-dtypes-
-Kompatibilitätsstrategie, Migrationstests, Vorwärts-/Rollback-Nachweis und eine
-Aktualisierung dieses Dokuments sowie der Feature-Evidenz.
+Changes to the hash format, action codes, or existing payload fields are
+persistence contract changes. They require an lx-dtypes compatibility
+strategy, migration tests, forward/rollback evidence, and an update to this
+document and the feature evidence.
 
-## Verifikation
+## Verification
 
-Aus `/home/admin/endoreg-db`:
+From `/home/admin/endoreg-db`:
 
 ```sh
 .devenv/state/venv/bin/pytest \

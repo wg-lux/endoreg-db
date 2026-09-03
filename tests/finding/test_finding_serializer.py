@@ -33,14 +33,7 @@ class _SerializerData(Protocol):
 
 
 class FindingSerializerTest(TestCase):
-    # @classmethod
-    # def setUpTestData(cls):
     def setUp(self):
-        """
-        Initializes test data for the CommonFindingTest class.
-
-        Creates and retrieves Finding instances.
-        """
         load_data()
 
         self.colonoscopy = Examination.objects.get(name="colonoscopy")

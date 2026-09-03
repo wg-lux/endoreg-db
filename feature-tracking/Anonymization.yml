@@ -1,7 +1,7 @@
 schema_version: '1.0'
 id: anonymization
-name: Anonymisierung
-description: Fail-closed Anonymisierung und Qualitätsfreigabe klinischer Videos, Frames und Berichte.
+name: Anonymization
+description: Fail-closed anonymization and quality approval of clinical videos, frames, and reports.
 owners:
 - endoreg_db maintainers
 production_critical: true
@@ -11,21 +11,21 @@ tracking:
 source_documents:
 - path: docs/anonymization_contract.md
   disposition: reference
-  note: Schutzumfang, Qualitätsgrenzen, Zustandsmodell und rollengetrennte Abläufe.
+  note: Protection scope, quality limits, state model, and role-separated workflows.
 - path: docs/configurable_ai_setup.md
   disposition: reference
-  note: Konfiguration der eingesetzten KI-Komponenten.
+  note: Configuration of the artificial intelligence components in use.
 definition_of_done:
 - id: documented_scope
   category: requirements
-  title: Schutzumfang und Freigabegrenzen sind eindeutig definiert
+  title: Protection scope and approval boundaries are clearly defined
   acceptance:
-  - Sensible Merkmale, unterstützte Medientypen und Qualitätsgrenzen sind dokumentiert.
-  - Unvollständige oder inkonsistente Zustände führen zu keiner Freigabe.
+  - Sensitive attributes, supported media types, and quality limits are documented.
+  - Incomplete or inconsistent states do not result in approval.
   required: true
   verification:
     kind: manual
-    instructions: Threat Model, Qualitätsmetriken und Zustandsmaschine gemeinsam prüfen.
+    instructions: Review the threat model, quality metrics, and state machine together.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -34,18 +34,18 @@ definition_of_done:
       reference: docs/configurable_ai_setup.md
     - kind: review
       reference: docs/anonymization_contract.md
-    note: Schutzumfang, unterstützte Medientypen, fail-closed Freigabegrenzen, Qualitätsgrenzen und Zustandsmaschine
-      wurden gegen Services, State-Logik und Sicherheitsgrenzen geprüft.
+    note: Protection scope, supported media types, fail-closed approval boundaries, quality limits, and the state machine
+      were reviewed against services, state logic, and security boundaries.
     assessed_by: Codex
     assessed_at: '2026-07-17T12:43:47.535094Z'
 - id: media_workflow
   category: functionality
-  title: Video-, Frame- und Berichtsanonymisierung folgen einem expliziten Workflow
+  title: Video, frame, and report anonymization follow an explicit workflow
   acceptance:
-  - Verarbeitung ist idempotent und jeder Übergang wird serverseitig validiert.
-  - Korrektur und erneute Verarbeitung überschreiben keine ungeprüfte Historie.
-  - Nach der Validierung werden alle extrahierten Frames validierter Outside-Segmente atomar vollständig
-    geschwärzt und vor der Freigabe verifiziert.
+  - Processing is idempotent, and every transition is validated server-side.
+  - Correction and reprocessing do not overwrite unreviewed history.
+  - After validation, all extracted frames from validated outside segments are completely blacked out
+    atomically and verified before approval.
   required: true
   verification:
     kind: command
@@ -63,19 +63,19 @@ definition_of_done:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_anonymization.py tests/views/anonymization/test_validate_view.py
         tests/services/test_video_post_validation_jobs.py tests/views/video/test_segments_crud.py -q
-      note: Exit-Code 0
+      note: Exit code 0
     assessed_by: Codex
     assessed_at: '2026-07-17T13:02:02.649207Z'
 - id: automated_tests
   category: testing
-  title: Anonymisierung, Validierung und Qualitätsmetriken sind regressionsgetestet
+  title: Anonymization, validation, and quality metrics are regression-tested
   acceptance:
-  - Positive, negative und Grenzfälle für Video und Bericht laufen reproduzierbar.
-  - Leere externe ID-Paare werden bei Video- und Berichtsvalidierung ignoriert; vollständige Paare werden
-    als typisierte PatientExternalID-Relation aufgelöst oder angelegt und atomar zugeordnet.
-  - Die Modellneutrainingsintegration mit lx-anonymizer ist nach Arrange-Act-Assert strukturiert und prüft
-    Optionsübergabe, Worker- und Management-Command-Grenze, Ergebnispersistenz sowie fail-closed Eingabe-,
-    Ergebnis- und Trainingsfehler.
+  - Positive, negative, and boundary cases for video and reports run reproducibly.
+  - Empty external identifier pairs are ignored during video and report validation; complete pairs are
+    resolved or created as a typed PatientExternalID relation and assigned atomically.
+  - The model retraining integration with lx-anonymizer follows Arrange-Act-Assert and verifies option
+    forwarding, worker and management-command boundaries, result persistence, and fail-closed input,
+    result, and training errors.
   required: true
   verification:
     kind: command
@@ -103,9 +103,9 @@ definition_of_done:
         passed)
     - kind: code
       reference: endoreg_db/schemas/sensitive_meta_update.py; endoreg_db/services/sensitive_meta_update.py;
-        gemeinsame Video-/PDF-PATCH-Grenze in endoreg_db/views/media/sensitive_metadata.py
+        shared video/PDF PATCH boundary in endoreg_db/views/media/sensitive_metadata.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrierte Boundary-Kohorte (90
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrated boundary cohort (90
         passed)
     - kind: code
       reference: endoreg_db/management/commands/train_phi_region_detector.py; tests/management/commands/test_train_phi_region_detector.py;
@@ -124,28 +124,26 @@ definition_of_done:
     - kind: command
       reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_phi_region_detector_training.py
         -q (2 passed)
-    note: Die gemeinsame Video-/Berichtsvalidierung trennt externe ID-Werte vor dem generischen SensitiveMeta-Update.
-      Leere Paare bleiben ohne Relation; vollständige, getrimmte Paare werden idempotent als PatientExternalID
-      aufgelöst oder angelegt und typisiert zugeordnet. Positive, negative und Grenzfälle der bestehenden
-      Anonymisierungssuite sowie vier Video-/Berichtsregressionen sind erfolgreich. Zusätzlich ist die
-      lx-anonymizer-Neutrainingsgrenze explizit nach Arrange-Act-Assert getestet. Der Test deckte einen
-      echten call_command-Pfadtypfehler auf; die Management-Command-Grenze normalisiert nun programmgesteuerte
-      Stringpfade vor der strikten gemeinsamen Validierung. Erfolgs-, ungültige Options-/Ergebnis- und
-      Trainerfehlerfälle sowie Worker-Persistenz, API-Übergabe und der native lx-anonymizer-Artefaktvertrag
-      sind grün.
+    note: The shared video/report validation separates external identifier values before the generic SensitiveMeta update.
+      Empty pairs remain without a relation; complete, trimmed pairs are idempotently resolved or created as
+      PatientExternalID records and assigned with a typed relation. Positive, negative, and boundary cases in the
+      existing anonymization suite and four video/report regressions pass. In addition, the lx-anonymizer retraining
+      boundary is explicitly tested using Arrange-Act-Assert. The test revealed a genuine call_command path type
+      error; the management-command boundary now normalizes programmatically supplied string paths before strict
+      shared validation. Success cases, invalid option/result cases, trainer error cases, worker persistence, API
+      forwarding, and the native lx-anonymizer artifact contract all pass.
     assessed_by: codex-anonymizer-retraining-aaa
     assessed_at: '2026-08-28T09:25:17.083799Z'
 - id: privacy_controls
   category: security
-  title: Nicht freigegebene Rohdaten können den lokalen Schutzbereich nicht verlassen
+  title: Unapproved raw data cannot leave the local protection boundary
   acceptance:
-  - Export ist nur für anonymisierte, validierte Medien möglich.
-  - Master-Key und direkte Identifikatoren gelangen weder in Payloads noch Konfiguration.
-  - Leere oder nur aus Platzhaltern bestehende Anonymizer-Metadaten überschreiben bei Wiederholungen keine
-    bereits persistierten direkten Identifikatoren.
-  - Center-Zuordnung und lokale Dateipfade stammen ausschließlich aus dem vertrauenswürdigen Importkontext;
-    Anonymizer-Metadaten dürfen diese Besitz- und Speichergrenzen nicht verändern und Routine-Logs enthalten
-    keine sensitiven Quellpfade.
+  - Export is possible only for anonymized, validated media.
+  - The master key and direct identifiers enter neither payloads nor configuration.
+  - Empty anonymizer metadata or metadata consisting only of placeholders does not overwrite already persisted
+    direct identifiers during repeated processing.
+  - Center assignment and local file paths originate exclusively from the trusted import context; anonymizer
+    metadata must not change these ownership and storage boundaries, and routine logs contain no sensitive source paths.
   required: true
   verification:
     kind: command
@@ -168,19 +166,18 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/import_files/test_sensitive_meta_storage.py
         tests/services/test_export_frames_contract.py tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
         tests/utils/test_structured_logging.py -q
-      note: Exit-Code 0
-    note: 'Codeprüfung und fokussierte Verifikation bestätigen: Export bleibt validierungsgebunden; Transferpfade
-      verwerfen Rohdaten und direkte Identifikatoren; leere oder Platzhalter-Metadaten erhalten bekannte
-      Identifikatoren; Center und Dateipfad sind keine schreibbaren Anonymizer-Felder; die Importservices
-      protokollieren keine sensitiven Quell- oder Stagingpfade.'
+      note: Exit code 0
+    note: 'Code review and focused verification confirm: export remains conditional on validation; transfer paths
+      reject raw data and direct identifiers; empty or placeholder metadata preserves known identifiers; center and
+      file path are not writable anonymizer fields; the import services do not log sensitive source or staging paths.'
     assessed_by: codex-sensitive-meta-20260820
     assessed_at: '2026-08-20T09:10:33.293358Z'
 - id: quality_evidence
   category: data_integrity
-  title: Freigabe beruht auf persistierten, nachvollziehbaren Qualitätsnachweisen
+  title: Approval is based on persisted, traceable quality evidence
   acceptance:
-  - Qualitätsmetriken, Modellversion und menschliche Validierung bleiben auditierbar.
-  - Fehlende Evidenz verhindert die Freigabe.
+  - Quality metrics, model version, and human validation remain auditable.
+  - Missing evidence prevents approval.
   required: true
   verification:
     kind: command
@@ -196,19 +193,19 @@ definition_of_done:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
         tests/views/media/test_anonymization_metrics.py -q
-      note: Exit-Code 0
+      note: Exit code 0
     assessed_by: Max
     assessed_at: '2026-07-17T12:51:01.915535Z'
 - id: operational_readiness
   category: operations
-  title: Fehler, Korrektur, Wiederanlauf und Monitoring sind betriebssicher
+  title: Failure, correction, restart, and monitoring are operationally safe
   acceptance:
-  - Betreiber erkennen hängende oder fehlgeschlagene Verarbeitung ohne Ad-hoc-Datenbankzugriff.
-  - Wiederanlauf ist idempotent und erhält Audit- und Qualitätsdaten.
+  - Operators can identify stalled or failed processing without ad hoc database access.
+  - Restart is idempotent and preserves audit and quality data.
   required: true
   verification:
     kind: manual
-    instructions: Fehler- und Korrekturszenario im produktionsnahen Profil durchführen.
+    instructions: Perform a failure and correction scenario in a production-like profile.
     timeout_seconds: 300
   assessment:
     status: in_progress
@@ -222,23 +219,23 @@ definition_of_done:
     - kind: command
       reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
         tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
-    note: Der fokussierte Recovery- und Monitoring-Lauf belegt operator-sichtbare Failed-/Stale-Zähler,
-      fail-closed Health-Fehler, idempotente Retry-Reservierung und Zustandsrücksetzung sowie den Erhalt
-      von AuditLedger- und AnonymizationValidationMetric-Evidenz über einen erfolgreichen Wiederanlauf.
-      Ein Video mit Integritätsstatus lost bleibt fail-closed. Das Kriterium bleibt in_progress, bis das
-      dokumentierte Fehler- und Korrekturszenario im produktionsnahen local_study_server-Deploymentprofil
-      mit paketierter Python-Umgebung durchgeführt wurde.
+    note: The focused recovery and monitoring run demonstrates operator-visible failed/stale counters,
+      fail-closed health errors, idempotent retry reservation and state reset, and preservation of
+      AuditLedger and AnonymizationValidationMetric evidence across a successful restart. A video with
+      integrity status lost remains fail-closed. The criterion remains in_progress until the documented
+      failure and correction scenario has been performed in the production-like local_study_server deployment
+      profile with the packaged Python environment.
     assessed_by: codex-root-20260902
     assessed_at: '2026-09-02T11:47:24.022168Z'
 - id: operator_documentation
   category: documentation
-  title: Schutzmodell, Qualitätsschwellen und Bedienabläufe sind aktuell
+  title: Protection model, quality thresholds, and operating procedures are current
   acceptance:
-  - Entwickler, Reviewer und Betreiber haben getrennte, konsistente Anleitungen.
+  - Developers, reviewers, and operators have separate, consistent instructions.
   required: true
   verification:
     kind: manual
-    instructions: Dokumentation mit Security, Betrieb und klinischem Reviewer abnehmen.
+    instructions: Obtain documentation approval from security, operations, and a clinical reviewer.
     timeout_seconds: 300
   assessment:
     status: in_progress
@@ -247,7 +244,7 @@ definition_of_done:
       reference: docs/local_study_server_deployment.md
     - kind: review
       reference: docs/anonymization_contract.md
-    note: Rollengetrennte Entwickler-, klinische Reviewer- und Betreiberanleitungen sind konsolidiert.
-      Ausstehend ist die gemeinsame formale Abnahme durch Security, Betrieb und klinischen Reviewer.
+    note: Role-separated instructions for developers, clinical reviewers, and operators have been consolidated.
+      Joint formal approval by security, operations, and a clinical reviewer remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-17T12:43:49.189799Z'

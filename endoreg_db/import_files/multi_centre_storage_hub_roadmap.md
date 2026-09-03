@@ -1,8 +1,9 @@
 # Multi-Centre Storage Hub Roadmap
 
-> Status tracking was migrated to `feature-tracking/done/HubIngest.yml`. This
-> document is retained as architecture context and must not carry an independent
-> completion status.
+> Production-readiness status is authoritative only in
+> `feature-tracking/done/HubIngest.yml` and `feature-tracking/HubTransfer.yml`.
+> This document is retained as architecture context and must not carry an
+> independent completion status.
 
 ## Purpose
 
@@ -29,10 +30,15 @@ best described as:
 - trusted local drop-folder ingestion for selected deployments
 - protected local filesystem storage, with streaming offload where configured
 
-The current cryptographic phase is Phase 1: transport and authentication.
-Central-hub production settings require secure transport and mTLS metadata for
-hub transfer traffic. Envelope encryption and KMS integration are not
-implemented yet.
+The production-approved cryptographic phase remains Phase 1: transport and
+authentication. Central-hub production settings require secure transport and
+mutual Transport Layer Security (mTLS) metadata for hub transfer traffic.
+Phase 2 recipient-envelope encryption is implemented and locally tested across
+the participating repositories, but its coordinated package-build, deployed
+key-rotation, and live transfer evidence remains in progress. It is therefore
+not yet an approved production dependency. See the
+`envelope_encrypted_media_transfer` criterion in
+`feature-tracking/HubTransfer.yml` for the current evidence and blockers.
 
 ## Implemented Capabilities
 
@@ -212,9 +218,10 @@ Current behavior:
 - processed video uploads are hash-checked against
   `processed_video_hash`
 
-This transfer path is controlled hub synchronization. It is not full mesh
-federation and it does not currently encrypt standalone transfer blobs with
-envelope encryption.
+This transfer path is controlled hub synchronization, not full mesh federation.
+The locally implemented Phase 2 profile encrypts standalone processed-media
+blobs with recipient envelopes; the approved Phase 1 production profile does
+not enable that behavior yet.
 
 Relevant files:
 
@@ -285,8 +292,8 @@ Remaining storage work is still significant:
 - not every Django storage mutation is routed through the typed filesystem
   wrappers yet
 - object-storage-style access is not implemented as the primary abstraction
-- transfer media are not envelope-encrypted
-- KMS-backed key management and key rotation are not implemented
+- recipient-envelope transfer support is not yet production-verified
+- deployed key management and key rotation still require production evidence
 
 Relevant files:
 
@@ -303,7 +310,8 @@ disaster-recovery mechanisms.
 
 Current export and retrieval paths include:
 
-- Django fixture export/import through `export_db.sh` and `import_db.sh`
+- legacy Django fixture scripts, `export_db.sh` and `import_db.sh`, which are
+  currently non-operational because `fix_endoreg_db_backup_json.py` is absent
 - frame and annotation dataset export through
   `endoreg_db/export/frames/export_frames_with_labels.py`
 - report and video stream endpoints under `/api/media/...`
@@ -327,21 +335,24 @@ Required outcome:
   search, and timeline reads must have consistent centre-aware authorization
   before the system is considered an authoritative multi-centre hub
 
-### Envelope encryption is not implemented
+### Envelope encryption is implemented locally but not production-verified
 
-The current transfer architecture is Phase 1. It relies on mTLS and request
-authentication. It does not wrap standalone transfer blobs with per-transfer
-data encryption keys.
+The approved production transfer architecture remains Phase 1 and relies on
+mTLS and request authentication. Phase 2 code wraps standalone processed-media
+transfers with recipient envelopes and per-transfer data encryption keys, and
+its focused local tests are green. Production verification remains pending the
+coordinated build, deployed key-rotation exercise, and live mTLS transfer
+evidence recorded in `feature-tracking/HubTransfer.yml`.
 
-Required outcome for Phase 2:
+Required production evidence for Phase 2:
 
-- generate a per-transfer data encryption key
-- encrypt outbound payloads with that data encryption key
-- wrap the data encryption key with the receiving hub public key
-- never transmit a long-lived master key
+- build and deploy the coordinated package set
+- verify current and retiring recipient-key rotation on the deployed hub
+- record a live mTLS transfer using distinct site and hub storage master keys
+- confirm that no long-lived master key is transmitted
 
-Until this exists, transfer media must remain constrained to anonymized
-processed media and protected transport.
+Until that evidence is accepted, transfer media remain constrained to
+anonymized processed media and the approved protected-transport profile.
 
 ### KMS integration is not implemented
 
@@ -393,8 +404,8 @@ Required outcome:
 
 ### Security and transport
 
-The current implementation should remain within Phase 1 until Phase 2 is
-designed and implemented.
+Production operation must remain within the approved Phase 1 profile until the
+Phase 2 criterion in `feature-tracking/HubTransfer.yml` is verified.
 
 Required outcomes:
 
@@ -404,8 +415,8 @@ Required outcomes:
 - reject active hub transfer nodes that have no usable request-auth secret
   unless a stronger mTLS-only machine identity policy is explicitly modeled
 - continue rejecting raw-media transfer
-- implement envelope encryption before allowing standalone transfer blobs to
-  leave the local storage boundary
+- complete production verification of recipient-envelope encryption before
+  allowing standalone transfer blobs to leave the local storage boundary
 
 ### Tenancy and authorization
 
@@ -486,15 +497,14 @@ Deliver next:
 - documented proxy mTLS metadata contract
 - audit events for all transfer auth failures that can be safely logged
 
-### 3. Add envelope encryption
+### 3. Production-verify envelope encryption
 
-Deliver next:
+Production evidence still required:
 
-- per-transfer data encryption key generation
-- payload encryption with the data encryption key
-- data encryption key wrapping with receiver public key
-- transfer metadata fields for wrapped keys and encryption parameters
-- tests proving no master key is transmitted or persisted in application config
+- coordinated compatible package builds
+- deployed recipient-key rotation using current and retiring keys
+- a live mTLS transfer with distinct site and hub storage master keys
+- confirmation that no master key is transmitted or persisted in application config
 
 ### 4. Finish storage abstraction
 
@@ -567,7 +577,7 @@ Guardrails:
 - keep watcher-compatible service functions for trusted local ingestion
 - keep `local_study_server` raw watcher ingest disabled
 - keep upload source cleanup retention-driven
-- keep fixture export/import available for development and migration work
+- do not present the currently broken legacy fixture scripts as an available workflow
 - do not position fixture export/import as hub disaster recovery
 - keep all API payload fields snake_case
 

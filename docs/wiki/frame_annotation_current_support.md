@@ -88,7 +88,9 @@ Integrity conflicts return HTTP 409, temporary database failures return HTTP
 503, and other database failures return HTTP 500. Internal database messages
 are never included in the response.
 
-This is compatible with the current Vue submit format that sends `choiceName`.
+The wire contract is snake_case: clients must send `choice_name`. Any frontend
+camelCase-to-snake_case conversion must happen before the request reaches this
+serializer.
 
 ### 3) Skip
 - `POST /api/media/annotations/frames/skip/`

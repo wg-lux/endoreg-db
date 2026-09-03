@@ -5,6 +5,19 @@ default_review_by: '2026-10-31'
 repositories:
 - id: endoreg-db
   root_hint: .
+  canonical_language: en
+  additional_documentation_paths:
+  - STANDARD.md
+  - changelog.md
+  - changelogs
+  - devlog
+  - setup
+  - tests/keycloak/README.md
+  - endoreg_db/codemods/readme.md
+  - endoreg_db/import_files
+  - endoreg_db/mermaid
+  - endoreg_db/models/medical/contraindication/README.md
+  - endoreg_db/versioning.md
   docs_path: docs
   readme_path: README.md
   agents_path: AGENTS.md
@@ -12,6 +25,8 @@ repositories:
   owner: endoreg_db maintainers
 - id: lx-annotate
   root_hint: ../dev/lx-annotate
+  canonical_language: null
+  additional_documentation_paths: []
   docs_path: docs
   readme_path: README.md
   agents_path: AGENTS.md
@@ -19,6 +34,8 @@ repositories:
   owner: lx-annotate maintainers
 - id: lx-anonymizer
   root_hint: ../lx-anonymizer
+  canonical_language: null
+  additional_documentation_paths: []
   docs_path: docs
   readme_path: README.md
   agents_path: AGENTS.md
@@ -26,6 +43,8 @@ repositories:
   owner: lx-anonymizer maintainers
 - id: lx-data-models
   root_hint: ../lx-parse/lx-data-models
+  canonical_language: null
+  additional_documentation_paths: []
   docs_path: docs
   readme_path: README.md
   agents_path: AGENTS.md

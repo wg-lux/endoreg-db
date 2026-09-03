@@ -1,8 +1,8 @@
 schema_version: '1.0'
 id: assisted_reporting_api_integration
-name: Assisted-Reporting-API-Integration
-description: Produktionsreife Integration der Reporting-Oberfläche mit den kanonischen endoreg_db- und
-  lx_dtypes-Endpunkten für Terminologiepakete, Befundkataloge und patientenbezogene Befunde.
+name: Assisted Reporting API Integration
+description: Production-ready integration of the reporting interface with the canonical endoreg_db and
+  lx_dtypes endpoints for terminology bundles, finding catalogs, and patient-related findings.
 owners:
 - endoreg_db maintainers
 - lx-annotate maintainers
@@ -14,24 +14,24 @@ tracking:
 source_documents:
 - path: docs/assisted_reporting_api_integration.md
   disposition: reference
-  note: Kanonischer Integrations- und Betriebsvertrag.
+  note: Canonical integration and operations contract.
 definition_of_done:
 - id: canonical_route_ownership
   category: requirements
-  title: Eigentümer und Verträge aller Reporting-Routen sind eindeutig festgelegt
+  title: Owners and contracts for all reporting routes are clearly defined
   acceptance:
-  - /dtypes-api/terminology/bundles, /dtypes-api/examinations/{examination_id}/findings/ und /dtypes-api/patient-findings/
-    sind als von lx_dtypes implementierte und von endoreg_db gehostete kanonische Verträge dokumentiert.
-  - Für den Aufruf /endoreg-api/findings/ ist entschieden und dokumentiert, ob ein autorisierter endoreg_db-Listenvertrag
-    implementiert oder der tote Frontend-Aufruf entfernt und durch einen kanonischen, kontextbezogenen
-    lx_dtypes-Aufruf ersetzt wird.
-  - Pfadformat, HTTP-Methode, Query-Parameter, snake_case-Wireformat und camelCase-Konvertierung an der
-    zentralen Frontend-Grenze sind je Vertrag festgelegt.
+  - /dtypes-api/terminology/bundles, /dtypes-api/examinations/{examination_id}/findings/, and /dtypes-api/patient-findings/
+    are documented as canonical contracts implemented by lx_dtypes and hosted by endoreg_db.
+  - For the /endoreg-api/findings/ call, it is decided and documented whether an authorized endoreg_db list
+    contract will be implemented or the dead frontend call will be removed and replaced with a canonical,
+    context-specific lx_dtypes call.
+  - Path format, HTTP method, query parameters, snake_case wire format, and camelCase conversion at the
+    centralized frontend boundary are defined for each contract.
   required: true
   verification:
     kind: manual
-    instructions: ReportingShell, useFindingSelectors, findingsApi, terminologyApi, endoreg_db.root_urls
-      und die lx_dtypes-Routen gemeinsam gegen den dokumentierten Vertrag prüfen.
+    instructions: Review ReportingShell, useFindingSelectors, findingsApi, terminologyApi, endoreg_db.root_urls,
+      and the lx_dtypes routes together against the documented contract.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -56,27 +56,27 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/findingsApi.test.ts src/api/__tests__/terminologyApi.test.ts
         src/api/__tests__/apiPrefixContract.test.ts (working directory /home/admin/dev/lx-annotate/frontend)
-    note: Der versionierte YAML-Vertrag ordnet Terminologie-Bundles, untersuchungsbezogene Befundkataloge
-      und patientenbezogene Befunde ausschließlich lx_dtypes zu und belegt das endoreg_db-Hosting unter
-      /dtypes-api/. Der Checker validiert strikt Schema, Methoden, snake_case-Pfad- und Queryparameter,
-      Implementierungsmarker, zentrale Axios-Konvertierung sowie die Abwesenheit des entfernten VITE_FINDINGS_BACKEND-Schalters
-      und globaler /endoreg-api/findings/-Aufrufe in produktiven Frontendquellen. Pyright, fünf Checker-Unit-Tests,
-      zehn fokussierte Backend- und 21 Frontend-Tests bestanden.
+    note: The versioned YAML contract assigns terminology bundles, examination-specific finding catalogs,
+      and patient-related findings exclusively to lx_dtypes and demonstrates endoreg_db hosting under
+      /dtypes-api/. The checker strictly validates schema, methods, snake_case path and query parameters,
+      implementation markers, centralized Axios conversion, and the absence of the removed VITE_FINDINGS_BACKEND
+      switch and global /endoreg-api/findings/ calls in production frontend sources. Pyright, five checker unit
+      tests, ten focused backend tests, and 21 frontend tests passed.
     assessed_by: codex-contract-coverage-20260813
     assessed_at: '2026-08-13T09:09:13.956469Z'
 - id: host_adapter_configuration
   category: functionality
-  title: Der lx_dtypes-Hostadapter ist in jedem unterstützten Laufzeitprofil verfügbar
+  title: The lx_dtypes host adapter is available in every supported runtime profile
   acceptance:
-  - LX_DTYPES_HOST_MODELS_MODULE wird vor dem Start der Django-Anwendung auf endoreg_db.integrations.lx_dtypes_host_models
-    gesetzt oder gleichwertig und importierbar in den Django-Settings bereitgestellt.
-  - Entwicklung, Tests, Wheel-Paket und NixOS-systemd-Dienst verwenden denselben Hostadaptervertrag; die
-    Produktionskonfiguration darf nicht vom devenv-only Environment abhängen.
-  - Eine fehlende oder nicht importierbare Adapterkonfiguration verhindert den Dienststart mit einer handlungsorientierten
-    Fehlermeldung statt erst Requests mit HTTP 500 scheitern zu lassen.
-  - GET /dtypes-api/examinations/{examination_id}/findings/ und GET /dtypes-api/patient-findings/?patient_examination={id}
-    liefern in einem gepackten Produktionsprofil den definierten Erfolg, 4xx-Fehler oder eine leere Liste,
-    aber keinen Konfigurationsfehler als HTTP 500.
+  - Before the Django application starts, LX_DTYPES_HOST_MODELS_MODULE is set to
+    endoreg_db.integrations.lx_dtypes_host_models or provided equivalently and importably in the Django settings.
+  - Development, tests, the wheel package, and the NixOS systemd service use the same host-adapter contract;
+    production configuration must not depend on the devenv-only environment.
+  - Missing or non-importable adapter configuration prevents service startup with an actionable error message
+    instead of allowing requests to fail later with HTTP 500.
+  - In a packaged production profile, GET /dtypes-api/examinations/{examination_id}/findings/ and
+    GET /dtypes-api/patient-findings/?patient_examination={id} return the defined success response, a 4xx error,
+    or an empty list, but not a configuration error as HTTP 500.
   required: true
   verification:
     kind: command
@@ -138,28 +138,27 @@ definition_of_done:
     - kind: command
       reference: 'nix run .#nixtest -- --no-color (exit 2: package-contract 0/1, service-vm 0/1; packaged
         server and route smoke not reached)'
-    note: 'Akzeptanzpunkt 1: Im Quell- und Testprofil ist LX_DTYPES_HOST_MODELS_MODULE importierbar; das
-      Paketprofil erreichte den Start nicht. Akzeptanzpunkt 2: Die devenv-Tests und der Frontend-Produktionsbuild
-      im Arbeitsbaum bestanden, aber Wheel/NixOS verwenden den Vertrag noch nicht nachweisbar, weil der
-      Git-basierte Paketbuild eine nicht getrackte erforderliche Quelldatei nicht enthält. Akzeptanzpunkt
-      3: Die fail-closed Readiness-Checks bestanden im Quellprofil; ein paketierter Dienststart wurde
-      nicht erreicht. Akzeptanzpunkt 4: Nicht erfüllt; die beiden /dtypes-api-Routen konnten in keinem
-      gepackten Produktionsprofil per Smoke-Test geprüft werden. Der Status bleibt in_progress.'
+    note: 'Acceptance point 1: LX_DTYPES_HOST_MODELS_MODULE is importable in the source and test profiles;
+      the package profile did not reach startup. Acceptance point 2: The devenv tests and frontend production
+      build passed in the working tree, but wheel/NixOS use of the contract is not yet demonstrated because the
+      Git-based package build does not include a required untracked source file. Acceptance point 3: The
+      fail-closed readiness checks passed in the source profile; packaged service startup was not reached.
+      Acceptance point 4: Not met; the two /dtypes-api/ routes could not be smoke-tested in any packaged
+      production profile. The status remains in_progress.'
     assessed_by: Codex
     assessed_at: '2026-07-31T11:24:43.304013Z'
 - id: terminology_registry_runtime
   category: functionality
-  title: Terminologiepakete aus lx-terminology-editor sind im Produktionsprofil auffindbar
+  title: Terminology bundles from lx-terminology-editor are discoverable in the production profile
   acceptance:
-  - Die Registry referenziert versionierte, für den Dienst lesbare Exportpakete aus lx-terminology-editor
-    und enthält eine explizite aktive Auswahl oder einen dokumentierten Zustand ohne aktive Auswahl.
-  - GET /dtypes-api/terminology/bundles liefert die typisierte Bundle-Liste; eine fehlende Registry wird
-    bereits beim Deployment erkannt und nicht als irreführender Route-404 erst bei Nutzung sichtbar.
-  - Import und Auswahl eines Bundles bleiben auf die vorgesehenen schreibenden Rollen beschränkt und verändern
-    die Registry atomar.
-  - Der lx-dtypes-Release prüft Wheel und Source-Distribution bytegenau gegen den vollständigen Knowledge-Base-Datenbaum
-    und führt den semantischen Smoke-Test für die veröffentlichten deutschen Demo-Vorlagen aus; endoreg-db
-    und lx-annotate werden erst nach der Veröffentlichung gemeinsam auf diese Version angehoben.
+  - The registry references versioned export bundles from lx-terminology-editor that are readable by the service
+    and contains either an explicit active selection or a documented state with no active selection.
+  - GET /dtypes-api/terminology/bundles returns the typed bundle list; a missing registry is detected during
+    deployment instead of appearing only during use as a misleading route-level HTTP 404.
+  - Import and selection of a bundle remain restricted to the designated write roles and modify the registry atomically.
+  - The lx-dtypes release verifies the wheel and source distribution byte-for-byte against the complete knowledge-base
+    data tree and runs the semantic smoke test for the published German demo templates; endoreg-db and lx-annotate
+    are upgraded together to this version only after publication.
   required: true
   verification:
     kind: command
@@ -225,95 +224,95 @@ definition_of_done:
     assessed_at: '2026-08-13T10:55:08.008972Z'
 - id: frontend_backend_contract_tests
   category: testing
-  title: Die Reporting-Aufrufe werden repository-übergreifend regressionsgetestet
+  title: Reporting calls are regression-tested across repositories
   acceptance:
-  - Frontend-Tests belegen die kanonischen Pfade für Bundle-Liste, Untersuchungsbefunde und patientenbezogene
-    Befunde; veraltete VITE_FINDINGS_BACKEND-Werte können keine entfernten Routen reaktivieren.
-  - Backend-Tests lösen die kanonischen Pfade unter /dtypes-api/ auf, weisen entfernte /endoreg-api/-Befundpfade
-    als nicht unterstützt nach und prüfen Erfolg, leere Ergebnisse, unbekannte IDs, ungültige Query-Parameter
-    sowie strukturierte Fehlerantworten.
-  - Ein paketierter Deployment-Smoke-Test verwendet die gebaute Frontend- und Python-Artefaktkombination
-    und schlägt bei fehlender Route, fehlendem Hostadapter oder fehlender Terminologie-Registry fehl.
+  - Frontend tests demonstrate the canonical paths for the bundle list, examination findings, and patient-related
+    findings; obsolete VITE_FINDINGS_BACKEND values cannot reactivate removed routes.
+  - Backend tests resolve the canonical paths under /dtypes-api/, demonstrate that removed /endoreg-api/ finding
+    paths are unsupported, and test success, empty results, unknown identifiers, invalid query parameters, and
+    structured error responses.
+  - A packaged deployment smoke test uses the built frontend and Python artifact combination and fails when a
+    route, host adapter, or terminology registry is missing.
   required: true
   verification:
     kind: manual
-    instructions: Die fokussierten Frontend-, endoreg_db-, lx_dtypes- und Paket-Smoke-Testläufe ausführen
-      und ihre Artefaktversionen gemeinsam dokumentieren.
+    instructions: Run the focused frontend, endoreg_db, lx_dtypes, and package smoke-test suites and document
+      their artifact versions together.
     timeout_seconds: 300
   assessment:
     status: in_progress
     evidence:
     - kind: test
       reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/findingsApi.test.ts
-    note: Frontend- und lx_dtypes-Tests sind grün; der endoreg_db-Paketlauf wird durch die unabhängige
-      Http403-Änderung blockiert.
+    note: Frontend and lx_dtypes tests pass; the endoreg_db package run is blocked by the unrelated
+      Http403 change.
     assessed_by: Codex
     assessed_at: '2026-07-22T08:27:09.966888Z'
 - id: reporting_access_controls
   category: security
-  title: Befund- und Terminologierouten erzwingen den vorgesehenen Zugriffskontext
+  title: Finding and terminology routes enforce the intended access context
   acceptance:
-  - Patientenbezogene Befunde sind authentifiziert und nach Center beziehungsweise PatientExamination
-    gescoped; fremde Datensätze werden nicht offengelegt.
-  - Befundkatalog- und Bundle-Lesezugriffe haben eine explizite Rollenentscheidung; Bundle-Import und
-    -Aktivierung verlangen eine dokumentierte explizite Schreibrolle.
-  - Fehlerantworten enthalten weder lokale Registry-Pfade noch Patienten- oder Konfigurationsgeheimnisse.
+  - Patient-related findings require authentication and are scoped by center or PatientExamination;
+    records belonging to other scopes are not disclosed.
+  - Finding-catalog and bundle read access have an explicit role decision; bundle import and activation
+    require a documented explicit write role.
+  - Error responses contain neither local registry paths nor patient or configuration secrets.
   required: true
   verification:
     kind: manual
-    instructions: Positive und negative Authentifizierungs-, Rollen- und Center-Scope-Tests für alle kanonischen
-      Reporting-Routen prüfen.
+    instructions: Review positive and negative authentication, role, and center-scope tests for all canonical
+      reporting routes.
     timeout_seconds: 300
   assessment:
     status: in_progress
     evidence:
     - kind: test
       reference: tests/api/test_dtypes_record_persistence.py::test_terminology_write_access_requires_explicit_write_role
-    note: Host-Rollenprüfung und schreibende Terminologie-Gates sind implementiert; vollständiger Host-Routentest
-      ist extern blockiert.
+    note: Host role checking and terminology write gates are implemented; the complete host route test
+      is externally blocked.
     assessed_by: Codex
     assessed_at: '2026-07-22T08:27:11.715462Z'
 - id: deployment_readiness
   category: operations
-  title: Deployment erkennt unvollständige Reporting-Abhängigkeiten vor Traffic
+  title: Deployment detects incomplete reporting dependencies before serving traffic
   acceptance:
-  - Startup- oder Readiness-Prüfungen validieren Hostadapter, Terminologie-Registry, aktive Bundle-Identität
-    und die Auflösung aller vom gebauten Frontend benötigten API-Routen.
-  - Der NixOS-Dienst und alle Worker erhalten die erforderlichen nicht geheimen lx_dtypes-Einstellungen
-    aus einer einzigen deklarativen Quelle.
-  - Deployment-Evidenz zeichnet lx-annotate-, endoreg_db- und lx_dtypes-Versionen gemeinsam auf, damit
-    Frontend-/Wheel-Drift diagnostizierbar ist.
-  - Monitoring unterscheidet fehlende Routen, fehlende Registry, fehlenden Hostadapter, Autorisierungsfehler
-    und fachlich leere Ergebnisse.
+  - Startup or readiness checks validate the host adapter, terminology registry, active bundle identity,
+    and resolution of every API route required by the built frontend.
+  - The NixOS service and all workers receive the required non-secret lx_dtypes settings from a single
+    declarative source.
+  - Deployment evidence records lx-annotate, endoreg_db, and lx_dtypes versions together so that frontend/wheel
+    drift can be diagnosed.
+  - Monitoring distinguishes missing routes, a missing registry, a missing host adapter, authorization errors,
+    and semantically empty results.
   required: true
   verification:
     kind: manual
-    instructions: Ein Produktionsprofil mit absichtlich fehlender Konfiguration und anschließend mit vollständiger
-      Konfiguration deployen; Fail-closed-Verhalten und erfolgreiche Readiness dokumentieren.
+    instructions: Deploy a production profile first with intentionally missing configuration and then with complete
+      configuration; document fail-closed behavior and successful readiness.
     timeout_seconds: 300
   assessment:
     status: in_progress
     evidence:
     - kind: test
       reference: /home/admin/dev/lx-annotate/tests/system/test_wheel_deployment_acceptance.py
-    note: Nix-Umgebung, Registry-Provisionierung und Startup-Checks sind implementiert; eine reale Deployment-Übung
-      fehlt.
+    note: The Nix environment, registry provisioning, and startup checks are implemented; a real deployment exercise
+      remains outstanding.
     assessed_by: Codex
     assessed_at: '2026-07-22T08:27:13.113642Z'
 - id: integration_documentation
   category: documentation
-  title: Einrichtung, Nutzung und Fehlerdiagnose sind repository-übergreifend dokumentiert
+  title: Setup, usage, and troubleshooting are documented across repositories
   acceptance:
-  - Die Dokumentation nennt die kanonischen Routen, zuständigen Repositories, erforderlichen Settings,
-    Registry-Format und Bundle-Exportablauf aus lx-terminology-editor.
-  - Ein Runbook ordnet HTTP 404, HTTP 401/403, HTTP 500 und leere Listen konkreten Prüfschritten zu, ohne
-    sensible Konfiguration in Logs oder Antworten offenzulegen.
-  - Die Entfernung von VITE_FINDINGS_BACKEND und die Ablösung nicht kanonischer Frontend-Pfade sind dokumentiert.
+  - The documentation identifies the canonical routes, responsible repositories, required settings,
+    registry format, and bundle export workflow from lx-terminology-editor.
+  - A runbook maps HTTP 404, HTTP 401/403, HTTP 500, and empty lists to concrete diagnostic steps without
+    exposing sensitive configuration in logs or responses.
+  - Removal of VITE_FINDINGS_BACKEND and replacement of noncanonical frontend paths are documented.
   required: true
   verification:
     kind: manual
-    instructions: Setup und Fehlerdiagnose anhand eines frischen paketierten Deployments und eines aus
-      lx-terminology-editor exportierten Bundles nachvollziehen.
+    instructions: Walk through setup and troubleshooting using a fresh packaged deployment and a bundle exported
+      from lx-terminology-editor.
     timeout_seconds: 300
   assessment:
     status: in_progress

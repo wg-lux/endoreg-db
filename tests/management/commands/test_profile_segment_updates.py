@@ -6,15 +6,43 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.management.commands._profiling import positive_int_option
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize(("value", "expected"), [(1, 1), ("2", 2)])
+def test_positive_int_option_accepts_positive_integer_values(
+    value: object,
+    expected: int,
+) -> None:
+    # Arrange
+    label = "--count"
+
+    # Act
+    result = positive_int_option(value, label)
+
+    # Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize("value", [0, -1, "invalid", None])
+def test_positive_int_option_rejects_non_positive_or_non_integer_values(
+    value: object,
+) -> None:
+    # Arrange
+    label = "--count"
+
+    # Act / Assert
+    with pytest.raises(CommandError, match="--count must be a positive integer"):
+        positive_int_option(value, label)
 
 
 def test_profile_segment_updates_rolls_back_synthetic_data_by_default(

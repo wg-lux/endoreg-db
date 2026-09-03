@@ -9,13 +9,14 @@ import logging
 from datetime import date, datetime
 from urllib.parse import urlencode
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, cast
 
 from django.db.models import Q
 from django.db.models.fields.files import FieldFile
 from django.db.models.query import QuerySet
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
+from lx_dtypes.models.contracts.json_types import JsonValue
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -35,9 +36,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
 
 logger = logging.getLogger(__name__)
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 def _query_params(request: Request) -> Mapping[str, str]:

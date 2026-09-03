@@ -1,34 +1,33 @@
-# Kontrollierte `(k, l, t)`-Release-Ansicht
+# Controlled `(k, l, t)` Release View
 
-Diese Funktion erstellt aus einer bereits de-identifizierten CSV-Tabelle eine
-separate, kontrollierte Release-Ansicht. Die klinische Ursprungstabelle wird
-nicht verändert. Ein Ausgabe-CSV wird nur geschrieben, wenn der vollständig
-konfigurierte Freigabe-Prädikat erfüllt ist.
+This feature creates a separate, controlled release view from an already
+de-identified CSV table. It does not modify the source clinical table. It
+writes an output CSV only when the fully configured release predicate is
+satisfied.
 
-## Gesamtbild
+## Overview
 
 ```text
-de-identifizierte Ursprungstabelle
-+-- feste QI-Definition
-+-- feste Sensitive-Attribute
-+-- feste Utility-Metriken und Schwellen
+de-identified source table
++-- fixed quasi-identifier (QI) definition
++-- fixed sensitive attributes
++-- fixed utility metrics and thresholds
     |
-    +-- Frequenzprüfung (k)
-    +-- optionale l-Diversität
-    +-- optionale TV-basierte t-Closeness
-    +-- JSD-/Wasserstein-basierte Utility-Prüfung
+    +-- frequency check (k)
+    +-- optional l-diversity
+    +-- optional total-variation-based t-closeness
+    +-- Jensen-Shannon-divergence/Wasserstein-based utility check
         |
-        +-- erfüllt: Release-CSV + geschütztes Auditmanifest
-        +-- nicht erfüllt: kein Release-CSV, Auditmanifest mit Ablehnungsgrund
+        +-- satisfied: release CSV + protected audit manifest
+        +-- not satisfied: no release CSV, audit manifest with rejection reason
 ```
 
-Das Ergebnis ist eine Häufigkeitseigenschaft der veröffentlichten Tabelle. Es
-ist kein Nachweis klassischer Personenanonymität. Synthetische Zeilen dürfen
-nur dann zu `k` beitragen, wenn Empfänger ihre Provenienz weder sehen noch
-zuverlässig ableiten können. Diese Governance-Annahme muss ausdrücklich in der
-Konfiguration bestätigt werden.
+The result is a frequency property of the released table, not proof of
+classical person-level anonymity. Synthetic rows may count toward `k` only
+when recipients can neither see nor reliably infer their provenance. The
+configuration must explicitly confirm this governance assumption.
 
-## Konfiguration
+## Configuration
 
 ```yaml
 schema_version: "1.0"
@@ -82,55 +81,54 @@ repair_cost_weights:
   distribution: 1.0
 ```
 
-Direkte Identifikatoren wie Namen, Geburtsdatum, Fallnummer oder externe
-Patienten-ID sind in `release_columns` verboten. Nicht deklarierte
-Eingabespalten werden nicht in die Release-Ansicht übernommen.
+Direct identifiers such as names, dates of birth, case numbers, or external
+patient identifiers are prohibited in `release_columns`. Undeclared input
+columns are not copied into the release view.
 
-Die Gewichte der `utility_features` müssen exakt zu `1.0` summieren.
-Die `allowed_values` bilden den vorab festgelegten endlichen Wertebereich eines
-sensitiven Attributes. Werte außerhalb dieser Domäne führen zum Abbruch;
-kontinuierliche sensitive Werte müssen vor dem Lauf fachlich gebinnt werden.
-Kategorische Features verwenden die Jensen-Shannon-Divergenz mit Logarithmus
-zur Basis 2. Kontinuierliche Features verwenden die 1-Wasserstein-Distanz,
-geteilt durch die fachlich vorab festgelegte `normalization_scale`.
+The `utility_features` weights must sum to `1.0` within the implementation
+tolerance of `1e-9`. `allowed_values` defines the predetermined finite domain
+of a sensitive attribute. A value outside that domain aborts the run;
+continuous sensitive values must be binned according to domain requirements
+before the run. Categorical features use Jensen-Shannon divergence with a
+base-2 logarithm. Continuous features use the 1-Wasserstein distance divided by
+the predetermined domain-specific `normalization_scale`.
 
-## Ausführung
+## Execution
 
 ```bash
 devenv shell -- python manage.py build_k_pseudonymous_release \
   release_policy.yaml \
   deidentified_study_table.csv \
-  --release-output /geschuetzter/pfad/release.csv \
-  --audit-output /nur-fuer-kustoden/audit.json
+  --release-output /protected/path/release.csv \
+  --audit-output /custodian-only/audit.json
 ```
 
-Beide Dateien werden atomar mit Modus `0600` geschrieben. Bei einer nicht
-erfüllten Freigabeprüfung wird ein eventuell vorhandenes altes Release-CSV
-entfernt. Das geschützte Auditmanifest bleibt erhalten und dokumentiert:
+Both files are written atomically with mode `0600`. When the release check is
+not satisfied, the command removes any existing stale release CSV. The
+protected audit manifest remains and records:
 
-- Konfiguration und Schwellen;
-- Anfangs- und Endzustand des Freigabe-Prädikats;
-- vollständige QI-Klassen und optionale Projektionsdiagnostik;
-- `k`-Defizite, l-Diversität und TV-basierte t-Closeness;
-- gewichtete JSD-/Wasserstein-Utility-Abweichungen;
-- Anzahl, Anteil und interne Zeilenpositionen synthetischer Datensätze;
-- kanonische SHA-256-Bindungen von Ursprungs- und Release-Tabelle;
-- Abbruchgrund und Zahl der untersuchten Zustände.
+- configuration and thresholds;
+- initial and final release-predicate state;
+- complete QI classes and optional projection diagnostics;
+- `k` deficits, l-diversity, and total-variation-based t-closeness;
+- weighted Jensen-Shannon-divergence/Wasserstein utility deviations;
+- the count, proportion, and internal row positions of synthetic records;
+- canonical SHA-256 bindings for the source and release tables;
+- the termination reason and number of evaluated states.
 
-Die synthetischen Zeilenpositionen erscheinen ausschließlich im geschützten
-Manifest. Sie werden nicht als Empfängerfeld in das Release-CSV geschrieben.
+Synthetic row positions appear only in the protected manifest. They are not
+written to the release CSV as a recipient-visible field.
 
-## Sicherheits- und Interpretationsgrenzen
+## Security and Interpretation Boundaries
 
-- Die Suche ist begrenzt und heuristisch. `no_release` bedeutet nicht, dass
-  mathematisch keine zulässige Tabelle existiert, sondern nur, dass im
-  erlaubten Suchpfad keine gefunden wurde.
-- Realzeilen sind unveränderlich. Reparaturen ergänzen ausschließlich explizit
-  synthetische Zeilen aus einem endlichen, durch die Ursprungsdaten bestimmten
-  Wertebereich.
-- Die Referenzverteilung für t-Closeness und Utility bleibt die initiale reale,
-  de-identifizierte Tabelle; synthetische Zeilen verschieben den Maßstab nicht.
-- Synthetische Beobachtungen dürfen nicht als reale Patientenzahlen oder
-  klinische Auditereignisse interpretiert werden.
-- Das Verfahren ersetzt weder Zugriffskontrolle noch Verschlüsselung,
-  Empfängermodell, Datenschutz-Folgenabschätzung oder fachliche Freigabe.
+- The search is bounded and heuristic. `no_release` does not prove that no
+  mathematically valid table exists; it means only that the permitted search
+  path found none.
+- Real rows are immutable. Repairs add only explicitly synthetic rows from a
+  finite value domain determined by the source data.
+- The reference distribution for t-closeness and utility remains the initial
+  real, de-identified table; synthetic rows do not move the baseline.
+- Synthetic observations must not be interpreted as real patient counts or
+  clinical audit events.
+- This process does not replace access control, encryption, a recipient model,
+  a data protection impact assessment, or domain-expert approval.

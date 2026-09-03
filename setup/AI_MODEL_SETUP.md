@@ -1,77 +1,64 @@
-## AI Model Metadata Setup Commands
+# AI model metadata setup
 
-This section documents the complete setup process for AI model metadata in EndoReg DB. These commands must be run in sequence to properly initialize the AI model system for video processing.
+The canonical setup entry point is the Django management command below. Run
+migrations before setup so the loader can access the required database tables.
 
-### 1. Load AI Models
+```bash
+uv run python manage.py migrate
+uv run python manage.py setup_endoreg_db
+```
+
+`setup_endoreg_db` loads the base seed data, creates a cache table only when a
+database cache backend is configured, loads artificial intelligence (AI) model
+and label definitions, prepares model metadata, and runs its built-in checks.
+Use `--skip-ai-setup` when AI processing is intentionally disabled,
+`--force-recreate` to create a new metadata version, or `--yaml-only` to disable
+automatic metadata generation.
+
+## Model weights
+
+The search order and filename patterns are defined in
+`endoreg_db/data/setup_config.yaml`. The current configured directories are:
+
+1. `${STORAGE_DIR}/model_weights`
+2. `tests/assets`
+3. `assets`
+4. `model_weights`
+
+If no local file matches, setup attempts the configured Hugging Face fallback.
+If that also fails, the command warns and may leave generated metadata without
+weights; that state is not ready for AI inference.
+
+## Manual commands
+
+Use these commands for targeted recovery or diagnosis:
+
 ```bash
 uv run python manage.py load_ai_model_data
-```
-**Purpose**: Loads the base AI model definitions into the database.
-- Creates `AiModel` instances with model names, types, and descriptions
-- Required before creating model metadata
-- **Output**: "Loaded X AI models"
-
-### 2. Load AI Model Labels
-```bash
 uv run python manage.py load_ai_model_label_data
-```
-**Purpose**: Loads label sets and labels associated with AI models.
-- Creates `LabelSet` and `Label` instances for model outputs
-- Links labels to AI models for classification tasks
-- **Output**: "Loaded X model labels"
-
-### 3. Create Django Cache Table
-```bash
-uv run python manage.py createcachetable
-```
-**Purpose**: Creates the database table for Django's caching framework.
-- Required for API polling and caching functionality
-- Prevents `OperationalError` when accessing cached data
-- **Output**: "Cache table for database cache created."
-
-### 4. Create Model Metadata
-```bash
 uv run python manage.py create_multilabel_model_meta \
     --model_name image_multilabel_classification_colonoscopy_default \
     --model_meta_version 1 \
-    --image_classification_labelset_name multilabel_classification_colonoscopy_default
+    --image_classification_labelset_name multilabel_classification_colonoscopy_default \
+    --model_path /absolute/path/to/model.safetensors
 ```
-**Purpose**: Creates `ModelMeta` instances with model weights and configuration.
-- Copies model weights file to storage directory
-- Sets up model parameters (activation, normalization, input size)
-- Links metadata to AI models and label sets
-- **Output**: "Created new ModelMeta: [model_name] (v1)"
 
+The metadata command requires an existing AI model and label set and accepts
+only a non-empty `.safetensors` file. On success it reports `ModelMeta ready`
+with the metadata name, version, and model name.
 
-### Verification Commands
-
-After running the setup commands, verify everything is working:
+Create the Django cache table only for a database-backed cache:
 
 ```bash
-# Check AI models and metadata
-uv run python manage.py shell -c "
-from endoreg_db.models import AiModel, ModelMeta
-from endoreg_db.helpers.default_objects import get_latest_segmentation_model
-
-print('AI Models:', AiModel.objects.count())
-print('Model Metadata:', ModelMeta.objects.count())
-
-model_meta = get_latest_segmentation_model()
-print('Latest model meta:', model_meta)
-print('Weights exist:', model_meta.weights and model_meta.weights.path)
-"
+uv run python manage.py createcachetable
 ```
 
-### Troubleshooting
+The default settings use Django's in-memory cache and do not require this
+table.
 
-- **"Model file not found"**: Ensure you're running commands from the correct project directory (`/home/admin/endoreg-db`)
-- **"No model metadata found"**: Run steps 1-4 in sequence
-- **"Processor is not of type EndoscopyProcessor"**: Apply the import fix in step 5
-- **Cache table errors**: Run step 3 to create the Django cache table
+## Hugging Face command
 
-### Alternative: Hugging Face Setup
-
-If local model files are not available, use the Hugging Face download command:
+The dedicated download command is also available:
 
 ```bash
 uv run python manage.py create_model_meta_from_huggingface \
@@ -80,5 +67,34 @@ uv run python manage.py create_model_meta_from_huggingface \
     --meta_version 1
 ```
 
-**Note**: Requires the model to exist on Hugging Face Hub.</content>
-<parameter name="filePath">/home/admin/endoreg-db/AI_MODEL_SETUP.md
+This requires network access and an available model repository on Hugging Face.
+
+## Verification
+
+```bash
+uv run python manage.py shell -c "
+from pathlib import Path
+from endoreg_db.models import AiModel, ModelMeta
+from endoreg_db.helpers.default_objects import get_latest_segmentation_model
+
+print('AI models:', AiModel.objects.count())
+print('Model metadata:', ModelMeta.objects.count())
+model_meta = get_latest_segmentation_model()
+print('Latest model metadata:', model_meta)
+print('Weights exist:', bool(model_meta.weights and Path(model_meta.weights.path).is_file()))
+"
+```
+
+The built-in `setup_endoreg_db` table verification currently queries
+SQLite's `sqlite_master`. It is therefore not a database-independent production
+readiness check and will fail on PostgreSQL until the implementation uses
+Django database introspection.
+
+## Troubleshooting
+
+- `Model file not found`: pass `--model_path` or place weights in a directory
+  and filename pattern configured by `endoreg_db/data/setup_config.yaml`.
+- `No model metadata found`: run `setup_endoreg_db`, or run the model, label,
+  and metadata commands above in order.
+- Cache-table errors: confirm that the configured cache backend is database
+  backed before running `createcachetable`.

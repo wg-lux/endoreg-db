@@ -1,79 +1,77 @@
-# Typisierter Hub-Transfervertrag 3.0
+# Typed Hub Transfer Contract 3.0
 
-[English version](hub_transfer_typed_contract.en.md)
+[Deutsche Fassung](hub_transfer_typed_contract.md)
 
-Dieses Dokument ist die technische Integrations- und Portierungsanleitung für
-Sender, die anonymisierte, verarbeitete Medien an einen aktuellen
-`endoreg_db`-Central-Hub übertragen. Der verbindliche Fertigstellungsstatus
-steht ausschließlich in
+This is the technical integration and migration guide for senders that transfer
+anonymized, processed media to a current `endoreg_db` central hub. Completion
+status is recorded exclusively in
 [`feature-tracking/HubTransfer.yml`](../feature-tracking/HubTransfer.yml).
 
-Die Anleitung richtet sich insbesondere an Implementierungen, die noch auf dem
-älteren Payload-Schema `1.0` oder auf untypisierten `dict[str, Any]`-Payloads
-basieren. Solche Implementierungen dürfen nicht durch Aufweichen des Receivers
-kompatibel gemacht werden. Sie müssen vor dem ersten Netzwerkzugriff auf den
-gemeinsamen Vertrag `3.0` migriert werden.
+The guide is intended especially for implementations that still use payload
+schema `1.0` or untyped `dict[str, Any]` payloads. Do not weaken the receiver to
+accommodate those implementations. Migrate them to shared contract `3.0`
+before the first network request.
 
-## Verbindliche Quellen und Schichtengrenzen
+## Authoritative sources and layer boundaries
 
-| Verantwortung | Verbindliche Quelle | Aufgabe |
+| Responsibility | Authoritative source | Purpose |
 | --- | --- | --- |
-| Repository-übergreifender Wire-Vertrag | `lx_dtypes.models.contracts.hub_transfer` | Strikte, eingefrorene Pydantic-Modelle, typisierte Rückgabewerte und kanonische Serialisierung |
-| Endoreg-Persistenzgrenze | `endoreg_db.schemas.persisted_json` | Validierung und Kanonisierung von `resource_rows` und `processing_snapshot` vor Datenbankspeicherung als JavaScript Object Notation (JSON) |
-| Hypertext-Transfer-Protocol-(HTTP)-Grenze | `endoreg_db.serializers.hub.transfer_job.TransferJobCreateSerializer` | Schema-Version, Node-/Center-Ownership, Datenschutz, Anonymisierungszustand und Hashverknüpfungen |
-| Persistenz | `endoreg_db.models.hub.transfer_job.TransferJob` | Felder, Choices, Constraints und erneute JSON-Validierung in `clean()`/`save()` |
-| Receiver-Workflow | `endoreg_db.services.hub.transfers` | Replay, Medienintegrität, atomare Speicherung, Zustandsübergänge und Acknowledgement |
-| Sender-Workflow | `lx_annotate.hub.hub_export_payloads` und `hub_export_worker` | Payloadaufbau, lokale Validierung, mutual Transport Layer Security (mTLS), Retry und Acknowledgement-Prüfung |
+| Cross-repository wire contract | `lx_dtypes.models.contracts.hub_transfer` | Strict frozen Pydantic models, typed return values, and canonical serialization |
+| Endoreg persistence boundary | `endoreg_db.schemas.persisted_json` | Validation and canonicalization of `resource_rows` and `processing_snapshot` before JavaScript Object Notation (JSON) persistence |
+| Hypertext Transfer Protocol (HTTP) boundary | `endoreg_db.serializers.hub.transfer_job.TransferJobCreateSerializer` | Schema version, node and center ownership, privacy, anonymization state, and hash linkage |
+| Persistence | `endoreg_db.models.hub.transfer_job.TransferJob` | Fields, choices, constraints, and repeated JSON validation in `clean()` and `save()` |
+| Receiver workflow | `endoreg_db.services.hub.transfers` | Replay, media integrity, atomic storage, state transitions, and acknowledgement |
+| Sender workflow | `lx_annotate.hub.hub_export_payloads` and `hub_export_worker` | Payload construction, local validation, mutual Transport Layer Security (mTLS), retry, and acknowledgement validation |
 
-Neue gemeinsame Felder werden zuerst in `lx_dtypes` modelliert. Endoreg-spezifische
-Persistenzfelder bleiben in `endoreg_db.schemas`. Request-Verarbeitung gehört
-nicht in Django-Modelle, und Netzwerk- oder Dateisystemoperationen gehören
-nicht in Pydantic-Modelle.
+Model new shared fields in `lx_dtypes` first. Endoreg-specific persistence
+fields remain in `endoreg_db.schemas`. Request handling does not belong in
+Django models, and network or filesystem operations do not belong in Pydantic
+models.
 
-## Unverhandelbare Regeln
+## Non-negotiable rules
 
-- `payload_schema_version` ist exakt `"3.0"`. `"1.0"` und `"2.0"` werden
-  abgelehnt.
-- Zulässiger Produktionsmodus ist
-  `metadata_and_processed_media`. Raw-Medien werden weder registriert noch
-  hochgeladen.
-- Ein Medium ist nur transferfähig, wenn sein Anonymisierungszustand
-  `VALIDATED` ergibt. `ANONYMIZED` oder
-  `DONE_PROCESSING_ANONYMIZATION` allein reichen nicht.
-- `source_center_key` muss dem `owning_center` des authentifizierten
-  `NetworkNode` entsprechen. Eine Django-Benutzersitzung ist für diese
-  Machine-to-Machine-Endpunkte weder Quelle noch Ersatz des Center-Scopes.
-- Direkte Identitätsfelder wie Name oder Geburtsdatum sind verboten.
-  `sensitive_meta` enthält ausschließlich `patient_hash` und
-  `examination_hash` als kanonische, kleingeschriebene 64-stellige
-  Secure-Hash-Algorithm-256-Bit-(SHA-256)-Hexwerte.
-- Reports enthalten nur `anonymized_text`; das Feld `text` ist verboten.
-- Der SHA-256-Hash des tatsächlich hochgeladenen Processed-Mediums wird vor
-  dem Payloadaufbau neu berechnet. Er steht für Videos in
-  `video_file.processed_video_hash` und
-  `video_state.processed_file_sha256`, für Reports in
+- `payload_schema_version` is exactly `"3.0"`. Versions `"1.0"` and `"2.0"`
+  are rejected.
+- The only implemented transfer mode is `metadata_and_processed_media`. Raw
+  media is neither registered nor uploaded. Implementation does not imply a
+  production-readiness approval; the required criteria in
+  `feature-tracking/HubTransfer.yml` remain authoritative.
+- Media is eligible only when its anonymization state resolves to `VALIDATED`.
+  `ANONYMIZED` or `DONE_PROCESSING_ANONYMIZATION` alone is insufficient.
+- `source_center_key` must match the authenticated `NetworkNode.owning_center`.
+  A Django user session is neither the source of nor a substitute for center
+  scope on these machine-to-machine endpoints.
+- Direct identity fields such as names or dates of birth are prohibited.
+  `sensitive_meta` contains only `patient_hash` and `examination_hash`, each a
+  canonical lowercase 64-character Secure Hash Algorithm 256-bit (SHA-256)
+  hexadecimal value.
+- Reports contain only `anonymized_text`; `text` is prohibited.
+- Recalculate the SHA-256 digest of the exact processed artifact before
+  constructing the payload. For videos it appears in
+  `video_file.processed_video_hash` and
+  `video_state.processed_file_sha256`; for reports it appears in
   `raw_pdf_state.processed_file_sha256`.
-- Payload, Datei und Remote-Acknowledgement werden als untrusted input
-  behandelt, auch wenn der Transport mTLS verwendet.
-- `NetworkNode.shared_secret` authentifiziert Requests. Es ist kein
-  Verschlüsselungsschlüssel. Master-Key und Raw-Medien verlassen niemals die
-  lokale Schutzgrenze.
+- Treat the payload, file, and remote acknowledgement as untrusted input even
+  when the channel uses mTLS.
+- `NetworkNode.shared_secret` authenticates requests. It is not an encryption
+  key. Neither a master key nor raw media may leave the local security
+  boundary.
 
-## Warum zwei Validierungsebenen existieren
+## Why validation happens at two boundaries
 
-Der Sender validiert den vollständigen Wire-Payload mit `lx_dtypes`, bevor
-Metadaten oder Medien offengelegt werden. Der Receiver validiert denselben
-Vertrag erneut an der HTTP-Grenze und kanonisiert anschließend die persistierten
-JSON-Teilobjekte. Das ist keine konkurrierende Fachlogik:
+The sender validates the complete wire payload with `lx_dtypes` before
+disclosing metadata or media. The receiver validates the same contract again
+at its HTTP boundary and then canonicalizes the persisted JSON subobjects.
+These responsibilities do not compete:
 
-1. `lx_dtypes` verhindert, dass ein inkompatibler Sender einen Request beginnt.
-2. Der Serializer schützt den Receiver vor einem veralteten oder manipulierten
-   Client und löst lokale Node-/Center-Referenzen auf.
-3. `TransferJob.save()` schützt direkte Schreibpfade des
-   Object-Relational-Mappers (ORM) und spätere Updates.
+1. `lx_dtypes` prevents an incompatible sender from starting a request.
+2. The serializer protects the receiver from stale or manipulated clients and
+   resolves local node and center references.
+3. `TransferJob.save()` protects direct Object-Relational Mapper (ORM) writes
+   and subsequent updates.
 
-Die Rückgabe des Validators ist der kanonische Payload. Der ursprüngliche
-unvalidierte Mapping-Wert darf danach nicht weitergereicht werden.
+The validator return value is the canonical payload. Do not continue passing
+the original unvalidated mapping.
 
 ```python
 from typing import Any, cast
@@ -88,41 +86,41 @@ payload: HubTransferVideoTransferPayloadData = (
     validate_hub_transfer_video_payload(candidate)
 )
 
-# Ab hier ausschließlich `payload` verwenden, nicht mehr `candidate`.
+# Use only `payload` from this point onward, never `candidate`.
 send_json(cast(dict[str, Any], payload))
 ```
 
-Ein `ValidationError` wird am Sender in einen terminalen Konfigurations- oder
-Payloadfehler übersetzt. Es gibt keinen stillen Fallback auf Schema `1.0`,
-untypisierte Zusatzfelder oder Shared-Secret-only-Transport.
+Translate a `ValidationError` into a terminal sender configuration or payload
+failure. There is no silent fallback to schema `1.0`, untyped extra fields, or
+shared-secret-only transport.
 
-## Gemeinsamer Envelope
+## Common envelope
 
-Video und Report verwenden dieselben Top-Level-Felder:
+Video and report transfers use the same top-level fields:
 
-| Feld | Bedeutung |
+| Field | Meaning |
 | --- | --- |
-| `transfer_key` | Deterministische, bei Retries unveränderte Transferidentität |
-| `source_node_key` | Aktiver Sender-Node mit Rolle `site_node` |
-| `target_node_key` | Aktiver Empfänger-Node mit Rolle `central_hub` |
-| `source_center_key` | Muss dem `owning_center` des Sender-Nodes entsprechen |
-| `resource_kind` | Diskriminator `video` oder `report` |
-| `resource_hash` | Fachliche Identität des Quellobjekts; muss zum Resource-Row passen |
-| `transfer_mode` | Im Produktionspfad `metadata_and_processed_media` |
-| `processing_policy` | Aktuell `preserve_processing_state` |
-| `processing_intent` | Aktuell `sender_requests_state_preservation` |
-| `cleanup_policy` | Konservativer Standard `retain_all` |
+| `transfer_key` | Deterministic transfer identity that remains stable across retries |
+| `source_node_key` | Active sender node with role `site_node` |
+| `target_node_key` | Active receiver node with role `central_hub` |
+| `source_center_key` | Must match the sender node's `owning_center` |
+| `resource_kind` | `video` or `report` discriminator |
+| `resource_hash` | Domain identity of the source object; must match its resource row |
+| `transfer_mode` | `metadata_and_processed_media` in the production path |
+| `processing_policy` | Currently `preserve_processing_state` |
+| `processing_intent` | Currently `sender_requests_state_preservation` |
+| `cleanup_policy` | Conservative default `retain_all` |
 | `payload_schema_version` | Literal `3.0` |
-| `resource_rows` | Durch `resource_kind` diskriminierter Payload |
-| `processing_snapshot` | Aktuell `sender_processing_success: true` |
-| `provenance` | Optionale, anonymisierte Transportprovenienz ohne lokale Primärschlüssel |
+| `resource_rows` | Payload discriminated by `resource_kind` |
+| `processing_snapshot` | Currently `sender_processing_success: true` |
+| `provenance` | Optional anonymized transport provenance without local primary keys |
 
-Lokale Datenbank-IDs, absolute Pfade und Originaldateinamen sind keine
-portablen Identitäten und gehören nicht in den Wire-Payload.
+Local database identifiers, absolute paths, and original filenames are not
+portable identities and do not belong in the wire payload.
 
-## Video-Payload
+## Video payload
 
-Ein minimales Processed-Video für Vertrag `3.0` sieht so aus:
+A minimal processed-video payload for contract `3.0` is:
 
 ```json
 {
@@ -173,30 +171,28 @@ Ein minimales Processed-Video für Vertrag `3.0` sieht so aus:
 }
 ```
 
-Für jedes Segment gelten zusätzlich:
+Every segment has these additional invariants:
 
-- `source_node_key` und `video_hash` müssen zum Envelope passen;
-- `end_frame_number_exclusive` ist exklusiv und größer als
+- `source_node_key` and `video_hash` match the envelope;
+- `end_frame_number_exclusive` is exclusive and greater than
   `start_frame_number`;
-- Segmente dürfen die deklarierte `frame_count` nicht überschreiten;
-- `source_node_key` plus `source_segment_id` ist innerhalb des Payloads
-  eindeutig;
-- `model_name` und `model_version` werden nur gemeinsam und nur für
-  exportierte Prediction-Segmente übertragen;
-- Präsentationszeitstempel bleiben für klinische Identität maßgeblich. Der
-  Transfer darf keine Frame-Koordinaten neu berechnen.
+- a segment does not exceed the declared `frame_count`;
+- the pair of `source_node_key` and `source_segment_id` is unique within the
+  payload;
+- `model_name` and `model_version` are supplied together and only for exported
+  prediction segments;
+- presentation timestamps remain authoritative for clinical identity. A
+  transfer must not recalculate frame coordinates.
 
-Die Video-Storage-Normalisierung bleibt eine zusätzliche Pflichtprüfung. Ein
-passender SHA-256-Hash beweist Integrität, aber nicht Codec, Pixel-Format,
-Auflösung, Framerate, Bitrate, Bytebudget oder Timeline-Konformität. Maßgeblich
-ist [`video_storage_normalization.md`](video_storage_normalization.md).
+Video storage normalization remains an additional mandatory check. A matching
+SHA-256 digest proves integrity, not codec, pixel format, resolution, frame
+rate, bitrate, byte budget, or timeline conformance. The authoritative contract
+is [`video_storage_normalization.md`](video_storage_normalization.md).
 
-## Report-Payload
+## Report payload
 
-Reports übertragen ausschließlich das anonymisierte Derivat im Portable
-Document Format (PDF).
-
-Ein minimales Processed-Report-Beispiel:
+Reports transfer only the anonymized derivative in Portable Document Format
+(PDF). A minimal processed-report payload is:
 
 ```json
 {
@@ -214,7 +210,7 @@ Ein minimales Processed-Report-Beispiel:
   "resource_rows": {
     "raw_pdf_file": {
       "pdf_hash": "<resource_sha256>",
-      "anonymized_text": "Anonymisierter Berichtstext"
+      "anonymized_text": "Anonymized report text"
     },
     "sensitive_meta": {
       "patient_hash": "<patient_sha256>",
@@ -239,15 +235,15 @@ Ein minimales Processed-Report-Beispiel:
 }
 ```
 
-`pdf_hash` bezeichnet die fachliche Ressourcenidentität. Der separate
-`processed_file_sha256` bezeichnet exakt die Bytes, die im zweiten Schritt
-hochgeladen werden. Der Receiver vergleicht den Upload mit diesem Wert. Das
-Feld `text`, direkte Patientendaten, `raw_meta` und Raw-PDF-Bytes sind nicht
-Teil des Transfervertrags.
+`pdf_hash` is the domain resource identity. The separate
+`processed_file_sha256` identifies the exact bytes uploaded during phase two.
+The receiver compares the upload with this digest. The `text` field, direct
+patient identity, `raw_meta`, and raw PDF bytes are not part of the transfer
+contract.
 
-## mTLS-Transporttyp
+## mTLS transport type
 
-Der aktuelle Sender benutzt ein explizites, eingefrorenes Transportobjekt:
+The current sender uses an explicit frozen transport object:
 
 ```python
 from dataclasses import dataclass
@@ -266,7 +262,7 @@ class HubTransportConfig:
     verify: str | bool
 ```
 
-Die zugehörigen Sender-Einstellungen sind:
+The corresponding sender settings are:
 
 ```sh
 LX_ANNOTATE_HUB_EXPORT_REQUIRE_MTLS=true
@@ -275,80 +271,78 @@ LX_ANNOTATE_HUB_EXPORT_CLIENT_KEY_FILE=/run/secrets/hub-client.key
 LX_ANNOTATE_HUB_EXPORT_CA_FILE=/run/secrets/hub-ca.crt
 ```
 
-Bei aktiviertem mTLS müssen Zertifikat und Key gemeinsam vorhanden und lesbar
-sein. Ein optionales Bundle der Zertifizierungsstelle (Certificate Authority,
-CA) ersetzt `verify=True` durch seinen Pfad, niemals durch `False`. Ziele müssen
-`https://` verwenden. Redirects sind deaktiviert,
-damit Node-Credentials nicht an ein anderes Ziel weitergereicht werden.
+When mTLS is enabled, the certificate and key must both exist and be readable.
+An optional Certificate Authority (CA) bundle changes `verify=True` to its
+path, never to `False`. Targets must use `https://`. Redirects are disabled so
+node credentials cannot be forwarded to another destination.
 
-Auf Receiver-Seite bleibt der Proxyvertrag aus
-[`deployment_note_hub_contract.md`](deployment_note_hub_contract.md)
-verbindlich: vom Client gesetzte Forwarded- und Zertifikatsheader werden
-entfernt und nur nach erfolgreicher Proxyprüfung neu gesetzt.
+On the receiver, the proxy contract in
+[`deployment_note_hub_contract.md`](deployment_note_hub_contract.md) remains
+mandatory: remove client-supplied forwarded and certificate headers, then set
+them only after successful proxy verification.
 
-## Zweiphasiger Ablauf und Acknowledgement
+## Two-phase workflow and acknowledgement
 
-1. Sender sperrt beziehungsweise lädt den lokalen Outbound-Job.
-2. Sender berechnet den Processed-Media-Hash aus den aktuellen Bytes.
-3. Sender baut den Payload und validiert ihn mit dem passenden
-   `validate_hub_transfer_*_payload()`-Validator.
-4. Sender registriert Metadaten mit demselben deterministischen
-   `transfer_key`, auch bei Retry.
-5. Nur bei `awaiting_media` lädt er `media_role=processed` hoch.
-6. Sender fragt den Status ab und validiert das Acknowledgement gegen seinen
-   unveränderlichen lokalen Job.
-7. Erst `applied` mit übereinstimmender Gesamtidentität erlaubt `completed`
-   oder lokale Cleanup-Eignung.
+1. The sender locks or loads its local outbound job.
+2. It calculates the processed-media digest from the current bytes.
+3. It builds the payload and validates it with the appropriate
+   `validate_hub_transfer_*_payload()` validator.
+4. It registers metadata with the same deterministic `transfer_key`, including
+   on retries.
+5. Only after `awaiting_media` does it upload `media_role=processed`.
+6. It retrieves status and validates the acknowledgement against the immutable
+   local job.
+7. Only `applied` with a completely matching identity permits `completed` or
+   local cleanup eligibility.
 
-Das Acknowledgement muss mindestens für folgende Felder übereinstimmen:
+At minimum, the acknowledgement must match:
 
-- Remote-Transfer-ID und `transfer_key`;
-- Source-Node, Target-Node und Source-Center;
-- `resource_kind`, `resource_hash` und `processed_media_hash`;
-- `transfer_mode` und `payload_schema_version`.
+- remote transfer identifier and `transfer_key`;
+- source node, target node, and source center;
+- `resource_kind`, `resource_hash`, and `processed_media_hash`;
+- `transfer_mode` and `payload_schema_version`.
 
-Fehlende oder abweichende Felder sind terminale Integritätsfehler. Sie werden
-nicht durch einen neuen Transfer-Key oder ein ungeprüftes Retry kaschiert.
+Missing or different fields are terminal integrity failures. Do not hide them
+behind a new transfer key or an unvalidated retry.
 
-## Portierung von `data-transfer-nginx-mtls`
+## Migrating `data-transfer-nginx-mtls`
 
-Beim Übertragen einzelner Ideen aus einem älteren Branch gelten diese
-Ersetzungen:
+Apply these replacements when porting isolated ideas from an older branch:
 
-| Alter Ansatz | Aktueller Ansatz |
+| Old approach | Current approach |
 | --- | --- |
-| Eigener `HubTransferClient` in `endoreg_db` | Sender-Workflow in `lx_annotate.hub.hub_export_worker` |
-| `verify_tls: bool` plus untypisiertes Kwargs-Dictionary | `HubTransportConfig` und `HubTransportRequestKwargs` mit `verify: str | bool` |
-| CLI-Flags mit optionalem Client-Zertifikat | Produktionsprofil verlangt vollständiges mTLS-Material und schlägt sonst vor dem Request fehl |
-| Payload-Schema `1.0` | Striktes, diskriminiertes Schema `3.0` aus `lx_dtypes` |
-| `dict[str, Any]` bleibt nach Validierung im Umlauf | Validator-Rückgabe ersetzt das ursprüngliche Mapping |
-| `ANONYMIZED` oder `sensitive_meta_processed` reicht | Ausschließlich explizit `anonymization_validated=true` |
-| Patientendaten zur Hashableitung übertragen | Nur bereits lokal gebildete `patient_hash` und `examination_hash` |
-| Reportfelder `text` und `anonymized_text` | Ausschließlich `anonymized_text` |
-| Report-Upload ohne separaten Processed-Hash | `raw_pdf_state.processed_file_sha256` ist Pflicht |
-| Filesystem-Implementierung unter `endoreg_db.utils.file_operations` | Kanonische Mutation über `endoreg_db.utils.filesystem.file_operations`; bestehende Kompatibilitätsimporte nicht als neue Ownership-Grenze verwenden |
-| Django-Session als Transfer-Scope | Authentifizierter `NetworkNode.owning_center` ist alleiniger Machine-to-Machine-Scope |
+| Custom `HubTransferClient` in `endoreg_db` | Sender workflow in `lx_annotate.hub.hub_export_worker` |
+| `verify_tls: bool` and an untyped keyword-argument dictionary | `HubTransportConfig` and `HubTransportRequestKwargs` with `verify: str | bool` |
+| Command-line flags with an optional client certificate | Production profile requires complete mTLS material and fails before a request otherwise |
+| Payload schema `1.0` | Strict discriminated `3.0` schema from `lx_dtypes` |
+| Continue using `dict[str, Any]` after validation | Replace the original mapping with the validator return value |
+| `ANONYMIZED` or `sensitive_meta_processed` is sufficient | Require explicit `anonymization_validated=true` |
+| Transmit patient data so the receiver can derive hashes | Transmit only locally derived `patient_hash` and `examination_hash` |
+| Report fields `text` and `anonymized_text` | Only `anonymized_text` |
+| Report upload without a separate processed digest | Require `raw_pdf_state.processed_file_sha256` |
+| Filesystem implementation under `endoreg_db.utils.file_operations` | Mutate through canonical `endoreg_db.utils.filesystem.file_operations`; do not make compatibility imports a new ownership boundary |
+| Django session as transfer scope | Authenticated `NetworkNode.owning_center` is the sole machine-to-machine scope |
 
-Der alte Branch soll deshalb nicht vollständig gemergt werden. Portiert werden
-nur isolierte Änderungen, die nach Rebase dieselben Typen und Invarianten
-erhalten. Insbesondere dürfen keine alten Payload-Builder, Raw-Media-Pfade,
-Filesystem-Verschiebungen oder Session-Scope-Annahmen übernommen werden.
+Do not merge the old branch wholesale. Port only isolated changes which retain
+the same types and invariants after rebasing. In particular, do not carry over
+old payload builders, raw-media paths, filesystem moves, or session-scope
+assumptions.
 
-## Fehlerbilder
+## Troubleshooting
 
-| Fehlermeldung oder Status | Ursache | Korrektur |
+| Error or status | Cause | Correction |
 | --- | --- | --- |
-| `Only privacy-preserving hub payload_schema_version '3.0' is accepted` | Veralteter Sender | Sender und `lx_dtypes` gemeinsam aktualisieren; kein Receiver-Fallback |
-| `extra_forbidden` | Altes oder direkt identifizierendes Feld | Feld entfernen oder zuerst im gemeinsamen Vertrag modellieren |
-| `anonymization_status=... is not eligible` | Noch nicht explizit validiert | Klinische Anonymisierungsvalidierung abschließen |
-| `processed_file_sha256 is required` | Processed-Bytes wurden nicht lokal gehasht | SHA-256 aus dem tatsächlich zu sendenden Artefakt berechnen |
-| `source_center_key must match ... owning center` | Node-/Center-Konfiguration widersprüchlich | `NetworkNode.owning_center` und Senderjob korrigieren |
-| `inconsistent` bei Replay | Gleicher Key mit anderem kanonischem Payload | Alten Job untersuchen; nur bei neuer fachlicher Identität neuen Key erzeugen |
-| `403` trotz Shared Secret | HTTPS-, mTLS- oder Node-Prüfung fehlt | Zertifikat, CA, Proxy-Attestation und Node prüfen; nicht auf Shared-Secret-only zurückfallen |
+| `Only privacy-preserving hub payload_schema_version '3.0' is accepted` | Stale sender | Upgrade sender and `lx_dtypes` together; do not add a receiver fallback |
+| `extra_forbidden` | Stale or directly identifying field | Remove the field or model it in the shared contract first |
+| `anonymization_status=... is not eligible` | Explicit validation is incomplete | Complete clinical anonymization validation |
+| `processed_file_sha256 is required` | Processed bytes were not hashed locally | Calculate SHA-256 from the exact artifact to be sent |
+| `source_center_key must match ... owning center` | Node and center configuration disagree | Correct `NetworkNode.owning_center` and the sender job |
+| `inconsistent` during replay | Same key with a different canonical payload | Investigate the existing job; create a new key only for a new domain identity |
+| `403` despite a shared secret | HTTPS, mTLS, or node verification is missing | Check certificate, CA, proxy attestation, and node; do not fall back to shared-secret-only transport |
 
-## Verifikation nach einer Portierung
+## Verification after migration
 
-Im Endoreg-Repository:
+In the Endoreg repository:
 
 ```sh
 .devenv/state/venv/bin/pyright
@@ -357,20 +351,19 @@ Im Endoreg-Repository:
   tests/services/test_transfer_job_contract.py -q
 ```
 
-Im lx-annotate-Repository:
+In the lx-annotate repository:
 
 ```sh
 .devenv/state/venv/bin/pyright
 .devenv/state/venv/bin/pytest tests/hub -q
 ```
 
-Zusätzlich ist ein produktionsnaher Cross-Repository-Test erforderlich:
-gültiger Video- und Reporttransfer, fehlendes Zertifikat, falsche CA,
-abgelaufenes Zertifikat, falscher Center, Payload `1.0`, Raw-Feld,
-Hashabweichung, identischer Replay, veränderter Replay, verlorenes
-Acknowledgement und Worker-Neustart.
+A production-like cross-repository test is also required: valid video and
+report transfers, missing certificate, wrong CA, expired certificate, wrong
+center, payload `1.0`, raw field, hash mismatch, exact replay, changed replay,
+lost acknowledgement, and worker restart.
 
-## Weiterführende Dokumente
+## Further reading
 
 - [`hub_ingest_operations.md`](hub_ingest_operations.md)
 - [`deployment_note_hub_contract.md`](deployment_note_hub_contract.md)

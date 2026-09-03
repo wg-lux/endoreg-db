@@ -1,162 +1,100 @@
-# Hub-Ingest-Betriebshandbuch
+# Hub Ingest Operations Manual
 
-Dieses Dokument ist das Betriebs- und Incident-Runbook für den kontrollierten
-Site-Node-zu-Central-Hub-Ingest. Der Fertigstellungsstatus wird ausschließlich
-in [`feature-tracking/done/HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
-geführt.
+This document is the operations and incident runbook for controlled Site-Node-to-Central-Hub ingestion. Completion status is maintained exclusively in [`feature-tracking/done/HubIngest.yml`](https://www.google.com/search?q=../feature-tracking/done/HubIngest.yml).
 
-Für Implementierer und Reviewer von Sendern beschreibt
-[`hub_transfer_typed_contract.md`](hub_transfer_typed_contract.md) den aktuell
-verbindlichen, typisierten Wire-Vertrag `3.0`, vollständige Video- und
-Reportbeispiele, den mTLS-Transporttyp und die Portierung älterer
-`data-transfer-nginx-mtls`-Ansätze. Eine vollständige
-[`englische Fassung`](hub_transfer_typed_contract.en.md) ist ebenfalls
-verfügbar.
+For sender implementers and reviewers, [`hub_transfer_typed_contract.md`](https://www.google.com/search?q=hub_transfer_typed_contract.md) describes the currently binding, typed Wire Contract `3.0`, full video and report examples, the mTLS transport type, and how to port older `data-transfer-nginx-mtls` approaches. A complete [`English version`](https://www.google.com/search?q=hub_transfer_typed_contract.en.md) is also available.
 
-Das produktionskritische Import-Monitoring einschließlich transienter Fehler,
-Quarantäne und HTTP-Live-Streaming-(HLS)-Materialisierung wird ausschließlich
-in [`feature-tracking/ImportMonitoring.yml`](../feature-tracking/ImportMonitoring.yml)
-bewertet. Dieses Runbook beschreibt den Betrieb, führt aber keinen parallelen
-Fertigstellungsstatus.
+Production-critical import monitoring—including transient errors, quarantine, and HTTP Live Streaming (HLS) materialization—is evaluated exclusively in [`feature-tracking/ImportMonitoring.yml`](https://www.google.com/search?q=../feature-tracking/ImportMonitoring.yml). This runbook describes operations, but does not maintain a parallel completion status.
 
-## Import-Monitoring und Zustandsachsen
+## Import Monitoring and State Axes
 
-Importversuch, Anonymisierung, HLS-Materialisierung und Cleanup werden getrennt
-beobachtet, besitzen für Videoerfolg aber eine gemeinsame Commit-Grenze. Ein
-Videoimport ist erst erfolgreich, wenn kanonischer Master, Raw- und
-Processed-HLS, Zustände und erfolgreiche ProcessingHistory dieselbe validierte
-Generation referenzieren. Ein HLS- oder History-Fehler vor dieser Grenze lässt
-den Versuch fehlgeschlagen beziehungsweise wiederholbar; eine vorherige valide
-Generation bleibt lesbar. Reportimporte benötigen kein HLS, veröffentlichen
-aber PDF, Text, SensitiveMeta, Zustand und Erfolgshistorie unter demselben
-Fencing-Token.
+Import attempt, anonymization, HLS materialization, and cleanup are monitored separately, but share a common commit boundary for video success. A video import is only successful when the canonical master, raw and processed HLS, states, and successful `ProcessingHistory` reference the same validated generation. An HLS or history error before this boundary leaves the attempt failed or retryable, while a previous valid generation remains readable. Report imports do not require HLS, but publish PDF, text, `SensitiveMeta`, state, and success history under the same fencing token.
 
-| Importzustand | Bedeutung | Automatik | Bedieneraktion |
+| Import State | Meaning | Automatic Behavior | Operator Action |
 | --- | --- | --- | --- |
-| `pending` | Persistiert und wartet auf Verarbeitung | Worker-Dispatch | Bei ungewöhnlichem Alter Worker und Queue prüfen |
-| `processing` | Ein Worker verarbeitet den Import | keine parallele Verarbeitung | Bei Überschreitung der betrieblichen Laufzeitschwelle eskalieren |
-| `retrying` | Transienter Dispatchfehler, Quelle bleibt geschützt erhalten | begrenzter exponentieller Retry | Bis `next_retry_at` abwarten; Versuchszähler beobachten |
-| `anonymized` | Generation vollständig veröffentlicht; bei Video sind Raw- und Processed-HLS bereit | keine | Generationskorrelation und Cleanup-Achse prüfen |
-| `error` | Terminaler, stabil codierter Fehler | keine automatische Wiederholung | Fehlercode prüfen; Konfiguration korrigieren oder sicheren Neuimport planen |
-| `lost` | Quelle oder Ledger ist inkonsistent | fail-closed | Logs und Storage sichern, niemals manuell auf Erfolg setzen |
-| Quarantäne | Geschützte Quelle wurde aus dem aktiven Importfluss isoliert | keine automatische Löschung | Ledger abgleichen und Reviewentscheidung dokumentieren |
+| `pending` | Persisted and awaiting processing | Worker dispatch | Check worker and queue if age is unusual |
+| `processing` | A worker is processing the import | No parallel processing | Escalate if operational runtime threshold is exceeded |
+| `retrying` | Transient dispatch error; source remains protected | Limited exponential retry | Wait until `next_retry_at`; monitor attempt counter |
+| `anonymized` | Generation fully published; raw and processed HLS are ready for video | None | Verify generation correlation and cleanup axis |
+| `error` | Terminal, stably coded error | No automatic retry | Check error code; correct configuration or plan safe re-import |
+| `lost` | Source or ledger is inconsistent | Fail-closed | Secure logs and storage; never manually set to success |
+| Quarantine | Protected source isolated from active import flow | No automatic deletion | Reconcile ledger and document review decision |
 
-Erlaubte Hauptübergänge sind `pending -> processing -> anonymized`,
-`processing -> retrying -> processing` und nach ausgeschöpften Versuchen
-`retrying -> error`. `lost` ist terminal. Ein Quarantäneeintrag besitzt einen
-eigenen Review-Lebenszyklus und überschreibt keinen Upload-Job-Status.
+Allowed main transitions are `pending -> processing -> anonymized`, `processing -> retrying -> processing`, and `retrying -> error` once attempts are exhausted. `lost` is terminal. A quarantine entry has its own review lifecycle and does not overwrite an upload job status.
 
-Die Retry-Policy startet bei 30 Sekunden, verdoppelt die Verzögerung je
-Versuch, ist auf 15 Minuten begrenzt und erlaubt standardmäßig drei Versuche.
-Der periodische Task `endoreg_db.retry_due_upload_jobs` übernimmt fällige Jobs
-unter Datenbanksperre und übergibt sie idempotent an die Pipeline-Queue.
+The retry policy starts at 30 seconds, doubles the delay per attempt, is capped at 15 minutes, and defaults to three attempts. The periodic task `endoreg_db.retry_due_upload_jobs` claims due jobs under a database lock and hands them off idempotently to the pipeline queue.
 
-Stabile Importfehlercodes:
+Stable import error codes:
 
-| Code | Bedeutung und nächster Schritt |
+| Code | Meaning and Next Step |
 | --- | --- |
-| `dispatch_unavailable` | Transient; automatischen Retry abwarten, bei Erschöpfung Queue oder Broker eskalieren |
-| `duplicate_content` | Kein Neuimport; vorhandene validierte Daten bleiben maßgeblich |
-| `invalid_configuration` | Terminal; Center-, Worker- oder Laufzeitkonfiguration korrigieren |
-| `invalid_input` | Terminal; Eingangsvertrag korrigieren und sicher neu importieren |
-| `media_integrity_failed` | Terminal; Quelle und Quarantäne prüfen, keine unsichere Wiederherstellung |
-| `processing_failed` | Terminal; geschützte strukturierte Logs über Upload-Job-ID korrelieren |
-| `source_missing` | Terminal beziehungsweise `lost`; Storage und Ledger abgleichen |
+| `dispatch_unavailable` | Transient; await automatic retry, escalate queue or broker if exhausted |
+| `duplicate_content` | No re-import; existing validated data remains authoritative |
+| `invalid_configuration` | Terminal; correct center, worker, or runtime configuration |
+| `invalid_input` | Terminal; correct input contract and safely re-import |
+| `media_integrity_failed` | Terminal; check source and quarantine, no unsafe recovery |
+| `processing_failed` | Terminal; correlate protected structured logs via upload job ID |
+| `source_missing` | Terminal or `lost`; reconcile storage and ledger |
 
-Die Monitoring-API liefert ausschließlich freigegebene Bedienertexte. Absolute
-Pfade, Hashes, Stacktraces, Rohmedien und technische Ausnahmetexte verbleiben in
-zugriffsgeschützten Logs. Die Anonymisierungsübersicht erkennt insbesondere
-Duplikate nur über `error_code`, nie durch Textsuche.
+The monitoring API provides exclusively approved operator messages. Absolute paths, hashes, stack traces, raw media, and technical exception texts remain in access-restricted logs. The anonymization overview detects duplicates strictly via `error_code`, never through text searches.
 
-### HLS-Materialisierung
+### HLS Materialization
 
-Raw- und Processed-HLS werden getrennt als `queued`, `materializing`, `ready`
-oder `failed` gezeigt. Jeder Eintrag enthält die Upload-Job-Korrelation, eine
-opaque Quellgeneration, die Zielgeneration, Segmentzahl und Zeitpunkte.
-`ready` ist erst nach validierter, atomarer Veröffentlichung einer vollständigen
-Playlist-, Schlüssel- und Segmentgeneration zulässig. Bei Fehlern wird ein
-stabiler Code (`dispatch_failed`, `materialization_failed`,
-`inconsistent_artifact` oder `stale_attempt`) ausgegeben; eine vorherige valide
-Generation wird wiederhergestellt und nicht gelöscht. Wiedergabe- und
-Segment-Update-Leases sowie die Details der atomaren Veröffentlichung sind im
-kanonischen [`video_storage_normalization.md`](video_storage_normalization.md)
-definiert.
+Raw and processed HLS are displayed separately as `queued`, `materializing`, `ready`, or `failed`. Each entry contains the upload job correlation, an opaque source generation, target generation, segment count, and timestamps. `ready` is only permissible following validated, atomic publication of a complete playlist, key, and segment generation. On failure, a stable code is emitted (`dispatch_failed`, `materialization_failed`, `inconsistent_artifact`, or `stale_attempt`); a previous valid generation is restored and preserved. Playback and segment update leases, as well as atomic publication details, are defined in canonical [`video_storage_normalization.md`](https://www.google.com/search?q=video_storage_normalization.md).
 
-### Diagnose und Wiederanlauf
+### Diagnostics and Restart
 
 ```sh
 python manage.py check_system_health --json
 python manage.py materialize_video_hls --artifact-kind raw --json
 python manage.py materialize_video_hls --artifact-kind processed --json
 python manage.py reap_quarantine --older-than-days 30 --dry-run --json
+
 ```
 
-Der Health-Check meldet unter anderem wartende und fällige Retries,
-ausgeschöpfte Versuche, `ERROR`, `LOST`, fehlgeschlagene oder hängende
-HLS-Materialisierungen, Quarantänealter und freien Speicher. Vor manueller
-Wiederholung muss geprüft werden, dass kein aktiver Job und keine aktive
-Media-Operation-Lease konkurriert. Quarantäne wird zuerst synchronisiert und
-reviewt; Löschung erfolgt ausschließlich nach expliziter Freigabe und separatem
-Reap-Schritt.
+System health checks report pending/due retries, exhausted attempts, `ERROR`, `LOST`, failed or hung HLS materializations, quarantine age, and free storage. Before manual retry, verify that no active job or media operation lease conflicts. Quarantine is synchronized and reviewed first; deletion occurs strictly after explicit approval and a separate reap step.
 
-### Verbindliche Recovery-Matrix
+### Binding Recovery Matrix
 
-| Befund | Automatische Aktion | Verbotene Aktion | Bedienerprüfung |
+| Finding | Automatic Action | Prohibited Action | Operator Inspection |
 | --- | --- | --- | --- |
-| Lease abgelaufen, Quelle und Ledger eindeutig | Neuer Versuch mit höherem Fencing-Token und begrenztem Retry | Alten Worker wieder autorisieren | Owner, Token, Datenbankzeit und Quellgeneration korrelieren |
-| Erfolgshistorie fehlt | Versuch nicht als erfolgreich behandeln; sichere Wiederholung oder Reconciliation | History-Fehler unterdrücken oder Status manuell auf Erfolg setzen | Master/PDF, Derivate, Zustände und Attempt-ID vergleichen |
-| Streamable-/HLS-Fehler | Neue Generation unveröffentlicht lassen; vorherige valide Generation behalten | Teilplaylist veröffentlichen oder alten Master löschen | Raw- und Processed-Generation, Playlist, Key und Segmentzahl prüfen |
-| Datenbank-only oder Storage-only | Nur bei eindeutigem Hash und eindeutiger Ownership relinken | Nach Dateiname oder Alter raten | Hash, Storage-Grenze, Center, Generation und History prüfen |
-| Mehrdeutige Quelle, unbekannte Ownership oder Trust-Boundary-Verletzung | `LOST` beziehungsweise Quarantäne; alle Quellen erhalten | automatische Löschung, Export oder schwächeren Codecpfad verwenden | Security-, Storage- und klinisches Review einholen |
-| Voranonymisierte Attestation oder Medienprofil ungültig | Quarantäne und terminaler Integritätsfehler | Als normalen anonymisierten Erfolg übernehmen | Sidecar, Center-Scope, Hash, Profil und Timeline prüfen |
+| Lease expired, source and ledger unambiguous | Retry with higher fencing token and limited retry | Re-authorize old worker | Correlate owner, token, DB time, and source generation |
+| Success history missing | Do not treat attempt as successful; safe retry or reconciliation | Suppress history error or manually set status to success | Compare master/PDF, derivatives, states, and attempt ID |
+| Streamable/HLS error | Leave new generation unpublished; preserve previous valid generation | Publish partial playlist or delete old master | Check raw/processed generation, playlist, key, and segment count |
+| Database-only or storage-only | Relink only if hash and ownership are unambiguous | Guess based on file name or age | Check hash, storage boundary, center, generation, and history |
+| Ambiguous source, unknown ownership, or trust boundary violation | `LOST` or quarantine; retain all sources | Automatic deletion, export, or using weaker code path | Obtain security, storage, and clinical review |
+| Pre-anonymized attestation or media profile invalid | Quarantine and terminal integrity error | Accept as normal anonymized success | Verify sidecar, center scope, hash, profile, and timeline |
 
-Reconciliation darf lokale Lockdateien nicht anhand ihres Alters als
-Cluster-Ownership interpretieren. Ein lokaler Lock ist nur eine
-Performance-Optimierung; autoritativ sind ausschließlich Attempt-/UploadJob-
-Zeile, Datenbankzeit, Lease-Owner und Fencing-Token. Unbekannte Artefakte werden
-klassifiziert und erhalten, nicht durch einen generischen Startup-Cleanup
-gelöscht.
+Reconciliation must not treat local lock files as cluster ownership based on age. A local lock is strictly a performance optimization; authoritative truth resides solely in the attempt/upload job row, database time, lease owner, and fencing token. Unknown artifacts are classified and preserved—never deleted by a generic startup cleanup.
 
-## Geltungsbereich und Sicherheitsphase
+## Scope and Security Phase
 
-Der produktive Transfervertrag befindet sich in Phase 1:
+The production transfer contract is currently in Phase 1:
 
-- Transportverschlüsselung und Node-Authentifizierung erfolgen über mTLS.
-- Ein zusätzliches `NetworkNode`-Shared-Secret authentifiziert Requests; es ist
-  kein Verschlüsselungsschlüssel.
-- Übertragen werden ausschließlich anonymisierte, verarbeitete Medien.
-- Raw-Medien werden weder exportiert noch vom Transfer-Endpunkt akzeptiert.
-- Der langlebige Master-Key bleibt in der lokalen Secret- beziehungsweise
-  Storage-Grenze und darf weder in lx-annotate konfiguriert noch übertragen
-  werden.
+* Transport encryption and node authentication occur via mTLS.
+* An additional `NetworkNode` shared secret authenticates requests; it is not an encryption key.
+* Only anonymized, processed media are transmitted.
+* Raw media are neither exported nor accepted by the transfer endpoint.
+* The long-lived master key remains within local secret/storage boundaries and must not be configured in lx-annotate or transmitted.
 
-Envelope Encryption ist die gesperrte Phase 2. Solange kein Empfänger-Public-Key,
-kein pro Transfer erzeugter DEK und kein getesteter Unwrap-Pfad implementiert
-sind, darf Phase 1 nicht auf eigenständige, außerhalb des geschützten
-mTLS-Transfers verteilte Artefakte ausgeweitet werden.
+Envelope encryption is the locked Phase 2. As long as no recipient public key, per-transfer DEK, and tested unwrap path are implemented, Phase 1 must not be extended to standalone artifacts distributed outside protected mTLS transfers.
 
-## Rollen- und Ingressmatrix
+## Role and Ingress Matrix
 
-| Rolle | Lokaler Watcher | Benutzer-Upload | Hub-Transfer-Receiver | Outbound zum Hub |
+| Role | Local Watcher | User Upload | Hub Transfer Receiver | Outbound to Hub |
 | --- | --- | --- | --- | --- |
-| `standalone` | erlaubt | kompatibler lokaler Modus | deaktiviert (`404`) | nicht vorgesehen |
-| `site_node` | erlaubt | kompatibler lokaler Modus | deaktiviert (`404`) | über lx-annotate erlaubt |
-| `central_hub` | vertrauenswürdiger lokaler Pfad | authentifiziert und `center_key`-pflichtig | aktiviert | nicht vorgesehen |
-| `local_study_server` | nur freigegebene preanonymisierte Imports | authentifiziert und `center_key`-pflichtig | deaktiviert (`404`) | kontrollierter Exportpfad |
+| `standalone` | Allowed | Compatible local mode | Disabled (`404`) | Not intended |
+| `site_node` | Allowed | Compatible local mode | Disabled (`404`) | Allowed via lx-annotate |
+| `central_hub` | Trusted local path | Authenticated & requires `center_key` | Enabled | Not intended |
+| `local_study_server` | Approved pre-anonymized imports only | Authenticated & requires `center_key` | Disabled (`404`) | Controlled export path |
 
-API, Watcher und Transfer benutzen getrennte Eingangsgrenzen, konvergieren aber
-auf persistierte Upload-/Transfer-Ledger, Content-Hashes, Center-Auflösung,
-Provenienz und explizite Retention-Zustände.
+API, Watcher, and Transfer utilize separate ingress boundaries, but converge on persisted upload/transfer ledgers, content hashes, center resolution, provenance, and explicit retention states.
 
-Der Hub-Transfer-Receiver ist ein Machine-to-Machine-Endpunkt: Registrierung,
-Status und Upload authentifizieren immer den `NetworkNode` und übernehmen den
-Center-Scope ausschließlich aus dessen `owning_center`. Eine Django-Sitzung ist
-weder erforderlich noch eine alternative Berechtigung; eine vorhandene Sitzung
-darf die Node-Grenze nicht erweitern oder einschränken.
+The Hub Transfer Receiver is a machine-to-machine endpoint: registration, status, and upload always authenticate the `NetworkNode` and inherit center scope exclusively from its `owning_center`. A Django session is neither required nor an alternative permission; an existing session must not expand or restrict node boundaries.
 
-## Central-Hub-Konfiguration
+## Central Hub Configuration
 
-Für den Central Hub sind mindestens folgende Werte erforderlich:
+The Central Hub requires at minimum the following settings:
 
 ```sh
 ENDOREG_DEPLOYMENT_ROLE=central_hub
@@ -168,182 +106,114 @@ ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT=true
 ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true
 ENDOREG_HUB_TRANSFER_MTLS_META_KEY=HTTP_X_CLIENT_CERT_VERIFIED
 ENDOREG_HUB_TRANSFER_MTLS_META_VALUE=SUCCESS
+
 ```
 
-Der Reverse Proxy muss eingehende, vom Client gesetzte Forwarded- und
-mTLS-Attestation-Header entfernen. Er setzt sie erst nach erfolgreicher TLS-
-beziehungsweise Client-Zertifikatsprüfung. Der Django-Prozess darf bei diesem
-Vertrauensmodell nicht direkt aus einem ungeschützten Netz erreichbar sein.
+The reverse proxy must strip incoming client-set forwarded and mTLS attestation headers. It sets them only after successful TLS/client certificate verification. Under this trust model, the Django process must not be directly accessible from an untrusted network.
 
-Speicher-, I/O- und Quarantänepfade müssen innerhalb der verschlüsselten lokalen
-Runtime-Grenze liegen. Die Anwendung prüft die Pfadgrenze; Verschlüsselung,
-Mount-Reihenfolge, Eigentümer und Berechtigungen bleiben Aufgabe des Hosts.
+Storage, I/O, and quarantine paths must lie within the encrypted local runtime boundary. The application validates path boundaries; host configuration governs encryption, mount order, ownership, and permissions.
 
-## Center- und Node-Provisionierung
+## Center and Node Provisioning
 
-1. Center mit unveränderlichem, maschinenlesbarem `center_key` anlegen.
-2. Genau einen aktiven lokalen `central_hub`-Node und je Sender einen aktiven
-   `site_node` mit `owning_center` anlegen.
-3. Für jeden Sender ein zufälliges Request-Secret über den vorhandenen
-   `NetworkNode.set_shared_secret(...)`-Pfad setzen. Persistiert wird nur der
-   Passwort-Hash.
-4. Das Klartext-Secret ausschließlich im Secret-Store des Senders hinterlegen;
-   nicht in Git, Datenbank, Frontend oder Logs.
-5. Sender-`base_url` und Empfängerziel auf `https://` begrenzen und einen
-   Probe-Transfer mit einem anonymisierten Testartefakt durchführen.
+1. Create a center with an immutable, machine-readable `center_key`.
+2. Create exactly one active local `central_hub` node, and one active `site_node` with `owning_center` per sender.
+3. Set a random request secret for each sender via `NetworkNode.set_shared_secret(...)`. Only the password hash is persisted.
+4. Store the plaintext secret exclusively in the sender's secret store—never in Git, database, frontend, or logs.
+5. Restrict sender `base_url` and receiver targets to `https://` and perform a probe transfer using an anonymized test artifact.
 
-Die Administration-Oberfläche von lx-annotate zeigt Node-, Transport- und
-Transferbereitschaft, aber niemals Private Keys oder Shared Secrets.
+The lx-annotate administration interface displays node, transport, and transfer readiness, but never private keys or shared secrets.
 
-## Zertifikatsrotation
+## Certificate Rotation
 
-1. Neue CA-/Server-/Client-Zertifikate mit Überlappungsfenster bereitstellen.
-2. CA-Vertrauen zuerst auf Hub und Sendern aktualisieren.
-3. Client-Zertifikat und privaten Schlüssel als neue, nur lesbare Secret-Dateien
-   ausrollen.
-4. Dienste neu laden und in der Administration die mTLS-Bereitschaft prüfen.
-5. Erfolgreichen Metadata-plus-Processed-Media-Transfer ausführen und dessen
-   Remote-Acknowledgement kontrollieren.
-6. Erst danach alte Zertifikate sperren und entfernen.
+1. Provision new CA, server, and client certificates with an overlap window.
+2. Update CA trust on the hub and senders first.
+3. Deploy client certificate and private key as new read-only secret files.
+4. Reload services and verify mTLS readiness in administration.
+5. Execute a test metadata-plus-processed-media transfer and verify its remote acknowledgment.
+6. Only then revoke and remove old certificates.
 
-Fehlt Zertifikatsmaterial oder die Proxy-Attestation, muss der Transfer
-fail-closed mit `403` enden. Shared-Secret-only ist kein zulässiger Ersatz.
+If certificate material or proxy attestation is missing, transfer must fail-closed with `403`. Shared-secret-only is not an acceptable substitute.
 
-## Transferprüfung und Korrelation
+## Transfer Verification and Correlation
 
-Für eine vollständige Nachverfolgung werden folgende Identitäten verwendet:
+The following identities ensure complete traceability:
 
-- `outbound_job_id` auf dem Sender,
-- `transfer_key` als idempotente fachliche Transferidentität,
-- `TransferJob.id` beziehungsweise `remote_transfer_id` auf dem Hub,
-- `resource_hash` als Inhaltsidentität,
-- `source_center_key`, `source_node_key` und `target_node_key`,
-- `local_cleanup_status` und Hub-`cleanup_status`.
+* `outbound_job_id` on sender,
+* `transfer_key` as an idempotent business transfer identity,
+* `TransferJob.id` / `remote_transfer_id` on the hub,
+* `resource_hash` as content identity,
+* `source_center_key`, `source_node_key`, and `target_node_key`,
+* `local_cleanup_status` and hub `cleanup_status`.
 
-Die lx-annotate-Administration zeigt lokale und Remote-Korrelation sowie den
-Cleanup-Zustand. Sender-Logs unter `lx_annotate.hub_export.audit`, Hub-Logs unter
-`endoreg_db.hub.audit` und strukturierte Dateisystemereignisse unter
-`endoreg_db.utils.file_operations` müssen sich über diese IDs verbinden lassen.
+The lx-annotate admin panel displays local and remote correlations along with cleanup states. Sender logs (`lx_annotate.hub_export.audit`), hub logs (`endoreg_db.hub.audit`), and structured file system events (`endoreg_db.utils.file_operations`) must correlate using these IDs.
 
-Ein erfolgreicher Transfer endet erst mit einem Hub-Acknowledgement
-`transfer_status=applied`. `awaiting_media` ist ein Zwischenzustand;
-`failed`, `inconsistent`, Hashabweichungen und widersprüchliche Snapshots sind
-Incident-Zustände und dürfen nicht automatisch als Erfolg behandelt werden.
+A successful transfer completes only upon receiving a hub acknowledgment with `transfer_status=applied`. `awaiting_media` is an intermediate state; `failed`, `inconsistent`, hash mismatches, and conflicting snapshots are incident states that must not be treated as success.
 
-Das Acknowledgement enthält zusätzlich den erwarteten Hash des anonymisierten
-Processed-Mediums. Der Sender muss Transfer-ID, Transfer-Key, Quell- und
-Zielknoten, Quellzentrum, Ressourcenart, Ressourcenhash, Processed-Media-Hash,
-Transfermodus und Payload-Schemaversion gegen seinen unveränderlichen lokalen
-Auftrag prüfen. Erst ein vollständig passendes `applied` darf den lokalen
-Auftrag abschließen oder Cleanup-fähig machen. Abweichungen sind terminale
-Integritätsfehler und werden nicht automatisch wiederholt.
+The acknowledgment includes the expected hash of the anonymized processed medium. The sender must validate transfer ID, transfer key, source/target nodes, source center, resource type, resource hash, processed media hash, transfer mode, and payload schema version against its immutable local job. Only a fully matching `applied` status permits completing the local job or marking it eligible for cleanup. Mismatches represent terminal integrity errors and are not retried automatically.
 
-## Cleanup und Quarantäne
+## Cleanup and Quarantine
 
-- Upload-Quellen werden nur bei `cleanup_status=eligible` entfernt.
-- `preserve_source` bleibt erhalten; `delete_after_success` wird erst nach
-  erfolgreicher Medienintegritätsprüfung cleanup-fähig.
-- Outbound-Processed-Media wird standardmäßig behalten. Eine Policy
-  `eligible_after_verified_apply` markiert lediglich die lokale Freigabe nach
-  bestätigtem `applied`; sie löscht nicht unkontrolliert die einzige Kopie.
-- Transfer-Cleanup auf dem Hub bleibt explizit als Operator-Intent oder
-  `not_requested` nachvollziehbar.
-- Quarantäne-Löschung benötigt eine dokumentierte Review-Entscheidung,
-  anschließende Freigabe und einen separaten Reap-Schritt.
+* Upload sources are removed only when `cleanup_status=eligible`.
+* `preserve_source` is respected; `delete_after_success` becomes cleanup-eligible only after verified media integrity.
+* Outbound processed media are retained by default. A policy of `eligible_after_verified_apply` merely signals local release after confirmed `applied`; it does not un-controlledly delete the sole copy.
+* Hub transfer cleanup remains explicitly traceable as operator intent or `not_requested`.
+* Quarantine deletion requires a documented review decision, explicit approval, and a separate reap step.
 
-### UploadJob-Quellen-Reaper
+### UploadJob Source Reaper
 
-Der Quellen-Reaper ist standardmäßig rein lesend. Eine Einzelauswahl verwendet
-die UploadJob-UUID; Batchläufe benötigen immer ein positives Limit. Die Ausgabe
-nennt nur UploadJob-ID, Entscheidungscode, stabilen Blockiergrund, Medienart,
-Ingest-Modus, Alter und Byteanzahl und enthält weder absolute Pfade noch
-Inhalte, Patientendaten oder Content-Hashes.
+The source reaper operates in read-only mode by default. Individual selection uses the UploadJob UUID; batch runs strictly require a positive limit. Output contains only UploadJob ID, decision code, stable block reason, media type, ingest mode, age, and byte count—omitting absolute paths, content, patient data, or content hashes.
 
 ```sh
 python manage.py reap_upload_job_sources --upload-job-id <uuid> --json
 python manage.py reap_upload_job_sources --limit 25 --json
+
 ```
 
-Vor einem Apply muss `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true` in der
-Laufzeitkonfiguration gesetzt und derselbe begrenzte Dry-Run geprüft werden.
-Das Apply-Flag ist zusätzlich und ausdrücklich erforderlich:
+Before applying, set `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true` in runtime configuration and run the same limited dry run. The apply flag is explicitly required:
 
 ```sh
 python manage.py reap_upload_job_sources --limit 25 --apply --json
 python manage.py reap_upload_job_sources --limit 25 --repeat-until-empty --apply --json
+
 ```
 
-Ungültige oder widersprüchliche Selektoren, deaktiviertes Apply und nicht
-positive Limits enden ungleich null. Ein sicher blockierter Kandidat ist ein
-erfolgreiches Diagnoseergebnis und bleibt mit seinem Blockiercode erhalten.
-Apply autorisiert jede Löschung zunächst unter Datenbanksperre und persistiert
-ein Receipt mit Datenbankzeit, Fencing-Token, opaker Quellidentität und Größe.
-Unmittelbar vor der Mutation werden Status, Retention, Fälligkeit, Retry,
-Processing-Lease, Fencing, Zielintegrität, ProcessingHistory, Video-HLS-
-Generationen, Media-Operation-Leases, Storage-Grenze und Dateiidentität erneut
-geprüft. Die Dateilöschung erfolgt ausschließlich über die auditierten
-File-Operations-Wrapper.
+Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, storage boundary, and file identity. File deletion occurs exclusively via audited file operation wrappers.
 
-Recovery folgt den stabilen Blockiercodes:
+Recovery aligns with stable block codes:
 
-- `source_missing_unexpected` ohne Receipt bleibt erhalten und muss als
-  Ledger-Dateisystem-Abweichung untersucht werden;
-- `delete_failed` verbleibt in `deleting` mit demselben Receipt und kann nach
-  Behebung des Storage-Fehlers erneut angewendet werden;
-- fehlt die Datei im Zustand `deleting`, reconciliiert dasselbe Receipt den
-  nach der Mutation unterbrochenen Lauf idempotent zu `completed`;
-- `active_processing_lease`, `retry_allowed`,
-  `active_media_operation_lease`, `fencing_token_changed`,
-  `target_integrity_failed`, `video_hls_not_ready` und
-  `video_hls_generation_mismatch` verbieten die Mutation bis zur autoritativen
-  Behebung; Fencing- und Identitätsabweichungen benötigen eine neue fachliche
-  Freigabe und werden nicht automatisch überschrieben.
+* `source_missing_unexpected` without a receipt is retained and investigated as a ledger/file system divergence;
+* `delete_failed` remains in `deleting` with its receipt and can be re-run after resolving storage errors;
+* If a file is missing while in `deleting`, the receipt idempotently reconciles the interrupted run to `completed`;
+* `active_processing_lease`, `retry_allowed`, `active_media_operation_lease`, `fencing_token_changed`, `target_integrity_failed`, `video_hls_not_ready`, and `video_hls_generation_mismatch` prohibit mutation until authoritatively resolved. Fencing and identity deviations require new domain authorization and are not auto-overwritten.
 
-Direkte Dateisystemlöschung außerhalb dieses Reapers ist untersagt. Der Reaper
-transkodiert eine Upload-Quelle nicht in-place, weil sie die einzige
-wiederherstellbare Quelle sein kann. Größenbegrenzte kanonische Videos werden
-über `normalize_video_storage` mit dessen separatem klinischen Qualitäts-,
-Timeline-, Kapazitäts- und Destructive-Migration-Gate erzeugt. Erst ein danach
-vollständig bestandener Zielintegritätsnachweis macht die entbehrliche
-UploadJob-Quelle löschbar.
+Direct file system deletion outside this reaper is prohibited. The reaper does not transcode upload sources in-place because they may represent the sole recoverable source. Size-bounded canonical videos are created via `normalize_video_storage` with its dedicated clinical quality, timeline, capacity, and destructive migration gate. Only after passing target integrity checks does the upload source become eligible for deletion.
 
-`check_system_health --json` meldet Cleanup-Fehler, überalterte `eligible`- und
-`deleting`-Zustände, Ledger-Abweichungen sowie ungewöhnlich große blockierte
-Receipts. Die lokalen Alarmgrenzen sind
-`ENDOREG_HEALTH_UPLOAD_SOURCE_ELIGIBLE_MAX_AGE_SECONDS` (Standard 24 Stunden),
-`ENDOREG_HEALTH_UPLOAD_SOURCE_DELETING_MAX_AGE_SECONDS` (Standard eine Stunde)
-und `ENDOREG_HEALTH_UPLOAD_SOURCE_LARGE_BLOCKED_BYTES` (Standard 2 GiB). Ein
-positiver Befund lässt den Health-Check im Local-Study-Server-Profil ungleich
-null enden und muss vor einem weiteren Apply untersucht werden.
+`check_system_health --json` flags cleanup errors, stale `eligible`/`deleting` states, ledger deviations, and unusually large blocked receipts. Local alert thresholds include `ENDOREG_HEALTH_UPLOAD_SOURCE_ELIGIBLE_MAX_AGE_SECONDS` (default 24h), `ENDOREG_HEALTH_UPLOAD_SOURCE_DELETING_MAX_AGE_SECONDS` (default 1h), and `ENDOREG_HEALTH_UPLOAD_SOURCE_LARGE_BLOCKED_BYTES` (default 2 GiB). Positive findings cause non-zero health check exits on `local_study_server` profiles and must be investigated prior to further apply runs.
 
-Beispiel für die sichere Quarantänefolge:
+Example safe quarantine sequence:
 
 ```sh
 python manage.py reap_quarantine --older-than-days 30 --dry-run --json
 python manage.py reap_quarantine --older-than-days 30 --approve-stale --decision-reason "retention period elapsed" --json
 python manage.py reap_quarantine --older-than-days 30 --confirm --json
+
 ```
 
-Bei Hashfehlern, fehlenden Artefakten oder widersprüchlicher Provenienz zuerst
-Quarantäne und Ledger sichern. Keine Datei manuell löschen und keinen Status in
-der Datenbank auf Erfolg setzen.
+On hash errors, missing artifacts, or conflicting provenance, back up quarantine and ledger first. Do not delete files manually or modify database status to success.
 
-## Monitoring, Kapazität und Alarmierung
+## Monitoring, Capacity, and Alerting
 
-Mindestens zu alarmieren sind:
+Minimum required alerts:
 
-- Hub-Konfiguration oder mTLS-Material nicht bereit,
-- `failed`/`inconsistent` Transfers und ausgeschöpfte Retries,
-- `ERROR`/`LOST` Upload-Jobs und hängende Processing-Zustände,
-- wachsende oder überalterte Quarantäne,
-- freier Speicher unter dem betrieblich festgelegten Grenzwert,
-- nicht verifizierte Audit-Ledger-Integrität,
-- wiederholte Auth-, mTLS-, Hash- oder Payload-Ablehnungen.
+* Hub configuration or mTLS material unavailable,
+* `failed`/`inconsistent` transfers and exhausted retries,
+* `ERROR`/`LOST` upload jobs and hung processing states,
+* Growing or stale quarantine,
+* Free storage below operational thresholds,
+* Unverified audit ledger integrity,
+* Repeated auth, mTLS, hash, or payload rejections.
 
-Die Administration aktualisiert das Transfer-Monitoring automatisch. Für
-den allgemeinen Import- und Speicherzustand ist
-`python manage.py check_system_health --json` zu verwenden. Der Zustand des
-Outbound-Hub-Transfers wird separat geprüft:
+Administration updates transfer monitoring automatically. For overall import and storage state, execute `python manage.py check_system_health --json`. Outbound hub transfer status is monitored separately:
 
 ```sh
 python manage.py check_hub_export_health
@@ -351,64 +221,32 @@ python manage.py check_hub_export_health --no-fail-on-attention
 systemctl status lx-annotate-hub-export-health.service
 systemctl status lx-annotate-hub-export-health.timer
 journalctl -u lx-annotate-hub-export-health.service
+
 ```
 
-Der erste Befehl gibt kompaktes JSON aus und endet ungleich null, sobald eine
-terminale Konfigurationsablehnung, Autorisierungsablehnung,
-Integritätsinkonsistenz, ein ausgeschöpfter Retry oder ein unklassifizierter
-Fehler vorliegt. Ein transienter Fehler bleibt bis zur Retry-Erschöpfung
-nichtkritisch sichtbar. Die LuxNix-Site-Node-Konfiguration führt diese Prüfung
-periodisch als persistierenden systemd-Timer aus; eine fehlgeschlagene Unit und
-das strukturierte Ereignis `hub_export.health_snapshot` bilden den lokalen
-Alarmzustand. `--no-fail-on-attention` ist nur für eine lesende Diagnose
-gedacht und unterdrückt nicht die persistierte Fehlerklasse.
+The first command outputs compact JSON and exits non-zero if terminal configuration/auth rejections, integrity inconsistencies, exhausted retries, or unclassified errors exist. Transient errors remain visible as non-critical until retry exhaustion. LuxNix site-node configurations run this check periodically via a systemd timer; failed units and structured `hub_export.health_snapshot` events form the local alarm state. `--no-fail-on-attention` is reserved for read-only diagnostics and does not suppress persisted error classes.
 
-Die Exportübersicht zeigt dieselben persistierten Klassen pro Transfer in
-deutscher Bedienersprache sowie aktive, abgeschlossene und aufmerksamkeits-
-pflichtige Transfers. Das Health-JSON und die Alarmereignisse enthalten keine
-Fehlertexte, Secrets, Rohmedien oder absoluten Medienpfade. HTTP `401` und
-`403` vom Hub sind terminale Autorisierungsablehnungen und werden nicht als
-transiente Netzwerkfehler wiederholt. Kapazitätsgrenzen müssen an erwartete
-parallele Uploads, temporäre Kopien, Quarantäne, verarbeitete Derivate und
-Backup-Fenster angepasst werden.
+The export overview displays persisted classes per transfer in localized operator language alongside active, completed, and attention-requiring transfers. Health JSON and alert events exclude error traces, secrets, raw media, and absolute paths. HTTP `401` and `403` from the hub are terminal authorization rejections and are not retried as transient network issues. Capacity limits must accommodate expected concurrent uploads, temp copies, quarantine, processed derivatives, and backup windows.
 
-Für gekoppelte Hub-Backups erzwingt LuxNix zusätzlich
-`services.luxnix.lxAnnotateLocal.hub.backup.minimumFreeBytes`. Der Standardwert
-reserviert 10 GiB auf dem Snapshot-Dateisystem. Der Backup-Dienst prüft die
-Reserve vor dem Staging und erneut, nachdem Datenbank-Dump und Medien in den
-noch nicht publizierten Snapshot kopiert wurden. Unterschreitet der freie
-Speicher die Reserve, schlägt die Unit fehl, entfernt ausschließlich den
-unvollständigen Pending-Snapshot und lässt den bisherigen `latest`-Restore-Punkt
-unverändert. Der Grenzwert darf anhand dokumentierter Kapazitätsplanung erhöht
-werden; eine Absenkung benötigt eine begründete Betriebsentscheidung und darf
-nicht als Reaktion auf einen bereits vollen Datenträger erfolgen.
+For paired hub backups, LuxNix enforces `services.luxnix.lxAnnotateLocal.hub.backup.minimumFreeBytes` (default: 10 GiB reserved on the snapshot file system). The backup service verifies headroom prior to staging and again after database dump and media copy to the unpublished snapshot. If free space falls below headroom, the unit fails, purges only the incomplete pending snapshot, and leaves the existing `latest` restore point intact. Threshold increases require documented capacity planning; reductions require a justified operational decision and must not be performed in response to a full disk.
 
 ```sh
 systemctl status lx-annotate-hub-backup.service
 journalctl -u lx-annotate-hub-backup.service | grep -F minimum_free_bytes
 df -B1 /var/lib/lx-annotate/data/hub/backup/snapshots
+
 ```
 
-## Backup und Restore
+## Backup and Restore
 
-Ein Hub-Backup besteht immer aus zwei zusammengehörigen Teilen:
+A Hub backup always comprises two coupled components:
 
-1. konsistentes datenbanknatives PostgreSQL-Backup,
-2. Backup der verschlüsselten, geschützten Media-/Quarantäne-Grenze inklusive
-   Storage-Namen und Berechtigungen.
+1. Consistent, native PostgreSQL database backup,
+2. Backup of the encrypted, protected media/quarantine boundary including storage names and permissions.
 
-LuxNix publiziert diese Teile als einen Restore-Punkt. Ein manueller oder vom
-Timer ausgelöster Start von `lx-annotate-hub-backup.service` startet zuerst
-`postgresqlBackup.service`. Nur wenn der komprimierte PostgreSQL-Dump
-erfolgreich und lesbar vorliegt, reicht systemd ihn als private Credential an
-den unprivilegierten Hub-Backup-Dienst weiter. Der Dienst prüft das
-Gzip-Format, kopiert den Dump als `database/all.sql.gz` in den noch nicht
-publizierten Medien-Snapshot und nimmt ihn in dieselbe Prüfsummenliste und das
-JSON-Manifest auf. Erst danach wechselt der atomare `latest`-Symlink auf den
-neuen Restore-Punkt. Ein fehlender, beschädigter oder fehlgeschlagener
-Datenbank-Dump lässt den bisherigen `latest`-Restore-Punkt unverändert.
+LuxNix publishes these as a single restore point. Invoking `lx-annotate-hub-backup.service` (manually or via timer) first executes `postgresqlBackup.service`. Upon successful creation of a readable compressed PostgreSQL dump, systemd passes it as a private credential to the unprivileged hub backup service. The service validates gzip formatting, copies the dump as `database/all.sql.gz` into the pending media snapshot, and registers it in the checksum list and JSON manifest. Only then does the atomic `latest` symlink update to the new restore point. Missing, corrupt, or failed database dumps leave the existing `latest` restore point unchanged.
 
-Bedienerprüfung auf dem Central Hub:
+Operator verification on the Central Hub:
 
 ```sh
 sudo systemctl start lx-annotate-hub-backup.service
@@ -416,63 +254,45 @@ sudo systemctl status postgresqlBackup.service lx-annotate-hub-backup.service
 sudo readlink -f /var/lib/lx-annotate/data/hub/backup/snapshots/latest
 sudo jq '.database_dump' /var/lib/lx-annotate/data/hub/backup/manifests/*.json
 sudo sh -c 'cd /var/lib/lx-annotate/data/hub/backup/snapshots/latest && sha256sum --check ../../manifests/$(basename "$(readlink -f .)").sha256'
+
 ```
 
-Der ausgewählte Manifest-Eintrag muss für `database_dump.relative_path` den
-Wert `database/all.sql.gz`, für `format` den Wert
-`postgresql-pg_dumpall-sql-gzip` und einen zum Snapshot passenden SHA-256-Hash
-enthalten. Das Manifest und die Prüfsummenliste gehören immer zu dem
-Zeitstempel, auf den `latest` zeigt; nicht mehrere Zeitstempel kombinieren.
+The selected manifest entry must specify `database/all.sql.gz` for `database_dump.relative_path`, `postgresql-pg_dumpall-sql-gzip` for `format`, and a matching SHA-256 hash. Manifests and checksum files belong strictly to the timestamp referenced by `latest`—do not combine multiple timestamps.
 
-Restore-Probe:
+Restore Dry-Run Procedure:
 
-1. Den Zielpfad von `latest`, das gleichnamige JSON-Manifest und die
-   gleichnamige Prüfsummenliste als untrennbares Set auswählen und vor dem
-   Restore vollständig mit `sha256sum --check` validieren.
-2. In einer isolierten Umgebung `database/all.sql.gz` mit PostgreSQL-Werkzeugen
-   wiederherstellen und anschließend den übrigen Snapshot als geschützte
-   Medien-/Quarantäne-Grenze desselben Sicherungszeitpunkts einspielen.
-3. Migrationen ausführen und die Central-Hub-Produktionschecks starten.
-4. Audit-Ledger-Integrität aktualisieren und System-Health prüfen.
-5. Stichprobenweise `resource_hash`, Transfer-Snapshot, gespeichertes Medium und
-   Acknowledgement verbinden.
-6. Fehlende oder nicht lesbare Artefakte als `LOST`/inkonsistent behandeln und
-   Logs erhalten; keine unsichere Auto-Recovery durchführen.
+1. Select the target path from `latest`, along with its matching JSON manifest and checksum file, validating completely via `sha256sum --check` prior to restore.
+2. In an isolated environment, restore `database/all.sql.gz` using PostgreSQL utilities, then extract the snapshot into the protected media/quarantine boundary for that exact timestamp.
+3. Run migrations and execute Central Hub production checks.
+4. Refresh audit ledger integrity and verify system health.
+5. Cross-verify `resource_hash`, transfer snapshot, stored medium, and acknowledgment.
+6. Treat missing or unreadable artifacts as `LOST`/inconsistent and preserve logs; avoid unsafe auto-recovery.
 
-Eine Datenbank ohne zugehörige Medien oder Medien ohne konsistente Ledger sind
-kein erfolgreicher Restore.
+A database without corresponding media, or media lacking a consistent ledger, does not constitute a successful restore.
 
-## Incident-Ablauf
+## Incident Workflow
 
-1. Betroffene Korrelationen, Zeitfenster, Nodes und Center erfassen.
-2. Transfer stoppen beziehungsweise Sender-Node deaktivieren, wenn Auth- oder
-   Integritätsverletzung vermutet wird.
-3. Strukturierte Audit-, Proxy- und Worker-Logs sichern; Secrets und klinische
-   Payloads nicht in Tickets kopieren.
-4. Quarantäne und Speicherbelegung prüfen, aber nichts manuell entfernen.
-5. Ursache beheben: Zertifikat/Proxy, Center-Scope, Hash, Snapshot, Kapazität,
-   Storage oder Worker.
-6. Nur idempotent über denselben `transfer_key` wiederholen. Ein neuer Key ist
-   ausschließlich für einen fachlich neuen Transfer zulässig.
-7. Remote-`applied`, Medienintegrität und Cleanup-Entscheidung abschließend
-   dokumentieren.
+1. Identify affected correlations, time windows, nodes, and centers.
+2. Halt transfers or deactivate the sender node if auth or integrity breaches are suspected.
+3. Secure structured audit, proxy, and worker logs; do not attach secrets or clinical payloads to tickets.
+4. Inspect quarantine and disk usage, but do not delete files manually.
+5. Resolve root causes: certificates/proxy, center scope, hash mismatch, snapshot issues, capacity, storage, or worker errors.
+6. Retry strictly idempotently using the same `transfer_key`. A new key is permitted only for a fundamentally new business transfer.
+7. Document final remote `applied` status, media integrity, and cleanup decisions.
 
-## Verifikationscheckliste
+## Verification Checklist
 
-- Central-Hub-Startup scheitert ohne PostgreSQL, HTTPS-Proxyvertrag oder mTLS.
-- Unauthentifizierte, fremd-Center- und Raw-Media-Anfragen werden abgelehnt.
-- Wiederholte Registrierung und Medienübertragung bleiben idempotent.
-- Manipulierte Medien und widersprüchliche Metadaten enden inkonsistent oder in
-  Quarantäne, nicht als Erfolg.
-- Sender- und Hub-Acknowledgement stimmen für Transfer-, Ressourcen- und
-  Cleanup-Identität überein.
-- Administration zeigt aktive, erfolgreiche und fehlgeschlagene Transfers samt
-  Korrelation und Cleanup-Zustand.
-- Quarantäne-Dry-Run, explizite Freigabe und Reap wurden geprobt.
-- Datenbank-und-Medien-Restore wurde isoliert geprüft.
+* Central Hub startup fails without PostgreSQL, HTTPS proxy contract, or mTLS.
+* Unauthenticated, foreign center, or raw media requests are rejected.
+* Repeated registrations and media transfers remain idempotent.
+* Tampered media and conflicting metadata result in inconsistent or quarantined states, never success.
+* Sender and hub acknowledgments align on transfer, resource, and cleanup identities.
+* Administration displays active, succeeded, and failed transfers alongside correlation IDs and cleanup states.
+* Quarantine dry runs, explicit approvals, and reaping procedures have been tested.
+* Database and media restores have been verified in isolation.
 
-## Referenzen
+## References
 
-- [`docs/wiki/hub_ingest_current_state.md`](wiki/hub_ingest_current_state.md)
-- [`docs/deployment_note_hub_contract.md`](deployment_note_hub_contract.md)
-- [`endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`](../endoreg_db/import_files/multi_centre_storage_hub_roadmap.md)
+* [`docs/wiki/hub_ingest_current_state.md`](https://www.google.com/search?q=wiki/hub_ingest_current_state.md)
+* [`docs/deployment_note_hub_contract.md`](https://www.google.com/search?q=deployment_note_hub_contract.md)
+* [`endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`](https://www.google.com/search?q=../endoreg_db/import_files/multi_centre_storage_hub_roadmap.md)

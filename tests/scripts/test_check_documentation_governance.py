@@ -15,6 +15,7 @@ from scripts.check_documentation_governance import (
     classify_artifact,
     discover_repository,
     validate_inventory,
+    validate_canonical_language,
     validate_local_links,
 )
 
@@ -28,6 +29,7 @@ def _repository() -> RepositoryPolicy:
         agents_path="AGENTS.md",
         documentation_entrypoint="docs/index.md",
         owner="example maintainers",
+        canonical_language="en",
     )
 
 
@@ -242,3 +244,70 @@ def test_local_link_validation_rejects_missing_and_workstation_targets(
         ("missing_local_link", "docs/guide.md"),
         ("workstation_link", "docs/guide.md"),
     ]
+
+
+def test_additional_documentation_paths_are_inventoried(tmp_path: Path) -> None:
+    _write_entrypoints(tmp_path)
+    setup = tmp_path / "setup"
+    setup.mkdir()
+    guide = setup / "guide.md"
+    guide.write_text("# Setup guide\n", encoding="utf-8")
+    repository = _repository().model_copy(
+        update={"additional_documentation_paths": ["setup"]}
+    )
+
+    entries = discover_repository(
+        tmp_path,
+        repository,
+        review_by=date(2026, 10, 31),
+        tracked_paths={"setup/guide.md"},
+    )
+
+    assert any(item.path == "setup/guide.md" for item in entries)
+
+
+def test_canonical_language_rejects_predominantly_german_prose(
+    tmp_path: Path,
+) -> None:
+    _write_entrypoints(tmp_path)
+    guide = tmp_path / "docs" / "guide.md"
+    guide.write_text(
+        "# Betriebsanleitung\n\n"
+        "Diese Anleitung ist für den Betrieb und die Prüfung der Anwendung. "
+        "Sie muss mit der aktuellen Konfiguration geprüft werden und darf nicht "
+        "ohne die dokumentierte Freigabe verwendet werden.\n",
+        encoding="utf-8",
+    )
+    entries = discover_repository(
+        tmp_path,
+        _repository(),
+        review_by=date(2026, 10, 31),
+        tracked_paths={"docs/guide.md"},
+    )
+
+    issues = validate_canonical_language(tmp_path, _repository(), entries)
+
+    assert [(item.rule, item.path) for item in issues] == [
+        ("non_english_source", "docs/guide.md")
+    ]
+
+
+def test_canonical_language_ignores_code_and_accepts_english_prose(
+    tmp_path: Path,
+) -> None:
+    _write_entrypoints(tmp_path)
+    guide = tmp_path / "docs" / "guide.md"
+    guide.write_text(
+        "# Operations guide\n\n"
+        "This guide describes the current deployment contract and its checks.\n\n"
+        "```text\nDer die das und oder nicht ist wird werden für mit ohne.\n```\n",
+        encoding="utf-8",
+    )
+    entries = discover_repository(
+        tmp_path,
+        _repository(),
+        review_by=date(2026, 10, 31),
+        tracked_paths={"docs/guide.md"},
+    )
+
+    assert validate_canonical_language(tmp_path, _repository(), entries) == []

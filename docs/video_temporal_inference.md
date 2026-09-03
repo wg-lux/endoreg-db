@@ -9,7 +9,7 @@ delegates temporal post-processing to `lx-ai-core`.
 The media API endpoint is:
 
 ```http
-POST /api/media/videos/<video_id>/segments/rerun-predictions/
+POST /endoreg-api/media/videos/<video_id>/segments/rerun-predictions/
 ```
 
 Relevant request fields are collected as `temporal_options` by

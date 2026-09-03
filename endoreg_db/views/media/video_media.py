@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, cast
 from urllib.parse import urlencode
 
 from django.db import models
 from django.db.models import Prefetch, Q
 from django.db.models.query import QuerySet
 from django.http import Http404
+from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.video_file import VideoFilePayload
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -42,9 +43,6 @@ from endoreg_db.views.access_control import (
 )
 
 logger = logging.getLogger(__name__)
-
-JsonScalar: TypeAlias = str | int | float | bool | None
-JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 class _SerializerLike(Protocol):

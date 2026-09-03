@@ -39,9 +39,6 @@ accepted_findings:
     path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
     message: "unused variable 'objs'"
   - <<: *protocol_signature
-    path: endoreg_db/models/metadata/sensitive_meta.py
-    message: "unused variable 'objs'"
-  - <<: *protocol_signature
     path: endoreg_db/serializers/misc/sensitive_patient_data.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature

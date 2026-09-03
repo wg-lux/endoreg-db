@@ -49,14 +49,14 @@ definition_of_done:
     - kind: document
       reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
     - kind: review
-      reference: 'PR #312 und lx-annotate Sender-/endoreg-db Receiver-Vertrag am 2026-08-03 gemeinsam
-        geprüft; Raw-Media bleibt verboten, Zustände sind getrennt, Phase 1 erzwingt mTLS und Phase 2
-        bleibt an Envelope Encryption gebunden.'
-    note: 'Sender- und Receiver-Verträge wurden gemeinsam gegen PR #312 und die aktuellen Ownership-Grenzen
-      geprüft. Ausschließlich anonymisierte verarbeitete Video-/Report-Artefakte sind zulässig; Markierung,
-      Queueing, Registrierung, Upload, verifizierte Anwendung und Cleanup bleiben getrennte Zustände.
-      Die aktuelle Phase 1 ist fail-closed an HTTPS/mTLS und den geschützten lokalen Speicher gebunden;
-      eigenständige Blob-Transfers bleiben bis zur Envelope-Encryption-Phase gesperrt.'
+      reference: 'PR #312 and the lx-annotate sender/endoreg-db receiver contract were jointly reviewed
+        on 2026-08-03; raw media remains prohibited, states remain separate, phase 1 enforces mTLS, and
+        phase 2 remains bound to envelope encryption.'
+    note: 'Sender and receiver contracts were jointly checked against PR #312 and the current ownership
+      boundaries. Only anonymized processed video and report artifacts are permitted; marking, queueing,
+      registration, upload, verified apply, and cleanup remain separate states. The current phase 1 fails
+      closed on HTTPS/mTLS and protected local storage; standalone blob transfers remain blocked until the
+      envelope-encryption phase.'
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T10:55:25.563881Z'
 - id: operator_verification_and_attribution
@@ -96,11 +96,10 @@ definition_of_done:
     - kind: command
       reference: 'frontend: npm run test:unit -- --run HubExportOverviewComponent.test.ts hubExportStore.spec.ts
         (10 passed) and npm run type-check:component-tests (passed, 2026-08-03)'
-    note: Alle Operator-Endpunkte erzwingen Session-Authentifizierung unabhängig vom Debug-Modus. Markierungen
-      ignorieren clientseitige Akteurangaben, persistieren den authentifizierten Benutzer und Zeitpunkt
-      und exponieren beides in API und UI. Bulk-Markierung und -Unmarkierung sind atomar; Unmarkierung
-      bleibt auf den Zustand MARKED begrenzt. Tests decken zwei Benutzer, anonymen Zugriff, Actor-Spoofing,
-      Rollback und Zustandsgrenzen ab.
+    note: All operator endpoints enforce session authentication independently of debug mode. Marking ignores
+      client-supplied actor data, persists the authenticated user and timestamp, and exposes both in the API
+      and UI. Bulk marking and unmarking are atomic; unmarking remains limited to the MARKED state. Tests
+      cover two users, anonymous access, actor spoofing, rollback, and state boundaries.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T11:08:15.424252Z'
 - id: authenticated_fail_closed_transport
@@ -163,13 +162,13 @@ definition_of_done:
         --parse passed; isolated NixOS module evaluation confirmed outbound=true, AppRole/Hub-PKI, worker
         certificate/provisioning requirements, Vault Raft 172.16.255.22:8200, CA path, backup and tun0
         port 8200 (2026-08-03)'
-    note: Fail-closed Transport ist am echten Nginx, in der erzeugten LuxNix-Konfiguration und in der
-      deklarativen gc-02-zu-gs-02-Inventory-Quelle belegt. Requests ohne gültige Clientidentität sowie
-      Requests mit falscher oder nicht freigegebener Identität erreichen den Upstream nicht; gespoofte
-      Proxy-Header werden überschrieben. Vault-AppRole, kurzlebige Client-PKI, getrenntes Node-Secret,
-      Hub-CA-Publikation, Raft, VPN-Port und beidseitige NetworkNode-Provisionierung evaluieren mit vollständigen
-      Worker-Abhängigkeiten. Die gestufte CA-Rotation validiert das Überlappungsfenster und begrenzte
-      alte Worker. Weder Master-Key noch shared_secret werden zur Payload-Verschlüsselung verwendet.
+    note: Fail-closed transport is demonstrated with real Nginx, the generated LuxNix configuration, and
+      the declarative gc-02-to-gs-02 inventory source. Requests without a valid client identity, or with an
+      incorrect or unauthorized identity, do not reach the upstream; spoofed proxy headers are overwritten.
+      Vault AppRole, short-lived client PKI, a separate node secret, hub CA publication, Raft, the VPN port,
+      and bilateral NetworkNode provisioning evaluate with complete worker dependencies. Staged CA rotation
+      validates the overlap window and bounded retirement of old workers. Neither the master key nor shared_secret
+      is used for payload encryption.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:21:16.553872Z'
 - id: transfer_integrity_and_replay
@@ -331,10 +330,10 @@ definition_of_done:
         includes unsafe raw report text and unbounded metadata. Direct merge remains rejected; current
         lx-annotate sender emits only schema-validated anonymized_text and current receiver rejects raw
         text.'
-    note: 'Receiver-, Sender-, Operator-, Datenschutz- und UI-Verträge sind reproduzierbar grün. PR #312
-      bleibt absichtlich unintegriert: Er ist nicht mergefähig, verletzt die aktuelle Sender-Ownership
-      und enthält einen unsicheren Rohtextpfad. Der aktuelle lx-annotate-Sender überträgt ausschließlich
-      streng validierte anonymisierte Payloads; der Receiver bindet Center-Scope ausschließlich an NetworkNode.owning_center.'
+    note: 'Receiver, sender, operator, privacy, and UI contracts pass reproducibly. PR #312 intentionally
+      remains unintegrated: it cannot be merged, violates current sender ownership, and contains an unsafe
+      raw-text path. The current lx-annotate sender transfers only strictly validated anonymized payloads;
+      the receiver binds center scope exclusively to NetworkNode.owning_center.'
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T11:08:35.315157Z'
 - id: recovery_cleanup_and_capacity
@@ -368,8 +367,8 @@ definition_of_done:
       reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in
         10.20s, 2026-08-03)
     - kind: runbook
-      reference: docs/hub_ingest_operations.md sections Cleanup und Quarantäne, Monitoring/Kapazität,
-        Backup/Restore and Incident-Ablauf
+      reference: docs/hub_ingest_operations.md sections Cleanup and Quarantine, Monitoring/Capacity,
+        Backup/Restore, and Incident Workflow
     - kind: code
       reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures
         become terminal before disclosure or stuck in-flight state)
@@ -389,7 +388,7 @@ definition_of_done:
       reference: '/home/admin/luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests
         passed in 22.22s; nix build .#checks.x86_64-linux.nixtests --no-link passed (2026-08-03)'
     - kind: runbook
-      reference: docs/hub_ingest_operations.md section Backup und Restore (coupled LuxNix PostgreSQL/media
+      reference: docs/hub_ingest_operations.md section Backup and Restore (coupled LuxNix PostgreSQL/media
         restore point and operator validation)
     - kind: test
       reference: '/home/admin/luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM:
@@ -414,16 +413,16 @@ definition_of_done:
       reference: '/home/admin/luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest:
         4 passed in 54.80s (2026-08-03)'
     - kind: runbook
-      reference: docs/hub_ingest_operations.md sections Monitoring, Kapazität und Alarmierung sowie Backup
-        und Restore (typed LuxNix reserve and operator commands)
-    note: Automatisiert bestätigt sind idempotente Reconciliation, Wiederanlauf verlorener Queue-/In-Flight-Jobs,
-      sichtbare Retry-Erschöpfung, fail-closed Acknowledgement-Integrität und Cleanup-Freigabe erst nach
-      verifiziertem applied. LuxNix koppelt PostgreSQL-Dump und geschützten Medien-Snapshot über eine
-      private systemd-Credential atomar. Eine frische NixOS-VM bestätigt Berechtigungsgrenze, gemeinsame
-      Prüfsummen/Publikation, Ablehnung beschädigter Dumps und die konfigurierbare Mindestfreiraumreserve
-      vor und nach Staging; jeder Fehler lässt den letzten gültigen Restore-Punkt unverändert. Offen bleiben
-      produktionsnahe Übungen für Hub-Ausfall, Zertifikatsrotation und die vollständige gemeinsame Datenbank-/Medien-Wiederherstellung
-      durch einen Operator.
+      reference: docs/hub_ingest_operations.md sections Monitoring, Capacity and Alerting, and Backup and
+        Restore (typed LuxNix reserve and operator commands)
+    note: Automated verification confirms idempotent reconciliation, restart of lost queued and in-flight
+      jobs, visible retry exhaustion, fail-closed acknowledgement integrity, and cleanup eligibility only
+      after verified applied status. LuxNix atomically couples the PostgreSQL dump and protected media snapshot
+      through a private systemd credential. A fresh NixOS virtual machine confirms the authorization boundary,
+      joint checksums and publication, rejection of corrupted dumps, and the configurable minimum free-space
+      reserve before and after staging; every failure leaves the latest valid restore point unchanged. Production-like
+      exercises for hub outage, certificate rotation, and complete joint database/media recovery by an operator
+      remain outstanding.
     assessed_by: codex-review-data-transfer-mtls
     assessed_at: '2026-08-03T14:22:21.794179Z'
 - id: transfer_observability
@@ -463,15 +462,15 @@ definition_of_done:
       reference: '/home/admin/luxnix: focused Nix evaluation contract (2 passed) and nix build .#checks.x86_64-linux.nixtests
         passed (2026-08-03)'
     - kind: runbook
-      reference: docs/hub_ingest_operations.md section Monitoring, Kapazität und Alarmierung
-    note: Sender- und Receiver-Ereignisse korrelieren Operator, lokalen Auftrag, Transfer-Key, pseudonymisierte
-      Ressource, Center, Quell-/Zielnode, Remote-ID, Versuch, Acknowledgement und Cleanup. Die persistierte
-      Fehlerklasse unterscheidet configuration_rejection, authorization_denial, integrity_inconsistency
-      und transient_retry; HTTP 401/403 endet terminal ohne Retry. Die UI zeigt Klassen sowie aktive,
-      abgeschlossene und aufmerksamkeitsbedürftige Transfers. Der kompakte Health-Check unterscheidet
-      terminale Klassen, Retry-Erschöpfung und unklassifizierte Fehler, enthält weder Fehlertext noch
-      Secrets/Rohmedien/Pfade und erzeugt über den persistenten LuxNix-systemd-Timer einen lokalen fehlgeschlagenen
-      Unit-/Journal-Alarmzustand. Erfolgreicher verified apply und Completion bleiben separat sichtbar.
+      reference: docs/hub_ingest_operations.md section Monitoring, Capacity and Alerting
+    note: Sender and receiver events correlate the operator, local job, transfer key, pseudonymous resource,
+      center, source and target nodes, remote ID, attempt, acknowledgement, and cleanup. The persisted failure
+      class distinguishes configuration_rejection, authorization_denial, integrity_inconsistency, and transient_retry;
+      HTTP 401/403 ends terminally without retry. The UI shows classes and active, completed, and attention-required
+      transfers. The compact health check distinguishes terminal classes, retry exhaustion, and unclassified
+      errors, contains no error text, secrets, raw media, or paths, and produces a local failed unit/journal
+      alarm state through the persistent LuxNix systemd timer. Successful verified apply and completion remain
+      separately visible.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:36:05.874456Z'
 - id: operator_runbook
@@ -504,19 +503,19 @@ definition_of_done:
       reference: DJANGO_SETTINGS_MODULE=lx_annotate.settings.settings_test python manage.py help dispatch_hub_export_recovery
         (command registered with --source-node-key, 2026-08-03)
     - kind: review
-      reference: Deutsch/englische Vertragsbeispiele durch codex-review-data-transfer-mtls gegen lx_dtypes
-        validiert; anschließend von codex-hub-transfer-ready gegen lx_dtypes, Sender-Payloadvalidator
-        und Receiver-Serializer geprüft.
+      reference: German/English contract examples validated against lx_dtypes by codex-review-data-transfer-mtls;
+        subsequently checked by codex-hub-transfer-ready against lx_dtypes, the sender payload validator,
+        and the receiver serializer.
     - kind: review
-      reference: 'Unabhängiger Review durch codex-review-data-transfer-mtls: echter Nginx-Test der gestuften
-        CA-Rotation einschließlich begrenztem Retirement alter Worker erneut bestanden (1 passed in 1.45s,
-        2026-08-03); zusätzlich 111 relevante Receiver-Boundary-Tests bestanden.'
-    note: Die deutsch/englische Vertrags- und Portierungsanleitung dokumentiert Wire-Vertrag 3.0; das
-      Hub-Betriebshandbuch deckt Proxy, mTLS-Rotation, Cleanup, klassifiziertes Monitoring/Alarmierung,
-      Kapazität, Restore und Incident ab. Die echte Nginx-CA-Rotation einschließlich begrenztem Retirement
-      alter Worker wurde unabhängig erneut verifiziert; Sender-, Receiver-, UI-, Health- und Deployment-Verträge
-      sind automatisiert grün. Ausstehend bleibt die laut Kriterium vorgeschriebene vollständige Durchführung
-      des Deployment-, Incident- und Restore-Runbooks durch einen Operator in einer frischen produktionsnahen
-      Umgebung; eine Konfigurationsevaluation ersetzt diesen Lauf nicht.
+      reference: 'Independent review by codex-review-data-transfer-mtls: the real Nginx test of staged CA
+        rotation, including bounded retirement of old workers, passed again (1 passed in 1.45s, 2026-08-03);
+        an additional 111 relevant receiver-boundary tests passed.'
+    note: The German/English contract and porting guide documents wire contract 3.0; the hub operations
+      runbook covers proxying, mTLS rotation, cleanup, classified monitoring and alerting, capacity, restore,
+      and incidents. Real Nginx CA rotation, including bounded retirement of old workers, was independently
+      verified again; sender, receiver, UI, health, and deployment contracts pass automated checks. The complete
+      execution of the deployment, incident, and restore runbook by an operator in a fresh production-like
+      environment, as required by the criterion, remains outstanding; configuration evaluation does not replace
+      this exercise.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:37:29.998864Z'

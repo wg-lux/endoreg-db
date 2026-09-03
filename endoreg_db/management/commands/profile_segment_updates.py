@@ -13,6 +13,7 @@ from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.management.commands._profiling import (
     add_profiling_arguments,
     command_profiling_config_from_options,
+    positive_int_option,
     profiling_metadata,
     run_with_optional_profile,
 )
@@ -317,9 +318,9 @@ def _command_options_from_raw_options(options: dict[str, object]) -> _CommandOpt
             options.get("delete_count"),
             "--delete-count",
         ),
-        frame_count=_positive_int_option(options.get("frame_count"), "--frame-count"),
+        frame_count=positive_int_option(options.get("frame_count"), "--frame-count"),
         fps=_positive_float_option(options.get("fps"), "--fps"),
-        removed_frame_step=_positive_int_option(
+        removed_frame_step=positive_int_option(
             options.get("removed_frame_step"),
             "--removed-frame-step",
         ),
@@ -461,17 +462,7 @@ def _required_str(value: object, label: str) -> str:
 def _optional_positive_int_option(value: object, label: str) -> int | None:
     if value is None:
         return None
-    return _positive_int_option(value, label)
-
-
-def _positive_int_option(value: object, label: str) -> int:
-    try:
-        result = int(str(value))
-    except (TypeError, ValueError) as exc:
-        raise CommandError(f"{label} must be a positive integer.") from exc
-    if result <= 0:
-        raise CommandError(f"{label} must be a positive integer.")
-    return result
+    return positive_int_option(value, label)
 
 
 def _non_negative_int_option(value: object, label: str) -> int:

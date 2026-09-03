@@ -154,12 +154,6 @@ class FrameStreamView(APIView):
             )
             return None
 
-    def _assert_video_access_allowed(
-        self, *, request: Request, video: VideoFile
-    ) -> None:
-        # Streaming access is centralized via RBAC permissions.
-        self.check_object_permissions(request, video)
-
     @staticmethod
     def _validate_frame_path_for_serving(*, video: VideoFile, frame_path: Path) -> Path:
         try:
@@ -252,7 +246,7 @@ class FrameStreamView(APIView):
             video = VideoFile.objects.get(pk=video_id_int)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video {video_id_int} not found")
-        self._assert_video_access_allowed(request=request, video=video)
+        self.check_object_permissions(request, video)
 
         _validate_frame_number_for_video(
             video=video,
@@ -356,11 +350,6 @@ class DecodedFrameStreamView(APIView):
             return _field_file_has_name(processed_file)
         return bool(getattr(video, "has_raw", False))
 
-    def _assert_video_access_allowed(
-        self, *, request: Request, video: VideoFile
-    ) -> None:
-        self.check_object_permissions(request, video)
-
     def get(
         self,
         request: Request,
@@ -377,7 +366,7 @@ class DecodedFrameStreamView(APIView):
             video = VideoFile.objects.get(pk=video_id_int)
         except VideoFile.DoesNotExist:
             raise Http404(f"Video {video_id_int} not found")
-        self._assert_video_access_allowed(request=request, video=video)
+        self.check_object_permissions(request, video)
 
         _validate_frame_number_for_video(
             video=video,
