@@ -1,34 +1,38 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
 
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        Employee,
-        Qualification,
-    )
+    from ...qualification.qualification import Qualification
+    from .employee import Employee
+
 
 class EmployeeQualification(models.Model):
     """
     Model representing an employee's qualification.
     """
-    employee = models.OneToOneField(
+
+    employee: models.OneToOneField["Employee", Any] = models.OneToOneField(
         "Employee",
         on_delete=models.CASCADE,
         related_name="qualification",
     )
-    qualifications = models.ManyToManyField(
-        "Qualification",
-        related_name="employee_qualifications",
+    qualifications: models.ManyToManyField[Qualification, Qualification] = (
+        models.ManyToManyField(
+            "Qualification",
+            related_name="employee_qualifications",
+        )
     )
 
     if TYPE_CHECKING:
-        employee: models.ForeignKey["Employee"]
-        qualifications: models.QuerySet["Qualification"]
+        pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns a human-readable string summarizing the employee and their qualifications.
-        
+
         If the employee has qualifications, lists them separated by commas; otherwise, indicates that no qualifications are assigned.
         """
         qualification_list = self.qualifications.all()

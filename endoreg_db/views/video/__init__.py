@@ -1,5 +1,4 @@
 from .correction import (
-    VideoMetadataView,
     VideoProcessingHistoryView,
     VideoApplyMaskView,
     VideoRemoveFramesView,
@@ -8,52 +7,65 @@ from .correction import (
 
 from ..media.video_media import VideoMediaView
 
-from .reimport import (
-    VideoReimportView
-)
-
-from .segmentation import (
-    VideoViewSet,
-    VideoLabelView,
-    UpdateLabelSegmentsView,
-    rerun_segmentation,
-)
-
-# Phase 3.2: VideoStreamView moved to dedicated module
+from .reimport import VideoReimportView
 from .video_stream import VideoStreamView
-
-from .timeline import (
-    video_timeline_view
-)
-
 from .video_examination_viewset import VideoExaminationViewSet
+from .video_fps import VideoFpsView
+from .video_metadata import VideoMetadataStatsView
+from .video_timeline import VideoFrameNeighborhoodView
+
+
+from .segments_crud import (
+    video_segments_collection,
+    video_segments_by_video,
+    video_segments_blacken_outside,
+    video_segments_normalize_fps,
+    video_segments_bulk_mutation,
+    video_segment_detail,
+    video_segments_stats,
+    video_segment_validate,
+    video_segments_validate_bulk,
+    video_segments_validation_status,
+    import_prediction_segments_to_manual,
+    ensure_segment_annotations_bulk,
+    ensure_segment_annotations_for_video,
+    ensure_prediction_segment_annotations_bulk,
+    ensure_prediction_segment_annotations_for_video,
+)
+from .ai.label import label_list
+from .export_annotated import export_annotated
 
 __all__ = [
     # Video Correction (Phase 1.1) - Implemented
-    'VideoMetadataView',
-    'VideoProcessingHistoryView',
-    'VideoApplyMaskView',
-    'VideoRemoveFramesView',
-    
-    'VideoMediaView',
-    
-    'VideoCorrectionView',
-    # 'TaskStatusView',
-    # 'VideoDownloadProcessedView',
-
+    "VideoProcessingHistoryView",
+    "VideoApplyMaskView",
+    "VideoRemoveFramesView",
+    "VideoMetadataStatsView",
+    "VideoFpsView",
+    "VideoFrameNeighborhoodView",
+    "VideoMediaView",
+    "VideoCorrectionView",
     # Reimport views
-    'VideoReimportView',
-
+    "VideoReimportView",
     # Segmentation views
-    'VideoViewSet',
-    'VideoStreamView',
-    'VideoLabelView',
-    'UpdateLabelSegmentsView',
-    'rerun_segmentation',
-
-    # Timeline views
-    'video_timeline_view',
-
+    "VideoStreamView",
     # Video Examination ViewSet
     "VideoExaminationViewSet",
+    "video_segments_collection",
+    "video_segments_by_video",
+    "video_segments_blacken_outside",
+    "video_segments_normalize_fps",
+    "video_segments_bulk_mutation",
+    "video_segment_detail",
+    "video_segments_stats",
+    "video_segment_validate",
+    "video_segments_validate_bulk",
+    "video_segments_validation_status",
+    "import_prediction_segments_to_manual",
+    "ensure_segment_annotations_bulk",
+    "ensure_segment_annotations_for_video",
+    "ensure_prediction_segment_annotations_bulk",
+    "ensure_prediction_segment_annotations_for_video",
+    "label_list",
+    "export_annotated",
 ]

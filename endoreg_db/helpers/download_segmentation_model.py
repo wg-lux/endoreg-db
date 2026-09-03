@@ -1,10 +1,27 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol, cast
+
 import huggingface_hub
-from typing import Optional
+
+
+class _HfHubDownload(Protocol):
+    def __call__(
+        self,
+        repo_id: str,
+        filename: str,
+        *,
+        cache_dir: str | Path | None = None,
+        force_download: bool = False,
+        resume_download: bool = True,
+    ) -> str: ...
+
 
 def download_segmentation_model(
     repo_id: str = "wg-lux/colo_segmentation_RegNetX800MF_base",
     filename: str = "model.safetensors",
-    cache_dir: Optional[str] = None
+    cache_dir: str | Path | None = None,
 ) -> str:
     """
     Downloads a segmentation model from Hugging Face and caches it locally.
@@ -16,12 +33,13 @@ def download_segmentation_model(
 
     Returns:
         str: The local path to the downloaded model.
-        
+
     Example:
         >>> model_path = download_segmentation_model()
         >>> # Downloads from wg-lux/colo_segmentation_RegNetX800MF_base
     """
-    local_path = huggingface_hub.hf_hub_download(
+    hf_hub_download = cast(_HfHubDownload, getattr(huggingface_hub, "hf_hub_download"))
+    local_path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         cache_dir=cache_dir,

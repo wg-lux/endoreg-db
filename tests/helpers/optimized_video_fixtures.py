@@ -9,28 +9,27 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.conf import settings
-
-from django.core.files.base import ContentFile
+from django.core.files.base import ContentFile, File
 from django.db import models
+from collections.abc import Iterable
 
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models import (
-    VideoFile,
     Center,
     EndoscopyProcessor,
     ModelMeta,
-    VideoMeta,
     SensitiveMeta,
+    VideoFile,
+    VideoMeta,
 )
-from endoreg_db.models.state.video import VideoState
 
 from .default_objects import (
-    DEFAULT_CENTER_NAME,
-    DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
     get_default_center,
     get_default_processor,
 )
@@ -40,8 +39,18 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 _cache_namespace: Optional["CacheNamespace"] = None
+MAX_MOCK_VIDEO_FRAMES = 2
 _fallback_cache: Dict[str, Any] = {}
 _CACHE_SENTINEL = object()
+
+
+class _BytesFieldFile(Protocol):
+    def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
+
+
+class _SegmentVideoLike(Protocol):
+    center: Center
+    processor: EndoscopyProcessor | None
 
 
 def configure_cache(namespace: Optional["CacheNamespace"]) -> None:
@@ -89,20 +98,24 @@ def _cache_pop(key: str) -> None:
 
 def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
+    raw_file_name = getattr(video.raw_file, "name", None) or ""
+    video_like = cast(_SegmentVideoLike, video)
+    center = video_like.center
+    processor = video_like.processor
 
     return {
-        "uuid": str(video.uuid),
+        "pk": video.pk,
         "video_hash": video.video_hash,
         "original_file_name": video.original_file_name or "segment_stub.mp4",
-    "raw_file_name": os.path.basename(video.raw_file.name) if video.raw_file else "",
-        "fps": float(video.fps or 25.0),
+        "raw_file_name": os.path.basename(raw_file_name),
+        "fps": float(video.fps or DEFAULT_VIDEO_FPS),
         "frame_count": int(video.frame_count or 0),
         "duration": float(video.duration or 0.0),
         "width": int(video.width or 0),
         "height": int(video.height or 0),
         "frame_dir": video.frame_dir or "",
-        "center_name": getattr(video.center, "name", DEFAULT_CENTER_NAME),
-        "processor_name": getattr(video.processor, "name", DEFAULT_ENDOSCOPY_PROCESSOR_NAME),
+        "center_name": center.name,
+        "processor_name": processor.name if processor is not None else "",
     }
 
 
@@ -117,10 +130,9 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
             from tests.helpers.data_loader import load_center_data
 
             load_center_data()
-            center = get_default_center()
-
+        center = get_default_center()
     processor_name = payload.get("processor_name")
-    processor = None
+    processor: EndoscopyProcessor | None = None
     if processor_name:
         processor = EndoscopyProcessor.objects.filter(name=processor_name).first()
     if processor is None:
@@ -132,17 +144,23 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
             load_endoscope_data()
             processor = get_default_processor()
 
-    existing = VideoFile.objects.filter(uuid=payload["uuid"]).first()
+    existing = VideoFile.objects.filter(video_hash=payload["video_hash"]).first()
     if existing is not None:
         if not existing.has_raw:
-            raw_name = payload.get("raw_file_name") or f"segment_stub_{existing.uuid.hex}.mp4"
-            existing.raw_file.save(raw_name, ContentFile(b""), save=True)
+            raw_name = (
+                payload.get("raw_file_name")
+                or f"segment_stub_{str(existing.video_hash).replace('/', '_')}.mp4"
+            )
+            cast(_BytesFieldFile, existing.raw_file).save(
+                raw_name, cast(File[bytes], ContentFile(b"")), save=True
+            )
         return existing
 
-    raw_file_name = payload.get("raw_file_name") or f"segment_stub_{uuid.uuid4().hex}.mp4"
+    raw_file_name = (
+        payload.get("raw_file_name") or f"segment_stub_{uuid.uuid4().hex}.mp4"
+    )
 
     return VideoFile.objects.create(
-        uuid=payload["uuid"],
         video_hash=payload["video_hash"],
         center=center,
         processor=processor,
@@ -175,18 +193,20 @@ def _create_segment_stub_video() -> VideoFile:
 
         load_endoscope_data()
         processor = get_default_processor()
+
+    from endoreg_db.utils.paths import data_paths
+
     suffix = uuid.uuid4().hex
-    frame_dir = f"tests/storage/frames/segment_stub_{suffix}"
+    frame_dir = (data_paths["frame"] / f"segment_stub_{suffix}").as_posix()
     raw_file_name = f"segment_stub_{suffix}.mp4"
 
     return VideoFile.objects.create(
-        uuid=uuid.uuid4(),
         video_hash=f"segment-stub-{suffix}",
         center=center,
         processor=processor,
         original_file_name=f"segment_stub_{suffix}.mp4",
-        fps=25.0,
-        frame_count=900,
+        fps=DEFAULT_VIDEO_FPS,
+        frame_count=int(36.0 * DEFAULT_VIDEO_FPS),
         duration=36.0,
         width=1920,
         height=1080,
@@ -208,7 +228,7 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 
     payload = _cache_get(payload_key)
     if isinstance(payload, dict):
-        video = _hydrate_segment_video(payload)
+        video = _hydrate_segment_video(cast(Dict[str, Any], payload))
         _cache_set(cache_key, video.pk)
         return video
 
@@ -223,7 +243,8 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 
 class MockVideoState:
     """Mock VideoState for testing."""
-    def __init__(self):
+
+    def __init__(self) -> None:
         self.frames_extracted = False
         self.frames_initialized = False
         self.frame_count = None
@@ -238,37 +259,43 @@ class MockVideoState:
         self.segment_annotations_created = False
         self.segment_annotations_validated = False
         self.was_created = True
-        
-    def refresh_from_db(self):
+
+    def refresh_from_db(self) -> None:
         """Mock refresh from database - does nothing for mock objects."""
         pass
-        
-    def mark_frames_extracted(self, save=True):
+
+    def mark_frames_extracted(self, save: bool = True) -> None:
         """Mark frames as extracted."""
         self.frames_extracted = True
-        
-    def mark_anonymized(self, save=True):
+
+    def mark_anonymized(self, save: bool = True) -> None:
         """Mark video as anonymized."""
         self.anonymized = True
-        
-    def mark_initial_prediction_completed(self, save=True):
+
+    def mark_initial_prediction_completed(self, save: bool = True) -> None:
         """Mark initial prediction as completed."""
         self.initial_prediction_completed = True
-        
-    def mark_video_meta_extracted(self, save=True):
+
+    def mark_video_meta_extracted(self, save: bool = True) -> None:
         """Mark video metadata as extracted."""
         self.video_meta_extracted = True
 
 
-def get_cached_or_create(cache_key: str, factory_func, *args, **kwargs):
+def get_cached_or_create(
+    cache_key: str,
+    factory_func: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
     """Return cached values, refreshing stale ORM objects when needed."""
 
     cached = _cache_get(cache_key)
 
     if isinstance(cached, models.Model):
         pk = getattr(cached, "pk", None)
-        if pk is not None and cached.__class__.objects.filter(pk=pk).exists():
-            return cached.__class__.objects.get(pk=pk)
+        manager = cast(Any, cached.__class__).objects
+        if pk is not None and manager.filter(pk=pk).exists():
+            return manager.get(pk=pk)
         _cache_pop(cache_key)
         cached = None
 
@@ -290,17 +317,21 @@ def clear_cache() -> None:
     else:
         _fallback_cache.clear()
 
+
 class MockVideoFile:
     """
     Lightweight mock VideoFile that provides the interface without file operations.
     """
-    
-    def __init__(self, center_name: str = "university_hospital_wuerzburg", 
-                 processor_name: str = "olympus_cv_1500"):
+
+    def __init__(
+        self,
+        center_name: str = "university_hospital_wuerzburg",
+        processor_name: str = "olympus_cv_1500",
+    ):
         # Set a mock ID for database queries
         self.id = 999999  # Use a high number to avoid conflicts with real data
         self.pk = self.id
-        self.uuid = uuid.uuid4()
+        mock_uuid = uuid.uuid4()
         # Try to get real objects, but create mock ones if they don't exist
         try:
             self.center = Center.objects.get(name=center_name)
@@ -308,35 +339,35 @@ class MockVideoFile:
             # Create a mock center object
             self.center = MagicMock()
             self.center.name = center_name
-            
+
         try:
             self.processor = EndoscopyProcessor.objects.get(name=processor_name)
         except EndoscopyProcessor.DoesNotExist:
             # Create a mock processor object
             self.processor = MagicMock()
             self.processor.name = processor_name
-            
-        self.raw_file = f"mock_video_{self.uuid}.mp4"
-        self.video_hash = f"mock_hash_{str(self.uuid)[:8]}"
+
+        self.raw_file = f"mock_video_{mock_uuid}.mp4"
+        self.video_hash = f"mock_hash_{str(mock_uuid)[:8]}"
         self._video_meta = None
         self._sensitive_meta = None
         self.is_processed = False
-        
+
         # Add state attribute with MockVideoState
         self.state = MockVideoState()
-        
+
     @property
     def video_meta(self):
         """Mock video metadata."""
         if self._video_meta is None:
             self._video_meta = MagicMock(spec=VideoMeta)
             self._video_meta.duration = 120.0
-            self._video_meta.fps = 25.0
+            self._video_meta.fps = DEFAULT_VIDEO_FPS
             self._video_meta.width = 1920
             self._video_meta.height = 1080
         return self._video_meta
-    
-    @property 
+
+    @property
     def sensitive_meta(self):
         """Mock sensitive metadata."""
         if self._sensitive_meta is None:
@@ -349,12 +380,22 @@ class MockVideoFile:
             mock_state.refresh_from_db = MagicMock()  # No-op for mock
             self._sensitive_meta.state = mock_state
         return self._sensitive_meta
-    
-    def pipe_1(self, model_name=None, model=None, model_meta_version=None, 
-               delete_frames_after=False, ocr_frame_fraction=0.001, ocr_cap=10,
-               smooth_window_size_s=1, binarize_threshold=0.5, test_run=False, 
-               n_test_frames=10, **kwargs):
-        """Mock pipe 1 processing with full parameter compatibility."""
+
+    def materialize_prediction_segments(
+        self,
+        model_name: str | None = None,
+        model: object | None = None,
+        model_meta_version: object | None = None,
+        delete_frames_after: bool = False,
+        ocr_frame_fraction: float = 0.001,
+        ocr_cap: int = 10,
+        smooth_window_size_s: int = 1,
+        binarize_threshold: float = 0.5,
+        test_run: bool = False,
+        n_test_frames: int = MAX_MOCK_VIDEO_FRAMES,
+        **kwargs: object,
+    ) -> bool:
+        """Mock temporal prediction segment materialization."""
         self.is_processed = True
         # Update state to match successful processing
         if delete_frames_after:
@@ -365,175 +406,212 @@ class MockVideoFile:
             # If frames are kept, they remain extracted
             self.state.frames_extracted = True
             self.state.frames_initialized = True
-            
+
         self.state.initial_prediction_completed = True
         self.state.lvs_created = True
         self.state.video_meta_extracted = True
         self.state.text_meta_extracted = True  # OCR metadata extracted
         return True
-    
-    def pipe_2(self):
-        """Mock pipe 2 processing."""
+
+    def anonymize(self, delete_original_raw: bool = True) -> bool:
+        """Mock video anonymization."""
         # Update state to match successful anonymization
-        self.state.anonymized = True
+        self.state.mark_anonymized()
         self.state.sensitive_meta_processed = True
+        if delete_original_raw:
+            self.raw_file = ""
         return True
-        
-    def test_after_pipe_1(self):
-        """Mock test_after_pipe_1 processing - simulates validation after pipe_1."""
-        # This method simulates human validation or automated testing after pipe_1
-        # For mock objects, we just return True to indicate successful validation
+
+    def simulate_manual_validation(self) -> bool:
+        """Mock manual validation after prediction segment materialization."""
         return True
-    
-    def refresh_from_db(self):
+
+    def refresh_from_db(self) -> None:
         """Mock refresh from database - no-op for mock objects."""
         pass
-    
-    def delete_with_file(self):
+
+    def delete_with_file(self) -> None:
         """Mock file deletion."""
         pass
-    
-    def delete(self):
+
+    def delete(self) -> None:
         """Mock database deletion."""
         pass
+
 
 class OptimizedVideoTestCase:
     """
     Base test case with optimized video file handling.
     """
-    
+
     @classmethod
     def setUpClass(cls):
         """Set up class-level fixtures."""
         # Load base data once per test class
         from tests.helpers.data_loader import load_base_db_data
+
         load_base_db_data()
-    
+
     def get_mock_video_file(self) -> MockVideoFile:
         """Get a lightweight mock video file."""
         return MockVideoFile()
-    
+
     def get_cached_video_file(self, cache_key: str = "default_video"):
         """
         Get a cached video file or create one if expensive tests are enabled.
         Returns either a MockVideoFile or real VideoFile depending on settings.
         """
-        skip_expensive = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
-        
+        skip_expensive = (
+            os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
+        )
+
         if skip_expensive:
             return self.get_mock_video_file()
-        
-        return get_cached_or_create(
-            cache_key, 
-            self._create_real_video_file
-        )
-    
+
+        return get_cached_or_create(cache_key, self._create_real_video_file)
+
     def _create_real_video_file(self) -> VideoFile:
         """Create a real video file (expensive operation)."""
         from tests.helpers.default_objects import get_default_video_file
+
         return get_default_video_file()
+
 
 # ==========================================
 # Mock Implementations for Expensive Operations
 # ==========================================
 
+
 class MockFFmpegOperations:
     """Mock expensive FFmpeg operations."""
-    
+
     @staticmethod
-    def extract_frames(video_path: str, output_dir: str, **kwargs):
+    def extract_frames(video_path: str, output_dir: str, **kwargs: object) -> bool:
         """Mock frame extraction."""
         # Create mock frame files
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Create a few mock frame files
-        for i in range(1, 6):
+
+        # Keep mocked frame extraction minimal to speed up test execution.
+        for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1):
             mock_frame = output_path / f"frame_{i:06d}.jpg"
             mock_frame.touch()
-        
+
         return True
-    
+
     @staticmethod
-    def anonymize_video(input_path: str, output_path: str, **kwargs):
+    def anonymize_video(
+        video_path: str,
+        output_path: str,
+        **kwargs: object,
+    ) -> bool:
         """Mock video anonymization."""
-        # Create mock anonymized video
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).touch()
-        return output_path
+        _ = video_path
+        _ = kwargs
+        output = Path(output_path)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.touch()
+        return True
+
 
 class MockAIInference:
     """Mock expensive AI inference operations."""
-    
+
     @staticmethod
-    def predict_frames(frames_dir: str, model: ModelMeta, **kwargs):
+    def predict_frames(
+        frames_dir: str,
+        model: ModelMeta,
+        **kwargs: object,
+    ) -> dict[str, object]:
         """Mock AI model inference on frames."""
         return {
             "predictions": [
-                {"frame": f"frame_{i:06d}.jpg", "label": "mock_prediction", "confidence": 0.95}
-                for i in range(1, 6)
+                {
+                    "frame": f"frame_{i:06d}.jpg",
+                    "label": "mock_prediction",
+                    "confidence": 0.95,
+                }
+                for i in range(1, MAX_MOCK_VIDEO_FRAMES + 1)
             ],
-            "processing_time": 0.1  # Mock fast processing
+            "processing_time": 0.1,  # Mock fast processing
         }
+
 
 # ==========================================
 # Pytest Fixtures for Optimized Testing
 # ==========================================
 
+
 @pytest.fixture
 def mock_ffmpeg():
     """Mock FFmpeg operations to avoid expensive video processing."""
-    with patch('endoreg_db.utils.video.ffmpeg_wrapper.extract_frames', MockFFmpegOperations.extract_frames), \
-         patch('endoreg_db.utils.video.ffmpeg_wrapper.anonymize_video', MockFFmpegOperations.anonymize_video):
+    with (
+        patch(
+            "endoreg_db.utils.ffmpeg_wrapper.extract_frames",
+            MockFFmpegOperations.extract_frames,
+        ),
+        patch(
+            "endoreg_db.utils.ffmpeg_wrapper.anonymize_video",
+            MockFFmpegOperations.anonymize_video,
+        ),
+    ):
         yield
+
 
 @pytest.fixture
 def mock_ai_inference():
     """Mock AI inference operations to avoid expensive model loading."""
-    with patch('endoreg_db.models.media.video.video_file.VideoFile.pipe_1') as mock_pipe1:
-        mock_pipe1.return_value = True
-        yield mock_pipe1
+    with patch(
+        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference"
+    ) as mock_temporal_inference:
+        mock_temporal_inference.return_value = True
+        yield mock_temporal_inference
+
 
 @pytest.fixture
-def lightweight_video_file(base_db_data):
+def lightweight_video_file(base_db_data: object) -> MockVideoFile:
     """Provide a lightweight video file for testing."""
     return MockVideoFile()
 
+
 @pytest.fixture
-def optimized_video_file(base_db_data):
+def optimized_video_file(base_db_data: object) -> MockVideoFile | VideoFile:
     """
     Provide an optimized video file - real if needed, mock if expensive tests are skipped.
     """
     skip_expensive = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
-    
+
     if skip_expensive:
         return MockVideoFile()
     else:
         # Use cached real video file
         return get_cached_or_create(
-            "optimized_video_file",
-            _create_real_video_file_for_fixture
+            "optimized_video_file", _create_real_video_file_for_fixture
         )
 
-def _create_real_video_file_for_fixture():
+
+def _create_real_video_file_for_fixture() -> VideoFile:
     """Helper function to create real video file for fixture."""
     from tests.helpers.default_objects import get_default_video_file
+
     return get_default_video_file()
+
 
 # ==========================================
 # Database Query Optimization Helpers
 # ==========================================
+
 
 def optimize_database_for_tests():
     """
     Apply database optimizations for test performance.
     """
     from django.db import connection
-    
+
     with connection.cursor() as cursor:
         try:
             # SQLite-specific optimizations
-            if 'sqlite' in settings.DATABASES['default']['ENGINE']:
+            if "sqlite" in settings.DATABASES["default"]["ENGINE"]:
                 cursor.execute("PRAGMA journal_mode=WAL;")
                 cursor.execute("PRAGMA synchronous=NORMAL;")
                 cursor.execute("PRAGMA cache_size=10000;")
@@ -542,53 +620,72 @@ def optimize_database_for_tests():
         except Exception as e:
             print(f"Database optimization warning: {e}")
 
-def batch_create_objects(model_class, objects_data, batch_size=100):
+
+def batch_create_objects(
+    model_class: type[models.Model],
+    objects_data: Iterable[Dict[str, Any]],
+    batch_size: int = 100,
+) -> list[models.Model]:
     """
     Efficiently create multiple objects using batch operations.
     """
     objects = [model_class(**data) for data in objects_data]
-    return model_class.objects.bulk_create(objects, batch_size=batch_size)
+    manager = cast(Any, model_class).objects
+    return cast(list[models.Model], manager.bulk_create(objects, batch_size=batch_size))
+
 
 # ==========================================
 # Performance Measurement Utilities
 # ==========================================
 
+
 class PerformanceTimer:
     """Simple timer for measuring test performance."""
-    
-    def __init__(self, name: str = "operation"):
+
+    def __init__(self, name: str = "operation") -> None:
         self.name = name
         self.start_time = None
         self.end_time = None
-    
-    def __enter__(self):
+
+    def __enter__(self) -> "PerformanceTimer":
         import time
+
         self.start_time = time.time()
         return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         import time
+
         self.end_time = time.time()
         if self.start_time is not None:
             duration = self.end_time - self.start_time
             print(f"⏱️  {self.name} took {duration:.2f} seconds")
 
-def measure_test_performance(func):
+
+def measure_test_performance(func: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to measure test performance."""
-    def wrapper(*args, **kwargs):
-        with PerformanceTimer(func.__name__):
+
+    def wrapper(*args: object, **kwargs: object) -> Any:
+        with PerformanceTimer(getattr(func, "__name__", "operation")):
             return func(*args, **kwargs)
+
     return wrapper
+
 
 # ==========================================
 # Cleanup Utilities
 # ==========================================
 
-def cleanup_test_files(directory: str):
+
+def cleanup_test_files(directory: str) -> None:
     """Clean up test files and directories."""
     import shutil
-    
+
     dir_path = Path(directory)
     if dir_path.exists():
         shutil.rmtree(dir_path, ignore_errors=True)
-

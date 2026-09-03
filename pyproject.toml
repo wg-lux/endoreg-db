@@ -1,90 +1,97 @@
+[build-system]
+build-backend = "maturin"
+requires = ["maturin>=1.7,<2"]
+
 [project]
 authors = [
   {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild"},
+  {name = "Max Hild", email = "hild_m@ukw.de"},
   {name = "Hamza Zahid"},
-  {name = "Peter Kowalczyk"},
 ]
 description = "EndoReg Db Django App"
 maintainers = [
   {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild"},
+  {name = "Max Hild", email = "hild_m@ukw.de"},
   {name = "Hamza Zahid"},
-  {name = "Peter Kowalczyk"},
 ]
-name = "endoreg-db"
+name = "endoreg_db"
 readme = "README.md"
-version = "0.8.6.6"
+version = "1.1.7"
+requires-python = ">=3.12,<3.13"
+license = {file = "LICENSE"}
 
 classifiers = [
   "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Topic :: Scientific/Engineering :: Medical Science Apps.",
   "Programming Language :: Python :: 3.12",
 ]
 
 dependencies = [
-  "agl-report-reader>=0.4.0",
-  "django-bootstrap5>=25.2",
-  "django-cors-headers>=4.8.0",
-  "django-extensions>=3.2.3",
-  "django>=5.2.4",
-  "djangorestframework>=3.16.1",
-  "dotenv>=0.9.9",
-  "faker>=37.6.0",
-  "icecream>=2.1.4",
-  "numpy>=2.2.3",
-  "opencv-python>=4.11.0.86",
-  "pandas>=2.2.3",
-  "pillow>=11.3.0",
-  "pydantic>=2.10.6",
-  "pytesseract>=0.3.13",
-  "pytest>=8.3.5",
-  "python-ffmpeg>=2.0.12",
-  "pytorch-lightning>=2.5.1",
-  "pyyaml>=6.0.2",
-  "regex>=2024.11.6",
-  "scikit-learn>=1.5.2",
-  "scipy>=1.16.1",
-  "sphinx-rtd-theme>=3.0.2",
-  "sphinx>=8.2.3",
-  "tesseract>=0.1.3",
-  "llvmlite>=0.44.0",
-  "tqdm>=4.67.0",
-  "urllib3>=2.2.3",
-  "pytest-django>=4.11.1",
-  "pytest-cov>=6.1.1",
-  "pytest-env>=1.1.5",
-  "openpyxl>=3.1.5",
-  "pyjwt>=2.10.1",
-  "cryptography>=44.0.2",
-  "mypy>=1.16.0",
-  "whitenoise>=6.10.0",
-  "requests>=2.32.3",
-  "gunicorn>=23.0.0",
-  "django-filter>=25.1",
-  "optimum==1.26.1",
-  "torch==2.5.1",
-  "torchaudio==2.5.1",
-  "torchvision==0.20.1",
-  "transformers==4.44.2",
-  "librosa==0.11.0",
-  "soundfile==0.12.1",
-  "vector-quantize-pytorch==1.18.5",
-  "vocos==0.1.0",
-  "decord==0.6.0",
-  "moviepy==2.2.1",
-  "safetensors>=0.4.5",
-  "celery>=5.5.3",
-  "python-magic>=0.4.27",
-  "django-modeltranslation>=0.19.16",
-  "pip>=25.2",
-  "lx-anonymizer[ocr,llm]>=0.8.8",
-  "ruff>=0.14.0",
-  "build>=1.3.0",
-  "flake8>=7.3.0",
-  "twine>=6.2.0",
+    "django-bootstrap5>=25.2",
+    "django-cors-headers>=4.8.0",
+    "django-extensions>=3.2.3",
+    "django>=5.2.4",
+    "djangorestframework>=3.16.1",
+    "dotenv>=0.9.9",
+    "faker>=37.6.0",
+    "icecream>=2.1.4",
+    "numpy>=2.2.3",
+    "opencv-python-headless>=4.11.0.86",
+    "pandas>=2.2.3",
+    "pillow>=11.3.0",
+    "pydantic>=2.10.6",
+    "pytesseract>=0.3.13",
+    "python-ffmpeg>=2.0.12",
+    "pytorch-lightning>=2.5.1",
+    "pyyaml>=6.0.2",
+    "regex>=2024.11.6",
+    "scikit-learn>=1.5.2",
+    "scipy>=1.16.1",
+    "sphinx-rtd-theme>=3.0.2",
+    "sphinx>=8.2.3",
+    "tesseract>=0.1.3",
+    "llvmlite>=0.44.0",
+    "tqdm>=4.67.0",
+    "urllib3>=2.2.3",
+    "openpyxl>=3.1.5",
+    "pyjwt>=2.10.1",
+    "cryptography>=44.0.2",
+    "whitenoise>=6.10.0",
+    "requests>=2.32.3",
+    "gunicorn>=23.0.0",
+    "django-filter>=25.1",
+    "django-ninja==1.5.3",
+    "optimum==1.26.1",
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+    "torchvision==0.20.1",
+    "transformers==4.45.0",
+    "librosa==0.11.0",
+    "soundfile==0.12.1",
+    "vector-quantize-pytorch==1.18.5",
+    "vocos==0.1.0",
+    "decord==0.6.0",
+    "moviepy==2.2.1",
+    "safetensors>=0.4.5",
+    "celery[redis]>=5.5.3",
+    "python-magic>=0.4.27",
+    "python-jose[cryptography]>=3.5.0",
+    "mozilla-django-oidc>=4.0.1",
+    "lx-anonymizer[gpu]==0.9.4.1",
+    "googlemaps>=4.10.0",
+    "numba>=0.63.1",
+    "ziglang>=0.15.2",
+    "twine>=6.2.0",
+    "ffprobe>=0.5",
+    "kombu>=5.6.1",
+    "report-pdf-renderer>=0.1.0",
+    "lx-ai-core[torch]==0.0.1",
+    "celery-types>=0.26.0",
+    "lightning-fabric>=2.6.5",
+    "lx-dtypes>=0.2.35",
+    "snakemake==9.23.1",
 ]
-requires-python = ">=3.12,<3.13"
 
 [project.urls]
 Homepage = "https://info.coloreg.de"
@@ -92,45 +99,125 @@ Repository = "https://github.com/wg-lux/endoreg-db"
 
 [project.optional-dependencies]
 dev = [
-  # Add development tools here, e.g.:
-  # "pytest",
-  # "ruff",
-  # "black",
+  "black",
+  "build>=1.3.0",
+  "flake8>=7.3.0",
+  "mypy>=1.16.0",
+  "pip>=25.2",
+  "pre-commit>=4.5.1",
+  "pytest>=8.3.5",
+  "pytest-cov>=6.1.1",
+  "pytest-django>=4.11.1",
+  "pytest-env>=1.1.5",
+  "pytest-xdist>=3.6.1",
+  "ruff>=0.14.0",
+  "django-stubs>=5.2.8",
+  "djangorestframework-stubs>=3.16.6",
+  "types-django-filter>=25.2.0.20251010",
+  "types-pyyaml>=6.0.12.20250915",
+  "types-requests>=2.32.4.20250913",
+  "types-tqdm>=4.67.0.20250809",
+  "twine>=6.2.0",
+  "pyright>=1.1.411",
+  "pylint>=4.0.5",  
+  "vulture>=2.16",
+  "radon>=6.0.1",
+]
+docs = [
+  "linkify-it-py>=2.0.3",
+  "myst-parser>=4.0.1",
+  "sphinx-autodoc-typehints>=3.5.2",
+  "sphinx-copybutton>=0.5.2",
+  "sphinx>=8.2.3,<9.0",
+  "furo>=2025.9.25",
 ]
 
-[build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
+[dependency-groups]
+# Hardware explicitly controlled via uv groups
+cpu-runtime = [
+    "onnxruntime>=1.25.1"
+]
+gpu-runtime = [
+    "onnxruntime-gpu>=1.26.0"
+]
+
 
 [tool.setuptools]
-packages = ["endoreg_db"]
+packages = ["endoreg_db", "workflow", "workflow.scripts"]
 
-[tool.hatch.build]
+[tool.maturin]
+manifest-path = "rust/endoreg_rust_backend/Cargo.toml"
+module-name = "endoreg_db.endoreg_rust_backend"
+bindings = "pyo3"
+python-source = "."
+python-packages = ["endoreg_db", "workflow"]
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "README.md", format = "sdist" },
+    "endoreg_db/endoreg_rust_backend.pyi",
+    "rust/endoreg_rust_backend/Cargo.toml",
+    "rust/endoreg_rust_backend/src/**/*",
+    "workflow/Snakefile",
+    "workflow/rules/**/*.smk",
+    "workflow/profiles/**/*.yaml",
+]
 exclude = [
-  "tests",
-  "tests/**",
-  "docs/production",
-  "docs/production/**",
-  "htmlcov",
-  "htmlcov/**",
-  "storage",
-  "storage/**",
+  ".git", ".git/**", ".gitmodules", "tests", "tests/**",
+  "htmlcov", "htmlcov/**", "lx-ai-core", "lx-ai-core/**",
+  "lx-data-models", "lx-data-models/**", "storage", "storage/**",
+  "tools", "tools/**", "workflow/**/__pycache__", "workflow/**/*.pyc"
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["endoreg_db"]
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+namespace_packages = true
+explicit_package_bases = true
+follow_imports = "silent"
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_untyped_globals = false
+check_untyped_defs = false
+allow_redefinition = true
+warn_return_any = false
+warn_unused_ignores = true
+show_error_codes = true
 
-[tool.hatch.build.targets.sdist]
-exclude = [
-  "tests",
-  "tests/**",
-  "docs/production",
-  "docs/production/**",
-  "htmlcov",
-  "htmlcov/**",
-  "storage",
-  "storage/**",
+[tool.django-stubs]
+django_settings_module = "endoreg_db.config.settings.test"
+strict_settings = true
+strict_model_abstract_attrs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "celery", "celery.*", "dateparser", "dateparser.*",
+  "gender_guesser", "gender_guesser.*", "lx_anonymizer", "lx_anonymizer.*",
+  "lx_dtypes", "lx_dtypes.*", "mozilla_django_oidc", "mozilla_django_oidc.*",
+  "pytesseract", "sklearn", "sklearn.*", "torchvision", "torchvision.*",
+  "kombu", "kombu.*"
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["endoreg_db.models.*"]
+disable_error_code = [
+  "var-annotated", "no-redef", "assignment", "name-defined", "attr-defined"
 ]
 
-# [tool.uv.sources]
-# lx-anonymizer = { workspace = true }
+[tool.pyprojectx.aliases]
+test-features = "feature-tracking/tracker.py"
+
+[tool.uv.extra-build-dependencies]
+"antlr4-python3-runtime" = ["setuptools"]
+"bibtexparser" = ["setuptools"]
+"encodec" = ["setuptools"]
+"googlemaps" = ["setuptools"]
+"imutils" = ["setuptools"]
+"tesseract" = ["setuptools"]
+
+[tool.uv.sources]
+endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
+# lx-anonymizer = { path = "../lx-anonymizer", editable = true }
+# Optional sibling checkout for local lx-ai-core development.
+# lx-ai-core = { path = "../lx-ai-core", editable = true }
+# lx-dtypes = { path = "lx-data-models", editable = true }

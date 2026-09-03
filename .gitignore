@@ -1,15 +1,28 @@
 result
 result/
 *result
+results/
+.snakemake/
 .ruff_cache/
 .devenv
+/tests/services/test_media/*
 untracked_notes.md
+data_integrity_security_report.md
+security_best_practices_report.md
 tests/sensitive/
+tests/assets/*.lock
 erc_data/
 /data/
 test_reports/*
 staticfiles/
 .ansible/
+.lx-data-models/
+/lx-data-models/*
+.lx-report-generator/
+/lx-report-generator/*
+.lx-terminology-editor/
+/lx-terminology-editor/*
+*.safetensors
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -19,12 +32,12 @@ _build
 .direnv
 
 *.sqlite3
-
+result-app
 .devenv.flake.nix
+standardized_dataset/ledger/*
+standardized_dataset/knowledge_base/*
 
-###### Do not Remove ###### # Deprecated?
-# Protects temporary files from being comitted
-endoreg_client_manager/data/* 
+
 
 # C extensions
 *.so
@@ -73,7 +86,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
-
+profile/
 # Translations
 *.mo
 *.pot
@@ -93,6 +106,8 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/build/
+docs/production/
 
 # PyBuilder
 .pybuilder/
@@ -145,6 +160,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+conf/db_pwd
 env/
 venv/
 ENV/
@@ -182,3 +198,25 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 storage/*
+
+
+#temporary
+.env.sandbox
+.env.sandbox.example
+.vscode/extensions.json
+batch_inference_top3.py
+endoreg_db/data/model_training/
+lx-anonymizer/
+lx-ai-core/
+lx-report-generator/
+lx-terminology-editor/
+tools/report_pdf_renderer_rust/
+*.safetensors
+
+*.bak
+
+# Runtime-only feature coordination leases
+/feature-tracking/.locks/
+/feature-tracking/.messages/
+
+*callgrind.out.*

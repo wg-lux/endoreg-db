@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """Module for annotation models"""
 
+from .frame_box import FrameBoxAnnotation
 from .image_classification import ImageClassificationAnnotation
 
 from .video_segmentation_annotation import (
@@ -7,6 +10,7 @@ from .video_segmentation_annotation import (
 )
 
 __all__ = [
+    "FrameBoxAnnotation",
     "ImageClassificationAnnotation",
     "VideoSegmentationAnnotation",
 ]

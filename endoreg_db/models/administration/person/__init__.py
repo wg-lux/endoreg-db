@@ -1,6 +1,8 @@
+from __future__ import annotations
 from .person import Person
 from .patient import (
     Patient,
+    PatientExternalID,
 )
 from .examiner import Examiner
 from .user.portal_user_information import PortalUserInfo
@@ -13,6 +15,7 @@ from .employee import Employee, EmployeeType, EmployeeQualification
 __all__ = [
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",

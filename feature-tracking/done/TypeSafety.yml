@@ -1,0 +1,263 @@
+schema_version: '1.0'
+id: type_safety
+name: Typ- und Modellgrenzen
+description: Strikte, wartbare Pydantic-, Django- und Videoverträge ohne versteckte ORM- oder Mehrfachvererbungsrisiken.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T09:11:30.433709Z'
+    note: Definition of Done vollständig verifiziert; Typ- und Modellgrenzen werden aus dem aktiven Tracking
+      abgeschlossen.
+source_documents:
+- path: docs/pydantic_django_hardening_plan.md
+  disposition: migrated
+  note: Hardening-Phasen und Feldownership werden hier bewertet.
+- path: docs/video_typing_integration_plan.md
+  disposition: migrated
+  note: Video-, Segment- und Sensitive-Meta-Typisierung wurde in diese DoD überführt.
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Aktuelle Abhängigkeiten und bevorzugte Refactor-Reihenfolge.
+definition_of_done:
+- id: boundary_rules
+  category: requirements
+  title: Ownership und Regeln für Django-, Pydantic- und lx_dtypes-Felder sind definiert
+  acceptance:
+  - Externe Daten werden einmal am Rand validiert und intern in einer typisierten Form geführt.
+  - Listenfelder, Links, optionale Felder und Mehrfachvererbung haben dokumentierte Regeln.
+  - Feldänderungen enthalten eine Cross-Layer-Checkliste.
+  required: true
+  verification:
+    kind: manual
+    instructions: Regeln gegen aktuelle Modelle, Serializer, Schemas und Services prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md#typed-boundary-rules
+    note: Ownership matrix, normalization rule, list/optional/MRO rules, strict-boundary policy, query
+      semantics, and cross-layer field checklist reviewed against current schemas and services.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:17:44.573591Z'
+- id: explicit_query_behavior
+  category: functionality
+  title: Typisierte Modelle lösen keine überraschenden oder unbeschränkten ORM-Abfragen aus
+  acceptance:
+  - .links und verwandte Ableitungen haben dokumentierte Query-Semantik.
+  - Prefetch-Pläne decken tatsächliche Traversierungspfade ab.
+  - Boundary-Verträge bleiben von persistenten Modellen getrennt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_patient_examination_links.py
+    - tests/app/test_model_import_boundaries.py
+    - tests/utils/test_model_links.py
+    - tests/models/test_patient_examination_knowledge_base_identity.py
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_patient_examination_links.py
+        tests/app/test_model_import_boundaries.py tests/utils/test_model_links.py tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/api/test_dtypes_record_persistence.py -q (24 passed)
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md#typed-boundary-rules
+    note: PatientExamination no longer owns a links property or imports the service layer. The canonical
+      service loader performs six bounded queries for the complete traversed graph; service-owned aggregation
+      performs zero queries and fails loudly for incomplete prefetches.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T13:16:32.044589Z'
+- id: inheritance_safety
+  category: maintainability
+  title: Mehrfachvererbung und ListField-Serialisierung sind deterministisch
+  acceptance:
+  - Automatische Prüfung erkennt doppelte Pydantic-Felder in Multi-Parent-Modellen.
+  - Redundante Vererbung ist entfernt und Mixins sind konsistent MRO-aware.
+  - Semantische Listen und serialisierte Stringfelder sind eindeutig unterschieden.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - -o
+      - addopts=
+      - --ds=lx_dtypes.django_settings_ci_test
+      - lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py
+      - lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py
+      - lx_dtypes/models/contracts/tests/test_dicom_export.py
+      - -q
+      working_directory: /home/admin/lx-data-models
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: cd /home/admin/lx-data-models && devenv shell -- .devenv/state/venv/bin/pytest -o addopts=''
+        --ds=lx_dtypes.django_settings_ci_test lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py
+        lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py lx_dtypes/models/contracts/tests/test_dicom_export.py
+        -q (18 passed)
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md#typed-boundary-rules
+    note: lx_dtypes imports all 271 model modules for the guard, detects synthetic direct-parent collisions,
+      has no repository collisions, serializes list declarations across the full MRO, and removes redundant
+      AppBaseModel inheritance from FilesAndDirsModel.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:33:32.991036Z'
+- id: video_contracts
+  category: data_integrity
+  title: Videozustand, Segmente und Sensitive Meta verwenden kanonische typisierte Verträge
+  acceptance:
+  - Boundary-Adapter normalisieren Legacyformen einmalig.
+  - Exportpfade verwenden dieselben Segment- und Zustandsverträge wie Services.
+  - Ungültige oder widersprüchliche Payloads werden laut abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_lx_video_contracts.py
+    - tests/models/test_dataset_export_scope.py
+    - tests/services/application_settings/test_ai_dataset_export.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_lx_video_contracts.py
+        tests/models/test_dataset_export_scope.py tests/services/application_settings/test_ai_dataset_export.py
+        -q (18 passed)
+    - kind: document
+      reference: docs/video_typing_integration_plan.md#implementierter-kanonischer-boundary-pfad
+    note: VideoState, LabelVideoSegment and SensitiveMeta use one lx_dtypes adapter path shared by AI
+      dataset export. IDs are deterministic, persisted segment state is retained, invalid segments and
+      contradictory dates fail loudly, and only processed file references enter the video contract.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:42:29.651103Z'
+- id: strict_type_checks
+  category: testing
+  title: Strikter Pyright und gezielte Runtime-Regressionstests bestehen
+  acceptance:
+  - Neue Typfehler werden nicht durch Any, breite Unionen oder Ignore-Regeln verdeckt.
+  - Query-Count-, Duplicate-Field-, MRO- und Video-Contract-Tests schützen die Grenzen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pyright
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright
+      note: Exit-Code 0
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 0 warnings)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
+        tests/scripts/test_check_dead_code.py -q (7 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py
+        -q (5 passed)
+    note: Repositoryweites Pyright bleibt fehlerfrei; vier neue DICOM-Manager-Ignores wurden entfernt.
+      Der versionierte Quality-Boundary-Guard friert bestehende Type-Suppressions ein und erzwingt Review
+      bei jeder Abweichung.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:01:05.532469Z'
+- id: safe_serialization
+  category: security
+  title: Serialisierung kann keine geschützten Felder oder unvalidierten Daten durchreichen
+  acceptance:
+  - Boundary-Schemas verbieten unbekannte Felder, wo klinische oder sicherheitskritische Invarianten gelten.
+  - Sensitive Daten werden bewusst ausgewählt und nicht über generische Model-Dumps exportiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_lx_video_contracts.py
+    - tests/models/test_dataset_export_scope.py
+    - tests/services/application_settings/test_ai_dataset_export.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_lx_video_contracts.py
+        tests/models/test_dataset_export_scope.py tests/services/application_settings/test_ai_dataset_export.py
+        -q (20 passed)
+    - kind: document
+      reference: docs/video_typing_integration_plan.md#implementierter-kanonischer-boundary-pfad
+    note: The AI dataset JSON artifact excludes PatientVideoFile.sensitive_meta at the central serialization
+      boundary. Regression coverage proves direct identifiers, birth date, case number, external ID, and
+      raw text are absent, while the strict payload model rejects unknown top-level fields.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:51:14.950308Z'
+- id: operational_readiness
+  category: operations
+  title: Schema- und Versionsänderungen haben einen kontrollierten Migrationspfad
+  acceptance:
+  - Versionsfehler schlagen beim Start oder am Boundary klar fehl.
+  - Backfill, Rollback und Kompatibilitätsdauer sind vor Deployment definiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:type-safety-operational
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv tasks run quality:type-safety-operational
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:25.372099Z'
+- id: contributor_documentation
+  category: documentation
+  title: Entwickler können Typ- und Modellgrenzen konsistent erweitern
+  acceptance:
+  - Architekturkarte, Feldcheckliste, Importregeln und Refactor-Reihenfolge sind aktuell.
+  required: true
+  verification:
+    kind: manual
+    instructions: Neue Feldänderung anhand der Dokumentation planen und alle betroffenen Layer identifizieren.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/model_layer_map_for_agents.md
+    note: Architecture map now contains field ownership, import/refactor rules, typed boundary guidance,
+      and the cross-layer change checklist.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:17:45.342796Z'

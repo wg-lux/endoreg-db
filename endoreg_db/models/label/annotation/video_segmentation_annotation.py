@@ -1,10 +1,14 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
-from django.db.models import Q, CheckConstraint, F
+from django.db.models import CheckConstraint, F, Q
+
 
 if TYPE_CHECKING:
     from ...media.video.video_file import VideoFile
-    from ..video_segmentation_label import VideoSegmentationLabel
+
 
 class VideoSegmentationAnnotation(models.Model):
     """
@@ -12,50 +16,36 @@ class VideoSegmentationAnnotation(models.Model):
     within a specific video file.
 
     An annotation must be associated with exactly one `VideoFile`.
-
-    Attributes:
-        video_file (ForeignKey): The video file associated with the annotation.
-        label (ForeignKey): The label for the annotation.
-        start_time (float): The start time of the annotation in seconds.
-        stop_time (float): The stop time of the annotation in seconds.
-        is_true (bool): Indicates if the annotation is valid (defaults to True).
     """
-    # Foreign key to the unified VideoFile model.
-    video_file = models.ForeignKey(
+
+    video_file: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_segmentation_annotations",
-        null=False,
-        blank=False,
     )
 
-    label = models.ForeignKey("VideoSegmentationLabel", on_delete=models.CASCADE)
-    start_time = models.FloatField()  # in seconds
-    stop_time = models.FloatField()  # in seconds
-    is_true = models.BooleanField(default=True)
+    label: models.ForeignKey[Any] = models.ForeignKey(
+        "VideoSegmentationLabel",
+        on_delete=models.CASCADE,
+    )
+
+    # times in seconds
+    start_time: models.FloatField[Any, Any] = models.FloatField()
+    stop_time: models.FloatField[Any, Any] = models.FloatField()
+
+    is_true: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
-        video_file: "VideoFile"
-        label: "VideoSegmentationLabel"
+        pass
 
     def __str__(self) -> str:
-        """
-        String representation of the annotation.
-        """
-        video_repr = self.get_video() # Get the actual video object for representation
-        return f"{video_repr} - {self.label.name} - {self.start_time} to {self.stop_time}"
+        return f"{self.video_file.pk} - {self.label.name} - {self.start_time} to {self.stop_time}"
 
     def get_video(self) -> "VideoFile":
         """
-        Get the video file associated with this annotation.
-
-        Returns the `VideoFile` instance.
+        Convenience accessor for the associated VideoFile instance.
         """
-        if self.video_file:
-            return self.video_file
-        else:
-            # This state should ideally not be reachable due to null=False, blank=False
-            raise ValueError("Annotation is not linked to a VideoFile.")
+        return self.video_file
 
     class Meta:
         constraints = [
@@ -64,3 +54,5 @@ class VideoSegmentationAnnotation(models.Model):
                 name="start_time_less_than_stop_time",
             ),
         ]
+        # optional but usually helpful:
+        # ordering = ("video_file_id", "start_time")

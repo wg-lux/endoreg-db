@@ -1,0 +1,81 @@
+schema_version: '1.0'
+feature_id: documentation
+baseline_date: '2026-07-31'
+default_review_by: '2026-10-31'
+repositories:
+- id: endoreg-db
+  root_hint: .
+  canonical_language: en
+  additional_documentation_paths:
+  - STANDARD.md
+  - changelog.md
+  - changelogs
+  - devlog
+  - setup
+  - tests/keycloak/README.md
+  - endoreg_db/codemods/readme.md
+  - endoreg_db/import_files
+  - endoreg_db/mermaid
+  - endoreg_db/models/medical/contraindication/README.md
+  - endoreg_db/versioning.md
+  docs_path: docs
+  readme_path: README.md
+  agents_path: AGENTS.md
+  documentation_entrypoint: docs/README.md
+  owner: endoreg_db maintainers
+- id: lx-annotate
+  root_hint: ../dev/lx-annotate
+  canonical_language: null
+  additional_documentation_paths: []
+  docs_path: docs
+  readme_path: README.md
+  agents_path: AGENTS.md
+  documentation_entrypoint: docs/index.md
+  owner: lx-annotate maintainers
+- id: lx-anonymizer
+  root_hint: ../lx-anonymizer
+  canonical_language: null
+  additional_documentation_paths: []
+  docs_path: docs
+  readme_path: README.md
+  agents_path: AGENTS.md
+  documentation_entrypoint: null
+  owner: lx-anonymizer maintainers
+- id: lx-data-models
+  root_hint: ../lx-parse/lx-data-models
+  canonical_language: null
+  additional_documentation_paths: []
+  docs_path: docs
+  readme_path: README.md
+  agents_path: AGENTS.md
+  documentation_entrypoint: docs/index.md
+  owner: lx_dtypes maintainers
+canonical_topics:
+- id: assisted_reporting_workflow
+  title: Assisted reporting workflow and requirement sets
+  owner: lx-annotate maintainers
+  canonical_repository: lx-annotate
+  canonical_path: docs/guides/reporting-template-requirements-page.md
+  related_documents: []
+- id: date_time_conventions
+  title: Shared date and time conventions
+  owner: lx_dtypes maintainers
+  canonical_repository: lx-data-models
+  canonical_path: docs/guides/dates-and-times.md
+  related_documents: []
+- id: pydantic_patterns
+  title: Shared Pydantic patterns
+  owner: lx_dtypes maintainers
+  canonical_repository: lx-data-models
+  canonical_path: docs/guides/pydantic-cheatsheet.md
+  related_documents: []
+- id: video_import_concurrency
+  title: Cross-repository video import concurrency
+  owner: endoreg_db maintainers
+  canonical_repository: endoreg-db
+  canonical_path: docs/video_import_concurrency_contract.md
+  related_documents:
+  - repository: lx-anonymizer
+    path: docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
+    role: Component implementation contract; the canonical endoreg-db contract prevails on conflict.
+temporary_exceptions: []

@@ -1,0 +1,211 @@
+from __future__ import annotations
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from django.conf import settings
+
+from endoreg_db.config.env import (
+    get_media_url,
+    get_protected_media_root,
+    get_protected_media_url,
+)
+from endoreg_db.services.streamable_media import (
+    STREAMABLE_PROCESSED_VIDEO_ROOT,
+    STREAMABLE_RAW_VIDEO_ROOT,
+    STREAMABLE_VIDEO_ROOT,
+)
+from endoreg_db.utils.paths import (
+    DATA_DIR,
+    PROTECTED_DATA_ROOT,
+    STORAGE_DIR,
+    WATCHER_PREANONYMIZED_DROP_DIR,
+    WATCHER_REPORT_DROP_DIR,
+    WATCHER_VIDEO_DROP_DIR,
+)
+from endoreg_db.utils.rust_backend import has_native_capability
+
+
+@dataclass(frozen=True)
+class ReadinessIssue:
+    severity: str
+    code: str
+    message: str
+    path: str | None = None
+
+
+def _path_within(root: Path, candidate: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _check_directory_access(path: Path, *, code_prefix: str) -> list[ReadinessIssue]:
+    issues: list[ReadinessIssue] = []
+    resolved = path.resolve()
+    resolved_str = str(resolved)
+    if not os.path.exists(resolved_str):
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code=f"{code_prefix}_missing",
+                message=f"Required directory does not exist: {resolved}",
+                path=str(resolved),
+            )
+        )
+        return issues
+    if not os.path.isdir(resolved_str):
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code=f"{code_prefix}_not_dir",
+                message=f"Required path is not a directory: {resolved}",
+                path=str(resolved),
+            )
+        )
+        return issues
+    for mode, suffix in ((os.R_OK, "read"), (os.W_OK, "write"), (os.X_OK, "execute")):
+        if not os.access(resolved_str, mode):
+            issues.append(
+                ReadinessIssue(
+                    severity="critical",
+                    code=f"{code_prefix}_{suffix}_denied",
+                    message=f"Missing {suffix} permission on required directory: {resolved}",
+                    path=str(resolved),
+                )
+            )
+    return issues
+
+
+def _check_protected_media_contract() -> list[ReadinessIssue]:
+    issues: list[ReadinessIssue] = []
+    protected_media_url = get_protected_media_url()
+    media_url = get_media_url()
+    protected_media_root = get_protected_media_root().resolve()
+
+    if protected_media_url != "/protected_media/":
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code="protected_media_url_invalid",
+                message=(
+                    "Protected media must be mounted at /protected_media/ for the "
+                    "LuxNix/Nginx contract."
+                ),
+                path=protected_media_url,
+            )
+        )
+
+    if media_url and media_url.startswith("/media/"):
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code="media_url_public_mount",
+                message="Protected media must not be exposed under /media/.",
+                path=media_url,
+            )
+        )
+
+    if media_url and media_url != protected_media_url:
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code="media_url_mismatch",
+                message=(
+                    "MEDIA_URL must match the protected media URL for protected "
+                    "payload delivery."
+                ),
+                path=media_url,
+            )
+        )
+
+    if not _path_within(PROTECTED_DATA_ROOT, protected_media_root):
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code="protected_media_root_outside_protected_root",
+                message=(
+                    "Protected media root must remain inside the protected runtime "
+                    "root."
+                ),
+                path=str(protected_media_root),
+            )
+        )
+
+    return issues
+
+
+def _check_report_native_snapshot_contract() -> list[ReadinessIssue]:
+    if not bool(getattr(settings, "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT", False)):
+        return []
+    if has_native_capability(
+        "report_source_snapshot",
+        "report_source_snapshot_v1",
+    ):
+        return []
+    return [
+        ReadinessIssue(
+            severity="critical",
+            code="report_native_snapshot_unavailable",
+            message=(
+                "The production report-import profile requires native capability "
+                "report_source_snapshot_v1, but the loaded extension does not "
+                "advertise it."
+            ),
+        )
+    ]
+
+
+def check_environment_readiness() -> list[ReadinessIssue]:
+    issues: list[ReadinessIssue] = []
+    issues.extend(_check_protected_media_contract())
+    issues.extend(_check_report_native_snapshot_contract())
+    issues.extend(
+        _check_directory_access(PROTECTED_DATA_ROOT, code_prefix="protected_root")
+    )
+    issues.extend(_check_directory_access(DATA_DIR, code_prefix="data_root"))
+    issues.extend(_check_directory_access(STORAGE_DIR, code_prefix="storage_root"))
+    issues.extend(
+        _check_directory_access(
+            WATCHER_VIDEO_DROP_DIR, code_prefix="watcher_video_drop"
+        )
+    )
+    issues.extend(
+        _check_directory_access(
+            WATCHER_REPORT_DROP_DIR, code_prefix="watcher_report_drop"
+        )
+    )
+    issues.extend(
+        _check_directory_access(
+            WATCHER_PREANONYMIZED_DROP_DIR,
+            code_prefix="watcher_preanonymized_drop",
+        )
+    )
+    issues.extend(
+        _check_directory_access(
+            STREAMABLE_VIDEO_ROOT, code_prefix="streamable_video_root"
+        )
+    )
+    issues.extend(
+        _check_directory_access(
+            STREAMABLE_RAW_VIDEO_ROOT,
+            code_prefix="streamable_raw_root",
+        )
+    )
+    issues.extend(
+        _check_directory_access(
+            STREAMABLE_PROCESSED_VIDEO_ROOT,
+            code_prefix="streamable_processed_root",
+        )
+    )
+    return issues
+
+
+def assert_environment_readiness() -> None:
+    issues = check_environment_readiness()
+    critical_issues = [issue for issue in issues if issue.severity == "critical"]
+    if critical_issues:
+        lines = [f"{issue.code}: {issue.message}" for issue in critical_issues]
+        raise RuntimeError("Environment readiness checks failed:\n" + "\n".join(lines))

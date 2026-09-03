@@ -1,0 +1,582 @@
+schema_version: '1.0'
+id: code_quality
+name: Codequalität und Wartbarkeit
+description: Toten Code belastbar identifizieren und entfernen, Helper- und Klassengrenzen vereinheitlichen
+  sowie Exception-Behandlung zentral, typisiert und sicher gestalten.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert bestehende Modell-, Service-, Helper- und Importgrenzen.
+- path: docs/code_quality.md
+  disposition: reference
+  note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
+definition_of_done:
+- id: dead_code_baseline
+  category: requirements
+  title: Toter Code ist repositoryweit belastbar inventarisiert und klassifiziert
+  acceptance:
+  - Das Inventar erfasst ungenutzte Dateien, Symbole, Imports, Re-Exports, Kompatibilitätswrapper und
+    unerreichbare Zweige mit Fundstelle, Evidenz, Konfidenz und Entscheidung.
+  - Dynamische Django-Registrierung, String-Imports, Plugins, Management Commands, Signale, Migrationen
+    und generierter Code werden vor einer Löschung gesondert geprüft.
+  - Ausnahmen besitzen einen benannten Owner, eine überprüfbare Begründung und ein Ablauf- oder Reviewdatum.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:dead-code
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (35 reviewed
+        findings; 0 confirmed deletion candidates; 5 compatibility candidates; no new, stale, or expired
+        entries)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
+        passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        (startup-smoke ok; 7 root URL patterns)
+    - kind: document
+      reference: quality/dead_code_baseline.yml
+    note: Die Baseline klassifiziert 35 geprüfte Vulture-Verträge und fünf separat untersuchte Kompatibilitätskandidaten.
+      Nach sechs kleinen, verifizierten Entfernungskohorten verbleibt kein bestätigter Löschkandidat.
+      Die fünf öffentlichen oder repositoryübergreifend potenziell konsumierten Verträge bleiben bis zur
+      Consumer-Migration bewusst erhalten.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T16:06:33.756585Z'
+- id: dead_code_reduction
+  category: functionality
+  title: Bestätigter toter Code ist sicher entfernt oder kontrolliert deprecatet
+  acceptance:
+  - Hochkonfidente Funde werden in kleinen, nachvollziehbaren Kohorten entfernt und zugehörige Tests,
+    Exporte, Konfigurationen und Dokumentation werden mitbereinigt.
+  - Öffentliche oder repositoryübergreifend konsumierte Symbole erhalten vor der Entfernung einen dokumentierten
+    Deprecation- und Kompatibilitätspfad.
+  - Keine Löschung basiert ausschließlich auf einem statischen Toolfund; dynamische und externe Aufrufer
+    sind ausgeschlossen oder migriert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Entfernte Symbole gegen Inventar, Git-Diff, Importgraph, Paketexporte und alle bekannten
+      Verbraucher abgleichen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py after
+        six cleanup cohorts (0 confirmed deletion candidates; 5 compatibility candidates)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after the canonical Root URLConf
+        cleanup (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
+        passed)
+    - kind: command
+      reference: manage.py show_urls --format csv before/after duplicate Root URLConf removal (505 rows;
+        byte-identical SHA-256 38fd085855cdd0ed9e95602ef944efa8dfd05103c821771e6ee04f7646415b20)
+    - kind: review
+      reference: Internal Django/settings/package search plus lx-annotate, LuxNix, lx-data-models and
+        lx-anonymizer consumer searches found no endoreg_db.urls.root_urls consumer.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest --collect-only -q (2800 tests collected
+        after removal)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/fileserver/test_whitenoise_file_serving.py
+        tests/dataloader/test_dataloader.py tests/dataloader/test_dataloader_foreign_keys.py tests/dataloader/test_dataloader_missing_tables.py
+        -q (28 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+        tests/views/anonymization/test_validate_view.py tests/utils/test_media_urlpatterns_contract.py
+        -q (33 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python manage.py show_urls --format csv
+        (canonical validate routes resolve to endoreg_db.views.anonymization.validate.AnonymizationValidateView)
+    - kind: review
+      reference: SensitiveMeta private wrapper and video frame-cache legacy path consumer/history audit;
+        no internal, dynamic or known external consumers
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+        passed)
+    note: Bestätigte Dead-Code-Kohorten entfernten zusätzlich drei private SensitiveMeta-Delegationsmethoden,
+      den unverdrahteten Legacy-Frame-Cache-Anonymisierungspfad samt ausschließlich abhängigen Helfern
+      sowie den verwaisten SensitiveMetaVerificationSerializer mit Barrel-Re-Exports. Interne, dynamische,
+      historische und bekannte repositoryübergreifende Consumer wurden vor der Löschung geprüft. Aktive
+      Identitäts-, Streaming-, Timeline-, Storage-, Lease- und Publikationspfade bleiben unverändert.
+      Der Dead-Code-Guard ist ausschließlich durch die fremde Änderung endoreg_db/services/hls_media.py:219
+      blockiert; die Baseline wurde nicht angepasst.
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T11:15:35.993624Z'
+- id: helper_class_boundaries
+  category: maintainability
+  title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
+  acceptance:
+  - Reine Transformationen leben in typisierten, seiteneffektfreien Funktionen; Datenbank-, Dateisystem-
+    und Netzwerkoperationen liegen an expliziten Servicegrenzen.
+  - Django-Modelle enthalten Persistenz, Constraints und dünne Zustandsübergänge, aber keine neue Workflow-Orchestrierung
+    oder Service-Rückimporte.
+  - Helper haben einen klaren fachlichen Owner, konkrete Ein- und Ausgabetypen und werden nicht als unspezifische
+    Sammelmodule oder konkurrierende Implementierungen geführt.
+  - Importzyklen, neue Barrel-Abhängigkeiten und mehrfach verantwortliche Klassen werden durch Architekturtests
+    verhindert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative Refactorings gegen Modellkarte, Import-Boundary-Tests, Seiteneffektgrenzen
+      und Typensignaturen reviewen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/app/test_model_import_boundaries.py
+        tests/models/metadata/file_import/test_create_video_file.py tests/models/metadata/file_import/test_create_report_file.py
+        -q (25 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+        passed)
+    - kind: code
+      reference: AIDataSet-Modell ohne endoreg_db.services-Importe und sieben entfernte Workflow-Fassaden;
+        SensitiveMetaUpdateSerializer als reine DRF-Validierungsgrenze; typisierter atomarer Service in
+        endoreg_db/services/sensitive_meta_update.py; AST-Nullregeln in tests/app/test_clean_layer_cohorts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations);
+        integrierter Pytest-Lauf über 13 Boundary-/Runtime-Dateien (90 passed)
+    note: Die AIDataSet-Kohorte besitzt nun keine Model→Service-Abhängigkeit und keine der sieben Legacy-Servicefassaden;
+      bekannte Consumer in Endoreg, lx-annotate und lx-data-models sind auf direkte Services migriert
+      beziehungsweise leer geprüft. SensitiveMeta-PATCH validiert nur noch am HTTP-Rand und delegiert
+      Relation-, Skalar- und Verifikationsmutation atomar an einen Service; explizites false bleibt erhalten,
+      die PDF-Doppelmutation und sensitive Response-Protokollierung entfallen. AST-Tests erzwingen die
+      Nullgrenzen. Weitere Modell-, View- und Serializer-Altbestände bleiben kohortenweise zu migrieren.
+    assessed_by: codex-boundary-cleanup-20260825
+    assessed_at: '2026-08-25T11:51:30.946367Z'
+- id: centralized_exception_contracts
+  category: functionality
+  title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
+  acceptance:
+  - Fachliche Fehler verwenden kleine, typisierte Exception-Hierarchien mit stabiler Semantik statt uneinheitlicher
+    ValueError-, RuntimeError- oder String-Verträge.
+  - HTTP-, Command-, Job- und Integrationsgrenzen übersetzen Exceptions jeweils an einer zentralen Stelle
+    in Status, Exit-Code, Retry-Entscheidung und strukturiertes Fehlerformat.
+  - Innere Domain- und Servicefunktionen fangen keine breiten Exceptions ab und unterdrücken keine Fehler;
+    Integrationsgrenzen fangen nur begründete konkrete Fehlerklassen.
+  - Fehlerursachen bleiben durch Exception-Chaining und strukturierte Logs nachvollziehbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exception-Flüsse für mindestens API, Management Command, Hintergrundjob und externe
+      Integration vom Ursprung bis zur Boundary verfolgen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors)
+    - kind: command
+      reference: pytest DICOM/FHIR services and interoperability response mapper (17 passed)
+    - kind: code
+      reference: endoreg_db/exceptions.py
+    - kind: code
+      reference: endoreg_db/views/interoperability_errors.py
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    - kind: command
+      reference: pytest DICOM backfill and Celery task boundaries (22 passed)
+    - kind: code
+      reference: endoreg_db/utils/names.py; typings/gender_guesser/detector.pyi
+    - kind: test
+      reference: tests/utils/test_names.py::test_guess_name_gender_propagates_unexpected_detector_failure
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+        -q (14 passed)
+    - kind: code
+      reference: endoreg_db/config/env.py::EnvironmentValueError; env_bool; env_int; env_float
+    - kind: test
+      reference: tests/environment/test_env.py (typed parser defaults, accepted values, safe failures,
+        chaining, finite-float contract)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
+    - kind: code
+      reference: endoreg_db/config/env.py::env_choice; env_int(minimum=...); typed job-mode getters
+    - kind: code
+      reference: endoreg_db/services/jobs/video_reimport_jobs.py; endoreg_db/services/jobs/report_llm_jobs.py
+        (central parser adapters; no private fallback parsers)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 296s after typed job-configuration
+        cohort)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_video_reimport_jobs.py
+        tests/services/test_report_llm_jobs.py tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
+        tests/services/test_model_training_jobs.py tests/services/test_model_training_jobs_unit.py tests/test_celery_config_checks.py
+        tests/test_app_startup.py -q (148 passed)
+    - kind: code
+      reference: scripts/check_quality_boundaries.py::_broad_exception_types (bare except wird als broad_exception
+        mit stabilem Fingerprint erfasst)
+    - kind: test
+      reference: tests/scripts/test_check_quality_boundaries.py::test_bare_except_is_broad_and_causes_baseline_drift
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after bare-except guard cohort
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
+        -q (4 passed)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        after bare-except guard cohort (existing drift blocker: baseline 406, current tree 411; no bare
+        except findings)'
+    - kind: code
+      reference: endoreg_db/views/video/ai/frame_annotations.py::_bulk_write_failure_response (typed database-boundary
+        classification; stable retry and commit-state contract)
+    - kind: test
+      reference: tests/views/video/test_frame_annotation_bulk_upsert.py (atomic rollback after annotation
+        insert, HTTP 409/503/500 mapping, redaction, unexpected-error propagation)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after frame-annotation write-boundary
+        cohort (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_bulk_upsert.py
+        -q (12 passed, 2 subtests passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_task_endpoints.py
+        tests/views/video/test_annotation_access_controls.py -q (31 passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        after frame-annotation write-boundary cohort (broad-handler debt reduced from current-tree 411
+        to 410; reviewed baseline remains 406 and was not rewritten)
+    note: Der zentrale Environment-Adapter validiert geschlossene, literal-typisierte Job- und Frame-Source-Modi
+      sowie explizite numerische Untergrenzen. Der Boundary-Guard erkennt parameterlose except:-Klauseln.
+      Der Frame-Annotation-Bulk-Upsert übersetzt Datenbankfehler nun an der HTTP-Grenze in stabile, datensparsame
+      Codes mit retryable und write_committed=false; Annotation und optionale Dataset-Verknüpfung bleiben
+      atomar, während unerwartete Programmierfehler sichtbar propagieren. Weitere Altbestandsgrenzen bleiben
+      zu migrieren.
+    assessed_by: codex-root-quality-gold
+    assessed_at: '2026-08-13T08:53:54.704545Z'
+- id: quality_regression_guards
+  category: testing
+  title: Automatisierte Guards verhindern neue Qualitätsregressionen
+  acceptance:
+  - Pyright, Import-Boundary-Tests und fokussierte Runtime-Tests bestehen nach jeder Refactoring-Kohorte.
+  - Ein versionierter Dead-Code-Check meldet neue hochkonfidente Funde und verwendet nur begründete, reviewbare
+    Ausnahmen.
+  - Ein versionierter Boundary-Guard verhindert unreviewte breite Exception-Handler und Typunterdrückungen.
+  - Tests decken Exception-Mapping, Chaining, Retry-Klassifikation, unbekannte Fehler und rückwärtskompatible
+    öffentliche Importe ab.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - tasks
+    - run
+    - quality:code-regression
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'devenv tasks run quality:code-regression (passed in 374s: Pyright, dead-code guard,
+        quality-boundary guard and fast marker lane)'
+    - kind: command
+      reference: Direct exact fast marker lane (1327 passed, 1 skipped, 36 warnings, 803 subtests passed
+        in 291.82s)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
+        tests/scripts/test_check_route_matrix.py -q (10 task/route guard tests passed across focused runs)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (clean:
+        35 reviewed findings, 0 confirmed deletion candidates, 5 compatibility candidates)'
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 409 reviewed broad handlers, 141 reviewed type suppressions)'
+    - kind: command
+      reference: nix-instantiate --parse devenv.nix (passed)
+    - kind: document
+      reference: docs/code_quality.md#reproduzierbarer-qualitätslauf
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after typed gender_guesser boundary
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 408 broad handlers, 140 type suppressions)'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+        -q (14 passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 336s after typed environment-parser
+        cohort)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        (clean: 406 broad handlers, 140 type suppressions)'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/test_app_startup.py
+        tests/test_celery_config_checks.py tests/services/test_environment_readiness_unit.py tests/utils/test_storage_profile.py
+        tests/services/test_video_storage_normalization.py -q (102 passed)
+    note: Der offizielle Qualitätslauf bleibt verifiziert. Die Environment-Parser-Kohorte reduziert den
+      Bestand auf 406 breite Handler bei unverändert 140 Typunterdrückungen; parametrische Normal-, Invalid-
+      und Non-Finite-Tests sowie Startup- und Storage-Regressionen schützen die fail-loud Semantik.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T17:10:25.032805Z'
+- id: secure_failure_semantics
+  category: security
+  title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
+  acceptance:
+  - Klinische, Berechtigungs-, Kryptografie-, Storage- und Transferinvarianten schlagen laut und fail-closed
+    fehl.
+  - Fehlerantworten und Logs enthalten keine Secrets, Master Keys, direkten Patientenidentifikatoren oder
+    unminimierten Payloads.
+  - Privacy-preserving Nichtoffenlegung und unterscheidbare interne Auditursachen bleiben trotz zentraler
+    Übersetzung erhalten.
+  - Unbekannte Fehler werden nicht als Erfolg, leere Antwort oder unsicherer Fallback behandelt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative Security-, Privacy- und Storage-Fehler gegen API-Antwort, Auditlog und
+      Retry-Verhalten prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py::test_patient_examination_fhir_endpoint_maps_expected_export_error
+    - kind: test
+      reference: tests/services/test_dicom_interoperability.py::test_import_fails_closed_when_artifact_integrity_check_fails
+    - kind: test
+      reference: tests/services/test_dicom_manifest_backfill.py::test_command_maps_backfill_failure_to_safe_stable_contract
+    - kind: test
+      reference: tests/test_tasks.py::test_job_boundary_preserves_unknown_error_without_retry
+    - kind: test
+      reference: tests/utils/test_names.py (six valid detector outcomes, real unknown result, unexpected
+        detector failure propagation)
+    - kind: test
+      reference: tests/environment/test_env.py (invalid values fail closed; messages disclose no configured
+        raw value)
+    - kind: review
+      reference: Tracked LuxNix and lx-annotate manifests use supported boolean spellings; lx-data-models
+        has no matching declarations
+    - kind: code
+      reference: endoreg_db/config/env.py::_dotenv_loading_allowed; snapshot
+    - kind: test
+      reference: tests/environment/test_env.py (subprocess-isolierte Dotenv-Quellpräzedenz und Snapshot-Redaktion)
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/deployment/test_prod_settings_contract.py
+        tests/test_app_startup.py tests/services/test_environment_readiness_unit.py tests/test_celery_config_checks.py
+        tests/utils/test_paths.py -q (101 passed)
+    - kind: test
+      reference: SKIP_EXPENSIVE_TESTS=true RUN_VIDEO_TESTS=false USE_STUB_MODEL_META=true TEST_DB_REUSE=true
+        .devenv/state/venv/bin/pytest -q -m 'not (expensive or video or pipeline or ai or slow or ffmpeg)'
+        -n auto --dist=loadscope (1374 passed, 1 skipped, 803 subtests passed)
+    - kind: review
+      reference: LuxNix und lx-annotate injizieren Produktionsumgebungen bereits über Secretspec, systemd
+        oder Devenv; keine Consumer-Manifeständerung erforderlich
+    - kind: code
+      reference: endoreg_db/config/env.py::_configured_path_value; build_protected_runtime_env; env_path
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/utils/test_paths.py
+        tests/deployment/test_prod_settings_contract.py tests/test_app_startup.py tests/services/test_environment_readiness_unit.py
+        -q (104 passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 391s)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+        tests/system/test_config_unit.py -q (32 passed)
+    - kind: command
+      reference: nix-instantiate --parse /home/admin/dev/lx-annotate/devenv.nix (passed)
+    - kind: review
+      reference: LuxNix supplies explicit protected roots; lx-annotate resolves its empty Secretspec sentinel
+        to DATA_DIR in devenv.nix before exporting the Python runtime environment
+    note: Die zentrale Pfadkonfiguration unterscheidet nun strikt zwischen nicht gesetzten und explizit
+      leeren Werten. Ein fehlender geschützter Runtime-Root wird deterministisch als <base>/data abgeleitet;
+      leere oder nur aus Leerzeichen bestehende Werte für Runtime-, Storage-, Daten-, Medien-, Asset-,
+      Static- oder Staging-Pfade schlagen mit einem datensparsamen EnvironmentValueError fehl und können
+      weder den Repository-Root noch einen aus None abgeleiteten Pfad aktivieren. EndoReg-, lx-annotate-
+      und Nix-Verträge sind grün; weitere Security- und Storage-Grenzen bleiben zu prüfen.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T18:03:55.627863Z'
+- id: incremental_rollout
+  category: operations
+  title: Qualitätsrefactorings besitzen einen kontrollierten Rollout- und Rollbackpfad
+  acceptance:
+  - Änderungen werden nach Domäne und Risiko in kleine Kohorten geschnitten; Baseline und Restbestand
+    werden pro Kohorte aktualisiert.
+  - Öffentliche Imports, Jobs, Commands, API-Fehlerformate und persistierte Fehlerzustände haben eine
+    dokumentierte Kompatibilitätsdauer.
+  - Für jede verhaltensändernde Kohorte sind Rollback, Beobachtbarkeit und Abbruchkriterien vor Deployment
+    definiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine repräsentative Kohorte einschließlich Baseline-Differenz, Deploymentprüfung und
+      Rollbackentscheidung nachvollziehen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md#exception-grenzen
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: document
+      reference: quality/quality_boundary_baseline.yml
+    - kind: test
+      reference: tests/test_tasks.py::test_media_tasks_share_retry_contract_when_media_busy
+    note: Die zweite Kohorte dokumentiert Command-Exitcode, zentralisierte Retry-Parameter, Kompatibilitätsimporte,
+      Auditfelder, Abbruchkriterien und Adapter-Rollback; Produktionsbeobachtung und weitere Domänenkohorten
+      bleiben offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T14:33:57.477090Z'
+- id: contributor_guidance
+  category: documentation
+  title: Entwickler können Qualitätsgrenzen konsistent anwenden
+  acceptance:
+  - Dokumentation beschreibt Dead-Code-Evidenz, Deprecation, Helper- und Klassenownership sowie die zulässigen
+    Exception-Schichten mit Beispielen.
+  - Eine Review-Checkliste verlangt Consumer-Suche, dynamische Registrierungsprüfung, Boundary-Wahl, Exception-Mapping
+    und relevante Tests.
+  - Architekturentscheidungen und zeitlich begrenzte Ausnahmen sind auffindbar und besitzen klare Verantwortliche.
+  required: true
+  verification:
+    kind: manual
+    instructions: Eine neue Bereinigung und eine neue Exception anhand der Dokumentation planen und alle
+      erforderlichen Layer und Prüfungen identifizieren.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: code
+      reference: endoreg_db/exceptions.py
+    - kind: code
+      reference: endoreg_db/views/interoperability_errors.py
+    - kind: document
+      reference: docs/code_quality.md#qualitäts-boundary-guard
+    - kind: document
+      reference: docs/code_quality.md#exception-grenzen
+    - kind: code
+      reference: endoreg_db/management/command_errors.py
+    - kind: code
+      reference: endoreg_db/services/jobs/error_handling.py
+    - kind: document
+      reference: docs/code_quality.md#konfigurationsgrenze
+    - kind: review
+      reference: 'Planning exercise: download_segmentation_model remains a compatibility candidate pending
+        downstream consumer confirmation and deprecation; a new interoperability failure follows the typed
+        descriptor, chained service exception, single boundary mapper, safe structured log, and focused
+        error-path test pattern.'
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/scripts/test_check_quality_boundaries.py
+        -q (9 passed, exit 0)
+    note: The contributor guide fully defines dead-code evidence and deprecation, helper and class ownership,
+      typed exception layers, and the required review checklist. A representative compatibility cleanup
+      and a new interoperability exception can be planned from the guide through consumer discovery, boundary
+      placement, safe mapping, chaining, rollout, rollback, and focused verification; versioned baselines
+      identify owners and review dates for governed exceptions.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:39:56.691694Z'
+- id: ai_dataset_frame_bucket_unit_coverage
+  category: testing
+  title: AI-Datensatz-Frame-Buckets sind mit AAA-Unit-Tests vollständig abgedeckt
+  acceptance:
+  - Arrange-Act-Assert-Tests decken positive, negative und unbekannte Ziel-Buckets sowie deren Priorität
+    bei mehreren Annotationen desselben Frames ab.
+  - Annotation-, Segment- und zusammengeführte Buckets prüfen Label-Set-Filterung, Prediction-Filterung,
+    extrahierte Frames, exklusive Segmentenden und Deduplizierung.
+  - Leere oder nicht anwendbare Datensätze sowie Metadaten, Sortierung, Label-Verteilung und eindeutige
+    Summary-Zähler besitzen stabile Assertions.
+  - Direkte Arrange-Act-Assert-Tests der Annotation-Queue decken Target-, Annotation-, Segment-, Candidate-
+    und Merge-Builder einschließlich Extraktions- und Prediction-Schaltern ab.
+  - Die fokussierte Testdatei erreicht 100 Prozent Statement-Coverage für den Bucket-Service.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_aidataset_frame_buckets_unit.py
+    - tests/services/test_frame_annotation_bucket_builders_unit.py
+    - --cov=endoreg_db.services.aidataset_frame_buckets
+    - --cov-report=term-missing
+    - --cov-fail-under=100
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_aidataset_frame_buckets_unit.py tests/services/test_frame_annotation_bucket_builders_unit.py
+        --cov=endoreg_db.services.aidataset_frame_buckets --cov-report=term-missing --cov-fail-under=100
+        -q
+      note: Exit-Code 0
+    - kind: test
+      reference: tests/services/test_frame_annotation_bucket_builders_unit.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external missing-stub
+        warning)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest focused bucket-builder and workflow
+        cohort -q (22 passed)
+    note: Alle fünf Akzeptanzpunkte gegen 18 direkte AAA-Tests, 100-Prozent-Service-Coverage und 22 bestandene
+      direkte plus Workflow-Regressionen geprüft.
+    assessed_by: codex-bucket-dataset-aaa
+    assessed_at: '2026-08-28T07:43:12.429965Z'
+- id: segmentation_retraining_lx_ai_core_aaa
+  category: testing
+  title: Segmentierungsmodell-Retraining ist gegen lx-ai-core mit AAA-Tests abgesichert
+  acceptance:
+  - Direkte Arrange-Act-Assert-Tests laden die tatsächlich installierten öffentlichen lx-ai-core-Trainingsverträge.
+  - Ein erfolgreicher Retraining-Lauf erzeugt Manifest, Modellspezifikation, Ergebnis und Artefaktmetadaten,
+    die lx-ai-core erneut strikt validiert.
+  - Stichproben-Gruppierung, Label-Masken, Klassenhäufigkeiten, Metriken, Byte-Größen und SHA-256-Prüfsummen
+    besitzen stabile Assertions.
+  - Entfernte Stichprobenpfade werden vor dem ersten Artefakt-Write abgelehnt; eine fehlende lx-ai-core-Installation
+    schlägt mit der dokumentierten Boundary-Fehlermeldung laut fehl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/ai/test_segmentation_retraining_lx_ai_core.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py -q
+      note: Exit-Code 0
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external lx_anonymizer
+        missing-stub warning)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py
+        tests/ai/test_trainer_multilabel_unit.py tests/ai/test_aidataset_training_manifest.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_train_image_multilabel_model_command_forwards_selected_backbone_and_feature_mode
+        -q (18 passed)
+    note: 'Alle vier Akzeptanzpunkte wurden direkt geprüft: reale installierte lx-ai-core-Verträge, persistierter
+      Manifest-/Ergebnis-Roundtrip, Gruppierungs-, Masken-, Häufigkeits-, Metrik-, Byte- und SHA-256-Assertions
+      sowie fail-closed Fälle für Remote-Pfade und fehlende Abhängigkeit. Der breitere Retraining-Vertragskohortenlauf
+      bestand mit 18 Tests.'
+    assessed_by: codex-seg-retrain-aaa
+    assessed_at: '2026-08-28T09:21:26.440508Z'

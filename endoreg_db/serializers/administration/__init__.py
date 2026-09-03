@@ -7,7 +7,6 @@ __all__ = [
     "ActiveModelSerializer",
     "ModelTypeSerializer",
     "AiModelSerializer",
-
     # Misc
     "CenterSerializer",
     "GenderSerializer",

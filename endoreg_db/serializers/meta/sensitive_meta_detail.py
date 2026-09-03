@@ -1,162 +1,178 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import datetime
+from typing import Protocol, cast
+
 from rest_framework import serializers
 import logging
 
-from ...models import SensitiveMeta
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 logger = logging.getLogger(__name__)
 
-class SensitiveMetaDetailSerializer(serializers.ModelSerializer):
+
+class _ExaminerLike(Protocol):
+    first_name: str
+    last_name: str
+    pk: int | str
+
+
+class _SensitiveMetaStateLike(Protocol):
+    dob_verified: bool
+    names_verified: bool
+
+
+class _SensitiveMetaExaminersRelationLike(Protocol):
+    def all(self) -> Iterable[_ExaminerLike]: ...
+
+
+class _SensitiveMetaDetailLike(Protocol):
+    pk: int | None
+    is_verified: bool
+    state: _SensitiveMetaStateLike | None
+    examiners: _SensitiveMetaExaminersRelationLike
+    patient_dob: datetime | None
+    examination_date: datetime | None
+    patient_hash: str | None
+    examination_hash: str | None
+    text: str | None
+    anonymized_text: str | None
+    tags: object
+    external_id: str | None
+    external_id_origin: str | None
+
+
+class SensitiveMetaDetailSerializer(serializers.ModelSerializer[SensitiveMeta]):
     """
     Serializer for displaying SensitiveMeta details with verification state.
     Includes all relevant fields for annotation and verification.
     """
-    
+
     # State verification fields
     is_verified = serializers.SerializerMethodField()
     dob_verified = serializers.SerializerMethodField()
     names_verified = serializers.SerializerMethodField()
-    
-    # Related fields for better display
+
+    # Related fields
     center_name = serializers.CharField(source="center.name", read_only=True)
-    patient_gender_name = serializers.CharField(source="patient_gender.name", read_only=True)
-    
-    # Examiner information
+    patient_gender_name = serializers.CharField(
+        source="patient_gender.name", read_only=True
+    )
     examiners_display = serializers.SerializerMethodField()
-    
-    # Formatted dates for display
+
+    # Formatted display fields
     patient_dob_display = serializers.SerializerMethodField()
     examination_date_display = serializers.SerializerMethodField()
-    
-    # Hash displays (last 8 characters for security)
+
+    # Hash displays (last 8 chars)
     patient_hash_display = serializers.SerializerMethodField()
     examination_hash_display = serializers.SerializerMethodField()
+    pseudo_patient_id = serializers.IntegerField(read_only=True)
+    pseudo_examination_id = serializers.IntegerField(read_only=True)
 
-    class Meta:
+    # Text fields
+    text = serializers.SerializerMethodField()
+    anonymized_text = serializers.SerializerMethodField()
+    tags = serializers.SerializerMethodField()
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = SensitiveMeta
         fields = [
-            'id',
-            'patient_first_name',
-            'patient_last_name', 
-            'patient_dob',
-            'patient_dob_display',
-            'examination_date',
-            'examination_date_display',
-            'center_name',
-            'patient_gender_name',
-            'endoscope_type',
-            'endoscope_sn',
-            'patient_hash_display',
-            'examination_hash_display',
-            'examiners_display',
-            'is_verified',
-            'dob_verified',
-            'names_verified',
+            "id",
+            "casenumber",
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "patient_dob_display",
+            "examination_date",
+            "examination_date_display",
+            "examination_time",
+            "center_name",
+            "patient_gender_name",
+            "endoscope_type",
+            "endoscope_sn",
+            "patient_hash_display",
+            "examination_hash_display",
+            "pseudo_patient_id",
+            "pseudo_examination_id",
+            "examiners_display",
+            "is_verified",
+            "dob_verified",
+            "names_verified",
+            "text",
+            "anonymized_text",
+            "tags",
+            "validation_comment",
+            "external_id",
+            "external_id_origin",
         ]
         read_only_fields = [
-            'id',
-            'patient_hash_display',
-            'examination_hash_display',
+            "id",
+            "patient_hash_display",
+            "examination_hash_display",
         ]
 
-    def get_is_verified(self, obj):
-        """
-        Return the overall verification status of the given SensitiveMeta instance.
-        
-        Returns:
-            bool: True if the instance is verified; False if the verification attribute is missing.
-        
-        Raises:
-            Exception: Propagates unexpected exceptions after logging.
-        """
+    # --- Verification getters ---
+    def get_is_verified(self, obj: _SensitiveMetaDetailLike) -> bool:
+        return obj.is_verified
+
+    def get_dob_verified(self, obj: _SensitiveMetaDetailLike) -> bool:
+        state = obj.state
+        return state.dob_verified if state is not None else False
+
+    def get_names_verified(self, obj: _SensitiveMetaDetailLike) -> bool:
+        state = obj.state
+        return state.names_verified if state is not None else False
+
+    # --- Examiner display ---
+    def get_examiners_display(self, obj: _SensitiveMetaDetailLike) -> list[str]:
         try:
-            return obj.is_verified
-        except AttributeError:
-            return False
+            if not obj.pk:
+                return []
+            return [
+                f"{examiner.first_name} {examiner.last_name}"
+                for examiner in obj.examiners.all()
+            ]
         except Exception as e:
-            logger.exception(f"Unexpected error in get_is_verified for SensitiveMeta {getattr(obj, 'pk', None)}: {e}")
-            raise
-
-    def get_dob_verified(self, obj):
-        """
-        Return the date of birth verification status for the given object.
-        
-        Returns:
-            bool: True if the date of birth is verified; otherwise, False if unavailable or on error.
-        """
-        try:
-            return obj.state.dob_verified
-        except Exception:
-            return False
-
-    def get_names_verified(self, obj):
-        """
-        Return whether the patient's names have been verified.
-        
-        Returns:
-            bool: True if the names are verified; False if not verified or if an error occurs.
-        """
-        try:
-            return obj.state.names_verified
-        except Exception:
-            return False
-
-    def get_examiners_display(self, obj):
-        """
-        Return a list of examiner full names for the given SensitiveMeta instance.
-        
-        Returns:
-            list[str]: List of examiner names in "First Last" format, or an empty list if unavailable.
-        """
-        try:
-            if obj.pk:
-                examiners = obj.examiners.all()
-                return [f"{e.first_name} {e.last_name}" for e in examiners]
-            return []
-        except Exception as e:
-            logger.warning(f"Error getting examiners for SensitiveMeta {obj.pk}: {e}")
+            logger.warning(f"Error fetching examiners for SensitiveMeta {obj.pk}: {e}")
             return []
 
-    def get_patient_dob_display(self, obj):
-        """
-        Return the patient's date of birth formatted as "YYYY-MM-DD" for display.
-        
-        Returns:
-            str or None: Formatted date string if available, otherwise None.
-        """
-        if obj.patient_dob:
-            return obj.patient_dob.strftime("%Y-%m-%d")
-        return None
+    # --- Date formatters ---
+    def get_patient_dob_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return obj.patient_dob.strftime("%Y-%m-%d") if obj.patient_dob else None
 
-    def get_examination_date_display(self, obj):
-        """
-        Return the examination date formatted as "YYYY-MM-DD" for display.
-        
-        Returns:
-            str or None: Formatted examination date string, or None if not set.
-        """
-        if obj.examination_date:
-            return obj.examination_date.strftime("%Y-%m-%d")
-        return None
+    def get_examination_date_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return (
+            obj.examination_date.strftime("%Y-%m-%d") if obj.examination_date else None
+        )
 
-    def get_patient_hash_display(self, obj):
-        """
-        Return the last eight characters of the patient's hash, prefixed with ellipsis, or None if not available.
-        
-        Returns:
-            str or None: Truncated patient hash for display, or None if the hash is not set.
-        """
-        if obj.patient_hash:
-            return f"...{obj.patient_hash[-8:]}"
-        return None
+    # --- Hash short forms ---
+    def get_patient_hash_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return f"...{obj.patient_hash[-8:]}" if obj.patient_hash else None
 
-    def get_examination_hash_display(self, obj):
-        """
-        Return the last eight characters of the examination hash, prefixed with ellipsis, or None if not available.
-        
-        Returns:
-            str or None: Truncated examination hash for display, or None if the hash is not set.
-        """
-        if obj.examination_hash:
-            return f"...{obj.examination_hash[-8:]}"
-        return None
+    def get_examination_hash_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return f"...{obj.examination_hash[-8:]}" if obj.examination_hash else None
 
+    # --- Text fields ---
+    def get_text(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return obj.text if isinstance(obj.text, str) else None
+
+    def get_anonymized_text(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return obj.anonymized_text if isinstance(obj.anonymized_text, str) else None
+
+    def get_tags(self, obj: _SensitiveMetaDetailLike) -> list[str]:
+        if not obj.pk:
+            return []
+        tags_relation = obj.tags
+        order_by = getattr(tags_relation, "order_by")
+        values_list = getattr(order_by("name"), "values_list")
+        return list(cast(Iterable[str], values_list("name", flat=True)))
+
+    def get_external_id(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return obj.external_id if isinstance(obj.external_id, str) else None
+
+    def get_external_id_origin(self, obj: _SensitiveMetaDetailLike) -> str | None:
+        return (
+            obj.external_id_origin if isinstance(obj.external_id_origin, str) else None
+        )

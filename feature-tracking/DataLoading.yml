@@ -1,0 +1,187 @@
+schema_version: '1.0'
+id: data_loading
+name: YAML Data Loading
+description: Deterministic, typed, and idempotent loading of domain base data from YAML.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/dataloader_layers_and_naming.md
+  disposition: migrated
+  note: The previous migration plan is now part of the binding definition of done.
+- path: docs/wiki/dataloader_yaml_authoring.md
+  disposition: reference
+  note: Authoring contract for YAML base data.
+- path: docs/supported_formats_csv.md
+  disposition: reference
+  note: Contract for supported CSV import formats.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Engine, orchestration, and naming conventions are defined separately
+  acceptance:
+  - The YAML-to-ORM engine and command orchestration have unambiguous responsibilities.
+  - Canonical import paths and legacy compatibility are defined.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review module boundaries against the documentation and all import calls.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/dataloader_layers_and_naming.md
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: code
+      reference: endoreg_db/utils/yaml_model_loader.py; endoreg_db/helpers/data_load_orchestrator.py;
+        endoreg_db/management/commands/load_base_db_data.py
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/dataloader/test_yaml_model_loader.py tests/dataloader/test_load_base_db_data_command.py
+        -q (3 passed, exit 0)
+    - kind: review
+      reference: Repository call-site audit confirmed management commands use the public utils loader
+        boundary and workflow entry points use the canonical orchestration helper; legacy modules remain
+        compatibility implementations.
+    note: 'The corrected guides match the implemented boundaries: yaml_model_loader is the canonical typed
+      YAML-to-ORM wrapper over the legacy dataloader engine, while data_load_orchestrator owns command
+      sequencing over the legacy data_loader implementation. Canonical imports, compatibility paths, migration
+      rules, and load_base_db_data ordering are explicit and verified.'
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:33:57.543459Z'
+- id: deterministic_loading
+  category: functionality
+  title: Base data is loaded idempotently in a stable order
+  acceptance:
+  - Repeated load_base_db_data runs produce the same domain state without duplicates.
+  - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
+  required: true
+  verification:
+    kind: manual
+    instructions: Load an empty database twice and compare states and natural keys.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: schema_validation
+  category: data_integrity
+  title: YAML is converted to a typed internal form before ORM mutation
+  acceptance:
+  - Required fields, enums, references, and duplicates are validated before persistence.
+  - Partial failures leave no silently accepted mixed state.
+  required: true
+  verification:
+    kind: manual
+    instructions: Test valid and intentionally invalid YAML examples at the loader boundary.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: automated_tests
+  category: testing
+  title: Loader, dependencies, and idempotency are tested automatically
+  acceptance:
+  - Representative valid variants and all important boundary failures have tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/dataloader
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_foreign_keys.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/dataloader -q (36 passed, exit 0)
+    - kind: test
+      reference: tests/dataloader/test_dataloader_missing_tables.py; tests/dataloader/test_dataloader_foreign_keys.py;
+        tests/dataloader/test_load_base_db_data_command.py; tests/dataloader/test_yaml_model_loader.py
+    note: The dataloader suite covers representative base-data commands, canonical wrapper delegation,
+      ordered orchestration, idempotent named updates, relationship resolution, source selection, missing
+      schema and directory handling, lock retries, fail-loud validation and non-lock database failures,
+      and safe rejection of Python-tagged YAML before loader delegation.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:48:18.686270Z'
+- id: safe_inputs
+  category: security
+  title: YAML loading executes no code and does not escape its data source
+  acceptance:
+  - Only safe YAML parsers and approved data roots are used.
+  - Inputs cannot trigger arbitrary imports or file access.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a security review of the parser, path resolution, and dynamic import boundaries.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/utils/dataloader.py::_approved_yaml_directory,_approved_yaml_file,load_model_data_from_yaml
+    - kind: test
+      reference: tests/dataloader/test_dataloader_safe_inputs.py; tests/dataloader/test_dataloader_missing_tables.py::test_load_model_data_from_yaml_rejects_unsafe_yaml_before_loading
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py
+        endoreg_db/utils/dataloader.pyi tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_safe_inputs.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed,
+        1 warning in 38.52s)
+    - kind: review
+      reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data; the
+        enforced root check applies independently of the caller. No importlib, __import__, eval, exec, or
+        unsafe yaml.load call exists at the loader boundary.
+    note: The shared YAML loader now enforces the packaged endoreg_db/data root before every file access,
+      rejects directory and file symlinks fail-closed, and reads only regular .yaml files. PyYAML safe_load
+      remains the only parser boundary; Python object tags are rejected before any ORM delegation. A repository
+      review of loader and load_*_data boundaries found no dynamic imports, eval/exec calls, or unsafe PyYAML
+      loaders.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T12:38:06.598243Z'
+- id: operational_readiness
+  category: operations
+  title: Loading failures and retries are manageable for operators
+  acceptance:
+  - Command output identifies the file, entity, and cause; retry is safe.
+  - Backup, migration, and rollback requirements are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Trigger an error in a dependent YAML file and verify restart behavior.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: author_documentation
+  category: documentation
+  title: YAML authors and developers have a current contract
+  acceptance:
+  - Layers, names, schema, references, examples, and validation errors are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Create and load a new base configuration using only the documentation.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/dataloader_layers_and_naming.md
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: command
+      reference: './feature-tracking/tracker.py validate (OK: 34 feature definitions are valid)'
+    note: The two authoritative data-loader guides cover layers and responsibilities, canonical and legacy
+      names, the YAML schema and field conventions, references, examples, and validation and error guidance.
+      Comparison with the loader contract and YAML validation confirms that this criterion is complete.
+    assessed_by: codex-20260902-feature
+    assessed_at: '2026-09-02T12:50:21.562034Z'

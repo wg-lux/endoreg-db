@@ -1,0 +1,29 @@
+# Authoring example. The tracker does not load this file as a feature.
+schema_version: "1.0"
+id: audit_ledger_example
+name: Audit ledger example
+description: Shows the complete structure of a feature definition.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+  - path: docs/model_layer_map_for_agents.md
+    disposition: reference
+    note: Architecture context; does not contain an authoritative completion status.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Supported scope is clearly documented
+    acceptance:
+      - Supported and unsupported workflows are documented.
+      - Failure and security behavior are expressed as verifiable requirements.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review the document against the implementation, API contract, and deployment profile.
+      timeout_seconds: 300
+    assessment:
+      status: not_assessed

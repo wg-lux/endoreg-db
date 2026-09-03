@@ -1,62 +1,76 @@
-from django.core.management.base import BaseCommand
-from endoreg_db.models import (
-    Disease, 
+from __future__ import annotations
+
+from typing import TypedDict, Unpack
+
+from django.core.management.base import BaseCommand, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
+
+from endoreg_db.models.medical.disease import (
+    Disease,
     DiseaseClassification,
     DiseaseClassificationChoice,
 )
-from ...utils import load_model_data_from_yaml
+
 from ...data import (
-    DISEASE_DATA_DIR, 
-    DISEASE_CLASSIFICATION_DATA_DIR,
     DISEASE_CLASSIFICATION_CHOICE_DATA_DIR,
+    DISEASE_CLASSIFICATION_DATA_DIR,
+    DISEASE_DATA_DIR,
 )
+from ...utils import load_model_data_from_yaml
+from ...utils.yaml_model_loader import LoadModelDataMetadata
 
 
-IMPORT_MODELS = [ # string as model key, serves as key in IMPORT_METADATA
+class LoadDiseaseCommandOptions(TypedDict):
+    verbose: bool
+
+
+IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
     Disease.__name__,
     DiseaseClassification.__name__,
     DiseaseClassificationChoice.__name__,
 ]
 
-IMPORT_METADATA = {
+IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
     Disease.__name__: {
-        "dir": DISEASE_DATA_DIR, # e.g. "interventions"
-        "model": Disease, # e.g. Intervention
-        "foreign_keys": [], # e.g. ["intervention_types"]
-        "foreign_key_models": [] # e.g. [InterventionType]
+        "dir": DISEASE_DATA_DIR,  # e.g. "interventions"
+        "model": Disease,
+        "foreign_keys": [],  # e.g. ["intervention_types"]
+        "foreign_key_models": [],  # e.g. [InterventionType]
     },
     DiseaseClassification.__name__: {
-        "dir": DISEASE_CLASSIFICATION_DATA_DIR, # e.g. "interventions"
-        "model": DiseaseClassification, # e.g. Intervention
-        "foreign_keys": ["disease"], # e.g. ["intervention_types"]
-        "foreign_key_models": [Disease] # e.g. [InterventionType]
+        "dir": DISEASE_CLASSIFICATION_DATA_DIR,  # e.g. "interventions"
+        "model": DiseaseClassification,
+        "foreign_keys": ["disease"],  # e.g. ["intervention_types"]
+        "foreign_key_models": [Disease],  # e.g. [InterventionType]
     },
     DiseaseClassificationChoice.__name__: {
-        "dir": DISEASE_CLASSIFICATION_CHOICE_DATA_DIR, # e.g. "interventions"
-        "model": DiseaseClassificationChoice, # e.g. Intervention
-        "foreign_keys": ["disease_classification"], # e.g. ["intervention_types"]
-        "foreign_key_models": [DiseaseClassification] # e.g. [InterventionType]
+        "dir": DISEASE_CLASSIFICATION_CHOICE_DATA_DIR,  # e.g. "interventions"
+        "model": DiseaseClassificationChoice,
+        "foreign_keys": ["disease_classification"],  # e.g. ["intervention_types"]
+        "foreign_key_models": [DiseaseClassification],  # e.g. [InterventionType]
     },
 }
+
 
 class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
-            '--verbose',
-            action='store_true',
-            help='Display verbose output',
+            "--verbose",
+            action="store_true",
+            help="Display verbose output",
         )
 
-    def handle(self, *args, **options):
-        verbose = options['verbose']
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[LoadDiseaseCommandOptions],
+    ) -> None:
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(
-                self,
-                model_name,
-                _metadata,
-                verbose
-            )
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)

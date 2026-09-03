@@ -1,0 +1,391 @@
+schema_version: '1.0'
+id: import_monitoring
+name: Import-Monitoring
+description: Durchgängige, sichere und betriebsfähige Sicht auf Import-Jobs aus API und Ordnerüberwachung.
+  Der Vertrag trennt Import, transiente Wiederholungsversuche, Quarantäne, Anonymisierung, Cleanup und
+  die generationsgebundene Materialisierung von HTTP Live Streaming (HLS) in eigenständige Zustandsachsen.
+owners:
+- endoreg_db und lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Beschreibt UploadJob als gemeinsames Import-Ledger für API und Ordnerüberwachung.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Definiert Quarantäne-, Cleanup-, Alarmierungs- und Wiederanlaufanforderungen.
+- path: docs/lxdm_contract_inventory.md
+  disposition: reference
+  note: Inventarisiert den typisierten Vertrag der Anonymisierungsübersicht.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Definiert HLS als generationsgebundenes Derivat mit atomarer Veröffentlichung und Lease-Schutz.
+definition_of_done:
+- id: import_state_contract
+  category: requirements
+  title: Importzustände und Übergänge sind vollständig und eindeutig definiert
+  acceptance:
+  - Wartend, in Bearbeitung, erfolgreich, transient fehlgeschlagen, dauerhaft fehlgeschlagen, verloren
+    und in Quarantäne sind fachlich getrennte Zustände mit erlaubten Übergängen und terminaler Bedeutung.
+  - Für jeden Fehlerzustand ist festgelegt, ob automatisch wiederholt werden darf, ein Bedienereingriff
+    erforderlich ist oder ein sicherer Neuimport erfolgen muss.
+  - Bestandsdaten mit terminalem Import- oder fehlgeschlagenem HLS-Zustand werden vor Aktivierung der
+    Fehlercode-Constraints deterministisch klassifiziert; die Migration bleibt atomar und wiederanlauffähig.
+  - Import-, Anonymisierungs-, HLS-Materialisierungs- und Cleanup-Zustand bleiben getrennte Zustandsachsen
+    und dürfen einander nicht implizit überschreiben.
+  required: true
+  verification:
+    kind: manual
+    instructions: Zustandsmatrix gegen UploadJob, Importservices, API-Verträge und die Anonymisierungsübersicht
+      prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/hub/upload_job.py
+    note: Implementiert; fachliche Zustandsmatrix wartet auf manuelles Review.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:45.000331Z'
+- id: typed_monitoring_api
+  category: interoperability
+  title: Die Monitoring-API liefert einen typisierten, stabilen Fehlervertrag
+  acceptance:
+  - Der snake_case API-Vertrag liefert Status, Importweg, Quellsystem, Zeitpunkte, Cleanup-Zustand, HLS-Materialisierungszustand
+    und eine stabile Job-Korrelation.
+  - Transiente Fehler enthalten einen stabilen Fehlercode, Wiederholbarkeit, bisherigen Versuchszähler,
+    maximal zulässige Versuche und den nächsten Wiederholungszeitpunkt; die UI muss keine Ausnahmetexte
+    klassifizieren.
+  - Unbekannte Zustände oder widersprüchliche Kombinationen werden am typisierten Rand laut abgelehnt
+    und nicht als erfolgreicher oder wiederholbarer Import interpretiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Endoreg-Serializer, lx_dtypes-Vertrag und TypeScript-Typen auf vollständige, identische
+      und strikt validierte Felder vergleichen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/serializers/misc/file_overview.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/anonymization_overview.py; endoreg_db/serializers/misc/file_overview.py;
+        /home/admin/dev/lx-annotate/frontend/src/stores/anonymizationStore.ts
+    - kind: command
+      reference: uv run pyright lx_dtypes/models/contracts/anonymization_overview.py tests/unit/lx_dtypes/models/contracts/test_anonymization_overview.py
+        (0 errors; working directory /home/admin/lx-data-models)
+    - kind: command
+      reference: uv run pytest tests/unit/lx_dtypes/models/contracts/test_anonymization_overview.py -q
+        (11 passed in 0.81s; working directory /home/admin/lx-data-models)
+    - kind: command
+      reference: devenv shell -- npm run type-check (exit 0; OpenAPI freshness, vue-tsc and ESLint; working
+        directory /home/admin/dev/lx-annotate/frontend)
+    - kind: command
+      reference: devenv shell -- npm exec -- vitest run src/stores/__tests__/anonymizationStore.reimport.spec.ts
+        src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts (23 passed; working
+        directory /home/admin/dev/lx-annotate/frontend)
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pyright
+        endoreg_db/serializers/misc/file_overview.py tests/views/anonymization/test_anonymization_overview.py
+        (0 errors)
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+        tests/views/anonymization/test_anonymization_overview.py -q (8 passed, 2 warnings in 68.36s)
+    - kind: code
+      reference: endoreg_db/serializers/misc/file_overview.py:_current_overview_hls_artifacts,_overview_hls_status;
+        tests/views/anonymization/test_anonymization_overview.py
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pyright
+        endoreg_db/serializers/misc/file_overview.py tests/views/anonymization/test_anonymization_overview.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+        tests/views/anonymization/test_anonymization_overview.py -q (8 passed, 2 warnings in 62.56s)
+    note: Der manuelle Cross-Layer-Abgleich ist abgeschlossen. Der gemeinsame lx_dtypes-Vertrag besitzt
+      geschlossene Literale für Jobstatus, Importweg, Cleanup-Zustand sowie Upload- und HLS-Fehlercodes
+      und lehnt unbekannte oder widersprüchliche Zustände fail-closed ab. Der EndoReg-Serializer validiert
+      und serialisiert genau diesen snake_case-Vertrag; interne validated-HLS-Kandidaten werden als materializing
+      projiziert, superseded-Historie wird nicht als aktuelle Materialisierung ausgegeben, und pro Artefaktart
+      wird nur der zuletzt aktualisierte nicht superseded Zustand gewählt. Die kanonische TypeScript-Schnittstelle
+      bildet alle Felder nach der zentralen Transportkonvertierung verpflichtend in camelCase ab; der
+      synthetische Quarantänestatus bleibt in einem getrennten UI-Typ. Retry-Metadaten und Job-/Generationskorrelation
+      sind durch fokussierte Backend-, Shared-Contract- und Frontendtests belegt.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T12:23:57.321904Z'
+- id: operator_overview
+  category: functionality
+  title: Die Anonymisierungsübersicht macht Importzustände handlungsorientiert sichtbar
+  acceptance:
+  - AnonymizationOverviewComponent.vue zeigt Importstatus getrennt von Anonymisierung und Annotation sowie
+    Importweg, Quellsystem, Zentrum, Aktualisierungszeit und Cleanup-Zustand.
+  - Transiente Fehler zeigen verständlich den laufenden oder geplanten Wiederholungsversuch samt Versuchszähler;
+    terminale Fehler und LOST werden davon visuell und sprachlich eindeutig unterschieden.
+  - 'Aktionen sind zustandsabhängig: aktive oder automatisch wiederholte Jobs verhindern konkurrierende
+    Verarbeitung, Quarantäne bleibt schreibgeschützt und Neuimport oder Löschung wird nur angeboten, wenn
+    der serverseitige Vertrag dies erlaubt.'
+  - Duplikate werden über einen stabilen Fehlercode und nicht durch reguläre Ausdrücke auf error_detail
+    erkannt; vorhandene validierte Annotationen bleiben unverändert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Repräsentative API-Payloads für jeden Zustand in der Übersicht darstellen und Texte,
+      Badges, Aktionen sowie Pollingverhalten prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/Anonymizer/AnonymizationOverviewComponent.vue
+    note: Darstellung und aktive Zustandsaktionen implementiert; repräsentative Bedienerprüfung ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:46.872488Z'
+- id: hls_materialization_state
+  category: functionality
+  title: HLS-Materialisierung ist als eigene generationsgebundene Zustandsachse sichtbar
+  acceptance:
+  - Raw- und Processed-HLS verwenden getrennt die typisierten Zustände queued, materializing, ready und
+    failed; ein erfolgreicher Import oder eine abgeschlossene Anonymisierung impliziert nicht automatisch
+    ready.
+  - Der Monitoringvertrag verbindet Artefaktart, Zustand, Quell- und Zielgeneration, Erstellungs- und
+    Aktualisierungszeit sowie einen sicheren stabilen Fehlercode mit dem Video und dem auslösenden Import-
+    oder Reimport-Job.
+  - ready wird erst nach vollständiger Validierung und atomarer Veröffentlichung von Playlist, Schlüssel
+    und Segmenten für genau eine Generation gemeldet; gemischte oder unvollständige Generationen schlagen
+    fail-closed fehl.
+  - Aktive Wiedergabe- oder Segment-Update-Leases schieben Neuerzeugung und Generationswechsel auf. Ein
+    Fehler oder eine Aufschiebung entfernt weder die vorherige gültige Generation noch den einzigen gültigen
+    Master.
+  - Die Anonymisierungsübersicht zeigt verständlich, ob HLS wartet, materialisiert wird, bereit oder fehlgeschlagen
+    ist, und bietet nur serverseitig erlaubte Wiederholungs- oder Diagnoseaktionen an.
+  required: true
+  verification:
+    kind: manual
+    instructions: Import und Reimport mit Raw- und Processed-HLS durch queued, materializing, ready und
+      failed verfolgen; atomare Veröffentlichung, Generationsbindung, Lease-Aufschub und UI-Aktionen prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hls_media.py
+    note: Generationsgebundener HLS-Zustand und UI implementiert; produktionsnahe Lease-/Reimport-Prüfung
+      ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:47.767791Z'
+- id: quarantine_lifecycle
+  category: data_integrity
+  title: Quarantäne ist mit Import-Ledger, Ursache und Lebenszyklus nachvollziehbar verbunden
+  acceptance:
+  - Jede Quarantänedatei besitzt eine stabile Korrelation zum Upload-Job oder einen ausdrücklich als verwaist
+    gekennzeichneten Zustand; Dateisystemscan und Datenbank-Ledger werden auf Abweichungen geprüft.
+  - Quarantänegrund, Zeitpunkt, Medienart, Größe, Reviewstatus und zulässiger nächster Schritt sind für
+    berechtigte Bediener sichtbar, ohne absolute Pfade oder sensible Rohdetails offenzulegen.
+  - Freigabe, sicherer Neuimport, Aufbewahrung und Löschung folgen einer expliziten Review-Entscheidung;
+    es gibt keine automatische Löschung der einzigen gültigen Quelle.
+  required: true
+  verification:
+    kind: manual
+    instructions: Beschädigten Import, verwaiste Quarantänedatei, freigegebenen Neuimport und genehmigten
+      Reap end-to-end gegen Ledger, API, UI und Dateisystem prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/quarantine.py
+    note: Ledger-Korrelation und center-spezifische read-only Anzeige implementiert; vollständige Review-/Reap-Übung
+      ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:48.677451Z'
+- id: backend_contract_tests
+  category: testing
+  title: Backend-Vertrag und Quarantänegrenze sind automatisiert getestet
+  acceptance:
+  - Tests decken alle Importzustände, transiente Wiederholungsmetadaten, terminale Fehler, LOST, HLS-Materialisierungszustände,
+    sichere Fehlerdarstellung und Cleanup-Zustände ab.
+  - 'Vertragstests sichern die vollständige Übergabe vom Ingest-Layer an die Report- und Video-Import-Jobs:
+    typisierte Report-Payloads und Ergebniszustände, Video-Queue und Task-ID, Celery-Delegation sowie
+    die Weitergabe von Lease-Owner, deterministischer Attempt-ID und Execution-Guard.'
+  - Quarantänetests decken fehlende Verzeichnisse, unlesbare Einträge, Symlinks, Limits, Pfadbereinigung,
+    Ledger-Korrelation und sichere Lebenszyklusaktionen ab.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/views/anonymization/test_anonymization_overview.py
+    - tests/services/test_ingest_idempotency_quarantine.py
+    - tests/services/test_hls_media.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+        tests/services/test_ingest_idempotency_quarantine.py tests/services/test_hls_media.py -q
+      note: Exit-Code 0
+    - kind: test
+      reference: tests/services/test_hub_ingest_import_job_contract.py (12 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_import_job_contract.py tests/services/test_hub_ingest_dispatch.py
+        tests/services/test_report_llm_jobs.py tests/services/test_upload_job_import_lease.py tests/test_tasks.py
+        -q (49 passed)
+    note: Der Ingest-zu-Import-Job-Vertrag ist durch fokussierte AAA-Tests für Report- und Video-Handoffs,
+      Ergebniszustände, Task-Identität, Lease-Owner, Attempt-ID und Execution-Guard ergänzt; die angrenzende
+      Regression-Lane ist grün.
+    assessed_by: codex-dag-import-analysis
+    assessed_at: '2026-08-26T07:37:35.835745Z'
+- id: frontend_state_tests
+  category: testing
+  title: Frontend-Darstellung und erlaubte Aktionen sind automatisiert getestet
+  acceptance:
+  - Komponententests decken wartende, laufende, transient fehlgeschlagene, dauerhaft fehlgeschlagene,
+    verlorene, duplizierte, erfolgreiche und quarantänisierte Importe sowie queued, materializing, ready
+    und failed für Raw- und Processed-HLS ab.
+  - Tests sichern verständliche Texte, keine rohen Fehlerdetails, zustandsabhängige Aktionen, schreibgeschützte
+    Quarantäne und getrennte Import- und Anonymisierungsstatus.
+  required: true
+  verification:
+    kind: command
+    command:
+    - nix
+    - develop
+    - /home/admin/dev/lx-annotate/frontend
+    - --command
+    - npm
+    - --prefix
+    - /home/admin/dev/lx-annotate/frontend
+    - run
+    - test:unit
+    - --
+    - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
+    - --run
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: nix develop /home/admin/dev/lx-annotate/frontend --command npm --prefix /home/admin/dev/lx-annotate/frontend
+        run test:unit -- src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts --run
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:35:02.567596Z'
+- id: safe_monitoring_boundary
+  category: security
+  title: Monitoring legt keine geschützten Medien- oder Systemdetails offen
+  acceptance:
+  - Monitoring-Endpunkte erzwingen Authentisierung und Center-Scope und geben weder absolute Pfade, Rohmedieninhalte,
+    Hashes, Stacktraces, Datenbankdetails noch Secrets aus.
+  - Nutzertexte stammen aus stabilen Fehlercodes und freigegebenen Meldungen; vollständige technische
+    Details verbleiben korreliert in strukturierten, zugriffsgeschützten Server-Logs.
+  - Quarantäne und Importartefakte bleiben innerhalb der genehmigten verschlüsselten Speichergrenze; Monitoring
+    umgeht weder mTLS noch Storage- oder Retention-Policies.
+  required: true
+  verification:
+    kind: manual
+    instructions: Berechtigungs-, Mandantentrennungs- und Informationsleck-Review für Übersicht, Quarantäne-Endpunkt
+      und strukturierte Logs durchführen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/api/test_quarantine_api.py
+    note: Center-Scope und Pfadbereinigung getestet; formales Security-Review ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:49.630358Z'
+- id: metrics_and_alerts
+  category: observability
+  title: Importdurchsatz, Wiederholungen, Fehler und Quarantäne sind messbar
+  acceptance:
+  - Strukturierte Ereignisse und Metriken erfassen Importanzahl und -alter je Zustand, Laufzeit, transiente
+    Fehler, Versuchszähler, ausgeschöpfte Wiederholungen, LOST, HLS-Warte- und Materialisierungsdauer,
+    HLS-Fehlschläge und Generationswechsel sowie Anzahl, Alter und Größe der Quarantäne.
+  - Upload-Job-ID verbindet API-Antwort, Worker-Ereignisse, Cleanup, Quarantäne und technische Fehlerdetails,
+    ohne sensible Bezeichner als ungeschützte Metrik-Labels zu verwenden.
+  - Alarme besitzen festgelegte Schwellen für hängende Verarbeitung, Retry-Erschöpfung, ERROR oder LOST,
+    Quarantänewachstum und Speicherknappheit und wurden mit Testereignissen geprüft.
+  required: true
+  verification:
+    kind: manual
+    instructions: Einen erfolgreichen, einen transient fehlschlagenden und einen quarantänisierten Import
+      ausschließlich über Metriken, Alarme und korrelierte strukturierte Ereignisse nachvollziehen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/management/commands/check_system_health.py
+    note: Health-Zähler und strukturierte Retry-Ereignisse implementiert; produktive Alarm-Testereignisse
+      ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:29:50.562363Z'
+- id: operational_recovery
+  category: operations
+  title: Wiederanlauf, Quarantänereview und Störungsbehebung sind betriebssicher
+  acceptance:
+  - Worker-Neustart, Prozessabbruch und vorübergehende Abhängigkeitsfehler führen idempotent zu Fortsetzung
+    oder begrenzter Wiederholung, nicht zu parallelen Jobs oder doppelten fachlichen Ressourcen.
+  - Nach ausgeschöpften Wiederholungen erfolgt ein terminaler, alarmierter Zustand; LOST und Inkonsistenz
+    bleiben fail-closed und werden nicht automatisch auf Erfolg gesetzt.
+  - Hängende oder fehlgeschlagene HLS-Materialisierung ist diagnostizierbar und idempotent wiederanlauffähig;
+    eine bestehende gültige Generation bleibt bis zur atomaren Veröffentlichung des Ersatzes erhalten.
+  - Runbook und Health-Check beschreiben Diagnose, manuelle Wiederholung, sicheren Neuimport, Quarantänereview,
+    Kapazitätskontrolle und Eskalation mit überprüfbaren Kommandos.
+  required: true
+  verification:
+    kind: manual
+    instructions: Produktionsnahe Wiederanlauf- und Incident-Übung mit transientem Fehler, Retry-Erschöpfung,
+      LOST und Quarantäne durchführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py::_reserve_video_upload_import_handoff; tests/services/test_hub_ingest_dispatch.py::UploadJobDispatchTests::test_process_upload_job_redispatches_video_retry_with_stale_task_id
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 1 pre-existing missing-stub warning); devenv
+        shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py tests/services/test_import_monitoring.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_import_job_contract.py
+        -q (27 passed)
+    note: 'Retry-Handoff regression fixed: a processing video UploadJob with retry_count greater than
+      zero no longer takes the lease-less legacy first-attempt short-circuit solely because an old video_import_task_id
+      remains. The existing database lease still serializes concurrent redispatch. Focused and adjacent
+      tests pass; production-like incident exercise remains in progress.'
+    assessed_by: codex-import-ninjau-t009
+    assessed_at: '2026-08-31T10:51:31.988242Z'
+- id: operator_documentation
+  category: documentation
+  title: Zustände, Anzeigen und Betriebsabläufe sind verständlich dokumentiert
+  acceptance:
+  - Dokumentation enthält Zustands- und Übergangsmatrix, Fehlercodes, Retry-Policy, UI-Bedeutung, HLS-Materialisierung
+    und Quarantäne-Lebenszyklus sowie die Abgrenzung von Import-, Anonymisierungs-, HLS- und Cleanup-Zustand.
+  - Bediener können anhand der Dokumentation entscheiden, wann Abwarten, manuelle Wiederholung, Neuimport,
+    Quarantänereview oder Eskalation erforderlich ist.
+  - Technische Dokumentation benennt die Verträge und verantwortlichen Module in endoreg_db, lx_dtypes
+    und lx-annotate ohne parallelen Fertigstellungsstatus außerhalb dieses Trackers.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation mit Entwicklung, Betrieb und einer repräsentativen Bedienperson gegen
+      reale Statusbeispiele reviewen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    note: Zustandsmatrix, Fehlercodes, Retry-, HLS- und Quarantäneablauf dokumentiert; Mehrrollen-Review
+      ausstehend.
+    assessed_by: Codex
+    assessed_at: '2026-07-21T08:30:01.370965Z'

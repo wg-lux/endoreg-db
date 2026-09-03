@@ -1,0 +1,389 @@
+schema_version: '1.0'
+id: hub_ingest
+name: Multi-Center-Hub-Ingest
+description: Authentifizierter, center-bezogener und auditierbarer Ingest über Upload-, Watcher- und Transfergrenzen.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-17T13:00:14.494063Z'
+    note: Alle acht Definition-of-Done-Kriterien sind mit Receiver-, Sender-, Frontend-, Security-, Integritäts-,
+      Cleanup-, Health- und Runbook-Evidenz verifiziert; die freigegebene Phase 1 bleibt fail-closed auf
+      mTLS und anonymisierte Processed Media begrenzt.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T13:38:28.852460Z'
+    note: Reopened to extend transfer integrity with schema 3.0 video segments.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T13:58:06.960322Z'
+    note: Payload schema 3.0 segment transfer contract is implemented and verified across canonical contracts,
+      receiver persistence/import, sender serialization, replay, boundary, and rollback tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T14:09:15.882076Z'
+    note: Reopened to require canonical full-payload replay equality and fail-closed source-node/source-center
+      ownership enforcement for globally hashed transfer resources.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T14:17:41.004775Z'
+    note: Canonical replay equality and fail-closed source ownership collision handling are implemented,
+      documented, type-checked, and verified by the 62-test focused hub boundary suite.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-20T14:18:28.632273Z'
+    note: Reopened to close the nullable NetworkNode.owning_center bypass at the transfer sender boundary.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-20T14:19:38.865231Z'
+    note: Canonical replay equality, fail-closed node/center ownership, collision persistence, and blocked
+      conflicted uploads are implemented and verified by targeted Pyright and 63 focused tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:11:19.034869Z'
+    note: Reopened to add typed SAP IS-H TSV directory conversion to YAML sidecars and persistence through
+      the existing watcher ingest service.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:18:48.337461Z'
+    note: SAP IS-H TSV directories now produce validated YAML sidecars and persist through the existing
+      idempotent watcher ingest path; Pyright and 41 focused/regression tests pass.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:43:18.045138Z'
+    note: Acceptance was extended for center-scoped canonical identity and structured medical-table persistence;
+      reopening for verification of the new pass.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:45:36.739742Z'
+    note: Re-verified after the structured SAP IS-H clinical persistence pass; expanded focused suite
+      passed 37 tests.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T12:48:25.077846Z'
+    note: Attach final post-review verifier evidence for the stable medication identity edge case.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T12:48:28.073494Z'
+    note: Re-verified after structured clinical persistence and the final stable Meona identity edge-case
+      test.
+  - action: reopened
+    changed_by: Codex
+    changed_at: '2026-07-29T14:01:09.281619Z'
+    note: Reopened after the full mirror test exposed SAP gender-code normalization missing at the typed
+      persistence boundary.
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-29T14:01:13.513640Z'
+    note: Full SAP mirror import and clinical replay verified after source gender-code normalization.
+source_documents:
+- path: docs/wiki/hub_ingest_gap_closure.md
+  disposition: migrated
+  note: Gap- und Phasenstatus wurden in diese DoD überführt.
+- path: endoreg_db/import_files/multi_centre_storage_hub_roadmap.md
+  disposition: migrated
+  note: Blocker, Architekturphasen und Akzeptanzkriterien werden hier bewertet.
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Aktueller Protokoll- und Implementierungsvertrag ohne eigenen Fertigstellungsstatus.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Betriebs-, Zertifikatsrotations-, Cleanup-, Restore- und Incident-Runbook.
+definition_of_done:
+- id: sap_ish_yaml_ingest
+  category: functionality
+  title: SAP-IS-H-Texttabellen werden typisiert über YAML in Django persistiert
+  acceptance:
+  - Ein Verzeichnis mit tabulatorgetrennten .txt-Dateien wird anhand der versionierten Dokumentvorlagen
+    normalisiert und als validierte .yaml-Sidecars ausgegeben; unbekannte Tabellen werden explizit gemeldet.
+  - Der optionale Process-Schritt übergibt jedes erzeugte Dateipaar an den bestehenden Preanonymized-Watcher-
+    Service, sodass die Host-Django-Modelle über denselben idempotenten und auditierten Persistenzpfad
+    geschrieben werden.
+  - Der Process-Schritt normalisiert PatientNr centerbezogen auf eine kanonische Patientenidentität und
+    persistiert unterstützte Diagnosen, Laborwerte und Medikationen zusätzlich in die medizinischen Fachtabellen;
+    nicht fallzuordenbare Meona-Zeilen bleiben ausdrücklich patientenbezogen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_sap_ish_clinical.py
+    - tests/services/test_sap_ish_import.py
+    - tests/services/test_watcher_storage_import.py
+    - tests/services/test_preanonymized_watcher_ingest.py
+    - tests/management/commands/test_import_sap_ish_txt.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'Full mirror import in isolated migrated Django database: 649 generated, 51,293 clinical
+        rows, 36,130 created, 15,121 reused, 42 skipped; clinical replay created zero rows'
+    - kind: command
+      reference: 'Pyright: 0 errors; focused SAP/tabular/watcher suite: 42 passed'
+    note: M/W and German gender aliases normalize to the strict shared vocabulary; full mirror persistence
+      and replay idempotency are verified.
+    assessed_by: Codex
+    assessed_at: '2026-07-29T14:01:10.299646Z'
+- id: segment_transfer_contract
+  category: data_integrity
+  title: Video-Segmente werden typisiert, idempotent und atomar übertragen
+  acceptance:
+  - Payload-Schema 3.0 überträgt ausschließlich typisierte, anonymisierte Segmentdaten mit quellknotengebundener
+    unveränderlicher ID.
+  - Der Receiver validiert exklusive Framegrenzen, materialisiert Segment- und Frame-Annotationen ohne
+    Zwischenzustands-Side-Effects und setzt segment_annotations_validated erst nach erfolgreichem Commit
+    aller Zeilen.
+  - Replay derselben source_node_key/source_segment_id-Paare aktualisiert bestehende Segmente ohne Duplikate;
+    fehlerhafte Grenzen rollen den gesamten Metadatenimport zurück.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_persisted_json_validation.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/models/test_persisted_json_validation.py
+        tests/models/test_hub_provenance_validation.py tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
+        -q (58 passed)
+    - kind: command
+      reference: lx-annotate tests/hub with canonical endoreg_db source (62 passed)
+    note: Schema 3.0, source-scoped replay upsert, boundary rejection and atomic rollback are covered
+      by receiver and sender tests.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T13:57:45.626114Z'
+- id: documented_scope
+  category: requirements
+  title: Rollen, Grenzen, Transfermodi und Cleanup-Policy sind festgelegt
+  acceptance:
+  - standalone, site_node und central_hub haben explizite erlaubte Ingresspfade.
+  - Metadaten-, Medien-, Replay-, Konflikt- und Retentionregeln sind eindeutig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Hub-Vertrag gegen Deploymentrollen, Endpunkte, Modelle und Services prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/hub_ingest_current_state.md
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    note: Rollenmatrix, Ingressgrenzen, Replay-/Konfliktregeln, Retention und die Phase-1/Phase-2-Grenze
+      sind gegen Services, Endpunkte und Sendervertrag geprüft.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:59:24.006782Z'
+- id: authenticated_ingress
+  category: security
+  title: Node- und Nutzergrenzen sind fail-closed authentifiziert und autorisiert
+  acceptance:
+  - Erforderliches mTLS kann nicht auf Shared-Secret-only zurückfallen.
+  - Center-Scope wird serverseitig erzwungen; Raw-Media-Export bleibt verboten.
+  - Der Master-Key wird weder übertragen noch in Anwendungskonfiguration gespeichert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/authz/test_video_media_policy.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'Targeted Pyright: 0 errors; canonical local lx-dtypes focused hub boundary suite: 63
+        passed'
+    note: Transfer senders must have an owning center and may only declare that center; nullable ownership
+      can no longer authorize arbitrary center claims.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:19:36.322566Z'
+- id: idempotent_ingest
+  category: functionality
+  title: Upload, Watcher und Transfer konvergieren idempotent auf denselben Workflow
+  acceptance:
+  - Wiederholung und Replay erzeugen keine doppelten fachlichen Ressourcen.
+  - Receiver-Entscheidungen behandeln Content-, Transfer- und Processing-Identität deterministisch.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/services/test_preanonymized_watcher_ingest.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+    note: Canonical transfer-key replay now compares source center, modes, policies, schema version, resource
+      rows, processing snapshot and sender-managed provenance; changed replays return 409 and exact replays
+      remain idempotent.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:17:12.621603Z'
+- id: transfer_integrity
+  category: data_integrity
+  title: Metadaten, Artefakte und Provenienz werden als konsistenter Transfer persistiert
+  acceptance:
+  - Hashes, Ressourcen-Snapshot, Zustände und Acknowledgement sind überprüfbar verbunden.
+  - Inkonsistenz führt abhängig von der Ingressgrenze zu Quarantäne, LOST oder persistentem INCONSISTENT,
+    nie zu unsicherer Auto-Recovery.
+  required: true
+  verification:
+    kind: manual
+    instructions: Teiltransfer, Hashfehler, Replay und widersprüchliche Metadaten end-to-end prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+    note: Source-center claims are bound to authenticated node ownership; cross-node and cross-center
+      resource-hash collisions persist INCONSISTENT without mutating existing video/report rows, and conflicted
+      media uploads are rejected.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:17:14.442790Z'
+- id: automated_tests
+  category: testing
+  title: Rollen-, Transfer-, Replay-, Integritäts- und Cleanup-Pfade sind getestet
+  acceptance:
+  - Positive und negative Tests decken alle Receiver-Entscheidungen und Deploymentrollen ab.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/deployment/test_prod_settings_contract.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/views/media/test_quarantine_retention_api.py
+    - tests/services/test_hub_ingest_active_learning_provenance.py
+    - tests/services/test_hub_audit.py
+    - tests/services/test_hub_cleanup.py
+    - tests/services/test_hub_deployment.py
+    - tests/services/test_hub_media_integrity_unit.py
+    - tests/services/test_ingest_idempotency_quarantine.py
+    - tests/services/test_end_to_end_topology_ingest.py
+    - tests/services/test_quarantine_retention.py
+    - tests/management/commands/test_check_system_health.py
+    - tests/management/commands/test_reap_quarantine.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py
+        tests/views/media/test_hub_transfer_endpoints.py tests/views/media/test_quarantine_retention_api.py
+        tests/services/test_hub_ingest_active_learning_provenance.py tests/services/test_hub_audit.py
+        tests/services/test_hub_cleanup.py tests/services/test_hub_deployment.py tests/services/test_hub_media_integrity_unit.py
+        tests/services/test_ingest_idempotency_quarantine.py tests/services/test_end_to_end_topology_ingest.py
+        tests/services/test_quarantine_retention.py tests/management/commands/test_check_system_health.py
+        tests/management/commands/test_reap_quarantine.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:59:00.854828Z'
+- id: storage_and_cleanup
+  category: operations
+  title: Storage, Cleanup, Wiederanlauf und Kapazität sind produktionsreif
+  acceptance:
+  - Cleanup erfolgt erst nach bestätigter Policy und vollständiger Integritätsprüfung.
+  - Hängende Jobs, Quarantäne, Speicherknappheit und Wiederanlauf sind sichtbar und beherrschbar.
+  - Phase 1 bleibt auf mTLS-geschützte anonymisierte Processed-Media-Transfers begrenzt; eigenständiger
+    Blobexport bleibt bis zur Envelope-Encryption-Phase gesperrt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Produktionsnahe Transfer-, Quarantäne-, Cleanup- und Recovery-Übung durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'endoreg-db Operations-/Health-/Quarantäne-Bahn: 91 passed'
+    - kind: command
+      reference: lx-annotate Hub-Cleanup-/Recovery-Tests in 69 passed
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    note: Upload-Cleanup nutzt den typisierten Storage-Wrapper und strukturierte Logs. Outbound/Transfer-Cleanup
+      bleibt bis verified apply explizit retained, eligible oder deferred. Phase 1 erlaubt nur mTLS-geschützte
+      anonymisierte Processed-Media-Transfers; eigenständiger Blobexport bleibt gesperrt.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:59:25.664309Z'
+- id: observability
+  category: observability
+  title: Jeder Transfer ist über strukturierte Ereignisse korrelierbar
+  acceptance:
+  - Upload-, Transfer-, Ressourcen- und Cleanup-ID verbinden alle relevanten Logs und Status.
+  - Fehler und Sicherheitsablehnungen erzeugen verwertbare Metriken und Alarmierung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Erfolgreichen und fehlgeschlagenen Transfer ausschließlich über Betriebsdaten nachvollziehen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'tests/services/test_hub_audit.py plus lx-annotate tests/api/test_administration_api.py:
+        passed'
+    - kind: command
+      reference: 'frontend AdministrationPage.test.ts: 3 passed; vue-tsc passed'
+    note: Sender- und Hub-Audit verbinden Outbound-Job, Transfer-Key/Remote-ID, Resource, Center, Node
+      und Cleanup. Die Administration zeigt aktuelle erfolgreiche und fehlerhafte Transfers ohne Secrets
+      oder Raw-Media.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:59:26.479437Z'
+- id: operator_documentation
+  category: documentation
+  title: Deployment-, Transfer- und Incident-Runbooks sind aktuell
+  acceptance:
+  - Betreiber können Rollen konfigurieren, Zertifikate rotieren, Transfer und Cleanup korrelieren, Backups
+    wiederherstellen und Fehler sichern.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbooks in einer frischen produktionsnahen Umgebung ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/hub_ingest_operations.md
+    - kind: document
+      reference: docs/deployment_note_hub_contract.md
+    note: Runbook gegen Deploymentrollen, Proxy-/mTLS-Vertrag, Zertifikatsrotation, Korrelation, Cleanup/Quarantäne,
+      Capacity, PostgreSQL-plus-Media-Backup/Restore und Incident-Ablauf geprüft.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:59:27.310621Z'

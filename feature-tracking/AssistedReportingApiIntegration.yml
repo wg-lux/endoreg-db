@@ -1,0 +1,338 @@
+schema_version: '1.0'
+id: assisted_reporting_api_integration
+name: Assisted Reporting API Integration
+description: Production-ready integration of the reporting interface with the canonical endoreg_db and
+  lx_dtypes endpoints for terminology bundles, finding catalogs, and patient-related findings.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+- lx_dtypes maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/assisted_reporting_api_integration.md
+  disposition: reference
+  note: Canonical integration and operations contract.
+definition_of_done:
+- id: canonical_route_ownership
+  category: requirements
+  title: Owners and contracts for all reporting routes are clearly defined
+  acceptance:
+  - /dtypes-api/terminology/bundles, /dtypes-api/examinations/{examination_id}/findings/, and /dtypes-api/patient-findings/
+    are documented as canonical contracts implemented by lx_dtypes and hosted by endoreg_db.
+  - For the /endoreg-api/findings/ call, it is decided and documented whether an authorized endoreg_db list
+    contract will be implemented or the dead frontend call will be removed and replaced with a canonical,
+    context-specific lx_dtypes call.
+  - Path format, HTTP method, query parameters, snake_case wire format, and camelCase conversion at the
+    centralized frontend boundary are defined for each contract.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review ReportingShell, useFindingSelectors, findingsApi, terminologyApi, endoreg_db.root_urls,
+      and the lx_dtypes routes together against the documented contract.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: quality/assisted_reporting_route_contracts.yml
+    - kind: code
+      reference: scripts/check_assisted_reporting_route_contracts.py
+    - kind: test
+      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_assisted_reporting_route_contracts.py
+        -q
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/docs/test_show_urls_contract.py tests/api/test_dtypes_record_persistence.py::test_dtypes_terminology_mutation_rejects_read_only_actor
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_create_updates_dtypes_record
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_routes_require_authentication
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_routes_enforce_center_scope
+        -q
+    - kind: command
+      reference: devenv shell -- npm exec -- vitest run src/api/__tests__/findingsApi.test.ts src/api/__tests__/terminologyApi.test.ts
+        src/api/__tests__/apiPrefixContract.test.ts (working directory /home/admin/dev/lx-annotate/frontend)
+    note: The versioned YAML contract assigns terminology bundles, examination-specific finding catalogs,
+      and patient-related findings exclusively to lx_dtypes and demonstrates endoreg_db hosting under
+      /dtypes-api/. The checker strictly validates schema, methods, snake_case path and query parameters,
+      implementation markers, centralized Axios conversion, and the absence of the removed VITE_FINDINGS_BACKEND
+      switch and global /endoreg-api/findings/ calls in production frontend sources. Pyright, five checker unit
+      tests, ten focused backend tests, and 21 frontend tests passed.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T09:09:13.956469Z'
+- id: host_adapter_configuration
+  category: functionality
+  title: The lx_dtypes host adapter is available in every supported runtime profile
+  acceptance:
+  - Before the Django application starts, LX_DTYPES_HOST_MODELS_MODULE is set to
+    endoreg_db.integrations.lx_dtypes_host_models or provided equivalently and importably in the Django settings.
+  - Development, tests, the wheel package, and the NixOS systemd service use the same host-adapter contract;
+    production configuration must not depend on the devenv-only environment.
+  - Missing or non-importable adapter configuration prevents service startup with an actionable error message
+    instead of allowing requests to fail later with HTTP 500.
+  - In a packaged production profile, GET /dtypes-api/examinations/{examination_id}/findings/ and
+    GET /dtypes-api/patient-findings/?patient_examination={id} return the defined success response, a 4xx error,
+    or an empty list, but not a configuration error as HTTP 500.
+  required: true
+  verification:
+    kind: command
+    commands:
+    - command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/app/test_lx_dtypes_import_boundary.py
+      - tests/api/test_dtypes_record_persistence.py
+      - -q
+      working_directory: /home/admin/endoreg-db
+    - command:
+      - devenv
+      - shell
+      - --
+      - .devenv/state/venv/bin/pytest
+      - tests/system/test_environment_checks.py
+      - tests/system/test_wheel_deployment_acceptance.py
+      - tests/system/test_console_scripts_contract.py
+      - tests/api/test_base_api_mount.py
+      - tests/api/test_urls_state.py
+      - -q
+      working_directory: /home/admin/dev/lx-annotate
+    - command:
+      - nix
+      - build
+      - .#checks.x86_64-linux.package
+      - --no-link
+      working_directory: /home/admin/dev/lx-annotate
+    - command:
+      - nix
+      - run
+      - .#nixtest
+      - --
+      - --no-color
+      working_directory: /home/admin/dev/lx-annotate
+    timeout_seconds: 3600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest tests/integrations/test_lx_dtypes_host_models.py tests/views/test_dtypes_findings_api.py
+        -q (exit 1 before collection: missing libstdc++.so.6; declared paths also do not exist)'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/app/test_lx_dtypes_import_boundary.py
+        tests/api/test_dtypes_record_persistence.py -q (25 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/system/test_environment_checks.py
+        tests/system/test_wheel_deployment_acceptance.py tests/system/test_console_scripts_contract.py
+        tests/api/test_base_api_mount.py tests/api/test_urls_state.py -q (49 passed)
+    - kind: command
+      reference: devenv shell -- npm run build (working directory /home/admin/dev/lx-annotate/frontend;
+        exit 0)
+    - kind: command
+      reference: 'nix build .#checks.x86_64-linux.package --no-link (exit 1: frontend production build
+        TypeScript/module errors)'
+    - kind: command
+      reference: 'nix run .#nixtest -- --no-color (exit 2: package-contract 0/1, service-vm 0/1; packaged
+        server and route smoke not reached)'
+    note: 'Acceptance point 1: LX_DTYPES_HOST_MODELS_MODULE is importable in the source and test profiles;
+      the package profile did not reach startup. Acceptance point 2: The devenv tests and frontend production
+      build passed in the working tree, but wheel/NixOS use of the contract is not yet demonstrated because the
+      Git-based package build does not include a required untracked source file. Acceptance point 3: The
+      fail-closed readiness checks passed in the source profile; packaged service startup was not reached.
+      Acceptance point 4: Not met; the two /dtypes-api/ routes could not be smoke-tested in any packaged
+      production profile. The status remains in_progress.'
+    assessed_by: Codex
+    assessed_at: '2026-07-31T11:24:43.304013Z'
+- id: terminology_registry_runtime
+  category: functionality
+  title: Terminology bundles from lx-terminology-editor are discoverable in the production profile
+  acceptance:
+  - The registry references versioned export bundles from lx-terminology-editor that are readable by the service
+    and contains either an explicit active selection or a documented state with no active selection.
+  - GET /dtypes-api/terminology/bundles returns the typed bundle list; a missing registry is detected during
+    deployment instead of appearing only during use as a misleading route-level HTTP 404.
+  - Import and selection of a bundle remain restricted to the designated write roles and modify the registry atomically.
+  - The lx-dtypes release verifies the wheel and source distribution byte-for-byte against the complete knowledge-base
+    data tree and runs the semantic smoke test for the published German demo templates; endoreg-db and lx-annotate
+    are upgraded together to this version only after publication.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/test_dtypes_terminology_api.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
+    - kind: command
+      reference: 'lx-annotate commit 213a8e2d pre-commit hooks: Ruff, format, Pyright, 368 passed/2 skipped
+        backend tests, runtime contract, Vitest, and frontend type-check passed'
+    - kind: command
+      reference: 'devenv shell -- make package at /tmp/lx-annotate-0.9.54-clean-213a8e2d: frontend, docs,
+        migrations (No changes detected), sdist and wheel passed'
+    - kind: command
+      reference: 'twine check plus installed-wheel terminology smoke for sha256 9e7723517374ec4ae4227deb869ea0ca8e30b0e808966367818c2fcf017da7fe:
+        passed; registry input_dirs resolved to installed lx_dtypes/data and repeated bootstrap preserved
+        registry hash'
+    - kind: command
+      reference: 'LuxNix isolated terminology contract: 4 passed; nix build gc-02 toplevel with clean
+        local lx_annotate-0.9.54 wheel override: passed'
+    - kind: command
+      reference: uv build --out-dir /var/tmp/...; verify_migration_artifacts + verify_knowledge_base_artifacts
+        passed for lx_dtypes-0.2.17 wheel and sdist
+    - kind: command
+      reference: 'isolated wheel install: lx_dtypes.scripts.verify_packaged_report_templates passed for
+        upper_gi_quality_2025 and colonoscopy_training_basic'
+    - kind: test
+      reference: '/home/admin/lx-data-models: release/API focused suites 40 passed; focused Pyright 0
+        errors'
+    - kind: test
+      reference: '/home/admin/dev/lx-annotate/frontend: template identity, API, editor, shell suites 62
+        passed; new test ESLint passed'
+    - kind: command
+      reference: final candidate wheel sha256 c1bb0439a10b28f30f0d65d61aa8bd9e493b344de09a027c742e51579b1bd166;
+        sdist sha256 bea8cb29aa4cb93c658815d7e5f89796acb02e9fe27460658e71391d60887412; artifact contracts
+        and twine passed
+    - kind: command
+      reference: 'isolated final wheel: required templates passed; colonoscopy emitted canonical German
+        title and six German section titles'
+    - kind: test
+      reference: 'lx-data-models: full Pyright 0 errors; focused release/API/semantic cohorts 68 passed;
+        Ruff and format checks passed'
+    - kind: test
+      reference: 'lx-annotate frontend: 62 reporting tests plus both vue-tsc lanes passed; new identity
+        test ESLint passed'
+    - kind: review
+      reference: 'PyPI JSON checked 2026-08-13: lx-dtypes 0.2.16; endoreg-db 1.0.14.0 requires lx-dtypes>=0.2.15'
+    - kind: test
+      reference: 'parallel backend persistence lane: focused Pyright 0 errors, 75 report/LXDM tests passed,
+        7 provenance backfill tests passed, canonical migration graph passed'
+    - kind: review
+      reference: 'release ordering confirmed: new migration/report fields require a new endoreg-db version
+        after lx-dtypes 0.2.17; consumed 1.0.14.0 will not be reused'
+    assessed_by: codex-german-reporting-frontend-20260813
+    assessed_at: '2026-08-13T10:55:08.008972Z'
+- id: frontend_backend_contract_tests
+  category: testing
+  title: Reporting calls are regression-tested across repositories
+  acceptance:
+  - Frontend tests demonstrate the canonical paths for the bundle list, examination findings, and patient-related
+    findings; obsolete VITE_FINDINGS_BACKEND values cannot reactivate removed routes.
+  - Backend tests resolve the canonical paths under /dtypes-api/, demonstrate that removed /endoreg-api/ finding
+    paths are unsupported, and test success, empty results, unknown identifiers, invalid query parameters, and
+    structured error responses.
+  - A packaged deployment smoke test uses the built frontend and Python artifact combination and fails when a
+    route, host adapter, or terminology registry is missing.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the focused frontend, endoreg_db, lx_dtypes, and package smoke-test suites and document
+      their artifact versions together.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/findingsApi.test.ts
+    note: Frontend and lx_dtypes tests pass; the endoreg_db package run is blocked by the unrelated
+      Http403 change.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:09.966888Z'
+- id: reporting_access_controls
+  category: security
+  title: Finding and terminology routes enforce the intended access context
+  acceptance:
+  - Patient-related findings require authentication and are scoped by center or PatientExamination;
+    records belonging to other scopes are not disclosed.
+  - Finding-catalog and bundle read access have an explicit role decision; bundle import and activation
+    require a documented explicit write role.
+  - Error responses contain neither local registry paths nor patient or configuration secrets.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review positive and negative authentication, role, and center-scope tests for all canonical
+      reporting routes.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/api/test_dtypes_record_persistence.py::test_terminology_write_access_requires_explicit_write_role
+    note: Host role checking and terminology write gates are implemented; the complete host route test
+      is externally blocked.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:11.715462Z'
+- id: deployment_readiness
+  category: operations
+  title: Deployment detects incomplete reporting dependencies before serving traffic
+  acceptance:
+  - Startup or readiness checks validate the host adapter, terminology registry, active bundle identity,
+    and resolution of every API route required by the built frontend.
+  - The NixOS service and all workers receive the required non-secret lx_dtypes settings from a single
+    declarative source.
+  - Deployment evidence records lx-annotate, endoreg_db, and lx_dtypes versions together so that frontend/wheel
+    drift can be diagnosed.
+  - Monitoring distinguishes missing routes, a missing registry, a missing host adapter, authorization errors,
+    and semantically empty results.
+  required: true
+  verification:
+    kind: manual
+    instructions: Deploy a production profile first with intentionally missing configuration and then with complete
+      configuration; document fail-closed behavior and successful readiness.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/system/test_wheel_deployment_acceptance.py
+    note: The Nix environment, registry provisioning, and startup checks are implemented; a real deployment exercise
+      remains outstanding.
+    assessed_by: Codex
+    assessed_at: '2026-07-22T08:27:13.113642Z'
+- id: integration_documentation
+  category: documentation
+  title: Setup, usage, and troubleshooting are documented across repositories
+  acceptance:
+  - The documentation identifies the canonical routes, responsible repositories, required settings,
+    registry format, and bundle export workflow from lx-terminology-editor.
+  - A runbook maps HTTP 404, HTTP 401/403, HTTP 500, and empty lists to concrete diagnostic steps without
+    exposing sensitive configuration in logs or responses.
+  - Removal of VITE_FINDINGS_BACKEND and replacement of noncanonical frontend paths are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Walk through setup and troubleshooting using a fresh packaged deployment and a bundle exported
+      from lx-terminology-editor.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/assisted_reporting_api_integration.md
+    - kind: document
+      reference: quality/assisted_reporting_route_contracts.yml
+    - kind: test
+      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
+    - kind: command
+      reference: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .devenv/state/venv/bin/pytest -q -o addopts='' --confcutdir=tests/scripts
+        tests/scripts/test_check_assisted_reporting_route_contracts.py (5 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py (verified
+        5 canonical routes)
+    note: Canonical route, exact module/version query, typed provider/digest and filesystem registry,
+      bootstrap migration/full packaged validation, fail-closed governed wheel deployment, and editor-native
+      layout boundaries are documented across the participating repositories. Route checker covers five
+      routes and passes. Fresh governed-deployment walkthrough remains outstanding, so this criterion
+      is not verified.
+    assessed_by: codex-finding-resolution-docs
+    assessed_at: '2026-08-17T09:20:55.927466Z'

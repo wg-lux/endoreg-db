@@ -1,0 +1,616 @@
+schema_version: '1.0'
+id: lxdm
+name: LX-Datenmodell-Integration
+description: Strikt typisierte Integration von lx_dtypes als klinischer Wissens- und Austauschvertrag.
+  lx_dtypes definiert auflösbare Wissensbasis-Identitäten, das Frontend wählt sie explizit und endoreg_db
+  validiert und persistiert die Auswahl ohne aktive oder voreingestellte Identitäten still einzusetzen.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/dtypes_lookup_module_entrypoint.md
+  disposition: reference
+  note: Beschreibt den aktuellen Lookup- und Host-Modul-Vertrag.
+- path: docs/lxdm_contract_usage_audit.md
+  disposition: reference
+  note: Prüfspezifikation für Inventar, Nutzungsklassifikation und priorisierte Einführung der lx_dtypes-Contracts;
+    der Status wird ausschließlich im Kriterium contract_usage_audit geführt.
+- path: docs/lxdm_contract_inventory.md
+  disposition: reference
+  note: Reproduzierbares vollständiges Modul-, Export-, Invarianten-, Test- und Consumer-Inventar.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Ownership zwischen Django, lx_dtypes und Knowledge Base ist eindeutig
+  acceptance:
+  - Für jedes persistierte oder exportierte Feld ist die zuständige Quelle festgelegt.
+  - Versions- und Kompatibilitätsgrenzen sind dokumentiert.
+  - lx_dtypes besitzt die Identitätssemantik, lx-annotate die Benutzerauswahl und endoreg_db die dauerhafte
+    Bindung an PatientExamination sowie die serverseitige Validierung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Feldownership und Versionsvertrag gegen Host-Modelle und Service prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    - kind: review
+      reference: Feldownership und Versionsvertrag gegen PatientExamination, PatientExaminationReport,
+        Serializer, report_persistence-Service und lx-dtypes-Vertragsimporte geprüft.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        -q (8 passed)
+    note: Der Leitfaden ordnet persistierte und exportierte Daten den verantwortlichen Systemgrenzen zu,
+      dokumentiert den lx-dtypes-Kompatibilitätsbereich und beschreibt explizit lx-dtypes als Besitzer
+      der Identitätssemantik, lx-annotate als Besitzer der Benutzerauswahl sowie endoreg_db als Validierungs-
+      und Persistenzgrenze.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:29:18.973392Z'
+- id: contract_usage_audit
+  category: requirements
+  title: LXDM-Contract-Nutzung ist vollständig inventarisiert und priorisiert
+  acceptance:
+  - Jedes öffentliche Nicht-Test-Modul unter /home/admin/lx-data-models/lx_dtypes/models/contracts ist
+    mit exportierten Typen, Invarianten und vorhandenen Contract-Tests erfasst.
+  - Statische und dynamische Consumer in endoreg-db sind je API-, Persistenz-, Job-, Import-/Export-,
+    Authentifizierungs- oder Mediengrenze nachvollziehbar zugeordnet.
+  - Parallele lokale Schemata, untypisierte Dictionaries und fehlende Boundary-Validierung sind mit Risiko
+    und Ownership klassifiziert.
+  - Verbesserungsvorschläge sind in kleine priorisierte Migrationskohorten mit Zielcontract, betroffenen
+    Dateien und überprüfbaren Pyright- und Testnachweisen gegliedert.
+  - Contract-Änderungen und Endoreg-Adoption werden getrennt bewertet; öffentliche oder persistierte Verträge
+    erhalten eine Versions- und Kompatibilitätsstrategie.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - feature-tracking/audit_lxdm_contracts.py
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/lxdm_contract_inventory.md
+    - kind: command
+      reference: feature-tracking/audit_lxdm_contracts.py
+    note: Alle 111 Contract-Module reproduzierbar inventarisiert; Consumer, Invarianten, Tests, Risiken
+      und priorisierte Kohorten dokumentiert.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:26:25.596650Z'
+- id: kb_1_canonical_identity
+  category: requirements
+  title: KB-1 lx_dtypes veröffentlicht die kanonische Wissensbasis-Identität
+  acceptance:
+  - Die Identität besteht aus knowledge_base_module und knowledge_base_version und wird durch den unveränderlichen
+    KnowledgeBaseIdentity-Vertrag validiert.
+  - Verfügbare Identitäten und Versionen stammen aus lx_dtypes; endoreg_db und lx-annotate erfinden keine
+    konkurrierenden Identitätsfelder oder Resolverregeln.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py'
+      note: Exit-Code 0
+    note: Canonical identity contract and resolver ownership reviewed; declared verifier passed (5 tests).
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:28.901844Z'
+- id: kb_2_backend_options
+  category: functionality
+  title: KB-2 Das Backend veröffentlicht verfügbare Optionen ohne Frontend-Auswahl
+  acceptance:
+  - Die Bundle- und Graph-Endpunkte liefern jede auflösbare Modul-/Versionsidentität mit eindeutiger Version.
+  - Das Lesen verfügbarer Optionen bindet keine PatientExamination und ändert keine aktive Auswahl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
+      lx_dtypes/django/api/tests/test_knowledge_base_graph_api.py
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
+        lx_dtypes/django/api/tests/test_knowledge_base_graph_api.py'
+      note: Exit-Code 0
+    note: Terminology bundle and graph option endpoints reviewed; declared verifier passed (32 tests).
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:31.021759Z'
+- id: kb_3_frontend_options
+  category: functionality
+  title: KB-3 Das Frontend rendert die vom Backend gelieferten Modul-/Versionsoptionen
+  acceptance:
+  - lx-annotate zeigt verfügbare Bundles aus der API und unterscheidet mehrere Versionen desselben Moduls.
+  - Die Oberfläche rekonstruiert keine versteckte Backend-Policy für die Auswahl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
+        run src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts'
+      note: Exit-Code 0
+    note: Frontend option rendering and frontend-owned selection reviewed; ReportingShell verifier passed
+      (34 tests).
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:32.755216Z'
+- id: kb_4_explicit_frontend_submission
+  category: functionality
+  title: KB-4 Die Frontend-Auswahl wird vollständig und explizit übertragen
+  acceptance:
+  - Berichtsspeicherung und Export senden knowledge_base_module und knowledge_base_version aus dem verifizierten
+    aktuell ausgewählten Bundle.
+  - Fehlende oder halb angegebene Identitäten werden am geteilten Request-Vertrag abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportEditorPage.test.ts
+      src/views/reporting/__tests__/ReportExportPage.test.ts
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
+        run src/views/reporting/__tests__/ReportEditorPage.test.ts src/views/reporting/__tests__/ReportExportPage.test.ts'
+      note: Exit-Code 0
+    note: Save and export requests carry the exact selected identity; editor/export verifier passed (15
+      tests).
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:34.267006Z'
+- id: kb_5_examination_binding
+  category: data_integrity
+  title: KB-5 PatientExamination bindet die explizit ausgewählte Identität
+  acceptance:
+  - Eine gültige explizite Auswahl wird atomar auf knowledge_base_module und knowledge_base_version gespeichert.
+  - Teilidentitäten sind weder über Serializer noch Service oder direkten Modell-Save zulässig.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py
+    - tests/views/report/test_patient_examination_report_ninja_api.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/views/report/test_patient_examination_report_ninja_api.py -q
+      note: Exit-Code 0
+    note: Atomic service binding and model pair invariant reviewed; focused model/report tests passed,
+      including module-only and version-only rejection.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:35.856756Z'
+- id: kb_6_save_uses_selected_identity
+  category: functionality
+  title: KB-6 Speichern und Berichtsvalidierung verwenden die ausgewählte Identität
+  acceptance:
+  - Die Bindung erfolgt vor Ledger-Persistenz und finaler ReportTemplate-Validierung.
+  - Auflösung über aktive oder voreingestellte Wissensbasen ist in untersuchungsgebundenen Schreibpfaden
+    unzulässig.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_persistence_service.py
+    - tests/services/test_report_runtime_validation.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py tests/services/test_report_runtime_validation.py
+        -q
+      note: Exit-Code 0
+    note: Binding precedes ledger persistence and final validation; persistence/runtime verifier passed
+      (11 tests).
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:37.490753Z'
+- id: kb_7_database_persistence
+  category: data_integrity
+  title: KB-7 Die ausgewählte Identität überlebt einen echten Datenbank-Commit
+  acceptance:
+  - Modul und Version werden in der PatientExamination-Zeile gespeichert und aus einer neuen ORM-Instanz
+    unverändert rekonstruiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+        -q
+      note: Exit-Code 0
+    note: Real database commit and fresh ORM instance preserve the selected module/version pair.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:39.407886Z'
+- id: kb_8_reload_identity
+  category: testing
+  title: KB-8 Ein Reload rekonstruiert exakt dieselbe kanonische Identität
+  acceptance:
+  - refresh_from_db und eine neue ORM-Abfrage ergeben denselben KnowledgeBaseIdentity-Wert wie die Auswahl.
+  - Der Nachweis verwendet den echten lx_dtypes-Vertrag und keine nur im Speicher gehaltene Testattrappe.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+        -q
+      note: Exit-Code 0
+    note: Reload reconstructs the same canonical KnowledgeBaseIdentity and resolves through real lx_dtypes
+      data.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:41.670865Z'
+- id: kb_9_persisted_identity_precedence
+  category: data_integrity
+  title: KB-9 Persistierte Identität hat Vorrang vor aktiver oder voreingestellter Version
+  acceptance:
+  - Ein Wechsel der Registry-Auswahl nach dem Speichern verändert weder die Identität noch die anschließende
+    lx_dtypes-Auflösung einer PatientExamination.
+  - Nominale Modul-Defaults oder Umgebungsvariablen dürfen eine persistierte Version nicht überschreiben.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+        -q
+      note: Exit-Code 0
+    note: Changing registry active selection after commit does not change persisted identity or exact
+      resolution.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:43.766514Z'
+- id: kb_10_invalid_identity_fails_closed
+  category: security
+  title: KB-10 Unbekannte und inkompatible Identitäten scheitern explizit
+  acceptance:
+  - Nicht registrierte Modul-/Versionspaare, mehrdeutige Werte und Teilidentitäten liefern einen sichtbaren
+    Validierungsfehler.
+  - Der Server ersetzt ungültige Auswahlen niemals durch das aktive Bundle oder einen Default.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_rejects_unknown_identity
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_rejects_unknown_identity
+        -q
+      note: Exit-Code 0
+    note: Unknown and partial identities fail visibly and remain unpersisted; no default substitution
+      occurs.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:45.751307Z'
+- id: kb_11_api_round_trip
+  category: testing
+  title: KB-11 Der API-Roundtrip erhält die gewählte Identität
+  acceptance:
+  - Eine explizite Frontend-Auswahl wird über POST oder PATCH gespeichert und über GET bytegenau als dasselbe
+    Modul-/Versionspaar zurückgegeben.
+  - Report-Antwort und PatientExamination-Antwort widersprechen sich nicht.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_round_trip_preserves_frontend_identity
+    - tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_round_trip_preserves_frontend_identity
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        -q
+      note: Exit-Code 0
+    note: Options -> PATCH -> database -> GET and controlled report migration retain one exact identity;
+      verifier passed.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:48.620994Z'
+- id: kb_12_no_implicit_backend_selection
+  category: operations
+  title: KB-12 Implizite Backend-Auswahl ist entfernt oder isoliert
+  acceptance:
+  - PatientExamination.save weist keine aktive, konfigurierte oder voreingestellte Wissensbasis zu.
+  - Untersuchungsgebundene Reporting-Pfade verlangen eine persistierte oder explizit übermittelte Identität;
+    verbleibende Defaults sind auf nicht gebundene Discovery-Endpunkte begrenzt und dokumentiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - bash
+    - -lc
+    - rg -n 'assign_knowledge_base_identity|get_configured_knowledge_base_identity' endoreg_db tests &&
+      exit 1 || exit 0
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: bash -lc 'rg -n '"'"'assign_knowledge_base_identity|get_configured_knowledge_base_identity'"'"'
+        endoreg_db tests && exit 1 || exit 0'
+      note: Exit-Code 0
+    note: PatientExamination default assignment is removed; patient-bound routes resolve persisted identity
+      while active lookup remains isolated to legacy discovery.
+    assessed_by: codex-frontend-kb-resolution
+    assessed_at: '2026-08-20T08:31:53.171713Z'
+- id: typed_boundary
+  category: functionality
+  title: Externe und persistierte Daten werden einmalig strikt validiert
+  acceptance:
+  - API-Daten werden am Rand in lx_dtypes-Verträge überführt.
+  - Interne Workflows verwenden keine parallelen untypisierten Payloadformen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    - kind: code
+      reference: endoreg_db/schemas/persisted_json.py:validate_dtypes_p_examination_payload
+    - kind: test
+      reference: tests/schemas/test_dtypes_record_persistence_boundary.py
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/schemas/test_dtypes_record_persistence_boundary.py tests/api/test_dtypes_record_persistence.py::test_base_api_persists_full_dtypes_record
+        tests/api/test_dtypes_record_persistence.py::test_base_api_rejects_unknown_nested_dtypes_record_fields
+        tests/api/test_dtypes_record_persistence.py::test_report_submission_api_returns_and_retrieves_persisted_dtypes_record
+        -q
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/schemas/persisted_json.py
+        tests/schemas/test_dtypes_record_persistence_boundary.py
+    - kind: code
+      reference: endoreg_db/services/dtypes_records.py
+    - kind: code
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/findings_routes.py
+    - kind: test
+      reference: tests/services/test_dtypes_records.py
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_report_template_validate_from_ledger_api.py
+    - kind: command
+      reference: 'Endoreg focused persistence/report lane: 75 passed'
+    - kind: command
+      reference: 'lx_dtypes host-ledger builder: 4 passed'
+    note: Der Host schreibt widersprüchliche nested patient_examination-Referenzen nicht mehr still um.
+      Der gemeinsame DtypesRecordPersistencePayload lehnt Befund- und Indikationskonflikte vor Mutation
+      ab; der LXDM-Host-Builder erzeugt die kanonische Untersuchungsreferenz direkt. Die fokussierte Endoreg-Lane
+      bestand mit 75 Tests, der Upstream-Builder mit 4 Tests; Pyright und Ruff sind in den geänderten
+      Dateien fehlerfrei.
+    assessed_by: codex-contract-coverage-20260813
+    assessed_at: '2026-08-13T10:52:27.713623Z'
+- id: record_consistency
+  category: data_integrity
+  title: Persistierter LXDM-Datensatz folgt allen klinischen Änderungen
+  acceptance:
+  - Erstellen, Ändern und Löschen abhängiger Befunde aktualisiert den Datensatz idempotent.
+  - Soft-Delete und Aktualisierung des persistierten LXDM-Datensatzes erfolgen atomar.
+  - Fremde Untersuchungsdatensätze werden abgelehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:41:11.678360Z'
+- id: automated_tests
+  category: testing
+  title: Importgrenzen und Persistenzvertrag sind regressionsgetestet
+  acceptance:
+  - Import-Boundary- und Datensatztests laufen mit strikt typisierten Verträgen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/app/test_lx_dtypes_import_boundary.py
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/app/test_lx_dtypes_import_boundary.py tests/api/test_dtypes_record_persistence.py -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:42:01.423471Z'
+- id: security_controls
+  category: security
+  title: Klinische Identität und Provenienz werden nicht durch lose Payloads umgangen
+  acceptance:
+  - Center- und Untersuchungsbezug werden serverseitig geprüft.
+  - Patientenbefunde werden nur authentifiziert und innerhalb des eigenen Center-Scopes gelistet.
+  - Erstellen, Ändern, Klassifizieren, Reaktivieren und Deaktivieren von Patientenbefunden erfordern Authentifizierung
+    und Center-Scope; fremde Ressourcen liefern 404.
+  - Jede Deaktivierung erhält einen authentifizierten Akteur und einen serverseitigen Zeitstempel.
+  - Persistierte JSON-Daten werden am Modellrand validiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/api/test_dtypes_record_persistence.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/api/test_dtypes_record_persistence.py -q
+    - kind: review
+      reference: lx_dtypes_host_models.py + findings_routes.py host authorization boundary
+    note: Alle Patient-Finding-Listen und -Mutationen authentifizieren, scopen Querysets auf das Center,
+      liefern für fremde Objekte 404 und auditieren Deaktivierungen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T14:42:22.499618Z'
+- id: operational_readiness
+  category: operations
+  title: Versionsgebundene Terminologie bleibt bei Upgrade und Wiederherstellung beherrschbar
+  acceptance:
+  - Upgrade-, Backfill-, Fehler- und Rollbackverfahren erhalten explizit gebundene Wissensbasis-Identitäten
+    und ersetzen sie nicht still durch eine aktive oder voreingestellte Version.
+  required: true
+  verification:
+    kind: manual
+    instructions: Versionsupgrade, Backfill und Wiederherstellung mit mindestens zwei unterscheidbaren
+      Wissensbasis-Versionen prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    - kind: review
+      reference: Upgrade, backfill, explicit migration, failure, and rollback paths reviewed against PatientExamination,
+        report_persistence, dtypes_records, and focused database/API tests; persisted identities are never
+        replaced by the active registry selection.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+        tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_rejects_unknown_identity
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        tests/api/test_dtypes_record_persistence.py::test_patient_finding_delete_rolls_back_when_dtypes_refresh_fails
+        -q (5 passed)
+    note: Upgrade and recovery procedures inventory persisted identities, require exact candidate-registry
+      resolution, preserve each bound pair during rebuilds, fail closed on incompatibility, and restore
+      the prior resolving registry on rollback. Focused tests prove active-version changes cannot override
+      persistence, invalid pairs remain unpersisted, controlled migration is atomic, and validation or
+      ledger-refresh failures roll back.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T11:48:36.521460Z'
+- id: integration_documentation
+  category: documentation
+  title: Host-Modul, Wissensbasis und API-Nutzung sind dokumentiert
+  acceptance:
+  - Neue Entwickler können Datenfluss, Imports und Kompatibilitätsregeln ohne Quellcodeforensik nachvollziehen.
+  - Die Dokumentation beschreibt die frontend-eigene Auswahl, den expliziten Request-Vertrag, die dauerhafte
+    PatientExamination-Bindung und das kontrollierte Migrationsverhalten ohne Default-Fallback.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation gegen aktuellen Import- und Persistenzpfad prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/dtypes_lookup_module_entrypoint.md
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
+        tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
+        -q (8 passed)
+    - kind: review
+      reference: Dokumentation gegen PatientExamination-Modell, DRF-Serializer, report_persistence-Service,
+        Ninja-API-Schemas und Export-Identitätsprüfung abgeglichen.
+    note: Der Integrationsleitfaden beschreibt jetzt die frontend-eigene Auswahl, den vollständigen Modul-/Versionsvertrag,
+      die transaktionale Bindung an PatientExamination und Report, sichtbare Fehler ohne Default-Fallback
+      sowie Upgrade-, Backfill- und Rollbackregeln für persistierte Identitäten.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:27:53.864884Z'

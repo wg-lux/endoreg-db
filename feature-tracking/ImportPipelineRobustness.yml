@@ -1,0 +1,370 @@
+schema_version: '1.0'
+id: import_pipeline_robustness
+name: Robuste Import-Pipeline
+description: Einheitlicher, fail-closed und wiederanlauffähiger Importvertrag für Video-, Report-, UploadJob-,
+  Watcher-, Transfer- und voranonymisierte Pfade. Die Aufgabe bündelt die schrittweise Härtung von Ownership,
+  Publikation, Erfolgsevidenz und Reconciliation, ohne bestehende Medienpfade vorzeitig als atomar oder
+  produktionsreif zu bewerten.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Definiert Lease, Heartbeat, Fencing und versuchseigene Publikationsrechte für Videoimporte.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Definiert kanonischen Master, HLS-Generationen, atomare Veröffentlichung und Cleanup-Gates.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Beschreibt Upload-, Watcher-, Transfer-, Quarantäne- und Wiederanlaufpfade.
+- path: docs/wiki/hub_ingest_current_state.md
+  disposition: reference
+  note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
+definition_of_done:
+- id: report_spacy_fallback_without_llm
+  category: functionality
+  title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex
+    zurück
+  acceptance:
+  - lx-anonymizer prüft beim Start eines Reportimports den konfigurierten LLM-Provider und aktiviert LLM-Metadatenextraktion
+    nur, wenn der Provider erreichbar ist und ein Modell bereitstellt; bei explizit deaktivierter LLM-Verarbeitung
+    wird der Provider nicht kontaktiert.
+  - endoreg-db führt Reportimporte unabhängig von der LLM-Verfügbarkeit im bereits verfügbaren Pipeline-Worker
+    aus und übergibt use_llm=true nur nach erfolgreicher Laufzeitprüfung; andernfalls verwendet der Import
+    die lokale spaCy- und Regex-Pipeline.
+  - Die Auswahl von LLM oder Fallback wird strukturiert protokolliert, startet keinen Dienst und lädt
+    kein Modell automatisch herunter; ein Import wird erst nach der bestehenden Artefakt-, Hash- und Zustandsvalidierung
+    als erfolgreich markiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_llm_jobs.py
+    - tests/services/test_report_import_service_unit.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/jobs/heavy_jobs.py; endoreg_db/config/settings/base.py; endoreg_db/import_files/processing/report_processing/report_anonymization.py;
+        /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
+    - kind: test
+      reference: 'Endoreg packaged-runtime pytest: 42 passed; lx-anonymizer focused pytest: 7 passed'
+    - kind: command
+      reference: lx-anonymizer pyright initially 0 errors/8 warnings; later rerun blocked by 20 concurrent
+        legacy example-test errors; Endoreg pyright environment incomplete, focused runtime tests passed
+    note: Reporttasks run on the pipeline queue. ReportReader probes the configured provider model list
+      at execution and sets use_llm=true only when a usable model is reachable; explicit LLM_ENABLED=false
+      skips probing. Selection is structured-logged and no service/model is auto-started.
+    assessed_by: codex-report-spacy-fallback
+    assessed_at: '2026-08-27T08:21:19.756497Z'
+- id: canonical_import_attempt_contract
+  category: requirements
+  title: Alle produktiven Importpfade verwenden einen kanonischen Importversuch
+  acceptance:
+  - Video, Report, API, Watcher, Transfer und voranonymisierter Import besitzen einen persistierten, typisierten
+    Versuch mit eindeutiger Medienart, Quellgeneration, Owner, Status und Attempt-ID.
+  - Direkte Service- und Kommandoaufrufe umgehen Lease, Retry, Fencing, Publikation oder Cleanup nicht.
+  - Der Vertrag benennt explizit, welche lokalen Locks nur Optimierungen und welche Datenbankzustände
+    autoritative Cluster-Ownership sind.
+  required: true
+  verification:
+    kind: manual
+    instructions: Alle Call-Sites von VideoImportService und ReportImportService inventarisieren und gegen
+      den kanonischen Attempt-Vertrag prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/import_files/video_import_service.py; endoreg_db/services/hub/ingest.py; docs/video_import_concurrency_contract.md
+    - kind: test
+      reference: PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db .devenv/state/venv/bin/pytest
+        tests/services/test_video_import_service_unit.py tests/services/test_hub_ingest_import_job_contract.py
+        -q (57 passed)
+    - kind: code
+      reference: endoreg_db/services/report_import_state_machine.py; endoreg_db/services/report_import_fencing.py;
+        endoreg_db/services/hub/upload_job_state_machine.py; endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: code
+      reference: endoreg_db/services/jobs/report_llm_jobs.py; endoreg_db/services/hub/upload_job_state_machine.py;
+        endoreg_db/services/report_import_state_machine.py
+    - kind: code
+      reference: endoreg_db/services/jobs/report_llm_jobs.py; endoreg_db/services/jobs/video_reimport_jobs.py;
+        endoreg_db/services/hub/ingest.py; endoreg_db/services/media_integrity.py
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py; endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: test
+      reference: tests/services/test_watcher_storage_import.py
+    - kind: command
+      reference: 'Kombinierte Lifecycle-/Watcher-Lane: 171 passed, 3 subtests passed, 2 warnings'
+    note: Der langlebige Inline-Watcher delegiert Videoimporte nun an process_upload_job und damit an
+      UploadJob-Lease, Heartbeat und den gefenceten VideoImportExecutionFence. Der zuvor noch erreichbare
+      direkte Legacy-Aufruf import_and_anonymize wird an diesem produktiven Einstieg nicht mehr verwendet.
+      Einmalige Migrations- und weitere Legacy-Direktpfade bleiben gesondert offen.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:01:13.926849Z'
+- id: video_finalization_fencing_receipt
+  category: data_integrity
+  title: Video-Finalisierung prüft Ownership und verlangt persistente Erfolgsevidenz
+  acceptance:
+  - Die aktuelle Ausführungsberechtigung wird vor Master-Metadaten, HLS-Materialisierung, Zustandsübergang,
+    Staging-Cleanup und erfolgreicher ProcessingHistory erneut geprüft.
+  - Ein Fehler beim Schreiben der erfolgreichen ProcessingHistory wird nicht unterdrückt und kann vom
+    Aufrufer nicht als erfolgreicher Import interpretiert werden.
+  - Regressionstests erzwingen die wiederholten Ownership-Prüfungen und einen laut propagierten History-Schreibfehler.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_video_finalize_success.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/import_files/file_storage/state_management.py::_record_successful_video_processing_history
+    - kind: test
+      reference: tests/import_files/test_video_finalize_success.py::test_successful_video_history_failure_is_not_suppressed;
+        tests/import_files/test_video_finalize_success.py::test_finalize_video_success_keeps_only_canonical_raw_and_anonymized
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py tests/services/test_preanonymized_watcher_ingest.py
+        -q (14 passed, 4 subtests passed)
+    note: Die kleinen Publikationsguards und der harte ProcessingHistory-Gate sind implementiert und typisiert
+      getestet; eine atomare Gesamtgeneration bleibt ein separates offenes Kriterium.
+    assessed_by: codex-ingest-audit-20260826
+    assessed_at: '2026-08-26T07:52:39Z'
+- id: preanonymized_streamability_fail_closed
+  category: security
+  title: Voranonymisierte Videos melden Streamable-Fehler nicht als Erfolg
+  acceptance:
+  - Ein Fehler beim Synchronisieren der erforderlichen Streamable-Artefakte propagiert bis zum Importversuch
+    und verhindert dessen erfolgreichen Abschluss.
+  - Der Fehler wird nicht in eine Warnung mit anschließend validiertem UploadJob umgewandelt.
+  - Ein negativer Regressionstest belegt das fail-closed Verhalten.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_preanonymized_watcher_ingest.py::test_preanonymized_video_streamable_sync_failure_is_not_suppressed
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py::_mark_preanonymized_video_ready
+    - kind: test
+      reference: tests/services/test_preanonymized_watcher_ingest.py::test_preanonymized_video_streamable_sync_failure_is_not_suppressed
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py tests/services/test_preanonymized_watcher_ingest.py
+        -q (14 passed, 4 subtests passed)
+    note: Die bisher unterdrückte Streamable-Ausnahme schlägt jetzt laut fehl. Medienprofil, Anonymisierungsattestation
+      und atomare Veröffentlichung bleiben gesondert offen.
+    assessed_by: codex-ingest-audit-20260826
+    assessed_at: '2026-08-26T07:52:39Z'
+- id: atomic_media_generation_publication
+  category: functionality
+  title: Master, Derivate, Status und Erfolgsevidenz werden als eine Generation veröffentlicht
+  acceptance:
+  - Ein Import wird erst erfolgreich, wenn kanonischer Master, erforderliche Derivate, Zustände und Erfolgshistorie
+    auf dieselbe Generation zeigen und vollständig validiert sind.
+  - Ein Fehler nach Master-Staging, während Raw- oder Processed-HLS oder beim History-Commit hinterlässt
+    keine teilweise als gültig referenzierte Generation.
+  - Die vorherige gültige Generation bleibt bis zum vollständigen Commit lesbar und wird bei Fehlern weder
+    überschrieben noch gelöscht.
+  required: true
+  verification:
+    kind: manual
+    instructions: Failure Injection an jeder Datei- und Datenbankgrenze ausführen und Datenbank, Master,
+      HLS, History und vorherige Generation anschließend reconciliieren.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/services/hls_media.py::_publish_validated_artifact
+    - kind: test
+      reference: tests/import_files/test_video_finalize_success.py; tests/services/test_hls_media.py::test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails;
+        tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication;
+        tests/services/test_hls_media.py::test_materialize_video_hls_failure_unlinks_partial_segments_and_keys
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py
+        tests/services/test_hls_media.py::test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails
+        tests/services/test_hls_media.py::test_failed_forced_queue_attempt_restores_previous_ready_artifact
+        tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication
+        tests/services/test_hls_media.py::test_materialize_video_hls_failure_unlinks_partial_segments_and_keys
+        -q (9 passed, 1 failed)
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success
+    - kind: test
+      reference: tests/import_files/test_video_finalize_success.py
+    - kind: command
+      reference: 'Kombinierte Lifecycle-Lane einschließlich Video-Finalisierung: 171 passed, 3 subtests
+        passed, 2 warnings'
+    note: finalize_video_success hält die Operation bis nach Kandidatenprüfung, beiden HTTP-Live-Streaming-Renditionen,
+      ProcessingHistory und VideoState auf RUNNING. Reanonymisierung schreibt eine neue generationenspezifische
+      Masterdatei und stellt bei jedem Fehler die vorherige Datei-, Hash- und Metadatenreferenz wieder
+      her; Staging wird erst nach vollständigem Erfolg bereinigt. Eine echte gemeinsame atomare Commit-Grenze
+      für Master und beide bereits separat publizierten HLS-Generationen bleibt offen.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:01:15.723574Z'
+- id: report_attempt_heartbeat_and_metadata_fencing
+  category: functionality
+  title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
+  acceptance:
+  - Die Report-Lease wird während lang laufender OCR- und Large-Language-Model-Phasen regelmäßig anhand
+    der Datenbankzeit erneuert.
+  - Originaltext, anonymisierter Text, SensitiveMeta und PDF-Publikation prüfen denselben monotonen Fencing-Token
+    vor jeder persistenten Mutation.
+  - Ein ersetzter Worker kann weder Metadaten noch Dateien oder Erfolgszustände eines neueren Versuchs
+    ändern.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_import_fencing.py
+    - tests/services/test_report_import_concurrency.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/report_import_fencing.py::ReportImportFenceHeartbeat; endoreg_db/services/report_import_fencing.py::report_import_mutation_guard;
+        endoreg_db/import_files/report_import_service.py::_import_with_content_hash_lock; endoreg_db/import_files/processing/report_processing/report_anonymization.py::ReportAnonymizer.anonymize_report
+    - kind: command
+      reference: 'targeted pyright: 0 errors, 1 external pymupdf-stub warning; report fencing: 6 passed;
+        report service unit: 52 passed'
+    - kind: test
+      reference: tests/services/test_report_import_state_machine.py; tests/services/test_report_import_fencing.py
+    - kind: code
+      reference: endoreg_db/models/state/report_import_attempt.py; endoreg_db/services/report_import_state_machine.py;
+        endoreg_db/services/report_import_fencing.py
+    - kind: command
+      reference: 'Kombinierte Lifecycle-Lane: 171 passed, 3 subtests passed, 2 warnings; fokussierter
+        Pyright der geänderten Dateien: 0 Fehler'
+    note: ReportImportAttempt besitzt nun den explizit persistierten Zustand LOST. Ein abgelaufener ACTIVE-Versuch
+      wird zuerst als OWNERSHIP_LOST sichtbar gespeichert und erst danach über RECONCILE_RETRY mit neuer
+      Attempt-ID und monoton erhöhtem Fencing-Token übernommen; ein lebender Owner bleibt gesperrt.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:01:12.277867Z'
+- id: cross_entrypoint_failure_injection
+  category: testing
+  title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
+  acceptance:
+  - Prozessbasierte Tests decken API, regulären Watcher, voranonymisierten Watcher, Transfer, CLI und
+    direkte Service-Aufrufe mit gleichem Pfad, gleichem Inhalt und unabhängigen Inhalten ab.
+  - Tests injizieren Lease-Verlust, Worker-Abbruch, Datenbankfehler, Disk-full, HLS-Fehler, History-Fehler
+    und Quelländerung an jeder Publikationsgrenze.
+  - Nach jedem Szenario bestehen höchstens eine gültige Generation und eine eindeutige aktuelle Ownership;
+    Quellenverlust und verwaiste Artefakte werden explizit erkannt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Die vollständige Failure-Injection-Matrix pro Eingangsweg in getrennten Prozessen gegen
+      PostgreSQL und produktionsnahen verschlüsselten Storage ausführen.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_import_service_unit.py
+        tests/services/test_hub_ingest_import_job_contract.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_watcher_storage_import.py -q (131 passed, 4 subtests passed, 2 warnings, 78.95s)
+    - kind: test
+      reference: tests/services/test_video_import_service_unit.py; tests/services/test_hub_ingest_import_job_contract.py;
+        tests/services/test_preanonymized_watcher_ingest.py; tests/services/test_watcher_storage_import.py
+    assessed_by: codex-advance-20260902
+    assessed_at: '2026-09-02T12:50:33.268631Z'
+- id: import_reconciliation_and_recovery
+  category: operations
+  title: Partielle Importe werden sicher erkannt und wiederaufgenommen
+  acceptance:
+  - Reconciliation erkennt Datenbank-only, Storage-only, fehlende History, unvollständige HLS-Generation,
+    abgelaufene Ownership und widersprüchliche Erfolgszustände.
+  - Automatische Reparatur verändert nur eindeutig besessene, wiederherstellbare Zustände; unbekannte
+    oder klinisch unsichere Zustände werden als LOST oder Quarantäne sichtbar und bleiben erhalten.
+  - Retry ist begrenzt, idempotent, kapazitätsgeprüft und löscht nie die einzige gültige Quelle oder Generation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Abgebrochene Importe in jeder Publikationsphase erzeugen und Recovery, Retry, Quarantäne
+      sowie unveränderte vorherige Generation betrieblich nachweisen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/reconciliation.py::ReconciliationService.clear_stale_lock_files;
+        cleanup_orphaned_artifacts; reset_incomplete_processing_states
+    - kind: command
+      reference: 'targeted pyright: 0 errors; tests/services/test_reconciliation_service.py: 15 passed'
+    - kind: command
+      reference: pytest tests/services/test_lifecycle_state_machine.py tests/services/test_report_import_state_machine.py
+        tests/services/test_report_import_fencing.py tests/services/test_upload_job_state_machine.py tests/services/test_upload_job_import_lease.py
+        tests/services/test_import_monitoring.py -q (68 passed); pytest tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py tests/services/test_hub_ingest_import_job_contract.py
+        -q (139 passed)
+    - kind: command
+      reference: 'Zusatzregressionen: Report-LLM/UploadJob 33 passed und 25 passed; Watcher/Media-Integrität
+        4 passed; Video-Reimport 6 passed und nach Datenbanktest 5 passed'
+    - kind: code
+      reference: endoreg_db/services/media_integrity.py; endoreg_db/services/jobs/model_training_jobs.py;
+        endoreg_db/tasks.py
+    - kind: test
+      reference: tests/services/test_media_integrity_reconciliation_plan.py; tests/services/test_model_training_jobs.py
+    - kind: command
+      reference: 'Kombinierte Reconciliation-/Lifecycle-Lane: 171 passed, 3 subtests passed, 2 warnings'
+    - kind: code
+      reference: endoreg_db/services/media_integrity.py::_mark_video_training_dependencies_lost; endoreg_db/services/jobs/model_training_jobs.py::reconcile_model_training_artifacts
+    - kind: test
+      reference: tests/services/test_media_integrity_reconciliation_plan.py::test_video_integrity_loss_propagates_to_dependent_training_ledger
+    - kind: command
+      reference: 'Vollständige Media-Integrity-Regression: 15 passed, 2 warnings; fokussierter Pyright:
+        0 Fehler'
+    note: Media-Reconciliation trennt gewöhnliche Verarbeitungsausfälle (FAILED) von belegtem Integritätsverlust
+      (LOST), erkennt leere Referenzen nach Erfolg beziehungsweise persistierte Uploadquellen ohne Storage-Referenz
+      und zählt bereits normalisierte LOST-Datensätze bei jeder Inventur. Der Verlust eines bestätigten
+      Videoartefakts propagiert atomar an angewandte TransferJob-Ledger und abgeschlossene AIModelTrainingRun-Ledger
+      der referenzierenden Datensätze; eigenständige Trainingsergebnis-Artefakte werden zusätzlich periodisch
+      reconciled.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:22:14.470261Z'
+- id: import_pipeline_operator_documentation
+  category: documentation
+  title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert
+  acceptance:
+  - Die Dokumentation zeigt je Eingangsweg Attempt, Lease, Heartbeat, Fencing, Staging, Publikation, Cleanup
+    und terminale Fehlerzustände ohne widersprüchliche Erfolgsdefinitionen.
+  - Videoimport-Erfolg, HLS-Bereitschaft und Generation werden zwischen Runbook und Feature-Tracker identisch
+    definiert.
+  - Das Runbook beschreibt Diagnose und Recovery für History-Fehler, Streamable-Fehler, Lease-Verlust,
+    partielle Generation und voranonymisierte Trust-Boundary-Verletzung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbooks gegen Code, Tracker und Incident-Abläufe gemeinsam mit Betrieb, Security, Storage
+      und klinischem Reviewer abnehmen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: runbook
+      reference: docs/video_import_concurrency_contract.md; docs/video_storage_normalization.md; docs/hub_ingest_operations.md;
+        docs/wiki/hub_ingest_current_state.md
+    note: Runbooks now share the fail-closed video success boundary, distinguish database ownership from
+      local locks, and include operator recovery for history, HLS, ownership, DB/storage mismatch, and
+      pre-anonymized trust failures. Cross-functional operations, security, storage, and clinical acceptance
+      remains outstanding.
+    assessed_by: codex-import-robustness-20260826
+    assessed_at: '2026-08-26T08:22:58.351741Z'

@@ -1,0 +1,1088 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
+import json
+import logging
+import os
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, cast
+from uuid import uuid4
+
+from django.db import transaction
+from django.db.models.fields.files import FieldFile
+from lx_dtypes.models.contracts.video_frame_cache import (
+    FrameCacheLogPayload,
+    FrameCacheManifestLogPayload,
+    FrameCacheValidationLogPayload,
+)
+from lx_dtypes.models.contracts.video_state import VideoFrameStateContract
+
+from endoreg_db.services.video_files._io import _get_frame_dir_path
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames as ffmpeg_extract_frames,
+)
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    atomic_move_path,
+    ensure_directory,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.media.frame_file_permissions import (
+    FRAME_CACHE_DIR_MODE,
+    FRAME_FILE_MODE,
+    FRAME_STAGING_DIR_MODE,
+    apply_frame_cache_dir_mode,
+    apply_frame_file_modes,
+    ensure_frame_staging_dir,
+)
+from endoreg_db.utils.rust_backend import (
+    parse_extracted_frame_numbers as rust_parse,
+)
+from endoreg_db.utils.storage import materialize_video_file
+
+logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.state.video import VideoState
+
+
+class _VideoMaterializableLike(Protocol):
+    video_hash: str
+
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
+
+    raw_file: FieldFile | None
+    processed_file: FieldFile | None
+
+
+@dataclass(frozen=True, slots=True)
+class FrameCacheManifest:
+    frame_dir: Path
+    ext: str
+    expected_count: int | None
+    actual_names: list[str]
+    frame_numbers: list[int]
+    invalid_file_names: list[str]
+    duplicate_frame_numbers: list[int]
+    missing_frame_numbers: list[int]
+    extra_frame_numbers: list[int]
+    unexpected_file_names: list[str]
+
+    @property
+    def file_count(self) -> int:
+        return len(self.actual_names)
+
+    @property
+    def is_contiguous_zero_based(self) -> bool:
+        return (
+            not self.invalid_file_names
+            and not self.duplicate_frame_numbers
+            and self.frame_numbers == list(range(self.file_count))
+        )
+
+    @property
+    def is_exact_complete(self) -> bool:
+        if self.expected_count is None:
+            return False
+        expected_names = {
+            _expected_relative_path(frame_number, self.ext)
+            for frame_number in range(self.expected_count)
+        }
+        return (
+            not self.invalid_file_names
+            and not self.duplicate_frame_numbers
+            and set(self.actual_names) == expected_names
+        )
+
+    def as_log_payload_model(self) -> FrameCacheManifestLogPayload:
+        return FrameCacheManifestLogPayload(
+            frame_dir=str(self.frame_dir),
+            file_count=self.file_count,
+            expected_count=self.expected_count,
+            missing_frame_numbers=self.missing_frame_numbers[:50],
+            extra_frame_numbers=self.extra_frame_numbers[:50],
+            invalid_file_names=self.invalid_file_names[:50],
+            duplicate_frame_numbers=self.duplicate_frame_numbers[:50],
+            unexpected_file_names=self.unexpected_file_names[:50],
+        )
+
+    def as_log_payload(self) -> FrameCacheLogPayload:
+        return cast(
+            FrameCacheLogPayload,
+            self.as_log_payload_model().model_dump(mode="python", exclude_none=True),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FrameCacheValidation:
+    manifest: FrameCacheManifest
+    db_extracted_frame_count: int
+    db_missing_frame_numbers: list[int]
+    db_extra_frame_numbers: list[int]
+    db_path_mismatch_frame_numbers: list[int]
+    db_missing_file_frame_numbers: list[int]
+
+    @property
+    def valid(self) -> bool:
+        return (
+            self.manifest.is_exact_complete
+            and not self.db_missing_frame_numbers
+            and not self.db_extra_frame_numbers
+            and not self.db_path_mismatch_frame_numbers
+            and not self.db_missing_file_frame_numbers
+        )
+
+    def as_log_payload(self) -> FrameCacheLogPayload:
+        manifest = self.manifest.as_log_payload_model()
+        payload = FrameCacheValidationLogPayload(
+            frame_dir=manifest.frame_dir,
+            file_count=manifest.file_count,
+            expected_count=manifest.expected_count,
+            missing_frame_numbers=manifest.missing_frame_numbers,
+            extra_frame_numbers=manifest.extra_frame_numbers,
+            invalid_file_names=manifest.invalid_file_names,
+            duplicate_frame_numbers=manifest.duplicate_frame_numbers,
+            unexpected_file_names=manifest.unexpected_file_names,
+            db_extracted_frame_count=self.db_extracted_frame_count,
+            db_missing_frame_numbers=self.db_missing_frame_numbers[:50],
+            db_extra_frame_numbers=self.db_extra_frame_numbers[:50],
+            db_path_mismatch_frame_numbers=self.db_path_mismatch_frame_numbers[:50],
+            db_missing_file_frame_numbers=self.db_missing_file_frame_numbers[:50],
+            valid=self.valid,
+        )
+        return cast(
+            FrameCacheLogPayload,
+            payload.model_dump(mode="python", exclude_none=True),
+        )
+
+
+def _video_source_context(
+    video: "VideoFile", *, from_processed: bool
+) -> AbstractContextManager[Path]:
+    return materialize_video_file(
+        cast(_VideoMaterializableLike, video),
+        "processed" if from_processed else "raw",
+    )
+
+
+def _expected_relative_path(frame_number: int, ext: str) -> str:
+    return f"frame_{frame_number:07d}.{ext}"
+
+
+def _log_frame_cache_event(
+    *,
+    event: str,
+    video: "VideoFile",
+    status: str,
+    detail: str,
+    extra: FrameCacheLogPayload,
+) -> None:
+    payload: FrameCacheLogPayload = {
+        "event": event,
+        "video_hash": str(video.video_hash),
+        "status": status,
+        "detail": detail,
+    }
+    logger.warning(
+        json.dumps(
+            {
+                **payload,
+                **extra,
+            },
+            sort_keys=True,
+            default=str,
+        )
+    )
+
+
+def _expected_frame_count(
+    video: "VideoFile", state: VideoFrameStateContract
+) -> int | None:
+    for value in (
+        getattr(video, "frame_count", None),
+        getattr(state, "frame_count", None),
+    ):
+        if value is None:
+            continue
+        try:
+            count = int(str(value))
+        except (TypeError, ValueError):
+            continue
+        if count > 0:
+            return count
+    return None
+
+
+def _parse_frame_numbers(frame_paths: list[Path]) -> list[int]:
+    rust_frame_numbers = rust_parse(frame_paths)
+    if rust_frame_numbers is not None:
+        return rust_frame_numbers
+
+    frame_numbers: list[int] = []
+    for frame_path in frame_paths:
+        try:
+            frame_numbers.append(int(frame_path.stem.split("_")[-1]))
+        except (ValueError, IndexError) as e:
+            logger.warning(
+                "Could not parse frame number from extracted file %s: %s",
+                frame_path.name,
+                e,
+            )
+    return frame_numbers
+
+
+def _parse_frame_number_from_name(file_name: str, ext: str) -> int | None:
+    prefix = "frame_"
+    suffix = f".{ext}"
+    if not file_name.startswith(prefix) or not file_name.endswith(suffix):
+        return None
+    number_text = file_name[len(prefix) : -len(suffix)]
+    if not number_text.isdigit():
+        return None
+    return int(number_text)
+
+
+def build_frame_cache_manifest(
+    frame_dir: Path,
+    *,
+    expected_count: int | None,
+    ext: str,
+) -> FrameCacheManifest:
+    frame_paths: list[Path] = []
+    if frame_dir.exists():
+        frame_paths = sorted(
+            path for path in frame_dir.glob(f"frame_*.{ext}") if path.is_file()
+        )
+
+    actual_names = [path.name for path in frame_paths]
+    invalid_file_names: list[str] = []
+    frame_numbers_by_name: dict[str, int] = {}
+    seen_numbers: set[int] = set()
+    duplicate_numbers: set[int] = set()
+
+    for file_name in actual_names:
+        frame_number = _parse_frame_number_from_name(file_name, ext)
+        if frame_number is None:
+            invalid_file_names.append(file_name)
+            continue
+        frame_numbers_by_name[file_name] = frame_number
+        if frame_number in seen_numbers:
+            duplicate_numbers.add(frame_number)
+        seen_numbers.add(frame_number)
+
+    frame_numbers = sorted(seen_numbers)
+    missing_frame_numbers: list[int] = []
+    extra_frame_numbers: list[int] = []
+    unexpected_file_names: list[str] = []
+    if expected_count is not None:
+        expected_numbers = set(range(expected_count))
+        missing_frame_numbers = sorted(expected_numbers - seen_numbers)
+        extra_frame_numbers = sorted(seen_numbers - expected_numbers)
+        expected_names = {
+            _expected_relative_path(frame_number, ext)
+            for frame_number in expected_numbers
+        }
+        unexpected_file_names = sorted(set(actual_names) - expected_names)
+    else:
+        unexpected_file_names = sorted(
+            file_name
+            for file_name, frame_number in frame_numbers_by_name.items()
+            if file_name != _expected_relative_path(frame_number, ext)
+        )
+
+    return FrameCacheManifest(
+        frame_dir=frame_dir,
+        ext=ext,
+        expected_count=expected_count,
+        actual_names=actual_names,
+        frame_numbers=frame_numbers,
+        invalid_file_names=sorted(invalid_file_names),
+        duplicate_frame_numbers=sorted(duplicate_numbers),
+        missing_frame_numbers=missing_frame_numbers,
+        extra_frame_numbers=extra_frame_numbers,
+        unexpected_file_names=unexpected_file_names,
+    )
+
+
+def _resolve_verified_frame_count(
+    manifest: FrameCacheManifest,
+    *,
+    video: "VideoFile",
+    expected_count: int | None,
+) -> tuple[int, int | None]:
+    if manifest.file_count == 0:
+        raise RuntimeError(
+            f"Frame extraction produced no installed frame files for {video.video_hash}."
+        )
+    if manifest.invalid_file_names or manifest.duplicate_frame_numbers:
+        _log_frame_cache_event(
+            event="frame_cache_validation",
+            video=video,
+            status="invalid",
+            detail="staged frame cache contains invalid or duplicate frame names",
+            extra=manifest.as_log_payload(),
+        )
+        raise RuntimeError(
+            "Extracted frame set contains invalid or duplicate frame filenames "
+            f"for {video.video_hash}."
+        )
+
+    if expected_count is None:
+        if manifest.is_contiguous_zero_based:
+            return manifest.file_count, None
+        _log_frame_cache_event(
+            event="frame_cache_validation",
+            video=video,
+            status="invalid",
+            detail="staged frame cache is not contiguous zero-based",
+            extra=manifest.as_log_payload(),
+        )
+        raise RuntimeError(
+            f"Extracted frame set for {video.video_hash} is not contiguous zero-based."
+        )
+
+    expected_numbers = set(range(expected_count))
+    actual_numbers = set(manifest.frame_numbers)
+    if (
+        actual_numbers == expected_numbers
+        and manifest.file_count == expected_count
+        and not manifest.unexpected_file_names
+    ):
+        return expected_count, None
+
+    missing = sorted(expected_numbers - actual_numbers)
+    extra = sorted(actual_numbers - expected_numbers)
+    has_single_trailing_extra = (
+        not missing
+        and extra == [expected_count]
+        and actual_numbers == set(range(expected_count + 1))
+        and manifest.file_count == expected_count + 1
+    )
+    if has_single_trailing_extra:
+        corrected_count = expected_count + 1
+        logger.warning(
+            "Correcting decoded frame count for video %s from %d to %d "
+            "after FFmpeg extracted one trailing frame beyond metadata.",
+            video.video_hash,
+            expected_count,
+            corrected_count,
+        )
+        return corrected_count, corrected_count
+
+    _log_frame_cache_event(
+        event="frame_cache_validation",
+        video=video,
+        status="invalid",
+        detail="staged frame cache does not match expected frame count",
+        extra=manifest.as_log_payload(),
+    )
+    raise RuntimeError(
+        "Extracted frame set does not match expected video frame count "
+        f"for {video.video_hash}: expected={expected_count}, "
+        f"actual={manifest.file_count}, missing_sample={missing[:10]}, "
+        f"extra_sample={extra[:10]}"
+    )
+
+
+def _assert_exact_installed_manifest(
+    manifest: FrameCacheManifest,
+    *,
+    video: "VideoFile",
+) -> None:
+    if manifest.is_exact_complete:
+        return
+    _log_frame_cache_event(
+        event="frame_cache_validation",
+        video=video,
+        status="invalid",
+        detail="installed frame cache failed final exact completeness check",
+        extra=manifest.as_log_payload(),
+    )
+    raise RuntimeError(
+        "Installed frame cache does not match the verified frame set "
+        f"for {video.video_hash}."
+    )
+
+
+def _full_extraction_files_complete(
+    frame_dir: Path,
+    *,
+    expected_count: int,
+    ext: str,
+) -> bool:
+    """Return true only when the directory is an exact full extraction."""
+    expected_names = {
+        _expected_relative_path(frame_number, ext)
+        for frame_number in range(expected_count)
+    }
+    actual_names = {
+        frame_path.name
+        for frame_path in frame_dir.glob(f"frame_*.{ext}")
+        if frame_path.is_file()
+    }
+    return actual_names == expected_names
+
+
+def validate_video_frame_cache(
+    video: "VideoFile",
+    *,
+    ext: str = "jpg",
+) -> FrameCacheValidation:
+    from endoreg_db.models.media.frame.frame import Frame
+
+    state = video.get_or_create_state()
+    expected_count = _expected_frame_count(
+        video,
+        VideoFrameStateContract.model_validate(state),
+    )
+    frame_dir = _get_frame_dir_path(video)
+    if frame_dir is None:
+        raise ValueError(
+            f"Cannot determine frame directory path for video {video.video_hash}."
+        )
+
+    manifest = build_frame_cache_manifest(
+        frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    expected_paths: dict[int, str] = {}
+    if expected_count is not None:
+        expected_paths = {
+            frame_number: _expected_relative_path(frame_number, ext)
+            for frame_number in range(expected_count)
+        }
+
+    db_rows = list(
+        Frame.objects.filter(video=video, is_extracted=True).values(
+            "frame_number",
+            "relative_path",
+        )
+    )
+    db_paths = {int(row["frame_number"]): str(row["relative_path"]) for row in db_rows}
+    expected_numbers = set(expected_paths)
+    db_numbers = set(db_paths)
+    db_missing = sorted(expected_numbers - db_numbers)
+    db_extra = sorted(db_numbers - expected_numbers)
+
+    db_path_mismatch: list[int] = []
+    db_missing_files: list[int] = []
+    for frame_number in sorted(expected_numbers & db_numbers):
+        relative_path = db_paths[frame_number]
+        if relative_path != expected_paths[frame_number]:
+            db_path_mismatch.append(frame_number)
+        if not (frame_dir / relative_path).is_file():
+            db_missing_files.append(frame_number)
+
+    return FrameCacheValidation(
+        manifest=manifest,
+        db_extracted_frame_count=len(db_rows),
+        db_missing_frame_numbers=db_missing,
+        db_extra_frame_numbers=db_extra,
+        db_path_mismatch_frame_numbers=db_path_mismatch,
+        db_missing_file_frame_numbers=db_missing_files,
+    )
+
+
+def _get_staged_extraction_dir(frame_dir: Path, video_hash: str) -> Path:
+    return frame_dir.with_name(f".extracting_{video_hash}_{os.getpid()}_{uuid4().hex}")
+
+
+def _get_staged_replacement_dir(frame_dir: Path) -> Path:
+    return frame_dir.with_name(f"{frame_dir.name}.pending_replace.{uuid4().hex}")
+
+
+def _ensure_stable_frame_records(
+    video: "VideoFile",
+    *,
+    frame_numbers: list[int],
+    ext: str,
+) -> int:
+    from endoreg_db.models.media.frame.frame import Frame
+
+    if not frame_numbers:
+        return 0
+
+    unique_numbers = sorted(set(frame_numbers))
+    existing_frames = {
+        frame.frame_number: frame
+        for frame in Frame.objects.filter(
+            video=video,
+            frame_number__in=unique_numbers,
+        )
+    }
+
+    frames_to_create: list[Frame] = []
+    frames_to_update: list[Frame] = []
+    for frame_number in unique_numbers:
+        expected_relative_path = _expected_relative_path(frame_number, ext)
+        frame = existing_frames.get(frame_number)
+        if frame is None:
+            frames_to_create.append(
+                Frame(
+                    video=video,
+                    frame_number=frame_number,
+                    relative_path=expected_relative_path,
+                    is_extracted=True,
+                )
+            )
+            continue
+
+        changed = False
+        if frame.relative_path != expected_relative_path:
+            frame.relative_path = expected_relative_path
+            changed = True
+        if not frame.is_extracted:
+            frame.is_extracted = True
+            changed = True
+        if changed:
+            frames_to_update.append(frame)
+
+    if frames_to_create:
+        Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
+    if frames_to_update:
+        Frame.objects.bulk_update(
+            frames_to_update,
+            ["relative_path", "is_extracted"],
+        )
+
+    return len(unique_numbers)
+
+
+def _sync_extracted_frame_records(
+    video: "VideoFile",
+    *,
+    frame_numbers: list[int],
+    ext: str,
+) -> int:
+    from endoreg_db.models.media.frame.frame import Frame
+
+    unique_numbers = sorted(set(frame_numbers))
+    if unique_numbers:
+        Frame.objects.filter(video=video, is_extracted=True).exclude(
+            frame_number__in=unique_numbers
+        ).update(is_extracted=False)
+    else:
+        Frame.objects.filter(video=video, is_extracted=True).update(is_extracted=False)
+        return 0
+    return _ensure_stable_frame_records(
+        video,
+        frame_numbers=unique_numbers,
+        ext=ext,
+    )
+
+
+def extract_full_frame_set_to_directory(
+    video: "VideoFile",
+    *,
+    output_dir: Path,
+    quality: int = 2,
+    ext: str = "jpg",
+    from_processed: bool = False,
+) -> list[Path]:
+    if from_processed:
+        source_label = "Processed"
+    else:
+        if not video.has_raw:
+            raise FileNotFoundError(
+                f"Raw video file not available for {video.video_hash}. Cannot extract frames."
+            )
+        source_label = "Raw"
+
+    with _video_source_context(video, from_processed=from_processed) as source_path:
+        if not Path(source_path).exists():
+            raise FileNotFoundError(
+                f"{source_label} video file not found at {source_path} for video {video.video_hash}. Cannot extract frames."
+            )
+        ensure_frame_staging_dir(output_dir)
+        frame_paths = ffmpeg_extract_frames(
+            Path(source_path),
+            output_dir,
+            quality=quality,
+            ext=ext,
+        )
+        apply_frame_file_modes(frame_paths)
+        return frame_paths
+
+
+def _normalize_full_extraction_paths(
+    frame_paths: list[Path],
+    *,
+    frame_dir: Path,
+    ext: str,
+) -> list[Path]:
+    """
+    Normalize full-extraction output to stable zero-based DB paths.
+
+    FFmpeg is invoked with ``-start_number 0`` now, but this also repairs output
+    from older/mocked extractors that still emit one-based or short-padded names.
+    """
+    if not frame_paths:
+        return []
+
+    parsed: list[tuple[int, Path]] = []
+    for frame_path in frame_paths:
+        if not frame_path.is_file():
+            raise RuntimeError(f"Extractor returned missing frame file: {frame_path}")
+        try:
+            parsed.append((int(frame_path.stem.split("_")[-1]), frame_path))
+        except (ValueError, IndexError) as exc:
+            raise RuntimeError(
+                f"Could not parse extracted frame filename: {frame_path.name}"
+            ) from exc
+
+    sorted_paths = [path for _, path in sorted(parsed, key=lambda item: item[0])]
+    target_paths = [
+        frame_dir / _expected_relative_path(frame_number, ext)
+        for frame_number in range(len(sorted_paths))
+    ]
+
+    if all(source == target for source, target in zip(sorted_paths, target_paths)):
+        return target_paths
+
+    staged_paths: list[Path] = []
+    rename_token = f".renaming.{id(sorted_paths)}"
+    try:
+        for index, source_path in enumerate(sorted_paths):
+            staged_path = frame_dir / f"{source_path.name}{rename_token}.{index}"
+            atomic_move_file(
+                source=source_path,
+                destination=staged_path,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_STAGING_DIR_MODE,
+            )
+            staged_paths.append(staged_path)
+
+        for staged_path, target_path in zip(staged_paths, target_paths):
+            if target_path.exists():
+                safe_unlink_file(target_path, missing_ok=True)
+            atomic_move_file(
+                source=staged_path,
+                destination=target_path,
+                file_mode=FRAME_FILE_MODE,
+                dir_mode=FRAME_STAGING_DIR_MODE,
+            )
+    except Exception:
+        for staged_path in staged_paths:
+            if staged_path.exists():
+                safe_unlink_file(staged_path, missing_ok=True)
+        raise
+
+    return target_paths
+
+
+@dataclass(slots=True)
+class _FrameCacheInstallation:
+    frame_dir: Path
+    staged_frame_dir: Path
+    replaced_frame_dir: Path | None = None
+    installed_new_cache: bool = False
+
+
+def _complete_existing_manifest(
+    frame_dir: Path,
+    *,
+    expected_count: int | None,
+    ext: str,
+) -> FrameCacheManifest | None:
+    if expected_count is None or not frame_dir.exists():
+        return None
+    manifest = build_frame_cache_manifest(
+        frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    return manifest if manifest.is_exact_complete else None
+
+
+def _reuse_complete_frame_cache(
+    video: "VideoFile",
+    *,
+    state: "VideoState",
+    manifest: FrameCacheManifest | None,
+    expected_count: int | None,
+    ext: str,
+    overwrite: bool,
+) -> bool:
+    if manifest is None or overwrite:
+        return False
+    assert expected_count is not None
+    logger.info(
+        "Complete frame extraction already exists for video %s (%d frames), "
+        "and overwrite=False. Skipping extraction.",
+        video.video_hash,
+        expected_count,
+    )
+    with transaction.atomic():
+        state.refresh_from_db()
+        updated_count = _sync_extracted_frame_records(
+            video,
+            frame_numbers=manifest.frame_numbers,
+            ext=ext,
+        )
+        logger.info(
+            "Verified %d stable Frame records for video %s based on complete files.",
+            updated_count,
+            video.video_hash,
+        )
+        state.frames_initialized = True
+        state.frame_count = expected_count
+        state.mark_frames_extracted(save=False)
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+                "date_modified",
+            ]
+        )
+    return True
+
+
+def _log_frame_cache_replacement(
+    video: "VideoFile",
+    *,
+    state: "VideoState",
+    files_exist_on_disk: bool,
+    overwrite: bool,
+) -> None:
+    if overwrite:
+        logger.info(
+            "Overwrite=True. A staged full extraction will replace existing "
+            "frames/files for video %s after verification.",
+            video.video_hash,
+        )
+        return
+    if state.frames_extracted or files_exist_on_disk:
+        logger.warning(
+            "Frame extraction state/files for video %s are incomplete. A staged "
+            "full extraction will replace the cache after verification.",
+            video.video_hash,
+        )
+
+
+def _extract_verified_staged_manifest(
+    video: "VideoFile",
+    *,
+    staged_frame_dir: Path,
+    quality: int,
+    ext: str,
+    from_processed: bool,
+    expected_count: int | None,
+) -> tuple[FrameCacheManifest, int | None]:
+    extracted_paths = extract_full_frame_set_to_directory(
+        video,
+        output_dir=staged_frame_dir,
+        quality=quality,
+        ext=ext,
+        from_processed=from_processed,
+    )
+    if not extracted_paths:
+        logger.warning(
+            "ffmpeg_extract_frames returned no paths for video %s. Check video "
+            "duration and ffmpeg logs.",
+            video.video_hash,
+        )
+        if video.frame_count is not None and video.frame_count > 0:
+            raise RuntimeError(
+                "ffmpeg_extract_frames returned no paths for video "
+                f"{video.video_hash}, but {video.frame_count} frames were expected."
+            )
+
+    extracted_paths = _normalize_full_extraction_paths(
+        extracted_paths,
+        frame_dir=staged_frame_dir,
+        ext=ext,
+    )
+    logger.info(
+        "Successfully extracted %d frames using ffmpeg for video %s.",
+        len(extracted_paths),
+        video.video_hash,
+    )
+    staged_manifest = build_frame_cache_manifest(
+        staged_frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    verified_frame_count, corrected_frame_count = _resolve_verified_frame_count(
+        staged_manifest,
+        video=video,
+        expected_count=expected_count,
+    )
+    verified_manifest = build_frame_cache_manifest(
+        staged_frame_dir,
+        expected_count=verified_frame_count,
+        ext=ext,
+    )
+    _assert_exact_installed_manifest(verified_manifest, video=video)
+    return verified_manifest, corrected_frame_count
+
+
+def _install_verified_frame_cache(
+    video: "VideoFile",
+    *,
+    installation: _FrameCacheInstallation,
+    verified_manifest: FrameCacheManifest,
+    ext: str,
+) -> FrameCacheManifest:
+    if installation.frame_dir.exists():
+        installation.replaced_frame_dir = _get_staged_replacement_dir(
+            installation.frame_dir
+        )
+        atomic_move_path(
+            source=installation.frame_dir,
+            destination=installation.replaced_frame_dir,
+        )
+        apply_frame_cache_dir_mode(installation.replaced_frame_dir)
+    atomic_move_path(
+        source=installation.staged_frame_dir,
+        destination=installation.frame_dir,
+    )
+    apply_frame_cache_dir_mode(installation.frame_dir)
+    apply_frame_file_modes(installation.frame_dir.glob(f"frame_*.{ext}"))
+    installation.installed_new_cache = True
+    final_manifest = build_frame_cache_manifest(
+        installation.frame_dir,
+        expected_count=verified_manifest.expected_count,
+        ext=ext,
+    )
+    _assert_exact_installed_manifest(final_manifest, video=video)
+    return final_manifest
+
+
+def _persist_verified_frame_cache(
+    video: "VideoFile",
+    *,
+    state: "VideoState",
+    final_manifest: FrameCacheManifest,
+    corrected_frame_count: int | None,
+    ext: str,
+) -> None:
+    with transaction.atomic():
+        update_count = _sync_extracted_frame_records(
+            video,
+            frame_numbers=final_manifest.frame_numbers,
+            ext=ext,
+        )
+        logger.info(
+            "Ensured %d stable Frame objects as is_extracted=True for video %s.",
+            update_count,
+            video.video_hash,
+        )
+        if update_count != len(final_manifest.frame_numbers):
+            logger.warning(
+                "Number of updated frames (%d) does not match number of parsed "
+                "extracted files (%d) for video %s.",
+                update_count,
+                len(final_manifest.frame_numbers),
+                video.video_hash,
+            )
+        state.refresh_from_db()
+        if (
+            corrected_frame_count is not None
+            and video.frame_count != corrected_frame_count
+        ):
+            video.frame_count = corrected_frame_count
+            video.save(update_fields=["frame_count"])
+        state.frames_initialized = True
+        state.frame_count = len(final_manifest.frame_numbers)
+        state.mark_frames_extracted(save=False)
+        state.save(
+            update_fields=[
+                "frames_initialized",
+                "frame_count",
+                "frames_extracted",
+                "date_modified",
+            ]
+        )
+
+
+def _restore_frame_cache_after_failure(
+    video: "VideoFile",
+    *,
+    state: "VideoState",
+    installation: _FrameCacheInstallation,
+) -> None:
+    logger.warning(
+        "Cleaning up staged frame directory %s for video %s due to extraction error.",
+        installation.staged_frame_dir,
+        video.video_hash,
+    )
+    safe_rmtree(installation.staged_frame_dir, missing_ok=True)
+    replaced_frame_dir = installation.replaced_frame_dir
+    if replaced_frame_dir is not None and replaced_frame_dir.exists():
+        _restore_replaced_frame_cache(video, installation)
+    elif installation.installed_new_cache and installation.frame_dir.exists():
+        safe_rmtree(installation.frame_dir, missing_ok=True)
+    _reset_extracted_state_after_failure(video, state=state)
+
+
+def _restore_replaced_frame_cache(
+    video: "VideoFile",
+    installation: _FrameCacheInstallation,
+) -> None:
+    assert installation.replaced_frame_dir is not None
+    if installation.frame_dir.exists():
+        safe_rmtree(installation.frame_dir, missing_ok=True)
+    try:
+        atomic_move_path(
+            source=installation.replaced_frame_dir,
+            destination=installation.frame_dir,
+        )
+    except Exception as restore_error:
+        logger.error(
+            "Failed to restore previous frame cache for video %s from %s: %s",
+            video.video_hash,
+            installation.replaced_frame_dir,
+            restore_error,
+            exc_info=True,
+        )
+
+
+def _reset_extracted_state_after_failure(
+    video: "VideoFile",
+    *,
+    state: "VideoState",
+) -> None:
+    try:
+        with transaction.atomic():
+            state.refresh_from_db()
+            if state.frames_extracted:
+                state.frames_extracted = False
+                state.save(update_fields=["frames_extracted"])
+    except Exception as database_error:
+        logger.error(
+            "Failed to reset flags/state in DB during error handling for video %s: %s",
+            video.video_hash,
+            database_error,
+        )
+
+
+def _require_frame_dir(video: "VideoFile") -> Path:
+    frame_dir = _get_frame_dir_path(video)
+    if frame_dir is None:
+        raise ValueError(
+            f"Cannot determine frame directory path for video {video.video_hash}."
+        )
+    return frame_dir
+
+
+def _extract_frames(
+    video: "VideoFile",
+    quality: int = 2,
+    overwrite: bool = False,
+    ext: str = "jpg",
+    verbose: bool = False,
+    from_processed: bool = False,
+) -> bool:
+    """
+    Extract a complete, stable frame set and update frame extraction state.
+
+    Full extraction is skipped only when the frame directory exactly matches the
+    expected zero-based filename set for the known frame count. A non-empty
+    frame directory, stale state flag, or range-extracted single frame is treated
+    as incomplete and replaced only after a staged extraction verifies the full
+    expected frame set. This protects explicit cache consumers from running OCR
+    or prediction on a partial frame set.
+
+    Parameters:
+        video (VideoFile): The video object from which frames are to be extracted.
+        quality (int, optional): Quality parameter for ffmpeg extraction. Defaults to 2.
+        overwrite (bool, optional): Whether to overwrite existing extracted frames. Defaults to False.
+        ext (str, optional): File extension for extracted frames. Defaults to "jpg".
+
+    Returns:
+        bool: True if extraction and updates succeed.
+
+    Raises:
+        FileNotFoundError: If the raw video file is missing.
+        RuntimeError: If extraction or database update fails.
+        ValueError: If the frame directory path cannot be determined.
+    """
+    frame_dir = _require_frame_dir(video)
+    state = video.get_or_create_state()
+    expected_count = _expected_frame_count(
+        video,
+        VideoFrameStateContract.model_validate(state),
+    )
+    files_exist_on_disk = frame_dir.exists() and any(frame_dir.glob(f"frame_*.{ext}"))
+    existing_manifest = _complete_existing_manifest(
+        frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    if _reuse_complete_frame_cache(
+        video,
+        state=state,
+        manifest=existing_manifest,
+        expected_count=expected_count,
+        ext=ext,
+        overwrite=overwrite,
+    ):
+        return True
+    _log_frame_cache_replacement(
+        video,
+        state=state,
+        files_exist_on_disk=files_exist_on_disk,
+        overwrite=overwrite,
+    )
+
+    ensure_directory(frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
+    installation = _FrameCacheInstallation(
+        frame_dir=frame_dir,
+        staged_frame_dir=_get_staged_extraction_dir(
+            frame_dir,
+            str(video.video_hash),
+        ),
+    )
+
+    try:
+        logger.info(
+            "Starting staged frame extraction for video %s to %s",
+            video.video_hash,
+            installation.staged_frame_dir,
+        )
+        verified_manifest, corrected_frame_count = _extract_verified_staged_manifest(
+            video,
+            staged_frame_dir=installation.staged_frame_dir,
+            quality=quality,
+            ext=ext,
+            from_processed=from_processed,
+            expected_count=expected_count,
+        )
+        final_manifest = _install_verified_frame_cache(
+            video,
+            installation=installation,
+            verified_manifest=verified_manifest,
+            ext=ext,
+        )
+        _persist_verified_frame_cache(
+            video=video,
+            state=state,
+            final_manifest=final_manifest,
+            corrected_frame_count=corrected_frame_count,
+            ext=ext,
+        )
+        if installation.replaced_frame_dir is not None:
+            safe_rmtree(installation.replaced_frame_dir, missing_ok=True)
+        return True
+
+    except Exception as error:
+        logger.error(
+            "Frame extraction or update failed for video %s: %s",
+            video.video_hash,
+            error,
+            exc_info=True,
+        )
+        _restore_frame_cache_after_failure(
+            video,
+            state=state,
+            installation=installation,
+        )
+        raise RuntimeError(
+            f"Frame extraction or update failed for video {video.video_hash}."
+        ) from error

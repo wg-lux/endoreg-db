@@ -1,23 +1,29 @@
-from typing import List
 from django.test import TestCase
-from django.db import models
+from typing import Protocol, cast
 from endoreg_db.models import (
     Product,
     ProductGroup,
     TransportRoute,
-    Examination, PatientExamination,
-    ExaminationIndication,
-    PatientExaminationIndication,
-    Center, # Import Center
-    PatientLabSample,
 )
-from datetime import date
 from logging import getLogger
-from pathlib import Path
-import random
 
 from endoreg_db.models.administration.product.product_material import ProductMaterial
 from endoreg_db.models.administration.product.reference_product import ReferenceProduct
+
+
+class _QuerySetLike(Protocol):
+    def first(self) -> object | None: ...
+
+
+class _ProductLike(Protocol):
+    name: str
+    product_group: ProductGroup
+    transport_route: TransportRoute
+    reference_products: _QuerySetLike
+    product_product_materials: _QuerySetLike
+
+    def get_product_weight(self) -> tuple[object, object] | None: ...
+    def get_package_weight(self) -> tuple[object, object] | None: ...
 
 
 logger = getLogger(__name__)
@@ -29,21 +35,14 @@ from ...helpers.data_loader import (
     load_distribution_data,
     load_center_data,
     load_examination_data,
-    load_examination_indication_data,
-    load_gender_data,
-    load_lab_value_data,
-    load_green_endoscopy_wuerzburg_data
+    load_green_endoscopy_wuerzburg_data,
 )
 
-from ...helpers.default_objects import (
-    generate_patient,
-    get_random_default_examination,
-    get_random_default_examination_indication,
-    get_default_egd_pdf,
-    get_random_gender,
-)
 
 class ProductModelTest(TestCase):
+    # Test suite works on pre-loaded fixture models created in shared data loader.
+    products: list[Product]
+
     def setUp(self):
         load_unit_data()
         load_examination_data()
@@ -62,13 +61,17 @@ class ProductModelTest(TestCase):
         products = Product.objects.all()
 
         for product in products:
+            product_like = cast(_ProductLike, product)
             self.assertIsInstance(product, Product)
-            self.assertIsInstance(product.name, str)
-            self.assertIsInstance(product.product_group, ProductGroup)
-            self.assertIsInstance(product.transport_route, TransportRoute)
-            self.assertIsInstance(product.reference_products.first(), ReferenceProduct)
-            self.assertIsNotNone(product.product_product_materials.first(), ProductMaterial)
-    
+            self.assertIsInstance(product_like.name, str)
+            self.assertIsInstance(product_like.product_group, ProductGroup)
+            self.assertIsInstance(product_like.transport_route, TransportRoute)
+            self.assertIsInstance(
+                product_like.reference_products.first(), ReferenceProduct
+            )
+            self.assertIsNotNone(
+                product_like.product_product_materials.first(), ProductMaterial
+            )
 
     def test_product_material_weight(self):
         """
@@ -79,7 +82,13 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a product weight
-            product_weight, _unit = product.get_product_weight()
+            product_weight_result = cast(_ProductLike, product).get_product_weight()
+            if product_weight_result is None:
+                raise self.failureException(
+                    "product.get_product_weight() must return a metric tuple"
+                )
+
+            product_weight, _unit = product_weight_result
             self.assertIsNotNone(product_weight)
 
     def test_package_weight(self):
@@ -91,5 +100,11 @@ class ProductModelTest(TestCase):
 
         for product in products:
             # check if the product has a package weight
-            package_weight, _unit = product.get_package_weight()
+            package_weight_result = cast(_ProductLike, product).get_package_weight()
+            if package_weight_result is None:
+                raise self.failureException(
+                    "product.get_package_weight() must return a metric tuple"
+                )
+
+            package_weight, _unit = package_weight_result
             self.assertIsNotNone(package_weight)

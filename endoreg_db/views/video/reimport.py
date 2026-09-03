@@ -1,195 +1,122 @@
-from celery.events import state
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from __future__ import annotations
+
 import logging
-from pathlib import Path
-from django.db import transaction
-from ...models import VideoFile, SensitiveMeta
-from ...services.video_import import VideoImportService
+from collections.abc import Mapping
+from typing import Any
+
+from lx_dtypes.models.contracts.video_reimport import (
+    VideoReimportApiResponsePayload,
+    VideoReimportRequestData,
+    dump_video_reimport_api_response,
+    dump_video_reimport_request_payload,
+    validate_video_reimport_request_payload,
+)
+from pydantic import ValidationError as PydanticValidationError
+from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.views.access_control import (
+    CenterScopedVideoPermission,
+)
+
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_reimport_orchestrator import VideoReimportOrchestrator
+from endoreg_db.views.reimport_helpers import request_payload_dict
+
 logger = logging.getLogger(__name__)
+
+
+def _video_hash(video: VideoFile) -> str:
+    return str(getattr(video, "video_hash", ""))
+
+
+def _api_response(payload: Mapping[str, Any], *, status_code: int) -> Response:
+    response_payload = VideoReimportApiResponsePayload.model_validate(dict(payload))
+    return Response(
+        dump_video_reimport_api_response(response_payload),
+        status=status_code,
+    )
+
+
+def _request_payload(request: object) -> VideoReimportRequestData:
+    payload = validate_video_reimport_request_payload(request_payload_dict(request))
+    return dump_video_reimport_request_payload(payload)
+
 
 class VideoReimportView(APIView):
     """
     API endpoint to re-import a video file and regenerate metadata.
     This is useful when OCR failed or metadata is incomplete.
     """
-    
-    def __init__(self, **kwargs):
+
+    permission_classes = [
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    ]
+
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.video_service = VideoImportService()
 
-    def post(self, request, pk):
+    def post(self, request: Request, pk: object) -> Response:
         """
         Re-import a video file to regenerate SensitiveMeta and other metadata.
         Instead of creating a new video, this updates the existing one.
-        
+
         Args:
             pk (int): Primary key of the VideoFile to reimport
         """
-        # Validate pk parameter
-        if not pk or not isinstance(pk, int):
-            return Response(
-                {"error": "Invalid video ID provided."}, 
-                status=status.HTTP_400_BAD_REQUEST
+        if not isinstance(pk, int) or pk <= 0:
+            return _api_response(
+                {"error": "Invalid video ID provided."},
+                status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            video = VideoFile.objects.get(id=pk)
-            logger.info(f"Found video {video.uuid} (ID: {pk}) for re-import")
+            video = VideoFile.objects.select_related(
+                "center",
+                "processor",
+                "video_meta__processor",
+            ).get(id=pk)
+            video_hash = _video_hash(video)
+            logger.info("Found video %s (ID: %s) for re-import", video_hash, pk)
         except VideoFile.DoesNotExist:
-            logger.warning(f"Video with ID {pk} not found")
-            return Response(
-                {"error": f"Video with ID {pk} not found."}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        # Check if video has a raw file
-        if not video.raw_file:
-            logger.warning(f"Video {video.uuid} has no raw file")
-            return Response(
-                {"error": "Video has no raw file to re-import."}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Check if the raw file actually exists on disk
-        raw_file_path = Path(video.raw_file.path)
-        if not raw_file_path.exists():
-            logger.error(f"Raw file not found on disk: {raw_file_path}")
-            return Response(
-                {"error": f"Video file not found on server: {raw_file_path.name}"}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Check if video has required relationships
-        if not video.center:
-            logger.warning(f"Video {video.uuid} has no associated center")
-            return Response(
-                {"error": "Video has no associated center."}, 
-                status=status.HTTP_400_BAD_REQUEST
+            logger.warning("Video with ID %s not found", pk)
+            return _api_response(
+                {"error": f"Video with ID {pk} not found."},
+                status_code=status.HTTP_404_NOT_FOUND,
             )
 
         try:
-            logger.info(f"Starting in-place re-import for video {video.uuid} (ID: {pk})")
-            
-            with transaction.atomic():
-                # Clear existing metadata to force regeneration
-                old_meta_id = None
-                if video.sensitive_meta:
-                    old_meta_id = video.sensitive_meta.id
-                    logger.info(f"Clearing existing SensitiveMeta {old_meta_id} for video {video.uuid}")
-                    video.sensitive_meta = None
-                    video.save(update_fields=['sensitive_meta'])
-                    
-                    # Delete the old SensitiveMeta record
-                    try:
-                        SensitiveMeta.objects.filter(id=old_meta_id).delete()
-                        logger.info(f"Deleted old SensitiveMeta {old_meta_id}")
-                    except Exception as e:
-                        logger.warning(f"Could not delete old SensitiveMeta {old_meta_id}: {e}")
-                
-                # Re-initialize video specs and frames
-                logger.info(f"Re-initializing video specs for {video.uuid}")
-                video.initialize_video_specs()
-                video.initialize_frames()
-                
-                # Run Pipe 1 for OCR and AI processing
-                logger.info(f"Starting Pipe 1 processing for {video.uuid}")
-            
-                try:
-                    success = video.pipe_1(
-                        model_name="image_multilabel_classification_colonoscopy_default",
-                        delete_frames_after=True,
-                        ocr_frame_fraction=0.01,
-                        ocr_cap=5
-                    )
-                except Exception as e:
-                    logger.error(f"Pipe 1 processing raised exception for {video.uuid}: {e}")
-                    return Response(
-                        {"error": f"OCR and AI processing failed: {str(e)}"},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
-                
-                if not success:
-                    logger.error(f"Pipe 1 processing failed for video {video.uuid}")
-                    return Response(
-                        {"error": "OCR and AI processing failed during re-import."}, 
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
-                
-                logger.info(f"Pipe 1 processing completed for {video.uuid}")
-                
-                # Ensure minimum patient data is available
-                logger.info(f"Ensuring minimum patient data for {video.uuid}")
-                self.video_service._ensure_default_patient_data(video)
-                
-                # Refresh from database to get updated data
-                video.refresh_from_db()
-                
-                # Use VideoImportService for anonymization
-                try:
-                    processor_name = video.video_meta.processor.name if video.video_meta and video.video_meta.processor else "Unknown"
-                    logger.info(f"Starting anonymization using VideoImportService for {video.uuid}")
-                    self.video_service.import_and_anonymize(
-                        file_path=raw_file_path,
-                        center_name=video.center.name,
-                        processor_name=processor_name,
-                        save_video=True,
-                        delete_source=False
-                    )
-                    
-                    logger.info(f"VideoImportService anonymization completed for {video.uuid}")
-                    
-                    
-                    return Response({
-                        "message": "Video re-import with VideoImportService completed successfully.",
-                        "video_id": pk,
-                        "uuid": str(video.uuid),
-                        "frame_cleaning_applied": True,
-                        "sensitive_meta_created": video.sensitive_meta is not None,
-                        "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
-                        "updated_in_place": True,
-                        "status": "done"
-                    }, status=status.HTTP_200_OK)
-                    
-                except Exception as e:
-                    logger.exception(f"VideoImportService anonymization failed for video {video.uuid}: {e}")
-                    logger.warning("Continuing without anonymization due to error")
-                
-                state.mark_sensitive_meta_processed(save=True)
-                
-            # If we reach here, everything was successful
-            logger.info(f"Video re-import completed successfully for {video.uuid}")
-            video.save(update_fields=['sensitive_meta', 'date_modified'])
-            
-            return Response({
-                "message": "Video re-import completed successfully.",
-                "video_id": pk,
-                "uuid": str(video.uuid),
-                "sensitive_meta_created": video.sensitive_meta is not None,
-                "sensitive_meta_id": video.sensitive_meta.id if video.sensitive_meta else None,
-                "updated_in_place": True,
-                "status": "done"  # ⭐ Add explicit done status
-            }, status=status.HTTP_200_OK)
+            payload = _request_payload(request)
+        except PydanticValidationError as exc:
+            return _api_response(
+                {
+                    "status": "failed",
+                    "operation": "video_reimport",
+                    "reason": str(exc),
+                    "error": "Invalid video re-import payload.",
+                    "error_type": "validation_error",
+                    "video_id": pk,
+                    "uuid": _video_hash(video),
+                    "updated_in_place": True,
+                },
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
-        except Exception as e:
-            logger.error(f"Failed to re-import video {video.uuid}: {str(e)}", exc_info=True)
-            
-            # Handle specific error types
-            error_msg = str(e)
-            if any(phrase in error_msg.lower() for phrase in ["insufficient storage", "no space left", "disk full"]):
-                # Storage error - return specific error message
-                return Response({
-                    "error": f"Storage error during re-import: {error_msg}",
-                    "error_type": "storage_error",
-                    "video_id": pk,
-                    "uuid": str(video.uuid)
-                }, status=status.HTTP_507_INSUFFICIENT_STORAGE)
-            else:
-                # Other errors
-                return Response({
-                    "error": f"Re-import failed: {error_msg}",
-                    "error_type": "processing_error", 
-                    "video_id": pk,
-                    "uuid": str(video.uuid)
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        response_payload, status_code = VideoReimportOrchestrator(
+            video=video,
+            video_id=pk,
+            payload=payload,
+            video_service=self.video_service,
+        ).run()
+
+        return _api_response(response_payload, status_code=status_code)
+
+
+__all__ = ["VideoReimportView"]

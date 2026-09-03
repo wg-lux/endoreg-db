@@ -1,8 +1,3 @@
-import os
-from celery import Celery
+from endoreg_db.celery import app as celery_app
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", os.environ.get("DJANGO_SETTINGS_MODULE", "config.settings.prod"))
-
-celery_app = Celery("endoreg_db")
-celery_app.config_from_object("django.conf:settings", namespace="CELERY")
-celery_app.autodiscover_tasks()
+__all__ = ["celery_app"]

@@ -5,6 +5,7 @@ import os
 LOG_DIR = Path("data/logs")
 DEFAULT_LOG_LEVEL = "INFO"
 
+
 def get_logging_config(logger_names, log_level=None, log_dir=None):
     """
     Generates Django LOGGING configuration dynamically.
@@ -34,38 +35,37 @@ def get_logging_config(logger_names, log_level=None, log_dir=None):
         # Create the log file to ensure it exists
         log_file.touch()
 
-
     handlers = {
-        'console': {
-            'level': log_level,
-            'class': 'logging.StreamHandler',
-            'formatter': 'standard',
+        "console": {
+            "level": log_level,
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
         },
     }
     loggers = {
         # Root logger configuration - logs to console by default
-        '': {
-            'handlers': ['console'],
-            'level': log_level,
-            'propagate': True,
+        "": {
+            "handlers": ["console"],
+            "level": log_level,
+            "propagate": True,
         },
-         # Django's default logger
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO', # Or your preferred level for Django logs
-            'propagate': False, # Don't propagate Django logs to root
+        # Django's default logger
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",  # Or your preferred level for Django logs
+            "propagate": False,  # Don't propagate Django logs to root
         },
         # Suppress faker debug messages
-        'faker': {
-            'handlers': [],  # No handlers = no output
-            'level': 'CRITICAL',  # Only critical messages (essentially disabled)
-            'propagate': False,
+        "faker": {
+            "handlers": [],  # No handlers = no output
+            "level": "CRITICAL",  # Only critical messages (essentially disabled)
+            "propagate": False,
         },
         # Also suppress faker.providers which can be noisy
-        'faker.providers': {
-            'handlers': [],
-            'level': 'CRITICAL',
-            'propagate': False,
+        "faker.providers": {
+            "handlers": [],
+            "level": "CRITICAL",
+            "propagate": False,
         },
     }
 
@@ -73,34 +73,36 @@ def get_logging_config(logger_names, log_level=None, log_dir=None):
     for name in logger_names:
         handler_name = f"file_{name}"
         handlers[handler_name] = {
-            'level': log_level,
-            'class': 'logging.FileHandler',
-            'filename': log_dir / f"{name}.log",
-            'formatter': 'standard',
+            "level": log_level,
+            "class": "logging.FileHandler",
+            "filename": log_dir / f"{name}.log",
+            "formatter": "standard",
         }
         loggers[name] = {
-            'handlers': [handler_name, 'console'], # Log to own file and console
-            'level': log_level,
-            'propagate': False, # Don't pass to root logger
+            "handlers": [handler_name, "console"],  # Log to own file and console
+            "level": log_level,
+            "propagate": False,  # Don't pass to root logger
         }
 
     return {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'standard': {
-                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "standard": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             },
         },
-        'handlers': handlers,
-        'loggers': loggers,
+        "handlers": handlers,
+        "loggers": loggers,
     }
+
 
 # Example usage (optional, for testing the function itself)
 if __name__ == "__main__":
     test_loggers = ["app1", "app2", "database"]
     logging_config = get_logging_config(test_loggers, log_level="DEBUG")
     import json
+
     print(json.dumps(logging_config, indent=4))
 
     # Example of how to use it with Python's logging

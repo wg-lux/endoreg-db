@@ -1,54 +1,89 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
 
 from endoreg_db.models.other.unit import Unit
 
 if TYPE_CHECKING:
-    from ...other.emission import EmissionFactor
+    from ...other.emission.emission_factor import EmissionFactor
     from ...other.unit import Unit
-    from .product import Product
-    from ...other.material import Material
+
+NoProductMaterialValue: TypeAlias = None
+ProductMaterialEmission: TypeAlias = tuple[float, "Unit"]
+
+
+class _ProductMaterialEmissionFactorSource(Protocol):
+    unit: "Unit | NoProductMaterialValue"
+    value: float
+
+
+class _ProductMaterialUnitSource(Protocol):
+    name: str
+
+
+class _ProductMaterialSource(Protocol):
+    name: str
+    emission_factor: "EmissionFactor | NoProductMaterialValue"
+
+
+class _ProductMaterialProductSource(Protocol):
+    name: str
+
 
 class ProductMaterial(models.Model):
-    component = models.CharField(max_length=255)
-    material = models.ForeignKey(
+    component: models.CharField[Any, Any] = models.CharField(max_length=255)
+    material: models.ForeignKey[Any] = models.ForeignKey(
         "Material",
         on_delete=models.CASCADE,
-        related_name="material_product_materials", # Changed related_name
+        related_name="material_product_materials",  # Changed related_name
     )
-    product = models.ForeignKey(
+    product: models.ForeignKey[Any] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,
-        related_name="product_product_materials" # Changed related_name
+        related_name="product_product_materials",  # Changed related_name
     )
-    unit = models.ForeignKey(
+    unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit",
         on_delete=models.CASCADE,
-        related_name="unit_product_materials", # Changed related_name
+        related_name="unit_product_materials",  # Changed related_name
     )
-    quantity = models.FloatField()
+    quantity: models.FloatField[Any, Any] = models.FloatField()
 
     if TYPE_CHECKING:
-        product: "Product"
-        material: "Material"
-        unit: "Unit"
-        emission_factor: "EmissionFactor"
+        pass
 
-    def get_emission(self) -> tuple[float, Unit]:
-        emission_factor = self.material.emission_factor
+    def get_emission(self) -> ProductMaterialEmission:
+        material = cast(_ProductMaterialSource, self.material)
+        emission_factor = material.emission_factor
         if emission_factor is None:
-            raise Exception("No emission factor for material " + self.material.name + " found.")
-        
-        # make sure product_material.unit is the same as emission_factor.unit
-        if self.unit != emission_factor.unit:
-            raise Exception("Unit mismatch: " + self.unit.name + " != " + emission_factor.unit.name)
-        
-        emmision_value = emission_factor.value * self.quantity
-        emission_unit = emission_factor.unit
-        return emmision_value, emission_unit
-    
+            raise Exception(
+                "No emission factor for material " + material.name + " found."
+            )
+        emission_factor_source = cast(
+            _ProductMaterialEmissionFactorSource,
+            emission_factor,
+        )
+
+        unit = cast(_ProductMaterialUnitSource, self.unit)
+        emission_unit_source = cast(
+            _ProductMaterialUnitSource | NoProductMaterialValue,
+            emission_factor_source.unit,
+        )
+        if emission_unit_source is not None:
+            if self.unit != emission_factor_source.unit:
+                raise Exception(
+                    "Unit mismatch: " + unit.name + " != " + emission_unit_source.name
+                )
+
+        emission_value = emission_factor_source.value * self.quantity
+        assert isinstance(emission_factor_source.unit, Unit)
+        emission_unit = emission_factor_source.unit
+        return emission_value, emission_unit
+
     def __str__(self) -> str:
-        return f"{self.product.name} - {self.material.name} - {self.quantity} {self.unit.name}"
-
-
-
+        product = cast(_ProductMaterialProductSource, self.product)
+        material = cast(_ProductMaterialSource, self.material)
+        unit = cast(_ProductMaterialUnitSource, self.unit)
+        return f"{product.name} - {material.name} - {self.quantity} {unit.name}"

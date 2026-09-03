@@ -1,0 +1,236 @@
+schema_version: '1.0'
+id: audit_ledger
+name: Audit-Ledger
+description: Tamper-evident, center-scoped, and operationally verifiable audit ledger.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/audit_ledger_operations.md
+  disposition: reference
+  note: Defines the event format, producers, data minimization, integrity states, verification frequency,
+    retention, and incident procedures.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Audit events, chaining, and trust boundaries are defined
+  acceptance:
+  - Auditable actions and intentionally excluded data are documented.
+  - Integrity status, error state, and verification frequency are unambiguous.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the audit contract against the model, service, tasks, and operational requirements.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: review
+      reference: Contract checked against AuditLedger/LedgerHead, event producers, the audit_integrity service,
+        Celery scheduling, status API, management command, and system health.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
+        -q (44 passed)
+    note: The authoritative runbook defines the persisted event format and producers, separate structured
+      hub logs, trust boundaries, intentionally excluded data, integrity states, a five-minute default verification,
+      locking, and fail-closed error decisions. The previously persisted absolute ready_for_export path was
+      removed, and the minimized contract was regression tested.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:58:26.421023Z'
+- id: ledger_behavior
+  category: functionality
+  title: Events are chained and verified deterministically
+  acceptance:
+  - New events reference the correct predecessor, and tampering is detected.
+  - Repeated verification does not modify the ledger.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/state/test_audit_ledger.py
+    - tests/services/test_audit_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/state/audit_ledger.py::AuditLedger.save,verify_chain; LedgerHead.lock
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: Chained persistence locks the singleton ledger head, computes the hash through the shared typed
+      lx_dtypes contract, and updates the head and entry atomically. The read-only chain verification detects
+      payload and head tampering; repeated verification does not change ledger rows.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:39:42.512643Z'
+- id: automated_tests
+  category: testing
+  title: The model, integrity service, hub audit, and refresh command are tested
+  acceptance:
+  - Tampering, locking, errors, and cache states have regression tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/models/state/test_audit_ledger.py
+    - tests/services/test_audit_integrity.py
+    - tests/services/test_hub_audit.py
+    - tests/management/commands/test_refresh_audit_ledger_integrity.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/models/state/test_audit_ledger.py; tests/services/test_audit_integrity.py; tests/services/test_hub_audit.py;
+        tests/management/commands/test_refresh_audit_ledger_integrity.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: The combined lane covers initialization and chaining, strict JSON validation, immutability, payload
+      and head tampering, cache states, refresh locking and lock release on errors, the hub-audit fallback,
+      management-command success, and fail-on-non-verified behavior.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:40:33.441281Z'
+- id: security_controls
+  category: security
+  title: Audit data is immutable, access-controlled, and center-scoped
+  acceptance:
+  - Unauthorized users cannot read or modify integrity details.
+  - Secrets and unnecessary direct patient data are not logged.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform an authorization, data-minimization, and tamper-resistance review.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/views/misc/audit_integrity.py; endoreg_db/services/export_ready.py; endoreg_db/services/validated_identity.py;
+        endoreg_db/management/commands/bootstrap_center_admin.py; endoreg_db/management/commands/migrate_media_storage.py
+    - kind: test
+      reference: tests/views/misc/test_stats_endpoints.py::StatsEndpointTests::test_audit_ledger_integrity_endpoint_is_read_only_and_requires_auth_in_production;
+        tests/views/media/test_video_ready_export.py::VideoReadyExportEndpointTests::test_marks_existing_managed_video_ready
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/export_ready.py
+        tests/views/media/test_video_ready_export.py tests/views/misc/test_stats_endpoints.py (0 errors,
+        0 warnings, 0 informations)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+        tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
+        tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/ruff check <changed Python files>; ruff
+        format --check <changed Python files> (passed)
+    note: The global integrity endpoint returns only the cached head status, requires authentication in production,
+      and remains read-only for authenticated users. Persisted producers were reviewed for data minimization;
+      ready_for_export no longer persists an absolute path, identity events contain only the hashes and IDs
+      required for pseudonymous correlation, and secrets or direct patient data are not recorded.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:57:07.434909Z'
+- id: integrity_evidence
+  category: data_integrity
+  title: The ledger head and verification result are consistently traceable
+  acceptance:
+  - Status includes a verifiable head snapshot and reports unknown or defective states loudly.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_audit_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/audit_integrity.py::_ledger_head_snapshot,get_audit_ledger_integrity_status,refresh_audit_ledger_integrity_status
+    - kind: test
+      reference: tests/services/test_audit_integrity.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        -q (32 passed)
+    note: For an empty or invalid cache, status fails closed with unknown/verified=false and always includes
+      the ledger-head hash and latest entry ID. Full verifications distinguish verified, failed, and error,
+      persist the snapshot, and visibly report tampering or verification errors.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:41:25.689839Z'
+- id: operational_readiness
+  category: operations
+  title: Periodic verification, alerting, and the repair process are established
+  acceptance:
+  - Verification runs separately, prevents concurrent runs, and alerts on errors.
+  - Operators have an evidence-preservation procedure without unsafe automatic recovery.
+  required: true
+  verification:
+    kind: manual
+    instructions: Simulate tampering and review the alert and evidence-preservation runbook.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: code
+      reference: endoreg_db/config/settings/base.py audit-ledger-integrity-refresh; endoreg_db/services/audit_integrity.py;
+        endoreg_db/management/commands/check_system_health.py
+    - kind: test
+      reference: tests/services/test_audit_integrity.py; tests/management/commands/test_refresh_audit_ledger_integrity.py;
+        tests/management/commands/test_check_system_health.py
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+        tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
+        tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
+    note: Celery Beat schedules full verification every 300 seconds by default on the separate maintenance
+      queue; a 30-minute cache lock prevents concurrent scans. Failed/error states produce structured error
+      events, and the local-study-server health check fails when status is not verified. The runbook defines
+      evidence preservation, limited repeat verification, and recovery without rehashing, truncation, or
+      unsafe automatic recovery.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:57:46.291858Z'
+- id: audit_documentation
+  category: documentation
+  title: The audit model and incident procedures are documented
+  acceptance:
+  - Event format, retention, verification, and incident workflow are described accurately.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the documentation with security and operations.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/audit_ledger_operations.md
+    - kind: review
+      reference: Technical comparison against the model, services, tasks, API, management commands, health
+        gate, and existing tests.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+        tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
+        tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
+        -q (44 passed)
+    note: Event format, producers, trust boundary, data minimization, integrity states, verification frequency,
+      retention, and the fail-closed incident workflow are documented in the authoritative runbook and were
+      technically cross-checked. The absolute ready_for_export path was removed from code and documentation.
+      The formal joint approval by security and operations required by this criterion remains outstanding.
+    assessed_by: codex-root-20260902-feature
+    assessed_at: '2026-09-02T11:58:52.683428Z'

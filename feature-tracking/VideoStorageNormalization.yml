@@ -1,0 +1,1021 @@
+schema_version: '1.0'
+id: video_storage_normalization
+name: Speicher-normalisierte Videos
+description: Einheitlicher, speicherbegrenzter Lebenszyklus für Rohvideo, kanonisches anonymisiertes Video
+  und HLS-Derivate, ohne die zeitgenaue Extraktion klinisch hochwertiger Frames aus persistierten Segmenten
+  zu verschlechtern.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Artefaktvertrag, Profil, Migrationsgate und Betriebsablauf.
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Repository-übergreifender Vertrag für Import-Leases, Fencing, unveränderliche Staging-Artefakte
+    und versuchslokale Anonymisierung.
+- path: docs/video_pts_fps_callsite_inventory.md
+  disposition: reference
+  note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
+definition_of_done:
+- id: storage_profile_contract
+  category: requirements
+  title: Rollen und Größenbudgets aller Videoartefakte sind verbindlich definiert
+  acceptance:
+  - Roh-Ingest, kanonisches anonymisiertes Mastervideo, HLS-Derivat, extrahierter Frame und temporäres
+    Transcode-Artefakt besitzen je eine eindeutige Rolle, Aufbewahrungsfrist und Löschbedingung.
+  - Ein versioniertes, typisiertes Profil definiert numerische Obergrenzen für Auflösung, Bildrate, Bitrate
+    beziehungsweise Bytes pro Sekunde und zulässigen Storage-Overhead; Profile werden nicht als freie
+    Strings durch den Workflow gereicht.
+  - Genau ein anonymisiertes kanonisches Video bleibt dauerhaft erhalten; HLS ist ein reproduzierbares,
+    größenbegrenztes Derivat mit expliziter Cache- und Eviction-Regel.
+  - Ein erfolgreicher Import, Reimport oder eine Reanonymisierung kehrt erst zurück, wenn Raw- und Processed-HLS
+    über den typisierten, idempotenten Materializer atomar bereitstehen. Dieser bewusste Storage-Trade-off
+    hält die Wiedergabelatenz in zeitkritischen Umgebungen begrenzt; fehlgeschlagene HLS-Erzeugung lässt
+    den Import laut und wiederholbar fehlschlagen. Der autorisierte Playlist-Zugriff behält den begrenzten
+    Demand-Fallback für Legacy-, evizierte oder reconciliierte Derivate.
+  - Jeder FFmpeg-Befehl, der ein Video, HLS-Derivat oder extrahiertes Frame erzeugt, deaktiviert Audio
+    explizit mit `-an`.
+  - Abweichungen vom Profil werden laut abgelehnt oder in einen expliziten Quarantänestatus versetzt;
+    stilles Stream-Copy oder unbeschränktes Source-Quality-Encoding ist kein Produktionsfallback.
+  - Die HLS-Encoderwahl erfolgt ausschließlich über ein versioniertes typisiertes Profil. Das bestehende
+    CPU-Profil verwendet libx264 mit Constant Rate Factor; das NVIDIA-NVENC-Profil verwendet explizite
+    variable Bitratenregelung mit Constant-Quality-Wert (`-cq`) und niemals libx264-CRF-Argumente.
+  - Das NVIDIA-NVENC-Profil startet nur, wenn der dedizierte FFmpeg-Worker genau ein deklarativ sichtbares
+    Grafikprozessor-Gerät besitzt und ein realer Encoder-Preflight erfolgreich ist. Fehlende, mehrere
+    oder unzugängliche Geräte sowie ein fehlender `h264_nvenc`-Encoder schlagen laut fehl; ein automatischer
+    CPU-Fallback ist unzulässig.
+  - Der Name des verwendeten HLS-Encoderprofils wird mit dem HLS-Artefakt persistiert. Ein deklarativer
+    Profilwechsel invalidiert nur das reproduzierbare HLS-Derivat und erzwingt eine neue atomare Generation,
+    ohne das kanonische Mastervideo zu verändern.
+  required: true
+  verification:
+    kind: manual
+    instructions: Profil, Artefaktmatrix und Ausnahmeprozess mit Betrieb, klinischem Reviewer und Storage-Verantwortlichen
+      abnehmen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/video_storage/contracts.py; endoreg_db/services/video_storage/validation.py;
+        docs/video_storage_normalization.md
+    - kind: code
+      reference: c3dfaf0a; 3f7084c4
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
+        tests/services/test_hls_media.py -q (45 passed)
+    - kind: code
+      reference: endoreg_db/services/hls_media.py; endoreg_db/views/video/hls_stream.py; endoreg_db/import_files/file_storage/state_management.py;
+        endoreg_db/import_files/video_import_service.py
+    - kind: command
+      reference: ruff check focused files (passed); pyright focused files (0 errors); compileall focused
+        modules (passed); git diff --check (passed)
+    - kind: command
+      reference: 'RUN_VIDEO_TESTS=true PYTHONPATH=/home/admin/endoreg-db /home/admin/dev/lx-annotate/.devenv/state/venv/bin/python
+        -m pytest -q -n0 focused files: 40 setup errors because pg_hba rejects admin for postgres/lxAnnotateTest;
+        9 expensive tests skipped; no test bodies ran'
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 focused import/materialize/playlist files => 39 passed, 10 expensive tests skipped
+        in 32.54s
+    - kind: command
+      reference: Ruff focused files passed; Pyright focused files 0 errors; compileall and git diff --check
+        passed
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/import_files/video_import_service.py
+        duplicate and completed paths
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 focused import/materialize/playlist files => 39 passed, 10 expensive tests skipped
+        in 41.02s
+    - kind: command
+      reference: Focused Ruff passed; focused Pyright 0 errors; git diff --check passed
+    note: 'Import-time eager HLS readiness is restored for time-critical playback: successful import,
+      reimport, reanonymization, and completed-duplicate return paths use the existing typed idempotent
+      materializer and require both raw and processed HLS before returning. Failure remains loud and retryable.
+      The authenticated playlist keeps its bounded on-demand fallback for legacy, evicted, or reconciled
+      derivatives. Ruff, focused Pyright, diff checks, and the non-expensive database-backed focused lane
+      pass; expensive media and formal production acceptance remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T08:10:36.939740Z'
+- id: temporal_frame_contract
+  category: data_integrity
+  title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
+  acceptance:
+  - Vor einer Bestandsnormalisierung sind die autoritative rationale FPS, Time-Base, Dauer, Frameanzahl
+    und Präsentationszeitstempel beziehungsweise deren belastbare Zuordnung zur Quell-Timeline persistiert
+    und versioniert.
+  - Segmentgrenzen speichern autoritative Präsentationszeitstempel; falls Frameindizes gespeichert werden,
+    ist deren Umrechnung samt Rundungsregel und Timeline-Version explizit. Bei variabler Bildrate sind
+    Zeitstempel autoritativ und eine nominelle FPS-Angabe allein ist unzulässig.
+  - Zeitbasierte Modellfenster für Glättung, Mindestdauer und Lückenschluss werden gegen die persistierten
+    Präsentationszeitstempel ausgewertet; fehlende, nicht endliche, nicht streng steigende oder unvollständige
+    Zeitstempelfolgen brechen die temporale Inferenz laut ab und fallen nicht auf eine nominelle Bildrate
+    zurück.
+  - Jede Normalisierung persistiert Provenienz und eine überprüfbare Abbildung von Quell- zu Ziel-Timeline;
+    Drift, ausgelassene oder doppelte Frames außerhalb der freigegebenen Toleranz verhindern die Freigabe.
+  - Frame-Extraktion an Segmentanfang, Segmentende und inneren Zeitpunkten wählt vor und nach dem Transcode
+    denselben klinischen Bildinhalt deterministisch aus und protokolliert Zielzeitstempel sowie Frameindex.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - bash
+    - -lc
+    - exec .devenv/state/venv/bin/pytest tests/services/test_video_temporal_mapping.py tests/services/test_segment_frame_extraction.py
+      tests/services/test_video_temporal_inference.py -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_temporal_mapping.py
+        tests/services/test_segment_frame_extraction.py -q'
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:40:56.446106Z'
+- id: clinical_frame_quality
+  category: requirements
+  title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
+  acceptance:
+  - Ein repräsentativer, freigegebener Videokorpus deckt Auflösungen, Bildraten, variable Bildrate, Bewegung,
+    Text, Segmentgrenzen und aktuell eingesetzte Quellcodecs ab.
+  - Numerische Mindestwerte für extrahierte Frameauflösung, Lesbarkeit und freigegebene objektive Qualitätsmetriken
+    sind je Profil versioniert; reine Dateigröße ist kein Qualitätsnachweis.
+  - Qualitätsmessungen erfolgen auf den anhand persistierter Segment-PTS ausgewählten Frames und nicht
+    nur auf zufällig gewählten Vollvideoframes.
+  - Das kleinste Profil, das alle klinischen und zeitlichen Grenzwerte erfüllt, wird als Produktionsprofil
+    festgelegt und mit Reviewerfreigabe dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Benchmarkbericht, numerische Schwellen und klinische Stichprobe gemeinsam prüfen; ohne
+      freigegebenes Profil keine destruktive Bestandsmigration.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: normalized_import_pipeline
+  category: functionality
+  title: Jeder erfolgreiche Import erzeugt ein begrenztes kanonisches Video
+  acceptance:
+  - Neuimport, Reimport und Reanonymisierung durchlaufen denselben typisierten Normalisierungsschritt;
+    Duplicate- und Existing-Video-Pfade umgehen ihn nicht unbemerkt.
+  - Vor jedem Neuimport sowie nach jedem Reimport und jeder Reanonymisierung wird das konkrete Kandidatenartefakt
+    gegen `clinical_h264_bounded_v1` geprüft. Bereits konforme Artefakte werden ohne erneute Kodierung
+    atomar übernommen; nicht konforme Artefakte werden in einem versuchsspezifischen Staging-Pfad auf
+    dasselbe Profil transkodiert und erst nach erneuter vollständiger Prüfung veröffentlicht.
+  - Das finale Video wird vor Veröffentlichung auf Codec, Pixel-Format, Dimensionen, FPS, Dauer, Bitrate,
+    Dateigröße und Timeline-Konformität geprüft.
+  - Die rationale Bildrate der verifizierten, unveränderlichen Quelle wird ohne Float-Rundung bis zur
+    Maskierungsgrenze in lx-anonymizer durchgereicht. FFmpeg-Maskierung erhält Quell-Präsentationszeitstempel
+    mit `-fps_mode passthrough` und darf weder `-r`, `-fpsmax` noch einen `fps`-Filter ergänzen.
+  - Ein Full-Frame-Maskierungs- oder Passthrough-Pfad darf das verpflichtende Storage-Profil nicht durch
+    Stream-Copy umgehen.
+  - Fehlende oder widersprüchliche Metadaten führen zu einem expliziten Fehlerzustand und bewahren die
+    noch benötigte Quelle.
+  - Der Content-Hash für die Import-Sperre wird erst unter der pfadbasierten Import-Sperre aus einer stabilen
+    Dateiidentität gebildet. Gleichzeitige Änderung oder Ersetzung der Quelle während des Hashings schlägt
+    laut fehl; die native Hash-Berechnung gibt den Python Global Interpreter Lock frei, damit unabhängige
+    Imports parallel fortschreiten können.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - bash
+    - -lc
+    - exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py tests/services/test_video_storage_normalization.py
+      -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py
+        tests/services/test_video_storage_normalization.py -q'
+      note: Exit-Code 0
+    - kind: code
+      reference: c3dfaf0a
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/import_files/test_video_import_normalization.py tests/import_files/test_import_encryption.py
+        tests/services/test_hls_media.py -q (45 passed)
+    - kind: command
+      reference: devenv shell -- cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml (8 passed);
+        .devenv/state/venv/bin/pyright (0 errors); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py
+        tests/rust_backend/test_rust_backend_fallbacks.py -q (28 passed)
+    note: Neuimport, Reimport und Reanonymisierung verwenden den gemeinsamen Profilcheck. Die Content-Hash-Sperre
+      wird unter der pfadbasierten Sperre aus einer stabilen, GIL-freien Rust-Dateiidentität abgeleitet;
+      Quelländerungen während des Hashings brechen laut ab. Rust-, Typ- und fokussierte Importtests sind
+      erfolgreich.
+    assessed_by: Codex
+    assessed_at: '2026-07-27T06:12:03.245922Z'
+- id: concurrent_import_ownership
+  category: functionality
+  title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte
+  acceptance:
+  - Ein persistierter, typisierter Importversuch besitzt eine eindeutige aktive Lease, durch Datenbankzeit
+    bestimmte Ablaufzeit, Heartbeat und monotonen Fencing-Token. Dateisperren sind ausschließlich lokale
+    Optimierungen und dürfen nicht allein anhand ihres Alters fremd übernommen werden.
+  - Jeder persistente Zustandswechsel und jede atomare Veröffentlichung prüft den aktuellen Fencing-Token.
+    Ein abgelaufener oder ersetzter Worker darf weder Zustand ändern noch Kandidaten veröffentlichen oder
+    fremde Artefakte bereinigen.
+  - Der Watcher übergibt reguläre, nicht symbolisch verknüpfte Quelldateien atomar in ein unveränderliches,
+    versuchseigenes Staging innerhalb des verschlüsselten Storage. Hashing, Anonymisierung und Validierung
+    arbeiten auf derselben geprüften Quellgeneration.
+  - endoreg-db bleibt alleiniger Eigentümer von Lease, Retry, Storage-Routing, Datenbankzustand und Veröffentlichung.
+    lx-anonymizer verarbeitet pro Aufruf genau eine Quelle in einen unveröffentlichten, versuchseigenen
+    Kandidaten und besitzt keine konkurrierende Sperr- oder Publikationslogik.
+  - Pro gleichzeitigem Video wird eine eigene `FrameCleaner`-Laufinstanz beziehungsweise ein typisiertes
+    Run-State-Objekt verwendet. Veränderliche Frame-, Metadaten- und Large-Language-Model-(LLM)-Zustände
+    werden nicht zwischen Aufrufen geteilt; gemeinsam genutzte Modelle benötigen einen nachgewiesenen
+    thread- und prozesssicheren Vertrag.
+  - Langlebige Rust- und FFmpeg-Operationen sind abbrechbar beziehungsweise begrenzt, geben den Python
+    Global Interpreter Lock frei, beenden Kindprozesse zuverlässig und propagieren Integritätsfehler ohne
+    stillen Erfolgsfallback. Das Produktionsprofil prüft eine versionierte native Capability-Menge beim
+    Start und schlägt bei Pflichtinkompatibilität geschlossen fehl.
+  - Prozessbasierte Konkurrenz- und Failure-Injection-Tests decken gleiche Pfade, gleiche Inhalte, unabhängige
+    Inhalte, Source-Mutation, Lease-Verlust, veraltete Fencing-Token, Worker-Abbruch, Disk-full, Retry
+    und Datenbank-/Dateisystem-Reconciliation ab.
+  - Strukturierte Logs und Metriken weisen Lease-Wartezeit, Heartbeats, Backendwahl, gehashte und temporäre
+    Bytes, Phasendauer, Abbruch, Fencing-Ablehnung, Duplicate-Short-Circuit und Cleanup-Eigentum je Versuch
+    nach, ohne Patientendaten oder unzulässige Rohpfade offenzulegen.
+  - Der optionale Snakemake-Batchpfad orchestriert Import, Processed-Video-Transcoding und HLS-Materialisierung
+    ausschließlich über typisierte Konfigurationen und atomare Receipt-Dateien. Globale CPU-, Speicher-,
+    Rust-Worker- und GPU-Budgets begrenzen die Parallelität über den gesamten gerichteten azyklischen
+    Graphen; Datenbank-Leases, Fencing, Publikation und Cleanup bleiben in den autoritativen Python-Services.
+  - Native Batch-Dateiidentitäten verwenden einen versuchslokalen, explizit begrenzten Rayon-Threadpool,
+    geben den Python Global Interpreter Lock frei und bewahren Eingabereihenfolge sowie fail-closed Mutationsprüfung.
+    Die Zahl der Rayon-Worker überschreitet nie die dem Snakemake-Job zugewiesenen Threads.
+  - Der überwachte Offline-Batch-Runner erzwingt eine prozessgebundene lokale Einzelinstanz-Sperre innerhalb
+    des freigegebenen Workflow-Pfads, prüft die Pflichtbudgets gegen jeden konfigurierten Job und beendet
+    sowie reapet die vollständige Snakemake-Prozessgruppe bei Signal oder Laufzeitüberschreitung mit begrenzter
+    Eskalation. Terminale strukturierte Ereignisse und Stage-Receipts teilen dieselbe Batch-ID; getrennte
+    Supervisor- und Workflow-Konfigurationsdigests, Start, Ende, Status, Exit-Code, Dauer und alarmierbare
+    Fehlerzähler werden ohne Quellpfade oder Patientendaten protokolliert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Prozessbasierte Cross-Repository-Tests und Failure Injection aus docs/video_import_concurrency_contract.md
+      ausführen; Lease-/Fencing-Evidenz, Rust-Capability-Gate, FFmpeg-Kindprozess-Cleanup und produktionsnahe
+      Lastmetriken gemeinsam durch Betrieb, Security und Storage-Verantwortliche prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py
+    - kind: code
+      reference: endoreg_db/import_files/processing/video_processing/video_anonymization.py
+    - kind: code
+      reference: /home/admin/lx-anonymizer/lx_anonymizer/frame_cleaner.py
+    - kind: test
+      reference: 73 endoreg-db concurrency/import tests; 29 FFmpeg tests; 6 lx-anonymizer native/concurrency
+        tests; cargo test passed
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/utils/video/test_ffmpeg_wrapper.py
+        tests/services/test_environment_readiness_unit.py tests/services/test_video_import_service.py
+        tests/rust_backend/test_rust_backend_fallbacks.py -q (65 passed)
+    - kind: command
+      reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_frame_cleaner_concurrency.py
+        tests/test_ocr_text_native.py tests/test_report_reader_contract.py -q (13 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright <video ownership files>; .devenv/state/venv/bin/pytest
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_dispatch.py tests/services/test_video_import_service.py
+        tests/services/test_watcher_storage_import.py tests/import_files/test_video_import_normalization.py
+        -q (56 passed)
+    - kind: command
+      reference: 'lx-anonymizer: devenv shell -- pyright lx_anonymizer/_native.py lx_anonymizer/frame_cleaner.py
+        tests/test_frame_cleaner_concurrency.py tests/test_ocr_text_native.py; pytest tests/test_frame_cleaner_concurrency.py
+        tests/test_ocr_text_native.py -q (6 passed)'
+    - kind: command
+      reference: devenv shell -- ruff; scoped pyright; pytest tests/import_files/test_video_finalize_success.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_hub_ingest_dispatch.py tests/services/test_video_import_service.py
+        tests/services/test_watcher_storage_import.py tests/import_files/test_video_import_normalization.py
+        -q (61 passed)
+    - kind: code
+      reference: endoreg_db/services/video_files/_ai.py uses lx_anonymizer.ocr.ocr_frame.FrameOCR; endoreg_db/utils/ocr.py
+        retired
+    - kind: command
+      reference: devenv shell -- pyright endoreg_db/services/video_files/_ai.py tests/services/test_video_metadata_ocr_boundary.py
+        (0 errors); pytest tests/services/test_video_metadata_ocr_boundary.py tests/models/test_video_metadata.py
+        tests/services/test_video_file_services_contract.py -q (28 passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pyright endoreg_db/services/offline_batch_runner.py
+        endoreg_db/management/commands/run_offline_batch.py tests/services/test_offline_batch_runner.py
+        tests/management/commands/test_run_offline_batch.py (0 errors); devenv shell -- .devenv/state/venv/bin/pytest
+        tests/services/test_offline_batch_runner.py tests/management/commands/test_run_offline_batch.py
+        -q (15 passed)
+    - kind: code
+      reference: endoreg_db/services/jobs/video_reimport_jobs.py (typed centralized mode and bounded dispatch-delay
+        configuration)
+    - kind: test
+      reference: tests/services/test_video_reimport_jobs.py::test_video_reimport_job_mode_rejects_unsupported_value;
+        test_video_reimport_dispatch_delay_rejects_negative_value
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_reimport_jobs.py
+        tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
+        -q (included in 148 passed focused job/configuration lane)
+    - kind: code
+      reference: endoreg_db/config/env.py::get_ffmpeg_transcode_timeout_seconds; get_watcher_poll_interval_seconds;
+        get_watcher_stable_after_seconds
+    - kind: code
+      reference: endoreg_db/services/hub/watcher_handoff.py::_validated_duration_seconds; wait_for_watcher_file_ready
+    - kind: test
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_watcher_storage_import.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/services/test_hls_media.py tests/utils/video/test_ffmpeg_wrapper.py
+        -q (154 passed, 4 subtests passed)
+    - kind: command
+      reference: devenv tasks run quality:code-regression (passed in 333s)
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+        tests/ingestion/test_full_video_import.py -q (5 passed)
+    - kind: test
+      reference: /home/admin/luxnix/.devenv/state/venv/bin/pytest tests/lx-annotate/test_file_mover_filewatcher_contract.py
+        tests/lx-annotate/test_lx_annotate_filewatcher_wheel_key_env.py -q (20 passed)
+    - kind: document
+      reference: docs/video_storage_normalization.md#transcoding-steps-and-idempotency
+    note: 'Watcher- und Transcode-Zeitgrenzen sind nun fail-closed: Polling muss positiv und endlich,
+      die Stabilitätsdauer nichtnegativ und endlich sowie der FFmpeg-Timeout positiv ganzzahlig sein.
+      Der autoritative Handoff-Service verkürzt die konfigurierte Stabilitätsdauer nicht mehr auf eine
+      interne Ein-Sekunden-Grenze und validiert auch direkte Aufrufer; eine Null-Stabilitätsdauer bleibt
+      für explizite atomare Test-Handoffs zulässig. EndoReg-, lx-annotate- und LuxNix-Verträge sind grün.
+      Produktionsnahe Last-, Abbruch- und Failure-Injection-Evidenz sowie formale Owner-Abnahme bleiben
+      offen.'
+    assessed_by: Codex
+    assessed_at: '2026-08-04T18:21:18.592686Z'
+- id: video_examination_annotation_contract
+  category: interoperability
+  title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
+  acceptance:
+  - Das von lx-annotate/VideoExaminationAnnotation.vue verwendete Processed-HLS bleibt nach Neuimport,
+    Reimport und Bestandsnormalisierung unter den bestehenden Playlist-, Key- und Segment-Endpunkten abspielbar;
+    Video-Detail, HLS-Dauer, FPS und Frameanzahl beschreiben dieselbe veröffentlichte Generation.
+  - Der GET-/POST-Vertrag segments/normalize-fps normalisiert Videos oberhalb von 50 FPS vor der ersten
+    Segmentanlage mit einem eigenen typisierten Resampling-Profil. Er aktualisiert FPS, Frameanzahl, Timeline-Version
+    und Provenienz konsistent; eine Storage-Normalisierung mit FPS-Passthrough darf diesen Pfad nicht
+    als erfolgreich behandeln oder blockieren. Statusabfragen und der gewöhnliche FPS-Endpunkt validieren
+    ausschließlich die persistierte positive, endliche Bildrate und dürfen weder das verschlüsselte Video
+    entschlüsseln noch eine vollständige temporäre Klartextkopie anlegen; die dateibasierte Prüfung bleibt
+    auf Import-, Normalisierungs- und explizite Integritäts-Workflows begrenzt.
+  - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
+    sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
+    klinischen Bildinhalt.
+  - Die Nachverarbeitung nach Segmentvalidierung extrahiert nach erfolgreichem Outside-Frame-Rebuild den
+    vollständigen stabilen Frame-Satz zwingend aus der neu veröffentlichten Processed-Generation. Sie
+    markiert die Validierung erst nach Prüfung von positivem Frame-Count, lückenlosen nullbasierten Framezeilen,
+    kanonischen Dateinamen, gesetztem Extraktionsstatus und vorhandenen Dateien als abgeschlossen; ein
+    fehlender oder unvollständiger Frame-Cache schlägt laut und wiederholbar fehl.
+  - Der Einzelbild-Decode verwendet den autoritativen Präsentationszeitstempel und einen nur an Loopback
+    gebundenen, nicht erratbaren Byte-Range-Zugriff auf das ausgewählte verschlüsselte Artefakt. Er erzeugt
+    keine vollständige temporäre Klartextkopie, entschlüsselt nur die von FFmpeg angeforderten Chunks
+    und schlägt bei nicht seekbarem Storage laut fehl.
+  - lx-annotate bewahrt binäre Einzelbildantworten unverändert als Blob, lädt pro ausgewählter Aufgabe
+    ohne expliziten Wiederholungsversuch höchstens einmal und zeigt HTTP-Status beziehungsweise Backendfehler
+    statt einer generischen Bildfehlermeldung an. Selten benötigte Queue-Parameter bleiben in einer eingeklappten
+    erweiterten Konfiguration verfügbar, während der Standardpfad nur die fachlich nötige Auswahl zeigt.
+  - lx-annotate lädt Video-Metadaten und Segmentdaten pro Auswahl über genau einen logisch verantwortlichen
+    Ladepfad. Status-Polling ist unabhängig von der Anzahl gleichzeitig ausstehender Videos auf einen
+    Request-Zyklus begrenzt, lädt unveränderte Labels nicht erneut und wird beim Verlassen der Ansicht
+    vollständig abgebrochen. Eine vom Normalisierungsstatus bereits validierte Bildrate wird für denselben
+    Ladevorgang wiederverwendet; der separate FPS-Endpunkt wird dann nicht zusätzlich aufgerufen.
+  - Der Dataset-Export bindet Integer-Präsentationszeitstempel, rationale Stream-Timebase und Timeline-Version
+    an denselben persistierten pts_v1-Vertrag. Fehlende Zeitachsenidentität führt zu einem lauten Fehler;
+    nominale Bilder pro Sekunde dürfen keine Exportkoordinaten erzeugen.
+  - Playlist-, Key- und Segmentzugriffe erzeugen beziehungsweise erneuern eine Media-Operation-Lease.
+    Normalisierung, HLS-Neuerzeugung und Cleanup warten bei aktivem Playback oder Segment-Update und veröffentlichen
+    eine neue Generation atomar, ohne laufende Annotationen auf gemischte Derivate zu lenken.
+  - Ein versionierter nativer Rust-Zustandsreduzierer entscheidet die zulässigen HLS-Reservierungs-, Claim-,
+    Publikations- und Reconciliation-Aktionen. Datenbank-Constraints erlauben je Video und Artefaktart
+    höchstens eine veröffentlichte `ready`-Generation und höchstens einen aktiven `queued`-, `materializing`-
+    oder `validated`-Kandidaten. Eine vorherige `ready`-Generation bleibt während der Kandidatenerzeugung
+    streambar; die Publikation serialisiert auf derselben Videozeile wie die Lease-Erzeugung.
+  - Vor der HLS-Materialisierung wird die ausgewählte Raw- oder Processed-Quelle innerhalb des geschützten
+    Transcoding-Verzeichnisses idempotent gegen `clinical_h264_bounded_v1` geprüft und nur bei Abweichung
+    normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-, Bitraten-
+    und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute Materialisierung
+    zurückgegeben.
+  - Das verschlüsselte HLS-Ergebnis wird vor atomarer Veröffentlichung über eine versuchsspezifische lokale
+    Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
+    Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
+    die Veröffentlichung und entfernen Prüfplaylist, Teilsegmente und Schlüsselmaterial.
+  - Nominelle rationale Bildrate, gemessene durchschnittliche Bildrate und Präsentationszeitstempel-Timeline
+    sind getrennte typisierte Werte. Eine HLS-Ausgabe mit nominell 50/1 und gemessen 50/1 darf gegenüber
+    einer gemessen 49,8549-FPS-Quelle ausschließlich dann akzeptiert werden, wenn die aktuelle `annotation_fps_resample_v1`-Provenienz,
+    der Content-Hash der Processed-Generation, Frameanzahl, Dauer, Time-Base, streng monotone konstante
+    PTS-Abstände sowie alle persistierten Segment- und extrahierten Framegrenzen dieselbe 50-FPS-Timeline
+    beweisen.
+  - Fehlende oder fremde FPS-Provenienz, ein abweichender Generation-Hash, Frameverlust, Frameduplikation,
+    echte PTS- beziehungsweise Grenzendrift und variable Bildrate ohne autoritative PTS verhindern die
+    HLS-Veröffentlichung weiterhin; die allgemeine FPS-Toleranz wird dafür nicht erweitert.
+  - Vor HLS-Veröffentlichung müssen die vollständigen relativen Präsentationszeitstempel der normalisierten
+    Quelle und der entschlüsselten HLS-Ausgabe innerhalb der gemeinsamen Time-Base-Auflösung übereinstimmen.
+    Jede `EXTINF`-Segmentgrenze muss monoton, positiv und innerhalb höchstens einer Frame-Dauer auf einen
+    autoritativen Ausgabe-Präsentationszeitstempel abbildbar sein; Segmentanzahl und Playlist-Gesamtdauer
+    müssen mit Dateien und validierter Timeline übereinstimmen.
+  - Gleichzeitige verschlüsselte Byte-Range-Lesezugriffe verwenden bevorzugt die native Rust-Implementierung,
+    die Datei-I/O und AES-GCM-Entschlüsselung ohne gehaltenen Python Global Interpreter Lock ausführt.
+    Rückgaben bleiben pro Request größenbegrenzt und byteidentisch zum Python-Referenzpfad; native Integritäts-,
+    Schlüssel- oder Geometriefehler schlagen laut fehl. Nur eine beim Prozessstart nicht verfügbare native
+    Erweiterung darf den explizit getesteten Python-Fallback verwenden.
+  - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
+    authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Backend-Tests für FPS-Job, Timeline und HLS-Leases sowie die lx-annotate Tests für VideoExaminationAnnotation
+      und useAuthenticatedVideoStream ausführen. Zusätzlich mit einem Video oberhalb von 50 FPS nachweisen,
+      dass die UI erst nach atomarer HLS-Veröffentlichung lädt und Segmentgrenzen über Normalisierung
+      und erneutes Laden stabil bleiben.
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
+    - kind: review
+      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
+        /home/admin/dev/lx-annotate/frontend/src/stores/videoStore.ts
+      note: Normalisierungsstatus und gewöhnlicher FPS-Endpunkt validieren persistierte Metadaten ohne
+        Media-Staging; das Frontend übernimmt die bereits validierte Bildrate in denselben Ladevorgang.
+    - kind: review
+      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue:1177-1280,1810-1819
+    - kind: test
+      reference: tests/services/test_video_fps_normalization_jobs.py; tests/views/video/test_hls_stream.py
+    - kind: test
+      reference: tests/services/test_export_frames_contract.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/utils/__tests__/segmentTimeline.test.ts
+    - kind: test
+      reference: tests/views/video/test_video_timeline_view.py; tests/services/test_segment_frame_extraction.py;
+        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+    - kind: test
+      reference: tests/services/test_seekable_media_input.py; tests/utils/test_encryption_range.py; tests/utils/test_storage_streaming.py;
+        tests/utils/video/test_frame_stream.py; tests/views/media/test_frame_stream.py
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        -q'
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/axiosInstance.binary.test.ts;
+        /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.test.ts; /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.usability.test.ts
+        (24 passed)
+    - kind: command
+      reference: devenv shell -- npm run type-check (exit 0)
+    - kind: code
+      reference: c3dfaf0a; 3f7084c4
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/services/test_video_storage_normalization.py
+        -q (passed)
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_hls_stream.py tests/services/test_media_operation_gate.py tests/services/test_video_post_validation_jobs.py
+        -q (46 passed)
+    - kind: command
+      reference: 'lx-annotate: devenv shell -- npm --prefix frontend run test:unit -- --run src/composables/__tests__/useAuthenticatedVideoStream.test.ts
+        src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+        src/utils/__tests__/segmentTimeline.test.ts (24 passed)'
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest
+        tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest tests/media/video/test_get_fps.py
+        -q (15 passed)
+    - kind: command
+      reference: 'lx-annotate: devenv tasks run vue:test (Vue-Typecheck, komponentenspezifischer Test-Typecheck
+        und vollständige Vitest-Suite bestanden)'
+    - kind: monitoring
+      reference: 'gc-10 journalctl, 2026-07-23 10:57-12:23 CEST: erster Upstream-Timeout auf GET media/videos/22/segments/normalize-fps/;
+        anschließend wiederholte Overview-/FPS-/Detail-Anfragen; manueller Restart 12:21:49 und expliziter
+        SIGKILL 12:23:16'
+      note: Kein Kernel- oder systemd-OOM-Kill. Der alte Webprozess erreichte 4 GiB Memory-Peak sowie
+        77,3 GiB Reads und 104,9 GiB Writes. Die optimierten Artefakte waren zum Analysezeitpunkt auf
+        gc-10 noch nicht ausgerollt.
+    - kind: review
+      reference: /home/admin/dev/lx-annotate/frontend/package.json; /home/admin/dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
+        (keine Cypress-Lane; API vollständig gemockt; veralteter FPS-/Payload-Vertrag)
+    note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
+      FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
+      Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,
+      und lx-annotate vermeidet den zweiten FPS-Aufruf. Backendseitig sind >50-FPS-Zustände, authentifizierte
+      Playlist-/Key-/Segment-Endpunkte, Lease-Erneuerung, Lease-Deferral und Post-Validation-Konkurrenz
+      durch 46 Tests nachgewiesen. lx-annotate weist credentialed HLS.js-/Native-HLS-Zugriff, fail-closed
+      Fehlerbehandlung, automatische FPS-Normalisierung vor Segmentladung sowie PTS-basierte Navigation
+      und Segment-Roundtrips durch 24 Tests nach. Offen bleiben Deployment und Lastnachweis auf gc-10
+      sowie ein einzelner realer Cross-Repository-End-to-End-Lauf mit einem Video oberhalb 50 FPS über
+      required/queued/running/ready beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität
+      nach UI-Reload. Die vorhandene Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder
+      in package.json konfiguriert noch installiert, alle relevanten API-Aufrufe werden mit Fixtures interceptet,
+      und die Assertions verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.'
+    assessed_by: Codex
+    assessed_at: '2026-07-23T09:12:53.429224Z'
+- id: derived_artifact_lifecycle
+  category: functionality
+  title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
+  acceptance:
+  - Roh-HLS und kanonisches Rohvideo werden nach erfolgreicher menschlicher Validierung nur entfernt,
+    wenn normalisiertes Mastervideo, benötigtes Processed-HLS, Segmentdaten und Temporal-/Qualitätsnachweise
+    vollständig und integritätsgeprüft vorliegen.
+  - Legacy materialisierte Vollvideos und veraltete HLS-Generationen werden anhand persistierter Besitz-
+    und Referenzdaten erkannt und idempotent bereinigt; aktive oder unbekannte Referenzen verhindern die
+    Löschung.
+  - Nach einem Teilfehler bleibt ein wiederanlauffähiger, eindeutig beobachtbarer Zustand zurück; ein
+    Cleanup-Erfolg wird erst nach Prüfung des tatsächlichen Dateisystemzustands persistiert.
+  - Eine versionierte native Rust-Zustandsmaschine entscheidet deterministisch über Reservierung, Veröffentlichung
+    und Reconciliation. Datenbankzeilen, Media-Operation-Leases, Dateibesitz und atomare Veröffentlichung
+    bleiben autoritativ im Python-Service.
+  - Der automatische Backfill stellt vorhandene `queued`, `materializing` oder `validated`-Versuche unabhängig
+    von ihrem Alter nicht erneut in den Broker. Nur ein tatsächlich zugestellter Worker darf einen veralteten
+    Versuch unter Datenbanksperre als fehlgeschlagen abgrenzen und eine neue Generation übernehmen; duplizierte
+    Broker-Nachrichten erzeugen keine parallelen Generationen.
+  - Validierte HLS-Ausgaben bleiben bei aktiver Playback- oder Segment-Update-Lease unveröffentlicht und
+    werden über einen begrenzten Task-Retry erneut zur Veröffentlichung angeboten. Ein späterer Besitzer
+    darf weder ihren Zustand ändern noch ihre temporären Dateien bereinigen.
+  - Reconciliation markiert ausschließlich abgelaufene, durch Datenbank-ID und Generationsschlüssel eindeutig
+    besessene HLS-Versuche als fehlgeschlagen und entfernt nur deren versuchsspezifische temporäre Pfade
+    über die typisierten Dateisystem-Wrapper. Unbekannte Verzeichnisse, aktive Leases und nicht abgelaufene
+    Versuche blockieren automatische Löschung und werden strukturiert gemeldet.
+  - Deterministische Profil- und Timeline-Validierungsfehler erhalten einen terminalen, nicht wiederholbaren
+    Fehlercode je Source-Generation. Eine dupliziert zugestellte Task materialisiert dieselbe fehlerhafte
+    Generation nicht erneut; eine unabhängige nachfolgende HLS-Task kann auf dem Worker fortfahren.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hls_media.py
+    - tests/models/video/test_video_file_io_helpers.py
+    - tests/views/anonymization/test_validate_view.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/models/video/test_video_file_io_helpers.py
+        tests/views/anonymization/test_validate_view.py -q
+      note: Exit-Code 0
+    - kind: command
+      reference: devenv shell -- env RUSTFLAGS=-C_link-arg=-lpython3.12 cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+        (17 passed); pytest tests/services/test_hls_media.py (22 passed); pytest tests/management/commands/test_materialize_video_hls.py
+        tests/test_tasks.py (24 passed)
+    - kind: code
+      reference: endoreg_db/services/runtime_wheel_staging.py; endoreg_db/management/commands/reap_runtime_wheel_staging.py
+    - kind: test
+      reference: pytest -q -n0 tests/services/test_runtime_wheel_staging.py => 5 passed; Ruff passed;
+        Pyright 0 errors
+    - kind: command
+      reference: 'Live dry-run /var/lib/lx-annotate: scanned_entries=99, candidate_count=83, candidate_bytes=2420525134,
+        removed_count=0; post-run inventory unchanged'
+    note: Existing HLS lifecycle work remains in progress. This change additionally provides a bounded,
+      typed, dry-run-by-default cleanup for obsolete LX-Annotate deployment wheel staging. It validates
+      canonical roots and wheel identities, rejects symlinks, malformed names and races, never descends
+      into media, and deletes only through safe_unlink_file structured logging. Production apply awaits
+      coordinated LuxNix deployment.
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T07:45:44.708398Z'
+- id: secure_atomic_migration
+  category: security
+  title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze
+  acceptance:
+  - Temporäre und finale Medien liegen ausschließlich im freigegebenen, verschlüsselten Storage; Klartext-Artefakte
+    werden weder exportiert noch in öffentliche Mounts oder ungeschützte Temp-Verzeichnisse geschrieben.
+  - Dateiänderungen verwenden den kanonischen typisierten Wrapper, atomare Veröffentlichung und strukturierte
+    Logs; Quelle und einziger gültiger Master werden nie vor Ziel-, Hash-, Timeline- und Qualitätsprüfung
+    gelöscht.
+  - Abbruch, Prozessverlust und unzureichender Speicher können kein teilweise veröffentlichtes Video als
+    gültig markieren.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dateioperationspfade sowie Abbruch-, Disk-full- und Integritätsfehler im verschlüsselten
+      Produktionsprofil prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    - kind: code
+      reference: 3f7084c4
+    - kind: test
+      reference: tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication
+    note: Zusätzlich zu den bestehenden Failure-Injection-Nachweisen wird verschlüsseltes HLS jetzt vor
+      Veröffentlichung über eine versuchsspezifische lokale Prüfplaylist validiert. Profilfehler markieren
+      den Versuch als fehlgeschlagen und entfernen Staging, Prüfplaylist und Schlüsselmaterial. Offen
+      bleibt die manuelle Abnahme im verschlüsselten Produktionsprofil einschließlich harter Prozessbeendigung.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T09:07:39.713637Z'
+- id: migration_regression_tests
+  category: testing
+  title: Größen-, Timeline-, Qualitäts- und Cleanup-Invarianten sind regressionsgetestet
+  acceptance:
+  - Parametrisierte Tests decken konstante und variable Bildrate, mehrere Auflösungen und Codecs, kurze
+    und lange Segmente sowie Grenzzeitstempel ab.
+  - Negative Tests erzwingen Fehler bei zu großem Output, Timeline-Drift, ungenügender Framequalität,
+    fehlender Provenienz, Disk-full und unvollständiger Validierung.
+  - Ein End-to-End-Test beweist, dass Normalisierung plus Cleanup die erwartete Byte-Reduktion erreicht
+    und weiterhin hochwertige Frames aus den gespeicherten Segmentzeitstempeln extrahiert.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_video_storage_normalization.py
+    - tests/services/test_video_temporal_mapping.py
+    - tests/management/commands/test_normalize_video_storage.py
+    - -q
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py tests/services/test_video_temporal_mapping.py
+        tests/management/commands/test_normalize_video_storage.py -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:42:49.159573Z'
+- id: controlled_legacy_migration
+  category: operations
+  title: Bestandsvideos werden kapazitätsbegrenzt, idempotent und rollbackfähig normalisiert
+  acceptance:
+  - Ein Dry-Run inventarisiert pro Video Rohvideo, Master, HLS, Legacy-Derivate, Referenzen und erwartete
+    Einsparung, ohne Dateien zu verändern.
+  - Die Migration priorisiert validierte Videos mit größtem Einsparpotenzial, arbeitet in begrenzten Batches
+    und startet nur mit ausreichendem Headroom für temporären Output und Rollback.
+  - Resume, Retry und erneuter Dry-Run sind idempotent; bei Fehler bleibt die bisher gültige Quelle erhalten
+    und das betroffene Video wird isoliert.
+  - Destruktive Migration ist technisch gesperrt, bis temporal_frame_contract und clinical_frame_quality
+    verifiziert sind.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_normalize_video_storage.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/management/commands/test_normalize_video_storage.py
+        -q
+      note: Exit-Code 0
+    assessed_by: Max
+    assessed_at: '2026-07-20T10:43:20.011221Z'
+- id: storage_observability
+  category: operations
+  title: Betreiber sehen Verbrauch, Redundanz, Einsparung und Migrationsrisiko
+  acceptance:
+  - Metriken und strukturierte Logs weisen Bytes nach Artefaktrolle, normalisierte versus ausstehende
+    Videos, freigegebenen löschbaren Bestand, erzielte Einsparung, Fehler und verfügbaren Headroom aus.
+  - Konfigurierbare Warn- und Stoppschwellen verhindern, dass Transcoding oder HLS-Materialisierung den
+    kritischen Storage erschöpfen.
+  - Ein wegen unzureichenden Storage-Headrooms vor der Medienanlage abgebrochener Import bewahrt seine
+    verschlüsselte verwaltete Quelle, erscheint center-begrenzt in der Anonymisierungsübersicht als wiederholbar
+    und kann nach Freigabe von Speicher automatisch oder explizit erneut angestoßen werden; der Kapazitätsfehler
+    führt nicht zur Quarantäne.
+  - Gewöhnliche Laufzeit-, Transcoding-, Worker- und Dispatchfehler verschieben eine bereits verschlüsselt
+    verwaltete Importquelle nicht in die Quarantäne. Sie bewahren die unveränderte Quelle und verwenden
+    begrenzte, beobachtbare Wiederholungsversuche; nach Ausschöpfung bleibt die Quelle für eine explizite
+    Betreiberentscheidung erhalten.
+  - Quarantäne bleibt auf seltene Trust-Boundary- oder Integritätsfälle begrenzt, in denen eine Quelle
+    nicht sicher als verwalteter Import weiterverarbeitet werden darf, insbesondere abgelehnte voranonymisierte
+    Drops. Profil-, Timeline-, Hash- und Referenzfehler bleiben fail-closed und werden durch diese Einschränkung
+    weder akzeptiert noch mit einem schwächeren Verarbeitungspfad umgangen.
+  - Nach jedem Batch werden Zähler aus Datenbank und Dateisystem abgeglichen; Abweichungen stoppen weitere
+    destruktive Schritte.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dry-Run, Kapazitätsalarm, Stoppschwelle, Batchabbruch und anschließenden Bestandsabgleich
+      in einer produktionsnahen Kopie demonstrieren.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py
+        tests/management/commands/test_normalize_video_storage.py -q
+    - kind: test
+      reference: tests/services/test_ingest_idempotency_quarantine.py::IngestIdempotencyQuarantineTests::test_insufficient_storage_retains_source_and_schedules_retry;
+        tests/views/anonymization/test_anonymization_overview.py::test_overview_includes_storage_blocked_upload_without_video_file;
+        tests/views/anonymization/test_anonymization_overview.py::test_retry_view_recovers_legacy_terminal_storage_failure
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_ingest_idempotency_quarantine.py
+        tests/services/test_import_monitoring.py tests/views/anonymization/test_anonymization_overview.py
+        -q (24 passed); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py -q
+        (32 passed)
+    - kind: code
+      reference: endoreg_db/management/commands/normalize_video_storage.py bounded _inventory_rows and
+        inventory_cursor payload
+    - kind: code
+      reference: endoreg_db/services/video_storage/inventory.py converts persisted HLS kinds to VideoArtifactKind
+        and branches exhaustively; unknown values fail with VideoStorageNormalizationError; each HLS artifact
+        inventory scan is capped at 20,000 filesystem entries and classified as incomplete when capped;
+        media bytes are never truncated or modified
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=true
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py => 5 passed, 4 destructive/expensive
+        tests skipped in 37.80s after incomplete-inventory terminology update
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_cursor_does_not_advance_after_reconciliation_failure
+        => 1 passed in 25.91s
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_rejects_unknown_hls_artifact_kind
+        => 1 passed in 38.98s
+    - kind: test
+      reference: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest -q -n0 tests/management/commands/test_normalize_video_storage.py::test_inventory_marks_hls_artifact_above_entry_limit_incomplete
+        => 1 passed in 33.29s; read-only inventory continues with incomplete/unreconciled evidence and
+        apply is rejected before mutation
+    - kind: command
+      reference: Focused Ruff passed; focused Pyright 0 errors; git diff --check passed
+    note: 'Existing capacity projection, thresholds, role/status counters, and fail-closed reconciliation
+      remain implemented. Inventory selection is now bounded before filesystem traversal: default batch
+      100, hard maximum 1000, stable ascending VideoFile primary-key cursor, and machine-readable next
+      cursor. This prevents --limit from scanning the whole fleet. Persisted HLS artifact kinds now enter
+      the existing typed enum and use exhaustive routing; unexpected values fail loudly instead of being
+      omitted from byte totals. Per-artifact HLS traversal is capped at 20,000 filesystem entries without
+      aborting read-only inventory: capped scans are marked incomplete and unreconciled, expose zero reclaimable
+      bytes, and block apply and cleanup before mutation. The cap affects metadata traversal only; no
+      video or HLS bytes are truncated, rewritten, moved, or partially stored. Production-like encrypted
+      inventory reconciliation and full lifecycle classification metrics remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T09:10:28Z'
+- id: operator_documentation
+  category: documentation
+  title: Profilwahl, Rollout, Recovery und Qualitätsprüfung sind dokumentiert
+  acceptance:
+  - Ein Runbook beschreibt Inventur, Profilbenchmark, Freigabegates, Batchplanung, Pause/Resume, Quarantäne,
+    Rollback und Recovery bei Disk-full.
+  - Die Artefaktmatrix dokumentiert, wann Rohvideo, Roh-HLS, Processed-HLS, kanonisches Mastervideo und
+    Legacy-Derivate erstellt und gelöscht werden.
+  - Dokumentation benennt ausdrücklich das Timeline-/Framequalitäts-Gate als Voraussetzung jeder destruktiven
+    Bestandsnormalisierung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbook mit Betrieb, Security und klinischem Reviewer abnehmen.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/video_storage_normalization.md
+    - kind: review
+      reference: AGENTS.md; docs/video_storage_normalization.md
+    - kind: document
+      reference: a33c73fe; 3f7084c4; docs/video_storage_normalization.md
+    - kind: document
+      reference: 'docs/video_storage_normalization.md#inventory-and-migration; #pause-and-resume'
+    - kind: document
+      reference: docs/video_storage_normalization.md documents the 20,000-entry per-HLS-artifact inventory
+        ceiling, nonfatal incomplete-scan classification, zero reclaimability, immutable media bytes,
+        and pre-mutation apply/cleanup gate
+    - kind: test
+      reference: 'Bounded cursor inventory tests: 3 passed sequentially with 4 destructive/expensive tests
+        skipped by policy; the resume-safety failure path passed separately with the expensive-test skip
+        disabled (1 passed)'
+    note: 'The English runbook documents eager HLS readiness, encrypted pre-publication validation, timeline
+      gates, and now the bounded inventory contract: default/max batch sizes, stable primary-key cursor
+      fields, resume commands, within-batch prioritization, and partial-apply reconciliation. Formal operations,
+      security, storage-owner, and clinical review remain outstanding.'
+    assessed_by: codex-storage-optimization-20260824
+    assessed_at: '2026-08-25T08:26:18.303628Z'
+- id: hls_dispatch_recovery_and_fencing
+  category: functionality
+  title: WP-ER-01 Lost HLS deliveries and worker loss converge safely
+  acceptance:
+  - A committed queue reservation is durably coupled to broker publication or is discoverable and republished
+    by reconciliation after publication loss.
+  - Stale queued, materializing, and validated attempts are recovered with explicit fencing; a late worker
+    cannot publish or fail a replacement attempt.
+  - Redelivery after worker loss reclaims or supersedes the owned attempt instead of acknowledging already_materializing
+    while leaving an orphan row.
+  - Reservation, reconciliation, and redelivery remain idempotent under concurrent dispatchers.
+  required: true
+  verification:
+    kind: manual
+    instructions: Implement and review the durable dispatch/reconciliation design, then run broker-loss,
+      worker-kill, stale-attempt, late-worker, and concurrent-dispatch integration tests before starting
+      WP-ER-02 publication-integrity work.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hls_media.py:675-824; rust/endoreg_rust_backend/src/hls_state.rs:22-36;
+        endoreg_db/utils/rust_backend.py:482-503
+      note: Dispatch commits the active row before broker publication, and both state reducers ignore
+        active_is_stale when deciding whether to enqueue replacement work.
+    - kind: test
+      reference: tests/services/test_hls_media.py:353-406; tests/management/commands/test_materialize_video_hls.py:246-302
+      note: Current tests preserve stale active attempts rather than requiring recovery.
+    - kind: code
+      reference: endoreg_db/services/hls_media.py; endoreg_db/tasks.py; endoreg_db/models/media/video/hls_artifact.py
+    - kind: test
+      reference: '55 passed, 15 skipped: tests/services/test_hls_media.py tests/views/video/test_hls_stream.py
+        tests/test_tasks.py tests/management/commands/test_materialize_video_hls.py'
+    - kind: code
+      reference: endoreg_db/services/hls_media.py::_prepare_artifact_record performs same-key stale reclaim
+        through the fenced common claim path
+    - kind: test
+      reference: tests/services/test_hls_media.py::test_redelivered_hls_task_reclaims_stale_matching_attempt;
+        tests/services/test_hls_media.py::test_failed_forced_queue_attempt_restores_previous_ready_artifact
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/management/commands/test_materialize_video_hls.py
+        tests/views/video/test_hls_stream.py -q (50 passed)
+    note: Durable artifact ID and immutable key_id continue to gate claim, validation, publication and
+      failure. A redelivered MATERIALIZING attempt may now resume only after the shared stale threshold
+      and only with the identical reservation key; its in-memory state is normalized into the common claim
+      path instead of being misclassified as already_materializing. Unowned direct force calls do not
+      bypass a queued reservation. Production deployment plus real broker-loss, hard-worker-kill and concurrent-dispatch
+      evidence remain outstanding.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T13:12:25.929587Z'
+- id: hls_source_generation_and_publication_integrity
+  category: data_integrity
+  title: WP-ER-02 READY HLS is bound to the current source generation
+  acceptance:
+  - READY fast paths validate source content identity, artifact kind, encoder profile, and generation
+    rather than relying on a source filename and shallow path existence.
+  - Publication rechecks the locked current source generation after transcoding and rejects output derived
+    from a superseded source.
+  - Readiness verifies the playlist and every referenced encrypted segment, including count, existence,
+    timeline, and generation identity.
+  - A profile change does not inherit deterministic-failure suppression from a different encoder profile.
+  required: true
+  verification:
+    kind: manual
+    instructions: After WP-ER-01 establishes attempt fencing, run same-name source replacement, concurrent
+      reanonymization, profile-change, missing-segment, and corrupt-segment tests through READY lookup
+      and authenticated playback.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hls_media.py:690-719,847-854,862-879,1812-1825,1846-1882,2232-2265
+      note: READY short circuits bypass the later generation comparison, deterministic failure lookup
+        omits the requested profile, and readiness does not enumerate playlist segment references.
+    - kind: code
+      reference: endoreg_db/services/hls_media.py:get_ready_hls_artifact,get_ready_hls_artifact_by_key;
+        endoreg_db/migrations/0074_videohlsartifact_source_content_hash.py
+    - kind: test
+      reference: legacy blank source hash rejected by materializer, playlist, key, and segment readiness
+        lookup in focused 55-pass lane
+    - kind: document
+      reference: docs/video_storage_normalization.md legacy automatic replacement policy
+    note: Legacy READY artifacts with blank or mismatched source identity are rejected at every playback
+      lookup. Every enabled LuxNix host automatically dispatches full raw and processed replacement without
+      per-machine opt-in or limits. Production rollout and complete-corpus convergence evidence remain
+      outstanding.
+    assessed_by: codex-gc10-hls-investigate
+    assessed_at: '2026-09-02T09:51:43.070244Z'
+- id: hls_callers_require_terminal_readiness
+  category: functionality
+  title: WP-ER-03 Import and correction callers enforce typed HLS outcomes
+  acceptance:
+  - Import, duplicate import, reimport, and correction workflows return success only when required raw
+    and processed artifacts are READY for the expected source generation.
+  - The shared result contract uses typed statuses; failed_validation, already_materializing, deferred,
+    and other non-ready outcomes cannot be mistaken for success.
+  - The correction workflow accepts the actual successful materializer statuses and recomputes processed
+    source identity before requesting HLS.
+  - Terminal validation failures are observable as task failures or equivalent explicit terminal-failure
+    telemetry rather than successful Celery results.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_video_finalize_success.py
+    - tests/services/test_video_correction_jobs.py
+    - tests/test_tasks.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/state_management.py:144-161,411-430; endoreg_db/services/jobs/video_correction_jobs.py:410-416;
+        endoreg_db/tasks.py:200-230
+      note: Import ignores returned statuses, correction requires the nonexistent ready result, and terminal
+        validation failure returns normally from the Celery task.
+    - kind: test
+      reference: tests/import_files/test_video_finalize_success.py:52-75; tests/services/test_video_correction_jobs.py:121-130
+      note: Existing tests mock only materialized or the impossible ready status and do not exercise the
+        real negative result contract.
+    note: The current caller/materializer contract permits false import success and guaranteed correction-job
+      failure after successful HLS publication.
+    assessed_by: codex-gc10-hls-investigate
+    assessed_at: '2026-09-02T09:00:00Z'
+- id: hls_backfill_admission_and_accounting
+  category: operations
+  title: WP-ER-04 Backfill admits viable sources and reports truthful outcomes
+  acceptance:
+  - Selection distinguishes a populated FileField from a source that exists and is readable in the approved
+    encrypted storage boundary; worker-side validation remains authoritative for races.
+  - Missing sources are reported or quarantined with a stable reason and are not retried without bound
+    on every boot or operator invocation.
+  - Dry-run and summary counts are per distinct eligible video and distinguish ready, active, failed,
+    missing-source, dispatch-failed, and newly queued outcomes.
+  - Inline execution exits nonzero for every terminal failure status.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/management/commands/test_materialize_video_hls.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence:
+    - kind: code
+      reference: endoreg_db/management/commands/materialize_video_hls.py:315-343,393-449,465-485; endoreg_db/services/hls_media.py:1797-1809
+      note: Eligibility checks only the stored field name, inline failure recognition is incomplete, and
+        missing accounting subtracts artifact rows rather than distinct videos.
+    note: gc-10 dispatched a raw HLS attempt whose referenced physical source was already absent.
+    assessed_by: codex-gc10-hls-investigate
+    assessed_at: '2026-09-02T09:00:00Z'
+- id: hls_privacy_safe_observability
+  category: security
+  title: WP-ER-05 HLS failures are actionable without exposing media paths
+  acceptance:
+  - Persisted errors, command output, Celery events, and structured logs use stable reason codes and artifact
+    identifiers without absolute paths, source filenames, secrets, or clinical metadata.
+  - Metrics distinguish dispatch loss, stale attempts, worker loss, validation failure, missing source,
+    publication deferral, and retry exhaustion.
+  - Health checks and recovery use one configured HLS stale policy and expose whether repair was attempted.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inject each HLS failure class, inspect database state, task events, command output,
+      and logs, and verify both diagnostic completeness and path/metadata redaction.
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hls_media.py:2196-2226; endoreg_db/management/commands/materialize_video_hls.py:331-343;
+        endoreg_db/management/commands/check_system_health.py:228-259
+      note: Raw exception strings can contain absolute encrypted-storage paths, while health reporting
+        and materializer recovery use different stale clocks.
+    note: Observability currently leaks source-path context and cannot reliably distinguish an orphaned
+      reservation from live broker work.
+    assessed_by: codex-gc10-hls-investigate
+    assessed_at: '2026-09-02T09:00:00Z'
+- id: hls_failure_injection_release_gate
+  category: testing
+  title: WP-ER-06 Failure-injection coverage gates HLS release readiness
+  acceptance:
+  - Tests cover the process boundary between committed reservation and broker publication, Redis redelivery,
+    hard worker loss, dispatcher concurrency, late workers, lease deferral exhaustion, and restart recovery.
+  - Storage tests cover dangling field references, same-name changed bytes, source replacement during
+    transcoding, missing and corrupt segments, and profile changes after a cached validation failure.
+  - Workflow tests use real materializer result values for import and correction and assert terminal database,
+    broker, task, filesystem, and playback states.
+  - A production-settings integration lane runs against the packaged Endoreg dependency used by lx-annotate.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the focused Endoreg suite after WP-ER-01 through WP-ER-05, then run the cross-repository
+      packaged-runtime and LuxNix acceptance lanes referenced by their HLS work packages.
+    timeout_seconds: 3600
+  assessment:
+    status: blocked
+    evidence:
+    - kind: test
+      reference: tests/services/test_hls_media.py; tests/management/commands/test_materialize_video_hls.py;
+        tests/import_files/test_video_finalize_success.py; tests/services/test_video_correction_jobs.py
+      note: Current tests omit broker-loss and worker-crash convergence and use mocks that conceal two
+        caller/result mismatches.
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/management/commands/test_materialize_video_hls.py
+        tests/views/video/test_hls_stream.py -q (50 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/rust_backend/test_rust_backend_fallbacks.py tests/services/test_lifecycle_state_machine.py
+        tests/services/test_upload_job_state_machine.py -q (51 passed)
+    note: Die fokussierte HLS-Service-, Command- und Playback-Suite besteht vollständig mit 50 Tests;
+      zusätzlich bestehen Rust-Capability-, gemeinsamer Lifecycle- und UploadJob-Adapter mit 51 Tests.
+      Same-key stale Redelivery und der fenced Force-Fehlerpfad sind abgedeckt. Das finale Release-Gate
+      bleibt wegen fehlender echter Broker-Loss-, Hard-Worker-Kill-, Mehrprozess-Concurrency- und lx-annotate-Packaged-Runtime-Evidenz
+      blockiert.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T13:12:28.803565Z'

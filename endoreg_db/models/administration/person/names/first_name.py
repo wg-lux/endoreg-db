@@ -1,18 +1,21 @@
 # class to represent unique first-names
 # name attribute is natural key
-
+from __future__ import annotations
+from typing import Any
 from django.db import models
 
-class FirstNameManager(models.Manager):
-    def get_by_natural_key(self, name):
+
+class FirstNameManager(models.Manager["FirstName"]):
+    def get_by_natural_key(self, name: str) -> "FirstName":
         return self.get(name=name)
-    
+
+
 class FirstName(models.Model):
     objects = FirstNameManager()
-    name = models.CharField(max_length=255, unique=True)
-    
-    def natural_key(self):
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+
+    def natural_key(self) -> tuple[str]:
         return (self.name,)
-    
-    def __str__(self):
+
+    def __str__(self) -> str:
         return str(self.name)

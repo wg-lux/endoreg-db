@@ -1,0 +1,246 @@
+schema_version: '1.0'
+id: api_contracts
+name: API Contracts
+description: Stable, authorized, and regression-tested REST contracts for all production-critical
+  endpoints.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/api_route_test_matrix.md
+  disposition: migrated
+  note: The route matrix remains the coverage reference; completion status is derived here.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Canonical and compatible routes are fully inventoried
+  acceptance:
+  - Every production-critical route has a purpose, mount, support status, and owner.
+  - For lx-annotate, /endoreg-api/ and /dtypes-api/ are the canonical mounts; /api/ and /base_api/ are
+    documented compatibility aliases only.
+  - Every compatibility alias has an explicit removal criterion; new consumers use only the canonical mounts
+    and centralized URL helpers.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the URL configuration against the route matrix and support contract.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/root_urls.py; endoreg_db/utils/api_urls.py; docs/api_route_test_matrix.md
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+        tests/test_resolve.py tests/utils/test_api_urls.py -q (19 route/startup contract tests passed)
+    - kind: command
+      reference: manage.py show_urls --format csv before/after URLConf consolidation (505 rows; byte-identical
+        SHA-256 38fd085855cdd0ed9e95602ef944efa8dfd05103c821771e6ee04f7646415b20)
+    note: endoreg_db.root_urls is now the sole canonical root URL configuration; the stale tracker reference
+      to the duplicate that was never configured has been corrected. Canonical mounts and compatibility aliases
+      remain byte-identical. The route matrix still does not record every production-critical route with an
+      individually specified owner and support status.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T16:06:39.859018Z'
+- id: route_contracts
+  category: functionality
+  title: Canonical routes and payload contracts match the implementation
+  acceptance:
+  - All documented routes resolve to the expected views.
+  - Backend and wire contracts use snake_case; the centralized lx-annotate client boundary may convert requests
+    to snake_case and responses to camelCase without endpoint-specific special paths.
+  - GET media/videos/{id}/fps/ and GET/POST media/videos/{id}/segments/normalize-fps/ validate the persisted
+    positive, finite frame rate without complete media staging. Missing or invalid persisted values return
+    HTTP 422; file-based verification remains reserved for the resource-intensive worker or an explicit
+    integrity workflow.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/check_route_matrix.py
+    - --warn-on-missing-backend
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+      note: Exit code 0
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
+        tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest
+        tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest -q
+      note: Metadata-based frames-per-second/normalization status contract, including the HTTP 422 error path, passed.
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+        (25 documented routes matched 489 normalized backend routes; 10 referenced test files exist)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+        tests/docs/test_show_urls_contract.py tests/test_resolve.py tests/test_app_startup.py tests/scripts/test_check_documentation_governance.py
+        -q (22 passed)
+    note: The canonical route contracts are now reproducibly checked from the versioned Markdown matrix
+      against the actual Django URL output. The legacy JSON input contract remains supported; snake_case
+      and frames-per-second contracts remain supported by the existing focused evidence.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T16:18:17.139615Z'
+- id: route_coverage
+  category: testing
+  title: Every high-risk route has a robust contract test
+  acceptance:
+  - The route matrix and test files are synchronized.
+  - Authentication, authorization, validation, and error cases are tested beyond the happy path.
+  - High-risk media status routes have a regression test that explicitly fails any attempt to perform complete
+    decryption or staging within the web process.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/docs/test_show_urls_contract.py
+    - tests/test_resolve.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/docs/test_show_urls_contract.py tests/test_resolve.py
+        -q
+      note: Exit code 0
+    - kind: test
+      reference: tests/services/test_video_fps_normalization_jobs.py::test_normalization_status_uses_persisted_fps_without_probing_media;
+        tests/views/video/test_video_fps_view.py::VideoFpsViewTest::test_uses_persisted_video_fps_without_media_probe
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:18:03.336332Z'
+- id: access_controls
+  category: security
+  title: All protected routes enforce authentication and scope
+  acceptance:
+  - Media, report, upload, and administration routes enforce their documented resource, patient, and center scope.
+  - On site nodes, center access is modeled as a Keycloak-synchronized multiple assignment; missing or unknown
+    center groups deny access safely.
+  - On the central hub, authenticated readers may read anonymized media across centers; raw media remains
+    center-scoped there as well and must not leave the local storage boundary.
+  - Explicitly cross-center annotation routes instead enforce dataset, annotator, and role permissions;
+    raw video streams remain center-scoped.
+  - The DEBUG bypass cannot be active in any production profile.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the route matrix against permission classes and negative authorization tests.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_center_group_sync.py
+        tests/authz/test_dynamic_permissions.py tests/authz/test_video_media_policy.py tests/services/test_center_access.py
+        tests/views/media/test_center_scoped_reads.py tests/views/media/test_video_media_view.py tests/views/misc/test_upload_endpoints.py
+        tests/views/test_center_access_matrix.py tests/views/video/test_annotation_access_controls.py
+        tests/deployment/test_prod_settings_contract.py -q (103 passed, 2 warnings in 67.03s)
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_hls_stream.py::test_centerless_hub_user_can_read_processed_playlist_key_and_segment
+        tests/views/video/test_hls_stream.py::test_central_hub_processed_playlist_rejects_anonymous_user
+        -q (2 passed, 2 warnings in 48.60s)
+    note: The focused access-control lane demonstrates fail-closed Keycloak center synchronization, resolution
+      of zero, one, or multiple centers, patient, report, upload, and raw-media scope, restricted anonymized
+      central-hub read access, server-side annotator identity and role checks, and rejection of DEBUG in production.
+      The criterion has advanced from not_assessed to in_progress. Verification still requires a complete
+      route-by-route review of all production-critical administration and reporting endpoints and explicit
+      negative evidence for AIDataSet assignment or dataset scope on the cross-center annotation routes.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T11:53:51.773011Z'
+- id: deprecation_control
+  category: maintainability
+  title: Legacy routes and serializer shims have a controlled end of life
+  acceptance:
+  - /api/ and /base_api/, as well as every other alias, are marked, tested, and have a removal prerequisite.
+  - New lx-annotate callers use endoregApi() or dtypesApi() instead of direct legacy mounts.
+  - Dead or untested compatibility paths are removed.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inventory URL and serializer shims and review their support status.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/frontend/src/stores/annotationStats.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/annotationStats.test.ts
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/apiPrefixContract.test.ts
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
+    note: Production lx-annotate TypeScript/Vue sources are now checked repository-wide for direct /api/
+      and /base_api/ string literals; the identified runtime hardcode has been migrated. Controlled replacement
+      of the r() wrapper and deployment and reverse-proxy evidence remain outstanding before removal of the
+      still-supported aliases.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:33:13.774895Z'
+- id: operational_readiness
+  category: operations
+  title: Contract violations are detected before deployment
+  acceptance:
+  - Route checking is reproducible locally and in continuous integration.
+  - Error output identifies the route, expected contract, and missing coverage.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/check_route_matrix.py
+    - --warn-on-missing-backend
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+        (exit 0; documented=25, backend=489, test_files=10)
+    - kind: command
+      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+        -q (7 passed: missing matrix, malformed coverage, missing backend and legacy JSON compatibility)'
+    - kind: document
+      reference: docs/api_route_test_matrix.md#reproducible-contract-check
+    - kind: command
+      reference: SKIP_EXPENSIVE_TESTS=true RUN_VIDEO_TESTS=false USE_STUB_MODEL_META=true TEST_DB_REUSE=true
+        .devenv/state/venv/bin/pytest -q -m "not (expensive or video or pipeline or ai or slow or ffmpeg)"
+        -n auto --dist=loadscope (1327 passed, 1 skipped, 803 subtests passed)
+    note: Route checking is reproducible locally and in continuous integration without an absolute lx-annotate
+      temporary file. A missing or invalid matrix, a missing test file, and documented backend drift produce an
+      unambiguous route/line and an error code; legacy JSON automation remains compatible. The exact fast-marker
+      lane passes completely; the nested devenv task wrapper previously exceeded its runtime window without
+      reporting a pytest error.
+    assessed_by: Codex
+    assessed_at: '2026-08-04T16:34:54.829528Z'
+- id: api_documentation
+  category: documentation
+  title: The API contract is current and unambiguous for consumers
+  acceptance:
+  - Mounts, versioning, authentication, payloads, and error behavior are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Walk through the documented flow for one media, upload, and report route each.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: 'docs/api_route_test_matrix.md: Common Wire Contract'
+    note: Mounts, ownership, compatibility windows, versioning strategy, snake_case wire format, authentication
+      and authorization semantics, and safe error conventions are documented centrally. Complete route-by-route
+      payload and error documentation for all production-critical consumers remains outstanding.
+    assessed_by: Codex
+    assessed_at: '2026-07-23T08:33:15.331420Z'

@@ -1,20 +1,25 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
-from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
     from ...administration import ReferenceProduct
-    from ..unit import Unit
 
-class EmissionFactorManager(models.Manager):
+
+class EmissionFactorManager(models.Manager["EmissionFactor"]):
     """
     Manager for EmissionFactor with custom query methods.
     """
+
     def get_by_natural_key(self, name: str) -> "EmissionFactor":
         return self.get(name=name)
+
 
 # get debug from settings
 # from django.conf import settings
 # DEBUG = settings.DEBUG
+
 
 class EmissionFactor(models.Model):
     """
@@ -25,28 +30,35 @@ class EmissionFactor(models.Model):
         unit (ForeignKey): The unit associated with the emission factor.
         value (float): The value of the emission factor.
     """
+
     objects = EmissionFactorManager()
 
-    name = models.CharField(max_length=255)
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    value = models.FloatField()
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    unit: models.ForeignKey[Any] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
+    value: models.FloatField[Any, Any] = models.FloatField()
 
     if TYPE_CHECKING:
-        unit: "Unit"
-        reference_products: models.QuerySet["ReferenceProduct"]
-        reference_product_package: models.QuerySet["ReferenceProduct"]
-        reference_product_product: models.QuerySet["ReferenceProduct"]
+        pass
 
-        
-    
-    def natural_key(self) -> tuple:
+        @property
+        def reference_products(self) -> models.QuerySet["ReferenceProduct"]: ...
+
+        @property
+        def reference_product_package(self) -> models.QuerySet["ReferenceProduct"]: ...
+
+        @property
+        def reference_product_product(self) -> models.QuerySet["ReferenceProduct"]: ...
+
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the emission factor.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     def __str__(self, verbose: bool = False) -> str:
         """
@@ -65,8 +77,8 @@ class EmissionFactor(models.Model):
                 result += f"\n\t\t{source}"
 
         return result
-    
-    def get_reference_products(self) -> List["ReferenceProduct"]:
+
+    def get_reference_products(self) -> list["ReferenceProduct"]:
         """
         Retrieves all reference products associated with the emission factor.
 
@@ -75,20 +87,26 @@ class EmissionFactor(models.Model):
         """
         from ...administration.product import ReferenceProduct
 
-        reference_products = []
-        reference_products += ReferenceProduct.objects.filter(emission_factor_total=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_package=self)
-        reference_products += ReferenceProduct.objects.filter(emission_factor_product=self)
+        reference_products: list["ReferenceProduct"] = []
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_total=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_package=self
+        )
+        reference_products += ReferenceProduct.objects.filter(
+            emission_factor_product=self
+        )
 
         return reference_products
 
-    def sources(self) -> List:
+    def sources(self) -> list["ReferenceProduct"]:
         """
         Retrieves all sources related to the emission factor.
 
         Returns:
             list: A list of sources related to the emission factor.
         """
-        sources = []
+        sources: list["ReferenceProduct"] = []
         sources.extend(self.get_reference_products())
         return sources

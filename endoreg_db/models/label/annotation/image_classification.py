@@ -1,12 +1,29 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypeAlias, Any
+
 from django.db import models
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from ..label import Label
     from ...media.frame import Frame
+    from ..label import Label
     from ...metadata import ModelMeta
     from ...other.information_source import InformationSource
+
+NoImageClassificationAnnotationValue: TypeAlias = None
+ImageClassificationAnnotationFloat: TypeAlias = (
+    "float | NoImageClassificationAnnotationValue"
+)
+ImageClassificationAnnotationText: TypeAlias = (
+    "str | NoImageClassificationAnnotationValue"
+)
+ImageClassificationAnnotationModelMeta: TypeAlias = (
+    "ModelMeta | NoImageClassificationAnnotationValue"
+)
+ImageClassificationAnnotationInformationSource: TypeAlias = (
+    "InformationSource | NoImageClassificationAnnotationValue"
+)
+
 
 class ImageClassificationAnnotation(models.Model):
     """
@@ -28,7 +45,7 @@ class ImageClassificationAnnotation(models.Model):
     """
 
     # Single ForeignKey to the unified Frame model
-    frame = models.ForeignKey(
+    frame: models.ForeignKey["Frame"] = models.ForeignKey(
         "Frame",  # Points to the unified Frame model
         on_delete=models.CASCADE,
         related_name="image_classification_annotations",
@@ -36,15 +53,25 @@ class ImageClassificationAnnotation(models.Model):
         null=False,
     )
 
-    label = models.ForeignKey(
+    label: models.ForeignKey["Label"] = models.ForeignKey(
         "Label",
         on_delete=models.CASCADE,
         related_name="image_classification_annotations",
     )
-    value = models.BooleanField()
-    float_value = models.FloatField(blank=True, null=True)
-    annotator = models.CharField(max_length=255, blank=True, null=True)
-    model_meta = models.ForeignKey(
+    value: models.BooleanField[Any, Any] = models.BooleanField()
+    float_value: models.FloatField[Any, Any] = models.FloatField(blank=True, null=True)
+    annotator: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    external_annotation_id: models.CharField[
+        ImageClassificationAnnotationText | None, Any
+    ] = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+    model_meta: models.ForeignKey["ModelMeta | None"] = models.ForeignKey(
         "ModelMeta",
         on_delete=models.SET_NULL,
         related_name="image_classification_annotations",
@@ -52,9 +79,13 @@ class ImageClassificationAnnotation(models.Model):
         null=True,
         blank=True,
     )
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
-    information_source = models.ForeignKey(
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+    information_source: models.ForeignKey[
+        ImageClassificationAnnotationInformationSource | None
+    ] = models.ForeignKey(
         "InformationSource",
         on_delete=models.SET_NULL,
         related_name="image_classification_annotations",
@@ -64,21 +95,24 @@ class ImageClassificationAnnotation(models.Model):
     )
 
     if TYPE_CHECKING:
-        frame: "Frame"  # Updated type hint
-        label: "Label"
-        information_source: "InformationSource"
-        model_meta: "ModelMeta"  # Added for completeness
+        pass
 
     class Meta:
         indexes = [
-            models.Index(fields=['frame', 'label']),
-            models.Index(fields=['frame']),
+            models.Index(fields=["frame", "label"]),
+            models.Index(fields=["frame"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["frame", "label", "information_source", "annotator"],
+                name="uniq_frame_label_source_annotator",
+            )
         ]
 
     def __str__(self) -> str:
         """
         String representation of the annotation.
         """
-        frame_str = str(self.frame) if self.frame else "No Frame"
-        label_name = self.label.name if self.label else "No Label"
+        frame_str = str(self.frame)
+        label_name = self.label.name
         return f"{frame_str} - {label_name} - {self.value}"

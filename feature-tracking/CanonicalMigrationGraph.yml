@@ -1,0 +1,207 @@
+schema_version: '1.0'
+id: canonical_migration_graph
+name: Canonical Migration Graph
+description: Keep the dependency-owned endoreg_db migration graph fresh-installable, immutable, and suitable
+  for application release gates.
+owners:
+- endoreg-db maintainers
+production_critical: true
+tracking:
+  state: active
+  history:
+  - action: done
+    changed_by: codex-agent-20260902
+    changed_at: '2026-09-02T12:41:00.103115Z'
+    note: All six required criteria are verified; the canonical migration chain is documented for production
+      release and is being moved to the done tracker.
+  - action: reopened
+    changed_by: codex-state-machine-tracker
+    changed_at: '2026-09-02T15:08:03.517252Z'
+    note: Additive ownership-ledger migration 0076 extends the canonical leaf; test and manifest evidence
+      must be advanced to the new leaf and verified again.
+source_documents: []
+definition_of_done:
+- id: canonical_contract
+  category: requirements
+  title: Canonical migration history remains immutable
+  acceptance:
+  - Existing canonical migration names and operations are not rewritten during application cutovers.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the migration diff and release package manifest.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: 'git migration review: no existing numbered migration is modified; additive migrations
+        0074_videohlsartifact_source_content_hash.py and 0075_alter_modelmeta_weights.py extend the existing
+        chain, and max_migration.txt advances to 0075'
+    - kind: command
+      reference: 'final full pytest: canonical graph and provenance backfill cohorts passed within 2718
+        passed, 4 skipped'
+    - kind: review
+      reference: Additive migration 0076 with a dependency on 0075; existing migration files remain unchanged
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt
+    note: The new migration 0076_operation_ownership_ledgers extends the existing canonical graph additively;
+      no earlier numbered migration was rewritten.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:54.187198Z'
+- id: canonical_graph
+  category: functionality
+  title: The canonical migration graph reaches its declared leaf
+  acceptance:
+  - Django loads the endoreg_db migration graph without conflicts.
+  - The declared max migration is the only endoreg_db leaf.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - ./.devenv/state/venv/bin/pytest
+    - tests/migrations/test_canonical_graph.py
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
+      note: Exit code 0
+    - kind: command
+      reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
+        -vv => 1 passed in 40.36s
+    - kind: code
+      reference: endoreg_db/migrations/0075_alter_modelmeta_weights.py
+    - kind: command
+      reference: 'tests/migrations/test_canonical_graph.py and provenance backfill: 8 passed'
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt;
+        tests/migrations/test_canonical_graph.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed;
+        manage.py makemigrations --check --dry-run: No changes detected'
+    note: The additive ownership-ledger leaf 0076_operation_ownership_ledgers is the only conflict-free
+      Endoreg leaf; an isolated fresh SQLite installation applies the complete graph with no unapplied
+      migrations.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:26.442727Z'
+- id: fresh_install
+  category: testing
+  title: A fresh database can apply the canonical migration graph
+  acceptance:
+  - The canonical graph applies from zero without application-owned migration modules.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - ./.devenv/state/venv/bin/pytest
+    - tests/migrations/test_canonical_graph.py
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
+      note: Exit code 0
+    - kind: command
+      reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
+        -vv => 1 passed in 40.36s
+    - kind: command
+      reference: 'tests/migrations/test_canonical_graph.py: fresh graph passed; combined migration lane
+        8 passed'
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed
+        in 52.30s'
+    note: An isolated fresh SQLite installation applied the complete Endoreg migration graph through
+      0076_operation_ownership_ledgers without conflicts; no unapplied migrations remained.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:09:56.011434Z'
+- id: safe_boundary
+  category: security
+  title: Migration verification does not weaken storage or cryptographic boundaries
+  acceptance:
+  - Tests mutate only isolated test databases and do not access application payloads or keys.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the migration test database boundary.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: tests/migrations/test_canonical_graph.py creates a tmp_path SQLite database, configures
+        a fresh isolated Django process, and migrates only that database
+    - kind: review
+      reference: migration test uses a generated SECRET_KEY and neither loads application payloads nor
+        reads cryptographic material or production storage
+    note: Migration verification remains isolated from deployment data, storage and cryptographic boundaries.
+    assessed_by: codex-release-readiness
+    assessed_at: '2026-08-13T12:07:25.146191Z'
+- id: release_gate
+  category: operations
+  title: Canonical migration leaf and package version are release gates
+  acceptance:
+  - The package exposes a stable migration manifest suitable for application safety checks.
+  required: true
+  verification:
+    kind: manual
+    instructions: Compare max_migration.txt and packaged migration files.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: endoreg-db 1.0.15.0 manylinux_2_17_x86_64.manylinux2014_x86_64 wheel built with Maturin/Zig;
+        source distribution built; Twine checks passed
+    - kind: command
+      reference: 'isolated manylinux wheel install: importlib.metadata 1.0.15.0; Python package and native
+        Rust extension imported from isolated target'
+    - kind: command
+      reference: 'artifact manifest check: migration 0075_alter_modelmeta_weights, max_migration.txt,
+        report_runtime_validation.py and case_creation.py present in manylinux wheel and sdist'
+    - kind: command
+      reference: source distribution rebuilt the complete endoreg_db 1.0.15.0 project wheel successfully
+    - kind: command
+      reference: 'final repository gates: pyright 0 errors; Ruff check passed; Ruff format --check 1263
+        files; pytest 2718 passed, 4 skipped, 0 failed in 706.17s'
+    - kind: command
+      reference: manylinux wheel sha256 16a45197e830d0882e163acfedaa091e8a95117079dec2920915ca784241e03c;
+        sdist sha256 fbb3cda38daf0f51ae7727daac706ee4698082a21dd350804d79e18b504d619a
+    - kind: code
+      reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt
+    note: max_migration.txt and the source graph have been advanced to 0076; a new publishable wheel and
+      source-distribution artifact containing this leaf was not built in this task and remains a release gate.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:10:06.260607Z'
+- id: cross_repository_guidance
+  category: documentation
+  title: Cross-repository ownership is explicit
+  acceptance:
+  - Endoreg-db owns the canonical graph and consuming applications own their historical database checks.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the feature descriptions in the dependency and consuming application repositories.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/feature-tracking/CanonicalMigrationCutover.yml assigns the
+        consuming application its historical/canonical cutover checks
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/docs/guides/deployment-strategy.md states that installed
+        endoreg_db owns the shipped canonical migrations while lx-annotate owns runtime history repair
+        and deployment gating
+    note: Dependency and consuming-application ownership are explicitly separated in both trackers and
+      the deployment guide.
+    assessed_by: codex-release-readiness
+    assessed_at: '2026-08-13T12:07:27.016200Z'

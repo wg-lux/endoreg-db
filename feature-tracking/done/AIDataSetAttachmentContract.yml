@@ -1,0 +1,232 @@
+schema_version: '1.0'
+id: ai_dataset_attachment_contract
+name: AI-Datensatz-Anhangsvertrag
+description: Standardisiert die Auswahl und den Bulk-Backfill von Annotationen in AIDataSets über einen
+  strikt validierten lx_dtypes-Vertrag, eine atomare endoreg_db-Persistenzgrenze und eine validierte lx-annotate-Dateneingangsgrenze.
+owners:
+- endoreg_db maintainers
+- lx_dtypes maintainers
+- lx-annotate frontend maintainers
+production_critical: false
+tracking:
+  state: done
+  history:
+  - action: done
+    changed_by: codex-root-20260902-a
+    changed_at: '2026-09-02T11:30:50.006744Z'
+    note: Alle sieben Pflichtkriterien sind verifiziert; der Produktionsreife-Check bestand und das Feature
+      wird formal abgeschlossen.
+source_documents:
+- path: docs/ai_dataset_attachment_contract.md
+  disposition: reference
+  note: Definiert Ownership, Wireformat, Persistenz- und Releasegrenzen für explizite Auswahl und Bulk-Backfill.
+definition_of_done:
+- id: documented_contract_scope
+  category: requirements
+  title: Ownership und Auswahlsemantik sind eindeutig dokumentiert
+  acceptance:
+  - Request, Response, Persistenzrelationen und Frontend-Adapter haben jeweils genau einen benannten Owner.
+  - Bulk-Backfill ohne video_id und explizite Auswahl mit IDs sind widerspruchsfrei voneinander abgegrenzt.
+  - Der Release-Übergang zwischen lx_dtypes-Quelle und veröffentlichter endoreg_db-Abhängigkeit ist sichtbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokument gegen lx_dtypes-Verträge, Endpoint und Frontend-Adapter prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/ai_dataset_attachment_contract.md
+    note: Reviewed ownership, bulk-versus-explicit semantics, and the unpublished dependency transition
+      against all three source layers.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:35.012807Z'
+- id: strict_shared_contract
+  category: interoperability
+  title: lx_dtypes besitzt den strikten öffentlichen Request- und Response-Vertrag
+  acceptance:
+  - Bulk-Backfill erlaubt video_id null beziehungsweise nicht gesetzt und die Response bildet null verlustfrei
+    ab.
+  - IDs und Counts besitzen enge Wertebereiche; String-zu-Zahl- und String-zu-Boolean-Koersion werden
+    abgelehnt.
+  - Unbekannte Felder und widersprüchliche Bulk-Auswahl werden laut abgelehnt.
+  - Beide Verträge sind über den öffentlichen contracts-Import erreichbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - uv
+    - --project
+    - /home/admin/lx-data-models
+    - run
+    - pytest
+    - /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: uv --project /home/admin/lx-data-models run pytest /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+        -q
+      note: Exit-Code 0
+    - kind: test
+      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+    - kind: command
+      reference: uv --project /home/admin/lx-data-models run pytest /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+        -q (11 passed)
+    note: Strict public request/result contracts cover bulk nullability, ranges, coercion rejection, extra
+      fields, and selection conflicts.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:38.694432Z'
+- id: canonical_backend_boundary
+  category: functionality
+  title: endoreg_db validiert Request und datenbankabgeleitete Response genau einmal
+  acceptance:
+  - Die View verwendet den öffentlichen lx_dtypes-Vertrag statt paralleler lokaler Request-Dataclass und
+    Parser.
+  - Ungültige oder nicht objektförmige Payloads führen vor jeder Datenbankmutation zu HTTP 400.
+  - Die Response wird vor Ausgabe durch den gemeinsamen Result-Vertrag validiert.
+  - Wiederholte Attachments bleiben an der Many-to-Many-Persistenzgrenze idempotent.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - env
+    - PYTHONPATH=/home/admin/lx-data-models
+    - .devenv/state/venv/bin/pytest
+    - tests/views/misc/test_application_settings_endpoints.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/views/misc/test_application_settings_endpoints.py -q
+      note: Exit-Code 0
+    - kind: test
+      reference: tests/views/misc/test_application_settings_endpoints.py
+    - kind: command
+      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+        tests/views/misc/test_application_settings_endpoints.py -q (45 passed)
+    note: The endpoint validates the shared request once, rejects malformed input before mutation, validates
+      its database-derived response, and retains relation idempotency.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:41.474900Z'
+- id: fail_closed_frontend_boundary
+  category: security
+  title: lx-annotate akzeptiert keine ungeprüfte Attachment-Response
+  acceptance:
+  - Axios behandelt die Response als unknown und validiert alle IDs, Counts, null und Listen vor Komponentennutzung.
+  - Zusätzliche Felder, negative Werte, falsche Typen und nicht objektförmige Responses schlagen laut
+    fehl.
+  - Der Request-Typ erlaubt keine String-IDs, die der gemeinsame Vertrag ablehnt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - npm
+    - --prefix
+    - /home/admin/dev/lx-annotate/frontend
+    - run
+    - test:unit
+    - --
+    - --run
+    - src/api/__tests__/aiDatasetApi.test.ts
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: npm --prefix /home/admin/dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
+      note: Exit-Code 0
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/aiDatasetApi.test.ts
+    - kind: command
+      reference: npm --prefix /home/admin/dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
+        (6 passed)
+    note: The Axios response remains unknown until exact runtime validation and request IDs are numeric.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:44.462988Z'
+- id: cross_layer_regression_matrix
+  category: testing
+  title: Kleine Positiv- und Negativtests decken jede Vertragsgrenze ab
+  acceptance:
+  - Shared-, Backend- und Frontendtests enthalten je einen erfolgreichen Bulk-Backfill-Fall.
+  - Jede Schicht testet mindestens falsche Typen, verletzte Wertebereiche oder unbekannte Felder.
+  - Pyright sowie beide Frontend-Typechecks bleiben fehlerfrei.
+  required: true
+  verification:
+    kind: manual
+    instructions: Die fokussierten Tests und statischen Prüfungen aus allen drei Repositories ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'lx_dtypes: 11 passed; endoreg_db: 45 passed; lx-annotate API and page: 10 passed'
+    - kind: command
+      reference: 'lx_dtypes Pyright: 0 errors; focused endoreg_db Pyright: 0 errors; lx-annotate application
+        and component type-checks: exit 0'
+    note: Positive bulk backfill and narrow negative boundary cases pass in all three layers, with clean
+      focused static analysis.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:47.032926Z'
+- id: published_dependency_adoption
+  category: operations
+  title: endoreg_db verwendet eine veröffentlichte kompatible lx-dtypes-Version
+  acceptance:
+  - Der korrigierte Vertrag ist als lx-dtypes-Release veröffentlicht.
+  - endoreg_db-Mindestversion und Lockfile wählen diesen oder einen neueren kompatiblen Release.
+  - Die Endpointtests bestehen ohne lokalen PYTHONPATH-Override.
+  required: true
+  verification:
+    kind: manual
+    instructions: Veröffentlichte Paketversion, pyproject.toml, uv.lock und Endpointtest ohne Quelloverride
+      prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: 'pyproject.toml: lx-dtypes>=0.2.34'
+    - kind: code
+      reference: 'uv.lock: lx-dtypes 0.2.34 published wheel and source distribution'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python contract inspection: lx-dtypes 0.2.34, video_id required=False,
+        default=None'
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/views/misc/test_application_settings_endpoints.py
+        -q (49 passed, exit 0)
+    note: Published lx-dtypes 0.2.34 supplies the nullable bulk attachment contract, endoreg_db requires
+      and locks that release, and the complete endpoint suite passes against the installed package without
+      a PYTHONPATH override.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:22:48.170660Z'
+- id: contributor_contract_guide
+  category: documentation
+  title: Contributor-Dokumentation erklärt Wire-, Persistenz- und Releasegrenzen
+  acceptance:
+  - Die Dokumentation ist englisch und benennt Request-, Response- und Persistenz-Owner.
+  - Bulk-nullability, strikte Typen, Idempotenz und Axios-Namenskonvertierung sind beschrieben.
+  - Der unveröffentlichte Dependency-Übergang wird nicht als produktionsbereit dargestellt.
+  required: true
+  verification:
+    kind: manual
+    instructions: docs/ai_dataset_attachment_contract.md auf Vollständigkeit und Übereinstimmung mit Code
+      prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/ai_dataset_attachment_contract.md
+    note: English contributor guidance documents ownership, nullability, strictness, idempotency, Axios
+      conversion, and the open release boundary.
+    assessed_by: codex-contract-standardization
+    assessed_at: '2026-08-13T09:22:50.374318Z'

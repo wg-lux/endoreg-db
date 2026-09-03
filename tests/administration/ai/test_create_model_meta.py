@@ -1,29 +1,38 @@
+from django.core.files.storage import Storage
+from typing import Protocol, cast
 from pathlib import Path
 
 import pytest
 from django.test import TestCase
 
-from ...helpers.data_loader import (
-    load_ai_model_label_data,
-    load_ai_model_data,
-    load_default_ai_model
-)
+from endoreg_db.models import ModelMeta
 
+from ...helpers.data_loader import load_data
 from ...helpers.default_objects import (
     get_latest_segmentation_model,
 )
 
-from endoreg_db.models import ModelMeta
+
+class _WeightsFileLike(Protocol):
+    name: str
+    storage: Storage
+
+
+class _AiModelWithActiveMeta(Protocol):
+    active_meta: ModelMeta | None
+
+
+class _ModelMetaWithModel(Protocol):
+    model: _AiModelWithActiveMeta
+
 
 class AiModelTest(TestCase):
-    def setUp(self):
+    ai_model_meta: ModelMeta
 
-        load_ai_model_label_data()
-        load_ai_model_data()
-        load_default_ai_model()
+    def setUp(self):
+        load_data()
 
         self.ai_model_meta = get_latest_segmentation_model()
-
 
     def test_model_meta_creation(self):
         """Test the creation of an AiModel instance."""
@@ -34,8 +43,7 @@ class AiModelTest(TestCase):
 @pytest.mark.django_db(transaction=True)
 def test_setup_default_model_meta_from_huggingface_downloads_safetensors():
     """Ensure we can pull safetensor weights from Hugging Face and register metadata."""
-    load_ai_model_label_data()
-    load_ai_model_data()
+    load_data()
 
     ModelMeta.objects.all().delete()
 
@@ -49,9 +57,14 @@ def test_setup_default_model_meta_from_huggingface_downloads_safetensors():
     assert weights_path.exists(), "Weights file should exist after download"
     assert weights_path.suffix == ".safetensors"
     assert weights_path.stat().st_size > 0
-    assert model_meta.model.active_meta == model_meta
+    model = cast(_ModelMetaWithModel, model_meta).model
+    assert model.active_meta == model_meta
 
     try:
-        model_meta.weights.storage.delete(model_meta.weights.name)
+        weights_file = cast(_WeightsFileLike, model_meta.weights)
+        weights_name = weights_file.name
+        if not weights_name:
+            raise ValueError("Model meta download did not persist a weight file name")
+        weights_file.storage.delete(weights_name)
     except Exception:
         pass
