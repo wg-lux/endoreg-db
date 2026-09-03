@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.1.6"
+version = "1.1.7"
 requires-python = ">=3.12,<3.13"
 license = {file = "LICENSE"}
 
