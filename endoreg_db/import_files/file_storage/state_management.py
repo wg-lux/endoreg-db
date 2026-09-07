@@ -1,12 +1,15 @@
 import logging
 import os
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
 
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
 from lx_dtypes.models.contracts.media_streaming import validate_ffmpeg_stream_info
+from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
@@ -17,7 +20,11 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
+from endoreg_db.services.hls_media import (
+    hls_materialization_is_active,
+    hls_result_is_ready,
+    materialize_video_hls,
+)
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
 )
@@ -147,14 +154,42 @@ def ensure_video_hls(
     instance: VideoFile,
     *,
     force: bool = False,
+    execution_guard: Callable[[], None] | None = None,
 ) -> None:
     """Return only after local raw and processed HLS are both ready."""
     for artifact_kind in ("raw", "processed"):
-        result = materialize_video_hls(
-            int(instance.pk),
-            artifact_kind=artifact_kind,
-            force=force,
-        )
+        deadline = time.monotonic() + get_ffmpeg_transcode_timeout_seconds()
+        request_force = force
+        while True:
+            if execution_guard is not None:
+                execution_guard()
+            result = materialize_video_hls(
+                int(instance.pk),
+                artifact_kind=artifact_kind,
+                force=request_force,
+                claim_queued=True,
+            )
+            if result.status != "already_materializing":
+                break
+            # Join the current generation without repeatedly forcing a rebuild.
+            # The import's enclosing heartbeat continues renewing its lease.
+            request_force = False
+            while True:
+                if execution_guard is not None:
+                    execution_guard()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(
+                        f"Timed out waiting for {artifact_kind} HLS materialization."
+                    )
+                if not hls_materialization_is_active(
+                    video_id=int(instance.pk),
+                    key_id=result.key_id,
+                ):
+                    break
+                time.sleep(min(1.0, remaining))
+        if execution_guard is not None:
+            execution_guard()
         if not hls_result_is_ready(result.status):
             raise RuntimeError(
                 f"{artifact_kind} HLS materialization ended with {result.status}."
@@ -384,7 +419,7 @@ def finalize_video_success(
         instance.meta = next_meta
         cast(_StatefulImportInstance, instance).save()
         _require_execution_ownership(ctx)
-        ensure_video_hls(instance, force=True)
+        ensure_video_hls(instance, force=True, execution_guard=ctx.execution_guard)
         _require_execution_ownership(ctx)
 
         state = _ensure_instance_state(instance)

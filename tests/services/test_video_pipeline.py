@@ -33,7 +33,7 @@ class _SensitiveMetaLike(Protocol):
 # Configuration
 DEFAULT_ENDOSCOPY_PROCESSOR_NAME = "olympus_cv_1500"
 DEFAULT_CENTER_NAME = "university_hospital_wuerzburg"
-VIDEO_PATH = Path("/home/admin/dev/endoreg-db/tests/assets/test_outside.mp4")
+VIDEO_PATH = Path("./endoreg-db/tests/assets/test_outside.mp4")
 
 vis = VideoImportService()
 import_and_anonymize = vis.import_and_anonymize

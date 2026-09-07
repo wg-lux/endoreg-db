@@ -31,8 +31,10 @@
     "endoreg_db/migrations",
     "endoreg_db/**/migrations"
   ],
-  "extraPaths": ["."],
-  "venvPath": "/home/admin/endoreg-db/.devenv/state",
+  "extraPaths": [
+    "."
+  ],
+  "venvPath": "/endoreg-db/.devenv/state",
   "venv": "venv",
   "pythonVersion": "3.12",
   "pythonPlatform": "Linux",

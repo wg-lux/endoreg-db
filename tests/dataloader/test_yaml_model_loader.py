@@ -12,6 +12,7 @@ import endoreg_db.utils.yaml_model_loader as yaml_model_loader
 def test_load_model_data_from_yaml_delegates_typed_metadata_unchanged(
     monkeypatch: MonkeyPatch,
 ) -> None:
+    # Arrange
     command = BaseCommand()
     metadata: yaml_model_loader.LoadModelDataMetadata = {
         "dir": Path("fixtures/genders"),
@@ -35,6 +36,7 @@ def test_load_model_data_from_yaml_delegates_typed_metadata_unchanged(
         record_delegate,
     )
 
+    # Act
     yaml_model_loader.load_model_data_from_yaml(
         command,
         "gender",
@@ -42,4 +44,5 @@ def test_load_model_data_from_yaml_delegates_typed_metadata_unchanged(
         verbose=True,
     )
 
+    # Assert
     assert calls == [(command, "gender", metadata, True)]

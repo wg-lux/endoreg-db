@@ -39,6 +39,8 @@ from endoreg_db.services.video_files import (
 )
 from endoreg_db.services.validated_identity import commit_validated_media_identity
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.views.access_control import assert_center_scope_allowed
 from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_VALIDATED,
@@ -654,6 +656,7 @@ def _validate_video(
     payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
+    assert_center_scope_allowed(request=request, obj=video)
     video_obj = cast(_VideoValidationLike, video)
     integrity_error = _video_integrity_error(
         video_obj=video_obj,
@@ -886,6 +889,7 @@ def _validate_pdf(
     payload: PdfFileMetaJsonObject,
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
+    assert_center_scope_allowed(request=request, obj=pdf)
     pdf_obj = cast(_PdfValidationLike, pdf)
     document_type_result = _validated_pdf_document_type(payload)
     if isinstance(document_type_result, Response):
@@ -960,19 +964,11 @@ def _validate_pdf(
 
 
 def _video_by_id(file_id: int) -> VideoFile | None:
-    return (
-        VideoFile.objects.select_related("center", "sensitive_meta", "state")
-        .filter(pk=file_id)
-        .first()
-    )
+    return VideoFile.objects.select_for_update(of=("self",)).filter(pk=file_id).first()
 
 
 def _pdf_by_id(file_id: int) -> RawPdfFile | None:
-    return (
-        RawPdfFile.objects.select_related("center", "sensitive_meta", "state")
-        .filter(pk=file_id)
-        .first()
-    )
+    return RawPdfFile.objects.select_for_update(of=("self",)).filter(pk=file_id).first()
 
 
 def _validate_video_or_not_found(
@@ -1093,6 +1089,8 @@ class AnonymizationValidateView(APIView):
 
     Rückwärtskompatibilität: ISO-Format (YYYY-MM-DD) wird ebenfalls akzeptiert.
     """
+
+    permission_classes = [EnvironmentAwarePermission, PolicyPermission]
 
     @transaction.atomic
     def post(self, request: Request, file_id: int) -> Response:

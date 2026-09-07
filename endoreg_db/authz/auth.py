@@ -9,6 +9,7 @@ from jwt import PyJWKClient
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import transaction
 from rest_framework import authentication, exceptions
 from rest_framework.request import Request
 
@@ -54,7 +55,7 @@ def _required_json_string(payload: Mapping[str, JsonValue], key: str) -> str:
 class KeycloakJWTAuthentication(authentication.BaseAuthentication):
     """
     Verifies Bearer JWTs against Keycloak JWKS.
-    Creates/updates a Django user and syncs groups if roles are present.
+    Creates/updates a Django user and replaces groups with verified roles.
     """
 
     _jwks_client: ClassVar[PyJWKClient | None] = None
@@ -179,28 +180,27 @@ class KeycloakJWTAuthentication(authentication.BaseAuthentication):
         if not username:
             raise exceptions.AuthenticationFailed("Token missing username/sub")
 
-        user, _ = User.objects.get_or_create(
-            username=username,
-            defaults={
-                "email": claims.email,
-                "first_name": claims.given_name[:150],
-                "last_name": claims.family_name[:150],
-            },
-        )
-        auth_user = cast(_AuthenticatedUser, user)
+        with transaction.atomic():
+            user, _ = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    "email": claims.email,
+                    "first_name": claims.given_name[:150],
+                    "last_name": claims.family_name[:150],
+                },
+            )
+            auth_user = cast(_AuthenticatedUser, user)
 
-        roles = claims.role_names
-        if roles:
             groups: list[Group] = []
-            for r in roles:
+            for r in claims.role_names:
                 grp, _ = Group.objects.get_or_create(name=r)
                 groups.append(grp)
             auth_user.groups.set(groups)
             auth_user.save()
 
-        synchronize_user_center_groups(
-            user=auth_user,
-            group_paths=center_group_paths,
-        )
+            synchronize_user_center_groups(
+                user=auth_user,
+                group_paths=center_group_paths,
+            )
 
         return (auth_user, None)

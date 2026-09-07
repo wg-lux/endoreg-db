@@ -8,7 +8,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.core.files.base import ContentFile
@@ -25,6 +25,86 @@ from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize(
+    "failure_stage", ["before_publication", "after_file_move", "after_commit"]
+)
+def test_database_publication_failure_preserves_output_and_redelivers_idempotently(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+) -> None:
+    from django.db import OperationalError
+    from unittest.mock import patch
+
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(video_id=video.pk)
+    publish = hls_media._publish_validated_artifact
+    commit_files = hls_media._commit_hls_output
+
+    def interrupted_move(*, temp_output_dir: Path, target_dir: Path) -> None:
+        commit_files(temp_output_dir=temp_output_dir, target_dir=target_dir)
+        raise OperationalError("database disconnected after publication rename")
+
+    def interrupted_publish(
+        *,
+        video_id: int,
+        artifact_kind: hls_media.VideoArtifactKind,
+        artifact_id: int,
+        expected_key_id: UUID,
+        temp_output_dir: Path,
+        target_dir: Path,
+    ) -> object:
+        if failure_stage == "after_file_move":
+            with patch.object(
+                hls_media, "_commit_hls_output", side_effect=interrupted_move
+            ):
+                publish(
+                    video_id=video_id,
+                    artifact_kind=artifact_kind,
+                    artifact_id=artifact_id,
+                    expected_key_id=expected_key_id,
+                    temp_output_dir=temp_output_dir,
+                    target_dir=target_dir,
+                )
+        if failure_stage == "after_commit":
+            publish(
+                video_id=video_id,
+                artifact_kind=artifact_kind,
+                artifact_id=artifact_id,
+                expected_key_id=expected_key_id,
+                temp_output_dir=temp_output_dir,
+                target_dir=target_dir,
+            )
+        raise OperationalError("database acknowledgement lost")
+
+    with (
+        patch.object(
+            hls_media, "_publish_validated_artifact", side_effect=interrupted_publish
+        ),
+        pytest.raises(OperationalError),
+    ):
+        hls_media.materialize_video_hls(
+            video.pk,
+            reserved_artifact_id=reservation.artifact_id,
+            reservation_key_id=reservation.attempt_key_id,
+        )
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert artifact.status == (
+        "ready" if failure_stage == "after_commit" else "validated"
+    )
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        reserved_artifact_id=reservation.artifact_id,
+        reservation_key_id=reservation.attempt_key_id,
+    )
+    assert hls_media.hls_result_is_ready(result.status)
+    assert len(fake_hls.source_payloads) == 1
+    assert VideoHlsArtifact.objects.filter(video=video).count() == 1
+    assert hls_media.get_ready_hls_artifact(video=video).pk == artifact.pk
 
 
 class PlaintextLeakSpy:
@@ -518,6 +598,67 @@ def test_queued_hls_worker_claims_reservation_and_materializes(
     assert str(artifact.key_id) == result.key_id
 
 
+@pytest.mark.parametrize("replace_source", [False, True])
+def test_import_claims_queued_hls_and_fences_delayed_delivery(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+    replace_source: bool,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    if replace_source:
+        cast(Any, video.processed_file).save(
+            "replacement.mp4", ContentFile(b"replacement generation"), save=True
+        )
+
+    result = hls_media.materialize_video_hls(
+        video.pk,
+        artifact_kind="processed",
+        force=True,
+        claim_queued=True,
+    )
+    assert result.status == "materialized"
+    assert result.key_id != str(reservation.attempt_key_id)
+    with pytest.raises(RuntimeError, match="does not own"):
+        hls_media.materialize_video_hls(
+            video.pk,
+            artifact_kind="processed",
+            reserved_artifact_id=reservation.artifact_id,
+            reservation_key_id=reservation.attempt_key_id,
+        )
+    artifact = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
+    assert artifact.status == VideoHlsArtifact.Status.READY.value
+    assert str(artifact.key_id) == result.key_id
+    assert len(fake_hls.source_payloads) == 1
+
+
+def test_completed_hls_reservation_redelivery_is_idempotent(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    reservation = hls_media.reserve_hls_materialization_dispatch(
+        video_id=video.pk,
+        artifact_kind="processed",
+    )
+    for expected in ("materialized", "already_ready"):
+        result = hls_media.materialize_video_hls(
+            video.pk,
+            artifact_kind="processed",
+            reserved_artifact_id=reservation.artifact_id,
+            reservation_key_id=reservation.attempt_key_id,
+        )
+        assert result.status == expected
+    assert len(fake_hls.source_payloads) == 1
+
+
 def test_redelivered_hls_task_reclaims_stale_matching_attempt(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
@@ -553,10 +694,12 @@ def test_redelivered_hls_task_reclaims_stale_matching_attempt(
 
 
 @pytest.mark.parametrize("force", [False, True])
+@pytest.mark.parametrize("claim_queued", [False, True])
 def test_active_hls_materialization_is_not_stolen(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
     force: bool,
+    claim_queued: bool,
 ) -> None:
     video = _create_processed_video(center=hls_center)
     active_key_id = uuid4()
@@ -576,6 +719,7 @@ def test_active_hls_materialization_is_not_stolen(
         video.pk,
         artifact_kind="processed",
         force=force,
+        claim_queued=claim_queued,
     )
 
     artifact.refresh_from_db()

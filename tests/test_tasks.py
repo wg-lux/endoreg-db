@@ -254,6 +254,39 @@ def test_video_hls_materialization_task_requires_reservation_identity() -> None:
         cast(Any, tasks.video_hls_materialization).run("42")
 
 
+@pytest.mark.parametrize("hls", [False, True])
+def test_database_outage_retries_import_and_hls_delivery(hls: bool) -> None:
+    from django.db import OperationalError
+
+    task = (
+        tasks.video_hls_materialization if hls else tasks.run_video_upload_import_task
+    )
+    service = (
+        "endoreg_db.services.hls_media.materialize_video_hls"
+        if hls
+        else "endoreg_db.services.hub.ingest._run_video_upload_import_job"
+    )
+    with (
+        patch(service, side_effect=OperationalError("private database details")),
+        patch.object(
+            _current_task(task), "retry", side_effect=RuntimeError("scheduled")
+        ) as retry,
+        pytest.raises(RuntimeError, match="scheduled"),
+    ):
+        if hls:
+            tasks.video_hls_materialization.run(
+                42,
+                "processed",
+                False,
+                7,
+                "11111111-1111-1111-1111-111111111111",
+            )
+        else:
+            tasks.run_video_upload_import_task.run("42")
+    assert retry.call_args.kwargs["max_retries"] is None
+    assert str(retry.call_args.kwargs["exc"]) == "database_unavailable"
+
+
 def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
     class _Result:
         def as_dict(self) -> dict[str, object]:

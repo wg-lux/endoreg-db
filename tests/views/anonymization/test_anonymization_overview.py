@@ -255,6 +255,74 @@ def test_overview_includes_storage_blocked_upload_without_video_file() -> None:
 
 
 @pytest.mark.django_db
+def test_unattached_upload_stays_visible_through_recovery() -> None:
+    center = Center.objects.create(name="Lifecycle Center")
+    user = User.objects.create_user(username="lifecycle-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    job = UploadJob.objects.create(source_center=center, content_type="video/mp4")
+    stable_id: int | None = None
+    for job_status in (
+        UploadJob.Status.PENDING,
+        UploadJob.Status.PROCESSING,
+        UploadJob.Status.RETRYING,
+        UploadJob.Status.ERROR,
+        UploadJob.Status.LOST,
+    ):
+        if job_status == UploadJob.Status.RETRYING:
+            job.schedule_retry(
+                "Processing interrupted",
+                delay_seconds=30,
+                max_retries=3,
+                error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+            )
+        elif job_status == UploadJob.Status.ERROR:
+            job.mark_error("Retry budget exhausted")
+        elif job_status == UploadJob.Status.LOST:
+            job.mark_lost("Source unavailable")
+        elif job_status == UploadJob.Status.PROCESSING:
+            job.mark_processing()
+        request = APIRequestFactory().get("/api/anonymization/items/overview/")
+        force_authenticate(request, user=user)
+        response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+        rows = json.loads(response.content)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["upload_job"]["id"] == str(job.pk)
+        assert row["upload_job"]["status"] == job_status
+        assert row["anonymization_status"] == (
+            "failed"
+            if job_status in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
+            else "processing_anonymization"
+        )
+        assert row["import_only"] is True
+        if stable_id is None:
+            stable_id = row["id"]
+        assert row["id"] == stable_id
+
+
+@pytest.mark.django_db
+def test_overview_never_attaches_foreign_center_upload_with_same_hash() -> None:
+    own = Center.objects.create(name="Attachment Own")
+    foreign = Center.objects.create(name="Attachment Foreign")
+    user = User.objects.create_user(username="attachment-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(own)
+    video = VideoFile.objects.create(center=own, video_hash="shared-content")
+    own_job = UploadJob.objects.create(
+        source_center=own, content_hash=video.video_hash, content_type="video/mp4"
+    )
+    foreign_job = UploadJob.objects.create(
+        source_center=foreign, content_hash=video.video_hash, content_type="video/mp4"
+    )
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    rows = json.loads(response.content)
+    assert len(rows) == 1
+    assert rows[0]["upload_job"]["id"] == str(own_job.pk)
+    assert str(foreign_job.pk) not in json.dumps(rows)
+
+
+@pytest.mark.django_db
 def test_retry_view_recovers_legacy_terminal_storage_failure() -> None:
     center = Center.objects.create(name="Retry Center")
     user = User.objects.create_user(username="storage-retry-operator")

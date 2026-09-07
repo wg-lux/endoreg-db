@@ -17,7 +17,8 @@ from typing import Any, Literal, Protocol, TypedDict, cast
 from unittest.mock import patch
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
+from django.test import Client
 from django.core.handlers.wsgi import WSGIRequest
 from django.utils import timezone
 from django.utils.translation import override
@@ -26,6 +27,9 @@ from rest_framework.response import Response as DRFResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.user.portal_user_information import (
+    PortalUserInfo,
+)
 from endoreg_db.models.media.anonymization_metrics import (
     AnonymizationFieldMetric,
     AnonymizationMetricField,
@@ -112,6 +116,79 @@ class _AllowedDocumentTypesResponse(_ErrorResponse):
 _ViewCallable = Callable[..., object]
 
 
+class _RoleRelation(Protocol):
+    def add(self, group: Group) -> None: ...
+
+
+class _RoleUser(Protocol):
+    groups: _RoleRelation
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("media_type", ["video", "pdf"])
+@pytest.mark.parametrize("membership", ["own", "foreign", "none"])
+def test_validation_rechecks_center_scope_on_every_request(
+    client: Client, media_type: str, membership: str
+) -> None:
+    center = Center.objects.create(name="Review Center")
+    user = User.objects.create_user(username="scoped-reviewer")
+    cast(_RoleUser, user).groups.add(Group.objects.get_or_create(name="data:write")[0])
+    info = PortalUserInfo.objects.create(user=user)
+    if membership == "own":
+        info.centers.add(center)
+    elif membership == "foreign":
+        info.centers.add(Center.objects.create(name="Unrelated Center"))
+    media = (
+        VideoFile.objects.create(center=center, video_hash="scope-review")
+        if media_type == "video"
+        else RawPdfFile.objects.create(center=center, pdf_hash="scope-review")
+    )
+    if isinstance(media, VideoFile):
+        state = media.get_or_create_state()
+        state.processing_error = True
+        state.save(update_fields=["processing_error"])
+    client.force_login(user)
+    path = f"/api/anonymization/{media.pk}/validate/"
+    payload = {
+        "file_type": media_type,
+        "patient_first_name": "",
+        "patient_last_name": "",
+        "patient_dob": "1990-01-01",
+        "examination_date": "2026-09-01",
+        "casenumber": "",
+    }
+    with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
+        response = client.post(path, payload, content_type="application/json")
+        if membership == "own":
+            # Reaching payload/media validation proves positive scope admission.
+            assert response.status_code == (409 if media_type == "video" else 400), (
+                response.content
+            )
+            info.centers.clear()
+            response = client.post(path, payload, content_type="application/json")
+        assert response.status_code == 404, response.content
+    media.refresh_from_db()
+    assert media.sensitive_meta is None
+
+
+@pytest.mark.django_db
+def test_validation_rejects_roleless_request(client: Client) -> None:
+    center = Center.objects.create(name="Role Review Center")
+    user = User.objects.create_user(username="roleless-reviewer")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    video = VideoFile.objects.create(center=center, video_hash="role-review")
+    client.force_login(user)
+    with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
+        response = client.post(
+            f"/api/anonymization/{video.pk}/validate/",
+            {"file_type": "video"},
+            content_type="application/json",
+        )
+    assert response.status_code == 403
+    video.refresh_from_db()
+    assert video.sensitive_meta is None
+
+
 @pytest.mark.django_db
 class TestAnonymizationValidateView:
     """Test suite for AnonymizationValidateView."""
@@ -126,9 +203,11 @@ class TestAnonymizationValidateView:
         return APIRequestFactory()
 
     @pytest.fixture
-    def user(self) -> User:
+    def user(self, center: Center) -> User:
         """Create test user."""
-        return User.objects.create_user(username="testuser")
+        user = User.objects.create_user(username="testuser")
+        PortalUserInfo.objects.create(user=user).centers.add(center)
+        return user
 
     @pytest.fixture
     def center(self) -> Center:

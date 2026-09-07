@@ -34,9 +34,9 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: review
-      reference: /home/admin/lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
+      reference: /lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
     note: 'Review 2026-07-31: Indikation, Untersucher, Assistenz, Geräteidentifikation, Prozesszeiten,
       Monitoring und relevante Bilder sind im LXDM-Template teilweise nur deklarierte Felder; sechs Feldschlüssel
       sind im Template-Graph unbekannt und werden nicht durch den PExamination-Laufzeitvertrag erzwungen.'
@@ -65,9 +65,9 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
     note: 'Review 2026-07-31: Mukosainspektionsdauer und tiefste Lokalisation sind modelliert, aber die
       sechs Prozesszeitpunkte fehlen, BBPS-Gesamtwert und Segmentwerte werden nicht auf Konsistenz geprüft
       und Zökumerreichen erzwingt keine positiven Landmarkbilder.'
@@ -104,13 +104,13 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_findings/data/02_colonoscopy_observation.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_findings/data/02_colonoscopy_observation.yaml
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_classifications/data/02_colonoscopy_baseline.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/terminology/lx_classifications/data/02_colonoscopy_baseline.yaml
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/data/coloreg/annotation_mappings.yml
+      reference: /lx-data-models/lx_dtypes/data/coloreg/annotation_mappings.yml
     - kind: test
-      reference: /home/admin/lx-data-models/tests/unit/lx_dtypes/models/contracts/test_coloreg.py
+      reference: /lx-data-models/tests/unit/lx_dtypes/models/contracts/test_coloreg.py
     - kind: test
       reference: tests/services/test_coloreg_study_export.py
     - kind: test
@@ -144,9 +144,9 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: review
-      reference: /home/admin/lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
+      reference: /lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
     note: 'Review 2026-07-31: Statement 2.36 ist nur teilweise abgebildet. Es fehlen insbesondere durchgängige
       Runtime-Verträge für Assistenz, Geräteseriennummer, Prozesszeiten, Vitalparameter/Sauerstofffluss,
       ICD/OPS, Instrumente/Materialien und echte Bildreferenzen; ein Bericht ohne Indikation oder Untersucher
@@ -178,9 +178,9 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: review
-      reference: /home/admin/lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
+      reference: /lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
     note: 'Review 2026-07-31: Es existiert keine ausführbare populationsbezogene QI-Schicht mit Zähler,
       Nenner, Ausschlüssen, Zeitraum und Gruppierung. Allgemeine Indikatoren aus Tabelle 22 sowie ADR,
       Zökumrate, Rückzugszeit-Compliance, angemessene Resektionstechnik und standardisierte Terminologie
@@ -207,9 +207,9 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: review
-      reference: /home/admin/lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
+      reference: /lx-parse/021-022l_S2k_Qualitaetsanforderungen-in-der-gastrointestinalen-Endoskopie_2026-01.pdf
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/citations/data/sample_references.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/citations/data/sample_references.yaml
     note: 'Review 2026-07-31: Die bereitgestellte Datei trägt intern den Status Konsultationsfassung Juli
       2025, während der Citation-Datensatz auf eine Langfassung vom 30.09.2025 verweist. Template, Citation
       und einzelne Regeln sind nicht über genaue Statement-/Empfehlungs- und Seitenreferenzen verbunden.'
@@ -244,23 +244,23 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/lx-parse/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage.py
+      reference: /lx-parse/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage.py
       note: Versionierter LXDM-Coverage-Vertrag mit stabiler Konzept-ID, Modul-/Template-Digest, Anwendbarkeit,
         Status und Evidenzpfad; positive und negative Modelltests.
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
       note: API-Validierung erzeugt concept_coverage aus KnowledgeBase, Template-Export, PExamination
         und Validatorresultat; fokussierter Lauf bestanden.
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportTemplatesApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/reportTemplatesApi.test.ts
       note: Frontend validiert den versionierten Serververtrag und weist bei fehlender oder ungültiger
         Coverage sichtbar auf den nicht autoritativen Fallback hin.
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage_builder.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/knowledge_base/report_template/tests/test_report_concept_coverage_builder.py
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
     note: 'Review 2026-07-31: Die technische Coverage-Auflösung und zentrale bedingte Regeln sind getestet.
       Die aktuelle autoritative Konzeptmatrix umfasst jedoch nur zwölf Konzepte und schließt Indikation,
       Personal, Gerät, Prozesszeiten, Monitoring, relevante Bilder, BBPS-Gesamtwert, Pathologiestatus
@@ -288,9 +288,9 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_example_module.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_example_module.py
     note: 35 fokussierte LXDM-Template- und Runtime-Tests bestanden am 2026-07-31. Es fehlen End-to-End-Fälle
       für die deklarativen Kontextfelder, BBPS-Summenkonsistenz, Zökumerreichen ohne positive Landmarkbilder
       und sämtliche populationsbezogenen QI-Kohorten.
@@ -343,7 +343,7 @@ definition_of_done:
     status: blocked
     evidence:
     - kind: review
-      reference: /home/admin/lx-parse/colonoscopy_guideline_coverage_matrix.md
+      reference: /lx-parse/colonoscopy_guideline_coverage_matrix.md
     note: 'Review 2026-07-31: Eine vollständige, freigegebene Abdeckungsmatrix für Statement 2.36, Tabelle
       22 und die spezifischen Koloskopie-QI fehlt. Die vorhandene Matrix beschreibt patientenbezogene
       Kerndaten, bildet aber keinen implementierten Aggregationsvertrag und keine End-to-End-Freigabe

@@ -14,7 +14,7 @@ tracking:
   state: active
   history: []
 source_documents:
-  - path: /home/admin/lx-data-models/docs/guides/cross-layer-validation.md
+  - path: ../lx-data-models/docs/guides/cross-layer-validation.md
     disposition: reference
     note: >-
       Canonical ownership rules for localization, report language, terminology

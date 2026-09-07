@@ -38,15 +38,7 @@ definition_of_done:
     evidence:
     - kind: document
       reference: quality/assisted_reporting_route_contracts.yml
-    - kind: code
-      reference: scripts/check_assisted_reporting_route_contracts.py
-    - kind: test
-      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
-    - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py
-    - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_assisted_reporting_route_contracts.py
-        -q
+
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/docs/test_show_urls_contract.py tests/api/test_dtypes_record_persistence.py::test_dtypes_terminology_mutation_rejects_read_only_actor
         tests/api/test_dtypes_record_persistence.py::test_patient_finding_create_updates_dtypes_record
@@ -55,7 +47,7 @@ definition_of_done:
         -q
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/findingsApi.test.ts src/api/__tests__/terminologyApi.test.ts
-        src/api/__tests__/apiPrefixContract.test.ts (working directory /home/admin/dev/lx-annotate/frontend)
+        src/api/__tests__/apiPrefixContract.test.ts (working directory /dev/lx-annotate/frontend)
     note: The versioned YAML contract assigns terminology bundles, examination-specific finding catalogs,
       and patient-related findings exclusively to lx_dtypes and demonstrates endoreg_db hosting under
       /dtypes-api/. The checker strictly validates schema, methods, snake_case path and query parameters,
@@ -89,7 +81,7 @@ definition_of_done:
       - tests/app/test_lx_dtypes_import_boundary.py
       - tests/api/test_dtypes_record_persistence.py
       - -q
-      working_directory: /home/admin/endoreg-db
+      working_directory: /endoreg-db
     - command:
       - devenv
       - shell
@@ -101,20 +93,20 @@ definition_of_done:
       - tests/api/test_base_api_mount.py
       - tests/api/test_urls_state.py
       - -q
-      working_directory: /home/admin/dev/lx-annotate
+      working_directory: /dev/lx-annotate
     - command:
       - nix
       - build
       - .#checks.x86_64-linux.package
       - --no-link
-      working_directory: /home/admin/dev/lx-annotate
+      working_directory: /dev/lx-annotate
     - command:
       - nix
       - run
       - .#nixtest
       - --
       - --no-color
-      working_directory: /home/admin/dev/lx-annotate
+      working_directory: /dev/lx-annotate
     timeout_seconds: 3600
   assessment:
     status: in_progress
@@ -130,7 +122,7 @@ definition_of_done:
         tests/system/test_wheel_deployment_acceptance.py tests/system/test_console_scripts_contract.py
         tests/api/test_base_api_mount.py tests/api/test_urls_state.py -q (49 passed)
     - kind: command
-      reference: devenv shell -- npm run build (working directory /home/admin/dev/lx-annotate/frontend;
+      reference: devenv shell -- npm run build (working directory /dev/lx-annotate/frontend;
         exit 0)
     - kind: command
       reference: 'nix build .#checks.x86_64-linux.package --no-link (exit 1: frontend production build
@@ -171,9 +163,9 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
+      reference: /lx-data-models/lx_dtypes/django/api/tests/test_terminology_routes.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/system/test_environment_checks.py
+      reference: /dev/lx-annotate/tests/system/test_environment_checks.py
     - kind: command
       reference: 'lx-annotate commit 213a8e2d pre-commit hooks: Ruff, format, Pyright, 368 passed/2 skipped
         backend tests, runtime contract, Vitest, and frontend type-check passed'
@@ -194,10 +186,10 @@ definition_of_done:
       reference: 'isolated wheel install: lx_dtypes.scripts.verify_packaged_report_templates passed for
         upper_gi_quality_2025 and colonoscopy_training_basic'
     - kind: test
-      reference: '/home/admin/lx-data-models: release/API focused suites 40 passed; focused Pyright 0
+      reference: '/lx-data-models: release/API focused suites 40 passed; focused Pyright 0
         errors'
     - kind: test
-      reference: '/home/admin/dev/lx-annotate/frontend: template identity, API, editor, shell suites 62
+      reference: '/dev/lx-annotate/frontend: template identity, API, editor, shell suites 62
         passed; new test ESLint passed'
     - kind: command
       reference: final candidate wheel sha256 c1bb0439a10b28f30f0d65d61aa8bd9e493b344de09a027c742e51579b1bd166;
@@ -243,7 +235,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/findingsApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/findingsApi.test.ts
     note: Frontend and lx_dtypes tests pass; the endoreg_db package run is blocked by the unrelated
       Http403 change.
     assessed_by: Codex
@@ -294,7 +286,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/system/test_wheel_deployment_acceptance.py
+      reference: /dev/lx-annotate/tests/system/test_wheel_deployment_acceptance.py
     note: The Nix environment, registry provisioning, and startup checks are implemented; a real deployment exercise
       remains outstanding.
     assessed_by: Codex
@@ -319,16 +311,6 @@ definition_of_done:
     evidence:
     - kind: review
       reference: docs/assisted_reporting_api_integration.md
-    - kind: document
-      reference: quality/assisted_reporting_route_contracts.yml
-    - kind: test
-      reference: tests/scripts/test_check_assisted_reporting_route_contracts.py
-    - kind: command
-      reference: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .devenv/state/venv/bin/pytest -q -o addopts='' --confcutdir=tests/scripts
-        tests/scripts/test_check_assisted_reporting_route_contracts.py (5 passed)
-    - kind: command
-      reference: .devenv/state/venv/bin/python scripts/check_assisted_reporting_route_contracts.py (verified
-        5 canonical routes)
     note: Canonical route, exact module/version query, typed provider/digest and filesystem registry,
       bootstrap migration/full packaged validation, fail-closed governed wheel deployment, and editor-native
       layout boundaries are documented across the participating repositories. Route checker covers five

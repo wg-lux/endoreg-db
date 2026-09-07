@@ -460,6 +460,8 @@ class UploadFileView(APIView):
             return preparation_error
         try:
             return _perform_api_upload(request, prepared)
+        except ingest.UploadJobIdempotencyConflict as exc:
+            return _error_response(str(exc), status_code=status.HTTP_409_CONFLICT)
         except PermissionDenied as exc:
             return _error_response(
                 str(exc),

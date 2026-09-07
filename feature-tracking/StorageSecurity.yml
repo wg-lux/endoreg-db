@@ -70,7 +70,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_environment_readiness.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_environment_readiness.py
         tests/views/video/test_video_stream.py tests/views/report/test_report_stream.py -q (19 passed,
         2 warnings in 93.36s)
     note: Die fokussierte Verifikationslane bestätigt fail-closed Produktions-Readiness, authentifizierte

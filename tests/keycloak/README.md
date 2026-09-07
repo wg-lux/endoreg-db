@@ -40,7 +40,7 @@ From repository root (Linux):
 
 ```bash
 devenv tasks run test:sync
-/home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/keycloak
+/endoreg-db/.devenv/state/venv/bin/pytest tests/keycloak
 ```
 
 Notes

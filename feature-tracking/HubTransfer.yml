@@ -47,7 +47,7 @@ definition_of_done:
     - kind: document
       reference: docs/hub_ingest_operations.md
     - kind: document
-      reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
+      reference: /dev/lx-annotate/docs/guides/hub-export-workflow.md
     - kind: review
       reference: 'PR #312 and the lx-annotate sender/endoreg-db receiver contract were jointly reviewed
         on 2026-08-03; raw media remains prohibited, states remain separate, phase 1 enforces mTLS, and
@@ -79,15 +79,15 @@ definition_of_done:
     status: verified
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/views/hub_export.py
+      reference: /dev/lx-annotate/lx_annotate/views/hub_export.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_jobs.py
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_jobs.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_contracts.py
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_contracts.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue
+      reference: /dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
         13.66s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright lx_annotate/views/hub_export.py lx_annotate/hub/hub_export_jobs.py
@@ -129,10 +129,10 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
         tests/services/test_transfer_job_contract.py -q (51 passed)
     - kind: test
-      reference: '/home/admin/dev/lx-annotate/tests/hub/test_hub_export_mtls_integration.py (real TLS
+      reference: '/dev/lx-annotate/tests/hub/test_hub_export_mtls_integration.py (real TLS
         handshake: valid mTLS succeeds; expired client and wrong CA disclose no HTTP body)'
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (75 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (75 passed in
         8.97s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright tests/hub/test_hub_export_mtls_integration.py lx_annotate/hub/hub_export_worker.py
@@ -149,16 +149,16 @@ definition_of_done:
         guard; invalid clients rejected pre-upstream, spoofed headers replaced, staged CA overlap and
         bounded old-worker retirement verified (2026-08-03)'
     - kind: code
-      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix
+      reference: //luxnix/modules/nixos/services/lx-annotate-local/config.nix
     - kind: command
-      reference: '/home/admin/luxnix: focused generated Nix config pytest passed (1 passed in 23.82s);
+      reference: '//luxnix: focused generated Nix config pytest passed (1 passed in 23.82s);
         nix build .#checks.x86_64-linux.nixtests passed (2026-08-03)'
     - kind: code
-      reference: /home/admin/luxnix/ansible/inventory/host_vars/gc-02.yml
+      reference: //luxnix/ansible/inventory/host_vars/gc-02.yml
     - kind: code
-      reference: /home/admin/luxnix/ansible/inventory/host_vars/gs-02.yml
+      reference: //luxnix/ansible/inventory/host_vars/gs-02.yml
     - kind: command
-      reference: '/home/admin/luxnix: inventory autoconf render for gc-02 and gs-02 plus nix-instantiate
+      reference: '//luxnix: inventory autoconf render for gc-02 and gs-02 plus nix-instantiate
         --parse passed; isolated NixOS module evaluation confirmed outbound=true, AppRole/Hub-PKI, worker
         certificate/provisioning requirements, Vault Raft 172.16.255.22:8200, CA path, backup and tun0
         port 8200 (2026-08-03)'
@@ -300,17 +300,17 @@ definition_of_done:
     - kind: command
       reference: 'lx-annotate frontend: HubExportOverviewComponent and hubExportStore (9 passed)'
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
         tests/services/test_transfer_job_contract.py -q (51 passed in 46.12s, 2026-08-03)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_transfer_unit_decisions.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_transfer_unit_decisions.py
         tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
         -q (87 passed in 41.16s, 2026-08-17; includes 29 granular receiver service unit tests)
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in
         11.92s, 2026-08-03)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q
         (7 passed in 4.43s, 2026-08-03; uncommitted reviewed middleware change)
     - kind: review
       reference: 'GitHub PR #312 review thread r3703197736 and merge-tree review against prototype at
@@ -318,7 +318,7 @@ definition_of_done:
         current contract and tests require NetworkNode.owning_center scope independent of Django session
         scope.'
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
         13.66s, 2026-08-03; includes authenticated operator attribution, atomic bulk rollback, state-dependent
         unmarking, mTLS, replay, recovery and acknowledgements)
     - kind: command
@@ -358,51 +358,51 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_reconciliation.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_cleanup.py;
-        /home/admin/dev/lx-annotate/lx_annotate/management/commands/dispatch_hub_export_recovery.py
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_reconciliation.py; /dev/lx-annotate/lx_annotate/hub/hub_export_cleanup.py;
+        /dev/lx-annotate/lx_annotate/management/commands/dispatch_hub_export_recovery.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_recovery_command.py;
+      reference: /dev/lx-annotate/tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_recovery_command.py;
         tests/hub/test_hub_export_cleanup_policy.py
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in
         10.20s, 2026-08-03)
     - kind: runbook
       reference: docs/hub_ingest_operations.md sections Cleanup and Quarantine, Monitoring/Capacity,
         Backup/Restore, and Incident Workflow
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures
         become terminal before disclosure or stuck in-flight state)
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_records_unreadable_processed_media
+      reference: /dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_records_unreadable_processed_media
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
         10.33s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright lx_annotate/hub/hub_export_worker.py lx_annotate/hub/hub_export_reconciliation.py
         tests/hub/test_hub_export_worker.py (0 errors, 2026-08-03)
     - kind: code
-      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix; /home/admin/luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix
+      reference: //luxnix/modules/nixos/services/lx-annotate-local/config.nix; //luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix
     - kind: test
-      reference: /home/admin/luxnix/tests/lx-annotate/test_lx_annotate_production_readiness_contract.py::test_hub_backup_publishes_database_and_media_as_one_restore_point
+      reference: //luxnix/tests/lx-annotate/test_lx_annotate_production_readiness_contract.py::test_hub_backup_publishes_database_and_media_as_one_restore_point
     - kind: command
-      reference: '/home/admin/luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests
+      reference: '//luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests
         passed in 22.22s; nix build .#checks.x86_64-linux.nixtests --no-link passed (2026-08-03)'
     - kind: runbook
       reference: docs/hub_ingest_operations.md section Backup and Restore (coupled LuxNix PostgreSQL/media
         restore point and operator validation)
     - kind: test
-      reference: '/home/admin/luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM:
+      reference: '//luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM:
         root-protected PostgreSQL dump via systemd LoadCredential, coupled media publication, checksum
         validation, corrupt next dump rejected without replacing latest)'
     - kind: command
       reference: nix build /nix/store/8fz5h24d857w3q3m2p7kyb2m9b788fv3-nixtest-vm-systemd-credential-couples-database-and-media-restore-point.drv^*
         --no-link (passed, real QEMU/NixOS systemd VM, 2026-08-03)
     - kind: code
-      reference: /home/admin/luxnix/modules/nixos/services/lx-annotate-local/options.nix (typed hub.backup.minimumFreeBytes);
-        /home/admin/luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix (pre/post staging
+      reference: //luxnix/modules/nixos/services/lx-annotate-local/options.nix (typed hub.backup.minimumFreeBytes);
+        //luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix (pre/post staging
         reserve gates)
     - kind: test
-      reference: /home/admin/luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM additionally
+      reference: //luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM additionally
         rejects impossible free-space reserve before staging, preserves latest, and records classified
         journal reason)
     - kind: command
@@ -410,7 +410,7 @@ definition_of_done:
         --no-link (passed with systemd credential, corrupt dump, checksum and capacity-reserve scenarios,
         2026-08-03)
     - kind: command
-      reference: '/home/admin/luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest:
+      reference: '//luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest:
         4 passed in 54.80s (2026-08-03)'
     - kind: runbook
       reference: docs/hub_ingest_operations.md sections Monitoring, Capacity and Alerting, and Backup and
@@ -444,22 +444,22 @@ definition_of_done:
     status: verified
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_audit.py; /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_health.py;
-        /home/admin/dev/lx-annotate/lx_annotate/management/commands/check_hub_export_health.py
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_audit.py; /dev/lx-annotate/lx_annotate/hub/hub_export_health.py;
+        /dev/lx-annotate/lx_annotate/management/commands/check_hub_export_health.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue;
-        /home/admin/luxnix/modules/nixos/services/lx-annotate-local/config.nix
+      reference: /dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue;
+        //luxnix/modules/nixos/services/lx-annotate-local/config.nix
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/hub/test_hub_export_health.py; tests/hub/test_hub_export_audit.py;
+      reference: /dev/lx-annotate/tests/hub/test_hub_export_health.py; tests/hub/test_hub_export_audit.py;
         tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_worker.py
     - kind: command
-      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/hub -q (87 passed in 15.13s, 2026-08-03);
+      reference: /dev/lx-annotate/.venv/bin/pytest tests/hub -q (87 passed in 15.13s, 2026-08-03);
         focused final audit/health/reconciliation verification (11 passed in 4.61s)
     - kind: command
       reference: devenv shell -- pyright (0 errors, 2026-08-03); frontend focused component/store suite
         (10 passed) and component-test type check passed
     - kind: command
-      reference: '/home/admin/luxnix: focused Nix evaluation contract (2 passed) and nix build .#checks.x86_64-linux.nixtests
+      reference: '//luxnix: focused Nix evaluation contract (2 passed) and nix build .#checks.x86_64-linux.nixtests
         passed (2026-08-03)'
     - kind: runbook
       reference: docs/hub_ingest_operations.md section Monitoring, Capacity and Alerting
@@ -495,7 +495,7 @@ definition_of_done:
     - kind: runbook
       reference: docs/hub_ingest_operations.md
     - kind: runbook
-      reference: /home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md
+      reference: /dev/lx-annotate/docs/guides/hub-export-workflow.md
     - kind: command
       reference: .devenv/state/venv/bin/python scripts/check_documentation_governance.py (227/131/24/230
         entries; 0 errors, 0 warnings, 2026-08-03)

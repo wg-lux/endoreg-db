@@ -48,7 +48,7 @@ definition_of_done:
       - tests/views/test_center_access_matrix.py
       - tests/views/media/test_center_scoped_reads.py
       - -q
-      working_directory: /home/admin/endoreg-db
+      working_directory: /endoreg-db
     - command:
       - nix
       - develop
@@ -61,7 +61,7 @@ definition_of_done:
       - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
       - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
       - --run
-      working_directory: /home/admin/dev/lx-annotate/frontend
+      working_directory: /dev/lx-annotate/frontend
     timeout_seconds: 600
   assessment:
     status: verified
@@ -74,7 +74,8 @@ definition_of_done:
         tests/views/report/test_report_llm_status.py tests/views/test_center_access_matrix.py tests/views/media/test_center_scoped_reads.py
         -q (80 passed)
     note: The access matrix was extended to cover node-authenticated hub transfers, anonymous debug access,
-      FHIR, reports, patient creation, and 404 existence concealment, and was checked against 80 focused tests.
+      FHIR, reports, patient creation, and 404 existence concealment, and was checked against 80 focused
+      tests.
     assessed_by: Codex
     assessed_at: '2026-07-22T12:43:32.411430Z'
 - id: identity_center_memberships
@@ -88,10 +89,18 @@ definition_of_done:
   - Reauthentication replaces the local membership cache deterministically, and the legacy Examiner.center
     relationship is migrated without silently dropping existing access.
   - Staff and superuser global access remains explicit and is not inferred from missing membership data.
+  - Verified empty or absent role claims revoke previous local role grants; user, role, and center synchronization
+    commits atomically or rolls back together.
+  - A session created from verified claims exposes the application role through auth bootstrap and returns
+    only its permitted center overview; reauthentication and revocation change both gates.
   required: true
   verification:
     kind: command
     command:
+    - env
+    - TEST_DB_ENGINE=django.db.backends.sqlite3
+    - RUN_VIDEO_TESTS=true
+    - SKIP_EXPENSIVE_TESTS=false
     - .devenv/state/venv/bin/pytest
     - tests/services/test_center_access.py
     - tests/authz/test_center_group_sync.py
@@ -104,8 +113,19 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/services/test_center_access.py tests/authz/test_center_group_sync.py
         -q
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-22T11:46:38.599344Z'
+    - kind: test
+      reference: '2026-09-07: TEST_DB_ENGINE=django.db.backends.sqlite3 RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest tests/authz/test_center_group_sync.py tests/keycloak/test_auth_bootstrap.py: 13 passed'
+    - kind: code
+      reference: endoreg_db/authz/auth.py; endoreg_db/authz/backends.py; tests/authz/test_center_group_sync.py
+    note: Verified application-level identity synchronization, typed multi-center relationships and legacy
+      migration, explicit global access, atomic rollback, empty/missing bearer-role revocation, session
+      bootstrap endoregdb_user role and center-scoped overview across three site profiles. Focused Pyright
+      clean; auth/center/JWT/access matrix 38 passed and final updated auth/bootstrap lane 13 passed.
+      Explicit test switches prevent claims tests silently skipping. Live Keycloak mapper and actual browser
+      login remain a separate operational gate.
+    assessed_by: codex-remote-review-20260907
+    assessed_at: '2026-09-07T09:00:49.026795Z'
 - id: deployment_aware_video_reads
   category: functionality
   title: Video discovery and playback enforce the same deployment-aware policy
@@ -188,7 +208,7 @@ definition_of_done:
       - tests/views/report/test_report_llm_status.py
       - tests/views/test_center_access_matrix.py
       - -q
-      working_directory: /home/admin/endoreg-db
+      working_directory: /endoreg-db
     - command:
       - nix
       - develop
@@ -201,7 +221,7 @@ definition_of_done:
       - src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts
       - src/composables/__tests__/useAuthenticatedVideoStream.test.ts
       - --run
-      working_directory: /home/admin/dev/lx-annotate/frontend
+      working_directory: /dev/lx-annotate/frontend
     timeout_seconds: 1200
   assessment:
     status: in_progress
@@ -318,7 +338,7 @@ definition_of_done:
       - tests/api/test_administration_api.py
       - tests/api/test_administration_unit.py
       - -q
-      working_directory: /home/admin/dev/lx-annotate
+      working_directory: /dev/lx-annotate
     - command:
       - devenv
       - shell
@@ -329,7 +349,7 @@ definition_of_done:
       - --
       - --run
       - src/views/__tests__/AdministrationPage.test.ts
-      working_directory: /home/admin/dev/lx-annotate/frontend
+      working_directory: /dev/lx-annotate/frontend
     timeout_seconds: 900
   assessment:
     status: verified

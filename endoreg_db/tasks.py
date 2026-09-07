@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 @shared_task(
     name="endoreg_db.video_upload_import",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -19,12 +20,34 @@ if TYPE_CHECKING:
     soft_time_limit=60 * 60 * 5,
 )
 def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
+    from django.db import DatabaseError
+    from endoreg_db.services.jobs.error_handling import retry_database_operation
     from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+    from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseBusy
 
-    return _run_video_upload_import_job(
-        str(job_id),
-        lease_owner=str(_task.request.id),
-    )
+    try:
+        return _run_video_upload_import_job(
+            str(job_id),
+            lease_owner=str(_task.request.id),
+            retry_on_busy=True,
+        )
+    except UploadJobImportLeaseBusy as exc:
+        # Waiting for a live or recently lost worker is not an import failure.
+        # Retry until completion or lease expiry without consuming UploadJob's
+        # processing retry budget or acknowledging a stranded delivery.
+        raise _task.retry(
+            exc=exc,
+            countdown=exc.retry_after_seconds,
+            max_retries=None,
+        ) from exc
+    except DatabaseError as exc:
+        retry_database_operation(
+            retry=_task.retry,
+            error=exc,
+            retries=_task.request.retries,
+            job_name="video_upload_import",
+            subject_id=job_id,
+        )
 
 
 @shared_task(
@@ -172,6 +195,7 @@ def run_video_post_validation_rebuild_task(
 @shared_task(
     name="endoreg_db.tasks.video_hls_materialization",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -187,6 +211,9 @@ def video_hls_materialization(
     reservation_key_id: str | None = None,
 ) -> dict[str, object]:
     import logging
+
+    from django.db import DatabaseError
+    from endoreg_db.services.jobs.error_handling import retry_database_operation
 
     from endoreg_db.exceptions import MediaOperationDeferred
     from endoreg_db.services.hls_media import (
@@ -212,6 +239,14 @@ def video_hls_materialization(
             force=bool(force),
             reserved_artifact_id=int(reserved_artifact_id),
             reservation_key_id=str(reservation_key_id),
+        )
+    except DatabaseError as exc:
+        retry_database_operation(
+            retry=_task.retry,
+            error=exc,
+            retries=_task.request.retries,
+            job_name="video_hls_materialization",
+            subject_id=video_id,
         )
     except MediaOperationDeferred as exc:
         retry_deferred_media_operation(

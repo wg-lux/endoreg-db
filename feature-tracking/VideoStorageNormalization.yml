@@ -77,7 +77,7 @@ definition_of_done:
       reference: ruff check focused files (passed); pyright focused files (0 errors); compileall focused
         modules (passed); git diff --check (passed)
     - kind: command
-      reference: 'RUN_VIDEO_TESTS=true PYTHONPATH=/home/admin/endoreg-db /home/admin/dev/lx-annotate/.devenv/state/venv/bin/python
+      reference: 'RUN_VIDEO_TESTS=true PYTHONPATH=/endoreg-db /dev/lx-annotate/.devenv/state/venv/bin/python
         -m pytest -q -n0 focused files: 40 setup errors because pg_hba rejects admin for postgres/lxAnnotateTest;
         9 expensive tests skipped; no test bodies ran'
     - kind: command
@@ -280,7 +280,7 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/import_files/processing/video_processing/video_anonymization.py
     - kind: code
-      reference: /home/admin/lx-anonymizer/lx_anonymizer/frame_cleaner.py
+      reference: //lx-anonymizer/lx_anonymizer/frame_cleaner.py
     - kind: test
       reference: 73 endoreg-db concurrency/import tests; 29 FFmpeg tests; 6 lx-anonymizer native/concurrency
         tests; cargo test passed
@@ -289,7 +289,7 @@ definition_of_done:
         tests/services/test_environment_readiness_unit.py tests/services/test_video_import_service.py
         tests/rust_backend/test_rust_backend_fallbacks.py -q (65 passed)
     - kind: command
-      reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_frame_cleaner_concurrency.py
+      reference: //lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_frame_cleaner_concurrency.py
         tests/test_ocr_text_native.py tests/test_report_reader_contract.py -q (13 passed)
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright <video ownership files>; .devenv/state/venv/bin/pytest
@@ -325,7 +325,7 @@ definition_of_done:
       reference: tests/services/test_video_reimport_jobs.py::test_video_reimport_job_mode_rejects_unsupported_value;
         test_video_reimport_dispatch_delay_rejects_negative_value
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_reimport_jobs.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_reimport_jobs.py
         tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
         -q (included in 148 passed focused job/configuration lane)
     - kind: code
@@ -334,16 +334,16 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/hub/watcher_handoff.py::_validated_duration_seconds; wait_for_watcher_file_ready
     - kind: test
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_watcher_storage_import.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_watcher_storage_import.py
         tests/services/test_preanonymized_watcher_ingest.py tests/services/test_hls_media.py tests/utils/video/test_ffmpeg_wrapper.py
         -q (154 passed, 4 subtests passed)
     - kind: command
       reference: devenv tasks run quality:code-regression (passed in 333s)
     - kind: test
-      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+      reference: /dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
         tests/ingestion/test_full_video_import.py -q (5 passed)
     - kind: test
-      reference: /home/admin/luxnix/.devenv/state/venv/bin/pytest tests/lx-annotate/test_file_mover_filewatcher_contract.py
+      reference: //luxnix/.devenv/state/venv/bin/pytest tests/lx-annotate/test_file_mover_filewatcher_contract.py
         tests/lx-annotate/test_lx_annotate_filewatcher_wheel_key_env.py -q (20 passed)
     - kind: document
       reference: docs/video_storage_normalization.md#transcoding-steps-and-idempotency
@@ -446,21 +446,21 @@ definition_of_done:
     - kind: review
       reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
     - kind: review
-      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
-        /home/admin/dev/lx-annotate/frontend/src/stores/videoStore.ts
+      reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
+        /dev/lx-annotate/frontend/src/stores/videoStore.ts
       note: Normalisierungsstatus und gewöhnlicher FPS-Endpunkt validieren persistierte Metadaten ohne
         Media-Staging; das Frontend übernimmt die bereits validierte Bildrate in denselben Ladevorgang.
     - kind: review
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue:1177-1280,1810-1819
+      reference: /dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue:1177-1280,1810-1819
     - kind: test
       reference: tests/services/test_video_fps_normalization_jobs.py; tests/views/video/test_hls_stream.py
     - kind: test
-      reference: tests/services/test_export_frames_contract.py; /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+      reference: tests/services/test_export_frames_contract.py; /dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/utils/__tests__/segmentTimeline.test.ts
+      reference: /dev/lx-annotate/frontend/src/utils/__tests__/segmentTimeline.test.ts
     - kind: test
       reference: tests/views/video/test_video_timeline_view.py; tests/services/test_segment_frame_extraction.py;
-        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
+        /dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/Timeline.pts-navigation.test.ts
     - kind: test
       reference: tests/services/test_seekable_media_input.py; tests/utils/test_encryption_range.py; tests/utils/test_storage_streaming.py;
         tests/utils/video/test_frame_stream.py; tests/views/media/test_frame_stream.py
@@ -468,9 +468,8 @@ definition_of_done:
       reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
         -q'
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/axiosInstance.binary.test.ts;
-        /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.test.ts; /home/admin/dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.usability.test.ts
-        (24 passed)
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/axiosInstance.binary.test.ts; /dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.test.ts;
+        /dev/lx-annotate/frontend/src/views/__tests__/FrameAnnotationPage.usability.test.ts (24 passed)
     - kind: command
       reference: devenv shell -- npm run type-check (exit 0)
     - kind: code
@@ -502,7 +501,7 @@ definition_of_done:
         77,3 GiB Reads und 104,9 GiB Writes. Die optimierten Artefakte waren zum Analysezeitpunkt auf
         gc-10 noch nicht ausgerollt.
     - kind: review
-      reference: /home/admin/dev/lx-annotate/frontend/package.json; /home/admin/dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
+      reference: /dev/lx-annotate/frontend/package.json; /dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
         (keine Cypress-Lane; API vollständig gemockt; veralteter FPS-/Payload-Vertrag)
     note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
       FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
@@ -856,8 +855,10 @@ definition_of_done:
     rather than relying on a source filename and shallow path existence.
   - Publication rechecks the locked current source generation after transcoding and rejects output derived
     from a superseded source.
-  - Readiness verifies the playlist and every referenced encrypted segment, including count, existence,
-    timeline, and generation identity.
+  - Playlist admission, publication, and reconciliation verify the complete referenced encrypted segment
+    set, including count, existence, timeline, and generation identity. Subsequent key and segment requests
+    recheck current source, profile, generation, key, and protected playlist/directory; requested segment
+    access validates its own protected path and existence without rescanning unrelated sibling segments.
   - A profile change does not inherit deterministic-failure suppression from a different encoder profile.
   required: true
   verification:
@@ -881,12 +882,19 @@ definition_of_done:
         lookup in focused 55-pass lane
     - kind: document
       reference: docs/video_storage_normalization.md legacy automatic replacement policy
-    note: Legacy READY artifacts with blank or mismatched source identity are rejected at every playback
-      lookup. Every enabled LuxNix host automatically dispatches full raw and processed replacement without
-      per-machine opt-in or limits. Production rollout and complete-corpus convergence evidence remain
-      outstanding.
-    assessed_by: codex-gc10-hls-investigate
-    assessed_at: '2026-09-02T09:51:43.070244Z'
+    - kind: test
+      reference: '2026-09-07: TEST_DB_ENGINE=django.db.backends.sqlite3 RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest tests/views/video/test_hls_stream.py -q: 24 passed'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md: playback readiness checks'
+    note: Current key/segment admission checks source/profile/generation/key and protected roots without
+      an O(segment-count) sibling scan; playlist/publication/reconciliation retain full-set checks. Missing
+      requested segment, invalid roots, stale identity and foreign-video keys fail closed. Blank legacy
+      identity rejects before hashing. Focused Pyright 0 errors; full playback view lane 24 passed with
+      video/expensive switches enabled. Source-generation concurrency/full-corpus and live-load acceptance
+      remain separate unverified gates.
+    assessed_by: codex-remote-review-20260907
+    assessed_at: '2026-09-07T09:00:47.048626Z'
 - id: hls_callers_require_terminal_readiness
   category: functionality
   title: WP-ER-03 Import and correction callers enforce typed HLS outcomes
@@ -929,6 +937,10 @@ definition_of_done:
   category: operations
   title: WP-ER-04 Backfill admits viable sources and reports truthful outcomes
   acceptance:
+  - Recoverable database failures retain fenced HLS attempts and protected staged output; Celery retries
+    with capped backoff until the database/runtime is repaired without reporting READY prematurely.
+  - A reservation failure is reported per artifact and does not discard the remainder of a backfill batch;
+    the command exits nonzero and repeated execution uses existing readiness and reservation fences.
   - Selection distinguishes a populated FileField from a source that exists and is readable in the approved
     encrypted storage boundary; worker-side validation remains authoritative for races.
   - Missing sources are reported or quarantined with a stable reason and are not retried without bound
@@ -951,9 +963,22 @@ definition_of_done:
       reference: endoreg_db/management/commands/materialize_video_hls.py:315-343,393-449,465-485; endoreg_db/services/hls_media.py:1797-1809
       note: Eligibility checks only the stored field name, inline failure recognition is incomplete, and
         missing accounting subtracts artifact rows rather than distinct videos.
-    note: gc-10 dispatched a raw HLS attempt whose referenced physical source was already absent.
-    assessed_by: codex-gc10-hls-investigate
-    assessed_at: '2026-09-02T09:00:00Z'
+    - kind: test
+      reference: tests/services/test_database_recovery.py; tests/services/test_hls_media.py::test_database_publication_failure_preserves_output_and_redelivers_idempotently;
+        tests/management/commands/test_materialize_video_hls.py
+    - kind: command
+      reference: '2026-09-07: SQLite recovery/task/HLS/import/backfill suite: 96 passed, 2 warnings; full
+        Pyright: 0 errors, 0 warnings.'
+    - kind: command
+      reference: '2026-09-07 final full Pyright: 0 errors, 0 warnings. SQLite database-recovery/task/import-finalization/lease/video-import
+        suite: 117 passed, 2 warnings; original focused recovery/backfill suite: 96 passed, 2 warnings.'
+    note: gc-10 dispatched a raw HLS attempt whose referenced physical source was already absent. Database
+      recovery now preserves fenced staged/published output and retries identified database failures with
+      capped backoff; reservation failures no longer abort the remaining batch. SQLite failure injection
+      passed; production deployment, PostgreSQL process-level failure injection, and other admission/accounting
+      acceptance remain outstanding.
+    assessed_by: codex-gc05-20260907
+    assessed_at: '2026-09-07T09:38:06.939229Z'
 - id: hls_privacy_safe_observability
   category: security
   title: WP-ER-05 HLS failures are actionable without exposing media paths

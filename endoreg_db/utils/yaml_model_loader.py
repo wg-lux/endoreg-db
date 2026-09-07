@@ -14,6 +14,10 @@ from django.core.management.base import BaseCommand
 from django.db import models
 
 from endoreg_db.utils.dataloader import (
+    YamlEntry,
+    YamlNull,
+    YamlScalar,
+    YamlValue,
     load_data_with_foreign_keys,
     load_model_data_from_yaml as _load_model_data_from_yaml,
 )
@@ -25,13 +29,6 @@ if TYPE_CHECKING:
 
 LoadModelDataModel: TypeAlias = type[models.Model]
 LoadModelDataDirectory: TypeAlias = str | Path
-YamlNull: TypeAlias = None
-YamlScalar: TypeAlias = str | int | float | bool | YamlNull
-YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
-
-
-class YamlEntry(TypedDict):
-    fields: dict[str, YamlValue]
 
 
 class LoadModelDataValidator(Protocol):

@@ -99,30 +99,30 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
         passed)
     - kind: code
       reference: endoreg_db/schemas/sensitive_meta_update.py; endoreg_db/services/sensitive_meta_update.py;
         shared video/PDF PATCH boundary in endoreg_db/views/media/sensitive_metadata.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest integrated boundary cohort (90
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest integrated boundary cohort (90
         passed)
     - kind: code
       reference: endoreg_db/management/commands/train_phi_region_detector.py; tests/management/commands/test_train_phi_region_detector.py;
         tests/services/test_model_training_jobs.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/management/commands/train_phi_region_detector.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/management/commands/train_phi_region_detector.py
         tests/management/commands/test_train_phi_region_detector.py tests/services/test_model_training_jobs.py
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_train_phi_region_detector.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_train_phi_region_detector.py
         tests/services/test_model_training_jobs.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_phi_region_detector_training_run_endpoints_create_run
         -q (12 passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 pre-existing lx_anonymizer
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 pre-existing lx_anonymizer
         missing-stub warning)
     - kind: command
-      reference: /home/admin/lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_phi_region_detector_training.py
+      reference: //lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_phi_region_detector_training.py
         -q (2 passed)
     note: The shared video/report validation separates external identifier values before the generic SensitiveMeta update.
       Empty pairs remain without a relation; complete, trimmed pairs are idempotently resolved or created as
@@ -217,7 +217,7 @@ definition_of_done:
         tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
         -q
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
         tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
     note: The focused recovery and monitoring run demonstrates operator-visible failed/stale counters,
       fail-closed health errors, idempotent retry reservation and state reset, and preservation of

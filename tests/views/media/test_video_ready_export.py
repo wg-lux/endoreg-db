@@ -113,7 +113,7 @@ class VideoReadyExportEndpointTests(TestCase):
                 )
 
         assert response.status_code == 200, response.content
-        select_video_for_update.assert_called_once_with(of=("self",))
+        select_video_for_update.assert_called_with(of=("self",))
         select_state_for_update.assert_called_once_with()
         body = response.json()
         assert body["success"] is True

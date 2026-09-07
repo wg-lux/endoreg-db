@@ -110,12 +110,6 @@ def _predict_video_streaming_decode_failure(
     _raise_runtime(RuntimeError("streaming decode failed"))
 
 
-def _predict_video_prediction_failure(
-    video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
-) -> NoReturn:
-    _raise_runtime(RuntimeError("prediction failed"))
-
-
 def _lx_core_empty(**kwargs: Unpack[_LxCoreKwargs]) -> types.SimpleNamespace:
     return types.SimpleNamespace(
         temporal_segments=[],
@@ -515,6 +509,60 @@ def test_dispatch_video_temporal_inference_reuses_active_history(
     assert second.status == "already_queued"
     assert second.history_id == first.history_id
     assert len(submitted) == 1
+
+
+@pytest.mark.django_db
+def test_changed_active_prediction_request_is_a_conflict(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    video = _create_video(tmp_path)
+    model_meta, _, _ = _create_model_meta()
+    other_model, _, _ = _create_model_meta()
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
+    submit = Mock()
+    monkeypatch.setattr(jobs._executor, "submit", submit)
+    first = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk
+    )
+    changed = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=other_model.pk
+    )
+    assert changed.status == "busy"
+    assert changed.reason == "prediction_request_conflict"
+    assert changed.history_id == first.history_id
+    assert VideoProcessingHistory.objects.filter(video=video).count() == 1
+    submit.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_running_prediction_redelivery_preserves_frames_and_owner(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    video = _create_video(tmp_path)
+    model_meta, _, _ = _create_model_meta()
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
+    )
+    cleanup = Mock()
+    predict = Mock()
+    monkeypatch.setattr(jobs, "rollback_video_frame_artifacts", cleanup)
+    monkeypatch.setattr(jobs, "predict_video", predict)
+    frame_ids = list(Frame.objects.filter(video=video).values_list("pk", flat=True))
+    with pytest.raises(RuntimeError, match="already has a running execution"):
+        jobs._run_video_temporal_inference(
+            video.pk, model_meta_id=model_meta.pk, history_id=history.pk
+        )
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_RUNNING
+    assert (
+        list(Frame.objects.filter(video=video).values_list("pk", flat=True))
+        == frame_ids
+    )
+    cleanup.assert_not_called()
+    predict.assert_not_called()
 
 
 @pytest.mark.django_db
@@ -1329,14 +1377,17 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("superseded", [False, True])
 def test_run_video_temporal_inference_rolls_back_frames_on_failure(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
+    superseded: bool,
 ):
     video = _create_video(tmp_path)
     model_meta, _label_a, _label_b = _create_model_meta()
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
+    state_at_supersession: list[bool] = []
     history = VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
@@ -1379,13 +1430,25 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
     monkeypatch.setattr(
         jobs, "_has_extracted_frame_files", _has_extracted_frame_files_true
     )
-    monkeypatch.setattr(
-        jobs,
-        "predict_video",
-        _predict_video_prediction_failure,
-    )
 
-    with pytest.raises(RuntimeError, match="prediction failed"):
+    def fail_prediction(
+        video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> NoReturn:
+        current_state = video_obj.get_or_create_state()
+        current_state.refresh_from_db()
+        state_at_supersession.append(bool(current_state.frames_extracted))
+        if superseded:
+            VideoProcessingHistory.objects.filter(pk=history.pk).update(
+                status=VideoProcessingHistory.STATUS_CANCELLED
+            )
+        raise RuntimeError("prediction failed")
+
+    monkeypatch.setattr(jobs, "predict_video", fail_prediction)
+
+    with pytest.raises(
+        RuntimeError,
+        match="Superseded prediction" if superseded else "prediction failed",
+    ):
         jobs._run_video_temporal_inference(
             video.pk,
             model_meta_id=model_meta.pk,
@@ -1395,12 +1458,17 @@ def test_run_video_temporal_inference_rolls_back_frames_on_failure(
         )
 
     history.refresh_from_db()
-    assert history.status == VideoProcessingHistory.STATUS_FAILURE
-    assert not frame_dir.exists()
+    assert history.status == (
+        VideoProcessingHistory.STATUS_CANCELLED
+        if superseded
+        else VideoProcessingHistory.STATUS_FAILURE
+    )
+    assert frame_dir.exists() is superseded
     state = video.get_or_create_state()
     state.refresh_from_db()
-    assert state.frames_extracted is False
-    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+    assert len(state_at_supersession) == 1
+    assert state.frames_extracted is (state_at_supersession[0] if superseded else False)
+    assert Frame.objects.filter(video=video, is_extracted=True).exists() is superseded
 
 
 @pytest.mark.django_db(transaction=True)

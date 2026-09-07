@@ -15,6 +15,7 @@ from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.services.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,
+    hls_result_is_ready,
     materialize_video_hls,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
@@ -22,6 +23,7 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
+from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.encryption.encryption import load_master_key
 
@@ -341,6 +343,11 @@ class Command(BaseVideoCommand):
                 "status": "failed",
                 "error": "materialization_failed",
             }, fail_fast
+        if not hls_result_is_ready(result.get("status")):
+            result["materialization_status"] = result.get("status")
+            result["status"] = "failed"
+            result["error"] = "hls_not_ready"
+            return result, fail_fast
         return result, False
 
     @staticmethod
@@ -351,11 +358,21 @@ class Command(BaseVideoCommand):
         force: bool,
         queue: str,
     ) -> dict[str, Any]:
-        dispatch = dispatch_video_hls_materialization(
-            video_id=video_id,
-            artifact_kind=artifact_kind,
-            force=force,
-        )
+        try:
+            dispatch = dispatch_video_hls_materialization(
+                video_id=video_id,
+                artifact_kind=artifact_kind,
+                force=force,
+            )
+        except Exception as exc:
+            reason = database_recovery_reason(exc)
+            return {
+                "video_id": video_id,
+                "artifact_kind": artifact_kind,
+                "status": "failed",
+                "error": reason or "hls_reservation_failed",
+                "retryable": reason is not None,
+            }
         if dispatch.queue != queue:
             raise RuntimeError(
                 "HLS dispatch queue disagrees with the validated preflight queue"

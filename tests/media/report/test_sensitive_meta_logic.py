@@ -13,7 +13,7 @@ from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 # Add the endoreg-db directory to the path
-# sys.path.insert(0, '/home/admin/test/lx-annotate/endoreg-db')
+# sys.path.insert(0, '//test/lx-annotate/endoreg-db')
 
 
 def generate_random_dob() -> datetime:

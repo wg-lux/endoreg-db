@@ -32,6 +32,7 @@ from typing import Any, Protocol, cast, overload
 from mozilla_django_oidc.auth import OIDCAuthenticationBackend  # pyright: ignore[reportMissingTypeStubs]
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractUser, Group
+from django.db import transaction
 from django.db.models.query import QuerySet
 from lx_dtypes.models.contracts import KeycloakClaimsPayload, validate_keycloak_claims
 from lx_dtypes.models.contracts.json_types import JsonValue
@@ -96,6 +97,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
     """
 
     # Called by the base class when no existing user matches the claims.
+    @transaction.atomic
     def create_user(self, claims: Mapping[str, JsonValue]) -> AbstractUser:
         """
         Create a new Django user on first OIDC login.
@@ -133,6 +135,7 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
         return user
 
     # Called by the base class when a matching user already exists.
+    @transaction.atomic
     def update_user(
         self, user: _AuthenticatedUser, claims: Mapping[str, JsonValue]
     ) -> _AuthenticatedUser:

@@ -20,7 +20,7 @@ source_documents:
   disposition: reference
   note: Definiert die Ownership-Grenze zwischen Django-Persistenz, Service-Layer und strikt typisierten
     lx_dtypes-Verträgen.
-- path: /home/admin/lx-data-models/docs/guides/django-host-integration.md
+- path: ../lx-data-models/docs/guides/django-host-integration.md
   disposition: reference
   note: Beschreibt Ledger-Modelle, EndoReg-Adapter und den vorgesehenen Django-Host-Integrationspfad.
 definition_of_done:
@@ -48,7 +48,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/services/test_sap_ish_clinical.py
     - tests/services/test_sap_ish_import.py
@@ -60,7 +60,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
         tests/management/commands/test_import_sap_ish_txt.py -q
       note: Exit-Code 0
@@ -136,13 +136,13 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/contracts/test_medical_ledger_version_contract.py
         tests/app/test_lx_dtypes_import_boundary.py -q (4 passed)
     - kind: command
-      reference: cd /home/admin/lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
+      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
         pytest lx_dtypes/models/ledger/medical/tests -q (11 passed)
     - kind: command
-      reference: cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
+      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
         src/api/__tests__/patientService.medicalLedger.test.ts (5 passed)
     - kind: command
-      reference: cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run type-check (passed)
+      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run type-check (passed)
     - kind: document
       reference: docs/medical_ledger_contract.md
     note: Der installierte lx-dtypes-Vertrag 0.2.15 stimmt exakt mit uv.lock und dem deklarierten kompatiblen
@@ -174,9 +174,9 @@ definition_of_done:
     kind: command
     command:
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
-    - /home/admin/lx-data-models/lx_dtypes/models/ledger/medical/tests
+    - /lx-data-models/lx_dtypes/models/ledger/medical/tests
     - tests/api/test_medical_ledger_validation.py
     - -q
     timeout_seconds: 900
@@ -184,9 +184,9 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/ledger/medical/Write.py
+      reference: /lx-data-models/lx_dtypes/models/ledger/medical/Write.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
+      reference: /lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
     - kind: test
       reference: tests/api/test_medical_ledger_create.py
     - kind: test
@@ -201,10 +201,10 @@ definition_of_done:
         tests/api/test_medical_ledger_create.py::test_update_schedule_rejects_invalid_contract_before_mutation
         -q (12 passed)
     - kind: command
-      reference: cd /home/admin/lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
+      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
         pytest lx_dtypes/models/ledger/medical/tests/test_write_contracts.py -q (5 passed)
     - kind: command
-      reference: cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
+      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
         src/api/__tests__/patientService.medicalLedger.test.ts (5 passed)
     note: Alle von lx-annotate verwendeten Medikations- und Medikationsplan-Schreibpfade validieren Request-Daten
       vor dem Service durch die öffentlichen strict/extra-forbid lx_dtypes-Pydantic-Verträge. Zwölf API-Negativfälle
@@ -236,7 +236,7 @@ definition_of_done:
     - --
     - env
     - ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-tracker
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/services/test_medical_ledger_roundtrip.py
     - tests/api/test_medical_ledger_create.py
@@ -247,7 +247,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-tracker PYTHONPATH=/home/admin/lx-data-models
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-tracker PYTHONPATH=/lx-data-models
         .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_roundtrip.py tests/api/test_medical_ledger_create.py
         tests/api/test_medical_ledger_read.py -q
       note: Exit-Code 0
@@ -378,7 +378,7 @@ definition_of_done:
     - --
     - env
     - ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-idempotency
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/services/test_medical_ledger_transactions.py
     - tests/api/test_medical_ledger_create.py
@@ -388,7 +388,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-idempotency PYTHONPATH=/home/admin/lx-data-models
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-idempotency PYTHONPATH=/lx-data-models
         .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/api/test_medical_ledger_create.py
         -q
       note: Exit-Code 0
@@ -481,13 +481,13 @@ definition_of_done:
     status: verified
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/views/PatientMedicationPage.vue
+      reference: /dev/lx-annotate/frontend/src/views/PatientMedicationPage.vue
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+      reference: /dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
     - kind: test
       reference: tests/api/test_medical_ledger_read.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
     - kind: command
       reference: devenv shell -- npm run test:unit -- --run src/views/__tests__/PatientResourcePages.test.ts
         src/api/__tests__/patientService.medicalLedger.test.ts (6 passed)
@@ -532,17 +532,17 @@ definition_of_done:
     - kind: test
       reference: tests/api/test_medical_ledger_read.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+      reference: /dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
     - kind: test
       reference: tests/api/test_medical_ledger_create.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
+      reference: /lx-data-models/lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/patientService.medicalLedger.test.ts
     - kind: test
       reference: tests/services/test_medical_ledger_transactions.py
     - kind: command
-      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-regression PYTHONPATH=/home/admin/lx-data-models
+      reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-regression PYTHONPATH=/lx-data-models
         .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/services/test_medical_ledger_roundtrip.py
         tests/api/test_medical_ledger_create.py tests/api/test_medical_ledger_read.py -q (29 passed)
     note: The source-contract suite has 11 passing tests; the focused EndoReg medical regression lane

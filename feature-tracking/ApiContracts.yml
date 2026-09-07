@@ -36,7 +36,7 @@ definition_of_done:
     - kind: document
       reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
         tests/test_resolve.py tests/utils/test_api_urls.py -q (19 route/startup contract tests passed)
     - kind: command
       reference: manage.py show_urls --format csv before/after URLConf consolidation (505 rows; byte-identical
@@ -78,10 +78,10 @@ definition_of_done:
         tests/views/video/test_segments_crud.py::VideoSegmentFpsNormalizationViewTest -q
       note: Metadata-based frames-per-second/normalization status contract, including the HTTP 422 error path, passed.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+      reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
         (25 documented routes matched 489 normalized backend routes; 10 referenced test files exist)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
         tests/docs/test_show_urls_contract.py tests/test_resolve.py tests/test_app_startup.py tests/scripts/test_check_documentation_governance.py
         -q (22 passed)
     note: The canonical route contracts are now reproducibly checked from the versioned Markdown matrix
@@ -142,13 +142,13 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_center_group_sync.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_center_group_sync.py
         tests/authz/test_dynamic_permissions.py tests/authz/test_video_media_policy.py tests/services/test_center_access.py
         tests/views/media/test_center_scoped_reads.py tests/views/media/test_video_media_view.py tests/views/misc/test_upload_endpoints.py
         tests/views/test_center_access_matrix.py tests/views/video/test_annotation_access_controls.py
         tests/deployment/test_prod_settings_contract.py -q (103 passed, 2 warnings in 67.03s)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_hls_stream.py::test_centerless_hub_user_can_read_processed_playlist_key_and_segment
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_hls_stream.py::test_centerless_hub_user_can_read_processed_playlist_key_and_segment
         tests/views/video/test_hls_stream.py::test_central_hub_processed_playlist_rejects_anonymous_user
         -q (2 passed, 2 warnings in 48.60s)
     note: The focused access-control lane demonstrates fail-closed Keycloak center synchronization, resolution
@@ -175,11 +175,11 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/stores/annotationStats.ts
+      reference: /dev/lx-annotate/frontend/src/stores/annotationStats.ts
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/annotationStats.test.ts
+      reference: /dev/lx-annotate/frontend/src/stores/__tests__/annotationStats.test.ts
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/apiPrefixContract.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/apiPrefixContract.test.ts
     - kind: document
       reference: 'docs/api_route_test_matrix.md: Mount Ownership And Compatibility'
     note: Production lx-annotate TypeScript/Vue sources are now checked repository-wide for direct /api/
@@ -206,10 +206,10 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
+      reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
         (exit 0; documented=25, backend=489, test_files=10)
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
+      reference: '/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_route_matrix.py
         -q (7 passed: missing matrix, malformed coverage, missing backend and legacy JSON compatibility)'
     - kind: document
       reference: docs/api_route_test_matrix.md#reproducible-contract-check

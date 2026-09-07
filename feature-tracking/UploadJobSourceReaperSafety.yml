@@ -48,11 +48,11 @@ definition_of_done:
       reference: Independent state-matrix review of UploadJob eligibility, database time, retry and processing/media
         lease exclusion, fencing receipt, report/video integrity, and fail-closed blockers.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
         endoreg_db/services/hub/media_integrity.py endoreg_db/models/hub/upload_job.py tests/services/test_hub_cleanup.py
         (0 errors)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
         -q (25 passed, 1 PostgreSQL-only concurrency test skipped)
     note: Independent review confirmed that deletion eligibility is re-evaluated under a row lock using
       database time, retries and active processing/media leases block cleanup, the fencing token and source
@@ -124,11 +124,11 @@ definition_of_done:
         fencing receipt, protected-root and source identity checks, typed deletion wrapper, structured
         audit events, and video/report target preservation.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
         endoreg_db/services/hub/upload_job_import_lease.py endoreg_db/utils/file_operations.py endoreg_db/utils/filesystem/file_operations.py
         tests/services/test_hub_cleanup.py tests/services/test_upload_job_import_lease.py (0 errors)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
         tests/services/test_upload_job_import_lease.py -q (27 passed, 1 PostgreSQL-only concurrency test
         skipped)
     note: Independent review confirmed that apply authorizes and revalidates under a row lock using database
@@ -210,7 +210,7 @@ definition_of_done:
         on non-PostgreSQL.'
     - kind: command
       reference: TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_NAME=endoregDbLocal TEST_DB_USER=postgres
-        TEST_DB_HOST=/run/postgresql /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
+        TEST_DB_HOST=/run/postgresql /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
         tests/management/commands/test_reap_upload_job_sources.py -q (35 passed, 2 warnings in 10.60s;
         PostgreSQL two-reaper row-lock test executed)
     note: 'PostgreSQL-backed verification completed with the administrator role over the local Unix socket:
@@ -253,7 +253,7 @@ definition_of_done:
       reference: 'Focused final lane including health and reaper command tests: 43 passed, 1 PostgreSQL-only
         concurrency test skipped, 2 warnings in 98.66s.'
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
         tests/management/commands/test_reap_upload_job_sources.py -q (14 passed, 1 warning in 57.76s)
     note: Inventory, independent apply gate, durable failure counters and health alarms are implemented
       and pass focused tests. The fresh health/reaper regression lane passed; production-like byte/integrity
@@ -286,7 +286,7 @@ definition_of_done:
         against the management command, cleanup service, stable blocker enum, receipts, health alarms,
         and video normalization boundary.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_reap_upload_job_sources.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_reap_upload_job_sources.py
         -q (9 passed)
     note: 'The runbook matches the implemented operator contract: read-only default, exact UUID and bounded
       batch selection, explicit gated apply, repeat behavior, safe output and exit semantics, stable blocker-specific

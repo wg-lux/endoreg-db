@@ -25,6 +25,12 @@ MINIMUM_VIDEO_IMPORT_LEASE_SECONDS = 30
 class UploadJobImportLeaseBusy(RuntimeError):
     """Raised when another live worker owns an upload import."""
 
+    retry_after_seconds: int
+
+    def __init__(self, message: str, *, retry_after_seconds: int = 30) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class UploadJobImportLeaseLost(RuntimeError):
     """Raised when a worker no longer owns the current fencing epoch."""
@@ -78,10 +84,15 @@ def acquire_upload_job_import_lease(
     *,
     upload_job_id: str,
     owner: str,
+    reservation_owner: str | None = None,
 ) -> UploadJobImportLease:
     normalized_owner = owner.strip()
     if not normalized_owner:
         raise ValueError("Import lease owner must not be empty")
+    if reservation_owner is not None and (
+        not reservation_owner.strip() or reservation_owner == normalized_owner
+    ):
+        raise ValueError("Reservation and execution owners must be distinct")
 
     with transaction.atomic():
         job = _locked_job(upload_job_id)
@@ -103,7 +114,14 @@ def acquire_upload_job_import_lease(
             and current_expiry is not None
             and current_expiry > database_now
         )
-        if has_live_owner and job.processing_lease_owner != normalized_owner:
+        # A live lease is not reacquired, even by a redelivery with the same
+        # task ID. Only the first execution may consume a queued reservation;
+        # subsequent renewal uses heartbeat_upload_job_import_lease instead.
+        claims_reservation = (
+            reservation_owner is not None
+            and job.processing_lease_owner == reservation_owner
+        )
+        if has_live_owner and not claims_reservation:
             emit_structured_event(
                 logger,
                 "video_import.lease_busy",
@@ -112,7 +130,10 @@ def acquire_upload_job_import_lease(
                 fencing_epoch=int(job.processing_fencing_token),
             )
             raise UploadJobImportLeaseBusy(
-                f"Upload job {job.pk} has another active import owner"
+                f"Upload job {job.pk} has another active import owner",
+                retry_after_seconds=max(
+                    10, min(60, int(_lease_duration().total_seconds() / 3))
+                ),
             )
 
         if job.processing_lease_owner and not has_live_owner:

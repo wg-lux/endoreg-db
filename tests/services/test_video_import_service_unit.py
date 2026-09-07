@@ -997,6 +997,95 @@ class TestNormalizationExecution:
 
 
 class TestImportOrchestration:
+    @pytest.mark.parametrize("renamed_source", [False, True])
+    def test_repeated_completed_import_preserves_external_source_and_skips_heavy_work(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        renamed_source: bool,
+    ) -> None:
+        # Arrange
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"video")
+        second_source = tmp_path / "renamed.mp4" if renamed_source else source
+        if renamed_source:
+            second_source.write_bytes(source.read_bytes())
+        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut, "_video_import_dir", lambda: tmp_path / "managed-import"
+        )
+        ensure_hls = Mock()
+        budget = Mock()
+        stage = Mock()
+        create = Mock()
+        anonymizer = Mock()
+        monkeypatch.setattr(sut, "ensure_video_hls", ensure_hls)
+        monkeypatch.setattr(
+            sut.VideoImportService, "_ensure_pipeline_storage_budget", budget
+        )
+        monkeypatch.setattr(sut, "create_sensitive_copy", stage)
+        monkeypatch.setattr(sut, "create_or_retrieve_video_file", create)
+        service = sut.VideoImportService(anonymizer=anonymizer)
+
+        # Act
+        first = service.import_and_anonymize(source, "test-center", "test-processor")
+        second = service.import_and_anonymize(
+            second_source, "test-center", "test-processor"
+        )
+
+        # Assert
+        assert first is second is video
+        assert source.read_bytes() == second_source.read_bytes() == b"video"
+        assert ensure_hls.call_args_list == [call(video), call(video)]
+        budget.assert_not_called()
+        stage.assert_not_called()
+        create.assert_not_called()
+        anonymizer.anonymize_video.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error", [OSError("storage unavailable"), RuntimeError("streaming failed")]
+    )
+    def test_completed_import_streaming_failure_preserves_source_for_redelivery(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        error: Exception,
+    ) -> None:
+        # Arrange
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"video")
+        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        ensure_hls = Mock(side_effect=[error, None])
+        cleanup = Mock()
+        anonymizer = Mock()
+        monkeypatch.setattr(sut, "ensure_video_hls", ensure_hls)
+        monkeypatch.setattr(
+            sut.VideoImportService, "_cleanup_duplicate_staging", cleanup
+        )
+        service = sut.VideoImportService(anonymizer=anonymizer)
+
+        # Act
+        with pytest.raises(type(error)) as raised:
+            service.import_and_anonymize(source, "test-center", "test-processor")
+
+        # Assert
+        assert raised.value is error
+        cleanup.assert_not_called()
+        assert source.read_bytes() == b"video"
+
+        # Act: redeliver after streaming becomes available.
+        result = service.import_and_anonymize(source, "test-center", "test-processor")
+
+        # Assert
+        assert result is video
+        cleanup.assert_called_once()
+        assert ensure_hls.call_args_list == [call(video), call(video)]
+        anonymizer.anonymize_video.assert_not_called()
+
     def test_rejects_a_missing_source_path(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:

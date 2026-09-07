@@ -1,0 +1,424 @@
+schema_version: '1.0'
+id: backend_idempotency_guarantee
+name: Backend Idempotency Guarantee
+description: 'Backend-owned guarantee for exact retry, concurrent delivery and crash recovery across the
+  video lifecycle. Requested after the lx-annotate frontend readiness implementation. This is a verification
+  and implementation handoff, not a claim that database concurrency or deployed acceptance has passed.
+  Frontend handoff: /home/admin/dev/lx-annotate/feature-tracking/VideoLifecycleFrontendReadiness.yml.'
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Durable attempt identity, lease ownership, fencing and publication boundaries.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Canonical media generation, encrypted publication, HLS and cleanup requirements.
+definition_of_done:
+- id: canonical_operation_identity
+  category: requirements
+  title: Define one durable identity for each logical lifecycle operation
+  acceptance:
+  - For each upload, duplicate import, recovery, anonymization approval, segment validation, prediction
+    replacement and hub transfer, document the center, resource, source generation and operation inputs
+    that form its identity.
+  - An exact retry returns the original operation and result without duplicate media, metadata, annotations,
+    tasks or transfer rows. Changed content, model configuration, annotator or generation is explicitly
+    a new authorized operation or a conflict; it is never silently treated as an exact retry.
+  - Every public application programming interface (API), watcher, task redelivery and direct service
+    entry point uses the same database-enforced identity contract. Process-local locks are not the guarantee.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inventory entry points and database constraints. Review exact replay and changed-payload
+      behavior for each operation against the existing import and hub-transfer feature contracts.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/models/hub/upload_job.py; endoreg_db/services/hub/ingest.py; tests/services/test_upload_operation_identity.py
+    note: 'Upload: aktive Datenbank-Constraints binden Zentrum, Medientyp und Inhaltshash sowie den Schluessel
+      an Quellsystem, Ingest-Modus und Storage-Klasse/-Tier. Geaenderter Inhalt zu einem bestehenden Schluessel
+      wird abgelehnt; geplanter Retry behaelt Job und Budget. Noch offen: unveraenderliche generationsgebundene
+      Identitaet fuer Approval, Segmentrevision, direkten Prediction-Aufruf und Recovery; terminale Fehler
+      koennen weiterhin neue Importzeilen erzeugen.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T11:58:58.898550Z'
+- id: durable_success_evidence
+  category: functionality
+  title: Completion and duplicate detection preserve truthful workflow gates
+  acceptance:
+  - Duplicate detection and already-completed delivery never grant anonymization approval or segment validation.
+    These remain independent persisted review decisions.
+  - A success response is supported by the required durable media generation and typed completion evidence.
+    Metadata alone, an upload status string or a missing watched source is not proof of completed media
+    processing.
+  - Repeated state repair converges to the same result, preserves all annotation identities and annotators,
+    and reports missing technical or sensitive metadata even when raw media remains available.
+  - Recovery clearly distinguishes state reconciliation from actual metadata regeneration. Missing or
+    inconsistent media is reported explicitly without unsafe publication or loss of diagnostics.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise duplicate unapproved video, metadata-only failed upload, retained raw media
+      with missing metadata, missing processed generation after a completed ledger status, and repeated
+      repair. Compare database and artifact identities before and after.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/hub/media_integrity.py; endoreg_db/services/hub/ingest.py; tests/services/test_hub_media_integrity_unit.py
+    - kind: code
+      reference: endoreg_db/services/video_files/state.py; tests/services/test_video_state_identity.py;
+        tests/services/test_upload_job_import_lease_postgresql.py::test_simultaneous_state_creation_preserves_one_state
+    note: 'Abgeschlossene Video-Task-Redelivery prueft zentrumsgebundene Medien, lesbare Artefakte, technischen
+      und sensitiven Metadatenbestand sowie den Verarbeitungszustand. Fehlende Evidenz wird LOST, ohne
+      Quellenloeschung oder automatische Review-Freigabe. get_or_create_video_state liest die autoritative
+      Zuordnung unter dem Videozeilenlock: ein alter VideoFile-Cache kann weder eine zweite State-Zeile
+      erzeugen noch die aktuelle Zuordnung und deren Review-Flags ersetzen. Offen bleiben vollstaendige
+      generationsgebundene Abschlussbelege einschliesslich HTTP Live Streaming und Normalisierung sowie
+      ein gemeinsamer Repair-Vertrag. Der Default-Integritaetscheck anderer Duplicate-Einstiegspunkte
+      verlangt weiterhin Review.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T12:15:34.177659Z'
+- id: concurrent_delivery_fencing
+  category: functionality
+  title: Only the current execution owner can publish or complete work
+  acceptance:
+  - Concurrent requests and same-task redelivery have at most one live execution owner; queue reservation
+    and execution identity remain distinct.
+  - Lease takeover uses database time and a fresh fencing epoch. A stale worker cannot publish, complete,
+    release another owner lease or delete another attempt artifacts.
+  - Crash and database-commit uncertainty preserve the source and last valid encrypted generation. Recovery
+    determines the committed outcome before replaying publication.
+  - Dispatch occurs after transaction commit and repeated operator or automatic retry cannot multiply
+    active work for the same operation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run separate-process PostgreSQL tests with synchronized concurrent deliveries, expired
+      leases, delayed old workers, worker loss and failures immediately before and after database commit.
+      Inspect durable rows and publication counts.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: tests/services/test_upload_job_import_lease_postgresql.py; endoreg_db/services/video_temporal_inference.py
+    - kind: test
+      reference: '2026-09-07, PostgreSQL 16.11, psycopg 3.3.4: alle fuenf Tests in tests/services/test_upload_job_import_lease_postgresql.py
+        bestanden innerhalb des 179-Test-Laufs. Zwei synchronisierte Zustellungsrennen (gleicher/verschiedener
+        Owner), stale Schreib-/Release-Prozess nach Takeover und zwei am INSERT synchronisierte Constraint-Konflikte
+        (identischer/geaenderter Inhalt). Reale unabhaengige Prozesse und Verbindungen; keine SQLite-Row-Lock-Behauptung.
+        Commit-Ungewissheit und Prozessabbruch waehrend Dateipublikation bleiben offen.'
+    - kind: test
+      reference: 'Alle sechs Tests in tests/services/test_upload_job_import_lease_postgresql.py bestanden
+        im 191-Test-Lauf: zwei gleichzeitige Zustellungen, stale Schreiber nach Datenbankzeit-Takeover,
+        zwei synchronisierte INSERT-Konflikte und gleichzeitige State-Erstellung aus veralteten Video-Instanzen.
+        Relation erst nach Videozeilenlock lesen; select_related auf der wartenden Lock-Abfrage hatte
+        zwei State-Zeilen erzeugt.'
+    note: Unabhaengige PostgreSQL-Prozesse belegen Upload-Lease-/Constraint-Fencing und eindeutige State-Zuordnung.
+      Offen bleiben Prozessabbruch an Dateipublikation, Commit-Ungewissheit und vollstaendige Generation-/Prediction-Epochen.
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T12:52:10.858906Z'
+- id: review_and_prediction_replay
+  category: functionality
+  title: Review replay and prediction replacement preserve annotation identity
+  acceptance:
+  - Repeating anonymization approval preserves the submitted media identity and does not mutate another
+    selected resource.
+  - Repeating segment validation for one video, annotator and segment revision creates no duplicate frame
+    annotations or cleanup work. An explicit different-annotator restart remains a separate reversible
+    track.
+  - Repeated prediction replacement for one video and model generation does not mix old and new model
+    metadata or duplicate prediction segments. Successful completion includes persisted prediction rows
+    when predicted ranges exist.
+  required: true
+  verification:
+    kind: manual
+    instructions: Replay identical and changed approval, segment validation and prediction requests concurrently.
+      Compare annotation primary keys, annotator principals, processing history identities and prediction
+      generation metadata.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/views/anonymization/validate.py; endoreg_db/services/video_temporal_inference.py;
+        tests/services/test_video_temporal_inference.py
+    note: 'Validation sperrt die explizit adressierte Video-/Reportzeile und prueft den Zentrumzugriff
+      innerhalb der Transaktion. Aktive Prediction-Anfragen vergleichen Modell und normalisierte Optionen;
+      Abweichungen ergeben einen expliziten Konflikt. Publikation serialisiert Modellmetadaten, Segmente
+      und History. Offen: dauerhafte Approval-/Segmentrevision-Identitaet, generationsgebundene Wiederverwendung
+      abgeschlossener Prediction-Anfragen und stale Cleanup ohne Zugriff auf Folgeversuche.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T11:59:12.494884Z'
+- id: scoped_replay_authorization
+  category: security
+  title: Every replay rechecks governed capability and center scope
+  acceptance:
+  - Read, repair, mark, bulk offload, retry and unmark enforce their backend capability and center scope
+    independently of frontend visibility.
+  - Idempotency keys and content hashes never grant access to another center result. Centerless and unrelated-center
+    requests reveal no protected resource state and perform no mutation.
+  - Authorization and resource ownership are rechecked under the mutation boundary, including mixed-center
+    bulk requests, stored transfer jobs and retried requests after membership changes.
+  - Retries preserve encryption at rest, required mutual Transport Layer Security (mTLS), processed-media-only
+    export and recipient-bound envelope encryption. No long-lived master key is transmitted or used as
+    a transfer credential.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run mounted API denials for roleless, centerless and wrong-center users with authorized
+      positive controls, mixed-center atomicity checks and permission changes between first request and
+      replay.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/views/anonymization/validate.py; endoreg_db/views/anonymization/overview.py;
+        tests/views/anonymization/test_validate_view.py
+    note: Standalone-Validation erzwingt EnvironmentAwarePermission und PolicyPermission sowie zentrumsgebundenen
+      Zugriff nach dem Zeilenlock. Upload-Zuordnung im Overview und Integritaetscheck verwenden das Quellzentrum
+      zusaetzlich zum Hash. Neue Tests pruefen rollenlose, zentrumslose und fremde Zugriffe sowie entzogene
+      Mitgliedschaft. Kein vollstaendiger Nachweis fuer Repair, Markierung, Unmarkierung, Bulk-Offload
+      und gespeicherte Transferjobs; kryptografische Invarianten wurden nicht veraendert.
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T11:59:16.603872Z'
+- id: generation_and_transfer_replay
+  category: data_integrity
+  title: Artifact and transfer retries reuse a single verified generation
+  acceptance:
+  - HTTP Live Streaming (HLS) preparation and repeated playlist requests join or reuse one valid materialization.
+    They do not create competing published generations.
+  - An exact transfer replay uses the same transfer key, immutable payload and verified processed-media
+    digest, including after acknowledgement loss.
+  - Changed payload, content hash, source center or recipient identity produces an explicit conflict or
+    INCONSISTENT state. Receiver application and sender acknowledgement cannot create duplicate resources.
+  - Cleanup waits for the verified receipt and active lease boundaries; repeated cleanup never removes
+    the only valid generation or another attempt source.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise concurrent HLS materialization, exact and changed transfer replay, lost acknowledgement,
+      and crash during receipt/application/cleanup. Compare receiver resources, transfer ledgers and encrypted
+      artifact generations.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: observable_retry_lifecycle
+  category: operations
+  title: Recovery remains observable until a trustworthy terminal outcome
+  acceptance:
+  - Unattached uploads remain visible through pending, processing, retrying, error and lost states with
+    stable job identity and safe diagnostics.
+  - Automatic retries, exhausted retry budgets and worker-loss recovery expose their current status and
+    scheduled next action. A frontend navigation or polling interruption does not alter backend execution.
+  - An operational acceptance record identifies host, backend and frontend revisions, installed package
+    provenance, database engine, worker queues, timings and outcomes without clinical payloads.
+  - Local adapter fixes in lx-annotate are explicitly distinguished from equivalent behavior delivered
+    by the endoreg-db package.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run a named-host recovery exercise only after its deployment prerequisites are met.
+      Verify both the standalone backend overview and mounted lx-annotate route, including a failed unattached
+      upload transitioning through retry and processing.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'gc-10: systemctl show/list-units; importlib.metadata ueber /var/endoreg-service-user/lx-annotate-wheel/.venv/bin/python;
+        tests/views/anonymization/test_anonymization_overview.py'
+    - kind: test
+      reference: 'PostgreSQL-Regressionslauf: tests/views/anonymization/test_anonymization_overview.py
+        bestanden, einschliesslich pending/processing/retrying/error/lost, stabiler Upload-Identitaet
+        und zentrumsgebundener Zuordnung. PostgreSQL-spezifischer Nullable-Join-Lock im UploadJobRetryView
+        durch select_for_update(of=(self,)) korrigiert.'
+    note: 'Lokale PostgreSQL-Tests belegen sichtbare Upload-Uebergaenge und stabile Jobidentitaet. Vom
+      Nutzer benannter Zielhost gc-10 (172.16.255.110), nur lesend geprueft: lx-annotate.service aktiv;
+      Pipeline-/ffmpeg-Worker inaktiv; HLS-Backfill failed/exit-code 1; Migration zuletzt inactive/success
+      0. Installierte Pakete: endoreg-db 1.0.8.0, lx-annotate 0.9.51, lx-dtypes 0.2.8, psycopg 3.3.4.
+      lx-annotate-Archiv SHA256 7607d7f28da24ebd40fb4c3210c9d902f90c490b9d5d38fb2906a5e305daa80f. Keine
+      nachgewiesene Zuordnung des installierten Backendpakets zum bearbeiteten Checkout. sudo -n verlangt
+      ein Passwort. Kein Deployment und keine Recovery-Mutation ausgefuehrt; Datenbankengine, Queue-Konfiguration
+      und durchgaengige Betriebsabnahme bleiben offen. Lokale Tests sind kein Nachweis fuer diese installierten
+      Pakete.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T12:22:48.420320Z'
+- id: regression_and_concurrency_evidence
+  category: testing
+  title: Executable tests establish the guarantee at each persistence boundary
+  acceptance:
+  - Strict Pyright and focused backend tests pass for changed code. PostgreSQL tests use independent connections
+    or processes; SQLite tests alone are not row-lock or cross-worker evidence.
+  - Tests cover exact replay, changed request, simultaneous first requests, simultaneous retries, lost
+    response, stale ownership, failed publication, wrong center and missing artifacts.
+  - Cross-repository mounted API and lifecycle tests pass against the actual packaged dependency. A source
+    checkout result is not attributed to a different installed wheel or archive.
+  - Existing test names and source observations are recorded as references until their current results
+    have been executed and attributed by an assessor.
+  required: true
+  verification:
+    kind: manual
+    instructions: Start with tests/services/test_upload_job_import_lease.py, tests/services/test_hub_ingest_import_job_contract.py,
+      tests/test_tasks.py, tests/import_files/test_video_finalize_success.py and relevant HLS/transfer
+      tests. Add the missing fault-injection and PostgreSQL concurrency matrix, then record exact commands,
+      revisions and results.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 0 warnings, 0 informations'
+    - kind: test
+      reference: 'Erster PostgreSQL-Lauf der acht fokussierten Dateien: 118 passed, 2 failed in 246.14s;
+        drei separate Prozess-Leasetests bestanden, noch kein vollstaendiger Crash-/Commit-Nachweis.'
+    - kind: command
+      reference: 'PYTHONPATH=/tmp/endoreg-idempotency-pg.Pv5sn3/driver TEST_DB_ENGINE=django.db.backends.postgresql
+        TEST_DB_HOST=/tmp/endoreg-idempotency-pg.Pv5sn3 TEST_DB_PORT=55439 TEST_DB_USER=admin TEST_DB_NAME=idempotency_evidence
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_upload_job_import_lease_postgresql.py
+        tests/services/test_upload_operation_identity.py tests/services/test_video_temporal_inference.py
+        tests/views/anonymization/test_validate_view.py tests/views/anonymization/test_anonymization_overview.py
+        tests/services/test_hub_media_integrity_unit.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_upload_job_import_lease.py tests/views/misc/test_upload_endpoints.py tests/test_tasks.py
+        tests/import_files/test_video_finalize_success.py -q --tb=short: 178 passed, 1 failed, 11 warnings
+        in 152.88s. Einziger Fehler war die Testannahme zum frames_extracted-Flag vor Supersession; auf
+        expliziten Snapshot umgestellt. Alle fuenf separaten Prozessrennen bestanden. Warnungen: bestehende
+        pytest/spaCy-Warnungen und Python-fork-Warnung im bereits multithreaded Testprozess; Prozesswartezeiten
+        sind begrenzt und Kinder werden beendet/gejoint.'
+    - kind: test
+      reference: 'PostgreSQL 16.11 / psycopg 3.3.4, Arbeitsbaum auf HEAD ec8b10da7c011e8ff56099e5731293b5a6b1d404:
+        191 passed, 13 warnings in 119.16s. Kommando: PYTHONPATH=/tmp/endoreg-idempotency-pg.Pv5sn3/driver
+        TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_HOST=/tmp/endoreg-idempotency-pg.Pv5sn3 TEST_DB_PORT=55439
+        TEST_DB_USER=admin TEST_DB_NAME=idempotency_evidence RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_video_state_identity.py tests/services/test_video_file_services_contract.py
+        tests/services/test_upload_job_import_lease_postgresql.py tests/services/test_upload_operation_identity.py
+        tests/services/test_video_temporal_inference.py tests/views/anonymization/test_validate_view.py
+        tests/views/anonymization/test_anonymization_overview.py tests/services/test_hub_media_integrity_unit.py
+        tests/services/test_hub_ingest_import_job_contract.py tests/services/test_upload_job_import_lease.py
+        tests/views/misc/test_upload_endpoints.py tests/test_tasks.py tests/import_files/test_video_finalize_success.py
+        -q --tb=short -x'
+    - kind: test
+      reference: 'PYTHONPATH=/tmp/endoreg-idempotency-pg.Pv5sn3/driver TEST_DB_ENGINE=django.db.backends.postgresql
+        TEST_DB_HOST=/tmp/endoreg-idempotency-pg.Pv5sn3 TEST_DB_PORT=55439 TEST_DB_USER=admin TEST_DB_NAME=idempotency_evidence
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py
+        tests/views/media/test_video_ready_export.py tests/scripts/test_check_documentation_governance.py
+        -q --tb=short -x: 47 passed, 2 warnings, 4 subtests passed in 179.59s. Alle sieben vom Nutzer
+        gemeldeten Fehlerfaelle bestanden, einschliesslich teurem Videoimport. Pyright zuvor 0 errors,
+        0 warnings; Ruff bestanden.'
+    note: '191 fokussierte Tests bestanden nach Korrektur der State-Lock-Snapshot-Race. Vorherige Fehler:
+      drei neue Fixtures ohne Pflichtzentrum korrigiert; separater Prozessnachweis deckte anschliessend
+      einen echten veralteten Join-Snapshot auf, durch Relation-Lesen nach Lock behoben. Ein Wiederholungslauf
+      ergab 191 Setupfehler wegen gestopptem temporaerem PostgreSQL; nach lokalem Neustart vollstaendig
+      bestanden. Pyright vor pytest: 0 errors, 0 warnings. Ruff und git diff --check bestanden. Warnungen
+      betreffen pytest, spaCy und fork im multithreaded Testprozess; Prozesswartezeiten begrenzt. Kein
+      vollstaendiger Crash-/Commit-/Deploymentnachweis. Vom Nutzer nachgereichte breitere Import-/Export-/Dokumentationstests
+      werden gesondert nachgewiesen. Nachgereichte Import-/Export-/Dokumentationsregressionen ebenfalls
+      bestanden. HLS-Testdouble uebernimmt execution_guard; synthetische Video-Unit-Tests nutzen vorhandenen
+      _get_dummy_video_state; Exportpruefung erlaubt mehrfache autoritative Locks und prueft weiterhin
+      persistierten Erfolg.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T12:56:42.915494Z'
+- id: contract_and_ownership_documented
+  category: documentation
+  title: Document the backend guarantee and its cross-repository ownership
+  acceptance:
+  - This feature defines the end-to-end idempotency guarantee; detailed implementation and storage or
+    deployment approvals remain owned by ImportPipelineRobustness.yml, VideoStorageNormalization.yml,
+    ImportMonitoring.yml and HubTransfer.yml.
+  - Document identity inputs, exact replay responses, conflict responses, transaction and publication
+    boundaries, and which persisted facts prove completion.
+  - Link VideoLifecycleFrontendReadiness.yml in lx-annotate and identify its local overview, repair and
+    export authorization adapters. Do not claim those application adapters are already implemented in
+    the standalone endoreg-db backend.
+  - Distinguish source review, unit tests, database concurrency tests and deployed acceptance. Do not
+    mark this feature complete from passing frontend tests alone.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the linked contracts and package ownership with backend and frontend maintainers;
+      verify evidence provenance and outstanding acceptance before updating readiness.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: feature-tracking/BackendIdempotencyGuarantee.yml; /home/admin/dev/lx-annotate/feature-tracking/VideoLifecycleFrontendReadiness.yml
+    - kind: review
+      reference: 'Dead-Code-/Duplikationsreview am 2026-09-07 mit .agents/skills/get-dead-code/SKILL.md,
+        Arbeitsverzeichnis /home/admin/endoreg-db, HEAD ec8b10da7c011e8ff56099e5731293b5a6b1d404 plus
+        gemischtem Arbeitsbaum. Scope: geaenderte Idempotenzdienste, Views und Tests; konfigurierter Vulture-Scan
+        ueber endoreg_db und scripts (90 Prozent Mindestkonfidenz). Ausgeschlossen: Migrationen, Tests,
+        Settings, Management-Commands, apps.py, admin.py. Rust und externer Laufzeitcode nicht statisch
+        abgedeckt.
+
+        Bestaetigte Entfernungen: in diesem Review keine neuen confirmed_dead-Kandidaten. Zuvor entfernter
+        Testhelper _predict_video_prediction_failure ist durch die parametrisierte lokale Fehlerfunktion
+        ersetzt; veralteter Overview-Import INSUFFICIENT_STORAGE_ERROR_PREFIX entfaellt mit dem neuen
+        Statusfilter.
+
+        Beibehaltene Vertraege: get_or_create_video_state ist der bereits vorhandene gemeinsame Dienst;
+        VideoFile.get_or_create_state delegiert dorthin und zahlreiche Import-/Annotation-/Exportaufrufer
+        bleiben erhalten. _active_temporal_request_status nutzt den vorhandenen Parser und _temporal_request_signature
+        an zwei Reservierungsstellen, statt Signaturregeln zu duplizieren. _UploadJobCenter und _OverviewUploadJobLike
+        sind lokale protocol_signature-Grenzen mit unterschiedlichen benoetigten Feldern, keine parallelen
+        Workflowimplementierungen. UploadJobIdempotencyConflict und TemporalInferenceOwnershipLost besitzen
+        konkrete Raise-/Catch- und Testaufrufer.
+
+        Kompatibilitaetsduplikat: lx-annotate/lx_annotate/views/anonymization_overview.py:26 ueberschreibt
+        _unattached_retryable_upload_job_rows mit gleichwertiger Status-/Zeilenbildung. classification
+        compatibility_contract, Risiko mittel; erst nach Paketupgrade und montiertem API-Nachweis den
+        lokalen Override entfernen, Permission-Unterklassen behalten. Aktuelles gc-10-Paket ist nicht
+        der bearbeitete Backend-Checkout.
+
+        Guard: devenv tasks run quality:dead-code und direkter scripts/check_dead_code.py-Aufruf exit
+        1. Fuenf NEW-Befunde (je 100 Prozent, 1 Zeile): services/hls_media.py:228 routing_key; utils/ai/multilabel_classification_net.py:29
+        y_true, :32 average, :33 zero_division; views/misc/upload_views.py:25 mime. Alle protocol_signature:
+        konkrete Keyword-Aufrufe in hls_media.py:862, multilabel_classification_net.py:65-99, upload_views.py:503.
+        Nicht loeschen; gesonderte Baseline-Review noetig. Drei STALE-Eintraege zu pdf_path/create_anonymized_pdf/anonymized_pdf_output_path
+        in report_anonymization.py; Symbole dort nicht mehr vorhanden. Baseline nicht veraendert.
+
+        Unsichere Kandidaten: keine neue sicher entbehrliche Idempotenzimplementierung nach Caller-, Barrel-,
+        Typ- und Downstream-Suche festgestellt; dies beweist keine globale Abwesenheit von Dead Code.
+        Kein Laufzeittrace, da keine zusaetzliche Konsolidierung/Entfernung durchgefuehrt wurde.
+
+        Radon-Messung: python -m radon cc -s und radon raw ueber state.py, hub/media_integrity.py, anonymization/overview.py;
+        zusaetzlich cc fuer video_temporal_inference.py und hub/ingest.py. Zustand: get_or_create_video_state
+        B(7), _active_temporal_request_status A(3), _matching_active_upload_job B(8), check_video_media_integrity
+        C(16), _attach_overview_upload_jobs C(17). LOC/SLOC: state 42/30, Integritaet 380/320, Overview
+        636/521. Keine Komplexitaetsreduktion behauptet.
+
+        Weiterer Guard: scripts/check_quality_boundaries.py exit 1, broad_exception 402 statt 406, type_suppression
+        109 statt 140 und Fingerprint-Drift im gemischten Arbeitsbaum. Keine Baselineanpassung zur Unterdrueckung.'
+    - kind: review
+      reference: 'Ergaenzende AST-Inventur ueber endoreg_db ohne Migrationen, Vergleich mehrzeiliger Funktionskoerper
+        ohne Docstring, Ausgabe auf die sieben bearbeiteten Anwendungsdateien begrenzt: zwei bestehende
+        Duplikatgruppen. video_temporal_inference.py:266 _coerce_bool / jobs/video_reimport_jobs.py:109
+        _as_bool besitzen identische Bodies, aber unterschiedliche default-Signaturen; video_temporal_inference.py:1319
+        / jobs/video_reimport_jobs.py:399 / jobs/video_post_validation_jobs.py:450 _set_history_task_id
+        besitzen identische Bodies und reale Dispatch-Aufrufer. Alle fuenf Funktionen per ast.dump gegen
+        git show HEAD exakt unveraendert. classification uncertain fuer sichere repo-uebergreifende Konsolidierung,
+        nicht confirmed_dead; Risiko mittel fuer Legacy-Konfigurationssemantik, niedrig fuer Task-ID-Helper.
+        Keine neue Duplikation durch diese Implementierung; getrennte Review-Kohorte mit Consumer-Trace
+        und fokussierten Jobtests erforderlich. AST-Identitaet allein ist kein Nachweis semantischer Austauschbarkeit.
+        Keine Loeschung oder Baselineaenderung.'
+    note: 'Diese YAML bleibt der uebergreifende Vertrag. Upload-Constraint, Queue-/Execution-Owner und
+      Lost-Replay sind in den Kriterien mit Code und Tests verknuepft; Approval nutzt Medienart/Primaerschluessel
+      und Request-Metadaten, Segmentannotation nutzt Segment-/Frame-/Label-/Quell-/Modell-/Annotatoridentitaet,
+      Prediction nutzt Video/Modell und normalisierte Optionen, Transfer nutzt transfer_key. Noch fehlende
+      Generations-/Revisionsbindung wird nicht als Garantie dargestellt. Frontend-Handoff: /home/admin/dev/lx-annotate/feature-tracking/VideoLifecycleFrontendReadiness.yml;
+      dortige lokale Overview-, Repair- und Exportautorisierungsadapter sind nicht automatisch Backend-Paketverhalten.
+      Betriebs-, klinische und Storage-Freigaben bleiben in den referenzierten Features.'
+    assessed_by: codex-idempotency-20260907-a
+    assessed_at: '2026-09-07T12:56:45.661218Z'

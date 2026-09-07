@@ -115,8 +115,8 @@ When removal is explicitly requested:
 For code changes, run Pyright before pytest:
 
 ```bash
-/home/admin/endoreg-db/.devenv/state/venv/bin/pyright
-/home/admin/endoreg-db/.devenv/state/venv/bin/pytest <focused-path-or-nodeid>
+.devenv/state/venv/bin/pyright
+.devenv/state/venv/bin/pytest <focused-path-or-nodeid>
 devenv tasks run quality:dead-code
 ```
 

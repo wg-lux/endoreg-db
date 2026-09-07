@@ -35,7 +35,7 @@ definition_of_done:
     als historischer Fallinhalt gelten.
   - Neue fallerreichbare Modellrelationen müssen im Inventar klassifiziert werden und können nicht still
     aus Persistenz, Export oder Wiederherstellung herausfallen.
-  - /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue ist als primärer Frontend-Consumer
+  - /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue ist als primärer Frontend-Consumer
     erfasst; sein aktuell als Fall verwendeter PatientExamination-Kontext wird ausdrücklich vom persistenten
     Case-Kontext abgegrenzt.
   required: true
@@ -195,9 +195,9 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/views/case.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/casesApi.ts
+      reference: /dev/lx-annotate/frontend/src/api/casesApi.ts
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/casesApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/casesApi.test.ts
     note: Zusätzlich zur vollständigen Dokumentliste existiert nun eine strikt validierte case-scoped
       POST-Mutation für vorhandene PDFs und Videos. Sie sperrt Fall, Untersuchung und Medienzeile atomar,
       ist bei identischer Wiederholung idempotent und lehnt geschlossene/inaktive Fälle, fallfremde Untersuchungen,
@@ -209,7 +209,7 @@ definition_of_done:
   category: interoperability
   title: ReportingShell verwendet den persistenten Fall statt einer Untersuchung als Fallersatz
   acceptance:
-  - /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID,
+  - /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID,
     Fallstatus, Aufnahme- und Entlasszeitpunkt sowie die Liste der zugehörigen PatientExaminations über
     einen typisierten snake_case-API-Vertrag.
   - Fallauswahl und Fall-ID-Anzeige leiten die Case-ID nicht länger aus flow.patientExaminationId ab;
@@ -226,7 +226,7 @@ definition_of_done:
     command:
     - pnpm
     - --dir
-    - /home/admin/dev/lx-annotate/frontend
+    - /dev/lx-annotate/frontend
     - exec
     - vitest
     - run
@@ -236,7 +236,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+      reference: /dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
     note: ReportingShell resolves and displays the stable Case ID, selects examinations within that case,
       and reports unanchored examinations; full cross-case media isolation and reload coverage remain.
     assessed_by: Codex
@@ -280,7 +280,7 @@ definition_of_done:
       reference: tests/views/case/test_case_viewset.py (unknown fields, scalar coercion, and orphan-patient
         rollback)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/views/case/test_case_viewset.py tests/services/test_case_persistence_transactions.py tests/authz/test_case_policy.py
         -q (12 passed)
     - kind: command
@@ -335,7 +335,7 @@ definition_of_done:
     - kind: test
       reference: tests/views/anonymization/test_sensitive_metadata_view.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
+      reference: /dev/lx-annotate/frontend/src/views/__tests__/PatientResourcePages.test.ts
     - kind: test
       reference: tests/authz/test_case_policy.py
     - kind: test
@@ -411,7 +411,7 @@ definition_of_done:
     Betreiber reproduzierbar beschrieben.
   - Die Abgrenzung zu LXDM, VideoStorageNormalization, DICOM und bestehenden PatientExamination-Verträgen
     ist ohne konkurrierenden Fertigstellungsstatus dokumentiert.
-  - Der Datenfluss bis /home/admin/dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue einschließlich
+  - Der Datenfluss bis /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue einschließlich
     Case-Auswahl, separater Untersuchungsauswahl, Reload und Fehlerzuständen ist dokumentiert.
   required: true
   verification:

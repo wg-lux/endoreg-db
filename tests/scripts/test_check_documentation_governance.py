@@ -228,7 +228,8 @@ def test_local_link_validation_rejects_missing_and_workstation_targets(
     _write_entrypoints(tmp_path)
     guide = tmp_path / "docs" / "guide.md"
     guide.write_text(
-        "[valid](index.md)\n[missing](missing.md)\n[local](/home/admin/private.md)\n",
+        "[valid](index.md)\n[missing](missing.md)\n"
+        "[root](/private.md)\n[local](/home/test/private.md)\n",
         encoding="utf-8",
     )
     entries = discover_repository(

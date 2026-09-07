@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, Protocol, cast
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Group, User
@@ -13,11 +14,118 @@ from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.services import hls_media
+from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 pytestmark = pytest.mark.django_db
+
+
+def test_hls_key_and_segment_do_not_rescan_the_generation(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+
+    def reject_scan(artifact: VideoHlsArtifact) -> bool:
+        raise AssertionError("key/segment request scanned the entire generation")
+
+    monkeypatch.setattr(hls_media, "_ready_artifact_paths_exist", reject_scan)
+    user = User.objects.create_user(username="bounded-hls-reader")
+    for view, extra in (
+        (hls_stream.HLSKeyView, {}),
+        (hls_stream.HLSSegmentView, {"segment_name": "seg_000.ts"}),
+    ):
+        response = view.as_view()(
+            _authenticated_request("/", user),
+            pk=hls_artifact.video_id,
+            key_id=hls_artifact.key_id,
+            **extra,
+        )
+        assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["playlist", "directory", "generation", "source_hash", "key", "other_video"],
+)
+def test_hls_resource_lookup_rechecks_identity_and_root_paths(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+    damage: str,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    video_pk = hls_artifact.video_id
+    key_id = hls_artifact.key_id
+    if damage == "playlist":
+        safe_unlink_file(hls_media.hls_playlist_path(hls_artifact))
+    elif damage == "directory":
+        safe_rmtree(hls_media.hls_segment_path(hls_artifact, "seg_000.ts").parent)
+    elif damage == "generation":
+        VideoHlsArtifact.objects.filter(pk=hls_artifact.pk).update(
+            source_generation_id=uuid4()
+        )
+    elif damage == "source_hash":
+        VideoHlsArtifact.objects.filter(pk=hls_artifact.pk).update(
+            source_content_hash="0" * 64
+        )
+    elif damage == "key":
+        key_id = uuid4()
+    else:
+        video_pk = VideoFile.objects.create(
+            video_hash="other-hls-video", center=hls_artifact.video.center
+        ).pk
+    user = User.objects.create_user(username="invalid-hls-resource-reader")
+    for view, extra in (
+        (hls_stream.HLSKeyView, {}),
+        (hls_stream.HLSSegmentView, {"segment_name": "seg_000.ts"}),
+    ):
+        response = view.as_view()(
+            _authenticated_request("/", user),
+            pk=video_pk,
+            key_id=key_id,
+            **extra,
+        )
+        assert response.status_code == 404
+        assert "X-Accel-Redirect" not in response.headers
+
+
+def test_hls_missing_requested_segment_fails_closed_and_full_readiness_rejects_it(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    safe_unlink_file(hls_media.hls_segment_path(hls_artifact, "seg_000.ts"))
+    user = User.objects.create_user(username="missing-hls-segment-reader")
+    response = hls_stream.HLSSegmentView.as_view()(
+        _authenticated_request("/", user),
+        pk=hls_artifact.video_id,
+        key_id=hls_artifact.key_id,
+        segment_name="seg_000.ts",
+    )
+    assert response.status_code == 404
+    assert "X-Accel-Redirect" not in response.headers
+    with pytest.raises(FileNotFoundError, match="files are missing"):
+        hls_media.get_ready_hls_artifact(video=hls_artifact.video)
+
+
+def test_hls_legacy_identity_is_rejected_without_hashing_source(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    VideoHlsArtifact.objects.filter(pk=hls_artifact.pk).update(source_content_hash="")
+
+    def reject_source_read(*args: object, **kwargs: object) -> str:
+        raise AssertionError("legacy identity rejection read the complete source")
+
+    monkeypatch.setattr(hls_media, "_source_content_hash", reject_source_read)
+    with pytest.raises(FileNotFoundError, match="source identity is stale"):
+        hls_media.get_ready_hls_artifact_by_key(
+            video=hls_artifact.video,
+            key_id=hls_artifact.key_id,
+        )
 
 
 class _GroupRelation(Protocol):

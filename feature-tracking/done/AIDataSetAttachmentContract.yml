@@ -58,23 +58,23 @@ definition_of_done:
     command:
     - uv
     - --project
-    - /home/admin/lx-data-models
+    - /lx-data-models
     - run
     - pytest
-    - /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+    - /lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
     - -q
     timeout_seconds: 600
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: uv --project /home/admin/lx-data-models run pytest /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+      reference: uv --project /lx-data-models run pytest /lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
         -q
       note: Exit-Code 0
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
     - kind: command
-      reference: uv --project /home/admin/lx-data-models run pytest /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+      reference: uv --project /lx-data-models run pytest /lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
         -q (11 passed)
     note: Strict public request/result contracts cover bulk nullability, ranges, coercion rejection, extra
       fields, and selection conflicts.
@@ -97,7 +97,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/views/misc/test_application_settings_endpoints.py
     - -q
@@ -106,13 +106,13 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/views/misc/test_application_settings_endpoints.py -q
       note: Exit-Code 0
     - kind: test
       reference: tests/views/misc/test_application_settings_endpoints.py
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/views/misc/test_application_settings_endpoints.py -q (45 passed)
     note: The endpoint validates the shared request once, rejects malformed input before mutation, validates
       its database-derived response, and retains relation idempotency.
@@ -132,7 +132,7 @@ definition_of_done:
     command:
     - npm
     - --prefix
-    - /home/admin/dev/lx-annotate/frontend
+    - /dev/lx-annotate/frontend
     - run
     - test:unit
     - --
@@ -143,12 +143,12 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: npm --prefix /home/admin/dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
+      reference: npm --prefix /dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
       note: Exit-Code 0
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/aiDatasetApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/aiDatasetApi.test.ts
     - kind: command
-      reference: npm --prefix /home/admin/dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
+      reference: npm --prefix /dev/lx-annotate/frontend run test:unit -- --run src/api/__tests__/aiDatasetApi.test.ts
         (6 passed)
     note: The Axios response remains unknown until exact runtime validation and request IDs are numeric.
     assessed_by: codex-contract-standardization

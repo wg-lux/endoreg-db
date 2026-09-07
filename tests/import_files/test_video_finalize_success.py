@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -76,6 +77,74 @@ def test_ensure_video_hls_materializes_raw_and_processed(
 
 
 @pytest.mark.unit
+def test_ensure_video_hls_joins_active_generation_without_forcing_again(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import endoreg_db.import_files.file_storage.state_management as module
+
+    calls: list[tuple[object, object, object]] = []
+    guarded: list[bool] = []
+    statuses = iter(("already_materializing", "already_ready", "materialized"))
+
+    def materialize(*args: object, **kwargs: object) -> SimpleNamespace:
+        calls.append((kwargs["artifact_kind"], kwargs["force"], kwargs["claim_queued"]))
+        return SimpleNamespace(status=next(statuses), key_id="test-attempt")
+
+    monkeypatch.setattr(module, "materialize_video_hls", materialize)
+    active = iter((True, True, False))
+
+    def is_active(**kwargs: object) -> bool:
+        return next(active)
+
+    def sleep(seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr(module, "hls_materialization_is_active", is_active)
+    monkeypatch.setattr(module.time, "sleep", sleep)
+    module.ensure_video_hls(
+        cast(VideoFile, SimpleNamespace(pk=42)),
+        force=True,
+        execution_guard=lambda: guarded.append(True),
+    )
+    assert calls == [
+        ("raw", True, True),
+        ("raw", False, True),
+        ("processed", True, True),
+    ]
+    assert len(guarded) == 8
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("failure", ["timeout", "ownership"])
+def test_ensure_video_hls_wait_fails_closed(
+    monkeypatch: MonkeyPatch,
+    failure: str,
+) -> None:
+    import endoreg_db.import_files.file_storage.state_management as module
+
+    calls: list[bool] = []
+    clock = iter((0.0, 2.0))
+
+    def materialize(*args: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(True)
+        return SimpleNamespace(status="already_materializing", key_id="test-attempt")
+
+    def guard() -> None:
+        if failure == "ownership" and calls:
+            raise RuntimeError("import ownership lost")
+
+    monkeypatch.setattr(module, "materialize_video_hls", materialize)
+    monkeypatch.setattr(module, "get_ffmpeg_transcode_timeout_seconds", lambda: 1)
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(clock, 2.0))
+    with pytest.raises((TimeoutError, RuntimeError), match="Timed out|ownership lost"):
+        module.ensure_video_hls(
+            cast(VideoFile, SimpleNamespace(pk=42)),
+            execution_guard=guard,
+        )
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("failure_boundary", ["hls", "history"])
 def test_failed_video_finalization_preserves_previous_generation(
     tmp_path: Path,
@@ -144,7 +213,12 @@ def test_failed_video_finalization_preserves_previous_generation(
         setattr(field_file, "name", relative_name)
         return relative_name
 
-    def materialize_video_hls(video: VideoFile, *, force: bool = False) -> None:
+    def materialize_video_hls(
+        video: VideoFile,
+        *,
+        force: bool = False,
+        execution_guard: Callable[[], None] | None = None,
+    ) -> None:
         if failure_boundary == "hls":
             raise RuntimeError("hls unavailable")
 
@@ -377,6 +451,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         video_arg: VideoFile,
         *,
         force: bool = False,
+        execution_guard: Callable[[], None] | None = None,
     ) -> None:
         assert force is True
         hls_calls.append(int(video_arg.pk))

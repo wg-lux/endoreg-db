@@ -34,7 +34,7 @@ definition_of_done:
       reference: Contract checked against AuditLedger/LedgerHead, event producers, the audit_integrity service,
         Celery scheduling, status API, management command, and system health.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
         tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
         -q (44 passed)
@@ -65,7 +65,7 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/models/state/audit_ledger.py::AuditLedger.save,verify_chain; LedgerHead.lock
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
         tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         -q (32 passed)
     note: Chained persistence locks the singleton ledger head, computes the hash through the shared typed
@@ -96,7 +96,7 @@ definition_of_done:
       reference: tests/models/state/test_audit_ledger.py; tests/services/test_audit_integrity.py; tests/services/test_hub_audit.py;
         tests/management/commands/test_refresh_audit_ledger_integrity.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
         tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         -q (32 passed)
     note: The combined lane covers initialization and chaining, strict JSON validation, immutability, payload
@@ -125,16 +125,16 @@ definition_of_done:
       reference: tests/views/misc/test_stats_endpoints.py::StatsEndpointTests::test_audit_ledger_integrity_endpoint_is_read_only_and_requires_auth_in_production;
         tests/views/media/test_video_ready_export.py::VideoReadyExportEndpointTests::test_marks_existing_managed_video_ready
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/export_ready.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/export_ready.py
         tests/views/media/test_video_ready_export.py tests/views/misc/test_stats_endpoints.py (0 errors,
         0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
         tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
         tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/ruff check <changed Python files>; ruff
+      reference: /endoreg-db/.devenv/state/venv/bin/ruff check <changed Python files>; ruff
         format --check <changed Python files> (passed)
     note: The global integrity endpoint returns only the cached head status, requires authentication in production,
       and remains read-only for authenticated users. Persisted producers were reviewed for data minimization;
@@ -163,7 +163,7 @@ definition_of_done:
     - kind: test
       reference: tests/services/test_audit_integrity.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
         tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         -q (32 passed)
     note: For an empty or invalid cache, status fails closed with unknown/verified=false and always includes
@@ -194,7 +194,7 @@ definition_of_done:
       reference: tests/services/test_audit_integrity.py; tests/management/commands/test_refresh_audit_ledger_integrity.py;
         tests/management/commands/test_check_system_health.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/media/test_video_ready_export.py
         tests/views/misc/test_stats_endpoints.py tests/models/state/test_audit_ledger.py tests/services/test_audit_integrity.py
         tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         tests/management/commands/test_check_system_health.py -q (59 passed, 4 subtests passed)
@@ -224,7 +224,7 @@ definition_of_done:
       reference: Technical comparison against the model, services, tasks, API, management commands, health
         gate, and existing tests.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/state/test_audit_ledger.py
         tests/services/test_audit_integrity.py tests/services/test_hub_audit.py tests/management/commands/test_refresh_audit_ledger_integrity.py
         tests/views/misc/test_stats_endpoints.py tests/management/commands/test_check_system_health.py
         -q (44 passed)

@@ -73,37 +73,37 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/serializers/misc/file_overview.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/anonymization_overview.py; endoreg_db/serializers/misc/file_overview.py;
-        /home/admin/dev/lx-annotate/frontend/src/stores/anonymizationStore.ts
+      reference: /lx-data-models/lx_dtypes/models/contracts/anonymization_overview.py; endoreg_db/serializers/misc/file_overview.py;
+        /dev/lx-annotate/frontend/src/stores/anonymizationStore.ts
     - kind: command
       reference: uv run pyright lx_dtypes/models/contracts/anonymization_overview.py tests/unit/lx_dtypes/models/contracts/test_anonymization_overview.py
-        (0 errors; working directory /home/admin/lx-data-models)
+        (0 errors; working directory /lx-data-models)
     - kind: command
       reference: uv run pytest tests/unit/lx_dtypes/models/contracts/test_anonymization_overview.py -q
-        (11 passed in 0.81s; working directory /home/admin/lx-data-models)
+        (11 passed in 0.81s; working directory /lx-data-models)
     - kind: command
       reference: devenv shell -- npm run type-check (exit 0; OpenAPI freshness, vue-tsc and ESLint; working
-        directory /home/admin/dev/lx-annotate/frontend)
+        directory /dev/lx-annotate/frontend)
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/stores/__tests__/anonymizationStore.reimport.spec.ts
         src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts (23 passed; working
-        directory /home/admin/dev/lx-annotate/frontend)
+        directory /dev/lx-annotate/frontend)
     - kind: command
-      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pyright
+      reference: PYTHONPATH=/lx-data-models /endoreg-db/.devenv/state/venv/bin/pyright
         endoreg_db/serializers/misc/file_overview.py tests/views/anonymization/test_anonymization_overview.py
         (0 errors)
     - kind: command
-      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+      reference: PYTHONPATH=/lx-data-models /endoreg-db/.devenv/state/venv/bin/pytest
         tests/views/anonymization/test_anonymization_overview.py -q (8 passed, 2 warnings in 68.36s)
     - kind: code
       reference: endoreg_db/serializers/misc/file_overview.py:_current_overview_hls_artifacts,_overview_hls_status;
         tests/views/anonymization/test_anonymization_overview.py
     - kind: command
-      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pyright
+      reference: PYTHONPATH=/lx-data-models /endoreg-db/.devenv/state/venv/bin/pyright
         endoreg_db/serializers/misc/file_overview.py tests/views/anonymization/test_anonymization_overview.py
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+      reference: PYTHONPATH=/lx-data-models /endoreg-db/.devenv/state/venv/bin/pytest
         tests/views/anonymization/test_anonymization_overview.py -q (8 passed, 2 warnings in 62.56s)
     note: Der manuelle Cross-Layer-Abgleich ist abgeschlossen. Der gemeinsame lx_dtypes-Vertrag besitzt
       geschlossene Literale für Jobstatus, Importweg, Cleanup-Zustand sowie Upload- und HLS-Fehlercodes
@@ -139,7 +139,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/Anonymizer/AnonymizationOverviewComponent.vue
+      reference: /dev/lx-annotate/frontend/src/components/Anonymizer/AnonymizationOverviewComponent.vue
     note: Darstellung und aktive Zustandsaktionen implementiert; repräsentative Bedienerprüfung ausstehend.
     assessed_by: Codex
     assessed_at: '2026-07-21T08:29:46.872488Z'
@@ -258,11 +258,11 @@ definition_of_done:
     command:
     - nix
     - develop
-    - /home/admin/dev/lx-annotate/frontend
+    - /dev/lx-annotate/frontend
     - --command
     - npm
     - --prefix
-    - /home/admin/dev/lx-annotate/frontend
+    - /dev/lx-annotate/frontend
     - run
     - test:unit
     - --
@@ -273,7 +273,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: nix develop /home/admin/dev/lx-annotate/frontend --command npm --prefix /home/admin/dev/lx-annotate/frontend
+      reference: nix develop /dev/lx-annotate/frontend --command npm --prefix /dev/lx-annotate/frontend
         run test:unit -- src/components/Anonymizer/__tests__/AnonymizationOverviewComponent.test.ts --run
       note: Exit-Code 0
     assessed_by: Codex
@@ -298,7 +298,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/dev/lx-annotate/tests/api/test_quarantine_api.py
+      reference: /dev/lx-annotate/tests/api/test_quarantine_api.py
     note: Center-Scope und Pfadbereinigung getestet; formales Security-Review ausstehend.
     assessed_by: Codex
     assessed_at: '2026-07-21T08:29:49.630358Z'

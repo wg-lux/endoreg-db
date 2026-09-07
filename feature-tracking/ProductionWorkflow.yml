@@ -181,7 +181,7 @@ definition_of_done:
         restart; expliziter SIGKILL; kein OOM-Kill'
     - kind: code
       reference: endoreg_db/services/video_files/metadata.py; endoreg_db/services/jobs/video_fps_normalization_jobs.py;
-        /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue
+        /dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue
     - kind: command
       reference: 15 fokussierte Backend-Tests und lx-annotate devenv tasks run vue:test bestanden
     note: Der gc-10-Incident vom 2026-07-23 ist anhand von Applikations-, Nginx- und systemd-Journalen

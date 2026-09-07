@@ -158,8 +158,15 @@ def _isolate_duplicate_hls_readiness(  # pyright: ignore[reportUnusedFunction]
     import endoreg_db.import_files.file_storage.state_management as state_management
     import endoreg_db.import_files.video_import_service as vis_module
 
-    def hls_ready(_video: VideoFile, *, force: bool = False) -> None:
+    def hls_ready(
+        _video: VideoFile,
+        *,
+        force: bool = False,
+        execution_guard: Callable[[], None] | None = None,
+    ) -> None:
         del force
+        if execution_guard is not None:
+            execution_guard()
 
     for module in (state_management, vis_module):
         monkeypatch.setattr(
@@ -254,6 +261,8 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
     The watched import path is the lock key. The sensitive copy is created only after the lock is held.
     """
     import endoreg_db.import_files.video_import_service as vis_module
+
+    monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
 
     source_path = tmp_path / "import" / "watcher.mp4"
     source_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1266,6 +1275,8 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
+    monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
+
     import_dir = tmp_path / "import"
     sensitive_dir = tmp_path / "managed" / "sensitive_videos"
     canonical_raw = sensitive_dir / "video-hash.mp4"
@@ -1348,6 +1359,8 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     tmp_path: Path,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
+
+    monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
 
     source_path = tmp_path / "import" / "watcher.mp4"
     source_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2046,6 +2059,8 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     tmp_path: Path,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
+
+    monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
 
     import_dir = tmp_path / "import"
     source_a = import_dir / "same_a.mp4"

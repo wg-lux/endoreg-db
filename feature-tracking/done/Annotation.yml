@@ -97,7 +97,7 @@ definition_of_done:
         -q
       note: Exit-Code 0
     - kind: command
-      reference: PATH=/home/admin/dev/lx-annotate/.devenv/profile/bin:$PATH npm run test:unit -- --run
+      reference: PATH=/dev/lx-annotate/.devenv/profile/bin:$PATH npm run test:unit -- --run
         src/views/__tests__/FrameAnnotationPage.test.ts src/views/__tests__/FrameAnnotationPage.usability.test.ts
         src/stores/__tests__/annotationQueue.test.ts
       note: 28 Tests bestanden; positive und negative Box-Reviews, Fortschaltung und Queue-Deduplizierung
@@ -138,9 +138,9 @@ definition_of_done:
         tests/management/commands/test_reconcile_frame_segment_annotations.py -q
       note: Exit-Code 0
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts;
-        /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/VideoStoreOptimization.spec.ts;
-        /home/admin/dev/lx-annotate/frontend/tests/components/VideoExaminationAnnotation.functionality.spec.ts
+      reference: /dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/VideoExaminationAnnotation.dropdown.test.ts;
+        /dev/lx-annotate/frontend/src/stores/__tests__/VideoStoreOptimization.spec.ts;
+        /dev/lx-annotate/frontend/tests/components/VideoExaminationAnnotation.functionality.spec.ts
     - kind: command
       reference: 'lx-annotate: devenv tasks run vue:test'
       note: Produktions-Typecheck, komponentenspezifischer Test-Typecheck und vollständige Vitest-Suite bestanden.
@@ -174,7 +174,7 @@ definition_of_done:
     - bash
     - -lc
     - devenv shell -- .devenv/state/venv/bin/pytest tests/acceptance/test_ai_segment_workflow_acceptance.py
-      -q && cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
+      -q && cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run tests/components/VideoPredictionSegments.acceptance.spec.ts
     timeout_seconds: 900
   assessment:
     status: verified
@@ -328,10 +328,10 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - devenv shell -- bash -lc 'PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
+    - devenv shell -- bash -lc 'PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest tests/services/test_export_frames_contract.py
       tests/views/misc/test_export_annotated_contract.py tests/services/test_video_storage_normalization.py
       tests/utils/video/test_ffmpeg_wrapper.py::test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter
-      -q && cd /home/admin/dev/lx-annotate/frontend && npm run type-check && npm run test:unit -- --run
+      -q && cd /dev/lx-annotate/frontend && npm run type-check && npm run test:unit -- --run
       src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts'
     timeout_seconds: 1200
   assessment:
@@ -352,7 +352,7 @@ definition_of_done:
     - kind: test
       reference: tests/utils/video/test_ffmpeg_wrapper.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
+      reference: /dev/lx-annotate/frontend/src/components/VideoExamination/__tests__/ExportAnnotations.pts-contract.test.ts
     note: pts_dataset_v1 ist über lx-dtypes 0.2.5 installiert, reproduzierbar gepinnt und einschließlich
       verschlüsseltem seekable Processed-Media-Pfad in Backend sowie Frontend verifiziert.
     assessed_by: Codex

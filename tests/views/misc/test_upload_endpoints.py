@@ -26,6 +26,37 @@ MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 
 class UploadEndpointTests(TestCase):
+    def test_changed_content_with_same_key_returns_conflict_without_dispatch(self):
+        self._authenticate_for_center()
+        with patch(
+            "endoreg_db.services.hub.ingest.start_upload_job_processing",
+            return_value="inline",
+        ) as dispatch:
+            first = self.client.post(
+                "/api/upload/",
+                data={
+                    "file": SimpleUploadedFile(
+                        "first.pdf", MINIMAL_PDF_BYTES, content_type="application/pdf"
+                    )
+                },
+                HTTP_IDEMPOTENCY_KEY="immutable-upload",
+            )
+            assert first.status_code == 201, first.content
+            second = self.client.post(
+                "/api/upload/",
+                data={
+                    "file": SimpleUploadedFile(
+                        "changed.pdf",
+                        MINIMAL_PDF_BYTES + b"\n% changed",
+                        content_type="application/pdf",
+                    )
+                },
+                HTTP_IDEMPOTENCY_KEY="immutable-upload",
+            )
+        assert second.status_code == 409, second.content
+        assert UploadJob.objects.count() == 1
+        dispatch.assert_called_once()
+
     def _authenticate_for_center(self, center: Center | None = None) -> Center:
         resolved_center = center or ApplicationSettings.get_solo().center
         if resolved_center is None:

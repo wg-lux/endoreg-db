@@ -31,10 +31,10 @@ Run tests intentionally from one foreground shell command so the process tree is
 auditable and easy to stop.
 
 - For focused verification, use the project venv directly:
-  `/home/admin/endoreg-db/.devenv/state/venv/bin/pytest <path-or-nodeid>`.
+  `.devenv/state/venv/bin/pytest <path-or-nodeid>`.
 - For broader lanes, prefer the repository tasks:
   `devenv tasks run test:fast` or `devenv tasks run test:full`.
-- For code changes, run `/home/admin/endoreg-db/.devenv/state/venv/bin/pyright`
+- For code changes, run `.devenv/state/venv/bin/pyright`
   before pytest.
 - Do not start tests through editor coverage/test commands or extensions. In
   particular, avoid VS Code coverage commands that launch `py.test --cov=.` in
@@ -168,7 +168,7 @@ Testing expectations:
 You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 `lx-annotate` operating within the LuxNix environment. Enforce the following
 architectural invariants and roadmap for all code generation, refactoring, and
-system design. Use /home/admin/lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
+system design. Use lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
 ## Mandatory Video Rules For All Agents
 
@@ -230,7 +230,7 @@ report-language convention below.
 
 ### Report structure
 
-While the model language is english, keep generated reports in german. /home/admin/lx-data-models/docs/guides/konzept-verknuepfungen.md is the main reference for how this is usually structured.
+While the model language is english, keep generated reports in german. lx-data-models/docs/guides/konzept-verknuepfungen.md is the main reference for how this is usually structured.
 
 ### Operating Assumptions And Threat Model
 

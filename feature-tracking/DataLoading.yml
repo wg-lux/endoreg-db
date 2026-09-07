@@ -130,11 +130,11 @@ definition_of_done:
     - kind: test
       reference: tests/dataloader/test_dataloader_safe_inputs.py; tests/dataloader/test_dataloader_missing_tables.py::test_load_model_data_from_yaml_rejects_unsafe_yaml_before_loading
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py
         endoreg_db/utils/dataloader.pyi tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_safe_inputs.py
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed,
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed,
         1 warning in 38.52s)
     - kind: review
       reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data; the

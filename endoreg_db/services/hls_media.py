@@ -20,6 +20,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.db import transaction
+from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
@@ -610,6 +611,16 @@ def _materialization_stale_before() -> datetime:
     )
 
 
+def hls_materialization_is_active(*, video_id: int, key_id: str) -> bool:
+    """Inspect the fenced owner without reopening or hashing protected media."""
+    return VideoHlsArtifact.objects.filter(
+        video_id=video_id,
+        key_id=UUID(key_id),
+        status=VideoHlsArtifact.Status.MATERIALIZING.value,
+        updated_at__gt=_materialization_stale_before(),
+    ).exists()
+
+
 def _redacted_hls_error(error: str, error_code: str) -> str:
     """Keep operator context while preventing storage paths from being persisted."""
     redacted = re.sub(r"(?:[A-Za-z]:)?/[^\s]+", "<redacted-path>", str(error))
@@ -901,6 +912,7 @@ def _prepare_artifact_record(
     source_content_hash: str = "",
     reserved_artifact_id: int | None = None,
     expected_reservation_key_id: UUID | None = None,
+    claim_queued: bool = False,
 ) -> _PreparedArtifact:
     if (reserved_artifact_id is None) != (expected_reservation_key_id is None):
         raise ValueError(
@@ -925,6 +937,18 @@ def _prepare_artifact_record(
                 or artifact.encoding_profile_name != requested_encoding_profile_name
             ):
                 raise RuntimeError("HLS reserved source identity changed before claim")
+            if artifact.status == VideoHlsArtifact.Status.READY.value:
+                if not _ready_artifact_paths_exist(artifact):
+                    raise RuntimeError(
+                        "Completed HLS reservation artifacts are missing"
+                    )
+                return _PreparedArtifact(
+                    artifact_id=int(artifact.pk),
+                    key_id=artifact.key_id,
+                    encoding_profile_name=str(artifact.encoding_profile_name),
+                    previous=None,
+                    should_materialize=False,
+                )
             if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
                 if artifact.updated_at > _materialization_stale_before():
                     return _PreparedArtifact(
@@ -1011,6 +1035,7 @@ def _prepare_artifact_record(
             if (
                 artifact.status == VideoHlsArtifact.Status.QUEUED.value
                 and reserved_artifact_id is None
+                and not claim_queued
             ):
                 return _PreparedArtifact(
                     artifact_id=int(artifact.pk),
@@ -1043,6 +1068,11 @@ def _prepare_artifact_record(
                 artifact_kind=artifact_kind.value,
                 encoding_profile_name=requested_encoding_profile_name,
             )
+        elif claim_queued and artifact.status == VideoHlsArtifact.Status.QUEUED.value:
+            # A synchronous importer cannot wait for a task queued behind itself.
+            # The locked row and fresh key fence the superseded queued delivery;
+            # a MATERIALIZING owner always returns above and is never displaced.
+            artifact.encoding_profile_name = requested_encoding_profile_name
         selected_encoding_profile_name = str(artifact.encoding_profile_name)
         hls_encoding_profile_by_name(selected_encoding_profile_name)
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
@@ -2225,6 +2255,7 @@ def materialize_video_hls(
     force: bool = False,
     reserved_artifact_id: int | None = None,
     reservation_key_id: UUID | str | None = None,
+    claim_queued: bool = False,
 ) -> HlsMaterializationResult:
     if (reserved_artifact_id is None) != (reservation_key_id is None):
         raise ValueError(
@@ -2309,6 +2340,7 @@ def materialize_video_hls(
         force=force,
         reserved_artifact_id=reserved_artifact_id,
         expected_reservation_key_id=expected_reservation_key_id,
+        claim_queued=claim_queued,
     )
 
     if not prepared.should_materialize and not prepared.publish_only:
@@ -2414,6 +2446,13 @@ def materialize_video_hls(
         preserve_validated_output = True
         raise
     except BaseException as exc:
+        if database_recovery_reason(exc) is not None:
+            # A commit may have succeeded even when its acknowledgement was
+            # lost. Preserve both staged and published encrypted output and the
+            # fenced attempt. Redelivery checks READY/VALIDATED or waits for the
+            # current MATERIALIZING lease to become stale before reclaiming.
+            preserve_validated_output = True
+            raise
         safe_rmtree(temp_output_dir, missing_ok=True)
         _cleanup_partial_output(target_dir)
         try:
@@ -2484,7 +2523,14 @@ def get_ready_hls_artifact_by_key(
 
     if not _ready_artifact_matches_current_source(video=video, artifact=artifact):
         raise FileNotFoundError("HLS artifact source identity is stale")
-    if not _ready_artifact_paths_exist(artifact):
+    # Playlist admission checks the complete generation. Key and segment requests
+    # must not rescan every sibling while holding the video row lock; the segment
+    # boundary separately resolves and checks the requested file on every request.
+    hls_playlist_path(artifact)
+    segment_dir = resolve_existing_protected_media_path(
+        artifact.segment_directory_relative_path
+    )
+    if segment_dir is None or not segment_dir.is_dir() or artifact.segment_count <= 0:
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
 
@@ -2495,6 +2541,8 @@ def _ready_artifact_matches_current_source(
     artifact: VideoHlsArtifact,
 ) -> bool:
     """Reject legacy or superseded READY rows at every playback boundary."""
+    if not artifact.source_content_hash:
+        return False
     try:
         artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
         source = _hls_source(video, artifact_kind)

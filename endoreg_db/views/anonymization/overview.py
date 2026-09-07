@@ -17,6 +17,7 @@ from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.anonymization import AnonymizationService
 from endoreg_db.services.polling_coordinator import (
@@ -26,7 +27,6 @@ from endoreg_db.services.polling_coordinator import (
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
-    INSUFFICIENT_STORAGE_ERROR_PREFIX,
     is_retryable_storage_failure,
     schedule_storage_retry,
 )
@@ -67,11 +67,13 @@ class NoPagination(PageNumberPagination):
 
 class _OverviewItem(Protocol):
     sensitive_meta_id: int | None
+    center_id: int | None
 
 
 class _OverviewUploadJobLike(Protocol):
     sensitive_meta_id: int | None
     content_hash: str
+    source_center_id: int | None
 
 
 class _OverviewUploadJobCarrier(Protocol):
@@ -115,30 +117,34 @@ def _attach_overview_upload_jobs(
         .order_by("-updated_at", "-created_at")
     )
 
-    by_sensitive_meta_id: dict[int, UploadJob] = {}
-    by_content_hash: dict[str, UploadJob] = {}
+    by_sensitive_meta_id: dict[tuple[int | None, int], UploadJob] = {}
+    by_content_hash: dict[tuple[int | None, str], UploadJob] = {}
     for upload_job in upload_jobs:
         upload_job_like = cast(_OverviewUploadJobLike, upload_job)
+        center_id = upload_job_like.source_center_id
         if (
             upload_job_like.sensitive_meta_id
-            and upload_job_like.sensitive_meta_id not in by_sensitive_meta_id
+            and (center_id, upload_job_like.sensitive_meta_id)
+            not in by_sensitive_meta_id
         ):
-            by_sensitive_meta_id[upload_job_like.sensitive_meta_id] = upload_job
+            by_sensitive_meta_id[(center_id, upload_job_like.sensitive_meta_id)] = (
+                upload_job
+            )
         if (
             upload_job_like.content_hash
-            and upload_job_like.content_hash not in by_content_hash
+            and (center_id, upload_job_like.content_hash) not in by_content_hash
         ):
-            by_content_hash[upload_job_like.content_hash] = upload_job
+            by_content_hash[(center_id, upload_job_like.content_hash)] = upload_job
 
     for item in items:
         overview_item = cast(_OverviewItem, item)
         sensitive_meta_id = overview_item.sensitive_meta_id
         content_hash = _overview_content_hash(item)
         upload_job = (
-            by_sensitive_meta_id.get(sensitive_meta_id)
+            by_sensitive_meta_id.get((overview_item.center_id, sensitive_meta_id))
             if sensitive_meta_id is not None
             else None
-        ) or by_content_hash.get(content_hash)
+        ) or by_content_hash.get((overview_item.center_id, content_hash))
         carrier = cast(_OverviewUploadJobCarrier, item)
         setattr(carrier, "_overview_upload_job", upload_job)
 
@@ -213,12 +219,12 @@ class AnonymizationOverviewView(APIView):
         retry_jobs = (
             UploadJob.objects.select_related("source_center")
             .filter(
-                Q(status=UploadJob.Status.RETRYING, retryable=True)
-                | Q(
-                    status=UploadJob.Status.ERROR,
-                    error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
-                    source_file_persisted=True,
-                    error_detail__startswith=INSUFFICIENT_STORAGE_ERROR_PREFIX,
+                status__in=(
+                    UploadJob.Status.PENDING,
+                    UploadJob.Status.PROCESSING,
+                    UploadJob.Status.RETRYING,
+                    UploadJob.Status.ERROR,
+                    UploadJob.Status.LOST,
                 )
             )
             .exclude(pk__in=attached_job_ids)
@@ -241,7 +247,12 @@ class AnonymizationOverviewView(APIView):
                     "id": synthetic_id,
                     "filename": filename or f"Import {upload_job.pk}",
                     "media_type": media_type,
-                    "anonymization_status": "failed",
+                    "anonymization_status": (
+                        "failed"
+                        if upload_job.status
+                        in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
+                        else AnonymizationState.PROCESSING_ANONYMIZING
+                    ),
                     "annotation_status": "",
                     "created_at": upload_job.created_at,
                     "sensitive_meta_id": None,
@@ -338,7 +349,7 @@ class UploadJobRetryView(APIView):
     @transaction.atomic
     def post(self, request: Request, job_id: UUID | str) -> Response:
         upload_job = (
-            UploadJob.objects.select_for_update()
+            UploadJob.objects.select_for_update(of=("self",))
             .select_related("source_center")
             .filter(pk=job_id)
             .first()

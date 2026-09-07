@@ -18,6 +18,96 @@ from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 
+@pytest.mark.parametrize("status", ["failed_validation", "already_materializing"])
+@pytest.mark.django_db
+def test_inline_backfill_non_ready_result_is_a_failure(
+    status: str,
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import Mock, patch
+
+    _patch_command_preflight(monkeypatch)
+    video = _create_processed_video(center=hls_command_center)
+    stdout = StringIO()
+    with (
+        patch.object(
+            command_module,
+            "materialize_video_hls",
+            return_value=Mock(
+                as_dict=lambda: {"video_id": video.pk, "status": status},
+            ),
+        ),
+        pytest.raises(CommandError),
+    ):
+        call_command(
+            "materialize_video_hls",
+            "--apply",
+            "--inline",
+            "--artifact-kind",
+            "processed",
+            "--fail-fast",
+            "--json",
+            stdout=stdout,
+            stderr=StringIO(),
+        )
+    result = json.loads(stdout.getvalue())["results"][0]
+    assert result["status"] == "failed"
+    assert result["materialization_status"] == status
+
+
+@pytest.mark.django_db
+def test_backfill_continues_after_database_reservation_failure_and_reports_nonzero(
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from django.db import OperationalError
+    from unittest.mock import patch
+
+    _patch_command_preflight(monkeypatch)
+    first = _create_processed_video(center=hls_command_center, payload=b"first")
+    second = _create_processed_video(center=hls_command_center, payload=b"second")
+    queue = command_module.queue_for_job_kind(
+        command_module.HeavyJobKind.VIDEO_HLS_MATERIALIZATION
+    )
+    stdout = StringIO()
+    with (
+        patch.object(command_module, "ensure_secure_transport_for_job_kind"),
+        patch.object(
+            command_module,
+            "dispatch_video_hls_materialization",
+            side_effect=[
+                OperationalError("protected failing row"),
+                hls_media.HlsMaterializationDispatchResult(
+                    video_id=second.pk,
+                    artifact_kind="processed",
+                    status="queued",
+                    queue=queue,
+                ),
+            ],
+        ) as dispatch,
+        pytest.raises(CommandError, match="1 artifact"),
+    ):
+        call_command(
+            "materialize_video_hls",
+            "--apply",
+            "--artifact-kind",
+            "processed",
+            "--json",
+            stdout=stdout,
+            stderr=StringIO(),
+        )
+    assert dispatch.call_count == 2
+    payload = json.loads(stdout.getvalue())
+    assert [result["video_id"] for result in payload["results"]] == [
+        first.pk,
+        second.pk,
+    ]
+    assert [result["status"] for result in payload["results"]] == ["failed", "queued"]
+    assert payload["results"][0]["retryable"] is True
+    assert "protected failing row" not in stdout.getvalue()
+
+
 @pytest.fixture
 def hls_command_center() -> Center:
     return Center.objects.create(

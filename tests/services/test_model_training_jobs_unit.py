@@ -10,6 +10,15 @@ import pytest
 from endoreg_db.services.jobs import model_training_jobs as training
 
 
+@pytest.mark.parametrize("lease_seconds", [0, -1])
+def test_training_claim_rejects_nonpositive_lease(lease_seconds: int) -> None:
+    # Arrange
+    run_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+    # Act / Assert: reject before accessing the database.
+    with pytest.raises(ValueError, match="lease_seconds must be positive"):
+        training._claim_model_training_run(run_id, lease_seconds=lease_seconds)
+
+
 def test_coerce_uuid_returns_none_for_invalid_payload() -> None:
     assert training._coerce_uuid("not-a-uuid") is None
     assert training._coerce_uuid("12345678-1234-1234-1234-1234567890ab") is None

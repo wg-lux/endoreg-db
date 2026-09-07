@@ -439,6 +439,48 @@ class TestPublicImportEntryPoint:
 
 
 class TestSourceAndContentLockOrchestration:
+    @pytest.mark.parametrize("renamed_source", [False, True])
+    def test_repeated_completed_import_skips_ownership_and_processing(
+        self,
+        service: ReportImportService,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        renamed_source: bool,
+    ) -> None:
+        # Arrange
+        contexts = [
+            _context(tmp_path / "report.pdf"),
+            _context(tmp_path / ("renamed.pdf" if renamed_source else "report.pdf")),
+        ]
+        existing = Mock(spec=RawPdfFile)
+        acquire = Mock()
+        process = Mock()
+        cleanup = Mock()
+        self._patch_content_lock(monkeypatch)
+        monkeypatch.setattr(
+            service, "_get_existing_completed_report", Mock(return_value=existing)
+        )
+        monkeypatch.setattr(
+            report_import_module, "acquire_report_import_fence", acquire
+        )
+        monkeypatch.setattr(service, "_process_owned_import", process)
+        monkeypatch.setattr(service, "_cleanup_duplicate_staging", cleanup)
+
+        # Act
+        results = [
+            service._import_with_content_hash_lock(
+                ctx, retry=False, file_hash=CONTENT_HASH
+            )
+            for ctx in contexts
+        ]
+
+        # Assert
+        assert all(result is existing for result in results)
+        assert all(ctx.current_report is existing for ctx in contexts)
+        acquire.assert_not_called()
+        process.assert_not_called()
+        assert cleanup.call_args_list == [call(ctx) for ctx in contexts]
+
     def test_snapshot_metadata_is_propagated_inside_source_lock(
         self,
         service: ReportImportService,
@@ -569,6 +611,7 @@ class TestSourceAndContentLockOrchestration:
         ("error", "should_finalize"),
         [
             (RuntimeError("failed"), True),
+            (OSError("storage unavailable"), True),
             (StaleReportImportAttemptError("stale"), False),
         ],
     )
@@ -576,12 +619,13 @@ class TestSourceAndContentLockOrchestration:
         self,
         service: ReportImportService,
         monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
+        pdf_path: Path,
         error: Exception,
         should_finalize: bool,
     ) -> None:
         # Arrange
-        context = _context(tmp_path / "report.pdf")
+        context = _context(pdf_path)
+        original_bytes = pdf_path.read_bytes()
         finalize = Mock()
         self._patch_content_lock(monkeypatch)
         monkeypatch.setattr(
@@ -595,12 +639,18 @@ class TestSourceAndContentLockOrchestration:
         monkeypatch.setattr(service, "_process_owned_import", Mock(side_effect=error))
         monkeypatch.setattr(service, "_finalize_owned_failure", finalize)
 
-        # Act / Assert
-        with pytest.raises(type(error), match=str(error)):
+        # Act
+        with pytest.raises(type(error), match=str(error)) as raised:
             service._import_with_content_hash_lock(
                 context, retry=False, file_hash=CONTENT_HASH
             )
+
+        # Assert
+        assert raised.value is error
         assert finalize.called is should_finalize
+        assert context.execution_guard is None
+        assert context.mutation_guard is None
+        assert pdf_path.read_bytes() == original_bytes
 
     @staticmethod
     def _patch_content_lock(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -27,6 +27,61 @@ def _upload_job(center: Center) -> UploadJob:
 
 
 @pytest.mark.django_db(transaction=True)
+def test_queued_reservation_is_claimed_by_only_one_delivery() -> None:
+    center = Center.objects.create(
+        name="delivery-center", display_name="Delivery Center"
+    )
+    job = _upload_job(center)
+    reserved = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="queued-task:task-id"
+    )
+    execution = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk),
+        owner="delivery-one",
+        reservation_owner="queued-task:task-id",
+    )
+    assert execution.fencing_epoch == reserved.fencing_epoch + 1
+    for owner in ("delivery-one", "delivery-two"):
+        with pytest.raises(UploadJobImportLeaseBusy):
+            acquire_upload_job_import_lease(
+                upload_job_id=str(job.pk),
+                owner=owner,
+                reservation_owner="queued-task:task-id",
+            )
+    with pytest.raises(UploadJobImportLeaseBusy):
+        acquire_upload_job_import_lease(upload_job_id=str(job.pk), owner="delivery-one")
+    with pytest.raises(UploadJobImportLeaseLost):
+        heartbeat_upload_job_import_lease(reserved)
+    heartbeat_upload_job_import_lease(execution)
+
+    UploadJob.objects.filter(pk=job.pk).update(
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    recovered = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk),
+        owner="delivery-three",
+        reservation_owner="queued-task:task-id",
+    )
+    assert recovered.fencing_epoch == execution.fencing_epoch + 1
+    with pytest.raises(UploadJobImportLeaseLost):
+        heartbeat_upload_job_import_lease(execution)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_legacy_task_owner_is_not_treated_as_a_queued_reservation() -> None:
+    center = Center.objects.create(name="legacy-owner", display_name="Legacy Owner")
+    job = _upload_job(center)
+    legacy = acquire_upload_job_import_lease(upload_job_id=str(job.pk), owner="task-id")
+    with pytest.raises(UploadJobImportLeaseBusy):
+        acquire_upload_job_import_lease(
+            upload_job_id=str(job.pk),
+            owner="new-delivery",
+            reservation_owner="queued-task:task-id",
+        )
+    heartbeat_upload_job_import_lease(legacy)
+
+
+@pytest.mark.django_db(transaction=True)
 def test_import_lease_fences_expired_owner() -> None:
     center = Center.objects.create(name="lease-center", display_name="Lease Center")
     job = _upload_job(center)

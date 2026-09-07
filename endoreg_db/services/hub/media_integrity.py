@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import cast
+from typing import Protocol, cast
 
 from django.db.models.fields.files import FieldFile
 
@@ -22,12 +22,18 @@ class MediaIntegrityStatus(StrEnum):
     ARTIFACT_UNREADABLE = "artifact_unreadable"
     STATE_MISSING = "state_missing"
     STATE_NOT_VALIDATED = "state_not_validated"
+    STATE_NOT_PROCESSED = "state_not_processed"
+    METADATA_MISSING = "metadata_missing"
 
 
 class MediaIntegrityExpectation(StrEnum):
     RAW_WATCHER_VIDEO = "raw_watcher_video"
     PREANONYMIZED_VIDEO = "preanonymized_video"
     REPORT = "report"
+
+
+class _UploadJobCenter(Protocol):
+    source_center_id: int | None
 
 
 @dataclass(frozen=True)
@@ -155,6 +161,7 @@ def check_video_media_integrity(
     *,
     expectation: MediaIntegrityExpectation = MediaIntegrityExpectation.RAW_WATCHER_VIDEO,
     content_hash: str,
+    require_review: bool = True,
 ) -> MediaIntegrityResult:
     normalized_hash = (content_hash or "").strip()
     if not normalized_hash:
@@ -211,13 +218,36 @@ def check_video_media_integrity(
             media_pk=media_pk,
             missing_artifacts=("state",),
         )
-    if not validated:
+    if require_review and not validated:
         return _failed_result(
             status=MediaIntegrityStatus.STATE_NOT_VALIDATED,
             reason="VideoState anonymization has not been validated.",
             content_hash=normalized_hash,
             media_pk=media_pk,
         )
+
+    if not require_review:
+        missing_metadata = tuple(
+            name
+            for name in ("video_meta", "sensitive_meta")
+            if getattr(video, name, None) is None
+        )
+        if missing_metadata:
+            return _failed_result(
+                status=MediaIntegrityStatus.METADATA_MISSING,
+                reason="Required video metadata is missing: "
+                + ", ".join(missing_metadata),
+                content_hash=normalized_hash,
+                media_pk=media_pk,
+                missing_artifacts=missing_metadata,
+            )
+        if not bool(getattr(video.state, "anonymized", False)):
+            return _failed_result(
+                status=MediaIntegrityStatus.STATE_NOT_PROCESSED,
+                reason="VideoState has no persisted anonymized processing result.",
+                content_hash=normalized_hash,
+                media_pk=media_pk,
+            )
 
     return _ok_result(content_hash=normalized_hash, media_pk=media_pk)
 
@@ -307,7 +337,9 @@ def _expectation_for_upload_job(
     return None
 
 
-def check_upload_job_media_integrity(upload_job: UploadJob) -> MediaIntegrityResult:
+def check_upload_job_media_integrity(
+    upload_job: UploadJob, *, require_review: bool = True
+) -> MediaIntegrityResult:
     content_hash = (upload_job.content_hash or "").strip()
     expectation = _expectation_for_upload_job(upload_job)
     if expectation is None:
@@ -318,21 +350,31 @@ def check_upload_job_media_integrity(upload_job: UploadJob) -> MediaIntegrityRes
             missing_artifacts=("content_type",),
         )
 
+    center_id = cast(_UploadJobCenter, upload_job).source_center_id
+    if center_id is None:
+        return _failed_result(
+            status=MediaIntegrityStatus.MEDIA_RECORD_MISSING,
+            reason="Upload job has no source center for media reconciliation.",
+            content_hash=content_hash,
+            missing_artifacts=("source_center",),
+        )
+
     if expectation == MediaIntegrityExpectation.REPORT:
         report = (
             RawPdfFile.objects.select_related("state")
-            .filter(pdf_hash=content_hash)
+            .filter(pdf_hash=content_hash, center_id=center_id)
             .first()
         )
         return check_report_media_integrity(report, content_hash=content_hash)
 
     video = (
         VideoFile.objects.select_related("state")
-        .filter(video_hash=content_hash)
+        .filter(video_hash=content_hash, center_id=center_id)
         .first()
     )
     return check_video_media_integrity(
         video,
         expectation=expectation,
         content_hash=content_hash,
+        require_review=require_review,
     )

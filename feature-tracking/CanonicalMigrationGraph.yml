@@ -195,10 +195,10 @@ definition_of_done:
     status: verified
     evidence:
     - kind: document
-      reference: /home/admin/dev/lx-annotate/feature-tracking/CanonicalMigrationCutover.yml assigns the
+      reference: /dev/lx-annotate/feature-tracking/CanonicalMigrationCutover.yml assigns the
         consuming application its historical/canonical cutover checks
     - kind: document
-      reference: /home/admin/dev/lx-annotate/docs/guides/deployment-strategy.md states that installed
+      reference: /dev/lx-annotate/docs/guides/deployment-strategy.md states that installed
         endoreg_db owns the shipped canonical migrations while lx-annotate owns runtime history repair
         and deployment gating
     note: Dependency and consuming-application ownership are explicitly separated in both trackers and

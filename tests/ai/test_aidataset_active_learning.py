@@ -6,7 +6,7 @@ from django.test import SimpleTestCase
 from lx_dtypes.models.contracts.ai_dataset import (
     AIDataSetActiveLearningConfigContract,
 )
-
+from endoreg_db.utils.paths import TEST_DATA_ROOT
 from endoreg_db.services.aidataset_active_learning import (
     select_active_learning_candidates_locally,
     select_active_learning_frame_indices,
@@ -14,7 +14,7 @@ from endoreg_db.services.aidataset_active_learning import (
 
 
 class AIDataSetActiveLearningTests(SimpleTestCase):
-    TMP_DIR = Path("/home/admin/endoreg-db/data/tests/tmp")
+    TMP_DIR = Path(f"{TEST_DATA_ROOT}data/tests/tmp")
 
     def setUp(self):
         if self.TMP_DIR.exists():

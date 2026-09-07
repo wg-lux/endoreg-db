@@ -133,6 +133,10 @@ class TemporalInferenceConfigError(ValueError):
     """Raised when temporal inference options are invalid."""
 
 
+class TemporalInferenceOwnershipLost(RuntimeError):
+    """A superseded prediction operation cannot publish or clean shared frames."""
+
+
 @dataclass(frozen=True, slots=True)
 class TemporalScoreTimeline:
     """Authoritative coordinates for each score row and its terminal boundary."""
@@ -1061,6 +1065,18 @@ def _temporal_request_signature(
     }
 
 
+def _active_temporal_request_status(
+    history: VideoProcessingHistory,
+    requested: TemporalInferenceHistoryConfig,
+) -> str:
+    existing = _parse_temporal_history_config(history.config)
+    if existing is None or _temporal_request_signature(
+        existing
+    ) != _temporal_request_signature(requested):
+        return "request_conflict"
+    return "already_queued"
+
+
 def _mark_history_cancelled(history: VideoProcessingHistory, reason: str) -> None:
     history.status = VideoProcessingHistory.STATUS_CANCELLED
     history.completed_at = timezone.now()
@@ -1193,7 +1209,9 @@ def _reserve_temporal_inference_history(
             for history in active_inference:
                 if _is_deferred_temporal_inference_history(history):
                     continue
-                return history, "already_queued"
+                return history, _active_temporal_request_status(
+                    history, dispatch_config
+                )
 
             deferred_config = TemporalInferenceHistoryConfig(
                 model_meta_id=dispatch_config.model_meta_id,
@@ -1286,7 +1304,7 @@ def _reserve_temporal_inference_history(
                     "Superseded by an immediate temporal inference request.",
                 )
                 continue
-            return history, "already_queued"
+            return history, _active_temporal_request_status(history, dispatch_config)
 
         history = VideoProcessingHistory.objects.create(
             video=locked_video,
@@ -1308,11 +1326,7 @@ def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
 def _get_processing_history(history_id: int | None) -> VideoProcessingHistory | None:
     if history_id is None:
         return None
-    try:
-        return VideoProcessingHistory.objects.get(pk=history_id)
-    except VideoProcessingHistory.DoesNotExist:
-        logger.warning("VideoProcessingHistory %s not found.", history_id)
-        return None
+    return VideoProcessingHistory.objects.get(pk=history_id)
 
 
 def _released_temporal_config(
@@ -1594,6 +1608,7 @@ def _cleanup_history_frames_if_required(
     rollback_video_frame_artifacts(history_video, reason=reason)
 
 
+@transaction.atomic
 def _prepare_temporal_history(
     history: VideoProcessingHistory | None,
     *,
@@ -1602,6 +1617,13 @@ def _prepare_temporal_history(
 ) -> bool:
     if history is None:
         return False
+    VideoFile.objects.select_for_update().get(pk=video_id)
+    history.refresh_from_db()
+    if (
+        history.video.pk != video_id
+        or history.operation != VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
+    ):
+        raise ValueError("Prediction history does not belong to this video operation.")
     if history.status == VideoProcessingHistory.STATUS_SUCCESS:
         _cleanup_history_frames_if_required(
             history,
@@ -1614,15 +1636,9 @@ def _prepare_temporal_history(
         )
         return True
     if history.status == VideoProcessingHistory.STATUS_RUNNING:
-        _cleanup_history_frames_if_required(
-            history,
-            video_id=video_id,
-            delete_frames_after=delete_frames_after,
-            reason=(
-                "Restarting temporal inference for a previously running "
-                f"history {history.pk}."
-            ),
-        )
+        raise RuntimeError("Prediction operation already has a running execution.")
+    if history.status != VideoProcessingHistory.STATUS_PENDING:
+        raise RuntimeError("Prediction execution requires a pending operation.")
     history.mark_running()
     return False
 
@@ -1876,6 +1892,19 @@ def _persist_temporal_prediction(
     replace_prediction_segments: bool,
 ) -> None:
     with transaction.atomic():
+        VideoFile.objects.select_for_update().get(pk=prepared.video.pk)
+        if history is not None:
+            current_history = VideoProcessingHistory.objects.select_for_update().get(
+                pk=history.pk,
+                video_id=prepared.video.pk,
+                operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+            )
+            if current_history.status == VideoProcessingHistory.STATUS_SUCCESS:
+                return
+            if current_history.status != VideoProcessingHistory.STATUS_RUNNING:
+                raise TemporalInferenceOwnershipLost(
+                    "Prediction publication requires a running operation."
+                )
         prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
             video_file=prepared.video,
             model_meta=prepared.model_meta,
@@ -2013,14 +2042,24 @@ def _run_video_temporal_inference(
         )
         success = True
         return True
+    except TemporalInferenceOwnershipLost:
+        raise
     except Exception as exc:
-        _mark_temporal_history_failure(history, exc)
-        _rollback_failed_temporal_frames(
-            video,
-            delete_frames_after=delete_frames_after,
-            frames_touched=frames_touched,
-            error=exc,
-        )
+        with transaction.atomic():
+            if history is not None:
+                VideoFile.objects.select_for_update().get(pk=video_id)
+                history.refresh_from_db()
+                if history.status != VideoProcessingHistory.STATUS_RUNNING:
+                    raise TemporalInferenceOwnershipLost(
+                        "Superseded prediction operation cannot clean frame artifacts."
+                    ) from exc
+            _mark_temporal_history_failure(history, exc)
+            _rollback_failed_temporal_frames(
+                video,
+                delete_frames_after=delete_frames_after,
+                frames_touched=frames_touched,
+                error=exc,
+            )
         raise
     finally:
         _delete_successful_temporal_frames(
@@ -2067,6 +2106,20 @@ def dispatch_video_temporal_inference(
         dispatch_config=dispatch_config,
         task_id=task_id,
     )
+
+    if reservation_status == "request_conflict":
+        return TemporalInferenceDispatchResult(
+            task_id=history.task_id or "",
+            mode=mode,
+            status="busy",
+            video_id=int(video_id),
+            model_meta_id=int(model_meta_id),
+            queue=queue,
+            history_id=history.pk,
+            reason="prediction_request_conflict",
+            message="A different prediction request is active for this video.",
+            blocked_by_history_id=history.pk,
+        )
 
     if reservation_status == "busy":
         return TemporalInferenceDispatchResult(

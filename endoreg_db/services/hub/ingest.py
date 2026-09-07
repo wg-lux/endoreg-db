@@ -24,6 +24,7 @@ from pydantic import ValidationError
 import yaml
 
 from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient_external_id import (
@@ -827,7 +828,7 @@ def _reserve_video_upload_import_handoff(
         try:
             lease = acquire_upload_job_import_lease(
                 upload_job_id=str(job.pk),
-                owner=task_id,
+                owner=f"queued-task:{task_id}",
             )
         except UploadJobImportLeaseBusy:
             return job, None, False
@@ -905,9 +906,34 @@ def _normalized_upload_content_hash(
     return _compute_uploaded_file_content_hash(uploaded_file)
 
 
+class UploadJobIdempotencyConflict(ValueError):
+    """A durable upload key was replayed with different content."""
+
+
 def _matching_active_upload_job(
     context: _UploadJobCreateContext,
 ) -> UploadJob | None:
+    if context.idempotency_key:
+        keyed_job = (
+            UploadJob.objects.select_for_update()
+            .filter(
+                source_center=context.source_center,
+                source_system=context.source_system,
+                ingest_mode=context.ingest_mode,
+                storage_class=context.storage_class,
+                storage_tier=context.storage_tier,
+                idempotency_key=context.idempotency_key,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if keyed_job is not None and (
+            keyed_job.content_hash != context.content_hash
+            or keyed_job.content_type != context.content_type
+        ):
+            raise UploadJobIdempotencyConflict(
+                "Upload idempotency key is already bound to different content."
+            )
     existing_job_qs = (
         UploadJob.objects.filter(
             source_center=context.source_center,
@@ -967,6 +993,8 @@ def _assess_completed_upload_job_reuse(
 def _assess_upload_job_reuse(
     existing_job: UploadJob,
 ) -> _InvalidUploadJobReuse | None:
+    if existing_job.status == UploadJob.Status.RETRYING:
+        return None
     if existing_job.status in {
         UploadJob.Status.PENDING,
         UploadJob.Status.PROCESSING,
@@ -1077,10 +1105,12 @@ def _create_upload_job_after_conflict_check(
     reingest_provenance_updates: JsonObject,
 ) -> tuple[UploadJob, bool]:
     try:
-        job = _create_upload_job(
-            context=context,
-            reingest_provenance_updates=reingest_provenance_updates,
-        )
+        # Recover the failed insert savepoint before querying the winner.
+        with transaction.atomic():
+            job = _create_upload_job(
+                context=context,
+                reingest_provenance_updates=reingest_provenance_updates,
+            )
     except IntegrityError:
         conflict_job = _matching_active_upload_job(context)
         if conflict_job is not None:
@@ -2115,14 +2145,19 @@ def _acquire_video_upload_import_lease(
     job: UploadJob,
     job_id: str,
     owner: str,
+    reservation_owner: str | None = None,
+    retry_on_busy: bool = False,
 ) -> UploadJobImportLease | None:
     try:
         return acquire_upload_job_import_lease(
             upload_job_id=str(job.pk),
             owner=owner,
+            reservation_owner=reservation_owner,
         )
     except UploadJobImportLeaseBusy:
         logger.info("Video upload job already has a live owner: job=%s", job_id)
+        if retry_on_busy:
+            raise
         return None
 
 
@@ -2401,6 +2436,10 @@ def _handle_video_upload_import_failure(
     attempt: _VideoUploadImportAttempt,
     exc: Exception,
 ) -> bool:
+    if database_recovery_reason(exc) is not None:
+        # Keep the source and lease intact. Celery redelivers after repair and
+        # must reacquire an expired lease rather than stealing a live epoch.
+        raise exc
     if isinstance(exc, UploadJobImportLeaseLost):
         logger.error(
             "Stale video upload worker fenced for %s: %s",
@@ -2412,7 +2451,13 @@ def _handle_video_upload_import_failure(
         _schedule_video_upload_storage_retry(attempt, exc)
         return False
     if isinstance(exc, IntegrityError):
-        _mark_duplicate_video_upload(attempt, exc)
+        cause = exc.__cause__
+        if getattr(cause, "sqlstate", None) == "23505" or getattr(
+            cause, "sqlite_errorcode", None
+        ) in (1555, 2067):
+            _mark_duplicate_video_upload(attempt, exc)
+        else:
+            _schedule_video_upload_processing_retry(attempt, exc)
         return False
     if isinstance(exc, OSError):
         _handle_video_upload_os_error(attempt, exc)
@@ -2425,19 +2470,33 @@ def _run_video_upload_import_job(
     job_id: str,
     *,
     lease_owner: str | None = None,
+    retry_on_busy: bool = False,
 ) -> bool:
-    job = UploadJob.objects.select_related("source_center", "sensitive_meta").get(
-        id=job_id
+    reservation_owner = (
+        f"queued-task:{lease_owner.strip()}" if lease_owner is not None else None
     )
-    if job.status == UploadJob.Status.ANONYMIZED.value:
-        return True
-
-    owner = (lease_owner or f"direct-{uuid.uuid4().hex}").strip()
-    lease = _acquire_video_upload_import_lease(
-        job=job,
-        job_id=job_id,
-        owner=owner,
-    )
+    owner = f"execution-{uuid.uuid4().hex}"
+    # Completion and lease acquisition share the same row lock. A redelivery
+    # must not revive a job completed between an unlocked read and acquisition.
+    with transaction.atomic():
+        job = UploadJob.objects.select_for_update().get(id=job_id)
+        if job.status == UploadJob.Status.ANONYMIZED.value:
+            integrity = check_upload_job_media_integrity(job, require_review=False)
+            if not integrity.ok:
+                mark_upload_job_integrity_lost(
+                    job,
+                    integrity.reason,
+                    error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED.value,
+                )
+                return False
+            return True
+        lease = _acquire_video_upload_import_lease(
+            job=job,
+            job_id=job_id,
+            owner=owner,
+            reservation_owner=reservation_owner,
+            retry_on_busy=retry_on_busy,
+        )
     if lease is None:
         return False
 

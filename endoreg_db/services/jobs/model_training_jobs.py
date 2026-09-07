@@ -208,39 +208,6 @@ def _validate_model_training_status_transition(
         )
 
 
-def _transition_model_training_run(
-    run_uuid: UUID,
-    *,
-    status: str,
-    **updates: Any,
-) -> int:
-    current_status = (
-        AIModelTrainingRun.objects.filter(run_id=run_uuid)
-        .values_list(
-            "status",
-            flat=True,
-        )
-        .first()
-    )
-    if current_status is None:
-        return 0
-    _validate_model_training_status_transition(
-        current_status=current_status,
-        target_status=status,
-    )
-    normalized = _validated_model_training_run_updates({"status": status, **updates})
-    updated = AIModelTrainingRun.objects.filter(
-        run_id=run_uuid,
-        status=current_status,
-    ).update(**normalized)
-    if updated != 1:
-        raise RuntimeError(
-            "model-training status changed concurrently before persistence: "
-            f"run_id={run_uuid} expected_status={current_status}"
-        )
-    return updated
-
-
 @dataclass(frozen=True)
 class ModelTrainingFence:
     run_id: UUID

@@ -44,7 +44,7 @@ definition_of_done:
       reference: Feldownership und Versionsvertrag gegen PatientExamination, PatientExaminationReport,
         Serializer, report_persistence-Service und lx-dtypes-Vertragsimporte geprüft.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
         tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
         tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
         tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
@@ -59,7 +59,7 @@ definition_of_done:
   category: requirements
   title: LXDM-Contract-Nutzung ist vollständig inventarisiert und priorisiert
   acceptance:
-  - Jedes öffentliche Nicht-Test-Modul unter /home/admin/lx-data-models/lx_dtypes/models/contracts ist
+  - Jedes öffentliche Nicht-Test-Modul unter /lx-data-models/lx_dtypes/models/contracts ist
     mit exportierten Typen, Invarianten und vorhandenen Contract-Tests erfasst.
   - Statische und dynamische Consumer in endoreg-db sind je API-, Persistenz-, Job-, Import-/Export-,
     Authentifizierungs- oder Mediengrenze nachvollziehbar zugeordnet.
@@ -101,13 +101,13 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py
+    - cd /lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py
     timeout_seconds: 600
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py'
+      reference: bash -lc 'cd /lx-data-models && uv run pytest -q lx_dtypes/models/contracts/tests/test_knowledge_base.py'
       note: Exit-Code 0
     note: Canonical identity contract and resolver ownership reviewed; declared verifier passed (5 tests).
     assessed_by: codex-frontend-kb-resolution
@@ -124,14 +124,14 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
+    - cd /lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
       lx_dtypes/django/api/tests/test_knowledge_base_graph_api.py
     timeout_seconds: 900
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
+      reference: bash -lc 'cd /lx-data-models && uv run pytest -q lx_dtypes/django/api/tests/test_terminology_routes.py
         lx_dtypes/django/api/tests/test_knowledge_base_graph_api.py'
       note: Exit-Code 0
     note: Terminology bundle and graph option endpoints reviewed; declared verifier passed (32 tests).
@@ -149,13 +149,13 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
+    - cd /dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
     timeout_seconds: 900
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
+      reference: bash -lc 'cd /dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
         run src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts'
       note: Exit-Code 0
     note: Frontend option rendering and frontend-owned selection reviewed; ReportingShell verifier passed
@@ -175,14 +175,14 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportEditorPage.test.ts
+    - cd /dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest run src/views/reporting/__tests__/ReportEditorPage.test.ts
       src/views/reporting/__tests__/ReportExportPage.test.ts
     timeout_seconds: 900
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
+      reference: bash -lc 'cd /dev/lx-annotate/frontend && devenv shell -- npm exec -- vitest
         run src/views/reporting/__tests__/ReportEditorPage.test.ts src/views/reporting/__tests__/ReportExportPage.test.ts'
       note: Exit-Code 0
     note: Save and export requests carry the exact selected identity; editor/export verifier passed (15
@@ -412,7 +412,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/api/test_dtypes_record_persistence.py
     - -q
@@ -421,7 +421,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/api/test_dtypes_record_persistence.py -q
       note: Exit-Code 0
     - kind: code
@@ -429,22 +429,22 @@ definition_of_done:
     - kind: test
       reference: tests/schemas/test_dtypes_record_persistence_boundary.py
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/schemas/test_dtypes_record_persistence_boundary.py tests/api/test_dtypes_record_persistence.py::test_base_api_persists_full_dtypes_record
         tests/api/test_dtypes_record_persistence.py::test_base_api_rejects_unknown_nested_dtypes_record_fields
         tests/api/test_dtypes_record_persistence.py::test_report_submission_api_returns_and_retrieves_persisted_dtypes_record
         -q
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/schemas/persisted_json.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/schemas/persisted_json.py
         tests/schemas/test_dtypes_record_persistence_boundary.py
     - kind: code
       reference: endoreg_db/services/dtypes_records.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/django/api/findings_routes.py
+      reference: /lx-data-models/lx_dtypes/django/api/findings_routes.py
     - kind: test
       reference: tests/services/test_dtypes_records.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/django/api/tests/test_report_template_validate_from_ledger_api.py
+      reference: /lx-data-models/lx_dtypes/django/api/tests/test_report_template_validate_from_ledger_api.py
     - kind: command
       reference: 'Endoreg focused persistence/report lane: 75 passed'
     - kind: command
@@ -471,7 +471,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/api/test_dtypes_record_persistence.py
     - -q
@@ -480,7 +480,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/api/test_dtypes_record_persistence.py -q
       note: Exit-Code 0
     assessed_by: Codex
@@ -498,7 +498,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/app/test_lx_dtypes_import_boundary.py
     - tests/api/test_dtypes_record_persistence.py
@@ -508,7 +508,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/app/test_lx_dtypes_import_boundary.py tests/api/test_dtypes_record_persistence.py -q
       note: Exit-Code 0
     assessed_by: Codex
@@ -531,7 +531,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-data-models
+    - PYTHONPATH=/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/api/test_dtypes_record_persistence.py
     - -q
@@ -540,7 +540,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/api/test_dtypes_record_persistence.py -q
     - kind: review
       reference: lx_dtypes_host_models.py + findings_routes.py host authorization boundary
@@ -570,7 +570,7 @@ definition_of_done:
         report_persistence, dtypes_records, and focused database/API tests; persisted identities are never
         replaced by the active registry selection.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py::test_persisted_identity_beats_changed_active_knowledge_base
         tests/models/test_patient_examination_knowledge_base_identity.py::test_patient_examination_api_rejects_unknown_identity
         tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
         tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation
@@ -601,7 +601,7 @@ definition_of_done:
     - kind: document
       reference: docs/dtypes_lookup_module_entrypoint.md
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/models/test_patient_examination_knowledge_base_identity.py
         tests/views/report/test_patient_examination_report_ninja_api.py::test_explicit_frontend_identity_migrates_examination_and_report
         tests/views/report/test_patient_examination_report_ninja_api.py::test_save_submission_maps_unregistered_knowledge_base_to_422
         tests/views/report/test_patient_examination_report_ninja_api.py::test_final_submission_returns_422_and_rolls_back_failed_template_validation

@@ -189,11 +189,11 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/views/report/reimport.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/upload.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/upload.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/video_frame_annotations.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/video_frame_annotations.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/video_frame_box_annotations.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/video_frame_box_annotations.py
     - kind: code
       reference: endoreg_db/schemas/frame_annotation_ingress.py
     - kind: code
@@ -247,11 +247,11 @@ definition_of_done:
     - kind: test
       reference: tests/views/misc/test_upload_endpoints.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_upload.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_upload.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_annotations.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_annotations.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py
     - kind: test
       reference: tests/views/video/test_frame_annotation_bulk_upsert.py
     - kind: test
@@ -292,11 +292,11 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/views/misc/test_upload_endpoints.py
         -q
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_upload.py'
+      reference: bash -lc 'cd /lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_upload.py'
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pyright'
+      reference: bash -lc 'cd /lx-data-models && devenv shell -- pyright'
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_video_frame_annotations.py
+      reference: bash -lc 'cd /lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_video_frame_annotations.py
         lx_dtypes/models/contracts/tests/test_video_frame_box_annotations.py'
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/python -m pytest tests/views/video/test_frame_annotation_bulk_upsert.py
@@ -313,22 +313,22 @@ definition_of_done:
         endoreg_db/services/tabular_import_formats.py tests/services/test_preanonymized_payloads.py tests/services/test_preanonymized_watcher_ingest.py
         tests/services/test_sap_ish_import.py tests/services/test_ingest_idempotency_quarantine.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/ai_dataset.py:AIDataSetCreateContract
+      reference: /lx-data-models/lx_dtypes/models/contracts/ai_dataset.py:AIDataSetCreateContract
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/application_settings.py:ApplicationSettingsDataSetEntryPayload
+      reference: /lx-data-models/lx_dtypes/models/contracts/application_settings.py:ApplicationSettingsDataSetEntryPayload
     - kind: code
       reference: endoreg_db/views/misc/application_settings_ai_datasets.py:_parse_ai_dataset_create_options
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_ai_dataset.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_application_settings.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_application_settings.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/aiDatasetApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/aiDatasetApi.test.ts
     - kind: command
       reference: uv run pytest -q lx_dtypes/models/contracts/tests/test_ai_dataset.py lx_dtypes/models/contracts/tests/test_application_settings.py
-        (working directory /home/admin/lx-data-models; 34 passed)
+        (working directory /lx-data-models; 34 passed)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_includes_existing_datasets
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_preserves_phi_detector_contract
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_post_returns_current_duplicate_name_count
@@ -338,43 +338,43 @@ definition_of_done:
         -q (6 passed)
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/aiDatasetApi.test.ts && devenv
-        shell -- npm run type-check (working directory /home/admin/dev/lx-annotate/frontend; 12 passed;
+        shell -- npm run type-check (working directory /dev/lx-annotate/frontend; 12 passed;
         exit 0)
     - kind: document
-      reference: /home/admin/lx-data-models/docs/guides/cross-layer-validation.md
+      reference: /lx-data-models/docs/guides/cross-layer-validation.md
     - kind: document
-      reference: /home/admin/lx-data-models/docs/data-model-concept-map.yml
+      reference: /lx-data-models/docs/data-model-concept-map.yml
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/core_concepts.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/core_concepts.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/ledger/main.py
+      reference: /lx-data-models/lx_dtypes/models/ledger/main.py
     - kind: test
-      reference: /home/admin/lx-data-models/tests/test_data_model_concept_map.py
+      reference: /lx-data-models/tests/test_data_model_concept_map.py
     - kind: command
-      reference: devenv shell -- pytest -q (working directory /home/admin/lx-data-models; 636 passed,
+      reference: devenv shell -- pytest -q (working directory /lx-data-models; 636 passed,
         2 skipped)
     - kind: command
-      reference: devenv shell -- pyright (working directory /home/admin/lx-data-models; 0 errors)
+      reference: devenv shell -- pyright (working directory /lx-data-models; 0 errors)
     - kind: command
       reference: devenv shell -- make -C docs html && devenv shell -- make -C docs linkcheck (both succeeded)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models pytest tests/schemas/test_dtypes_record_persistence_boundary.py
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models pytest tests/schemas/test_dtypes_record_persistence_boundary.py
         tests/api/test_dtypes_record_persistence.py tests/services/test_medical_ledger_roundtrip.py tests/models/test_patient_examination_knowledge_base_identity.py
-        -q (working directory /home/admin/endoreg-db; 36 passed)
+        -q (working directory /endoreg-db; 36 passed)
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/adapters.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/adapters.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py
     - kind: command
-      reference: devenv shell -- pytest -q (working directory /home/admin/lx-data-models; 658 passed,
+      reference: devenv shell -- pytest -q (working directory /lx-data-models; 658 passed,
         1 skipped)
     - kind: command
       reference: devenv shell -- ruff check lx_dtypes/models/contracts/adapters.py lx_dtypes/models/contracts/core_concepts.py
-        lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py (working directory /home/admin/lx-data-models;
+        lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py (working directory /lx-data-models;
         all checks passed)
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/coreConcepts.test.ts src/api/__tests__/reportTemplatesApi.test.ts
-        && devenv shell -- npm run type-check (working directory /home/admin/dev/lx-annotate/frontend;
+        && devenv shell -- npm run type-check (working directory /dev/lx-annotate/frontend;
         20 passed; type-check exit 0)
     assessed_by: codex-dtypes-consistency-20260813
     assessed_at: '2026-08-13T11:47:01.588500Z'
@@ -567,20 +567,20 @@ definition_of_done:
     - kind: test
       reference: tests/app/test_model_import_boundaries.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/remote_data_roots.py
+      reference: /lx-data-models/lx_dtypes/models/interface/remote_data_roots.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py
+      reference: /lx-data-models/lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/interface/tests/test_remote_data_roots.py
+      reference: /lx-data-models/lx_dtypes/models/interface/tests/test_remote_data_roots.py
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pyright
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py
+      reference: bash -lc 'cd /lx-data-models && devenv shell -- pytest -q lx_dtypes/models/interface/tests/test_knowledge_base_resolver.py
         lx_dtypes/models/interface/tests/test_remote_data_roots.py'
     - kind: command
-      reference: bash -lc 'cd /home/admin/lx-data-models && devenv shell -- pyright'
+      reference: bash -lc 'cd /lx-data-models && devenv shell -- pyright'
     - kind: command
-      reference: bash -o pipefail -c 'cd /home/admin/lx-data-models && ! rg -n "(^|[[:space:]])(from|import)[[:space:]]+endoreg_db"
+      reference: bash -o pipefail -c 'cd /lx-data-models && ! rg -n "(^|[[:space:]])(from|import)[[:space:]]+endoreg_db"
         lx_dtypes --glob "*.py" --glob "!**/tests/**"'
     note: Der verbindliche Prozess begrenzt Ausführungskohorten auf ein bis zwölf Modelle, priorisiert
       acht Risikodomänen und verlangt pro Kohorte Modelle, Contracts, Consumer, Migrationen, Abhängigkeiten,

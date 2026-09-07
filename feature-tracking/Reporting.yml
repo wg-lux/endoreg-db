@@ -51,11 +51,11 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
+      reference: /lx-parse/lx-data-models/lx_dtypes/data/report_template_examples/report_templates.yaml
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/models/interface/tests/test_report_template_runtime_execution.py
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_templates_api.py
     - kind: command
       reference: .devenv/state/venv/bin/pytest -q (524 passed, 2 skipped)
     - kind: command
@@ -101,26 +101,26 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_report_draft.py
-      && cd /home/admin/endoreg-db && devenv shell -- env PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/python
-      -m pytest tests/views/patient_examination/test_patient_examination_draft_viewset.py -q && cd /home/admin/dev/lx-annotate/frontend
+    - cd /lx-data-models && devenv shell -- pytest -q lx_dtypes/models/contracts/tests/test_report_draft.py
+      && cd /endoreg-db && devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/python
+      -m pytest tests/views/patient_examination/test_patient_examination_draft_viewset.py -q && cd /dev/lx-annotate/frontend
       && devenv shell -- npm exec -- vitest run src/api/__tests__/reportDraftApi.test.ts
     timeout_seconds: 900
   assessment:
     status: verified
     evidence:
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/report_draft.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/report_draft.py
     - kind: code
       reference: endoreg_db/schemas/report_draft.py
     - kind: code
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/reportDraftApi.ts
+      reference: /dev/lx-annotate/frontend/src/api/reportDraftApi.ts
     - kind: test
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/tests/test_report_draft.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_report_draft.py
     - kind: test
       reference: tests/views/patient_examination/test_patient_examination_draft_viewset.py
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts
     - kind: command
       reference: 'lx_dtypes report-draft tests: 9 passed; focused Pyright 0 errors; Ruff passed'
     - kind: command
@@ -158,7 +158,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py
         tests/services/test_report_materialization_contracts.py tests/views/report/test_report_stream.py
         tests/services/test_report_llm_jobs.py -q (21 passed)
     - kind: test
@@ -186,7 +186,7 @@ definition_of_done:
     command:
     - bash
     - -lc
-    - cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- src/api/__tests__/reportTemplateBuilderApi.test.ts
+    - cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- src/api/__tests__/reportTemplateBuilderApi.test.ts
       src/api/__tests__/reportTemplatesApi.test.ts src/stores/__tests__/reportingFlow.template.spec.ts
       src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts src/views/reporting/__tests__/FindingsCapturePage.test.ts
       src/views/reporting/__tests__/ReportEditorPage.test.ts
@@ -195,21 +195,21 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /home/admin/dev/lx-annotate/frontend && devenv shell -- npm run test:unit
+      reference: bash -lc 'cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit
         -- src/api/__tests__/reportTemplateBuilderApi.test.ts src/api/__tests__/reportTemplatesApi.test.ts
         src/stores/__tests__/reportingFlow.template.spec.ts src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
         src/views/reporting/__tests__/FindingsCapturePage.test.ts src/views/reporting/__tests__/ReportEditorPage.test.ts'
       note: Exit-Code 0
     - kind: test
-      reference: /home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; src/stores/__tests__/reportingFlow.template.spec.ts;
+      reference: /dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; src/stores/__tests__/reportingFlow.template.spec.ts;
         Frontend-Gesamtlauf 82 Dateien/413 Tests bestanden
     - kind: test
       reference: tests/views/patient_examination/test_patient_examination_draft_viewset.py (7 bestanden)
     - kind: test
-      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts
+      reference: '/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts
         (Frontend-Gesamtlauf: 82 Dateien, 413 Tests bestanden)'
     - kind: test
-      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts;
+      reference: '/dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; /dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts;
         vollständiger Frontend-Lauf: 82 Dateien, 413 Tests bestanden'
     - kind: command
       reference: /var/lib/lx-annotate/staticfiles/main.js SHA-256 7868bc2f69ca1af02b9faf05c9fdb67fb6cc6c0b7587f59ef87524b19c0ddaf2;
@@ -240,11 +240,11 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_template_routes_extra.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_report_template_routes_extra.py
       note: Builder-Routen prüfen anonymen Zugriff, getrennte Read-/Write-Kapazitäten und fail-closed
         Verhalten.
     - kind: test
-      reference: /home/admin/endoreg-db/tests/authz/test_lx_dtypes_report_template_access.py
+      reference: /endoreg-db/tests/authz/test_lx_dtypes_report_template_access.py
       note: Host-Integration prüft sechs Rollen- und Fail-Closed-Fälle.
     note: Serverseitige Authentifizierung sowie getrennte Read-/Write-Kapazitäten und Fail-Closed-Tests
       sind implementiert. Offen bleiben Auditierung, explizite Modul-/Center-Scopes, CSRF-/Paralleländerungstests
@@ -272,11 +272,11 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: '/home/admin/dev/lx-annotate/frontend/src/api/__tests__/reportingLanguagesApi.test.ts;
-        /home/admin/dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts; /home/admin/dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportEditorPage.test.ts
+      reference: '/dev/lx-annotate/frontend/src/api/__tests__/reportingLanguagesApi.test.ts;
+        /dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts; /dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportEditorPage.test.ts
         (Frontend-Gesamtlauf: 82 Dateien, 411 Tests bestanden)'
     - kind: test
-      reference: /home/admin/lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py
+      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py
         (1 bestanden; Pyright 0 Fehler)
     - kind: code
       reference: endoreg_db/models/report/patient_examination_report.py
@@ -291,14 +291,14 @@ definition_of_done:
     - kind: command
       reference: migration backfill tests 7 passed; report/API subset 39 passed
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/terminology_catalog.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/terminology_catalog.py
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/knowledge_base/report_template/ReportTemplateSection.py
+      reference: /lx-data-models/lx_dtypes/models/knowledge_base/report_template/ReportTemplateSection.py
     - kind: test
-      reference: '/home/admin/lx-data-models focused localization/route lane: 19 passed, 1 skipped; route
+      reference: '/lx-data-models focused localization/route lane: 19 passed, 1 skipped; route
         contract 3 passed, 1 skipped; full 645-test collection exit 0'
     - kind: test
-      reference: '/home/admin/dev/lx-annotate localized reporting/API lane: 29 passed; both type-check
+      reference: '/dev/lx-annotate localized reporting/API lane: 29 passed; both type-check
         lanes passed'
     - kind: test
       reference: 'Endoreg indication compatibility endpoint: Pyright 0; 6 tests passed'
@@ -335,14 +335,14 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_export_boundary.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_report_export_boundary.py
         tests/authz/test_report_llm_policy.py tests/views/report/test_report_stream.py tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_reimport_returns_404_for_cross_center_access
         tests/views/report/test_report_llm_status.py::ReportLlmStatusScopeTests::test_report_llm_job_status_returns_404_for_cross_center_access
         tests/views/media/test_center_scoped_reads.py::CenterScopedReadTests::test_report_stream_is_denied_outside_center_scope
         tests/views/media/test_hub_transfer_endpoints.py::HubTransferEndpointTests::test_raw_report_upload_is_rejected
         -q (21 passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright tests/services/test_report_export_boundary.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright tests/services/test_report_export_boundary.py
         (0 errors)
     - kind: code
       reference: endoreg_db/views/report/report_stream.py; endoreg_db/views/report/reimport.py; endoreg_db/views/media/hub/transfers.py;
@@ -504,16 +504,16 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: /home/admin/lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; /home/admin/lx-anonymizer/lx_anonymizer/report_contracts.py;
-        /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
+      reference: /lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; //lx-anonymizer/lx_anonymizer/report_contracts.py;
+        //lx-anonymizer/lx_anonymizer/report_reader.py
     - kind: test
-      reference: /home/admin/lx-data-models/tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py
-        (5 passed); /home/admin/lx-anonymizer/tests/test_report_reader_contract.py (8 passed)
+      reference: /lx-data-models/tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py
+        (5 passed); //lx-anonymizer/tests/test_report_reader_contract.py (8 passed)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer python
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models://lx-anonymizer python
         -m pytest tests/import_files/test_report_anonymization_contract.py -q (2 passed)
     - kind: document
-      reference: docs/report_import_concurrency_implementation.md; /home/admin/lx-anonymizer/docs/report_pipeline_concurrency_contract.md
+      reference: docs/report_import_concurrency_implementation.md; //lx-anonymizer/docs/report_pipeline_concurrency_contract.md
     note: Der einzige serialisierbare Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn
       ohne lokale Modellduplikate oder ältere Reader-Fallbacks, und der aktuelle lokale Endoreg-Vertragstest
       besteht. Verifizierung bleibt bis zur Veröffentlichung einer neuen, unverbrauchten lx-dtypes-Version
@@ -549,7 +549,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: document
-      reference: /home/admin/lx-parse/lx-data-models/docs/guides/report-concept-coverage.md
+      reference: /lx-parse/lx-data-models/docs/guides/report-concept-coverage.md
     note: Technische Coverage-, Authoring- und Freigabedokumentation ist ergänzt. Vollständige Nutzer-,
       Betriebs-, Berechtigungs- und klinische Fachdokumentation steht noch aus.
     assessed_by: Codex

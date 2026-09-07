@@ -9,6 +9,7 @@ import pytest
 
 import endoreg_db.services.hub.media_integrity as media_integrity
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hub.media_integrity import (
@@ -54,7 +55,11 @@ def _fake_video(
             video_hash=video_hash,
             raw_file=_FakeFieldFile(raw_file_name),
             processed_file=_FakeFieldFile(processed_file_name),
-            state=SimpleNamespace(anonymization_validated=state_validated),
+            state=SimpleNamespace(
+                anonymization_validated=state_validated, anonymized=True
+            ),
+            video_meta=object(),
+            sensitive_meta=object(),
         ),
     )
 
@@ -84,6 +89,7 @@ class _FakeUploadJob:
         processing_provenance: dict[str, Any] | None = None,
     ) -> None:
         self.content_hash = content_hash
+        self.source_center_id: int | None = 1
         self.content_type = content_type
         self.source_system = source_system
         self.storage_tier = storage_tier
@@ -157,6 +163,49 @@ def test_check_video_media_integrity_reports_state_not_validated() -> None:
     assert result.ok is False
     assert result.status == MediaIntegrityStatus.STATE_NOT_VALIDATED
     assert result.media_pk == 1
+
+
+def test_processing_replay_does_not_require_or_grant_human_review() -> None:
+    video = _fake_video(
+        pk=1,
+        video_hash="unapproved",
+        raw_file_name="raw.bin",
+        processed_file_name="processed.bin",
+        state_validated=False,
+    )
+    with (
+        patch.object(media_integrity, "file_exists", _always_exists),
+        patch.object(media_integrity, "field_file_is_readable", _always_true),
+    ):
+        result = check_video_media_integrity(
+            video, content_hash="unapproved", require_review=False
+        )
+    assert result.ok
+    assert video.state is not None
+    assert video.state.anonymization_validated is False
+
+
+@pytest.mark.parametrize("missing_field", ["video_meta", "sensitive_meta"])
+def test_processing_replay_reports_missing_metadata_even_with_raw_media(
+    missing_field: str,
+) -> None:
+    video = _fake_video(
+        pk=1,
+        video_hash="missing-meta",
+        raw_file_name="raw.bin",
+        processed_file_name="processed.bin",
+        state_validated=False,
+    )
+    setattr(video, missing_field, None)
+    with (
+        patch.object(media_integrity, "file_exists", _always_exists),
+        patch.object(media_integrity, "field_file_is_readable", _always_true),
+    ):
+        result = check_video_media_integrity(
+            video, content_hash="missing-meta", require_review=False
+        )
+    assert result.status == MediaIntegrityStatus.METADATA_MISSING
+    assert result.missing_artifacts == (missing_field,)
 
 
 def test_check_video_media_integrity_preanonymized_does_not_require_raw_file(
@@ -344,3 +393,20 @@ def test_check_upload_job_media_integrity_dispatches_video(
     )
     assert result.ok is True
     assert result.media_pk == 11
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("content_type", ["video/mp4", "application/pdf"])
+def test_upload_integrity_never_uses_another_centers_media(content_type: str) -> None:
+    own = Center.objects.create(name="Integrity Own")
+    foreign = Center.objects.create(name="Integrity Foreign")
+    if content_type == "video/mp4":
+        VideoFile.objects.create(center=foreign, video_hash="foreign-integrity")
+    else:
+        RawPdfFile.objects.create(center=foreign, pdf_hash="foreign-integrity")
+    job = UploadJob.objects.create(
+        source_center=own, content_type=content_type, content_hash="foreign-integrity"
+    )
+    result = check_upload_job_media_integrity(job)
+    assert result.status == MediaIntegrityStatus.MEDIA_RECORD_MISSING
+    assert result.media_pk is None

@@ -3,7 +3,7 @@
 # Endoreg-DB CLI helpers
 #
 # Usage:
-#   source /home/admin/endoreg-db/scripts/endoreg_aliases.sh
+#   source /endoreg-db/scripts/endoreg_aliases.sh
 #
 # Optional environment variables:
 #   ENDOREG_BASE_URL=http://localhost:8000/api

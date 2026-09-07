@@ -22,7 +22,7 @@ source_documents:
 - path: docs/deployment_note_hub_contract.md
   disposition: reference
   note: Existing hub and site node roles and fail-closed transport contract.
-- path: /home/admin/luxnix/docs/hardware-setup.md
+- path: ../luxnix/docs/hardware-setup.md
   disposition: reference
   note: Current declarative disk and persistent-storage provisioning context.
 definition_of_done:

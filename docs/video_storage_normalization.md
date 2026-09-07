@@ -5,6 +5,61 @@ This document is the operational and architecture runbook for the
 feature. The feature definition in YAML Ain't Markup Language (YAML) format is
 the only authoritative source for implementation and approval status.
 
+## Import reservation and delivery recovery
+
+Queued imports reserve a database lease with owner `queued-task:<Celery task ID>`.
+The first delivery atomically claims that reservation as `execution-<UUID>`, using
+a fresh universally unique identifier (UUID), and
+increments its fencing epoch. A second delivery, including the same Celery task
+identifier, cannot acquire that live execution lease. Only the heartbeat renews
+an execution lease. Completion is checked under the same row lock as acquisition.
+Celery retries a busy delivery at the configured lease heartbeat interval, bounded
+between 10 and 60 seconds, without incrementing the upload's processing retry
+counter. After worker loss, the delivery can reclaim an expired lease; the old
+fencing epoch can no longer publish. A completed upload returns success idempotently.
+Legacy unnamespaced task owners are potentially active execution owners and are
+never treated as queued reservations. Recovery must wait for expiry or follow the
+explicit operator recovery contract.
+
+Import success still requires raw and processed HTTP Live Streaming (HLS)
+artifacts to be ready. An import can claim queued HLS work inline under the
+existing artifact row lock, replacing its attempt key so a delayed delivery is
+fenced. It never displaces an active encoder. While joining active work it polls
+only database ownership and status, retains the import heartbeat, checks its
+execution guard, and fails if the configured encoding wait timeout expires.
+Waiting does not repeatedly hash or decrypt the source, and a join does not
+repeatedly force regeneration. Existing Celery task runtime limits still apply
+to the whole import; this coordination does not extend those limits.
+
+## Database recovery and version mismatches
+
+Video import and HLS Celery deliveries retry database connection failures,
+missing-table/column errors, and a PostgreSQL NOT NULL violation for a column
+absent from the installed model. Retry delays grow from 60 seconds to a maximum
+of 15 minutes, with no retry-count limit. Driver error text is not placed in
+Celery retry payloads because it can contain protected row values. An ordinary
+NOT NULL violation for a known model field or an unknown programming error is
+not classified as a recoverable version mismatch.
+
+Imports retain their source, lease, and processing retry budget during these
+failures. Redelivery must wait for the old lease to expire and acquire a fresh
+fencing epoch. HLS retains encrypted staged and published output when database
+commit status is uncertain. Redelivery reuses READY output, resumes VALIDATED
+publication, or waits for the existing MATERIALIZING attempt to become stale.
+It does not mark an uncertain commit failed or delete its potentially committed
+output. Existing source identity, encryption, validation, and ownership checks
+remain mandatory.
+
+Backfill reservation exceptions produce a redacted per-artifact failure and
+allow the remaining batch to run; any failure still makes the command exit
+nonzero. A subsequent invocation re-evaluates readiness and reservations. The
+command itself does not install a scheduler: automatic redispatch requires the
+deployment's recurring backfill invocation, and Celery retries require an
+operational broker and worker. A database schema newer than the installed
+runtime requires deployment of a compatible release; retries do not repair the
+schema, downgrade it, or manufacture encoding-profile defaults. These changes
+must be present in the deployed worker to protect its deliveries.
+
 ## Terms and Abbreviations
 
 - **MPEG-4 Part 14 (MP4):** the Moving Picture Experts Group container format
@@ -168,6 +223,15 @@ requests arriving before replacement. This repository does not yet contain
 production evidence that the full corpus has converged, and the tracker records
 open backfill admission and accounting defects; therefore automatic dispatch
 must not be described as completed production backfill.
+
+Playlist admission, materialization, and reconciliation check the playlist and
+every referenced segment. Subsequent key and segment requests check the current
+source identity, encoder profile, generation, playlist, and segment directory
+without enumerating unrelated segments while holding the video row lock. Each
+segment request also resolves and checks its requested file inside the protected
+directory. Missing requested files fail closed immediately; missing sibling files
+are detected on their own request or the next complete readiness check. These
+checks do not use a readiness cache.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50

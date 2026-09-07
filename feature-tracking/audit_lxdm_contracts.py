@@ -245,11 +245,11 @@ symbols/re-exports, mechanically detectable invariants and tests, and static or
 dynamic references in Endoreg. Absence of an import is classified as uncertain,
 not as proof that the contract is obsolete.
 
-Regenerate from `/home/admin/endoreg-db`:
+Regenerate from `endoreg-db`:
 
 ```bash
 .devenv/state/venv/bin/python feature-tracking/audit_lxdm_contracts.py \\
-  --lxdm-root /home/admin/lx-data-models \\
+  --lxdm-root /lx-data-models \\
   --output docs/lxdm_contract_inventory.md
 ```
 
@@ -262,9 +262,7 @@ Regenerate from `/home/admin/endoreg-db`:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--lxdm-root", type=Path, default=Path("/home/admin/lx-data-models")
-    )
+    parser.add_argument("--lxdm-root", type=Path, default=Path("/lx-data-models"))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     content = generate(args.lxdm_root.resolve(), Path.cwd().resolve())

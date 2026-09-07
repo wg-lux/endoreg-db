@@ -104,13 +104,13 @@ definition_of_done:
       - lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py
       - lx_dtypes/models/contracts/tests/test_dicom_export.py
       - -q
-      working_directory: /home/admin/lx-data-models
+      working_directory: /lx-data-models
     timeout_seconds: 300
   assessment:
     status: verified
     evidence:
     - kind: command
-      reference: cd /home/admin/lx-data-models && devenv shell -- .devenv/state/venv/bin/pytest -o addopts=''
+      reference: cd /lx-data-models && devenv shell -- .devenv/state/venv/bin/pytest -o addopts=''
         --ds=lx_dtypes.django_settings_ci_test lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py
         lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py lx_dtypes/models/contracts/tests/test_dicom_export.py
         -q (18 passed)

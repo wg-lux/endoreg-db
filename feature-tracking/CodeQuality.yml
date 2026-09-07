@@ -39,13 +39,13 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (35 reviewed
+      reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (35 reviewed
         findings; 0 confirmed deletion candidates; 5 compatibility candidates; no new, stale, or expired
         entries)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
         tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
         passed)
     - kind: command
@@ -79,13 +79,13 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py after
+      reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py after
         six cleanup cohorts (0 confirmed deletion candidates; 5 compatibility candidates)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after the canonical Root URLConf
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright after the canonical Root URLConf
         cleanup (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/test_app_startup.py tests/docs/test_show_urls_contract.py
         tests/test_resolve.py tests/utils/test_api_urls.py tests/scripts/test_check_dead_code.py -q (22
         passed)
     - kind: command
@@ -95,24 +95,24 @@ definition_of_done:
       reference: Internal Django/settings/package search plus lx-annotate, LuxNix, lx-data-models and
         lx-anonymizer consumer searches found no endoreg_db.urls.root_urls consumer.
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest --collect-only -q (2800 tests collected
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest --collect-only -q (2800 tests collected
         after removal)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/fileserver/test_whitenoise_file_serving.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/fileserver/test_whitenoise_file_serving.py
         tests/dataloader/test_dataloader.py tests/dataloader/test_dataloader_foreign_keys.py tests/dataloader/test_dataloader_missing_tables.py
         -q (28 passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
         tests/views/anonymization/test_validate_view.py tests/utils/test_media_urlpatterns_contract.py
         -q (33 passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python manage.py show_urls --format csv
+      reference: /endoreg-db/.devenv/state/venv/bin/python manage.py show_urls --format csv
         (canonical validate routes resolve to endoreg_db.views.anonymization.validate.AnonymizationValidateView)
     - kind: review
       reference: SensitiveMeta private wrapper and video frame-cache legacy path consumer/history audit;
         no internal, dynamic or known external consumers
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
         passed)
     note: Bestätigte Dead-Code-Kohorten entfernten zusätzlich drei private SensitiveMeta-Delegationsmethoden,
       den unverdrahteten Legacy-Frame-Cache-Anonymisierungspfad samt ausschließlich abhängigen Helfern
@@ -153,14 +153,14 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139
         passed)
     - kind: code
       reference: AIDataSet-Modell ohne endoreg_db.services-Importe und sieben entfernte Workflow-Fassaden;
         SensitiveMetaUpdateSerializer als reine DRF-Validierungsgrenze; typisierter atomarer Service in
         endoreg_db/services/sensitive_meta_update.py; AST-Nullregeln in tests/app/test_clean_layer_cohorts.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations);
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations);
         integrierter Pytest-Lauf über 13 Boundary-/Runtime-Dateien (90 passed)
     note: Die AIDataSet-Kohorte besitzt nun keine Model→Service-Abhängigkeit und keine der sieben Legacy-Servicefassaden;
       bekannte Consumer in Endoreg, lx-annotate und lx-data-models sind auf direkte Services migriert
@@ -211,7 +211,7 @@ definition_of_done:
     - kind: test
       reference: tests/utils/test_names.py::test_guess_name_gender_propagates_unexpected_detector_failure
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
         -q (14 passed)
     - kind: code
       reference: endoreg_db/config/env.py::EnvironmentValueError; env_bool; env_int; env_float
@@ -219,7 +219,7 @@ definition_of_done:
       reference: tests/environment/test_env.py (typed parser defaults, accepted values, safe failures,
         chaining, finite-float contract)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations)
     - kind: code
       reference: endoreg_db/config/env.py::env_choice; env_int(minimum=...); typed job-mode getters
     - kind: code
@@ -229,7 +229,7 @@ definition_of_done:
       reference: devenv tasks run quality:code-regression (passed in 296s after typed job-configuration
         cohort)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_video_reimport_jobs.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/services/test_video_reimport_jobs.py
         tests/services/test_report_llm_jobs.py tests/services/test_video_post_validation_jobs.py tests/services/test_video_temporal_inference.py
         tests/services/test_model_training_jobs.py tests/services/test_model_training_jobs_unit.py tests/test_celery_config_checks.py
         tests/test_app_startup.py -q (148 passed)
@@ -239,13 +239,13 @@ definition_of_done:
     - kind: test
       reference: tests/scripts/test_check_quality_boundaries.py::test_bare_except_is_broad_and_causes_baseline_drift
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after bare-except guard cohort
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright after bare-except guard cohort
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_check_quality_boundaries.py
         -q (4 passed)
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+      reference: '/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
         after bare-except guard cohort (existing drift blocker: baseline 406, current tree 411; no bare
         except findings)'
     - kind: code
@@ -255,16 +255,16 @@ definition_of_done:
       reference: tests/views/video/test_frame_annotation_bulk_upsert.py (atomic rollback after annotation
         insert, HTTP 409/503/500 mapping, redaction, unexpected-error propagation)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after frame-annotation write-boundary
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright after frame-annotation write-boundary
         cohort (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_bulk_upsert.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_bulk_upsert.py
         -q (12 passed, 2 subtests passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_task_endpoints.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/views/video/test_frame_annotation_task_endpoints.py
         tests/views/video/test_annotation_access_controls.py -q (31 passed)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+      reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
         after frame-annotation write-boundary cohort (broad-handler debt reduced from current-tree 411
         to 410; reviewed baseline remains 406 and was not rewritten)
     note: Der zentrale Environment-Adapter validiert geschlossene, literal-typisierte Job- und Frame-Source-Modi
@@ -304,35 +304,35 @@ definition_of_done:
       reference: Direct exact fast marker lane (1327 passed, 1 skipped, 36 warnings, 803 subtests passed
         in 291.82s)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
         tests/scripts/test_check_route_matrix.py -q (10 task/route guard tests passed across focused runs)
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (clean:
+      reference: '/endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py (clean:
         35 reviewed findings, 0 confirmed deletion candidates, 5 compatibility candidates)'
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+      reference: '/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
         (clean: 409 reviewed broad handlers, 141 reviewed type suppressions)'
     - kind: command
       reference: nix-instantiate --parse devenv.nix (passed)
     - kind: document
       reference: docs/code_quality.md#reproduzierbarer-qualitätslauf
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright after typed gender_guesser boundary
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright after typed gender_guesser boundary
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+      reference: '/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
         (clean: 408 broad handlers, 140 type suppressions)'
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/utils/test_names.py tests/media/report/test_sensitive_meta_logic.py
         -q (14 passed)
     - kind: command
       reference: devenv tasks run quality:code-regression (passed in 336s after typed environment-parser
         cohort)
     - kind: command
-      reference: '/home/admin/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+      reference: '/endoreg-db/.devenv/state/venv/bin/python scripts/check_quality_boundaries.py
         (clean: 406 broad handlers, 140 type suppressions)'
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/test_app_startup.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/test_app_startup.py
         tests/test_celery_config_checks.py tests/services/test_environment_readiness_unit.py tests/utils/test_storage_profile.py
         tests/services/test_video_storage_normalization.py -q (102 passed)
     note: Der offizielle Qualitätslauf bleibt verifiziert. Die Environment-Parser-Kohorte reduziert den
@@ -382,7 +382,7 @@ definition_of_done:
     - kind: test
       reference: tests/environment/test_env.py (subprocess-isolierte Dotenv-Quellpräzedenz und Snapshot-Redaktion)
     - kind: test
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/deployment/test_prod_settings_contract.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/deployment/test_prod_settings_contract.py
         tests/test_app_startup.py tests/services/test_environment_readiness_unit.py tests/test_celery_config_checks.py
         tests/utils/test_paths.py -q (101 passed)
     - kind: test
@@ -395,16 +395,16 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/config/env.py::_configured_path_value; build_protected_runtime_env; env_path
     - kind: test
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/utils/test_paths.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/utils/test_paths.py
         tests/deployment/test_prod_settings_contract.py tests/test_app_startup.py tests/services/test_environment_readiness_unit.py
         -q (104 passed)
     - kind: command
       reference: devenv tasks run quality:code-regression (passed in 391s)
     - kind: test
-      reference: /home/admin/dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
+      reference: /dev/lx-annotate/.venv/bin/pytest tests/system/test_secretspec_environment_contract.py
         tests/system/test_config_unit.py -q (32 passed)
     - kind: command
-      reference: nix-instantiate --parse /home/admin/dev/lx-annotate/devenv.nix (passed)
+      reference: nix-instantiate --parse /dev/lx-annotate/devenv.nix (passed)
     - kind: review
       reference: LuxNix supplies explicit protected roots; lx-annotate resolves its empty Secretspec sentinel
         to DATA_DIR in devenv.nix before exporting the Python runtime environment
@@ -533,10 +533,10 @@ definition_of_done:
     - kind: test
       reference: tests/services/test_frame_annotation_bucket_builders_unit.py
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external missing-stub
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external missing-stub
         warning)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest focused bucket-builder and workflow
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest focused bucket-builder and workflow
         cohort -q (22 passed)
     note: Alle fünf Akzeptanzpunkte gegen 18 direkte AAA-Tests, 100-Prozent-Service-Coverage und 22 bestandene
       direkte plus Workflow-Regressionen geprüft.
@@ -568,10 +568,10 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py -q
       note: Exit-Code 0
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external lx_anonymizer
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 external lx_anonymizer
         missing-stub warning)
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/ai/test_segmentation_retraining_lx_ai_core.py
         tests/ai/test_trainer_multilabel_unit.py tests/ai/test_aidataset_training_manifest.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_train_image_multilabel_model_command_forwards_selected_backbone_and_feature_mode
         -q (18 passed)
     note: 'Alle vier Akzeptanzpunkte wurden direkt geprüft: reale installierte lx-ai-core-Verträge, persistierter

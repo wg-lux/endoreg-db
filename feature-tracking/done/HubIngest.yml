@@ -114,7 +114,7 @@ definition_of_done:
     - shell
     - --
     - env
-    - PYTHONPATH=/home/admin/lx-parse/lx-data-models
+    - PYTHONPATH=/lx-parse/lx-data-models
     - .devenv/state/venv/bin/pytest
     - tests/services/test_sap_ish_clinical.py
     - tests/services/test_sap_ish_import.py
@@ -244,7 +244,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+      reference: 'PYTHONPATH=/lx-data-models focused hub boundary suite: 62 passed'
     note: Canonical transfer-key replay now compares source center, modes, policies, schema version, resource
       rows, processing snapshot and sender-managed provenance; changed replays return 409 and exact replays
       remain idempotent.
@@ -266,7 +266,7 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: 'PYTHONPATH=/home/admin/lx-data-models focused hub boundary suite: 62 passed'
+      reference: 'PYTHONPATH=/lx-data-models focused hub boundary suite: 62 passed'
     note: Source-center claims are bound to authenticated node ownership; cross-node and cross-center
       resource-hash collisions persist INCONSISTENT without mutating existing video/report rows, and conflicted
       media uploads are rejected.

@@ -53,7 +53,7 @@ definition_of_done:
     evidence:
     - kind: code
       reference: endoreg_db/services/jobs/heavy_jobs.py; endoreg_db/config/settings/base.py; endoreg_db/import_files/processing/report_processing/report_anonymization.py;
-        /home/admin/lx-anonymizer/lx_anonymizer/report_reader.py
+        //lx-anonymizer/lx_anonymizer/report_reader.py
     - kind: test
       reference: 'Endoreg packaged-runtime pytest: 42 passed; lx-anonymizer focused pytest: 7 passed'
     - kind: command
@@ -73,6 +73,12 @@ definition_of_done:
   - Direkte Service- und Kommandoaufrufe umgehen Lease, Retry, Fencing, Publikation oder Cleanup nicht.
   - Der Vertrag benennt explizit, welche lokalen Locks nur Optimierungen und welche Datenbankzustände
     autoritative Cluster-Ownership sind.
+  - Queued video reservations and running deliveries have distinct owner identities; same-task redelivery
+    and legacy live owners cannot share or steal an execution epoch.
+  - Busy Celery deliveries retry until lease expiry or completion without consuming the upload processing
+    retry budget; completion is checked under the lease-acquisition row lock.
+  - Database outages and identified runtime/schema mismatches preserve import ownership and sources, retry
+    with capped backoff without consuming the processing budget, and never become duplicate-content success.
   required: true
   verification:
     kind: manual
@@ -85,9 +91,8 @@ definition_of_done:
     - kind: review
       reference: endoreg_db/import_files/video_import_service.py; endoreg_db/services/hub/ingest.py; docs/video_import_concurrency_contract.md
     - kind: test
-      reference: PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db .devenv/state/venv/bin/pytest
-        tests/services/test_video_import_service_unit.py tests/services/test_hub_ingest_import_job_contract.py
-        -q (57 passed)
+      reference: PYTHONPATH=/lx-data-models:/endoreg-db .devenv/state/venv/bin/pytest tests/services/test_video_import_service_unit.py
+        tests/services/test_hub_ingest_import_job_contract.py -q (57 passed)
     - kind: code
       reference: endoreg_db/services/report_import_state_machine.py; endoreg_db/services/report_import_fencing.py;
         endoreg_db/services/hub/upload_job_state_machine.py; endoreg_db/services/hub/upload_job_import_lease.py
@@ -103,12 +108,28 @@ definition_of_done:
       reference: tests/services/test_watcher_storage_import.py
     - kind: command
       reference: 'Kombinierte Lifecycle-/Watcher-Lane: 171 passed, 3 subtests passed, 2 warnings'
-    note: Der langlebige Inline-Watcher delegiert Videoimporte nun an process_upload_job und damit an
-      UploadJob-Lease, Heartbeat und den gefenceten VideoImportExecutionFence. Der zuvor noch erreichbare
-      direkte Legacy-Aufruf import_and_anonymize wird an diesem produktiven Einstieg nicht mehr verwendet.
-      Einmalige Migrations- und weitere Legacy-Direktpfade bleiben gesondert offen.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:01:13.926849Z'
+    - kind: test
+      reference: '2026-09-07: all-enabled SQLite HLS/import/lease/dispatch lane 69 passed; final impacted
+        lane 29 passed; task retry configuration 3 passed'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md: Import reservation and delivery recovery'
+    - kind: test
+      reference: tests/services/test_hub_ingest_import_job_contract.py::TestVideoImportJobHandoff::test_database_outage_preserves_import_source_lease_and_retry_budget;
+        tests/test_tasks.py::test_database_outage_retries_import_and_hls_delivery; tests/services/test_database_recovery.py
+    - kind: command
+      reference: '2026-09-07 final full Pyright: 0 errors, 0 warnings. SQLite database-recovery/task/import-finalization/lease/video-import
+        suite: 117 passed, 2 warnings; original focused recovery/backfill suite: 96 passed, 2 warnings.'
+    note: Video queued reservations now use queued-task:<id>; each delivery atomically receives execution-<UUID>
+      and a new fencing epoch. Same-task duplicates and legacy live owners are rejected; heartbeat alone
+      renews. Celery busy delivery raises typed lease-busy and retries at bounded heartbeat cadence, with
+      task-level max_retries=None, without changing upload retry_count. Completed jobs return idempotently
+      under the acquisition lock. Combined HLS/import/lease/dispatch lane 69 passed, final lease/dispatch/task
+      changes 29 passed, final task configuration 3 passed; Pyright clean. Full PostgreSQL process-level
+      locking and other report/legacy attempt paths remain unverified. Identified database recovery failures
+      now preserve source/lease/retry budget and propagate to unlimited Celery retries with 60-to-900-second
+      capped backoff. NOT NULL errors are no longer treated as duplicate content.
+    assessed_by: codex-gc05-20260907
+    assessed_at: '2026-09-07T09:38:15.188750Z'
 - id: video_finalization_fencing_receipt
   category: data_integrity
   title: Video-Finalisierung prüft Ownership und verlangt persistente Erfolgsevidenz
@@ -118,6 +139,9 @@ definition_of_done:
   - Ein Fehler beim Schreiben der erfolgreichen ProcessingHistory wird nicht unterdrückt und kann vom
     Aufrufer nicht als erfolgreicher Import interpretiert werden.
   - Regressionstests erzwingen die wiederholten Ownership-Prüfungen und einen laut propagierten History-Schreibfehler.
+  - Inline HLS finalization can claim queued work under its artifact lock and fences delayed deliveries,
+    while active encoders remain protected. Joining active work uses bounded database-only polling, retains
+    heartbeat and execution guards, and returns success only for both ready artifacts.
   required: true
   verification:
     kind: command
@@ -127,7 +151,7 @@ definition_of_done:
     - -q
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: endoreg_db/import_files/file_storage/state_management.py::finalize_video_success; endoreg_db/import_files/file_storage/state_management.py::_record_successful_video_processing_history
@@ -137,10 +161,17 @@ definition_of_done:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py tests/services/test_preanonymized_watcher_ingest.py
         -q (14 passed, 4 subtests passed)
-    note: Die kleinen Publikationsguards und der harte ProcessingHistory-Gate sind implementiert und typisiert
-      getestet; eine atomare Gesamtgeneration bleibt ein separates offenes Kriterium.
-    assessed_by: codex-ingest-audit-20260826
-    assessed_at: '2026-08-26T07:52:39Z'
+    - kind: test
+      reference: '2026-09-07: tests/services/test_hls_media.py and tests/import_files/test_video_finalize_success.py
+        included in all-enabled 69-pass integration lane'
+    note: Existing publication guards/history failure propagation retained. Inline queued HLS takeover
+      changes the attempt key under row lock; delayed deliveries cannot overwrite it, active encoder stays
+      protected, and completed reservations are idempotent. Active join polls only fenced DB state with
+      execution guard and bounded wait while enclosing heartbeat continues, avoiding repeated source hashing.
+      Both raw and processed readiness remain required. Focused materialization/finalization tests and
+      full Pyright pass; expanded process-level PostgreSQL/concurrent recovery acceptance remains outstanding.
+    assessed_by: codex-remote-review-20260907
+    assessed_at: '2026-09-07T09:20:52.013179Z'
 - id: preanonymized_streamability_fail_closed
   category: security
   title: Voranonymisierte Videos melden Streamable-Fehler nicht als Erfolg
@@ -197,7 +228,7 @@ definition_of_done:
         tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication;
         tests/services/test_hls_media.py::test_materialize_video_hls_failure_unlinks_partial_segments_and_keys
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/import_files/test_video_finalize_success.py
         tests/services/test_hls_media.py::test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails
         tests/services/test_hls_media.py::test_failed_forced_queue_attempt_restores_previous_ready_artifact
         tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication
@@ -278,14 +309,35 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_import_service_unit.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_video_import_service_unit.py
         tests/services/test_hub_ingest_import_job_contract.py tests/services/test_preanonymized_watcher_ingest.py
         tests/services/test_watcher_storage_import.py -q (131 passed, 4 subtests passed, 2 warnings, 78.95s)
     - kind: test
       reference: tests/services/test_video_import_service_unit.py; tests/services/test_hub_ingest_import_job_contract.py;
         tests/services/test_preanonymized_watcher_ingest.py; tests/services/test_watcher_storage_import.py
-    assessed_by: codex-advance-20260902
-    assessed_at: '2026-09-02T12:50:33.268631Z'
+    - kind: test
+      reference: tests/services/test_report_import_service_unit.py::TestSourceAndContentLockOrchestration;
+        tests/services/test_video_import_service_unit.py::TestImportOrchestration
+    - kind: command
+      reference: '2026-09-07: .devenv/state/venv/bin/pyright: 0 errors, 0 warnings; Ruff check und format
+        --check für beide geänderten Tests bestanden.'
+    - kind: command
+      reference: '2026-09-07: .devenv/state/venv/bin/pytest tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py -q: 133 passed, 2 warnings.'
+    - kind: command
+      reference: '2026-09-07: .devenv/state/venv/bin/pytest tests/services/test_ingest_idempotency_quarantine.py
+        tests/services/test_report_import_concurrency.py tests/services/test_video_import_service.py::test_same_content_imports_serialize_and_only_one_runs_heavy_work
+        -q: 18 passed, 4 warnings.'
+    note: Arrange–Act–Assert-Regressionen prüfen wiederholte abgeschlossene Report- und Videoimporte bei
+      gleichem beziehungsweise geändertem Dateinamen ohne erneute Verarbeitung. Video-Streamingfehler
+      propagieren vor Cleanup; erneute Zustellung liefert dieselbe Medieninstanz. Reportfehler erhalten
+      Quelle und Ausnahmeidentität und entfernen Ausführungs- und Mutationsguards. Sieben zusätzliche
+      parametrisierte Testfälle; ergänzende bestehende Tests prüfen Upload-Idempotenz, Quarantäne, Fehlerbehandlung
+      und Konkurrenz. Die lokale Datenbank-Lane verwendet SQLite; serviceinterne Datenbank- und Verarbeitungsgrenzen
+      sind in den Unit-Tests ersetzt. Die vollständige prozessbasierte PostgreSQL-/Produktionsstorage-Matrix
+      bleibt offen.
+    assessed_by: codex-import-aaa-20260907
+    assessed_at: '2026-09-07T11:37:18.171326Z'
 - id: import_reconciliation_and_recovery
   category: operations
   title: Partielle Importe werden sicher erkannt und wiederaufgenommen

@@ -124,13 +124,13 @@ definition_of_done:
     - kind: test
       reference: feature-tracking/test_tracker.py::test_message_cli_and_lock_acquire_surface_unread_feedback
     - kind: command
-      reference: devenv shell -- /home/admin/endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
+      reference: devenv shell -- /endoreg-db/.devenv/state/venv/bin/pytest feature-tracking/test_tracker.py
         tests/utils/test_file_operations.py -q (37 passed)
     - kind: command
       reference: devenv shell -- pyright feature-tracking/tracker.py feature-tracking/test_tracker.py
         (0 errors)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/home/admin/release-worktrees/lx-dtypes-0.2.10 .devenv/state/venv/bin/pytest
+      reference: devenv shell -- env PYTHONPATH=//release-worktrees/lx-dtypes-0.2.10 .devenv/state/venv/bin/pytest
         feature-tracking/test_tracker.py -q (32 passed)
     note: Native subagent and external codex exec backends are typed, documented, and verified.
     assessed_by: codex-feature-tracker-topology-20260803
