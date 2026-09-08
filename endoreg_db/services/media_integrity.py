@@ -1942,7 +1942,7 @@ def reconcile_upload_job_integrity(
     if not upload_path.is_file():
         return repaired, lost, report
 
-    actual_hash = sha256_file(upload_path)
+    actual_hash = _field_hash(upload_job.file)
     expected_hash = (upload_job.content_hash or "").strip()
     if not expected_hash:
         if not dry_run:

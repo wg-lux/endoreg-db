@@ -295,6 +295,8 @@ def test_unattached_upload_stays_visible_through_recovery() -> None:
             else "processing_anonymization"
         )
         assert row["import_only"] is True
+        if job_status in (UploadJob.Status.ERROR, UploadJob.Status.LOST):
+            assert "safe_reimport" not in row["upload_job"]["allowed_actions"]
         if stable_id is None:
             stable_id = row["id"]
         assert row["id"] == stable_id

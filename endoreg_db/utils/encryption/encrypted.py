@@ -33,7 +33,7 @@ from .encryption import (
 )
 
 
-IndexCacheKey: TypeAlias = tuple[str, int, int]
+IndexCacheKey: TypeAlias = tuple[str, int, int, int, int, int]
 IndexCacheValue: TypeAlias = EncryptedFileLayout
 NATIVE_DECRYPT_BATCH_BYTES = 4 * 1024 * 1024
 
@@ -126,7 +126,14 @@ class EncryptedStorage(FileSystemStorage):
     def _get_cached_index(self, name: str) -> IndexCacheValue:
         full_path = Path(self.path(name))
         stat = full_path.stat()
-        cache_key = (str(full_path), stat.st_mtime_ns, stat.st_size)
+        cache_key = (
+            str(full_path),
+            stat.st_dev,
+            stat.st_ino,
+            stat.st_ctime_ns,
+            stat.st_mtime_ns,
+            stat.st_size,
+        )
         cached = self._index_cache.get(cache_key)
         if cached is not None:
             return cached

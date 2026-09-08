@@ -7,7 +7,7 @@ import logging
 import hashlib
 import time
 from collections.abc import Callable, Iterable
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator, NotRequired, Protocol, TypedDict, cast
@@ -101,6 +101,9 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.paths import to_storage_relative
 from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.utils.encryption.encryption import MAGIC
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 from endoreg_db.utils.permissions import is_debug_mode
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
@@ -752,32 +755,52 @@ def _ensure_upload_job_local_file(
     *,
     lease: UploadJobImportLease,
 ) -> Generator[Path, None, None]:
-    try:
-        with ensure_local_file(job.file) as file_path:
+    with ExitStack() as stack:
+        try:
+            file_path = stack.enter_context(ensure_local_file(job.file))
+        except OSError:
+            pass
+        else:
             yield Path(file_path)
             return
-    except OSError as storage_exc:
         fallback_path = _safe_existing_media_root_path(job.file.name)
         if fallback_path is None:
-            raise storage_exc
-        fallback_hash = sha256_file(fallback_path)
+            raise FileNotFoundError("Upload source is unavailable")
+        with fallback_path.open("rb") as source:
+            encrypted = source.read(len(MAGIC)) == MAGIC
+        if encrypted:
+            storage = EncryptedStorage(location=fallback_path.parent)
+            plaintext_size = storage.get_plaintext_size(fallback_path.name)
+            plaintext_path = path_utils.TRANSCODING_DIR / (
+                f"upload-source-{uuid.uuid4().hex}{fallback_path.suffix}"
+            )
+            stack.callback(safe_unlink_file, plaintext_path, missing_ok=True)
+            atomic_write_file(
+                destination=plaintext_path,
+                content=storage.iter_decrypted_range(
+                    fallback_path.name, start=0, end=plaintext_size - 1
+                ),
+                required_bytes=plaintext_size,
+                file_mode=0o600,
+            )
+        else:
+            plaintext_path = fallback_path
+        fallback_hash = sha256_file(plaintext_path)
         with locked_upload_job_import_lease(lease) as owned_job:
             if owned_job.content_hash and fallback_hash != owned_job.content_hash:
-                raise IOError(
-                    "Fallback upload source failed content-hash verification"
-                ) from storage_exc
+                raise IOError("Fallback upload source failed content-hash verification")
             if not owned_job.content_hash:
                 owned_job.content_hash = fallback_hash
                 owned_job.save(update_fields=["content_hash", "updated_at"])
             job.content_hash = owned_job.content_hash
-        logger.warning(
-            "Using verified MEDIA_ROOT fallback for upload job %s because storage "
-            "could not materialize %s: %s",
-            job.id,
-            job.file.name,
-            storage_exc,
+        emit_structured_event(
+            logger,
+            "import.verified_source_fallback",
+            level=logging.WARNING,
+            upload_job_id=str(job.id),
+            encrypted=encrypted,
         )
-        yield fallback_path
+        yield plaintext_path
 
 
 def _reserve_video_upload_import_handoff(

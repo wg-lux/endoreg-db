@@ -402,11 +402,14 @@ definition_of_done:
     höchstens eine veröffentlichte `ready`-Generation und höchstens einen aktiven `queued`-, `materializing`-
     oder `validated`-Kandidaten. Eine vorherige `ready`-Generation bleibt während der Kandidatenerzeugung
     streambar; die Publikation serialisiert auf derselben Videozeile wie die Lease-Erzeugung.
-  - Vor der HLS-Materialisierung wird die ausgewählte Raw- oder Processed-Quelle innerhalb des geschützten
-    Transcoding-Verzeichnisses idempotent gegen `clinical_h264_bounded_v1` geprüft und nur bei Abweichung
-    normalisiert. Die HLS-Kodierung verwendet danach denselben Codec-, Pixelformat-, Farbbereichs-, Bitraten-
-    und FPS-Passthrough-Vertrag; eine bereits vollständige Generation wird ohne erneute Materialisierung
-    zurückgegeben.
+  - Die HTTP-Live-Streaming-(HLS)-Materialisierung prüft die unveränderte Raw- oder Processed-Quelle im
+    geschützten Transcoding-Verzeichnis auf zulässige Dimensionen, Bildrate und Zeitachsenmetadaten. Genau
+    ein Kodierdurchlauf erzeugt daraus das begrenzte HLS-Derivat; eine vorgeschaltete temporäre MP4-Normalisierung
+    entfällt. Ausgabeprofil, vollständige Präsentationszeitstempel und Segmentgrenzen werden vor Veröffentlichung
+    gegen die ursprüngliche Quelle geprüft. Unzulässige Quellen und Ausgabeabweichungen schlagen geschlossen
+    fehl; kanonische Master werden nicht verändert. Reale Encoder-Tests weisen den einzelnen Durchlauf
+    auch für eine noch nicht profilkonforme Quelle nach. Bereits vollständige Generationen bleiben ohne
+    erneute Materialisierung wiederverwendbar.
   - Das verschlüsselte HLS-Ergebnis wird vor atomarer Veröffentlichung über eine versuchsspezifische lokale
     Prüfplaylist entschlüsselt geprobt. Codec, Pixelformat, Dimensionen, Bildrate, Dauer, Frameanzahl,
     Bitrate, Gesamtgröße und Timeline müssen dem typisierten Profil entsprechen; Abweichungen verhindern
@@ -503,6 +506,11 @@ definition_of_done:
     - kind: review
       reference: /dev/lx-annotate/frontend/package.json; /dev/lx-annotate/frontend/cypress/e2e/video-examination-annotations.cy.ts
         (keine Cypress-Lane; API vollständig gemockt; veralteter FPS-/Payload-Vertrag)
+    - kind: command
+      reference: '2026-09-08: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_hls_media.py tests/services/test_video_storage_normalization.py tests/services/test_video_storage_atomic_migration.py
+        tests/import_files/test_video_import_normalization.py tests/import_files/test_video_finalize_success.py
+        -q: 118 passed, 2 warnings; vollständiger Pyright: 0 errors, 0 warnings; fokussierter Ruff bestanden.'
     note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
       FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
       Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,
@@ -515,9 +523,14 @@ definition_of_done:
       required/queued/running/ready beziehungsweise failed, atomare HLS-Generation und Segment-PTS-Stabilität
       nach UI-Reload. Die vorhandene Cypress-Datei ist dafür keine ausführbare Evidenz: Cypress ist weder
       in package.json konfiguriert noch installiert, alle relevanten API-Aufrufe werden mit Fixtures interceptet,
-      und die Assertions verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.'
-    assessed_by: Codex
-    assessed_at: '2026-07-23T09:12:53.429224Z'
+      und die Assertions verwenden den veralteten Zeit-mal-30-FPS- sowie camelCase-Vertrag.
+
+      2026-09-08: HLS kodiert direkt aus der unveränderten geschützten Quelle; die temporäre MP4-Normalisierung
+      entfällt. Reale FFmpeg-Tests belegen genau einen Kodierdurchlauf für Raw und Processed mit profilkonformen
+      sowie konvertierungsbedürftigen Pixelformaten. Quellzulassung, Ausgabegates, Mastererhalt und Cleanup
+      bleiben geprüft. Deployment, Produktionsmessung und klinische Abnahme bleiben offen.'
+    assessed_by: codex-processed-priority-20260908
+    assessed_at: '2026-09-08T11:13:30.345923Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
@@ -851,6 +864,13 @@ definition_of_done:
   category: data_integrity
   title: WP-ER-02 READY HLS is bound to the current source generation
   acceptance:
+  - Wiederholte HLS-Quellhashprüfungen dürfen einen vollständig berechneten Klartext-SHA-256 pro Prozess
+    nur für dieselbe verschlüsselte Storage-Instanz und unveränderte Dateigeneration wiederverwenden.
+    Geräte-ID, Inode, Dateigröße, Modus sowie Nanosekunden-Änderungszeiten binden die Generation; Ersetzung,
+    In-place-Schreiben, fehlende Dateien und Änderungen während der Prüfung verhindern Wiederverwendung.
+    Der Cache ist begrenzt, pro Quelle synchronisiert und wird nach Fork verworfen. Andere Storage-Backends
+    behalten die vollständige Hashprüfung. Legacy-Datenbankhashes allein begründen keine Wiederverwendung;
+    Prozessneustarts führen zur erneuten Verifikation.
   - READY fast paths validate source content identity, artifact kind, encoder profile, and generation
     rather than relying on a source filename and shallow path existence.
   - Publication rechecks the locked current source generation after transcoding and rejects output derived
@@ -887,14 +907,28 @@ definition_of_done:
         pytest tests/views/video/test_hls_stream.py -q: 24 passed'
     - kind: document
       reference: 'docs/video_storage_normalization.md: playback readiness checks'
-    note: Current key/segment admission checks source/profile/generation/key and protected roots without
+    - kind: command
+      reference: '2026-09-08: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_video_source_hash.py tests/utils/test_encryption_range.py tests/services/test_hls_media.py
+        tests/views/video/test_hls_stream.py tests/management/commands/test_materialize_video_hls.py tests/import_files/test_video_import_normalization.py
+        tests/import_files/test_video_finalize_success.py -q: 110 passed, 2 warnings; vollständiger Pyright:
+        0 errors, 0 warnings; Ruff, git diff --check und Tracker-Validierung bestanden.'
+    note: 'Current key/segment admission checks source/profile/generation/key and protected roots without
       an O(segment-count) sibling scan; playlist/publication/reconciliation retain full-set checks. Missing
       requested segment, invalid roots, stale identity and foreign-video keys fail closed. Blank legacy
       identity rejects before hashing. Focused Pyright 0 errors; full playback view lane 24 passed with
       video/expensive switches enabled. Source-generation concurrency/full-corpus and live-load acceptance
       remain separate unverified gates.
-    assessed_by: codex-remote-review-20260907
-    assessed_at: '2026-09-07T09:00:47.048626Z'
+
+      2026-09-08: Ein begrenzter prozesslokaler Cache bindet vollständig geprüfte Klartext-SHA-256-Digests
+      an die verschlüsselte Storage-Instanz sowie Geräte-ID, Inode, Größe, Modus und Nanosekunden-Zeitstempel.
+      Quelle wird vor/nach Lookup und Hashing geprüft; Fork verwirft Cache und Sperren. Playback vertraut
+      nicht mehr allein auf persistierte Video-Hashes. Die Layout-Cache-Identität enthält zusätzlich Geräte-ID,
+      Inode und Änderungszeit. Reale verschlüsselte Dateien belegen Wiederverwendung, Konkurrenz, Ersetzung/In-place-Schreiben
+      mit restaurierter mtime, Mutation während Hashing, fehlende Dateien, Schlüsselisolation und Eviction.
+      Keine persistente oder prozessübergreifende Hashwiederverwendung; Produktionsmessung bleibt offen.'
+    assessed_by: codex-processed-priority-20260908
+    assessed_at: '2026-09-08T11:54:01.954232Z'
 - id: hls_callers_require_terminal_readiness
   category: functionality
   title: WP-ER-03 Import and correction callers enforce typed HLS outcomes
@@ -937,6 +971,12 @@ definition_of_done:
   category: operations
   title: WP-ER-04 Backfill admits viable sources and reports truthful outcomes
   acceptance:
+  - Der Backfill verarbeitet beziehungsweise disponiert alle ausgewählten Processed-Artefakte vor Raw-Artefakten.
+    Videos mit Processed-Datei und bestätigter Anonymisierung oder erstellten beziehungsweise validierten
+    Segmentannotationen kommen zuerst, danach übrige Processed-Videos, danach reine Raw-Videos. Innerhalb
+    jeder Gruppe gilt die aufsteigende Video-ID; die Priorisierung erfolgt vor dem Videolimit. Dry-Run,
+    Inline-Ausführung und Dispatch verwenden dieselbe Reihenfolge, explizite Videoauswahl und Artefaktfilter
+    bleiben wirksam. Bereits laufende oder disponierte Jobs werden nicht umgeordnet.
   - Recoverable database failures retain fenced HLS attempts and protected staged output; Celery retries
     with capped backoff until the database/runtime is repaired without reporting READY prematurely.
   - A reservation failure is reported per artifact and does not discard the remainder of a backfill batch;
@@ -972,13 +1012,19 @@ definition_of_done:
     - kind: command
       reference: '2026-09-07 final full Pyright: 0 errors, 0 warnings. SQLite database-recovery/task/import-finalization/lease/video-import
         suite: 117 passed, 2 warnings; original focused recovery/backfill suite: 96 passed, 2 warnings.'
-    note: gc-10 dispatched a raw HLS attempt whose referenced physical source was already absent. Database
-      recovery now preserves fenced staged/published output and retries identified database failures with
-      capped backoff; reservation failures no longer abort the remaining batch. SQLite failure injection
-      passed; production deployment, PostgreSQL process-level failure injection, and other admission/accounting
-      acceptance remain outstanding.
-    assessed_by: codex-gc05-20260907
-    assessed_at: '2026-09-07T09:38:06.939229Z'
+    - kind: command
+      reference: '2026-09-08: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/management/commands/test_materialize_video_hls.py -q: 16 passed, 2 warnings; vollständiger
+        Pyright: 0 errors, 0 warnings; Ruff und git diff --check bestanden. Priorisierung, Review-Flags,
+        stabile Reihenfolge, Limit, Video-/Artefaktfilter, Dry-Run/Inline/Dispatch und Fail-fast geprüft.
+        Keine Produktionsabnahme.'
+    note: 'Processed-Priorisierung vor dem Videolimit und vor allen Raw-Artefakten ist lokal regressionsgetestet.
+      Bestehende Blocker bleiben offen: produktionsnahe Quellenzulassung und vollständige Ergebniszählung,
+      Deployment auf gc-10 und PostgreSQL-Prozessfehlerinjektion. Die vorhandene Datenbank-Recovery bewahrt
+      eingezäunte Ausgaben und wiederholt identifizierte Datenbankfehler; Reservierungsfehler brechen
+      den restlichen Batch nicht ab.'
+    assessed_by: codex-processed-priority-20260908
+    assessed_at: '2026-09-08T11:05:43.189695Z'
 - id: hls_privacy_safe_observability
   category: security
   title: WP-ER-05 HLS failures are actionable without exposing media paths

@@ -442,13 +442,12 @@ def validate_hls_segment_and_pts_equivalence(
         )
 
 
-def validate_normalized_output(
+def assert_normalization_source_supported(
     *,
     source: VideoArtifactProbe,
-    output: VideoArtifactProbe,
     profile: VideoStorageProfile,
-    segments: list[SegmentTimelineReference] | None = None,
-) -> VideoStorageNormalizationEvidence:
+) -> None:
+    """Reject sources needing a separate resize or timeline-changing workflow."""
     if source.width > profile.max_width or source.height > profile.max_height:
         raise VideoStorageNormalizationError(
             "Source dimensions exceed profile and require explicit quarantine or "
@@ -459,6 +458,17 @@ def validate_normalized_output(
             "Source FPS exceeds profile and requires explicit quarantine or a "
             "separately approved resampling profile"
         )
+    assert_temporal_equivalence(source.timeline, source.timeline, profile=profile)
+
+
+def validate_normalized_output(
+    *,
+    source: VideoArtifactProbe,
+    output: VideoArtifactProbe,
+    profile: VideoStorageProfile,
+    segments: list[SegmentTimelineReference] | None = None,
+) -> VideoStorageNormalizationEvidence:
+    assert_normalization_source_supported(source=source, profile=profile)
     if output.width != source.width or output.height != source.height:
         raise VideoStorageNormalizationError(
             "Canonical normalization must preserve source dimensions until the "

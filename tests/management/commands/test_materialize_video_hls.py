@@ -28,7 +28,7 @@ def test_inline_backfill_non_ready_result_is_a_failure(
     from unittest.mock import Mock, patch
 
     _patch_command_preflight(monkeypatch)
-    video = _create_processed_video(center=hls_command_center)
+    video = _create_raw_and_processed_video(center=hls_command_center)
     stdout = StringIO()
     with (
         patch.object(
@@ -37,15 +37,13 @@ def test_inline_backfill_non_ready_result_is_a_failure(
             return_value=Mock(
                 as_dict=lambda: {"video_id": video.pk, "status": status},
             ),
-        ),
+        ) as materialize,
         pytest.raises(CommandError),
     ):
         call_command(
             "materialize_video_hls",
             "--apply",
             "--inline",
-            "--artifact-kind",
-            "processed",
             "--fail-fast",
             "--json",
             stdout=stdout,
@@ -54,6 +52,9 @@ def test_inline_backfill_non_ready_result_is_a_failure(
     result = json.loads(stdout.getvalue())["results"][0]
     assert result["status"] == "failed"
     assert result["materialization_status"] == status
+    materialize.assert_called_once_with(
+        video.pk, artifact_kind="processed", force=False
+    )
 
 
 @pytest.mark.django_db
@@ -226,12 +227,12 @@ def test_materialize_video_hls_command_defaults_to_both_required_artifacts(
     assert payload["audit"]["processed"]["eligible_processed_videos"] == 1
     assert payload["results"] == [
         {
-            "artifact_kind": "raw",
+            "artifact_kind": "processed",
             "status": "would_materialize",
             "video_id": video.pk,
         },
         {
-            "artifact_kind": "processed",
+            "artifact_kind": "raw",
             "status": "would_materialize",
             "video_id": video.pk,
         },
@@ -280,7 +281,136 @@ def test_materialize_video_hls_command_inline_apply_materializes_both_artifacts(
         stderr=StringIO(),
     )
 
-    assert materialized_kinds == ["raw", "processed"]
+    assert materialized_kinds == ["processed", "raw"]
+
+
+@pytest.mark.parametrize(
+    "review_flag",
+    [
+        "anonymization_validated",
+        "segment_annotations_created",
+        "segment_annotations_validated",
+    ],
+)
+@pytest.mark.django_db
+def test_backfill_prioritizes_reviewed_processed_videos_before_limit(
+    review_flag: str,
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_command_preflight(monkeypatch)
+    raw = _create_raw_video(center=hls_command_center)
+    processed = _create_processed_video(center=hls_command_center)
+    reviewed = _create_processed_video(center=hls_command_center, payload=b"reviewed")
+    reviewed_peer = _create_processed_video(center=hls_command_center, payload=b"peer")
+    for video in (raw, reviewed, reviewed_peer):
+        state = video.get_or_create_state()
+        setattr(state, review_flag, True)
+        state.save(update_fields=[review_flag])
+
+    def selected_ids(
+        *,
+        artifact_kind: str = "both",
+        limit: int | None = None,
+        video_ids: list[int] | None = None,
+    ) -> list[int]:
+        stdout = StringIO()
+        call_command(
+            "materialize_video_hls",
+            "--json",
+            artifact_kind=artifact_kind,
+            video_ids=video_ids,
+            limit=limit,
+            stdout=stdout,
+            stderr=StringIO(),
+        )
+        return list(
+            dict.fromkeys(
+                row["video_id"] for row in json.loads(stdout.getvalue())["results"]
+            )
+        )
+
+    assert selected_ids() == [reviewed.pk, reviewed_peer.pk, processed.pk, raw.pk]
+    assert selected_ids(limit=1) == [reviewed.pk]
+    assert selected_ids(video_ids=[raw.pk, processed.pk], limit=1) == [processed.pk]
+    assert selected_ids(artifact_kind="processed") == [
+        reviewed.pk,
+        reviewed_peer.pk,
+        processed.pk,
+    ]
+    assert selected_ids(artifact_kind="raw") == [raw.pk]
+
+
+@pytest.mark.parametrize("mode", ["dry_run", "inline", "dispatch"])
+@pytest.mark.django_db
+def test_backfill_finishes_processed_pass_before_any_raw_artifact(
+    mode: str,
+    hls_command_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import patch
+
+    _patch_command_preflight(monkeypatch)
+    raw = _create_raw_video(center=hls_command_center)
+    both = _create_raw_and_processed_video(center=hls_command_center)
+    processed = _create_processed_video(center=hls_command_center)
+    expected = [
+        (both.pk, "processed"),
+        (processed.pk, "processed"),
+        (both.pk, "raw"),
+        (raw.pk, "raw"),
+    ]
+    calls: list[tuple[int, str]] = []
+
+    def materialize(
+        video_id: int, *, artifact_kind: str, force: bool
+    ) -> SimpleNamespace:
+        assert force is False
+        calls.append((video_id, artifact_kind))
+        return SimpleNamespace(
+            as_dict=lambda: {
+                "video_id": video_id,
+                "artifact_kind": artifact_kind,
+                "status": "materialized",
+            }
+        )
+
+    def dispatch(
+        *, video_id: int, artifact_kind: str, force: bool
+    ) -> hls_media.HlsMaterializationDispatchResult:
+        assert force is False
+        calls.append((video_id, artifact_kind))
+        return hls_media.HlsMaterializationDispatchResult(
+            video_id=video_id,
+            artifact_kind=hls_media.coerce_hls_artifact_kind(artifact_kind).value,
+            status="queued",
+            queue=command_module.queue_for_job_kind(
+                command_module.HeavyJobKind.VIDEO_HLS_MATERIALIZATION
+            ),
+        )
+
+    stdout = StringIO()
+    args = ["--json"]
+    if mode != "dry_run":
+        args.append("--apply")
+    if mode == "inline":
+        args.append("--inline")
+    with (
+        patch.object(command_module, "ensure_secure_transport_for_job_kind"),
+        patch.object(command_module, "materialize_video_hls", side_effect=materialize),
+        patch.object(
+            command_module, "dispatch_video_hls_materialization", side_effect=dispatch
+        ),
+    ):
+        call_command("materialize_video_hls", *args, stdout=stdout, stderr=StringIO())
+
+    payload = json.loads(stdout.getvalue())
+    assert payload["selected"] == 3
+    assert payload["selected_artifacts"] == 4
+    assert [
+        (row["video_id"], row["artifact_kind"]) for row in payload["results"]
+    ] == expected
+    assert calls == ([] if mode == "dry_run" else expected)
 
 
 @pytest.mark.django_db

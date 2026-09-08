@@ -23,6 +23,9 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services import video_storage_normalization as normalization
 from endoreg_db.services.video_storage import contracts as storage_contracts
+from endoreg_db.services.video_storage.validation import (
+    assert_normalization_source_supported,
+)
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 
 
@@ -64,6 +67,47 @@ def _probe(
         size_bytes=size_bytes,
         timeline=timeline or _timeline(),
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "error"),
+    [
+        (_probe(width=4097), "Source dimensions"),
+        (_probe(height=2161), "Source dimensions"),
+        (_probe(timeline=_timeline(fps_num=121)), "Source FPS"),
+        (_probe(timeline=_timeline(variable_frame_rate=True)), "time-base metadata"),
+    ],
+)
+def test_normalization_source_admission_rejects_unsupported_input(
+    source: VideoArtifactProbe, error: str
+) -> None:
+    with pytest.raises(normalization.VideoStorageNormalizationError, match=error):
+        assert_normalization_source_supported(
+            source=source, profile=normalization.configured_video_storage_profile()
+        )
+
+
+@pytest.mark.parametrize("variable_frame_rate", [False, True])
+def test_normalization_source_admission_allows_bounded_output_conversion(
+    variable_frame_rate: bool,
+) -> None:
+    source = VideoArtifactProbe(
+        codec_name="mpeg4",
+        pixel_format="yuv444p",
+        width=1920,
+        height=1080,
+        bit_rate_bps=24_000_000,
+        size_bytes=100_000_000,
+        timeline=_timeline(
+            variable_frame_rate=variable_frame_rate,
+            time_base_num=1,
+            time_base_den=90000,
+        ),
+    )
+    profile = normalization.configured_video_storage_profile()
+    assert_normalization_source_supported(source=source, profile=profile)
+    with pytest.raises(normalization.VideoStorageNormalizationError):
+        normalization.assert_storage_compliance(source, profile=profile)
 
 
 def _ffprobe_payload(

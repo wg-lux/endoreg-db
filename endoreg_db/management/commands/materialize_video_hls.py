@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from django.core.management.base import CommandError, CommandParser
-from django.db.models import Q, QuerySet
+from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 
 from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
@@ -82,7 +82,8 @@ class Command(BaseVideoCommand):
     help = (
         "Materialize legacy encrypted video media into AES-128 encrypted HLS "
         "artifacts. Defaults to dry-run selection; use --apply to dispatch work "
-        "to the ffmpeg_media Celery queue."
+        "to the ffmpeg_media Celery queue. Processed artifacts run before raw "
+        "artifacts, with validated or segment-annotated processed videos first."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -160,7 +161,7 @@ class Command(BaseVideoCommand):
     @staticmethod
     def _artifact_kinds(artifact_kind: str) -> tuple[str, ...]:
         if artifact_kind == _BOTH_ARTIFACT_KINDS:
-            return (VideoArtifactKind.RAW.value, VideoArtifactKind.PROCESSED.value)
+            return (VideoArtifactKind.PROCESSED.value, VideoArtifactKind.RAW.value)
         try:
             return (coerce_hls_artifact_kind(artifact_kind).value,)
         except ValueError as exc:
@@ -252,40 +253,23 @@ class Command(BaseVideoCommand):
         queue: str,
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
-        for video in videos:
-            video_results, stop = self._process_video(
-                video=video,
-                run_options=run_options,
-                queue=queue,
-            )
-            results.extend(video_results)
-            if stop:
-                return results
-        return results
-
-    def _process_video(
-        self,
-        *,
-        video: VideoFile,
-        run_options: _RunOptions,
-        queue: str,
-    ) -> tuple[list[dict[str, Any]], bool]:
-        results: list[dict[str, Any]] = []
+        # Finish the selected processed pass before starting any raw artifact.
         for artifact_kind in run_options.artifact_kinds:
-            if not self._video_has_source(video, artifact_kind=artifact_kind):
-                continue
-            result, stop = self._process_artifact(
-                video_id=int(video.pk),
-                artifact_kind=artifact_kind,
-                run_options=run_options,
-                queue=queue,
-            )
-            results.append(result)
-            if not run_options.json_output:
-                self._write_result(result)
-            if stop:
-                return results, True
-        return results, False
+            for video in videos:
+                if not self._video_has_source(video, artifact_kind=artifact_kind):
+                    continue
+                result, stop = self._process_artifact(
+                    video_id=int(video.pk),
+                    artifact_kind=artifact_kind,
+                    run_options=run_options,
+                    queue=queue,
+                )
+                results.append(result)
+                if not run_options.json_output:
+                    self._write_result(result)
+                if stop:
+                    return results
+        return results
 
     def _process_artifact(
         self,
@@ -468,6 +452,21 @@ class Command(BaseVideoCommand):
                 **{source_field: ""}
             )
         queryset = VideoFile.objects.filter(source_filter).order_by("pk")
+        if VideoArtifactKind.PROCESSED.value in artifact_kinds:
+            has_processed = Q(processed_file__isnull=False) & ~Q(processed_file="")
+            has_review_work = (
+                Q(state__anonymization_validated=True)
+                | Q(state__segment_annotations_created=True)
+                | Q(state__segment_annotations_validated=True)
+            )
+            queryset = queryset.alias(
+                backfill_priority=Case(
+                    When(has_processed & has_review_work, then=Value(0)),
+                    When(has_processed, then=Value(1)),
+                    default=Value(2),
+                    output_field=IntegerField(),
+                )
+            ).order_by("backfill_priority", "pk")
         return Command.apply_video_selection(
             queryset,
             video_ids=video_ids,

@@ -324,7 +324,7 @@ def _assert_api_rooted_relative_uri(uri: str) -> None:
     assert parsed_uri.path.startswith("/endoreg-api/")
 
 
-def _write_tiny_ffmpeg_mp4(output_path: Path) -> None:
+def _write_tiny_ffmpeg_mp4(output_path: Path, *, pixel_format: str = "yuv420p") -> None:
     ffmpeg_executable = resolve_ffmpeg_executable()
     if ffmpeg_executable is None:
         pytest.skip("ffmpeg executable is not available")
@@ -347,7 +347,7 @@ def _write_tiny_ffmpeg_mp4(output_path: Path) -> None:
         "-preset",
         "ultrafast",
         "-pix_fmt",
-        "yuv420p",
+        pixel_format,
         "-c:a",
         "aac",
         "-movflags",
@@ -1001,26 +1001,51 @@ def test_materialize_video_hls_ignores_existing_processed_streamable_source(
 
 
 @pytest.mark.ffmpeg
+@pytest.mark.parametrize("pixel_format", ["yuv420p", "yuv444p"])
+@pytest.mark.parametrize("artifact_kind", ["raw", "processed"])
 def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
     hls_center: Center,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    pixel_format: str,
+    artifact_kind: str,
 ) -> None:
+    from unittest.mock import patch
+
     monkeypatch.setattr(
         hls_media.ffmpeg_wrapper,
         "get_stream_info",
         transcode_execution.get_stream_info,
     )
     source_path = tmp_path / "hls-source.mp4"
-    _write_tiny_ffmpeg_mp4(source_path)
-    video = _create_processed_video(
+    _write_tiny_ffmpeg_mp4(source_path, pixel_format=pixel_format)
+    source_probe = hls_media.probe_video_artifact(source_path)
+    assert source_probe.pixel_format == pixel_format
+    if pixel_format == "yuv444p":
+        with pytest.raises(VideoStorageNormalizationError, match="pixel format"):
+            hls_media.assert_storage_compliance(
+                source_probe, profile=hls_media.configured_video_storage_profile()
+            )
+    create_video = (
+        _create_raw_video if artifact_kind == "raw" else _create_processed_video
+    )
+    source_payload = source_path.read_bytes()
+    video = create_video(
         center=hls_center,
-        payload=source_path.read_bytes(),
+        payload=source_payload,
     )
 
-    result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    with patch.object(subprocess, "Popen", wraps=subprocess.Popen) as processes:
+        result = hls_media.materialize_video_hls(video.pk, artifact_kind=artifact_kind)
+    encoder_commands = [
+        call.args[0]
+        for call in processes.call_args_list
+        if call.args[0][0] == resolve_ffmpeg_executable()
+    ]
+    assert len(encoder_commands) == 1
+    assert encoder_commands[0][encoder_commands[0].index("-f") + 1] == "hls"
 
-    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind=artifact_kind)
     assert artifact.status == VideoHlsArtifact.Status.READY.value
     assert result.status == "materialized"
     assert result.segment_count >= 1
@@ -1051,6 +1076,45 @@ def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
         paths.transcoding / "hls_output" / str(video.pk) / result.key_id
     ).exists()
     assert not list(segment_dir.glob("*.key"))
+    assert not hls_media._temporary_plaintext_source_dir(
+        video_id=video.pk, key_id=artifact.key_id
+    ).exists()
+    video.refresh_from_db()
+    field_file = video.raw_file if artifact_kind == "raw" else video.processed_file
+    with field_file.open("rb") as retained_source:
+        assert retained_source.read() == source_payload
+
+
+@pytest.mark.ffmpeg
+def test_hls_rejects_unsupported_source_before_encoding(
+    hls_center: Center,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import patch
+
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper, "get_stream_info", transcode_execution.get_stream_info
+    )
+    source_path = tmp_path / "oversized-source.mp4"
+    _write_tiny_ffmpeg_mp4(source_path)
+    video = _create_processed_video(center=hls_center, payload=source_path.read_bytes())
+    monkeypatch.setenv("ENDOREG_VIDEO_STORAGE_MAX_WIDTH", "32")
+    with (
+        patch.object(subprocess, "Popen", wraps=subprocess.Popen) as processes,
+        pytest.raises(VideoStorageNormalizationError, match="Source dimensions"),
+    ):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    assert all(
+        call.args[0][0] != resolve_ffmpeg_executable()
+        for call in processes.call_args_list
+    )
+    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="processed")
+    assert artifact.status == VideoHlsArtifact.Status.FAILED.value
+    assert artifact.playlist_relative_path == ""
+    assert not hls_media._temporary_plaintext_source_dir(
+        video_id=video.pk, key_id=artifact.key_id
+    ).exists()
 
 
 @pytest.mark.ffmpeg
@@ -1146,6 +1210,39 @@ def test_ready_hls_lookup_rejects_legacy_blank_source_hash(
             video=video,
             key_id=artifact.key_id,
         )
+
+
+def test_hls_reuses_verified_hash_and_rejects_same_name_replacement(
+    hls_center: Center,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import patch
+    from endoreg_db.services import video_source_hash
+
+    video = _create_processed_video(center=hls_center, payload=b"original processed")
+    video.processed_video_hash = hashlib.sha256(b"original processed").hexdigest()
+    video.save(update_fields=["processed_video_hash"])
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    with patch.object(
+        video_source_hash, "get_video_hash", wraps=video_source_hash.get_video_hash
+    ) as read:
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+        hls_media.get_ready_hls_artifact(video=video, artifact_kind="processed")
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+        assert read.call_count == 1
+
+        # Even a valid-looking persisted digest cannot authorize changed bytes.
+        storage = video.processed_file.storage
+        replacement = storage.save(
+            "replacement.mp4", ContentFile(b"modified processed")
+        )
+        Path(video.processed_file.path).write_bytes(
+            Path(storage.path(replacement)).read_bytes()
+        )
+        with pytest.raises(FileNotFoundError, match="source identity is stale"):
+            hls_media.get_ready_hls_artifact(video=video, artifact_kind="processed")
+        assert read.call_count == 2
 
 
 def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(

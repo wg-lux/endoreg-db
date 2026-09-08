@@ -21,6 +21,11 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
+from endoreg_db.services.hub.import_monitoring import (
+    STORAGE_RETRY_MAX_RETRIES,
+    is_retryable_storage_failure,
+)
+from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.video_segment_validation_workflow import (
     SegmentAnnotationStatus,
     resolve_segment_annotation_status,
@@ -36,9 +41,9 @@ def safe_upload_job_original_filename(upload_job: _FileOverviewUploadJobLike) ->
     return Path(normalized_name).name
 
 
-def overview_upload_job_summary(
+def _overview_upload_job_payload(
     upload_job: _FileOverviewUploadJobLike,
-) -> OverviewUploadJobMonitoringData:
+) -> OverviewUploadJobMonitoringPayload:
     source_center = getattr(upload_job, "source_center", None)
     if upload_job.status == "anonymized":
         allowed_actions = ["delete"]
@@ -72,7 +77,33 @@ def overview_upload_job_summary(
             "created_at": upload_job.created_at,
             "updated_at": upload_job.updated_at,
         }
-    ).to_data()
+    )
+
+
+def overview_upload_job_summary(
+    upload_job: _FileOverviewUploadJobLike,
+) -> OverviewUploadJobMonitoringData:
+    return _overview_upload_job_payload(upload_job).to_data()
+
+
+def overview_upload_job_retry_summary(
+    upload_job: UploadJob,
+) -> OverviewUploadJobMonitoringData:
+    """Advertise only actions supported by the unattached upload retry endpoint."""
+    payload = _overview_upload_job_payload(cast(_FileOverviewUploadJobLike, upload_job))
+    summary = payload.model_dump()
+    can_retry = (
+        upload_job.status == UploadJob.Status.RETRYING.value and upload_job.retryable
+    ) or (
+        is_retryable_storage_failure(upload_job)
+        and upload_job.retry_count
+        < max(upload_job.max_retries, STORAGE_RETRY_MAX_RETRIES)
+    )
+    if not can_retry:
+        summary["allowed_actions"] = [
+            action for action in summary["allowed_actions"] if action != "safe_reimport"
+        ]
+    return OverviewUploadJobMonitoringPayload.model_validate(summary).to_data()
 
 
 class _FileOverviewPayload(TypedDict):

@@ -1005,7 +1005,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.1.7"
+version = "1.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -1148,7 +1148,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.4.1" },
-    { name = "lx-dtypes", specifier = "==0.2.36" },
+    { name = "lx-dtypes", specifier = "==0.2.37" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2094,7 +2094,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.36"
+version = "0.2.37"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2117,9 +2117,8 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/8f/93ebb740c4ce743c7cb1fbb5fbc61a3fd9b9754e5bdada15450e170a31d3/lx_dtypes-0.2.36.tar.gz", hash = "sha256:f55e8ca1623921bd205bc152ae6cc9c00721db475cabe9026163b7bb351a357b", size = 2726858, upload-time = "2026-09-07T13:20:03.166Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/1e/388fc71bd531f7e8bc25ba889ad6c8c6a661f4c173c2c78bdd58004c02d7/lx_dtypes-0.2.36-py3-none-any.whl", hash = "sha256:c84f15cd867d1f95e1e6b65b395e9cd1c0115dd6ef76d4006e4fe9378b6a5ad0", size = 865968, upload-time = "2026-09-07T13:19:58.164Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/4f/d17617b330d602f74e37ff2e9870de78e6eb5e31c2d2de753c3b2564ea2b/lx_dtypes-0.2.37-py3-none-any.whl", hash = "sha256:06c69a5726a48697b1a25ee47d3a24cb9d38b997ba13123c093c3f63e734f8c4", size = 866199, upload-time = "2026-09-08T11:08:12.773Z" },
 ]
 
 [[package]]

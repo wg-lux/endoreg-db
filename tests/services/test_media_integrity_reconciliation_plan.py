@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from pytest import MonkeyPatch
+from django.core.files.base import ContentFile
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
@@ -33,6 +36,35 @@ from endoreg_db.utils.file_operations import (
 
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("known_hash", [False, True])
+def test_upload_reconciliation_hashes_authenticated_plaintext(
+    monkeypatch: MonkeyPatch, tmp_path: Path, dry_run: bool, known_hash: bool
+) -> None:
+    payload = b"synthetic encrypted upload"
+    expected_hash = hashlib.sha256(payload).hexdigest()
+    job = UploadJob.objects.create(
+        content_hash=expected_hash if known_hash else "",
+        source_file_persisted=True,
+    )
+    storage = EncryptedStorage(location=tmp_path)
+    job.file.storage = storage
+    job.file.name = storage.save("source.mp4", ContentFile(payload))
+    job.save(update_fields=["file"])
+    ciphertext_before = Path(job.file.path).read_bytes()
+    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+
+    repaired, lost, report = reconcile_upload_job_integrity(job, dry_run=dry_run)
+
+    assert lost == 0
+    assert repaired == (0 if known_hash else 1)
+    assert report.get("action") == (None if known_hash else "set_content_hash")
+    assert Path(job.file.path).read_bytes() == ciphertext_before
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.PENDING
+    assert job.content_hash == (expected_hash if known_hash or not dry_run else "")
 
 
 def test_missing_upload_source_uses_integrity_lifecycle_event(

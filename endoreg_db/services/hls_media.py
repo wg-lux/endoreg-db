@@ -25,7 +25,6 @@ from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
 from endoreg_db.config.env import (
-    get_ffmpeg_transcode_quality_mode,
     get_ffmpeg_transcode_timeout_seconds,
 )
 from endoreg_db.exceptions import MediaOperationDeferred
@@ -40,6 +39,7 @@ from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
 )
 from endoreg_db.services import streamable_media
+from endoreg_db.services.video_source_hash import verified_video_source_hash
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
     get_active_raw_video_file,
@@ -47,6 +47,9 @@ from endoreg_db.services.video_files import (
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
+from endoreg_db.services.video_storage.validation import (
+    assert_normalization_source_supported,
+)
 from endoreg_db.services.video_storage_normalization import (
     MeasuredAverageFrameRateDriftError,
     ProvenResampledHlsContext,
@@ -57,7 +60,6 @@ from endoreg_db.services.video_storage_normalization import (
     configured_hls_encoding_profile,
     configured_video_storage_profile,
     hls_encoding_profile_by_name,
-    normalize_video_file,
     probe_video_artifact,
     probe_video_presentation_timeline,
     probe_video_frame_timestamps,
@@ -300,12 +302,7 @@ def _hls_source(video: VideoFile, artifact_kind: VideoArtifactKind) -> _HlsSourc
 
 
 def _source_content_hash(source: _HlsSource) -> str:
-    digest = get_video_hash(source.field_file).strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise VideoStorageNormalizationError(
-            "HLS source content identity is missing or invalid"
-        )
-    return digest
+    return verified_video_source_hash(source.field_file)
 
 
 def _persisted_hls_boundaries(
@@ -1826,15 +1823,15 @@ def _run_ffmpeg_hls(
                 source_generation_id=timeline_validation.source_generation_id,
                 source_content_hash=timeline_validation.source_content_hash,
             )
-        normalization_evidence = normalize_video_file(
-            input_path=source_path,
-            reference_path=source_path,
-            quality_mode=get_ffmpeg_transcode_quality_mode(),
+        source_probe = probe_video_artifact(source_path)
+        assert_normalization_source_supported(
+            source=source_probe,
+            profile=configured_video_storage_profile(),
         )
-        normalized_timeline = normalization_evidence.output.timeline
+        source_timeline = source_probe.timeline
         if timeline_validation.proof is not None and not math.isclose(
-            normalized_timeline.nominal_fps,
-            normalized_timeline.measured_average_fps,
+            source_timeline.nominal_fps,
+            source_timeline.measured_average_fps,
             rel_tol=configured_video_storage_profile().fps_relative_tolerance,
             abs_tol=0.001,
         ):
@@ -1962,7 +1959,7 @@ def _run_ffmpeg_hls(
     _validate_generated_hls_profile(
         playlist_path=playlist_path,
         key_info_path=key_info_path,
-        source_probe=normalization_evidence.output,
+        source_probe=source_probe,
         source_pts=source_pts,
         validation=timeline_validation,
         source_frame_timestamps=source_frame_timestamps,
@@ -2547,9 +2544,7 @@ def _ready_artifact_matches_current_source(
         artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
         source = _hls_source(video, artifact_kind)
         timeline = _hls_timeline_validation(video, artifact_kind)
-        expected_hash = str(timeline.expected_content_hash or "").strip().lower()
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_hash):
-            expected_hash = _source_content_hash(source)
+        expected_hash = _source_content_hash(source)
         return bool(
             artifact.source_content_hash
             and artifact.source_content_hash == expected_hash

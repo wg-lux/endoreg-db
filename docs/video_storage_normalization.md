@@ -183,20 +183,32 @@ shared compliance contract:
    gate passes.
 3. HLS materialization decrypts the selected raw or processed source only into
    its attempt-scoped directory inside the protected transcoding boundary. The
-   source is checked against the same profile and is normalized there only when
-   required. HLS then encodes H.264 High Profile, YUV420P, full-range color,
-   bounded bitrate, and source-timeline frame-rate passthrough. Before atomic
+   source dimensions, frame rate, and timeline metadata must satisfy the shared
+   source-admission checks. A single HLS encoding pass produces H.264 High
+   Profile, YUV420P, full-range color, bounded bitrate, and source-timeline
+   frame-rate passthrough directly from that unchanged staged source. There is
+   no intermediate normalized MP4 encode. Source codec, pixel format, bitrate,
+   and byte size may require conversion; the final HLS output must satisfy all
+   storage-profile limits. Unsupported dimensions, frame rate, or timeline
+   metadata fail closed rather than invoking resize or resampling. Before atomic
    publication, a temporary local playlist resolves the encrypted segments
    with the attempt key and probes the complete result again for codec, pixel
    format, dimensions, frame rate, duration, frame count, bitrate, byte budget,
    and timeline equivalence. The complete relative presentation-timestamp
-   sequence must match the normalized source within the shared time-base
+   sequence must match the original staged source within the shared time-base
    resolution. Every positive, contiguous `EXTINF` boundary must resolve to an
    output presentation timestamp within one frame duration, and the playlist
    segment count and total duration must match the staged files and probed
    timeline. The validation playlist is removed immediately.
    A complete current HLS generation is returned idempotently without starting
    FFmpeg.
+
+This removes an encoding pass and its temporary MP4 only when HLS previously
+needed intermediate normalization. Already compliant sources previously skipped
+that encode. Canonical raw and anonymized master normalization remains mandatory
+at import boundaries, and HLS remains a separate encrypted derivative. This
+change does not establish a single shared encode for canonical masters and HLS,
+change encoder settings, or authorize clinical-quality approval or deployment.
 
 Raw and processed HLS readiness is the required import, reimport, and
 reanonymization contract, but this is not yet enforced consistently by every
@@ -233,6 +245,26 @@ segment request also resolves and checks its requested file inside the protected
 directory. Missing requested files fail closed immediately; missing sibling files
 are detected on their own request or the next complete readiness check. These
 checks do not use a readiness cache.
+
+Repeated source-content checks reuse a fully computed plaintext Secure Hash
+Algorithm, 256-bit (SHA-256) digest within the current process only. The bounded
+cache holds at most 128 encrypted-file generations. Each entry belongs to the
+same key-owning encrypted storage instance and local file path, device, inode,
+size, mode, and nanosecond modification/change timestamps. Metadata is checked
+before and after both hashing and reuse. Same-name replacement, in-place writes
+(including restored modification times), missing files, and changes during
+verification invalidate reuse or fail loudly. Concurrent checks of the same
+source share verification; the cache and its locks are reset after process fork.
+
+This optimization relies on the approved local filesystem reporting reliable
+inode and change-time metadata. Other storage backends retain full hashing.
+Restarted processes and distinct storage/key instances must verify again; no
+cached digest is persisted or transmitted. Legacy database hashes alone never
+authorize reuse. Playback, reservation, worker startup, and publication use the
+same source verification. Artifact generation, encoder profile, media leases,
+and output checks remain independent mandatory gates. The encrypted reader's
+layout cache also includes device, inode, and change time so a replaced source
+cannot inherit stale decryption metadata.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50
@@ -320,6 +352,25 @@ while native key, authentication, geometry, or length failures stop the
 response instead of falling back.
 
 ## Inventory and Migration
+
+### Playback Backfill Order
+
+`materialize_video_hls` selects videos with a processed-file reference first.
+Within that group, confirmed anonymization or created/validated segment
+annotations give priority; remaining processed videos follow, then raw-only
+videos. Each group uses ascending video identifiers, and this ordering applies
+before `--limit`. These state flags influence scheduling only; existing source,
+generation, lease, and encoding validation remains authoritative.
+
+With the default `--artifact-kind both`, all selected processed artifacts are
+handled before any selected raw artifact. Dry runs, synchronous `--inline`
+execution, and queue dispatch share that order. Explicit `--video-id` selection
+and `--artifact-kind` filters still apply; raw-only selection keeps ascending
+video identifiers. Both artifact kinds remain required where applicable.
+This orders newly submitted work only: running tasks are not interrupted and
+already queued tasks are not reordered. Worker capacity is unchanged.
+
+### Storage Inventory
 
 The default mode is always read-only:
 

@@ -41,6 +41,7 @@ from endoreg_db.serializers.misc.file_overview import (
     CrossCenterProcessedOverviewSerializer,
     FileOverviewSerializer,
     overview_upload_job_summary,
+    overview_upload_job_retry_summary,
     safe_upload_job_original_filename,
 )
 from ...serializers import VoPPatientDataSerializer
@@ -257,7 +258,7 @@ class AnonymizationOverviewView(APIView):
                     "created_at": upload_job.created_at,
                     "sensitive_meta_id": None,
                     "file_size": 0,
-                    "upload_job": overview_upload_job_summary(cast(Any, upload_job)),
+                    "upload_job": overview_upload_job_retry_summary(upload_job),
                     "hls_materializations": [],
                     "document_type": None,
                     "patient_hash_display": None,
