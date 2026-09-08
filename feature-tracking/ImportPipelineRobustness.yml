@@ -80,17 +80,15 @@ definition_of_done:
         hashes, VideoState, Frame, ImageClassificationAnnotation, LabelVideoSegment and VideoHlsArtifact;
         no media or records deleted.'
     - kind: review
-      reference: >-
-        2026-09-08 gc-10 read-only import-state audit
-        (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml): 29 videos and 2,508
-        import jobs reviewed; 2,473 import errors covered 32 source hashes, and 2,414 error jobs
-        referenced absent upload files. Videos 35, 37 and 42 retain raw files but lack processed output
-        and require recovery investigation. Video 12 lacks its raw file but retains processed media and
-        29,698 human annotations; annotations and existing media must be preserved. Videos 48 and 52
-        retain raw and processed files despite older LOST attempts. Two LOST jobs with retained files
+      reference: '2026-09-08 gc-10 read-only import-state audit (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml):
+        29 videos and 2,508 import jobs reviewed; 2,473 import errors covered 32 source hashes, and 2,414
+        error jobs referenced absent upload files. Videos 35, 37 and 42 retain raw files but lack processed
+        output and require recovery investigation. Video 12 lacks its raw file but retains processed media
+        and 29,698 human annotations; annotations and existing media must be preserved. Videos 48 and
+        52 retain raw and processed files despite older LOST attempts. Two LOST jobs with retained files
         decrypted successfully and matched their original hashes; one belongs to retired video 55 and
         must not recreate it. Files were checked for existence, not full playback integrity; no videos,
-        annotations or import states were changed.
+        annotations or import states were changed.'
     - kind: code
       reference: endoreg_db/import_files/video_import_service.py::_import_and_anonymize; endoreg_db/import_files/video_import_service.py::_raw_source_identity;
         endoreg_db/services/video_files/queries.py::get_video_by_content_hash
@@ -128,49 +126,19 @@ definition_of_done:
         gestartete unselektierte Lauf derselben Datei wurde wegen SKIP_EXPENSIVE_TESTS=false im aufwendigen
         vollständigen Videoimport gezielt mit SIGINT beendet (1 passed, Exit 2); dies ist kein abgeschlossener
         End-to-End-Nachweis.'
-    note: 'Reported duplicate-display incident on gc-10: videos 54 and 55 originate from same-named uploads
-      and both report 2183.68 seconds, 50 frames per second and 109183 frames, but their stored source
-      hashes differ. Both UploadJob hashes match their respective VideoFile.video_hash; processed identities
-      also differ. At initial inspection video 54 had 31845 manual frame annotations, 583 segments (96
-      without prediction metadata), accepted anonymization and no raw-file reference. Video 55 has no
-      frame or segment annotations, retains a raw-file reference and has unaccepted anonymization. Video
-      54 has clinical links; video 55''s patient and examination links are unset, not proven conflicting
-      patient identities. Preserve 54 as the canonical candidate and retain 55''s unique raw source if
-      equivalence is verified. Current source inspection hashes the incoming file before anonymization
-      and looks up VideoFile.video_hash, not processed_video_hash. The hypothesis that a historical anonymized
-      or re-encoded input caused the different source hashes remains unproven; equal names and timing
-      are not content-equivalence evidence. This records an improvement requirement, not an implemented
-      deduplication fix or automatic deletion policy. Subsequently, the operator explicitly requested
-      cancellation, PostgreSQL evidence capture and retirement of video 55. Live inspection identified
-      video 45 as the active encoder; four queued HLS deliveries for video 55 were revoked with acknowledgments
-      and removed from the queue without interrupting video 45. After a full database snapshot, record-only
-      transactional deletion removed video 55, its 109183 unannotated frame records and seven HLS records.
-      The unique raw and processed ciphertext files were atomically moved into the protected host-local
-      recovery archive with inode and size preserved; they were not attached to video 54 and source equivalence
-      remains unproven. PostgreSQL after-checks found zero video/frame/HLS records for 55. Video 54''s
-      31845 manual annotations and 583 segments retain identical before/after row digests; its video and
-      state records also remain unchanged. The application and FFmpeg worker remain active. This scoped
-      operational retirement does not implement or verify automatic retrospective deduplication. Ergänzung
-      2026-09-08: Der automatische Löschpfad in _existing_readable_video wurde entfernt; bestehende Quellidentität
-      wird jetzt vor Normalisierung geprüft. Fehlende oder unlesbare Rohquellen führen in direkter Erzeugung,
-      Kontextwiederverwendung und History-Pfaden zu einem typisierten Integritätsfehler statt Datensatzlöschung
-      oder Zustandsreset. 27 parametrisierte Fälle mit wiederholtem Aufruf sichern Video, VideoState,
-      Frame, menschliche Annotation, History, Master und Eingangsquelle unverändert ab. Ein erfolgreich
-      empfangener Hub-Transfer wird für denselben ursprünglichen Quellhash anhand APPLIED-Ledger, Zielvideo,
-      Zentrum, Knotenidentitäten, typisiertem Empfangsbeleg und Klartextgröße/-Hash der aktuell akzeptierten
-      Generation erkannt. Ohne Rohdateireferenz verlangt dieser Wiederverwendungspfad nur die verarbeitete
-      HTTP-Live-Streaming-Rendition und erhält die erneut eingegangene Rohquelle auch im verwalteten Importverzeichnis.
-      Falsche oder fehlende Belege, ausstehende Transfers, fremde Zentren, geänderte Generationen, unlesbare
-      Ausgabe, Streamingfehler und erzwungene Rohverarbeitung sind negativ getestet. Die Tests verwenden
-      SQLite, isolierten Dateisystem-Teststorage, synthetische Medien und ersetzte Encoding-/Streaming-Grenzen;
-      echte Medienkodierung, PostgreSQL-Prozesskonkurrenz und ein gc-10-Dry-Run sind damit nicht nachgewiesen.
-      Transfers ohne prüfbaren Empfangsbeleg bleiben manuell zu klären. Weiter offen: vollständige unveränderliche
-      Quellprovenienz vor Transformation, Eingangsrollentrennung einschließlich voranonymisierter Kollisionen,
-      umfassende Scope-Prüfung sowie ein referenzvollständiges Legacy-Dry-Run-Inventar und klinisch freigegebene
-      Zusammenführung. Kein Produktionszugriff, keine Altdatenlöschung und keine automatische Hash-Aliasbildung
-      in dieser Änderung.'
-    assessed_by: codex-import-20260908-a
-    assessed_at: '2026-09-08T10:27:37.811662Z'
+    - kind: review
+      reference: '2026-09-08 gc-10 follow-up: 2477 terminal source-less UploadJob attempts removed after
+        full pg_dump decode verification; all 29 VideoFile rows, VideoState and annotation/segment row
+        digests unchanged. 4 ERROR and 2 LOST attempts with retained sources remain; four ERROR sources
+        authenticate and match their recorded plaintext hashes. Videos 35/37/42 retain raw media but lack
+        processed output; video12 retains processed media and 29698 annotations. Later filesystem audit
+        found 17 candidate source copies outside recorded UploadJob paths, including T005/T006/T007/T009/T013
+        in old intake directories and T018/T019 under /home/admin/2; identity/playback unverified, all
+        preserved. Free space increased from 11 to107 GiB after package cache and orphan HLS-work cleanup.
+        Evidence: /var/lib/lx-annotate/recovery/import-cleanup-20260908/{cleanup-result.json,source-verification.json,reimport-list.yml};
+        /var/lib/lx-annotate/recovery/space-cleanup-20260908/summary.yml. No full playback recovery claimed.'
+    assessed_by: codex-gc10-20260908-diagnostics
+    assessed_at: '2026-09-08T14:17:06.470275Z'
 - id: report_spacy_fallback_without_llm
   category: functionality
   title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex
@@ -522,14 +490,12 @@ definition_of_done:
       reference: endoreg_db/services/reconciliation.py::ReconciliationService.clear_stale_lock_files;
         cleanup_orphaned_artifacts; reset_incomplete_processing_states
     - kind: review
-      reference: >-
-        2026-09-08 gc-10 read-only import-state audit
-        (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml): missing-source and
-        retained-artifact cases were classified without mutation. The audit identified a 409 retry
-        UI/backend contract mismatch: the UI offers reimport while the endpoint rejects these job states.
-        It also found that the encrypted-source fallback hashes ciphertext rather than decrypted content,
-        so intact sources can fail source-hash validation. These findings require recovery and contract
-        fixes; they are not evidence of successful automatic repair.
+      reference: '2026-09-08 gc-10 read-only import-state audit (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml):
+        missing-source and retained-artifact cases were classified without mutation. The audit identified
+        a 409 retry UI/backend contract mismatch: the UI offers reimport while the endpoint rejects these
+        job states. It also found that the encrypted-source fallback hashes ciphertext rather than decrypted
+        content, so intact sources can fail source-hash validation. These findings require recovery and
+        contract fixes; they are not evidence of successful automatic repair.'
     - kind: command
       reference: 'targeted pyright: 0 errors; tests/services/test_reconciliation_service.py: 15 passed'
     - kind: command

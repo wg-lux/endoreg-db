@@ -17,7 +17,7 @@ models:
   target: shared_lx_dtypes_contract
   owner: lx_dtypes maintainers
   rationale: The cross-repository semantic shape is owned by the project-pinned lx-dtypes contract family;
-    Django retains relations and constraints.
+    Django retains relations and constraints, including the system-managed VideoFile.joined_dataset relation.
   ownership_evidence:
   - api:endoreg_db/views/misc/application_settings.py
   - endoreg_db/models/aidataset/aidataset.py:AIDataSet
@@ -5415,8 +5415,8 @@ models:
   custom_save: true
   target: local_boundary_schema
   owner: endoreg_db maintainers
-  rationale: The persisted video aggregate uses a local metadata adapter; sequences remain an explicitly
-    validated shared lx-dtypes video-segments contract.
+  rationale: The persisted video aggregate uses a local metadata adapter and a mandatory local joined_dataset
+    relation; sequences remain an explicitly validated shared lx-dtypes video-segments contract.
   ownership_evidence:
   - endoreg_db/models/media/video/video_file.py:VideoFile.clean
   - endoreg_db/schemas/persisted_json.py:VideoFileMetaPayload

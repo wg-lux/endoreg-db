@@ -3,6 +3,7 @@
 from typing import Any, Protocol, cast
 from uuid import UUID
 from django.db import transaction
+from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
@@ -12,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.authz.permissions import PolicyPermission
@@ -29,6 +31,8 @@ from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
     is_retryable_storage_failure,
     schedule_storage_retry,
+    can_dismiss_upload_job,
+    dismissed_upload_job_filter,
 )
 from endoreg_db.services.video_files import (
     get_video_by_pk,
@@ -115,6 +119,7 @@ def _attach_overview_upload_jobs(
     upload_jobs = (
         UploadJob.objects.select_related("source_center")
         .filter(filters)
+        .exclude(dismissed_upload_job_filter())
         .order_by("-updated_at", "-created_at")
     )
 
@@ -229,6 +234,7 @@ class AnonymizationOverviewView(APIView):
                 )
             )
             .exclude(pk__in=attached_job_ids)
+            .exclude(dismissed_upload_job_filter())
             .order_by("-created_at")
         )
         if allowed_center_ids is not None:
@@ -266,6 +272,7 @@ class AnonymizationOverviewView(APIView):
                     "pseudo_patient_id": None,
                     "pseudo_examination_id": None,
                     "import_only": True,
+                    "can_dismiss_import": can_dismiss_upload_job(upload_job),
                 }
             )
         return rows
@@ -340,6 +347,41 @@ class AnonymizationOverviewView(APIView):
             reverse=True,
         )
         return combined
+
+
+class UploadJobDismissView(APIView):
+    """Hide a terminal attempt without deleting its source or audit history."""
+
+    permission_classes = [IsAuthenticated, PolicyPermission]
+
+    @transaction.atomic
+    def post(self, request: Request, job_id: UUID | str) -> Response:
+        job = (
+            UploadJob.objects.select_for_update(of=("self",)).filter(pk=job_id).first()
+        )
+        if job is None:
+            return Response(
+                {"detail": "Upload job not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        centers = resolve_allowed_center_ids(request.user)
+        source_center_id = cast(int | None, getattr(job, "source_center_id", None))
+        if centers is not None and source_center_id not in centers:
+            raise PermissionDenied("Upload job is outside the assigned center scope.")
+        if not can_dismiss_upload_job(job):
+            return Response(
+                {
+                    "detail": "Only inactive failed import attempts can be removed from the overview."
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if job.overview_dismissed_at is None or (
+            job.last_attempt_at is not None
+            and job.last_attempt_at > job.overview_dismissed_at
+        ):
+            job.overview_dismissed_at = timezone.now()
+            job.overview_dismissed_by = cast(User, request.user)
+            job.save(update_fields=["overview_dismissed_at", "overview_dismissed_by"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class UploadJobRetryView(APIView):

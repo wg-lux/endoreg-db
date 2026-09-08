@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from django.db import transaction
+from django.db.models import F, Q
 from django.utils import timezone
 
 from endoreg_db.models.hub.upload_job import UploadJob
@@ -22,6 +23,26 @@ DEFAULT_RETRY_DELAY_SECONDS = 30
 MAX_RETRY_DELAY_SECONDS = 15 * 60
 STORAGE_RETRY_MAX_RETRIES = 96
 INSUFFICIENT_STORAGE_ERROR_PREFIX = "Insufficient pipeline storage."
+
+
+def can_dismiss_upload_job(job: UploadJob) -> bool:
+    return (
+        job.status in {UploadJob.Status.ERROR, UploadJob.Status.LOST}
+        and not job.processing_lease_owner
+        and job.cleanup_status != UploadJob.CleanupStatus.DELETING
+    )
+
+
+def dismissed_upload_job_filter() -> Q:
+    """Dismiss only the reviewed failure; subsequent processing stays observable."""
+    return (
+        Q(status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST])
+        & Q(overview_dismissed_at__isnull=False)
+        & (
+            Q(last_attempt_at__isnull=True)
+            | Q(last_attempt_at__lte=F("overview_dismissed_at"))
+        )
+    )
 
 
 class UploadJobRetryDispatcher(Protocol):

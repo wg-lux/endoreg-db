@@ -51,6 +51,28 @@ from .video_file_queries import VideoQuerySet
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
 
+
+def get_default_joined_dataset_id() -> int:
+    """Return the stable system dataset used when a video has no explicit dataset."""
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+
+    dataset, _ = AIDataSet.objects.get_or_create(
+        is_default_video_dataset=True,
+        defaults={
+            "name": "default-joined-video-dataset-v1",
+            "description": (
+                "System-managed dataset assigned to every video so dataset-scoped "
+                "training workflows always have a video dataset identifier."
+            ),
+            "dataset_type": AIDataSet.DATASET_TYPE_IMAGE,
+            "ai_model_type": AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        },
+    )
+    if dataset.pk is None:
+        raise RuntimeError("Default joined video dataset was not persisted.")
+    return int(dataset.pk)
+
+
 if TYPE_CHECKING:
     from django.db.models.fields.files import FieldFile
 
@@ -173,6 +195,16 @@ class VideoFile(models.Model):
     import_meta: models.OneToOneField[Any] = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
+    joined_dataset: models.ForeignKey[Any] = models.ForeignKey(
+        "AIDataSet",
+        on_delete=models.PROTECT,
+        related_name="joined_videos",
+        default=get_default_joined_dataset_id,
+        help_text=(
+            "Dataset identifier assigned to this video for dataset-scoped training. "
+            "Callers may explicitly assign a different dataset."
+        ),
+    )
 
     original_file_name: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True, null=True
@@ -260,6 +292,7 @@ class VideoFile(models.Model):
         ai_model_meta_id: int | None
         state_id: int | None
         import_meta_id: int | None
+        joined_dataset_id: int
 
         @property
         def label_video_segments(self) -> models.Manager[LabelVideoSegment]: ...

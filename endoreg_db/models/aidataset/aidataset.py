@@ -164,6 +164,13 @@ class AIDataSet(models.Model):
         default=True,
         help_text="Soft toggle to enable/disable this dataset for training.",
     )
+    is_default_video_dataset: models.BooleanField[bool, Any] = models.BooleanField(
+        default=False,
+        help_text=(
+            "Marks the one system-managed dataset assigned to every VideoFile when "
+            "no explicit joined_dataset is supplied."
+        ),
+    )
 
     if TYPE_CHECKING:
         id: int
@@ -237,6 +244,10 @@ class AIDataSet(models.Model):
         if isinstance(video, int):
             video = VideoFile.objects.get(pk=video)
 
+        if video.joined_dataset_id != self.pk:
+            video.joined_dataset = self
+            video.save(update_fields=["joined_dataset"])
+
         normalized_source_names = None
         if information_source_names is not None:
             normalized_source_names = [
@@ -282,13 +293,23 @@ class AIDataSet(models.Model):
             "video_file_id", flat=True
         )
         return VideoFile.objects.filter(
-            pk__in=set(image_video_ids).union(set(segment_video_ids))
+            models.Q(joined_dataset=self)
+            | models.Q(pk__in=set(image_video_ids).union(set(segment_video_ids)))
         ).distinct()
 
     def __str__(self) -> str:
         if self.name:
             return f"AIDataSet(id={self.id}, name={self.name})"
         return f"AIDataSet(id={self.id})"
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default_video_dataset"],
+                condition=models.Q(is_default_video_dataset=True),
+                name="aidataset_one_default_video_dataset",
+            )
+        ]
 
 
 class AIModelTrainingRun(models.Model):

@@ -145,6 +145,20 @@ class UploadJob(models.Model):
         max_length=100, blank=True, help_text="MIME type of the uploaded file"
     )
 
+    overview_dismissed_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(null=True, blank=True, editable=False)
+    )
+    overview_dismissed_by: models.ForeignKey[User | None, User | None] = (
+        models.ForeignKey(
+            User,
+            null=True,
+            blank=True,
+            editable=False,
+            on_delete=models.SET_NULL,
+            related_name="dismissed_upload_jobs",
+        )
+    )
+
     source_center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         null=True,

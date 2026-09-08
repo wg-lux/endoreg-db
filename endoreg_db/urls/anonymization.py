@@ -2,6 +2,7 @@ from django.urls import path
 from endoreg_db.views.anonymization import (
     AnonymizationOverviewView,
     UploadJobRetryView,
+    UploadJobDismissView,
     AnonymizationValidateView,
     start_anonymization,
     anonymization_current,
@@ -14,6 +15,11 @@ from endoreg_db.views.anonymization import (
 from endoreg_db.views.anonymization import media_management
 
 url_patterns = [
+    path(
+        "anonymization/upload-jobs/<uuid:job_id>/dismiss/",
+        UploadJobDismissView.as_view(),
+        name="anonymization_upload_job_dismiss",
+    ),
     # URL patterns for anonymization overview
     path(
         "anonymization/items/overview/",
