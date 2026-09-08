@@ -2,8 +2,9 @@ schema_version: '1.0'
 id: center_access
 name: Center Access and Central-Hub Video Visibility
 description: Production-readiness criteria for identity-backed multi-center assignments and deployment-aware
-  video access, including authenticated cross-center viewing of anonymized processed media on a central
-  hub while non-hub profiles and sensitive resources remain center-scoped.
+  video access, including authenticated cross-center viewing and training from validated processed media
+  retained after original deletion on a central hub while non-hub profiles and sensitive resources remain
+  center-scoped.
 owners:
 - endoreg_db maintainers
 - lx-annotate maintainers
@@ -139,6 +140,12 @@ definition_of_done:
     diagnostics.
   - The central-hub exception requires both a processed artifact and an anonymized, non-error, non-lost
     state; incomplete artifacts remain invisible and forbidden.
+  - After anonymization and segment validation, deleting the original raw video does not remove authenticated
+    users' cross-center discovery, processed playback, training-manifest access, or training-frame extraction
+    from the retained processed artifact.
+  - Central-hub training uses the selected dataset's frame identities and validated processed media, including
+    transferred annotation rows without extracted caches or exact presentation timestamp ticks. It does
+    not depend on original files, estimate new frame coordinates, or grant raw-media export.
   - Raw artifact paths remain center-scoped, and anonymous requests are denied in every deployment profile.
   - Missing or incomplete center membership fails closed outside the explicitly unrestricted central-hub
     processed-video read boundary.
@@ -158,7 +165,7 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
@@ -166,8 +173,15 @@ definition_of_done:
         tests/views/media/test_video_media_view.py tests/views/video/test_video_stream.py tests/views/media/test_center_scoped_reads.py
         tests/views/anonymization/test_sensitive_metadata_view.py -q
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-22T11:47:11.495629Z'
+    - kind: code
+      reference: endoreg_db/services/frames/training_images.py; endoreg_db/services/aidataset_training_manifests.py;
+        endoreg_db/utils/ai/model_training/dataset.py; endoreg_db/export/frames/export_frames_with_labels.py
+    note: Existing Hub viewing contract is preserved. Added processed-only training after original deletion;
+      source-level API, actual JPEG decoding, PyTorch sample, encryption-failure, and cleanup tests pass.
+      The expanded contract requires a new reviewed endoreg-db wheel and named-host acceptance before
+      production promotion.
+    assessed_by: codex-wheel-hygiene-20260907
+    assessed_at: '2026-09-07T14:22:04.429231Z'
 - id: access_regression_tests
   category: testing
   title: Deployment, identity, artifact, and negative authorization paths are regression tested
@@ -228,10 +242,20 @@ definition_of_done:
     evidence:
     - kind: command
       reference: Extended center/hub/FHIR/patient/report regression suite (80 passed)
-    note: The previously missing hub-transfer, FHIR, patient-creation, report, and existence-concealment
-      cases pass. The required manual review of every resource row remains outstanding.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T12:43:33.535623Z'
+    - kind: test
+      reference: '2026-09-07: Pyright 0 errors; 41 backend regressions passed across central-hub raw-deletion
+        training, manifests, frame export, scoped materialization, and video access. Encrypted input,
+        wrong-key/tamper rejection, decoder cleanup, and default manifest format checks covered. Source
+        changes are not yet in a published wheel.'
+    - kind: test
+      reference: '2026-09-07: TEST_DB_ENGINE=django.db.backends.sqlite3 RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest -q tests/views/test_central_hub_training_access.py tests/ai/test_trainer_multilabel_unit.py
+        tests/ai/test_multilabel_data_loader_video_ids.py tests/services/test_model_training_jobs.py tests/services/test_model_training_jobs_unit.py
+        tests/services/test_center_access.py tests/views/test_center_access_matrix.py tests/views/video/test_hls_stream.py
+        => 115 passed in 61.87s. Includes actual processed JPEG decoding after raw deletion and users
+        from source, foreign, and no assigned center.'
+    assessed_by: codex-wheel-hygiene-20260907
+    assessed_at: '2026-09-07T14:20:25.171143Z'
 - id: authorization_boundaries
   category: security
   title: Unrestricted hub viewing is narrow, authenticated, and non-transitive

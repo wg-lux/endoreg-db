@@ -17,6 +17,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
+from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
     RUNS_DIR,
@@ -410,6 +411,11 @@ def _subset_dataset(
         label_vectors=label_vectors,
         label_masks=label_masks,
         image_size=dataset.image_size,
+        frame_ids=(
+            [dataset.frame_ids[index] for index in indices]
+            if dataset.frame_ids is not None
+            else None
+        ),
     )
 
 
@@ -444,6 +450,7 @@ def _build_training_loaders(
         label_vectors=data.label_vectors,
         label_masks=data.label_masks,
         image_size=224,
+        frame_ids=data.frame_ids if hub_mode_enabled() else None,
     )
     return _TrainingLoaders(
         full_dataset=full_dataset,

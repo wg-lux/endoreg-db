@@ -29,12 +29,16 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         label_vectors: Sequence[Sequence[Optional[int]]],
         label_masks: Sequence[Sequence[int]],
         image_size: int = 224,
+        frame_ids: Sequence[int] | None = None,
     ) -> None:
         assert len(image_paths) == len(label_vectors) == len(label_masks), (
             "image_paths, label_vectors, label_masks must have same length"
         )
 
         self.image_paths: List[str] = list(image_paths)
+        if frame_ids is not None and len(frame_ids) != len(image_paths):
+            raise ValueError("frame_ids and image_paths must have the same length")
+        self.frame_ids = list(frame_ids) if frame_ids is not None else None
 
         # Explizite Typisierung der leeren Listen, um "Unknown Member Type"
         # beim anschließenden .append() zu verhindern.
@@ -60,11 +64,21 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
     def __len__(self) -> int:
         return len(self.image_paths)
 
-    def _load_image(self, path: str) -> torch.Tensor:
+    def _load_image(self, path: str, frame_id: int | None = None) -> torch.Tensor:
         """
         Load image from disk, resize, convert to normalized tensor [3, H, W].
         """
-        img = Image.open(path).convert("RGB")
+        if frame_id is not None:
+            from endoreg_db.models.media.frame.frame import Frame
+            from endoreg_db.services.frames.training_images import (
+                read_processed_training_image,
+            )
+
+            frame = Frame.objects.select_related("video__state").get(pk=frame_id)
+            img = read_processed_training_image(frame)
+        else:
+            with Image.open(path) as source:
+                img = source.convert("RGB")
         img = img.resize((self.image_size, self.image_size))
         arr = np.array(img, dtype=np.float32) / 255.0  # [H, W, C]
 
@@ -74,7 +88,8 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor]:
         path = self.image_paths[idx]
-        x = self._load_image(path)
+        frame_id = self.frame_ids[idx] if self.frame_ids is not None else None
+        x = self._load_image(path, frame_id)
         y = self.labels[idx]
         m = self.masks[idx]
         return x, y, m

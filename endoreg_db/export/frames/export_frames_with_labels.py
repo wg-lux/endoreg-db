@@ -56,6 +56,9 @@ from endoreg_db.utils.paths import (
     resolve_existing_protected_media_path,
 )
 from endoreg_db.utils import ensure_local_file
+from endoreg_db.utils.encryption.storage_materialization import (
+    materialized_plaintext_field_file,
+)
 from endoreg_db.utils.storage_streaming import (
     field_file_has_decrypted_range_storage,
     local_plaintext_path_from_name,
@@ -1129,7 +1132,14 @@ def _transcode_video_to_frame_dir(
                 raise FileNotFoundError(
                     f"processed video artifact missing for {video.pk}"
                 )
-            if field_file_has_decrypted_range_storage(processed_file):
+            # Imported annotations may retain frame indices without exact ticks.
+            # Decode those indices from scoped plaintext; the seekable path
+            # requires persisted presentation timestamps and must not guess them.
+            coordinates = _requested_frame_coordinates(video, frame_pks=frame_pks)
+            if (
+                field_file_has_decrypted_range_storage(processed_file)
+                and coordinates.frames_by_presentation_timestamp is not None
+            ):
                 with serve_seekable_media_input(
                     cast(SeekableFieldFile, processed_file)
                 ) as seekable_source:
@@ -1144,7 +1154,9 @@ def _transcode_video_to_frame_dir(
                         overwrite=overwrite,
                     )
                 return
-            with ensure_local_file(processed_file) as source_path_fallback:
+            with materialized_plaintext_field_file(
+                processed_file, suffix=".mp4"
+            ) as source_path_fallback:
                 _extract_and_move_transcoded_frames(
                     video,
                     source_path=source_path_fallback,

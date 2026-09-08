@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 
 from endoreg_db.schemas import (
@@ -231,6 +231,13 @@ def _record_frame_inspection(
 def _inspect_frame_format(
     frame: object,
 ) -> tuple[tuple[str, int, int, str] | None, str | None]:
+    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.services.frames.training_images import read_processed_training_image
+
+    if isinstance(frame, Frame) and not frame.is_extracted:
+        with read_processed_training_image(frame) as image:
+            width, height = image.size
+            return ("JPEG", width, height, image.mode), None
     frame_id = getattr(frame, "pk", None)
     frame_number = getattr(frame, "frame_number", None)
     try:
@@ -382,7 +389,22 @@ def _manifest_annotations(
         dataset.image_annotations.select_related(
             "frame__video", "label", "information_source"
         )
-        .filter(frame__isnull=False, frame__is_extracted=True)
+        .filter(frame__isnull=False)
+        .filter(
+            Q(frame__is_extracted=True)
+            | (
+                ~Q(frame__video__processed_file="")
+                & Q(
+                    frame__video__state__anonymized=True,
+                    frame__video__state__anonymization_validated=True,
+                    frame__video__state__segment_annotations_validated=True,
+                    frame__video__state__outside_segments_removed=True,
+                    frame__video__state__ready_for_export=True,
+                    frame__video__state__processing_error=False,
+                )
+                & ~Q(frame__video__meta__integrity_status="lost")
+            )
+        )
         .order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
     )
     if normalized_source_names:
@@ -391,7 +413,7 @@ def _manifest_annotations(
         )
     if not annotations_qs.exists():
         raise ValueError(
-            f"AIDataSet id={dataset.pk} has no extracted frame annotations."
+            f"AIDataSet id={dataset.pk} has no extracted or validated processed frame annotations."
         )
     return annotations_qs
 

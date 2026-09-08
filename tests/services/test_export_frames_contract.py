@@ -468,6 +468,18 @@ def test_pts_transcode_uses_seekable_encrypted_processed_input(
     )
     captured_source: list[Path | str] = []
 
+    def exact_coordinates(
+        _video: VideoFile,
+        *,
+        frame_pks: set[int] | None,
+    ) -> export_module._RequestedFrameCoordinates:
+        assert frame_pks == {1}
+        return export_module._RequestedFrameCoordinates({1}, [0], [(0, 1)], False)
+
+    monkeypatch.setattr(
+        export_module, "_requested_frame_coordinates", exact_coordinates
+    )
+
     def fake_ready(_video: VideoFile) -> None:
         return None
 
