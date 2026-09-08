@@ -21,8 +21,9 @@ Legacy unnamespaced task owners are potentially active execution owners and are
 never treated as queued reservations. Recovery must wait for expiry or follow the
 explicit operator recovery contract.
 
-Import success still requires raw and processed HTTP Live Streaming (HLS)
-artifacts to be ready. An import can claim queued HLS work inline under the
+Raw-source import success still requires raw and processed HTTP Live Streaming
+(HLS) artifacts to be ready. Verified reuse of a received processed Hub generation
+follows the separate receipt-bound rule below. An import can claim queued HLS work inline under the
 existing artifact row lock, replacing its attempt key so a delayed delivery is
 fenced. It never displaces an active encoder. While joining active work it polls
 only database ownership and status, retains the import heartbeat, checks its
@@ -398,7 +399,8 @@ missing; it logs the blockers and preserves every raw artifact.
 
 The import success boundary is identical across this runbook, the hub ingest
 runbook, and the feature tracker: a video is successful only after the
-canonical master, required raw and processed HLS generations, durable media
+canonical master, required HLS generations (both raw and processed for regular
+raw imports; processed for verified received-generation reuse), durable media
 state, and successful processing history all refer to the same validated
 generation under the current fencing token. A failure in any one of those
 steps is not a degraded success. It preserves the previous valid generation
@@ -448,6 +450,39 @@ and retains the previous valid source. A quarantine release may return media
 to migration only under a versioned, reviewed profile or after the source has
 been corrected. Quarantine files are reviewed through the existing quarantine
 workflow and are not deleted by `normalize_video_storage`.
+
+### Duplicate Sources and Received Hub Generations
+
+Source identity and legacy duplicate reconciliation are governed by
+[`source_identity_deduplication_and_legacy_reconciliation`](../feature-tracking/ImportPipelineRobustness.yml).
+The incoming plaintext Secure Hash Algorithm, 256-bit (SHA-256) digest identifies
+the source; a processed generation has a separate digest. A matching filename,
+duration, or frame count does not authorize consolidation.
+
+A duplicate import must never delete an existing video row merely because its
+raw source is absent or unreadable. Direct creation checks existing identity
+before normalization. Reuse and failed-history paths reject an unusable raw
+source before resetting the existing record. Preserve its annotations, accepted
+master, processing history, and incoming source for manual reconciliation.
+An absent raw file can reflect an intentional lifecycle decision; it is not
+evidence that a record is an orphan.
+
+A previously received Hub transfer can establish completed-import reuse for
+the same original source digest even when no raw-file reference exists. This
+requires an applied processed-media transfer bound to the current video and
+center, a validated envelope receipt matching the transfer and node identities,
+and a current accepted anonymized generation whose plaintext size and digest
+match that receipt. The incoming center must match the retained video. Missing
+receipts, changed generations, unreadable output, and dangling raw references
+do not qualify. Forced raw reprocessing still requires a usable raw source.
+
+For this verified received-generation path, duplicate import requires ready
+processed HTTP Live Streaming and does not attempt to reconstruct raw media.
+It retains the incoming raw source even in the managed import directory; the
+processed-only receipt does not authorize deleting the only local raw copy.
+Regular raw imports continue to require both raw and processed renditions.
+This exception does not alias arbitrary processed-input hashes to raw identities,
+merge legacy records, or transfer acceptance to a different generation.
 
 ### Publication Rollback
 

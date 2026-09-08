@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from threading import Event
+from typing import Literal
 from unittest.mock import Mock
 
 import pytest
@@ -105,6 +106,73 @@ def test_expired_owner_cannot_mutate_report_metadata() -> None:
         report_import_mutation_guard(stale),
     ):
         pytest.fail("stale attempt entered the mutation boundary")
+
+
+@pytest.mark.parametrize("operation", ["renew", "mutate", "finalize", "fail"])
+def test_superseded_owner_cannot_change_replacement_attempt(
+    operation: Literal["renew", "mutate", "finalize", "fail"],
+) -> None:
+    content_hash = "3" * 64
+    stale = acquire_report_import_fence(content_hash)
+    ReportImportAttempt.objects.filter(content_hash=content_hash).update(
+        lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    current = acquire_report_import_fence(content_hash)
+    before = ReportImportAttempt.objects.values().get(content_hash=content_hash)
+
+    assert current.owner_id != stale.owner_id
+    assert current.fencing_token == stale.fencing_token + 1
+    if operation == "fail":
+        assert not mark_report_import_fence_failed(stale)
+    else:
+        with pytest.raises(StaleReportImportAttemptError):
+            if operation == "renew":
+                renew_report_import_fence(stale)
+            elif operation == "mutate":
+                with report_import_mutation_guard(stale):
+                    pytest.fail("superseded owner entered the mutation boundary")
+            else:
+                with report_import_finalization_guard(stale):
+                    pytest.fail("superseded owner entered finalization")
+
+    assert ReportImportAttempt.objects.values().get(content_hash=content_hash) == before
+    with report_import_finalization_guard(current):
+        pass
+    assert (
+        ReportImportAttempt.objects.get(content_hash=content_hash).status
+        == ReportImportAttempt.STATUS_SUCCEEDED
+    )
+
+
+@pytest.mark.parametrize("boundary", ["mutate", "finalize"])
+def test_failed_guard_rolls_back_database_writes_and_preserves_owner(
+    boundary: Literal["mutate", "finalize"],
+) -> None:
+    content_hash = "4" * 64
+    fence = acquire_report_import_fence(content_hash)
+    before = ReportImportAttempt.objects.values().get(content_hash=content_hash)
+    guard = (
+        report_import_mutation_guard
+        if boundary == "mutate"
+        else report_import_finalization_guard
+    )
+    failure = RuntimeError("publication interrupted")
+
+    with pytest.raises(RuntimeError, match="publication interrupted") as raised:
+        with guard(fence):
+            # A second row represents a dependent write in the same transaction.
+            acquire_report_import_fence("5" * 64)
+            raise failure
+
+    assert raised.value is failure
+    assert not ReportImportAttempt.objects.filter(content_hash="5" * 64).exists()
+    assert ReportImportAttempt.objects.values().get(content_hash=content_hash) == before
+    with report_import_finalization_guard(fence):
+        pass
+    assert (
+        ReportImportAttempt.objects.get(content_hash=content_hash).status
+        == ReportImportAttempt.STATUS_SUCCEEDED
+    )
 
 
 def test_background_heartbeat_renews_during_long_running_stage(

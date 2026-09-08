@@ -7,9 +7,12 @@ from typing import Protocol, cast
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.storage import field_file_is_readable, file_exists
+from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.storage_streaming import field_file_size
 
 
 class MediaIntegrityStatus(StrEnum):
@@ -80,8 +83,8 @@ def video_integrity_failure_allows_existing_video_reprocessing(
     Return whether a reimport can repair the existing VideoFile in place.
 
     Processed artifacts and validation state can be rebuilt from the canonical raw
-    file. If the raw file or media row is not usable, the import layer must fall
-    back to its normal create-or-recreate path instead of reusing the instance.
+    file. An existing row with an unusable raw file requires reconciliation;
+    it must never be deleted and recreated as an import fallback.
     """
     if result.ok:
         return False
@@ -156,6 +159,75 @@ def _state_is_validated(media_obj: object) -> bool | None:
     return bool(getattr(state, "anonymization_validated", False))
 
 
+def require_reusable_video_raw_source(video: VideoFile) -> None:
+    """Reject automatic reuse without discarding a potentially annotated record."""
+    status, artifacts = _required_artifacts_are_readable(
+        (("raw_file", video.raw_file),)
+    )
+    if status != MediaIntegrityStatus.OK:
+        raise MediaIntegrityError(
+            _failed_result(
+                status=status,
+                reason=(
+                    "Existing video raw source is missing or unreadable; "
+                    "manual reconciliation is required. Preserve the video, "
+                    "annotations, published media and incoming source."
+                ),
+                content_hash=video.video_hash,
+                media_pk=video.pk,
+                missing_artifacts=artifacts,
+            )
+        )
+
+
+def has_verified_processed_video_transfer(video: VideoFile) -> bool:
+    """Recognize a received generation, never infer raw identity from output alone."""
+    from endoreg_db.services.hub.transfers import get_media_envelope_receipt
+
+    if not video.pk or not video.processed_video_hash:
+        return False
+    state = video.state
+    if (
+        state is None
+        or not state.anonymized
+        or not state.anonymization_validated
+        or state.processed_file_sha256 != video.processed_video_hash
+    ):
+        return False
+    transfers = TransferJob.objects.select_related(
+        "source_node", "target_node", "source_center"
+    ).filter(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_hash=video.video_hash,
+        source_center_id=video.center_id,
+        target_object_id=video.pk,
+        transfer_mode=TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA,
+        transfer_status=TransferJob.TransferStatus.APPLIED,
+    )
+    for transfer in transfers.iterator():
+        receipt = get_media_envelope_receipt(transfer)
+        if receipt is None or transfer.source_center is None:
+            continue
+        if (
+            receipt.receiver_transfer_id != str(transfer.pk)
+            or receipt.transfer_key != transfer.transfer_key
+            or receipt.resource_kind != "video"
+            or receipt.resource_hash != video.video_hash
+            or receipt.processed_media_hash != video.processed_video_hash
+            or receipt.source_center_key != transfer.source_center.center_key
+            or receipt.source_node_key != transfer.source_node.node_key
+            or receipt.target_node_key != transfer.target_node.node_key
+        ):
+            continue
+        if not field_file_is_readable(video.processed_file):
+            return False
+        return (
+            field_file_size(video.processed_file) == receipt.plaintext_size
+            and sha256_file(video.processed_file) == receipt.plaintext_sha256
+        )
+    return False
+
+
 def check_video_media_integrity(
     video: VideoFile | None,
     *,
@@ -191,7 +263,9 @@ def check_video_media_integrity(
         )
 
     required_artifacts: list[tuple[str, object]] = []
-    if expectation == MediaIntegrityExpectation.RAW_WATCHER_VIDEO:
+    if expectation == MediaIntegrityExpectation.RAW_WATCHER_VIDEO and not (
+        not video.raw_file and has_verified_processed_video_transfer(video)
+    ):
         required_artifacts.append(("raw_file", getattr(video, "raw_file", None)))
     required_artifacts.append(
         ("processed_file", getattr(video, "processed_file", None))

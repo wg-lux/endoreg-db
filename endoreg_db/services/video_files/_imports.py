@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
 from endoreg_db.config.env import get_ffmpeg_transcode_quality_mode
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    require_reusable_video_raw_source,
+)
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
@@ -297,40 +301,13 @@ def _existing_readable_video(
     *,
     cls_model: Type["VideoFile"],
     video_hash: str,
-    file_path: Path,
-    transcoded_file_path: Path,
-    temp_output_path: Path,
 ) -> "VideoFile | None":
     existing_video = cls_model.objects.filter(video_hash=video_hash).first()
     if existing_video is None:
         return None
 
-    logger.warning(
-        "Video with hash %s already exists; checking canonical raw_file readability.",
-        video_hash,
-    )
-    if field_file_is_readable(existing_video.raw_file):
-        logger.warning(
-            "Video with hash %s already exists and raw_file is readable. "
-            "Returning existing instance.",
-            video_hash,
-        )
-        if transcoded_file_path != file_path:
-            _safe_unlink_local(
-                transcoded_file_path,
-                label="duplicate transcoded file",
-            )
-        if temp_output_path != transcoded_file_path:
-            _safe_unlink_local(temp_output_path, label="duplicate temp output")
-        return existing_video
-
-    logger.warning(
-        "Video with hash %s exists but raw_file is missing/unreadable. "
-        "Deleting orphaned record.",
-        video_hash,
-    )
-    existing_video.delete()
-    return None
+    require_reusable_video_raw_source(existing_video)
+    return existing_video
 
 
 def _prepare_canonical_source(
@@ -407,22 +384,19 @@ def _create_from_file(
     canonical_source_path: Path | None = None
 
     try:
+        existing_video = _existing_readable_video(
+            cls_model=cls_model,
+            video_hash=video_hash,
+        )
+        if existing_video is not None:
+            return existing_video
+
         temp_output_path, transcoded_file_path, storage_name = _prepare_import_staging(
             file_path=file_path,
             video_hash=video_hash,
             original_suffix=original_suffix,
             video_dir=video_dir,
         )
-        existing_video = _existing_readable_video(
-            cls_model=cls_model,
-            video_hash=video_hash,
-            file_path=file_path,
-            transcoded_file_path=transcoded_file_path,
-            temp_output_path=temp_output_path,
-        )
-        if existing_video is not None:
-            return existing_video
-
         canonical_source_path = _prepare_canonical_source(
             transcoded_file_path=transcoded_file_path,
             temp_output_path=temp_output_path,
@@ -492,7 +466,7 @@ def _create_from_file(
 
         return video
 
-    except (InsufficientStorageError, ValueError):
+    except (InsufficientStorageError, MediaIntegrityError, ValueError):
         _cleanup_failed_import(
             file_path=file_path,
             temp_output_path=temp_output_path,

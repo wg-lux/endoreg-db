@@ -569,7 +569,7 @@ class TestImportInputBoundaries:
         attempt_id = "a" * 32
         observed_attempts: list[str] = []
         guard_calls: list[str] = []
-        existing_video = VideoFile(id=1, video_hash="hash")
+        existing_video = VideoFile(id=1, video_hash="hash", raw_file="raw/source.mp4")
 
         def existing_completed(
             _service: sut.VideoImportService, ctx: ImportContext
@@ -1010,7 +1010,7 @@ class TestImportOrchestration:
         second_source = tmp_path / "renamed.mp4" if renamed_source else source
         if renamed_source:
             second_source.write_bytes(source.read_bytes())
-        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        video = VideoFile(id=7, video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
         _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(
@@ -1056,7 +1056,7 @@ class TestImportOrchestration:
         # Arrange
         source = tmp_path / "input.mp4"
         source.write_bytes(b"video")
-        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        video = VideoFile(id=7, video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
         _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         ensure_hls = Mock(side_effect=[error, None])
@@ -1179,6 +1179,7 @@ class TestImportOrchestration:
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
             video_hash=CONTENT_HASH,
+            raw_file="raw/source.mp4",
             original_file_name="input.mp4",
             state=SimpleNamespace(anonymization_validated=True),
         )

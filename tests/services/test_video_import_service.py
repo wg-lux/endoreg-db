@@ -109,7 +109,12 @@ def _completed_video_file(
     file_hash: str,
     original_file_name: str = "completed-duplicate.mp4",
 ) -> VideoFile:
-    return VideoFile(id=1, video_hash=file_hash, original_file_name=original_file_name)
+    return VideoFile(
+        id=1,
+        video_hash=file_hash,
+        original_file_name=original_file_name,
+        raw_file="raw/completed-source.mp4",
+    )
 
 
 def _path_provider(path: Path) -> Callable[[], Path]:
@@ -1322,6 +1327,10 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
         def get_raw_file_path(self) -> Path:
             return canonical_raw
 
+        @property
+        def raw_file(self) -> Path:
+            return canonical_raw
+
     def fake_create_or_retrieve_duplicate(
         ctx: ImportContext,
     ) -> tuple[DummyVideo, bool, bool]:
@@ -1414,6 +1423,10 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
             return self.state
 
         def get_raw_file_path(self) -> Path:
+            return sensitive_path
+
+        @property
+        def raw_file(self) -> Path:
             return sensitive_path
 
     def fake_create_or_retrieve(ctx: ImportContext) -> tuple[DummyVideo, bool, bool]:
@@ -2117,6 +2130,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         pk = 1
         video_hash = "video-hash"
         sensitive_meta = object()
+        raw_file = canonical_raw
 
         def __init__(self) -> None:
             self.state = DummyState()

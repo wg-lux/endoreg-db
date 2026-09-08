@@ -2,20 +2,36 @@
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn
+from typing import Literal, NoReturn
 
 import pytest
+from django.core.files.storage import FileSystemStorage
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import create_video_file
-from endoreg_db.models import Center, EndoscopyProcessor
+from endoreg_db.models import (
+    Center,
+    EndoscopyProcessor,
+    Frame,
+    ImageClassificationAnnotation,
+    Label,
+)
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.services.video_files import _imports as create_from_file_module
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    MediaIntegrityStatus,
+)
+from endoreg_db.utils.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+    sha256_file,
+)
 from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.utils.storage import save_local_file
 
@@ -286,6 +302,8 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
     assert isinstance(ctx.file_hash, str)
     video = video_file_module.VideoFile(video_hash=ctx.file_hash)
     video.pk = 1
+    video.raw_file.storage = FileSystemStorage(location=tmp_path)
+    video.raw_file.name = "import/stale-success.mp4"
 
     integrity_result = MediaIntegrityResult(
         ok=False,
@@ -467,16 +485,15 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_reuses_existing_record_without_success_history(
+def test_create_from_file_duplicate_with_missing_file_requires_reconciliation_without_success_history(
     mock_storage: EndoregPathsModel,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     base_db_data: None,
 ) -> None:
     """
-    Without a successful ProcessingHistory entry, the current create_or_retrieve
-    flow reuses the existing VideoFile record from context/failure finalization
-    and keeps the pipeline marked as needing processing.
+    A failed history does not authorize resetting an existing record whose raw
+    source is missing.
     """
     _storage_root, _sensitive_dir, transcoding_dir = _configure_storage_layout(
         mock_storage, "dup_orphan"
@@ -532,14 +549,113 @@ def test_create_from_file_duplicate_with_missing_file_reuses_existing_record_wit
         center_name=center_name,
         processor_name=processor_name,
     )
-    new_video, processed2, needs_processing2 = (
+    before = VideoFile.objects.values().get(pk=orphan_pk)
+    with pytest.raises(MediaIntegrityError, match="manual reconciliation"):
         create_video_file.create_or_retrieve_video_file(ctx2)
+
+    assert VideoFile.objects.values().get(pk=orphan_pk) == before
+    assert src_file.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("entrypoint", ["direct", "create", "context"])
+@pytest.mark.parametrize("history", [None, False, True])
+@pytest.mark.parametrize("raw_source", ["blank", "missing", "unreadable"])
+def test_duplicate_with_unusable_raw_source_preserves_human_work(
+    mock_storage: EndoregPathsModel,
+    base_db_data: None,
+    monkeypatch: pytest.MonkeyPatch,
+    entrypoint: Literal["direct", "create", "context"],
+    history: bool | None,
+    raw_source: Literal["blank", "missing", "unreadable"],
+) -> None:
+    source = mock_storage.sensitive_video / "renamed-incoming.mp4"
+    source_bytes = b"synthetic incoming source for duplicate reconciliation"
+    atomic_write_file(destination=source, content=(source_bytes,))
+    source_hash = sha256_file(source)
+    center_name, processor_name = _center_and_processor_names()
+    center = Center.objects.get(name=center_name)
+    video = VideoFile.objects.create(
+        center=center,
+        video_hash=source_hash,
+        original_file_name="original-recording.mp4",
+        raw_file="" if raw_source == "blank" else "raw_videos/unavailable.mp4",
+    )
+    if raw_source == "unreadable":
+        # An existing directory is an unambiguous unreadable media artifact,
+        # including with this module's filesystem-backed storage fixture.
+        ensure_directory(Path(video.raw_file.path))
+    save_local_file(video.processed_file, source, name="retained-master.mp4", save=True)
+    master_path = Path(video.processed_file.path)
+    master_bytes = master_path.read_bytes()
+    state = get_or_create_video_state(video)
+    state.anonymization_validated = True
+    state.save()
+    frame = Frame.objects.create(
+        video=video, frame_number=7, timestamp=0.28, relative_path="7.jpg"
+    )
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=Label.objects.create(name="reconciliation-regression"),
+        value=True,
+        float_value=0.75,
+        annotator="human-reviewer",
+    )
+    if history is not None:
+        ProcessingHistory.get_or_create_for_hash(file_hash=source_hash, success=history)
+    video_before = VideoFile.objects.values().get(pk=video.pk)
+    state_before = type(state).objects.values().get(pk=state.pk)
+    frame_before = Frame.objects.values().get(pk=frame.pk)
+    annotation_before = ImageClassificationAnnotation.objects.values().get(
+        pk=annotation.pk
+    )
+    history_before = list(
+        ProcessingHistory.objects.filter(file_hash=source_hash).values()
     )
 
-    assert processed2 is False
-    assert needs_processing2 is True
-    assert new_video.pk == orphan_pk
-    assert new_video.get_raw_file_path() is None
+    def reject_staging(**_kwargs: object) -> NoReturn:
+        pytest.fail("duplicate conflict must be detected before normalization")
+
+    monkeypatch.setattr(
+        create_from_file_module, "_prepare_import_staging", reject_staging
+    )
+    for _attempt in range(2):
+        ctx = ImportContext(
+            file_path=source,
+            center_name=center_name,
+            processor_name=processor_name,
+            file_hash=source_hash,
+            current_video=video if entrypoint == "context" else None,
+        )
+        with pytest.raises(MediaIntegrityError) as raised:
+            if entrypoint == "direct":
+                create_from_file_module._create_from_file(
+                    VideoFile, source, center_name, processor_name, source_hash
+                )
+            else:
+                create_video_file.create_or_retrieve_video_file(ctx)
+
+        assert raised.value.result.status == (
+            MediaIntegrityStatus.ARTIFACT_UNREADABLE
+            if raw_source == "unreadable"
+            else MediaIntegrityStatus.ARTIFACT_MISSING
+        )
+        assert raised.value.result.media_pk == video.pk
+        assert raised.value.result.missing_artifacts == ("raw_file",)
+        assert VideoFile.objects.values().get(pk=video.pk) == video_before
+        assert type(state).objects.values().get(pk=state.pk) == state_before
+        assert Frame.objects.values().get(pk=frame.pk) == frame_before
+        assert (
+            ImageClassificationAnnotation.objects.values().get(pk=annotation.pk)
+            == annotation_before
+        )
+        assert (
+            list(ProcessingHistory.objects.filter(file_hash=source_hash).values())
+            == history_before
+        )
+        assert VideoFile.objects.filter(video_hash=source_hash).count() == 1
+        assert source.read_bytes() == source_bytes
+        assert master_path.read_bytes() == master_bytes
 
 
 def test_check_storage_capacity_raises_on_insufficient_space(

@@ -4,7 +4,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
@@ -24,6 +24,9 @@ from endoreg_db.services.hls_media import (
     hls_materialization_is_active,
     hls_result_is_ready,
     materialize_video_hls,
+)
+from endoreg_db.services.hub.media_integrity import (
+    has_verified_processed_video_transfer,
 )
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
@@ -157,7 +160,34 @@ def ensure_video_hls(
     execution_guard: Callable[[], None] | None = None,
 ) -> None:
     """Return only after local raw and processed HLS are both ready."""
-    for artifact_kind in ("raw", "processed"):
+    _ensure_video_hls_artifacts(
+        instance, ("raw", "processed"), force=force, execution_guard=execution_guard
+    )
+
+
+def ensure_transferred_video_hls(
+    instance: VideoFile,
+    *,
+    execution_guard: Callable[[], None] | None = None,
+) -> None:
+    """Require processed HTTP Live Streaming for an authenticated Hub generation."""
+    if execution_guard is not None:
+        execution_guard()
+    if not has_verified_processed_video_transfer(instance):
+        raise RuntimeError("Processed-only playback requires a verified Hub transfer")
+    _ensure_video_hls_artifacts(
+        instance, ("processed",), force=False, execution_guard=execution_guard
+    )
+
+
+def _ensure_video_hls_artifacts(
+    instance: VideoFile,
+    artifact_kinds: tuple[Literal["raw", "processed"], ...],
+    *,
+    force: bool,
+    execution_guard: Callable[[], None] | None,
+) -> None:
+    for artifact_kind in artifact_kinds:
         deadline = time.monotonic() + get_ffmpeg_transcode_timeout_seconds()
         request_force = force
         while True:

@@ -13,6 +13,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.import_files.file_storage.state_management import finalize_failure
 from endoreg_db.services.hub.media_integrity import (
     check_video_media_integrity,
+    require_reusable_video_raw_source,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
 from endoreg_db.services.video_files import (
@@ -43,13 +44,19 @@ def _ensure_context_file_hash(ctx: ImportContext) -> str:
     return ctx.file_hash
 
 
-def _load_current_video(ctx: ImportContext, file_hash: str) -> VideoFile | None:
+def _load_current_video(
+    ctx: ImportContext, file_hash: str, *, require_raw_source: bool = True
+) -> VideoFile | None:
     if isinstance(ctx.current_video, VideoFile):
+        if require_raw_source:
+            require_reusable_video_raw_source(ctx.current_video)
         return ctx.current_video
     try:
         ctx.current_video = get_video_by_content_hash(file_hash)
     except VideoFile.DoesNotExist:
         ctx.current_video = None
+    if require_raw_source and isinstance(ctx.current_video, VideoFile):
+        require_reusable_video_raw_source(ctx.current_video)
     return ctx.current_video if isinstance(ctx.current_video, VideoFile) else None
 
 
@@ -59,17 +66,23 @@ def _handle_success_history(ctx: ImportContext, file_hash: str) -> _HistoryDecis
         "- checking media integrity before short-circuiting",
         file_hash,
     )
-    existing_video = _load_current_video(ctx, file_hash)
+    existing_video = _load_current_video(ctx, file_hash, require_raw_source=False)
     integrity_result = check_video_media_integrity(
         existing_video,
         content_hash=file_hash,
     )
     if integrity_result.ok:
+        if existing_video is not None and not existing_video.raw_file:
+            if existing_video.center.name != ctx.center_name:
+                raise ValueError("Transferred video belongs to a different center")
         return _HistoryDecision(
             processed=True,
             needs_processing=False,
             can_short_circuit=True,
         )
+
+    if existing_video is not None:
+        require_reusable_video_raw_source(existing_video)
 
     logger.warning(
         "Successful processing history exists for %s but media integrity "
@@ -106,6 +119,7 @@ def _get_or_create_video_instance(
 ) -> VideoFile:
     if isinstance(ctx.current_video, VideoFile):
         video = ctx.current_video
+        require_reusable_video_raw_source(video)
         logger.info("Using existing VideoFile from context: pk=%s", video.pk)
         return video
 

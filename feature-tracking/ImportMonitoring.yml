@@ -351,6 +351,15 @@ definition_of_done:
     evidence:
     - kind: runbook
       reference: docs/hub_ingest_operations.md
+    - kind: review
+      reference: >-
+        2026-09-08 gc-10 read-only import-state audit
+        (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml): 409 retry is a
+        UI/backend state-contract mismatch because the UI offers reimport for states rejected by the
+        endpoint. The encrypted-source fallback hashes ciphertext instead of decrypted content, causing
+        false source-hash failures for intact sources. Recovery classification covered 29 videos and
+        2,508 jobs without changing videos, annotations or import states; file existence was checked but
+        full playback integrity was not.
     - kind: code
       reference: endoreg_db/services/hub/ingest.py::_reserve_video_upload_import_handoff; tests/services/test_hub_ingest_dispatch.py::UploadJobDispatchTests::test_process_upload_job_redispatches_video_retry_with_stale_task_id
     - kind: command

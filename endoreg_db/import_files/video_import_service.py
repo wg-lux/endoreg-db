@@ -26,6 +26,7 @@ from endoreg_db.import_files.context.import_context import (
 )
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.import_files.file_storage.state_management import (
+    ensure_transferred_video_hls,
     ensure_video_hls,
     finalize_failure,
     finalize_video_success,
@@ -43,6 +44,8 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.hub.media_integrity import (
+    MediaIntegrityError,
+    require_reusable_video_raw_source,
     check_video_media_integrity,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
@@ -518,9 +521,13 @@ class VideoImportService:
                 if existing_completed_video is not None and not retry:
                     ctx.current_video = existing_completed_video
                     _require_execution_ownership(ctx)
-                    ensure_video_hls(existing_completed_video)
-                    self._cleanup_duplicate_staging(ctx)
+                    self._ensure_duplicate_streaming(ctx, existing_completed_video)
+                    if existing_completed_video.raw_file:
+                        self._cleanup_duplicate_staging(ctx)
                     return existing_completed_video
+
+                if existing_completed_video is not None and retry:
+                    require_reusable_video_raw_source(existing_completed_video)
 
                 _require_execution_ownership(ctx)
                 self._ensure_pipeline_storage_budget(ctx.file_path)
@@ -558,8 +565,9 @@ class VideoImportService:
 
                 if not needs_processing and not retry:
                     _require_execution_ownership(ctx)
-                    ensure_video_hls(ctx.current_video)
-                    self._cleanup_duplicate_staging(ctx)
+                    self._ensure_duplicate_streaming(ctx, ctx.current_video)
+                    if ctx.current_video.raw_file:
+                        self._cleanup_duplicate_staging(ctx)
                     return ctx.current_video
 
                 try:
@@ -737,6 +745,15 @@ class VideoImportService:
                         )
                         raise
 
+    @staticmethod
+    def _ensure_duplicate_streaming(ctx: ImportContext, video: VideoFile) -> None:
+        if not video.raw_file:
+            if video.center.name != ctx.center_name:
+                raise ValueError("Transferred video belongs to a different center")
+            ensure_transferred_video_hls(video, execution_guard=ctx.execution_guard)
+        else:
+            ensure_video_hls(video)
+
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
         """
         Return an already-successful video for this content hash, if one exists.
@@ -764,11 +781,11 @@ class VideoImportService:
             content_hash=file_hash,
         )
         if not integrity_result.ok:
-            if isinstance(
-                existing_video, VideoFile
-            ) and video_integrity_failure_allows_existing_video_reprocessing(
-                integrity_result
-            ):
+            if isinstance(existing_video, VideoFile):
+                if not video_integrity_failure_allows_existing_video_reprocessing(
+                    integrity_result
+                ):
+                    raise MediaIntegrityError(integrity_result)
                 ctx.current_video = existing_video
             else:
                 ctx.current_video = None

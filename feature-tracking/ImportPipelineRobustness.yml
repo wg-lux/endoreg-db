@@ -25,6 +25,152 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: source_identity_deduplication_and_legacy_reconciliation
+  category: data_integrity
+  title: Preserve source identity and human annotations when reconciling duplicate video imports
+  acceptance:
+  - Persist the immutable incoming plaintext source SHA-256 (Secure Hash Algorithm, 256-bit) before anonymization,
+    normalization, remuxing or encryption. Keep this identity distinct from the anonymized master hash
+    and each derivative generation hash; transformed output hashes must never overwrite the original import
+    identity.
+  - Identical source bytes imported under different names or through concurrent entrypoints resolve to
+    one canonical video within the authorized clinical scope. Pre-anonymized inputs explicitly identify
+    their input role and preserve verified source lineage when available; their output hash alone must
+    not establish equivalence with a raw recording.
+  - Different byte hashes with a matching filename, duration or frame count identify only a possible duplicate.
+    Require verified source lineage and presentation-timestamp timeline equivalence before consolidation;
+    uncertain identity or conflicting clinical links must produce a reviewable blocked result without
+    merging or deleting media.
+  - Retrospective reconciliation provides a dry-run inventory of all references and selects the record
+    carrying human annotations as the canonical candidate. Preserve annotation identifiers, annotators,
+    labels, values, timestamps, frame coordinates, segments and validation history. If both records contain
+    human work, preserve both annotation tracks and report conflicts rather than overwriting either track.
+  - Preserve unique raw sources, the accepted anonymized master, import provenance, clinical references
+    and dependent jobs before retiring a redundant record. Reconcile active media leases, queued tasks
+    and generation references; do not transfer anonymization acceptance to a different processed generation
+    or cascade-delete human work or the only source copy.
+  - Consolidation is transactional, idempotent and auditable, with recoverable evidence and explicit failure
+    handling across database and encrypted-storage boundaries. Destructive cleanup remains behind the
+    existing video-storage validation and approval gates.
+  - Ein erneuter Import mit gleichem Quellhash darf bei fehlender oder unlesbarer Rohquelle keinen vorhandenen
+    Videodatensatz löschen oder dessen Annotationen, akzeptierten Master und Historie zurücksetzen. Ohne
+    nachgewiesenen sicheren Wiederverwendungspfad muss er vor diesen Mutationen mit einem überprüfbaren
+    Integritätsfehler abbrechen; Quelle und vorhandene Referenzen bleiben erhalten.
+  - Ein zuvor erfolgreich empfangener Hub-Transfer wird bei erneutem Eingang derselben Quellidentität
+    im selben Zentrum erkannt. Ohne Rohdateireferenz erfordert die Wiederverwendung einen angewandten
+    Transfer mit passendem Zielvideo und typisiertem Empfangsbeleg sowie die aktuelle akzeptierte verarbeitete
+    Generation mit passender Klartextgröße und passendem Hash. Fehlende oder widersprüchliche Belege,
+    fremde Zentren, geänderte Generationen und unlesbare Artefakte erlauben keinen Duplikaterfolg. Die
+    erforderliche verarbeitete HTTP-Live-Streaming-Generation muss bereit sein; die erneut eingegangene
+    Rohquelle bleibt auch im verwalteten Importverzeichnis erhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Add regression coverage for renamed identical sources, concurrent duplicate imports,
+      raw versus pre-anonymized input, remuxed or re-encoded candidates with different hashes, missing
+      legacy source identity, human annotations on either or both records, unique raw-source retention,
+      clinical/timeline conflicts, active jobs, rollback and idempotent replay. Use synthetic fixtures,
+      then review a gc-10 dry run; do not delete production records merely to verify this criterion.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: '2026-09-08 gc-10 read-only PostgreSQL inspection: VideoFile 54 and 55, UploadJob source
+        hashes, VideoState, Frame, ImageClassificationAnnotation, LabelVideoSegment and VideoHlsArtifact;
+        no media or records deleted.'
+    - kind: review
+      reference: >-
+        2026-09-08 gc-10 read-only import-state audit
+        (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml): 29 videos and 2,508
+        import jobs reviewed; 2,473 import errors covered 32 source hashes, and 2,414 error jobs
+        referenced absent upload files. Videos 35, 37 and 42 retain raw files but lack processed output
+        and require recovery investigation. Video 12 lacks its raw file but retains processed media and
+        29,698 human annotations; annotations and existing media must be preserved. Videos 48 and 52
+        retain raw and processed files despite older LOST attempts. Two LOST jobs with retained files
+        decrypted successfully and matched their original hashes; one belongs to retired video 55 and
+        must not recreate it. Files were checked for existence, not full playback integrity; no videos,
+        annotations or import states were changed.
+    - kind: code
+      reference: endoreg_db/import_files/video_import_service.py::_import_and_anonymize; endoreg_db/import_files/video_import_service.py::_raw_source_identity;
+        endoreg_db/services/video_files/queries.py::get_video_by_content_hash
+    - kind: command
+      reference: '2026-09-08 explicit operator-requested retirement on gc-10: /var/lib/lx-annotate/recovery/video55-retirement-20260908
+        contains database-before.dump, psql-evidence-before.json, psql-evidence-after.json, queued-hls-deliveries.json,
+        revoke-acknowledgments.json, retirement-plan.json, transaction-evidence.json, retirement-result.json
+        and the executed retire-record.py. Root-only host-local evidence; full pg_restore decode passed.
+        Dump SHA-256: 4b56e833083a7822d55fc8734d29c593ea2f864aee70636a38eef82278fbc6da.'
+    - kind: code
+      reference: endoreg_db/services/video_files/_imports.py::_existing_readable_video; endoreg_db/services/hub/media_integrity.py::require_reusable_video_raw_source;
+        endoreg_db/services/hub/media_integrity.py::has_verified_processed_video_transfer; endoreg_db/import_files/file_storage/create_video_file.py;
+        endoreg_db/import_files/video_import_service.py; endoreg_db/import_files/file_storage/state_management.py::ensure_transferred_video_hls
+    - kind: test
+      reference: tests/models/metadata/file_import/test_create_video_file.py::test_duplicate_with_unusable_raw_source_preserves_human_work;
+        tests/services/test_video_import_transfer_identity.py
+    - kind: command
+      reference: '2026-09-08: .devenv/state/venv/bin/pytest tests/models/metadata/file_import/test_create_video_file.py
+        tests/services/test_video_import_service_unit.py tests/services/test_video_import_transfer_identity.py
+        tests/import_files/test_video_finalize_success.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_hub_transfer_unit_decisions.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_video_import_service.py::test_same_content_imports_serialize_and_only_one_runs_heavy_work
+        tests/services/test_hub_media_integrity_unit.py tests/services/test_ingest_idempotency_quarantine.py
+        tests/services/test_hub_cleanup.py -q --tb=short: 246 passed, 1 skipped, 2 dependency/plugin warnings,
+        4 subtests passed in 66.80s. PostgreSQL-Zeilensperrentest in test_hub_cleanup.py unter SQLite
+        übersprungen. Vollständiger Pyright: 0 errors, 0 warnings; Ruff check und format --check für alle
+        neun geänderten Python-Dateien bestanden.'
+    - kind: runbook
+      reference: 'docs/video_storage_normalization.md: Duplicate Sources and Received Hub Generations'
+    - kind: command
+      reference: '2026-09-08 Zusatzprüfung nach Anpassung der bestehenden Rohquellen-Testobjekte: .devenv/state/venv/bin/pyright
+        tests/services/test_video_import_service.py: 0 errors, 0 warnings; Ruff check und format --check
+        bestanden. .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py -m unit -q
+        --tb=short: 22 passed, 1 deselected, 2 dependency/plugin warnings in 47.46s. Der zuvor zusätzlich
+        gestartete unselektierte Lauf derselben Datei wurde wegen SKIP_EXPENSIVE_TESTS=false im aufwendigen
+        vollständigen Videoimport gezielt mit SIGINT beendet (1 passed, Exit 2); dies ist kein abgeschlossener
+        End-to-End-Nachweis.'
+    note: 'Reported duplicate-display incident on gc-10: videos 54 and 55 originate from same-named uploads
+      and both report 2183.68 seconds, 50 frames per second and 109183 frames, but their stored source
+      hashes differ. Both UploadJob hashes match their respective VideoFile.video_hash; processed identities
+      also differ. At initial inspection video 54 had 31845 manual frame annotations, 583 segments (96
+      without prediction metadata), accepted anonymization and no raw-file reference. Video 55 has no
+      frame or segment annotations, retains a raw-file reference and has unaccepted anonymization. Video
+      54 has clinical links; video 55''s patient and examination links are unset, not proven conflicting
+      patient identities. Preserve 54 as the canonical candidate and retain 55''s unique raw source if
+      equivalence is verified. Current source inspection hashes the incoming file before anonymization
+      and looks up VideoFile.video_hash, not processed_video_hash. The hypothesis that a historical anonymized
+      or re-encoded input caused the different source hashes remains unproven; equal names and timing
+      are not content-equivalence evidence. This records an improvement requirement, not an implemented
+      deduplication fix or automatic deletion policy. Subsequently, the operator explicitly requested
+      cancellation, PostgreSQL evidence capture and retirement of video 55. Live inspection identified
+      video 45 as the active encoder; four queued HLS deliveries for video 55 were revoked with acknowledgments
+      and removed from the queue without interrupting video 45. After a full database snapshot, record-only
+      transactional deletion removed video 55, its 109183 unannotated frame records and seven HLS records.
+      The unique raw and processed ciphertext files were atomically moved into the protected host-local
+      recovery archive with inode and size preserved; they were not attached to video 54 and source equivalence
+      remains unproven. PostgreSQL after-checks found zero video/frame/HLS records for 55. Video 54''s
+      31845 manual annotations and 583 segments retain identical before/after row digests; its video and
+      state records also remain unchanged. The application and FFmpeg worker remain active. This scoped
+      operational retirement does not implement or verify automatic retrospective deduplication. Ergänzung
+      2026-09-08: Der automatische Löschpfad in _existing_readable_video wurde entfernt; bestehende Quellidentität
+      wird jetzt vor Normalisierung geprüft. Fehlende oder unlesbare Rohquellen führen in direkter Erzeugung,
+      Kontextwiederverwendung und History-Pfaden zu einem typisierten Integritätsfehler statt Datensatzlöschung
+      oder Zustandsreset. 27 parametrisierte Fälle mit wiederholtem Aufruf sichern Video, VideoState,
+      Frame, menschliche Annotation, History, Master und Eingangsquelle unverändert ab. Ein erfolgreich
+      empfangener Hub-Transfer wird für denselben ursprünglichen Quellhash anhand APPLIED-Ledger, Zielvideo,
+      Zentrum, Knotenidentitäten, typisiertem Empfangsbeleg und Klartextgröße/-Hash der aktuell akzeptierten
+      Generation erkannt. Ohne Rohdateireferenz verlangt dieser Wiederverwendungspfad nur die verarbeitete
+      HTTP-Live-Streaming-Rendition und erhält die erneut eingegangene Rohquelle auch im verwalteten Importverzeichnis.
+      Falsche oder fehlende Belege, ausstehende Transfers, fremde Zentren, geänderte Generationen, unlesbare
+      Ausgabe, Streamingfehler und erzwungene Rohverarbeitung sind negativ getestet. Die Tests verwenden
+      SQLite, isolierten Dateisystem-Teststorage, synthetische Medien und ersetzte Encoding-/Streaming-Grenzen;
+      echte Medienkodierung, PostgreSQL-Prozesskonkurrenz und ein gc-10-Dry-Run sind damit nicht nachgewiesen.
+      Transfers ohne prüfbaren Empfangsbeleg bleiben manuell zu klären. Weiter offen: vollständige unveränderliche
+      Quellprovenienz vor Transformation, Eingangsrollentrennung einschließlich voranonymisierter Kollisionen,
+      umfassende Scope-Prüfung sowie ein referenzvollständiges Legacy-Dry-Run-Inventar und klinisch freigegebene
+      Zusammenführung. Kein Produktionszugriff, keine Altdatenlöschung und keine automatische Hash-Aliasbildung
+      in dieser Änderung.'
+    assessed_by: codex-import-20260908-a
+    assessed_at: '2026-09-08T10:27:37.811662Z'
 - id: report_spacy_fallback_without_llm
   category: functionality
   title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex
@@ -284,11 +430,27 @@ definition_of_done:
     - kind: command
       reference: 'Kombinierte Lifecycle-Lane: 171 passed, 3 subtests passed, 2 warnings; fokussierter
         Pyright der geänderten Dateien: 0 Fehler'
-    note: ReportImportAttempt besitzt nun den explizit persistierten Zustand LOST. Ein abgelaufener ACTIVE-Versuch
+    - kind: test
+      reference: tests/services/test_report_import_fencing.py::test_superseded_owner_cannot_change_replacement_attempt;
+        tests/services/test_report_import_fencing.py::test_failed_guard_rolls_back_database_writes_and_preserves_owner
+    - kind: command
+      reference: '2026-09-08: .devenv/state/venv/bin/pyright: 0 errors, 0 warnings; Ruff check und format
+        --check für tests/services/test_report_import_fencing.py bestanden. .devenv/state/venv/bin/pytest
+        tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
+        -q: 18 passed, 4 dependency/plugin warnings in 70.06s; SQLite.'
+    note: 'ReportImportAttempt besitzt nun den explizit persistierten Zustand LOST. Ein abgelaufener ACTIVE-Versuch
       wird zuerst als OWNERSHIP_LOST sichtbar gespeichert und erst danach über RECONCILE_RETRY mit neuer
-      Attempt-ID und monoton erhöhtem Fencing-Token übernommen; ein lebender Owner bleibt gesperrt.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:01:12.277867Z'
+      Attempt-ID und monoton erhöhtem Fencing-Token übernommen; ein lebender Owner bleibt gesperrt. Ergänzung
+      2026-09-08: Sechs parametrisierte Datenbankregressionen prüfen, dass ein ersetzter Owner weder Lease-Erneuerung,
+      Metadaten-Mutationsguard, Finalisierung noch Fehlerfreigabe auf den aktuellen Versuch anwenden kann.
+      Der vollständige Datensatz des neuen Owners bleibt unverändert und dieser kann anschließend erfolgreich
+      abschließen. Fehler innerhalb von Mutations- und Finalisierungsgrenzen rollen eine zusätzliche Datenbankzeile
+      zurück, erhalten die ursprüngliche Ausnahme und lassen den aktuellen Owner weiter abschließen. Die
+      Tests verwenden SQLite und prüfen den Transaktionsvertrag der Guards; sie ersetzen weder PostgreSQL-Prozesskonkurrenz
+      noch End-to-End-Nachweise für Text, SensitiveMeta und PDF-Dateipublikation. Keine Änderung am Anwendungscode;
+      Kriterium bleibt in_progress.'
+    assessed_by: codex-import-20260908-a
+    assessed_at: '2026-09-08T09:47:39.706449Z'
 - id: cross_entrypoint_failure_injection
   category: testing
   title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
@@ -359,6 +521,15 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/reconciliation.py::ReconciliationService.clear_stale_lock_files;
         cleanup_orphaned_artifacts; reset_incomplete_processing_states
+    - kind: review
+      reference: >-
+        2026-09-08 gc-10 read-only import-state audit
+        (/var/lib/lx-annotate/recovery/import-state-audit-20260908/report.yml): missing-source and
+        retained-artifact cases were classified without mutation. The audit identified a 409 retry
+        UI/backend contract mismatch: the UI offers reimport while the endpoint rejects these job states.
+        It also found that the encrypted-source fallback hashes ciphertext rather than decrypted content,
+        so intact sources can fail source-hash validation. These findings require recovery and contract
+        fixes; they are not evidence of successful automatic repair.
     - kind: command
       reference: 'targeted pyright: 0 errors; tests/services/test_reconciliation_service.py: 15 passed'
     - kind: command
