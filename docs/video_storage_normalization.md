@@ -230,7 +230,7 @@ private, non-cacheable `202 Accepted` response with `Retry-After`; broker
 failure returns `503 Service Unavailable`. It never performs synchronous
 transcoding in the web process.
 
-Legacy HLS rows without a persisted source-content SHA-256 identity are never
+Legacy HLS rows without a persisted source-content SHA-256 identity are not
 served as READY. Playlist lookup treats them as stale and uses the same bounded
 demand fallback to reserve an identity-bound replacement. Direct key and segment
 lookups reject the legacy generation. The schema migration deliberately does not
@@ -240,6 +240,24 @@ requests arriving before replacement. This repository does not yet contain
 production evidence that the full corpus has converged, and the tracker records
 open backfill admission and accounting defects; therefore automatic dispatch
 must not be described as completed production backfill.
+
+An operator who explicitly confirms that existing legacy media is unchanged may
+repair its missing provenance with `adopt_legacy_hls`. This is a database repair,
+not a runtime exemption and not an automatic inference from duration or visual
+similarity. Supply an exact `--artifact-id` allowlist, `--created-before` cutoff,
+`--approved-by`, `--reason`, and `--accept-unchanged-source`; preview is the
+default and `--apply` commits each artifact independently. The command reads the
+current source through authenticated encrypted storage, verifies complete HLS
+paths and the wrapped content key, and retains the original HLS files and keys.
+A changed filename additionally requires identical authenticated source bytes.
+Only blank-hash READY rows qualify. Active encoding/publication and playback
+leases defer repair. Matching queued replacements become failed stale attempts,
+so delayed deliveries cannot replace the adopted generation. Protected typed
+before/after receipts under `hls-legacy-adoption` retain the old metadata and
+operator attestation. If only a prepared receipt exists after an interruption,
+compare its before/after identities with the database before retrying or rolling
+back. A nonempty hash is never overwritten by this command. Normal playback
+checks and future source-change invalidation remain unchanged.
 
 Playlist admission, materialization, and reconciliation check the playlist and
 every referenced segment. Subsequent key and segment requests check the current

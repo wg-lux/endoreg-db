@@ -880,6 +880,11 @@ definition_of_done:
     recheck current source, profile, generation, key, and protected playlist/directory; requested segment
     access validates its own protected path and existence without rescanning unrelated sibling segments.
   - A profile change does not inherit deterministic-failure suppression from a different encoder profile.
+  - Explicit operator-approved adoption may bind existing legacy READY HLS with a blank historical hash
+    to the verified current source without transcoding. Require an exact artifact allowlist, an unchanged-source
+    attestation, authenticated source hashing, complete HLS paths and key checks, locked state rechecks,
+    a protected typed before/after receipt, and rejection of mismatched nonempty hashes or active encodes.
+    Ordinary playback and future-source invalidation remain strict after adoption.
   required: true
   verification:
     kind: manual
@@ -921,12 +926,32 @@ definition_of_done:
       reference: endoreg_db/services/hls_media.py; tests/services/test_hls_profile_transition.py
     - kind: document
       reference: docs/video_storage_normalization.md encoder profile default and explicit rebuild contract
-    note: User explicitly chose retain valid HLS and use NVENC for new builds. Default changes do not
-      invalidate supported READY profiles or rewrite queued attempt encoder identities. Legacy blank source
-      hashes remain rejected; gc10 migration0074 applied 2026-09-02T16:54:24Z, 24 processed READY rows
-      still lack hashes. Local verification only; no deployment approval.
+    - kind: test
+      reference: 2026-09-09 full pyright 0 errors/0 warnings; Ruff passed; tests/services/test_hls_legacy_adoption.py
+        9 passed,1 warning,45.08s
+    - kind: code
+      reference: endoreg_db/services/hls_legacy_adoption.py SHA256 67f465e1ed3f5de00817a2fc46a5a619af64aaa61099b291a78cfc6aa309db53;
+        endoreg_db/management/commands/adopt_legacy_hls.py
+    - kind: command
+      reference: 'gc-10 protected receipts: /var/lib/lx-annotate/data/hls-legacy-adoption; current29 receipts
+        independently match database source identity, key IDs, full HLS paths and key unwrap;0 postcheck
+        problems'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md: explicit operator-approved legacy provenance repair'
+    - kind: command
+      reference: 2026-09-09 gc-10 DB maintenance:31 committed receipts (22 processed,9 raw) at /var/lib/lx-annotate/data/hls-legacy-adoption;30
+        obsolete queued reservations fenced; source SHA256 67f465e1ed3f5de00817a2fc46a5a619af64aaa61099b291a78cfc6aa309db53;
+        base068fab488823091630864074c9416da323f0edba
+    note: gc-10 operator-authorized DB repair completed for31 legacy HLS records:22 processed and9 raw.
+      Original HLS files/keys retained,30 matching queued replacement attempts fenced as failed/stale.
+      Both installed strict readiness lookups passed before each commit. No runtime exception, application
+      package edit, or deployment. Processed12/54 remain excluded because different old/current source
+      bytes; raw46 active encode left undisturbed. Lease-deferred processed38/raw53 adopted after normal
+      expiry. Raw38 existing encode completed independently and replaced its legacy row. Protected receipts
+      preserve previous identities and explicit unchanged-media attestation; this does not claim historical
+      cryptographic proof or production release approval.
     assessed_by: codex-gc10-hls-20260909
-    assessed_at: '2026-09-09T07:55:20.174001Z'
+    assessed_at: '2026-09-09T08:21:07.147750Z'
 - id: hls_callers_require_terminal_readiness
   category: functionality
   title: WP-ER-03 Import and correction callers enforce typed HLS outcomes
