@@ -52,6 +52,22 @@ from .video_file_queries import VideoQuerySet
 logger = logging.getLogger(__name__)  # Changed from "video_file"
 
 
+def _validate_video_sequence_ranges(sequences: VideoSegmentsPayloadDict) -> None:
+    """Reject frame-coordinate ranges that cannot identify a video segment."""
+    for label_name, ranges in sequences.items():
+        for start_frame, end_frame in ranges:
+            if start_frame < 0 or end_frame < 0:
+                raise ValueError(
+                    f"Video segment range for {label_name!r} must use non-negative "
+                    "frame coordinates."
+                )
+            if start_frame >= end_frame:
+                raise ValueError(
+                    f"Video segment range for {label_name!r} must have start_frame "
+                    "less than end_frame."
+                )
+
+
 def get_default_joined_dataset_id() -> int:
     """Return the stable system dataset used when a video has no explicit dataset."""
     from endoreg_db.models.aidataset.aidataset import AIDataSet
@@ -199,7 +215,7 @@ class VideoFile(models.Model):
         "AIDataSet",
         on_delete=models.PROTECT,
         related_name="joined_videos",
-        default=get_default_joined_dataset_id,
+        blank=True,
         help_text=(
             "Dataset identifier assigned to this video for dataset-scoped training. "
             "Callers may explicitly assign a different dataset."
@@ -292,7 +308,7 @@ class VideoFile(models.Model):
         ai_model_meta_id: int | None
         state_id: int | None
         import_meta_id: int | None
-        joined_dataset_id: int
+        joined_dataset_id: int | None
 
         @property
         def label_video_segments(self) -> models.Manager[LabelVideoSegment]: ...
@@ -812,7 +828,12 @@ class VideoFile(models.Model):
             validated_sequences = validate_video_segments_payload(self.sequences or {})
         except ValueError as exc:
             raise ValidationError({"sequences": str(exc)}) from exc
-        self.sequences = validated_sequences.model_dump(mode="json")
+        canonical_sequences = validated_sequences.model_dump(mode="json")
+        try:
+            _validate_video_sequence_ranges(canonical_sequences)
+        except ValueError as exc:
+            raise ValidationError({"sequences": str(exc)}) from exc
+        self.sequences = canonical_sequences
         try:
             validated_meta = validate_video_file_meta_payload(self.meta)
         except ValueError as exc:
@@ -827,6 +848,9 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
+        if self.joined_dataset_id is None:
+            self.joined_dataset_id = get_default_joined_dataset_id()
+
         previous_processed_name = None
         if self.pk:
             previous_processed_name = (
