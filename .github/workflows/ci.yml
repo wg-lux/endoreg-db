@@ -51,10 +51,6 @@ jobs:
           DJANGO_SETTINGS_MODULE: endoreg_db.config.settings.test
         run: .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
 
-      - name: Check authentication and deployment security contracts
-        shell: devenv shell bash -- -e {0}
-        run: .devenv/state/venv/bin/pytest tests/keycloak tests/authz tests/deployment -q
-
-      - name: Run test suite
+      - name: Run test suite including authentication and deployment security contracts
         shell: devenv shell bash -- -e {0}
         run: .devenv/state/venv/bin/pytest

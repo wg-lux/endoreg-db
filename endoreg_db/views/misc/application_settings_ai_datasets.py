@@ -825,6 +825,7 @@ def _training_manifest_response(
             recommended_model_input_strategy=(options.recommended_model_input_strategy),
             information_source_names=options.information_source_names,
         )
+        lx_ai_core_manifest = manifest.to_lx_ai_core_dict()
     except ValueError as exc:
         return Response(
             {"errors": {"manifest": str(exc)}},
@@ -857,7 +858,7 @@ def _training_manifest_response(
                 "frame_format": manifest.frame_format.model_dump(mode="json"),
             },
             "manifest": manifest.model_dump(mode="json"),
-            "lx_ai_core_manifest": manifest.to_lx_ai_core_dict(),
+            "lx_ai_core_manifest": lx_ai_core_manifest,
         },
         status=status.HTTP_200_OK,
     )

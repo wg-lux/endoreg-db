@@ -428,7 +428,8 @@ def resolve_ai_dataset_for_queue(
     )
 
     if not dataset_name and not dataset_type:
-        dataset = AIDataSet.objects.first()
+        # The system video-assignment dataset is not an implicit annotation scope.
+        dataset = AIDataSet.objects.filter(is_default_video_dataset=False).first()
         return dataset
 
     dataset_qs = AIDataSet.objects.all()

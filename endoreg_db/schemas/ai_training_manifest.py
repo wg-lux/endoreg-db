@@ -121,8 +121,11 @@ class AITrainingSample(BaseModel):
             metadata.setdefault("video_uuid", self.video_uuid)
 
         path = self.path
-        if path is None and self.relative_path is not None:
-            path = Path(self.relative_path)
+        if path is None:
+            raise ValueError(
+                "Training path export requires protected processed-frame materialization; "
+                "relative frame-cache paths cannot be used as lx-ai-core training inputs."
+            )
 
         payload: dict[str, Any] = {
             "sample_index": self.sample_index,
@@ -135,8 +138,7 @@ class AITrainingSample(BaseModel):
             "timestamp": self.timestamp,
             "metadata": metadata,
         }
-        if path is not None:
-            payload["path"] = str(path)
+        payload["path"] = str(path)
         return payload
 
 

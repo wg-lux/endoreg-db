@@ -1005,7 +1005,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.1.9"
+version = "1.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -1146,9 +1146,9 @@ requires-dist = [
     { name = "lightning-fabric", specifier = ">=2.6.5" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.1" },
+    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.3" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.4.1" },
-    { name = "lx-dtypes", specifier = "==0.2.37" },
+    { name = "lx-dtypes", specifier = "==0.3.0" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -2024,15 +2024,16 @@ wheels = [
 
 [[package]]
 name = "lx-ai-core"
-version = "0.0.1"
+version = "0.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "twine" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/19/37/e74b0ee15ae40b1b1a2265f88d942f186d1f0edecea4768e0ac4dfc89c66/lx_ai_core-0.0.1.tar.gz", hash = "sha256:d55e24d76f601118b4d2c40b289e3aabc7d9fa8e0e8c9aba608becc576ef4769", size = 26303, upload-time = "2026-05-08T13:24:41.661Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/9c/70ad7d897365041d585bb60f383e6c00c326e5c1b9974e523a2d49701791/lx_ai_core-0.0.3.tar.gz", hash = "sha256:5b82324c5013527ffed2f5fef5bfefa4b9e531d1c672703cb7f15f43890ace83", size = 26549, upload-time = "2026-09-09T11:29:12.346Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/16/ead4ff421e5396cd37b24d91457eabec5139bc5e4ca9569693e49e7b828e/lx_ai_core-0.0.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e0567e91fa63eb2ebe90acca4fe46b3816c3a48fa56d97af493e6b2f2af5102b", size = 250561, upload-time = "2026-05-08T13:09:40.566Z" },
+    { url = "https://files.pythonhosted.org/packages/63/f4/5de079296a639ab1d3fa3a36b6bc8e6d9e221470792ce5c9fa838c407ae9/lx_ai_core-0.0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:59388314655af4f9f88062e560b7120ff688dc6e67407147fa6193b8feaa6f08", size = 250802, upload-time = "2026-09-09T11:29:11.133Z" },
 ]
 
 [package.optional-dependencies]
@@ -2094,7 +2095,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.2.37"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -2117,8 +2118,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/70/5a/6b7ef0ed9b6349727236fbd3b3fb7e62a1913c8bf1d1db0e98d2fd4f19ed/lx_dtypes-0.3.0.tar.gz", hash = "sha256:03d3c7be7ae578986cc4a8dfe0e993a1075ff9f89f37f04acd8d2db287932a68", size = 2678884, upload-time = "2026-09-09T11:28:11.052Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/4f/d17617b330d602f74e37ff2e9870de78e6eb5e31c2d2de753c3b2564ea2b/lx_dtypes-0.2.37-py3-none-any.whl", hash = "sha256:06c69a5726a48697b1a25ee47d3a24cb9d38b997ba13123c093c3f63e734f8c4", size = 866199, upload-time = "2026-09-08T11:08:12.773Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/e1/08a07d23c848820dc2f04d75156cd6f6216bfd08d6d012ed3316cf2fea1f/lx_dtypes-0.3.0-py3-none-any.whl", hash = "sha256:3065a51dcde530667b0c1a355dec4e858c30e887aed472e4ec4047a30c913e18", size = 869811, upload-time = "2026-09-09T11:28:06.321Z" },
 ]
 
 [[package]]

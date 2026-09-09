@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+import hashlib
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ class _Request:
     retries: object
 
 
-@dataclass
+@dataclass(eq=False)
 class _Task:
     name: object
     request: _Request
@@ -159,6 +160,7 @@ def test_signal_registration_is_idempotent() -> None:
         patch.object(celery_observability, "_signals_registered", False),
         patch.object(celery_observability.task_prerun, "connect") as prerun_connect,
         patch.object(celery_observability.task_postrun, "connect") as postrun_connect,
+        patch.object(celery_observability.task_failure, "connect") as failure_connect,
     ):
         celery_observability.register_celery_timing_signals()
         celery_observability.register_celery_timing_signals()
@@ -173,6 +175,130 @@ def test_signal_registration_is_idempotent() -> None:
         weak=False,
         dispatch_uid=celery_observability._TASK_POSTRUN_DISPATCH_UID,
     )
+    failure_connect.assert_called_once_with(
+        celery_observability._task_failure_receiver,
+        weak=False,
+        dispatch_uid=celery_observability._TASK_FAILURE_DISPATCH_UID,
+    )
+
+
+@pytest.mark.parametrize("started", [False, True])
+def test_failure_emits_private_error_without_requiring_timing(
+    caplog: LogCaptureFixture,
+    started: bool,
+) -> None:
+    _clear_active_tasks()
+    task_id = "patient-specific-delivery"
+    task = _Task(
+        name="endoreg_db.process_upload_job",
+        request=_Request(delivery_info={"routing_key": "pipeline"}, retries=2),
+    )
+    if started:
+        celery_observability._task_prerun_receiver(task_id=task_id, task=task)
+    with caplog.at_level(logging.ERROR, logger="endoreg_db.workload_timing"):
+        celery_observability._task_failure_receiver(
+            sender=task,
+            task_id=task_id,
+            exception=ValueError("clinical-error-content"),
+            args=("clinical-argument",),
+            kwargs={"password": "clinical-credential"},
+            traceback="clinical-traceback",
+            einfo="clinical-exception-info",
+        )
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    payload = cast(Mapping[str, object], getattr(record, "structured_event"))
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is None
+    assert payload == {
+        "event": "celery.task_failure",
+        "operation": "celery_task",
+        "outcome": "failed",
+        "task_id_sha256": hashlib.sha256(task_id.encode()).hexdigest(),
+        "task_family": "pipeline_ingest",
+        "queue": "pipeline",
+        "retry_bucket": "2_to_3",
+        "error_classification": "invalid_value",
+    }
+    assert "clinical-" not in caplog.text
+    assert task_id not in caplog.text
+    # Failure reporting must not consume the separate postrun timing state.
+    assert (task_id in celery_observability._active_task_started_at) is started
+    _clear_active_tasks()
+
+
+@pytest.mark.parametrize(
+    ("exception", "expected"),
+    [
+        (TimeoutError("private"), "timeout"),
+        (ConnectionError("private"), "connection"),
+        (PermissionError("private"), "permission"),
+        (ValueError("private"), "invalid_value"),
+        (TypeError("private"), "unknown"),
+        (OSError("private"), "os_error"),
+        (RuntimeError("private"), "unknown"),
+        (None, "unknown"),
+    ],
+)
+def test_failure_classification_is_bounded(exception: object, expected: str) -> None:
+    assert celery_observability._failure_classification(exception) == expected
+
+
+@pytest.mark.parametrize("task_id", [None, "", 42])
+def test_failure_normalizes_unknown_context_without_rendering_exception(
+    caplog: LogCaptureFixture,
+    task_id: object,
+) -> None:
+    class ClinicalException(Exception):
+        def __str__(self) -> str:
+            raise AssertionError("Exception details must never be rendered")
+
+    task = _Task(
+        name="clinical-task-name",
+        request=_Request(delivery_info={"routing_key": "clinical-queue"}, retries=-1),
+    )
+    with caplog.at_level(logging.ERROR, logger="endoreg_db.workload_timing"):
+        celery_observability._task_failure_receiver(
+            sender=task,
+            task_id=task_id,
+            exception=ClinicalException(),
+        )
+    payload = cast(
+        Mapping[str, object], getattr(caplog.records[-1], "structured_event")
+    )
+    assert payload["task_id_sha256"] is None
+    assert payload["task_family"] == "unknown"
+    assert payload["queue"] == "unknown"
+    assert payload["retry_bucket"] == "unknown"
+    assert payload["error_classification"] == "unknown"
+    assert "clinical-" not in caplog.text
+    assert "ClinicalException" not in caplog.text
+
+
+def test_failure_signal_dispatch_reaches_structured_error_handler(
+    caplog: LogCaptureFixture,
+) -> None:
+    celery_observability.register_celery_timing_signals()
+    task = _Task(
+        name="endoreg_db.process_upload_job",
+        request=_Request(delivery_info={"routing_key": "pipeline"}, retries=0),
+    )
+    with caplog.at_level(logging.ERROR, logger="endoreg_db.workload_timing"):
+        celery_observability.task_failure.send(
+            sender=task, task_id="signal-delivery", exception=TimeoutError("private")
+        )
+    failure_records = [
+        record
+        for record in caplog.records
+        if record.name == "endoreg_db.workload_timing"
+    ]
+    assert len(failure_records) == 1
+    payload = cast(
+        Mapping[str, object], getattr(failure_records[0], "structured_event")
+    )
+    assert payload["event"] == "celery.task_failure"
+    assert payload["error_classification"] == "timeout"
+    assert "private" not in caplog.text
 
 
 def test_app_ready_registers_celery_timing_before_runtime_early_returns() -> None:

@@ -247,11 +247,15 @@ def apply_video_anonymization_strategy(
 ) -> dict[str, object]:
     if config.strategy == "detector_assisted":
         mask_method = getattr(frame_cleaner, "mask_video_with_phi_detector", None)
-        if callable(mask_method):
-            summary = mask_method(input_video=raw_path, output_video=output_path)
-            to_dict = getattr(summary, "to_dict", None)
-            return cast(dict[str, object], to_dict() if callable(to_dict) else {})
-        return mask_video_with_detector_compat(frame_cleaner, raw_path, output_path)
+        if not callable(mask_method):
+            raise RuntimeError(
+                "Detector-assisted correction requires "
+                "lx-anonymizer FrameCleaner.mask_video_with_phi_detector. "
+                "Install a compatible lx-anonymizer runtime before retrying."
+            )
+        summary = mask_method(input_video=raw_path, output_video=output_path)
+        to_dict = getattr(summary, "to_dict", None)
+        return cast(dict[str, object], to_dict() if callable(to_dict) else {})
 
     if config.region.mode == "device":
         frame_cleaner.mask_application.device_name = config.region.device_name

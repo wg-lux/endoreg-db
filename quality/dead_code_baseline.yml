@@ -62,6 +62,26 @@ accepted_findings:
     message: "unused variable 'p_examination'"
     reason: Required keyword parameter in the KnowledgeBase runtime protocol; the validated ledger payload is passed under this name and consumed by the concrete implementation.
     review_after: 2026-11-13
+  - <<: *protocol_signature
+    path: endoreg_db/services/hls_media.py
+    message: "unused variable 'routing_key'"
+    reason: _HlsTaskDispatcher.apply_async declares the Celery keyword contract; dispatch_video_hls_materialization passes routing_key=queue to the concrete task dispatcher.
+    review_after: 2026-12-09
+  - &metric_signature
+    <<: *protocol_signature
+    path: endoreg_db/utils/ai/multilabel_classification_net.py
+    message: "unused variable 'y_true'"
+    reason: _MetricFunction.__call__ declares the scikit-learn precision_score, recall_score and f1_score keyword contract; calculate_metrics passes y_true, average and zero_division to all three concrete functions.
+    review_after: 2026-12-09
+  - <<: *metric_signature
+    message: "unused variable 'average'"
+  - <<: *metric_signature
+    message: "unused variable 'zero_division'"
+  - <<: *protocol_signature
+    path: endoreg_db/views/misc/upload_views.py
+    message: "unused variable 'mime'"
+    reason: _MagicModule.from_buffer declares the python-magic keyword contract; the upload content-type check invokes the concrete module with mime=True.
+    review_after: 2026-12-09
 
   - &framework_contract
     path: endoreg_db/checks.py
@@ -74,10 +94,6 @@ accepted_findings:
   - <<: *framework_contract
     path: endoreg_db/checks.py
     message: "unused variable 'databases'"
-  - <<: *framework_contract
-    path: endoreg_db/models/state/signals.py
-    message: "unused variable 'sender'"
-    occurrences: 2
   - <<: *framework_contract
     path: endoreg_db/services/polling_coordinator.py
     message: "unused variable 'exc_val'"
@@ -105,15 +121,6 @@ accepted_findings:
   - <<: *compatibility_contract
     path: endoreg_db/helpers/download_segmentation_model.py
     message: "unused variable 'resume_download'"
-  - <<: *compatibility_contract
-    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
-    message: "unused variable 'pdf_path'"
-  - <<: *compatibility_contract
-    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
-    message: "unused variable 'create_anonymized_pdf'"
-  - <<: *compatibility_contract
-    path: endoreg_db/import_files/processing/report_processing/report_anonymization.py
-    message: "unused variable 'anonymized_pdf_output_path'"
   - <<: *compatibility_contract
     path: endoreg_db/services/video_files/_ai.py
     message: "unused variable 'save_results'"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -117,14 +119,48 @@ def _cosine_distance_to_set(
 def _coerce_candidates(
     candidates: Sequence[AIDataSetActiveLearningCandidateContract | dict[str, Any]],
 ) -> list[AIDataSetActiveLearningCandidateContract]:
-    return [
-        (
-            candidate
+    normalized = [
+        AIDataSetActiveLearningCandidateContract.model_validate(
+            candidate.model_dump()
             if isinstance(candidate, AIDataSetActiveLearningCandidateContract)
-            else AIDataSetActiveLearningCandidateContract.model_validate(candidate)
+            else candidate,
+            strict=True,
         )
         for candidate in candidates
     ]
+    for candidate in normalized:
+        if candidate.sample_index < 0 or candidate.frame_number < 0:
+            raise ValueError("sample_index and frame_number must be nonnegative.")
+        if candidate.frame_id <= 0 or candidate.video_id <= 0:
+            raise ValueError("frame_id and video_id must be positive.")
+        if not math.isfinite(candidate.timestamp) or candidate.timestamp < 0:
+            raise ValueError("timestamp must be a finite presentation timestamp.")
+        if any(
+            not math.isfinite(value) or not 0 <= value <= 1 for value in candidate.probs
+        ):
+            raise ValueError("probabilities must be finite and between zero and one.")
+    for identities in (
+        [candidate.sample_index for candidate in normalized],
+        [candidate.frame_id for candidate in normalized],
+        [(candidate.video_id, candidate.frame_number) for candidate in normalized],
+    ):
+        if len(set(identities)) != len(identities):
+            raise ValueError("active learning candidate identities must be unique.")
+    return normalized
+
+
+def _validated_config(
+    config: AIDataSetActiveLearningConfigContract | None,
+) -> AIDataSetActiveLearningConfigContract:
+    resolved = AIDataSetActiveLearningConfigContract.model_validate(
+        config.model_dump() if config is not None else {}, strict=True
+    )
+    if any(
+        not math.isfinite(value) or value < 1
+        for value in (resolved.max_rarity_boost, resolved.max_label_weight)
+    ):
+        raise ValueError("rarity and label weights must be finite and at least one.")
+    return resolved
 
 
 def _validate_matrix(
@@ -137,6 +173,8 @@ def _validate_matrix(
     width = len(rows[0])
     if width == 0:
         raise ValueError(f"{name} rows must not be empty.")
+    if any(not math.isfinite(value) for row in rows for value in row):
+        raise ValueError(f"{name} values must be finite.")
     if any(len(row) != width for row in rows):
         raise ValueError(f"all {name} rows must have the same length.")
     return width
@@ -171,6 +209,8 @@ def _resolve_class_frequencies(
         raise ValueError(
             "class_frequencies must match the number of model output labels."
         )
+    if not np.all(np.isfinite(frequencies)) or np.any(frequencies < 0):
+        raise ValueError("class_frequencies must contain finite nonnegative values.")
     return frequencies
 
 
@@ -517,7 +557,7 @@ def select_active_learning_candidates_locally(
     class_frequencies: np.ndarray | Sequence[float] | None = None,
     config: AIDataSetActiveLearningConfigContract | None = None,
 ) -> AIDataSetActiveLearningSelectionContract:
-    resolved_config = config or AIDataSetActiveLearningConfigContract()
+    resolved_config = _validated_config(config)
     normalized_candidates = _coerce_candidates(candidates)
     if not normalized_candidates:
         return AIDataSetActiveLearningSelectionContract(
@@ -555,12 +595,89 @@ def select_active_learning_candidates_locally(
         scores=scores,
     )
     selected = _select_scored_candidates(segments, config=resolved_config)
-    return _build_selection(
+    selection = _build_selection(
         config=resolved_config,
         candidate_count=len(normalized_candidates),
         segment_count=len(segments),
         selected=selected,
     )
+    _validate_selection(selection, normalized_candidates, resolved_config)
+    return selection
+
+
+def _validate_selection(
+    selection: AIDataSetActiveLearningSelectionContract,
+    candidates: Sequence[AIDataSetActiveLearningCandidateContract],
+    config: AIDataSetActiveLearningConfigContract,
+) -> None:
+    segment_ids = _build_segment_ids(
+        candidates, segment_gap_frames=config.segment_gap_frames
+    )
+    selected = selection.selected_candidates
+    if (
+        selection.config != config
+        or selection.candidate_count != len(candidates)
+        or selection.segment_count != len(set(segment_ids))
+        or len(selected) > config.budget
+    ):
+        raise ValueError("active learning result does not match the request scope.")
+    indices = [item.sample_index for item in selected]
+    if (
+        len(set(indices)) != len(indices)
+        or selection.selected_sample_indices != indices
+        or selection.selected_frame_ids != [item.frame_id for item in selected]
+    ):
+        raise ValueError(
+            "active learning result identities are inconsistent or duplicated."
+        )
+    sources = {
+        candidate.sample_index: (candidate, segment_ids[index])
+        for index, candidate in enumerate(candidates)
+    }
+    per_segment: dict[int, int] = {}
+    frames_by_video: dict[int, list[int]] = {}
+    for item in selected:
+        source = sources.get(item.sample_index)
+        if source is None:
+            raise ValueError("active learning result contains an unknown candidate.")
+        candidate, segment_id = source
+        if (
+            item.frame_id != candidate.frame_id
+            or item.video_id != candidate.video_id
+            or item.frame_number != candidate.frame_number
+            or item.timestamp != candidate.timestamp
+            or item.probs != candidate.probs
+            or item.quality_score != candidate.quality_score
+            or item.segment_id != segment_id
+        ):
+            raise ValueError(
+                "active learning result changed candidate identity or measurements."
+            )
+        scores = (
+            item.uncertainty,
+            item.diversity,
+            item.rarity,
+            item.quality_gate,
+            item.frame_score,
+        )
+        if any(not math.isfinite(value) or value < 0 for value in scores):
+            raise ValueError(
+                "active learning result scores must be finite and nonnegative."
+            )
+        if (
+            candidate.quality_score < config.min_quality_score
+            or item.quality_gate <= 0
+            or item.quality_gate != candidate.quality_score
+        ):
+            raise ValueError("active learning result violated the quality gate.")
+        per_segment[segment_id] = per_segment.get(segment_id, 0) + 1
+        frame_numbers = frames_by_video.setdefault(candidate.video_id, [])
+        if per_segment[segment_id] > config.max_samples_per_segment or any(
+            abs(candidate.frame_number - number) < config.temporal_spacing_frames
+            for number in frame_numbers
+        ):
+            raise ValueError("active learning result violated sampling limits.")
+        frame_numbers.append(candidate.frame_number)
 
 
 def select_active_learning_frame_indices_from_candidates(
@@ -570,8 +687,14 @@ def select_active_learning_frame_indices_from_candidates(
     class_frequencies: np.ndarray | Sequence[float] | None = None,
     config: AIDataSetActiveLearningConfigContract | None = None,
 ) -> AIDataSetActiveLearningSelectionContract:
-    resolved_config = config or AIDataSetActiveLearningConfigContract()
+    resolved_config = _validated_config(config)
     normalized_candidates = _coerce_candidates(candidates)
+    if normalized_candidates:
+        _, _, label_count, embedding_width = _candidate_matrices(normalized_candidates)
+        _resolve_class_frequencies(class_frequencies, label_count=label_count)
+        _resolve_reference_embeddings(
+            labeled_embeddings, embedding_width=embedding_width
+        )
     reference_embeddings = (
         None
         if labeled_embeddings is None
@@ -588,12 +711,10 @@ def select_active_learning_frame_indices_from_candidates(
     except ModuleNotFoundError as exc:
         if exc.name != "lx_ai_core":
             raise
-        return select_active_learning_candidates_locally(
-            normalized_candidates,
-            labeled_embeddings=reference_embeddings,
-            class_frequencies=frequencies,
-            config=resolved_config,
-        )
+        raise RuntimeError(
+            "lx-ai-core is required for active learning selection; install the "
+            "supported lx-ai-core dependency in the backend environment."
+        ) from exc
 
     selection = select_active_learning_candidates(
         [candidate.model_dump(mode="json") for candidate in normalized_candidates],
@@ -601,9 +722,11 @@ def select_active_learning_frame_indices_from_candidates(
         class_frequencies=frequencies,
         config=resolved_config.model_dump(mode="json"),
     )
-    return AIDataSetActiveLearningSelectionContract.model_validate(
-        selection.model_dump(mode="json")
+    validated = AIDataSetActiveLearningSelectionContract.model_validate(
+        selection.model_dump(mode="json"), strict=True
     )
+    _validate_selection(validated, normalized_candidates, resolved_config)
+    return validated
 
 
 def _required_int_values(
@@ -615,12 +738,14 @@ def _required_int_values(
     for value in values:
         if value is None:
             raise ValueError(f"{name} must not contain None values.")
-        result.append(int(value))
+        if type(value) is not int:
+            raise ValueError(f"{name} must contain integer identities.")
+        result.append(value)
     return result
 
 
 def _required_float_values(
-    values: Sequence[float | None],
+    values: Sequence[object],
     *,
     name: str,
 ) -> list[float]:
@@ -628,6 +753,8 @@ def _required_float_values(
     for value in values:
         if value is None:
             raise ValueError(f"{name} must not contain None values.")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must contain numeric values.")
         result.append(float(value))
     return result
 
@@ -656,32 +783,40 @@ def select_active_learning_frame_indices(
     ):
         raise ValueError("All active learning arrays must have the same length.")
 
-    if frame_ids is None or quality_scores is None:
+    if frame_ids is None or quality_scores is None or timestamps is None:
         raise ValueError(
-            "frame_ids and quality_scores are required by "
+            "frame_ids, timestamps and quality_scores are required by "
             "AIDataSetActiveLearningCandidateContract."
         )
 
+    for name, values in (
+        ("frame_ids", frame_ids),
+        ("timestamps", timestamps),
+        ("quality_scores", quality_scores),
+    ):
+        if len(values) != candidate_count:
+            raise ValueError(
+                f"{name} must match the number of active learning candidates."
+            )
     resolved_frame_ids = _required_int_values(frame_ids, name="frame_ids")
-    resolved_timestamps = (
-        _required_float_values(timestamps, name="timestamps")
-        if timestamps is not None
-        else [float(frame_number) for frame_number in frame_numbers]
-    )
+    resolved_timestamps = _required_float_values(timestamps, name="timestamps")
     resolved_quality_scores = _required_float_values(
         quality_scores, name="quality_scores"
     )
 
     candidates = [
-        AIDataSetActiveLearningCandidateContract(
-            sample_index=sample_indices[index],
-            frame_id=resolved_frame_ids[index],
-            video_id=video_ids[index],
-            frame_number=frame_numbers[index],
-            timestamp=resolved_timestamps[index],
-            probs=list(probs[index]),
-            embedding=list(embeddings[index]),
-            quality_score=resolved_quality_scores[index],
+        AIDataSetActiveLearningCandidateContract.model_validate(
+            {
+                "sample_index": sample_indices[index],
+                "frame_id": resolved_frame_ids[index],
+                "video_id": video_ids[index],
+                "frame_number": frame_numbers[index],
+                "timestamp": resolved_timestamps[index],
+                "probs": list(probs[index]),
+                "embedding": list(embeddings[index]),
+                "quality_score": resolved_quality_scores[index],
+            },
+            strict=True,
         )
         for index in range(candidate_count)
     ]

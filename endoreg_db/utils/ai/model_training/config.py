@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -40,6 +41,19 @@ DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 # ---------------------------------------------------------------------
 # TRAINING CONFIG
 # ---------------------------------------------------------------------
+
+
+def validate_training_split_ratios(val_split: float, test_split: float) -> None:
+    """Reject split fractions that cannot leave a training partition."""
+    for name, value in (("val_split", val_split), ("test_split", test_split)):
+        if (
+            isinstance(value, bool)
+            or not math.isfinite(value)
+            or not 0.0 <= value < 1.0
+        ):
+            raise ValueError(f"{name} must be finite and in [0, 1).")
+    if val_split + test_split >= 1.0:
+        raise ValueError("val_split and test_split must sum to less than 1.")
 
 
 @dataclass
@@ -124,3 +138,6 @@ class TrainingConfig:
     freeze_backbone: bool = True
 
     # backbone_name: str = "gastro_rn50"
+
+    def __post_init__(self) -> None:
+        validate_training_split_ratios(self.val_split, self.test_split)

@@ -34,6 +34,9 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
+from endoreg_db.models.administration.person.user.portal_user_information import (
+    PortalUserInfo,
+)
 from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
 from endoreg_db.utils.paths import protected_media_root
 from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
@@ -94,6 +97,18 @@ def logged_in_client(client: Client, staff_user: User) -> Client:
 @pytest.fixture
 def report_center(db: Any) -> Center:
     return Center.objects.create(name=f"Report Center {uuid.uuid4().hex}")
+
+
+@pytest.fixture
+def center_scoped_client(client: Client, report_center: Center) -> Client:
+    user = User.objects.create_user(
+        username=f"center-report-user-{uuid.uuid4().hex}",
+        password="pw",
+    )
+    portal_info, _ = PortalUserInfo.objects.get_or_create(user=user)
+    portal_info.centers.add(report_center)
+    client.force_login(user)
+    return client
 
 
 @pytest.fixture
@@ -1044,3 +1059,105 @@ def test_report_list_requires_scope_for_non_privileged_user(
 
     assert resp.status_code == 200, resp.content
     assert resp.json() == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("own_center", [True, False])
+def test_reporting_history_enforces_nonstaff_center_scope(
+    center_scoped_client: Client,
+    report_patient: Patient,
+    patient_examination: PatientExamination,
+    own_center: bool,
+) -> None:
+    if not own_center:
+        report_patient.center = Center.objects.create(name="foreign-report-center")
+        report_patient.save(update_fields=["center"])
+
+    response = center_scoped_client.get(
+        f"{API_PREFIX}/history-context",
+        {"patient_examination_id": patient_examination.pk},
+    )
+
+    assert response.status_code == (200 if own_center else 403), response.content
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "center_selection", ["foreign_id", "foreign_name", "null", "empty"]
+)
+def test_scoped_report_submission_rejects_center_reassignment_without_writes(
+    center_scoped_client: Client,
+    report_patient: Patient,
+    report_center: Center,
+    patient_examination: PatientExamination,
+    packaged_registry: Path,
+    center_selection: str,
+) -> None:
+    del packaged_registry
+    foreign_center = Center.objects.create(name="foreign-submission-center")
+    center_values: dict[str, int | str | None] = {
+        "foreign_id": foreign_center.pk,
+        "foreign_name": foreign_center.name,
+        "null": None,
+        "empty": "",
+    }
+    original_record = patient_examination.dtypes_record
+    original_name = report_patient.first_name
+
+    response = center_scoped_client.post(
+        f"{API_PREFIX}/save-submission",
+        data=_json_body(
+            {
+                "patient_examination_id": patient_examination.pk,
+                "template_name": "star_upper_gi_main",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
+                "patient_data": {
+                    "first_name": "Must Roll Back",
+                    "center": center_values[center_selection],
+                },
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 422, response.content
+    assert "cannot change" in str(response.json())
+    report_patient.refresh_from_db()
+    patient_examination.refresh_from_db()
+    assert report_patient.center_id == report_center.pk
+    assert report_patient.first_name == original_name
+    assert patient_examination.dtypes_record == original_record
+    assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_scoped_report_submission_cannot_modify_foreign_examination(
+    center_scoped_client: Client,
+    report_patient: Patient,
+    patient_examination: PatientExamination,
+) -> None:
+    foreign_center = Center.objects.create(name="foreign-write-center")
+    report_patient.center = foreign_center
+    report_patient.save(update_fields=["center"])
+    original_name = report_patient.first_name
+
+    response = center_scoped_client.post(
+        f"{API_PREFIX}/save-submission",
+        data=_json_body(
+            {
+                "patient_examination_id": patient_examination.pk,
+                "template_name": "star_upper_gi_main",
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
+                "patient_data": {"first_name": "Must Not Write"},
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403, response.content
+    report_patient.refresh_from_db()
+    assert report_patient.first_name == original_name
+    assert report_patient.center_id == foreign_center.pk
+    assert PatientExaminationReport.objects.count() == 0

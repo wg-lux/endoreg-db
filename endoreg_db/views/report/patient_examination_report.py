@@ -5,10 +5,10 @@ import json
 import random
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 from django.contrib.auth.models import User
-from django.db import models, transaction
+from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.http import HttpRequest
 from django.utils import timezone
@@ -42,6 +42,7 @@ from lx_dtypes.models.contracts.patient_examination_report import (
 from pydantic import ValidationError
 from ninja import Query as NinjaQuery, Router
 from ninja.errors import HttpError
+from rest_framework.exceptions import ValidationError as ReportContextValidationError
 
 from endoreg_db.helpers.model_ids import model_pk, optional_model_pk
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
@@ -77,8 +78,6 @@ from endoreg_db.utils.media_urls import (
 )
 
 router = Router(tags=["patient-examination-reports"])
-
-ModelT = TypeVar("ModelT", bound=models.Model)
 
 
 def _ninja_query(*args: Any, **kwargs: Any) -> Any:
@@ -259,7 +258,9 @@ class PatientExaminationReportApi:
         allowed_center_ids = resolve_allowed_center_ids(user)
         return None if allowed_center_ids is None else set(allowed_center_ids)
 
-    def _apply_center_scope(self, queryset: QuerySet[ModelT]) -> QuerySet[ModelT]:
+    def _apply_center_scope(
+        self, queryset: QuerySet[PatientExaminationReport]
+    ) -> QuerySet[PatientExaminationReport]:
         allowed_center_ids = self._allowed_center_ids_for_user(
             getattr(self.request, "user", None)
         )
@@ -275,9 +276,12 @@ class PatientExaminationReportApi:
         self,
         patient_examination_id: int,
     ) -> PatientExamination:
-        queryset = self._apply_center_scope(
-            PatientExamination.objects.select_related("patient", "examination")
+        queryset = PatientExamination.objects.select_related("patient", "examination")
+        allowed_center_ids = self._allowed_center_ids_for_user(
+            getattr(self.request, "user", None)
         )
+        if allowed_center_ids is not None:
+            queryset = queryset.filter(patient__center_id__in=allowed_center_ids)
         patient_examination = queryset.filter(pk=patient_examination_id).first()
         if patient_examination is None:
             raise HttpError(
@@ -1056,6 +1060,8 @@ def save_submission(
     except ReportRuntimeValidationError as exc:
         raise HttpError(422, json.dumps(exc.result)) from exc
     except ReportPersistenceValidationError as exc:
+        raise HttpError(422, json.dumps(exc.detail)) from exc
+    except ReportContextValidationError as exc:
         raise HttpError(422, json.dumps(exc.detail)) from exc
     except ReportKnowledgeBaseRegistryUnavailableError as exc:
         raise HttpError(

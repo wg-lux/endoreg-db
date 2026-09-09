@@ -12,6 +12,7 @@ from endoreg_db.utils.structured_logging import (
     StructuredJsonFormatter,
     emit_structured_event,
     path_reference,
+    request_log_context,
 )
 
 
@@ -75,3 +76,24 @@ def test_emit_structured_event_adds_sanitized_record_extra(
         Path("/patients/Jane Doe/report.pdf")
     )
     assert "Jane Doe" not in caplog.text
+
+
+def test_nested_request_context_restores_outer_identity(
+    caplog: LogCaptureFixture,
+) -> None:
+    logger = logging.getLogger("tests.structured_logging")
+    with caplog.at_level(logging.INFO, logger="tests.structured_logging"):
+        with request_log_context() as outer:
+            with request_log_context() as inner:
+                emit_structured_event(logger, "inner")
+            emit_structured_event(logger, "outer")
+        emit_structured_event(logger, "outside")
+
+    events = [
+        cast(Mapping[str, object], getattr(record, "structured_event"))
+        for record in caplog.records
+    ]
+    assert outer != inner
+    assert events[0]["request_id"] == inner
+    assert events[1]["request_id"] == outer
+    assert "request_id" not in events[2]

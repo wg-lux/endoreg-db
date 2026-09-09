@@ -219,6 +219,122 @@ def test_report_anonymizer_fails_when_canonical_method_is_missing(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("defect", "message"),
+    [
+        ("attempt", "attempt identity"),
+        ("source", "source identity"),
+        ("size", "size does not match"),
+        ("hash", "hash does not match"),
+        ("foreign", "outside its attempt"),
+        ("traversal", "contains traversal"),
+        ("symlink", "contains a symlink"),
+        ("parent_symlink", "contains a symlink"),
+        ("directory", "regular file"),
+        ("invalid_contract", "artifact_size_bytes"),
+        ("changed_during_hash", "changed during validation"),
+    ],
+)
+def test_report_anonymizer_rejects_untrusted_result_before_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base_db_data: bool,
+    defect: str,
+    message: str,
+) -> None:
+    import endoreg_db.import_files.processing.report_processing.report_anonymization as module
+
+    class UntrustedReader(_CanonicalReader):
+        def process_report(
+            self, request: ReportAnonymizationRequest
+        ) -> ReportAnonymizationResult:
+            result = super().process_report(request)
+            updates: dict[str, object] = {}
+            if defect == "attempt":
+                updates["attempt_id"] = uuid.uuid4()
+            elif defect == "source":
+                updates["source_sha256"] = "d" * 64
+            elif defect == "size":
+                updates["artifact_size_bytes"] = result.artifact_size_bytes + 1
+            elif defect == "hash":
+                updates["artifact_sha256"] = "e" * 64
+            elif defect == "foreign":
+                foreign = tmp_path / "foreign.pdf"
+                foreign.write_bytes(result.artifact_path.read_bytes())
+                updates["artifact_path"] = foreign
+            elif defect == "traversal":
+                updates["artifact_path"] = (
+                    request.output_directory
+                    / ".."
+                    / request.output_directory.name
+                    / result.artifact_path.name
+                )
+            elif defect == "symlink":
+                link = request.output_directory / "linked.pdf"
+                link.symlink_to(result.artifact_path)
+                updates["artifact_path"] = link
+            elif defect == "parent_symlink":
+                link = request.output_directory / "linked-directory"
+                link.symlink_to(request.output_directory, target_is_directory=True)
+                updates["artifact_path"] = link / result.artifact_path.name
+            elif defect == "directory":
+                updates["artifact_path"] = request.output_directory
+            elif defect == "invalid_contract":
+                # Pydantic model_copy deliberately skips validation. The host
+                # must not treat an instance as proof of valid nested values.
+                updates["artifact_size_bytes"] = 0
+            elif defect == "changed_during_hash":
+                expected_hash = result.artifact_sha256
+
+                def changed_hash(path: Path) -> str:
+                    replacement = path.with_suffix(".replacement")
+                    replacement.write_bytes(path.read_bytes())
+                    replacement.replace(path)
+                    return expected_hash
+
+                monkeypatch.setattr(module, "sha256_file", changed_hash)
+            else:
+                raise AssertionError("Unknown defect")
+            return result.model_copy(update=updates)
+
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
+    report = _create_report_for_tests(text="before", anonymized_text="before-anon")
+    reader = UntrustedReader(llm_available=False)
+    anonymizer = object.__new__(ReportAnonymizer)
+    monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
+
+    def make_reader(self: ReportAnonymizer, report: RawPdfFile) -> UntrustedReader:
+        return reader
+
+    monkeypatch.setattr(ReportAnonymizer, "_instantiate_report_reader", make_reader)
+
+    def unexpected_persistence(**kwargs: object) -> NoReturn:
+        raise AssertionError("Invalid result reached persistence")
+
+    monkeypatch.setattr(
+        module, "persist_report_anonymization_result", unexpected_persistence
+    )
+    ctx = ImportContext(
+        file_path=source,
+        center_name="dummy-center",
+        file_type="report",
+        file_hash="b" * 64,
+        current_report=report,
+    )
+    with pytest.raises(ValueError, match=message):
+        anonymizer.anonymize_report(ctx)
+
+    assert ctx.original_text is None
+    assert ctx.anonymized_text is None
+    assert ctx.anonymized_path is None
+    report.refresh_from_db()
+    assert report.text == "before"
+    assert report.anonymized_text == "before-anon"
+    assert report.sensitive_meta_id is None
+
+
+@pytest.mark.django_db
 def test_persist_report_anonymization_result_rolls_back_text_fields_on_meta_error(
     monkeypatch: pytest.MonkeyPatch,
     base_db_data: bool,

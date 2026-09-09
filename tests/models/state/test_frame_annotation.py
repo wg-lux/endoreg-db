@@ -519,6 +519,41 @@ class FrameAnnotationStateTest(TestCase):
 
         self.assertEqual(resolved, dataset)
 
+    def test_resolve_ai_dataset_for_queue_ignores_system_dataset_by_default(self):
+        self.assertTrue(
+            AIDataSet.objects.filter(is_default_video_dataset=True).exists()
+        )
+        self.assertFalse(
+            AIDataSet.objects.filter(is_default_video_dataset=False).exists()
+        )
+
+        resolved = resolve_ai_dataset_for_queue(
+            dataset_name_raw=None,
+            dataset_type_raw=None,
+        )
+
+        self.assertIsNone(resolved)
+
+    def test_resolve_ai_dataset_for_queue_preserves_explicit_system_dataset(self):
+        dataset = AIDataSet.objects.get(is_default_video_dataset=True)
+
+        for selection in ("id", "name", "settings"):
+            with self.subTest(selection=selection):
+                with patch(
+                    "endoreg_db.utils.set_default_center.get_application_settings"
+                ) as get_settings:
+                    get_settings.return_value.ai_dataset_name = (
+                        dataset.name if selection == "settings" else ""
+                    )
+                    get_settings.return_value.ai_dataset_type = ""
+                    resolved = resolve_ai_dataset_for_queue(
+                        dataset_id_raw=dataset.pk if selection == "id" else None,
+                        dataset_name_raw=dataset.name if selection == "name" else None,
+                        dataset_type_raw=None,
+                    )
+
+                self.assertEqual(resolved, dataset)
+
     def test_resolve_ai_dataset_for_queue_prefers_explicit_dataset_id(self):
         older_dataset = AIDataSet.objects.create(
             name="duplicate-frame-dataset",

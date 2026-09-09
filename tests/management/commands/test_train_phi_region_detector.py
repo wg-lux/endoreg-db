@@ -156,3 +156,98 @@ def test_train_phi_region_detector_rejects_invalid_lx_anonymizer_result(
             dataset_yaml=dataset_yaml,
             output_dir=tmp_path / "runs",
         )
+
+
+@pytest.mark.parametrize("export_onnx", [True, False])
+def test_train_phi_region_detector_consumes_installed_result_contract(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    export_onnx: bool,
+) -> None:
+    from lx_anonymizer.text_detection import phi_region_detector_training as runtime
+
+    dataset_yaml = tmp_path / "dataset.yml"
+    dataset_yaml.write_text("train: images/train\nval: images/val\n", encoding="utf-8")
+    checkpoint = tmp_path / "best.pt"
+    onnx = tmp_path / "phi.onnx" if export_onnx else None
+    runtime_result = runtime.PhiRegionDetectorTrainingResult(
+        model_path=onnx or checkpoint,
+        model_sha256="a" * 64,
+        checkpoint_path=checkpoint,
+        onnx_path=onnx,
+        meta_path=tmp_path / "model.json",
+        training_result_path=tmp_path / "training.json",
+        run_dir=tmp_path,
+        settings={
+            "PHI_REGION_DETECTOR_MODEL_PATH": str(onnx or checkpoint),
+            "PHI_REGION_DETECTOR_MODEL_SHA256": "a" * 64,
+            "PHI_REGION_DETECTOR_CONFIDENCE": 0.35,
+            "PHI_REGION_DETECTOR_NMS_THRESHOLD": 0.45,
+            "PHI_REGION_DETECTOR_INPUT_SIZE": 640,
+            "PHI_REGION_DETECTOR_RESIZE_MODE": "letterbox",
+            "PHI_REGION_DETECTOR_BOX_FORMAT": "yolo_xywh",
+            "PHI_REGION_DETECTOR_SCORE_FORMAT": "class_scores",
+            "PHI_REGION_DETECTOR_CLASS_IDS": "",
+        },
+        config={"seed": 0, "deterministic": True},
+        training_result={"status": "success", "artifacts": []},
+    )
+
+    def completed_training(
+        config: runtime.PhiRegionDetectorTrainingConfig,
+    ) -> runtime.PhiRegionDetectorTrainingResult:
+        return runtime_result
+
+    monkeypatch.setattr(runtime, "train_phi_region_detector", completed_training)
+    stdout = StringIO()
+
+    call_command(
+        "train_phi_region_detector",
+        dataset_yaml=dataset_yaml,
+        output_dir=tmp_path / "runs",
+        export_onnx=export_onnx,
+        stdout=stdout,
+    )
+
+    assert json.loads(stdout.getvalue().splitlines()[-1]) == runtime_result.to_dict()
+
+
+@pytest.mark.parametrize("invalid_kind", ["unsupported", "nonfinite", "non_json"])
+def test_train_phi_region_detector_rejects_unsupported_or_non_json_result(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+    invalid_kind: str,
+) -> None:
+    from lx_anonymizer.text_detection import phi_region_detector_training as runtime
+
+    class UnsupportedResult:
+        def to_dict(self) -> dict[str, str]:
+            raise AssertionError("Unrecognized result serialization must not run")
+
+    dataset_yaml = tmp_path / "dataset.yml"
+    dataset_yaml.write_text("train: images/train\nval: images/val\n", encoding="utf-8")
+    result: object
+    if invalid_kind == "unsupported":
+        result = UnsupportedResult()
+    elif invalid_kind == "nonfinite":
+        result = {"model_path": "phi.onnx", "metrics": {"loss": float("nan")}}
+    else:
+        result = {"model_path": "phi.onnx", "metadata": {"path": tmp_path}}
+
+    def invalid_training(
+        config: runtime.PhiRegionDetectorTrainingConfig,
+    ) -> object:
+        return result
+
+    monkeypatch.setattr(runtime, "train_phi_region_detector", invalid_training)
+    stdout = StringIO()
+
+    with pytest.raises(ValueError):
+        call_command(
+            "train_phi_region_detector",
+            dataset_yaml=dataset_yaml,
+            output_dir=tmp_path / "runs",
+            stdout=stdout,
+        )
+
+    assert "training completed" not in stdout.getvalue()

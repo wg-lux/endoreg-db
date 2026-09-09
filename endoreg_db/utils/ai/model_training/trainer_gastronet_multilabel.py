@@ -17,11 +17,11 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
-from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
     RUNS_DIR,
     ensure_training_directories,
+    validate_training_split_ratios,
 )
 from endoreg_db.utils.ai.model_training.dataset import EndoMultiLabelDataset
 from endoreg_db.utils.ai.model_training.losses import (
@@ -184,7 +184,9 @@ def groupwise_split_indices_by_video(
     test_split: float,
     seed: int = 42,
 ) -> Tuple[List[int], List[int], List[int]]:
-    assert len(frame_ids) == len(video_ids)
+    validate_training_split_ratios(val_split, test_split)
+    if len(frame_ids) != len(video_ids):
+        raise ValueError("frame_ids and video_ids must have the same length")
 
     groups: Dict[object, List[int]] = {}
     for idx, (fid, video_id) in enumerate(zip(frame_ids, video_ids)):
@@ -198,6 +200,8 @@ def groupwise_split_indices_by_video(
     n_groups = len(group_ids)
     n_test = int(round(test_split * n_groups))
     n_val = int(round(val_split * n_groups))
+    if n_groups == 0 or n_val + n_test >= n_groups:
+        raise ValueError("Training split must retain at least one training group")
 
     train_group_ids = group_ids[: n_groups - n_val - n_test]
     val_group_ids = group_ids[n_groups - n_val - n_test : n_groups - n_test]
@@ -329,9 +333,13 @@ def _grouping_ids(
     frame_ids: list[int],
     video_ids: list[int],
 ) -> tuple[list[int], list[Optional[int]]]:
-    if frame_ids and video_ids:
-        return frame_ids, list(video_ids)
-    return list(range(len(image_paths))), [None] * len(image_paths)
+    if not image_paths or not (len(image_paths) == len(frame_ids) == len(video_ids)):
+        raise ValueError("Training requires aligned image, frame and video identities")
+    if any(type(value) is not int or value <= 0 for value in [*frame_ids, *video_ids]):
+        raise ValueError(
+            "Training requires positive integer frame and video identities"
+        )
+    return frame_ids, list(video_ids)
 
 
 def _prepare_training_data(config: TrainingConfig) -> _PreparedTrainingData:
@@ -400,22 +408,18 @@ def _subset_dataset(
 ) -> EndoMultiLabelDataset:
     label_vectors = cast(
         list[list[Optional[int]]],
-        cast(Any, dataset.labels[indices]).tolist(),
+        cast(Any, dataset.labels[indices].to(dtype=torch.int64)).tolist(),
     )
     label_masks = cast(
         list[list[int]],
-        cast(Any, dataset.masks[indices]).tolist(),
+        cast(Any, dataset.masks[indices].to(dtype=torch.int64)).tolist(),
     )
     return EndoMultiLabelDataset(
         image_paths=[dataset.image_paths[index] for index in indices],
         label_vectors=label_vectors,
         label_masks=label_masks,
         image_size=dataset.image_size,
-        frame_ids=(
-            [dataset.frame_ids[index] for index in indices]
-            if dataset.frame_ids is not None
-            else None
-        ),
+        frame_ids=[dataset.frame_ids[index] for index in indices],
     )
 
 
@@ -450,7 +454,7 @@ def _build_training_loaders(
         label_vectors=data.label_vectors,
         label_masks=data.label_masks,
         image_size=224,
-        frame_ids=data.frame_ids if hub_mode_enabled() else None,
+        frame_ids=data.frame_ids,
     )
     return _TrainingLoaders(
         full_dataset=full_dataset,

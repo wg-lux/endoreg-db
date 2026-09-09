@@ -7,13 +7,22 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from pydantic import ValidationError
+from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.management_command import (
     TrainPhiRegionDetectorCommandOptionsPayload,
     validate_model_training_result,
 )
+
+
+_RESULT_JSON_ADAPTER: TypeAdapter[JsonObject] = TypeAdapter(
+    JsonObject, config=ConfigDict(strict=True, allow_inf_nan=False)
+)
+
+
+class PhiRegionDetectorTrainingResultProtocol(Protocol):
+    def to_dict(self) -> dict[str, object]: ...
 
 
 class PhiRegionDetectorTrainingConfigProtocol(Protocol):
@@ -95,7 +104,7 @@ class Command(BaseCommand):
             config_factory_candidate,
         )
         train_model = cast(
-            Callable[[PhiRegionDetectorTrainingConfigProtocol], JsonObject],
+            Callable[[PhiRegionDetectorTrainingConfigProtocol], object],
             train_candidate,
         )
 
@@ -126,7 +135,17 @@ class Command(BaseCommand):
                 f"input_size={config.input_size}"
             )
         )
-        result = validate_model_training_result(train_model(config))
+        raw_result = train_model(config)
+        result_class: object = getattr(
+            training_module, "PhiRegionDetectorTrainingResult"
+        )
+        if isinstance(result_class, type) and isinstance(raw_result, result_class):
+            raw_result = cast(
+                PhiRegionDetectorTrainingResultProtocol, raw_result
+            ).to_dict()
+        result = validate_model_training_result(
+            _RESULT_JSON_ADAPTER.validate_python(raw_result)
+        )
         self.stdout.write(
             self.style.SUCCESS(
                 "PHI-region detector training completed. "

@@ -271,6 +271,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "endoreg_db.request_logging.RequestLoggingMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",

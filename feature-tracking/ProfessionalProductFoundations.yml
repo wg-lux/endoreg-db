@@ -1,157 +1,579 @@
-schema_version: "1.0"
+schema_version: '1.0'
 id: professional_product_foundations
 name: Professional product foundations
-description: >-
-  Cross-cutting production requirements that make the application predictable,
-  resilient, secure, observable, accessible, maintainable, and safe to operate
-  under real-world deployment conditions.
+description: Cross-cutting production requirements that make the application predictable, resilient, secure,
+  observable, accessible, maintainable, and safe to operate under real-world deployment conditions.
 owners:
-  - endoreg_db maintainers
+- endoreg_db maintainers
 production_critical: true
 tracking:
   state: active
   history: []
-source_documents: []
+source_documents:
+- path: docs/api_route_test_matrix.md
+  disposition: reference
+  note: Backend-Vertraege; Detailstatus bleibt in ApiContracts.yml.
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Modulgrenzen und dokumentierte Modell-/Service-Kopplung.
+- path: docs/local_study_server_deployment.md
+  disposition: reference
+  note: Betriebsprofil; ersetzt keinen Nachweis am eingesetzten Host.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: Importbetrieb, Wiederanlauf und Incident-Ablauf.
 definition_of_done:
-  - id: resilient_failure_handling
-    category: functionality
-    title: Expected failures are handled as recoverable user-facing states
-    acceptance:
-      - Network failures, API timeouts, validation errors, and expired sessions produce actionable feedback rather than cryptic errors or an unhandled crash.
-      - Recoverable failures preserve valid user input and expose a deterministic retry or recovery action where retry is safe.
-      - Each retry policy has an explicit timeout, bounded retry limit, and idempotency rule; unsafe operations are not automatically replayed.
-    required: true
-    verification:
-      kind: manual
-      instructions: Exercise representative timeout, invalid-input, expired-session, and connection-loss paths in a production-like profile and inspect the resulting UI state and server response.
-      timeout_seconds: 600
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: security_privacy_controls
-    category: security
-    title: Security and privacy controls are enforced throughout the stack
-    acceptance:
-      - Data is encrypted at rest within the approved storage boundary and in transit using the deployment-required transport protection.
-      - Authentication, authorization, and resource scoping enforce least privilege and fail closed when identity or scope is missing.
-      - External and user-controlled input is validated at system boundaries; sensitive data, credentials, and raw media are absent from logs, exports, and error responses.
-    required: true
-    verification:
-      kind: manual
-      instructions: Review the threat boundaries, storage and transport configuration, authorization checks, input schemas, logging fields, and export paths; execute negative access and data-leak tests in a production-like profile.
-      timeout_seconds: 900
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: observability_telemetry
-    category: operations
-    title: Failures and performance regressions are diagnosable in production
-    acceptance:
-      - Structured logs include correlation context, operation, resource identity, outcome, and a safe error classification without sensitive payloads.
-      - Unhandled exceptions and background-job failures reach the configured crash-reporting channel with release and environment context.
-      - Service health, latency, error rate, saturation, retries, and queue or workflow stagnation are represented by actionable metrics or alerts with documented ownership.
-    required: true
-    verification:
-      kind: manual
-      instructions: Trace one successful request, one handled failure, and one background failure using only the configured logs, error reporting, dashboards, and alerts.
-      timeout_seconds: 600
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: accessible_design_system
-    category: requirements
-    title: The interface follows a consistent and accessible design system
-    acceptance:
-      - Shared components define consistent visual hierarchy, spacing, states, focus treatment, and error presentation for supported workflows.
-      - Core workflows are operable by keyboard alone, expose meaningful names and status updates to assistive technology, and maintain sufficient contrast and visible focus.
-      - Form errors, loading states, empty states, and destructive actions are understandable without relying on color, animation, or pointer input alone.
-    required: true
-    verification:
-      kind: manual
-      instructions: Review the component inventory and keyboard and screen-reader test the critical workflows, including loading, validation-error, empty, and destructive-action states.
-      timeout_seconds: 900
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: performance_and_loading_states
-    category: functionality
-    title: Slow and unreliable connections remain usable
-    acceptance:
-      - Critical screens expose explicit loading, stale, empty, error, and retry states without blocking unrelated interactions.
-      - Assets and cacheable responses use bounded, versioned caching; user-visible state does not display stale data as current without an explicit indication.
-      - Optimistic updates are used only for operations with safe rollback, and perceived-speed improvements do not weaken server-side confirmation or data integrity.
-    required: true
-    verification:
-      kind: command
-      command:
-        - .devenv/state/venv/bin/pytest
-        - tests
-        - -q
-      timeout_seconds: 1800
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: deterministic_data_integrity
-    category: testing
-    title: Concurrent interactions cannot corrupt or duplicate state
-    acceptance:
-      - State transitions have one authoritative owner and deterministic ordering for concurrent responses, retries, refreshes, and navigation.
-      - Mutating requests are protected against double submission and unsafe replay through server-side idempotency or an equivalent invariant.
-      - Tests cover race-prone success, timeout-after-commit, retry, stale-response, and concurrent-update scenarios and verify rollback or conflict behavior.
-    required: true
-    verification:
-      kind: manual
-      instructions: Review state ownership and mutation contracts, then execute concurrent and delayed-response scenarios while checking that persisted records and user-visible state remain consistent.
-      timeout_seconds: 900
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: automated_quality_gates
-    category: testing
-    title: Changes pass automated quality and delivery gates
-    acceptance:
-      - Unit, integration, API-contract, and end-to-end coverage exists for critical workflows and their principal failure paths.
-      - Continuous integration runs type checking, linting, security checks, migrations or schema checks, and the relevant test suites on every change.
-      - Release automation produces reproducible, versioned artifacts and supports a controlled rollback without bypassing required checks.
-    required: true
-    verification:
-      kind: command
-      command:
-        - devenv
-        - tasks
-        - run
-        - agent:pre-commit
-      timeout_seconds: 1800
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: maintainable_contracts_documentation
-    category: documentation
-    title: Architecture, interfaces, and operational behavior are maintainable
-    acceptance:
-      - Modules have clear ownership boundaries, typed internal contracts, and documented responsibilities with no hidden coupling required for normal operation.
-      - Public API behavior documents authentication, inputs, outputs, errors, retries, and compatibility expectations without camelCase field additions.
-      - Runbooks document deployment, troubleshooting, incident escalation, data recovery, and rollback procedures and are kept aligned with the implementation.
-    required: true
-    verification:
-      kind: manual
-      instructions: Review the module boundaries, type and API contracts, release notes, and operational runbooks against the current implementation and a representative deployment.
-      timeout_seconds: 900
-    assessment:
-      status: not_assessed
-      evidence: []
-  - id: production_operational_readiness
-    category: operations
-    title: Deployment and incident operations are safe and repeatable
-    acceptance:
-      - Configuration is environment-specific, validated at startup, and free of committed secrets, fake credentials, or silent production fallbacks.
-      - Deployments provide health checks, graceful shutdown, bounded resource use, migration safety, and observable rollback or recovery procedures.
-      - Incident response identifies owner, severity, user impact, recovery steps, and post-incident evidence while preserving privacy and data integrity.
-    required: true
-    verification:
-      kind: manual
-      instructions: Perform a production-readiness review and a controlled deployment, failure, rollback, and recovery exercise using the documented operational profile.
-      timeout_seconds: 1200
-    assessment:
-      status: not_assessed
-      evidence: []
+- id: resilient_failure_handling
+  category: functionality
+  title: Expected failures are handled as recoverable user-facing states
+  acceptance:
+  - Network failures, API timeouts, validation errors, and expired sessions produce actionable feedback
+    rather than cryptic errors or an unhandled crash.
+  - Recoverable failures preserve valid user input and expose a deterministic retry or recovery action
+    where retry is safe.
+  - Each retry policy has an explicit timeout, bounded retry limit, and idempotency rule; unsafe operations
+    are not automatically replayed.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise representative timeout, invalid-input, expired-session, and connection-loss
+      paths in a production-like profile and inspect the resulting UI state and server response.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/views/interoperability_errors.py; endoreg_db/services/jobs/error_handling.py;
+        endoreg_db/tasks.py; tests/views/test_interoperability_errors.py; tests/test_tasks.py; tests/views/video/test_frame_annotation_bulk_upsert.py'
+    - kind: test
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef plus Arbeitsbaum: .devenv/state/venv/bin/pyright:
+        0 errors, 0 warnings, 0 informations. Danach .devenv/state/venv/bin/pytest tests/test_celery_observability.py
+        tests/utils/test_structured_logging.py tests/utils/test_workload_timing.py tests/deployment/test_prod_settings_contract.py
+        tests/views/test_interoperability_errors.py -q --tb=short: 53 passed, 2 warnings in 23.43s. Warnungen:
+        pytest Assertion-Rewrite und spaCy/Click-Deprecation. Kein vollstaendiger Import-, PostgreSQL-Konkurrenz-
+        oder Betriebsnachweis.'
+    note: 'Sichere Fehlercodes und Transaktionsrollback sind an ausgewaehlten API-Grenzen implementiert.
+      Vertragskonflikt: Datenbank-Recovery und beschaeftigte Import-Leases verwenden absichtlich max_retries=None;
+      begrenztes Backoff ist kein Versuchslimit. Vor Aenderung sind terminaler Zustand und sichere Wiederaufnahme
+      zu definieren. UI-Nachweise fuer Sessionablauf, Verbindungsverlust und erhaltene Eingaben fehlen.'
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:46:04.291938Z'
+- id: security_privacy_controls
+  category: security
+  title: Security and privacy controls are enforced throughout the stack
+  acceptance:
+  - Data is encrypted at rest within the approved storage boundary and in transit using the deployment-required
+    transport protection.
+  - Authentication, authorization, and resource scoping enforce least privilege and fail closed when identity
+    or scope is missing.
+  - External and user-controlled input is validated at system boundaries; sensitive data, credentials,
+    and raw media are absent from logs, exports, and error responses.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the threat boundaries, storage and transport configuration, authorization checks,
+      input schemas, logging fields, and export paths; execute negative access and data-leak tests in
+      a production-like profile.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/config/settings/prod.py; endoreg_db/authz/permissions.py;
+        endoreg_db/utils/structured_logging.py; docs/local_study_server_deployment.md; tests/deployment/test_prod_settings_contract.py'
+    - kind: test
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef plus Arbeitsbaum: .devenv/state/venv/bin/pyright:
+        0 errors, 0 warnings, 0 informations. Danach .devenv/state/venv/bin/pytest tests/test_celery_observability.py
+        tests/utils/test_structured_logging.py tests/utils/test_workload_timing.py tests/deployment/test_prod_settings_contract.py
+        tests/views/test_interoperability_errors.py -q --tb=short: 53 passed, 2 warnings in 23.43s. Warnungen:
+        pytest Assertion-Rewrite und spaCy/Click-Deprecation. Kein vollstaendiger Import-, PostgreSQL-Konkurrenz-
+        oder Betriebsnachweis.'
+    note: 'Produktionskonfiguration und Berechtigungen verlangen Identitaet und profilabhaengig gegenseitige
+      Transportauthentifizierung; Logging-Helfer redigieren sensible Felder. Pfadvalidierung beweist keine
+      Datentraegerverschluesselung. Host-Mounts, Berechtigungen und vollstaendige negative Zugriffs-/Export-/Datenlecktests
+      im benannten Betriebsprofil bleiben nachzuweisen. Detailvertraege: StorageSecurity.yml und CenterAccess.yml.'
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:46:07.245835Z'
+- id: observability_telemetry
+  category: operations
+  title: Failures and performance regressions are diagnosable in production
+  acceptance:
+  - Structured logs include correlation context, operation, resource identity, outcome, and a safe error
+    classification without sensitive payloads.
+  - Unhandled exceptions and background-job failures reach the configured crash-reporting channel with
+    release and environment context.
+  - Service health, latency, error rate, saturation, retries, and queue or workflow stagnation are represented
+    by actionable metrics or alerts with documented ownership.
+  required: true
+  verification:
+    kind: manual
+    instructions: Trace one successful request, one handled failure, and one background failure using
+      the configured logs, error reporting, dashboards, and alerts. Match the server-generated X-Request-ID
+      response header to request_id in structured backend events. Verify concurrent requests cannot share
+      context and streaming bodies are not consumed by logging; response-preparation timing is not full
+      transfer latency. Confirm the consuming deployment actually installs the middleware and prove cross-service
+      correlation separately.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/utils/structured_logging.py; endoreg_db/celery_observability.py;
+        endoreg_db/management/commands/check_system_health.py; docs/ops/local_study_server/check_system_health.service'
+    - kind: code
+      reference: 'endoreg_db/celery_observability.py: _task_failure_receiver, _failure_classification,
+        register_celery_timing_signals; tests/test_celery_observability.py: Signaldispatch, idempotente
+        Registrierung, Fehler ohne Startsignal, begrenzte Klassifikation und Payload-Ausschluss.'
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 0 warnings, 0 informations; .devenv/state/venv/bin/ruff
+        check endoreg_db/celery_observability.py tests/test_celery_observability.py: passed; ruff format
+        --check derselben Dateien: 2 files already formatted; scripts/check_django_startup_imports.py:
+        exit 0, startup-smoke ok (7 root url patterns), 2026-09-09.'
+    - kind: test
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef plus Arbeitsbaum: .devenv/state/venv/bin/pyright:
+        0 errors, 0 warnings, 0 informations. Danach .devenv/state/venv/bin/pytest tests/test_celery_observability.py
+        tests/utils/test_structured_logging.py tests/utils/test_workload_timing.py tests/deployment/test_prod_settings_contract.py
+        tests/views/test_interoperability_errors.py -q --tb=short: 53 passed, 2 warnings in 23.43s. Warnungen:
+        pytest Assertion-Rewrite und spaCy/Click-Deprecation. Kein vollstaendiger Import-, PostgreSQL-Konkurrenz-
+        oder Betriebsnachweis.'
+    - kind: test
+      reference: 'Erster fokussierter Lauf: 52 passed, 1 failed; Celery-Signaltest verwendete eine unhashbare
+        Dataclass als Sender. Testfixture auf Identitaetssemantik mit dataclass(eq=False) korrigiert;
+        anschliessend erneut globale Typpruefung und alle 53 Tests bestanden. Produktivverhalten dafuer
+        nicht abgeschwaecht.'
+    - kind: code
+      reference: 'endoreg_db/request_logging.py; endoreg_db/utils/structured_logging.py: request_log_context
+        und emit_structured_event; endoreg_db/config/settings/base.py; tests/test_request_logging.py;
+        tests/utils/test_structured_logging.py. Serverseitige Kennungen statt ungepruefter Client-Header;
+        Logereignisse erfassen Identitaet vor spaeterer Formatierung.'
+    - kind: test
+      reference: '2026-09-09: .devenv/state/venv/bin/pyright: 0 errors, 0 warnings, 0 informations. Danach
+        .devenv/state/venv/bin/pytest tests/test_request_logging.py tests/utils/test_structured_logging.py
+        tests/test_celery_observability.py tests/authz/test_middleware.py tests/scripts/test_check_dead_code.py
+        -q --tb=short: 55 passed, 2 bestehende pytest/spaCy-Warnungen in 6.36s. Tests belegen serverseitige
+        Kennung fuer Erfolgs-/Fehlerstatus, Payload-Ausschluss, Fehlerweitergabe, Kontextreset, parallele
+        Threads, Django-Async-Adapter und unverbrauchte Streaming-Antworten. Ruff fuer vier betroffene
+        Python-Dateien bestanden.'
+    - kind: command
+      reference: '2026-09-09: devenv tasks run agent:smoke exit 0 in 33.1s (Django-Startup-Importpruefung
+        und tests/deployment/test_prod_settings_contract.py). Zusaetzliches unabhaengiges Quellreview
+        durch Subagent assess_boundary_drift: kein konkreter Fehler in Datenschutz, Kontextisolation,
+        Async-Adaption, Fehlerweitergabe oder Streaming-Vertrag gefunden. Keine Aussage ueber konsumierenden
+        Host oder vollstaendige Stream-Laufzeit.'
+    note: 'Backend-Middleware erzeugt fuer jede Anfrage eine eigene UUID-Kennung und liefert sie als X-Request-ID
+      zurueck. Bestehende strukturierte Ereignisse erfassen request_id beim Emit; ContextVar und finally-Reset
+      isolieren parallele sowie verschachtelte Anfragen. Das Abschlussereignis enthaelt nur normalisierte
+      Methode, Status, Ergebnis und Dauer der Antwortvorbereitung; keine URL, Query, Header oder Nutzdaten.
+      Antwortkoerper werden nicht gelesen, Streaming-/Proxy-Transferdauer ist nicht gemessen. Celery-Fehlerereignisse
+      aus dem vorherigen Schritt bleiben vorhanden. Offen: Einbindung im konsumierenden Host, dienstuebergreifende
+      Korrelation, externe Crash-Meldestelle mit Release-/Umgebungskontext sowie zugestellte Alarme mit
+      benannter Verantwortung.'
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:54:59.830988Z'
+- id: accessible_design_system
+  category: requirements
+  title: The interface follows a consistent and accessible design system
+  acceptance:
+  - Shared components define consistent visual hierarchy, spacing, states, focus treatment, and error
+    presentation for supported workflows.
+  - Core workflows are operable by keyboard alone, expose meaningful names and status updates to assistive
+    technology, and maintain sufficient contrast and visible focus.
+  - Form errors, loading states, empty states, and destructive actions are understandable without relying
+    on color, animation, or pointer input alone.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the component inventory and keyboard and screen-reader test the critical workflows,
+      including loading, validation-error, empty, and destructive-action states.
+    timeout_seconds: 900
+  assessment:
+    status: blocked
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: docs/assisted_reporting_api_integration.md; quality/documentation_governance.yml;
+        endoreg_db/admin.py'
+    note: Die primaere Oberflaeche gehoert zum konsumierenden lx-annotate-Repository. In diesem Checkout
+      wurde kein Frontend-Komponentenprojekt gefunden; Tastatur-, Screenreader-, Kontrast- und Zustandsnachweise
+      kritischer Workflows fehlen. Backend-Adminvorlagen ersetzen diesen Nachweis nicht. Benoetigt werden
+      konkrete Frontend-Revision und gemeinsame Workflow-Abnahme.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:38:27.400345Z'
+- id: performance_and_loading_states
+  category: functionality
+  title: Slow and unreliable connections remain usable
+  acceptance:
+  - Critical screens expose explicit loading, stale, empty, error, and retry states without blocking unrelated
+    interactions.
+  - Assets and cacheable responses use bounded, versioned caching; user-visible state does not display
+    stale data as current without an explicit indication.
+  - Optimistic updates are used only for operations with safe rollback, and perceived-speed improvements
+    do not weaken server-side confirmation or data integrity.
+  required: true
+  verification:
+    kind: manual
+    instructions: Im konsumierenden lx-annotate-Frontend langsame und unterbrochene Verbindungen, veraltete
+      Antworten, leere Listen und fehlgeschlagene Mutationen pruefen. Loading-, Stale-, Error- und Retry-Zustaende
+      sowie Rollback beobachten. Backend-Cacheheader separat mit tests/views/video/test_hls_stream.py
+      pruefen; Backend-pytest allein belegt keine UI-Akzeptanz.
+    timeout_seconds: 1800
+  assessment:
+    status: blocked
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/views/video/hls_stream.py; tests/views/video/test_hls_stream.py'
+    note: Backend-Streaming unterscheidet zeitlich begrenztes privates Segmentcaching von nicht gecachten
+      Playlists und Schluesseln. Dies belegt keine Loading-/Stale-/Retry-Zustaende oder optimistischen
+      UI-Rollback. Blockiert durch fehlende Pruefung des konsumierenden Frontends unter langsamen/unterbrochenen
+      Verbindungen. Der pauschale Backend-Testbefehl wurde durch eine zur Akzeptanz passende manuelle
+      Pruefanweisung ersetzt.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:38:28.904645Z'
+- id: deterministic_data_integrity
+  category: testing
+  title: Concurrent interactions cannot corrupt or duplicate state
+  acceptance:
+  - State transitions have one authoritative owner and deterministic ordering for concurrent responses,
+    retries, refreshes, and navigation.
+  - Mutating requests are protected against double submission and unsafe replay through server-side idempotency
+    or an equivalent invariant.
+  - Tests cover race-prone success, timeout-after-commit, retry, stale-response, and concurrent-update
+    scenarios and verify rollback or conflict behavior.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review state ownership and mutation contracts, then execute concurrent and delayed-response
+      scenarios while checking that persisted records and user-visible state remain consistent.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/services/hub/ingest.py; tests/services/test_ingest_idempotency_quarantine.py;
+        tests/services/test_report_import_concurrency.py; tests/views/video/test_frame_annotation_bulk_upsert.py;
+        feature-tracking/BackendIdempotencyGuarantee.yml'
+    note: Upload-Identitaet, Datenbank-Constraints, Transaktionen und isolierte Report-Importlocks sind
+      implementiert; vorhandene Tests pruefen ausgewaehlte Wiederholungen und Konkurrenzfaelle. Vollstaendige
+      Commit-Ungewissheit, Mutation-Replay und UI-Reihenfolge bei veralteten Antworten und Navigation
+      sind nicht belegt. PostgreSQL-Mehrprozessnachweise und eingesetzte Paketrevision sind gesondert
+      zuzuordnen. BackendIdempotencyGuarantee.yml bleibt der Detailvertrag.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:38:30.474958Z'
+- id: automated_quality_gates
+  category: testing
+  title: Changes pass automated quality and delivery gates
+  acceptance:
+  - Unit, integration, API-contract, and end-to-end coverage exists for critical workflows and their principal
+    failure paths.
+  - Continuous integration runs type checking, linting, security checks, migrations or schema checks,
+    and the relevant test suites on every change.
+  - Release automation produces reproducible, versioned artifacts and supports a controlled rollback without
+    bypassing required checks.
+  required: true
+  verification:
+    kind: manual
+    instructions: CI-Konfiguration und erfolgreichen Lauf der konkreten Revision auf Typpruefung, nichtmutierende
+      Lint-/Formatpruefung, Sicherheitspruefung, Migrationspruefung und Tests pruefen. Kritische API-
+      und End-to-End-Abdeckung sowie versioniertes Release-Artefakt und kontrollierten Rollback gesondert
+      nachweisen; agent:pre-commit allein belegt weder Release noch alle Teststufen.
+    timeout_seconds: 1800
+  assessment:
+    status: blocked
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: .github/workflows/ci.yml; .pre-commit-config.yaml;
+        devenv.nix; feature-tracking/CodeQuality.yml'
+    - kind: command
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: .devenv/state/venv/bin/python
+        scripts/check_quality_boundaries.py exit 1 (broad_exception 416/406; type_suppression 109/140;
+        Fingerprint-Drift); .devenv/state/venv/bin/python scripts/check_dead_code.py exit 1 (5 NEW, 4
+        STALE).'
+    - kind: command
+      reference: 'DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test .devenv/state/venv/bin/python
+        manage.py makemigrations --check --dry-run: exit 0, No changes detected.'
+    - kind: review
+      reference: '.github/workflows/ci.yml: YAML-Parse und bash -n fuer sechs run-Bloecke bestanden; genau
+        eine pytest-Ausfuehrung nach Pyright, Locked-Sync und kein --fix; Subagent codex-ppf-quality-review-20260909,
+        2026-09-09.'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python scripts/check_route_matrix.py: exit 0, documented=25 backend=499
+        test_files=10, 2026-09-09.'
+    - kind: test
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef plus Arbeitsbaum: .devenv/state/venv/bin/pyright:
+        0 errors, 0 warnings, 0 informations. Danach .devenv/state/venv/bin/pytest tests/test_celery_observability.py
+        tests/utils/test_structured_logging.py tests/utils/test_workload_timing.py tests/deployment/test_prod_settings_contract.py
+        tests/views/test_interoperability_errors.py -q --tb=short: 53 passed, 2 warnings in 23.43s. Warnungen:
+        pytest Assertion-Rewrite und spaCy/Click-Deprecation. Kein vollstaendiger Import-, PostgreSQL-Konkurrenz-
+        oder Betriebsnachweis.'
+    - kind: command
+      reference: '2026-09-09: devenv tasks run quality:dead-code und .devenv/state/venv/bin/python scripts/check_dead_code.py
+        exit 0; 34 reviewed findings, no new/stale/expired entries; 0 confirmed deletion candidates, 5
+        compatibility candidates. Begruendung und Reviewdatum in quality/dead_code_baseline.yml; CodeQuality.yml
+        bleibt massgeblich fuer Detailbefunde.'
+    - kind: review
+      reference: 'Subagent assess_boundary_drift: Baselinecommit 4c84c423 hatte bereits tatsaechlich 404
+        Broad-Handler/109 Suppressions statt eingetragener 406/140. Seitdem 18 hinzugefuegte und 6 entfernte
+        Broad-Befunde, keine Suppressionsdifferenz. Vorwiegend Timing-plus-Reraise und explizite Kommando-/Publikationsgrenzen;
+        keine sichere pauschale Verengung abgeleitet. quality/quality_boundary_baseline.yml unveraendert.'
+    - kind: test
+      reference: '2026-09-09: .devenv/state/venv/bin/pyright: 0 errors, 0 warnings, 0 informations. Danach
+        .devenv/state/venv/bin/pytest tests/test_request_logging.py tests/utils/test_structured_logging.py
+        tests/test_celery_observability.py tests/authz/test_middleware.py tests/scripts/test_check_dead_code.py
+        -q --tb=short: 55 passed, 2 bestehende pytest/spaCy-Warnungen in 6.36s. Tests belegen serverseitige
+        Kennung fuer Erfolgs-/Fehlerstatus, Payload-Ausschluss, Fehlerweitergabe, Kontextreset, parallele
+        Threads, Django-Async-Adapter und unverbrauchte Streaming-Antworten. Ruff fuer vier betroffene
+        Python-Dateien bestanden.'
+    note: 'CI-Gates und einzelne pytest-Ausfuehrung bleiben vorhanden. Dead-Code-Guard nach quellengestuetztem
+      Einzelreview repariert: 34 akzeptierte Befunde, keine neuen/veralteten/abgelaufenen akzeptierten
+      Eintraege. Fuenf Protokollparameter besitzen reale Keyword-Aufrufer; drei ersetzte Reportparameter
+      und ein nicht mehr gemeldeter Framework-Parameter wurden aus der Baseline entfernt, keine Laufzeitloeschung.
+      Die separate Exception-/Typsuppressionsbaseline blockiert weiterhin (416/406, 109/140). Historischer
+      Vergleich zeigt bereits in ihrem letzten Aenderungscommit eine Diskrepanz; neue Handler protokollieren
+      Fehler und werfen sie weiter. Kein numerisches Baseline-Refresh ohne vollstaendiges Review. Hosted-CI-,
+      Release- und Rollback-Nachweise sowie ueberfaellige Kompatibilitaetsreviews bleiben offen.'
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:54:29.956418Z'
+- id: maintainable_contracts_documentation
+  category: documentation
+  title: Architecture, interfaces, and operational behavior are maintainable
+  acceptance:
+  - Modules have clear ownership boundaries, typed internal contracts, and documented responsibilities
+    with no hidden coupling required for normal operation.
+  - Public API behavior documents authentication, inputs, outputs, errors, retries, and compatibility
+    expectations without camelCase field additions.
+  - Runbooks document deployment, troubleshooting, incident escalation, data recovery, and rollback procedures
+    and are kept aligned with the implementation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the module boundaries, type and API contracts, release notes, and operational
+      runbooks against the current implementation and a representative deployment.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: docs/api_route_test_matrix.md; docs/model_layer_map_for_agents.md;
+        docs/medical_ledger_contract.md; docs/local_study_server_deployment.md; docs/hub_ingest_operations.md'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository
+        endoreg-db: exit 0, 258 inventory entries, 0 error(s), 0 warning(s), 2026-09-09.'
+    note: API-Matrix und Modulkarte dokumentieren Authentifizierung, Statuscodes, snake_case-Vertraege
+      und Modulgrenzen. Dokumentationsgovernance besteht mit 258 Inventareintraegen, 0 Fehlern und 0 Warnungen.
+      Dokumentierte Kopplung ist keine abgeschlossene Entkopplung. Betriebsabgleich mit konkreter Installation
+      und benannte Eskalations-/Recovery-Verantwortung bleiben nachzuweisen.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:40:00.158099Z'
+- id: production_operational_readiness
+  category: operations
+  title: Deployment and incident operations are safe and repeatable
+  acceptance:
+  - Configuration is environment-specific, validated at startup, and free of committed secrets, fake credentials,
+    or silent production fallbacks.
+  - Deployments provide health checks, graceful shutdown, bounded resource use, migration safety, and
+    observable rollback or recovery procedures.
+  - Incident response identifies owner, severity, user impact, recovery steps, and post-incident evidence
+    while preserving privacy and data integrity.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a production-readiness review and a controlled deployment, failure, rollback,
+      and recovery exercise using the documented operational profile.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: 'Quellpruefung 2026-09-09, HEAD 12f19caa3c840d86b8fdaf26e80e2d8da9bf6824; vorhandene
+        Tests sind keine behaupteten Testergebnisse: endoreg_db/config/settings/prod.py; endoreg_db/management/commands/check_system_health.py;
+        docs/local_study_server_deployment.md; docs/hub_ingest_operations.md'
+    - kind: test
+      reference: '2026-09-09, HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef plus Arbeitsbaum: .devenv/state/venv/bin/pyright:
+        0 errors, 0 warnings, 0 informations. Danach .devenv/state/venv/bin/pytest tests/test_celery_observability.py
+        tests/utils/test_structured_logging.py tests/utils/test_workload_timing.py tests/deployment/test_prod_settings_contract.py
+        tests/views/test_interoperability_errors.py -q --tb=short: 53 passed, 2 warnings in 23.43s. Warnungen:
+        pytest Assertion-Rewrite und spaCy/Click-Deprecation. Kein vollstaendiger Import-, PostgreSQL-Konkurrenz-
+        oder Betriebsnachweis.'
+    note: Produktionsvalidierung, Health-Checks und Runbooks sind vorhanden. Ein kontrollierter Deployment-,
+      Ausfall-, Rollback- und Recovery-Lauf fuer ein benanntes Betriebsprofil ist nicht belegt. Hostverschluesselung,
+      Shutdown-Verhalten, Ressourcenlimits sowie Incident-Verantwortung, Schweregrad und Nutzerauswirkung
+      sind am eingesetzten Dienst nachzuweisen. Lokale Konfigurationstests ersetzen diese Betriebsabnahme
+      nicht.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T09:46:15.359458Z'
+- id: clinical_reporting_identity
+  category: security
+  title: Clinical report writes preserve patient identity and center authorization
+  acceptance:
+  - Center-scoped users can read and update their own examinations and reports; foreign-center resources
+    fail closed without partial writes.
+  - Report submission cannot transfer or clear an existing patient center; conflicting demographic aliases
+    are rejected before mutation.
+  - Wrongly typed identifiers, malformed clinical values and unresolvable referenced concepts are rejected
+    rather than coerced into another clinical record.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise nonstaff own/foreign-center API calls and hostile submission payloads; verify
+      patient demographics, center, report, findings and ledger remain unchanged after rejection.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/report_patient_context.py; endoreg_db/views/report/patient_examination_report.py;
+        tests/services/test_report_patient_context.py; tests/views/report/test_patient_examination_report_ninja_api.py
+    - kind: test
+      reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
+        0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
+        tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
+        tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
+        tests/ai/test_training_media_boundary.py; tests/ai/test_training_split_validation.py; tests/ai/test_trainer_multilabel_unit.py;
+        tests/ai/test_multilabel_data_loader_video_ids.py; tests/ai/test_segmentation_retraining_lx_ai_core.py;
+        tests/management/commands/test_select_active_learning_candidates.py; tests/services/test_video_correction_jobs.py;
+        tests/ai/test_aidataset_training_manifest.py; tests/views/misc/test_application_settings_endpoints.py;
+        tests/views/test_central_hub_training_access.py; tests/services/test_report_import_service_unit.py;
+        tests/services/test_report_import_fencing.py; tests/services/test_report_import_state_machine.py;
+        tests/utils/test_file_operations.py; Optionen -q --tb=short -ra: 396 passed, 1 failed, 24 subtests
+        passed, 2 warnings in 69.30s. Einziger Fehler: Segment-Testfixture verlor erwartungsgemaess Exportfreigabe
+        durch Segmentanlage. Testfixture bildet nun erneute explizite Freigabe ab, Produktpruefung unveraendert.
+        Nach fokussierter Pyright-Pruefung 0/0: identischer Umgebungsaufruf fuer tests/management/commands/test_select_active_learning_candidates.py:
+        11 passed, 14 subtests passed, 2 warnings in 55.67s. Insgesamt alle 397 verschiedenen ausgewaehlten
+        Tests erfolgreich nachgeprueft; kein kompletter Repository-, PostgreSQL-Konkurrenz-, realer OCR-/Modelltrainings-
+        oder klinischer Abnahmelauf. Warnungen pytest Assertion-Rewrite und spaCy/Click-Deprecation. devenv
+        tasks run agent:smoke exit 0 (46.0s); Ruff alle geaenderten Pythondateien exit 0; check_dead_code.py:
+        34 reviewed findings, keine neuen/veralteten/abgelaufenen Eintraege.'
+    note: Center-Filter fuer Untersuchungen korrigiert; Patientencenter bleibt bei Reportupdates unveraenderlich.
+      Demografie wird vor Mutation normalisiert; boolesche Relationskennungen, widerspruechliche Aliase
+      und fehlerhafte Namen/Datumswerte werden abgewiesen. Ausgewaehlte Service-/API-Tests bestehen, siehe
+      zentrale Testevidenz. Breitere klinische Werte-/Konzeptvalidierung und persistierte verifizierte
+      OIDC-Subjektbindung fuer benutzerbezogene Entwuerfe bleiben offene Nachweise.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T11:06:15.958334Z'
+- id: external_integration_contracts
+  category: interoperability
+  title: Advertised anonymization and training boundaries validate real runtime contracts
+  acceptance:
+  - Anonymization results are revalidated and bound to the requested attempt and source digest before
+    any context or persistence mutation.
+  - Returned artifacts remain inside the attempt directory, are regular non-symlink files, and match claimed
+    size and digest; foreign or replaced artifacts fail closed.
+  - Training adapters accept the actual installed lx-anonymizer and lx-ai-core return contracts and reject
+    incompatible results with actionable errors; checkout evidence is not attributed to a different installed
+    package.
+  - Installed package versions and supported contract tests are recorded; adapter tests do not imply detector
+    sensitivity, clinical accuracy or production release approval.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run hostile report-result tests and real installed runtime contract conversion tests.
+      Record package origins and versions and explicit gaps for source checkouts, model execution, clinical
+      evaluation and deployed transport/storage.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/import_files/processing/report_processing/report_anonymization.py; endoreg_db/management/commands/train_phi_region_detector.py;
+        endoreg_db/services/jobs/video_correction_jobs.py
+    - kind: test
+      reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
+        0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
+        tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
+        tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
+        tests/ai/test_training_media_boundary.py; tests/ai/test_training_split_validation.py; tests/ai/test_trainer_multilabel_unit.py;
+        tests/ai/test_multilabel_data_loader_video_ids.py; tests/ai/test_segmentation_retraining_lx_ai_core.py;
+        tests/management/commands/test_select_active_learning_candidates.py; tests/services/test_video_correction_jobs.py;
+        tests/ai/test_aidataset_training_manifest.py; tests/views/misc/test_application_settings_endpoints.py;
+        tests/views/test_central_hub_training_access.py; tests/services/test_report_import_service_unit.py;
+        tests/services/test_report_import_fencing.py; tests/services/test_report_import_state_machine.py;
+        tests/utils/test_file_operations.py; Optionen -q --tb=short -ra: 396 passed, 1 failed, 24 subtests
+        passed, 2 warnings in 69.30s. Einziger Fehler: Segment-Testfixture verlor erwartungsgemaess Exportfreigabe
+        durch Segmentanlage. Testfixture bildet nun erneute explizite Freigabe ab, Produktpruefung unveraendert.
+        Nach fokussierter Pyright-Pruefung 0/0: identischer Umgebungsaufruf fuer tests/management/commands/test_select_active_learning_candidates.py:
+        11 passed, 14 subtests passed, 2 warnings in 55.67s. Insgesamt alle 397 verschiedenen ausgewaehlten
+        Tests erfolgreich nachgeprueft; kein kompletter Repository-, PostgreSQL-Konkurrenz-, realer OCR-/Modelltrainings-
+        oder klinischer Abnahmelauf. Warnungen pytest Assertion-Rewrite und spaCy/Click-Deprecation. devenv
+        tasks run agent:smoke exit 0 (46.0s); Ruff alle geaenderten Pythondateien exit 0; check_dead_code.py:
+        34 reviewed findings, keine neuen/veralteten/abgelaufenen Eintraege.'
+    note: 'Reportresultate werden erneut validiert und an Versuch, Quelldigest und regulaeres unveraendertes
+      Artefakt im Versuchsverzeichnis gebunden. Detector-Training akzeptiert den tatsaechlichen lx-anonymizer-Ergebnistyp;
+      fehlende kanonische Video-Detector-Faehigkeit bricht ohne lokalen Fallback ab. Installiert: lx-anonymizer
+      0.9.4.1, lx-ai-core 0.0.1, lx-dtypes 0.2.37 aus Endoreg-venv/site-packages; Checkouttests sind davon
+      getrennte Evidenz. Kanonischer Video-Detector nutzt weiterhin nominelle Bildrate/OpenCV: Erhaltung
+      variabler Praesentationszeitstempel, klinische Erkennungsleistung und vollstaendig persistierte
+      Reportprovenienz bleiben Freigabeblocker.'
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T11:06:17.773036Z'
+- id: reviewed_active_learning
+  category: testing
+  title: Active learning preserves reviewed provenance and validated media boundaries
+  acceptance:
+  - Candidate input has finite numerical values, aligned arrays, unique identities and authoritative presentation
+    timestamps; results are bound to supplied candidates, requested configuration, budget and temporal
+    spacing.
+  - Training reads only validated anonymized processed media through the existing protected reader in
+    every deployment mode; missing identities or unsafe media fail closed rather than using cached raw
+    paths.
+  - A callable production workflow connects candidate selection to human review without promoting predictions
+    to ground truth; review identity, dataset and model provenance remain traceable.
+  - Retraining is explicitly initiated or governed by an approved threshold policy; model evaluation and
+    promotion remain separate approval gates with no automatic clinical deployment.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run selector hostile-input and forged-output tests, reviewed-media reader tests, installed
+      training contract tests and a candidate-to-review workflow test. Verify predictions are not persisted
+      as human labels and no training or model promotion occurs during candidate selection.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/aidataset_active_learning.py; endoreg_db/management/commands/select_active_learning_candidates.py;
+        endoreg_db/services/aidataset_active_learning_shortlist.py; endoreg_db/utils/ai/model_training/dataset.py;
+        endoreg_db/services/aidataset_training_manifests.py
+    - kind: test
+      reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
+        0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
+        tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
+        tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
+        tests/ai/test_training_media_boundary.py; tests/ai/test_training_split_validation.py; tests/ai/test_trainer_multilabel_unit.py;
+        tests/ai/test_multilabel_data_loader_video_ids.py; tests/ai/test_segmentation_retraining_lx_ai_core.py;
+        tests/management/commands/test_select_active_learning_candidates.py; tests/services/test_video_correction_jobs.py;
+        tests/ai/test_aidataset_training_manifest.py; tests/views/misc/test_application_settings_endpoints.py;
+        tests/views/test_central_hub_training_access.py; tests/services/test_report_import_service_unit.py;
+        tests/services/test_report_import_fencing.py; tests/services/test_report_import_state_machine.py;
+        tests/utils/test_file_operations.py; Optionen -q --tb=short -ra: 396 passed, 1 failed, 24 subtests
+        passed, 2 warnings in 69.30s. Einziger Fehler: Segment-Testfixture verlor erwartungsgemaess Exportfreigabe
+        durch Segmentanlage. Testfixture bildet nun erneute explizite Freigabe ab, Produktpruefung unveraendert.
+        Nach fokussierter Pyright-Pruefung 0/0: identischer Umgebungsaufruf fuer tests/management/commands/test_select_active_learning_candidates.py:
+        11 passed, 14 subtests passed, 2 warnings in 55.67s. Insgesamt alle 397 verschiedenen ausgewaehlten
+        Tests erfolgreich nachgeprueft; kein kompletter Repository-, PostgreSQL-Konkurrenz-, realer OCR-/Modelltrainings-
+        oder klinischer Abnahmelauf. Warnungen pytest Assertion-Rewrite und spaCy/Click-Deprecation. devenv
+        tasks run agent:smoke exit 0 (46.0s); Ruff alle geaenderten Pythondateien exit 0; check_dead_code.py:
+        34 reviewed findings, keine neuen/veralteten/abgelaufenen Eintraege.'
+    note: Expliziter Managementbefehl select_active_learning_candidates erstellt streng gepruefte pending_human_review-Auswahl
+      mit Datensatz-, Modell-, Label- und Framebindung atomar und ohne Ueberschreiben im geschuetzten
+      Speicher. Keine Labelmutation, Trainingsausfuehrung oder Modellpromotion. Interner Trainingsleser
+      verlangt echte Frameidentitaeten und freigegebene verarbeitete Medien in allen Betriebsrollen; Split-/Labelgrenzen
+      und Auswahlergebnisse werden geprueft. Pfadmanifest-API gibt bewusst errors.manifest HTTP 400 zurueck,
+      bis geschuetzte verarbeitete Einzelbilder materialisiert werden; Rohcacheexport gesperrt. Separater
+      gespeicherter Trainer-Artefaktmanifestpfad nutzt weiterhin data.image_paths und bleibt unfreigegeben.
+      Vollstaendige menschliche Korrektur zu versioniertem Trainingssatz, patientengetrennte Evaluation,
+      Promotion, reale Modelllaeufe und Betriebsabnahme fehlen.
+    assessed_by: codex-professional-foundations-20260909
+    assessed_at: '2026-09-09T11:06:19.633270Z'

@@ -234,7 +234,7 @@ def _inspect_frame_format(
     from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.services.frames.training_images import read_processed_training_image
 
-    if isinstance(frame, Frame) and not frame.is_extracted:
+    if isinstance(frame, Frame):
         with read_processed_training_image(frame) as image:
             width, height = image.size
             return ("JPEG", width, height, image.mode), None
@@ -304,6 +304,11 @@ def build_frame_multilabel_training_manifest(
     recommended_model_input_strategy: AIFrameFormatStrategy = "crop_to_endoscope_roi",
     information_source_names: Iterable[str] | None = None,
 ) -> AITrainingDatasetManifest:
+    if include_file_paths:
+        raise ValueError(
+            "Training path export requires protected processed-frame materialization; "
+            "cached extracted-frame paths are not approved training artifacts."
+        )
     _validate_manifest_dataset(dataset)
     normalized_source_names = _normalize_source_names(information_source_names)
     annotations_qs = _manifest_annotations(dataset, normalized_source_names)
@@ -385,25 +390,24 @@ def _normalize_source_names(
 def _manifest_annotations(
     dataset: AIDataSet, normalized_source_names: list[str] | None
 ) -> QuerySet[ImageClassificationAnnotation]:
+    # Extraction is a cache state, not evidence of anonymization or clinical
+    # approval. Apply the same source eligibility gates to every frame.
     annotations_qs = (
         dataset.image_annotations.select_related(
             "frame__video", "label", "information_source"
         )
         .filter(frame__isnull=False)
         .filter(
-            Q(frame__is_extracted=True)
-            | (
-                ~Q(frame__video__processed_file="")
-                & Q(
-                    frame__video__state__anonymized=True,
-                    frame__video__state__anonymization_validated=True,
-                    frame__video__state__segment_annotations_validated=True,
-                    frame__video__state__outside_segments_removed=True,
-                    frame__video__state__ready_for_export=True,
-                    frame__video__state__processing_error=False,
-                )
-                & ~Q(frame__video__meta__integrity_status="lost")
+            ~Q(frame__video__processed_file="")
+            & Q(
+                frame__video__state__anonymized=True,
+                frame__video__state__anonymization_validated=True,
+                frame__video__state__segment_annotations_validated=True,
+                frame__video__state__outside_segments_removed=True,
+                frame__video__state__ready_for_export=True,
+                frame__video__state__processing_error=False,
             )
+            & ~Q(frame__video__meta__integrity_status__iexact="lost")
         )
         .order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
     )
@@ -551,7 +555,7 @@ def _build_sample(
         )
     return AITrainingSample(
         sample_index=sample_index,
-        path=frame.file_path if include_file_paths else None,
+        path=None,
         relative_path=frame.relative_path,
         labels=label_values,
         label_mask=label_mask,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Optional, Sequence, Tuple, List
 
 import numpy as np
-from PIL import Image
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -31,21 +30,46 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         image_size: int = 224,
         frame_ids: Sequence[int] | None = None,
     ) -> None:
-        assert len(image_paths) == len(label_vectors) == len(label_masks), (
-            "image_paths, label_vectors, label_masks must have same length"
-        )
+        if not image_paths or not (
+            len(image_paths) == len(label_vectors) == len(label_masks)
+        ):
+            raise ValueError(
+                "image_paths, label_vectors, label_masks must have the same nonzero length"
+            )
+        if type(image_size) is not int or image_size <= 0:
+            raise ValueError("image_size must be a positive integer")
 
         self.image_paths: List[str] = list(image_paths)
-        if frame_ids is not None and len(frame_ids) != len(image_paths):
-            raise ValueError("frame_ids and image_paths must have the same length")
-        self.frame_ids = list(frame_ids) if frame_ids is not None else None
+        if frame_ids is None or len(frame_ids) != len(image_paths):
+            raise ValueError(
+                "Validated frame_ids are required for every training image"
+            )
+        if any(type(frame_id) is not int or frame_id <= 0 for frame_id in frame_ids):
+            raise ValueError("frame_ids must contain positive integer identities")
+        self.frame_ids: list[int] = list(frame_ids)
 
         # Explizite Typisierung der leeren Listen, um "Unknown Member Type"
         # beim anschließenden .append() zu verhindern.
         label_vec_list: List[List[int]] = []
         mask_list: List[List[int]] = []
 
-        for vec, mask in zip(label_vectors, label_masks):
+        label_count = len(label_vectors[0])
+        if label_count == 0:
+            raise ValueError("Training label vectors must not be empty")
+        for vec, mask in zip(label_vectors, label_masks, strict=True):
+            if len(vec) != label_count or len(mask) != label_count:
+                raise ValueError("Every label vector and mask must have the same width")
+            for value, known in zip(vec, mask, strict=True):
+                if type(known) not in (int, bool) or known not in (0, 1):
+                    raise ValueError("Label masks must contain only binary integers")
+                if value is not None and (
+                    type(value) not in (int, bool) or value not in (0, 1)
+                ):
+                    raise ValueError(
+                        "Labels must contain binary integers or unknown values"
+                    )
+                if value is None and known != 0:
+                    raise ValueError("Unknown labels must be masked out")
             v = [0 if (x is None) else int(x) for x in vec]
             m = [int(x) for x in mask]
             label_vec_list.append(v)
@@ -64,21 +88,17 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
     def __len__(self) -> int:
         return len(self.image_paths)
 
-    def _load_image(self, path: str, frame_id: int | None = None) -> torch.Tensor:
+    def _load_image(self, frame_id: int) -> torch.Tensor:
         """
-        Load image from disk, resize, convert to normalized tensor [3, H, W].
+        Read approved processed media, resize, normalize to tensor [3, H, W].
         """
-        if frame_id is not None:
-            from endoreg_db.models.media.frame.frame import Frame
-            from endoreg_db.services.frames.training_images import (
-                read_processed_training_image,
-            )
+        from endoreg_db.models.media.frame.frame import Frame
+        from endoreg_db.services.frames.training_images import (
+            read_processed_training_image,
+        )
 
-            frame = Frame.objects.select_related("video__state").get(pk=frame_id)
-            img = read_processed_training_image(frame)
-        else:
-            with Image.open(path) as source:
-                img = source.convert("RGB")
+        frame = Frame.objects.select_related("video__state").get(pk=frame_id)
+        img = read_processed_training_image(frame)
         img = img.resize((self.image_size, self.image_size))
         arr = np.array(img, dtype=np.float32) / 255.0  # [H, W, C]
 
@@ -87,9 +107,7 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         return tensor
 
     def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor]:
-        path = self.image_paths[idx]
-        frame_id = self.frame_ids[idx] if self.frame_ids is not None else None
-        x = self._load_image(path, frame_id)
+        x = self._load_image(self.frame_ids[idx])
         y = self.labels[idx]
         m = self.masks[idx]
         return x, y, m

@@ -4,10 +4,13 @@ import hashlib
 import json
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeAlias, cast
+from uuid import uuid4
 
 
 SENSITIVE_KEY_PARTS = (
@@ -34,6 +37,20 @@ StructuredLogValue: TypeAlias = (
     StructuredLogScalar | list["StructuredLogValue"] | dict[str, "StructuredLogValue"]
 )
 StructuredLogPayload: TypeAlias = dict[str, StructuredLogValue]
+_request_id: ContextVar[str | None] = ContextVar(
+    "structured_log_request_id", default=None
+)
+
+
+@contextmanager
+def request_log_context() -> Generator[str, None, None]:
+    """Isolate a server-generated identity and restore any enclosing context."""
+    request_id = uuid4().hex
+    token = _request_id.set(request_id)
+    try:
+        yield request_id
+    finally:
+        _request_id.reset(token)
 
 
 def hash_identifier(value: object) -> str:
@@ -127,6 +144,9 @@ def emit_structured_event(
     **payload: StructuredLogValue,
 ) -> None:
     structured_payload = safe_log_payload({"event": event, **payload})
+    request_id = _request_id.get()
+    if request_id is not None:
+        structured_payload["request_id"] = request_id
     structured_message = (
         sanitize_log_string(message, key="message")
         if message

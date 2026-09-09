@@ -15,7 +15,8 @@ from endoreg_db.utils.encryption.storage_materialization import (
 from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
 
 
-def read_processed_training_image(frame: Frame) -> Image.Image:
+def validate_processed_training_frame(frame: Frame) -> None:
+    """Require reviewed processed media without reading pixels or touching raw media."""
     video = frame.video
     state = video.state
     metadata: object = video.meta
@@ -36,6 +37,11 @@ def read_processed_training_image(frame: Frame) -> Image.Image:
         or not video.processed_file.name
     ):
         raise ValueError("Training requires validated, export-ready processed video.")
+
+
+def read_processed_training_image(frame: Frame) -> Image.Image:
+    validate_processed_training_frame(frame)
+    video = frame.video
     with materialized_plaintext_field_file(video.processed_file, suffix=".mp4") as path:
         sample = read_video_path_frame_jpeg(
             path,

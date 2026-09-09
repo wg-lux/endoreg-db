@@ -2,6 +2,7 @@ import hashlib
 import importlib
 import logging
 import os
+import stat
 import sys
 from contextlib import nullcontext
 from pathlib import Path
@@ -28,7 +29,7 @@ from endoreg_db.models.administration.person.patient.patient import (
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.utils.hashs import get_patient_hash
 from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory, sha256_file
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,63 @@ def _processed_report_dir() -> Path:
     )
 
 
+def _validate_report_result(
+    result: object,
+    *,
+    request: ReportAnonymizationRequest,
+    output_directory: Path,
+) -> ReportAnonymizationResult:
+    """Validate library evidence against the host-owned attempt before mutation."""
+    # A type annotation (or a model constructed without validation) is not a
+    # runtime contract. Revalidate nested values rather than trusting an instance.
+    if not isinstance(result, ReportAnonymizationResult):
+        raise TypeError("Report anonymizer returned an unsupported result contract")
+    result = ReportAnonymizationResult.model_validate(result.model_dump())
+    if result.attempt_id != request.attempt_id:
+        raise ValueError("Report anonymization attempt identity does not match")
+    if result.source_sha256 != request.source_sha256:
+        raise ValueError("Report anonymization source identity does not match")
+
+    artifact = result.artifact_path
+    if ".." in artifact.parts:
+        raise ValueError("Report anonymization artifact path contains traversal")
+    artifact = artifact.absolute()
+    if not artifact.is_relative_to(output_directory):
+        raise ValueError("Report anonymization artifact is outside its attempt")
+    # Inspect the assigned directory as well as intermediate components; resolve()
+    # alone would hide a symlink that happens to point back into the attempt.
+    for component in (artifact, *artifact.parents):
+        if component.is_symlink():
+            raise ValueError("Report anonymization artifact path contains a symlink")
+        if component == output_directory:
+            break
+    before = artifact.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("Report anonymization artifact must be a regular file")
+    if before.st_size != result.artifact_size_bytes:
+        raise ValueError("Report anonymization artifact size does not match")
+    if sha256_file(artifact) != result.artifact_sha256:
+        raise ValueError("Report anonymization artifact hash does not match")
+    after = artifact.lstat()
+    if (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    ):
+        raise ValueError("Report anonymization artifact changed during validation")
+    return result
+
+
 class ReportAnonymizer:
     _report_reader_class: _ReportReaderClass | None
 
@@ -160,7 +218,7 @@ class ReportAnonymizer:
 
             attempt_directory = ensure_directory(
                 anonymized_dir / f"attempt-{uuid4().hex}"
-            )
+            ).resolve(strict=True)
             if not isinstance(ctx.file_hash, str):
                 raise RuntimeError(
                     "Stable report snapshot hash is required for anonymization."
@@ -173,7 +231,11 @@ class ReportAnonymizer:
                 output_directory=attempt_directory,
                 options=ReportAnonymizationOptions(use_llm=use_llm),
             )
-            anonymization_result = report_reader.process_report(request)
+            anonymization_result = _validate_report_result(
+                report_reader.process_report(request),
+                request=request,
+                output_directory=attempt_directory,
+            )
             ctx.original_text = anonymization_result.original_text
             ctx.anonymized_text = anonymization_result.anonymized_text
             ctx.extracted_metadata = anonymization_result.extracted_metadata

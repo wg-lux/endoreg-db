@@ -52,6 +52,9 @@ definition_of_done:
   title: Canonical routes and payload contracts match the implementation
   acceptance:
   - All documented routes resolve to the expected views.
+  - Die automatische Dataset-Auswahl der Frame-Annotationsqueue ignoriert das systemverwaltete
+    Video-Zuordnungsdataset; verfügbare extrahierte und streambare Frames liefern weiterhin HTTP 200.
+    Explizit oder in den Anwendungseinstellungen gewählte Datasets behalten ihre Auswahlgrenzen.
   - Backend and wire contracts use snake_case; the centralized lx-annotate client boundary may convert requests
     to snake_case and responses to camelCase without endpoint-specific special paths.
   - GET media/videos/{id}/fps/ and GET/POST media/videos/{id}/segments/normalize-fps/ validate the persisted
@@ -72,6 +75,15 @@ definition_of_done:
     - kind: command
       reference: .devenv/state/venv/bin/python scripts/check_route_matrix.py --warn-on-missing-backend
       note: Exit code 0
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/models/state/test_frame_annotation.py
+        tests/views/video/test_annotation_access_controls.py tests/views/video/test_frame_annotation_task_endpoints.py
+        tests/views/video/test_frame_annotation_bulk_upsert.py -q
+      note: '2026-09-09, codex-stream-404-20260909: 57 Tests und 5 Subtests bestanden, 2 Warnungen.
+        Automatische Auswahl ignoriert das systemverwaltete Video-Zuordnungsdataset;
+        explizite Auswahl per ID, Name oder Anwendungseinstellung bleibt erhalten.
+        Der Stream-Frame-Task liefert wieder HTTP 200. Pyright: 0 Fehler, 1 Missing-Type-Stubs-Warnung
+        in tests/services/test_video_correction_jobs.py. Ruff-Prüfung und Formatprüfung bestanden.'
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_fps_normalization_jobs.py
         tests/views/video/test_video_fps_view.py tests/views/video/test_segment_validation_status_view.py::VideoSegmentFpsNormalizationStatusViewTest

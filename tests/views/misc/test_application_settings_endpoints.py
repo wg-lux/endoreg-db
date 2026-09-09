@@ -688,6 +688,37 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["summary"]["sample_count"] == 1
         assert payload["config"]["label_set_id"] == label_set.pk
 
+    def test_ai_dataset_training_manifest_endpoint_reports_materialization_requirement(
+        self,
+    ) -> None:
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-no-materialization-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+
+        class IdentityManifest:
+            def to_lx_ai_core_dict(self) -> dict[str, object]:
+                raise ValueError(
+                    "Training path export requires protected processed-frame materialization."
+                )
+
+        with patch.object(
+            ai_dataset_view_module,
+            "build_frame_multilabel_training_manifest",
+            return_value=IdentityManifest(),
+        ):
+            response = self.client.post(
+                f"/api/settings/application/ai_datasets/{dataset.pk}/training_manifest/",
+                data={"check_frame_format": False},
+                content_type="application/json",
+            )
+        assert response.status_code == 400
+        assert (
+            "protected processed-frame materialization"
+            in response.json()["errors"]["manifest"]
+        )
+
     def test_ai_dataset_training_manifest_endpoint_rejects_invalid_strategy(self):
         dataset = AIDataSet.objects.create(
             name=f"dataset-manifest-invalid-{uuid4().hex[:8]}",

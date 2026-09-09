@@ -175,13 +175,11 @@ def test_hub_read_and_training_after_raw_deletion(
         format="json",
         secure=True,
     )
-    assert manifest.status_code == 200, manifest.content
-    assert manifest.json()["summary"]["sample_count"] == 1
-    assert manifest.json()["manifest"]["provenance"][
-        "source_video_kind_by_video_uuid"
-    ] == {
-        str(video.uuid): "processed",
-    }
+    assert manifest.status_code == 400, manifest.content
+    assert (
+        "protected processed-frame materialization"
+        in manifest.json()["errors"]["manifest"]
+    )
 
 
 @override_settings(DEBUG=False, ENDOREG_DEPLOYMENT_ROLE="central_hub")
