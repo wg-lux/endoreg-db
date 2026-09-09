@@ -11,4 +11,4 @@ graph TD;
     E --> F
     
     F --> G["Patient Registration Completed"]
-
+```

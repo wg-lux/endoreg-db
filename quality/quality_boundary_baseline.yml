@@ -1,0 +1,52 @@
+schema_version: "1.0"
+scan:
+  paths:
+    - endoreg_db
+    - scripts
+  excluded_path_parts:
+    - migrations
+    - __pycache__
+broad_exception:
+  count: 406
+  fingerprint: f45f2d00b78f2db3ff896939149ec62993b92332e72218598f90107ccc4c63fb
+  owner: endoreg_db maintainers
+  reason: >-
+    Reviewed inventory after the exception-reduction cohort, the extraction of
+    typed workflow helpers, and removal of the unmounted NICE/PARIS
+    classification island. Three newer boundary handlers were reviewed
+    individually: per-video failure isolation in the migration command,
+    fail-closed role resolution at the lx-dtypes authorization boundary, and
+    atomic cleanup with structured error logging in the filesystem wrapper.
+    They replace three removed legacy findings, leave the total unchanged, and
+    do not permit broad handlers in inner domain logic.
+    The reproducible API route checker catches only specific file, Unicode,
+    JSON, and contract errors; its former broad command-line handler was
+    removed.
+    The name-gender adapter handles the library's regular `unknown` value as a
+    domain case while allowing unexpected detector or data failures to
+    propagate visibly instead of masking them as a valid unknown classification.
+    The central configuration boundary replaces two broad numeric parser
+    handlers with specific ValueError translation. Explicitly configured invalid
+    values and non-finite floating-point numbers raise a data-minimizing typed
+    error instead of silently activating the default.
+    Two removed legacy findings are replaced by two reviewed handlers at the
+    Hypertext Transfer Protocol (HTTP) integration boundary for remote processed
+    reports. They catch unknown failures from a configurable external provider
+    only at the view boundary, log only the report identifier and exception type,
+    and translate fail-closed into the existing non-disclosing HTTP 404 contract.
+    The materialization lifetime itself uses ExitStack and requires neither broad
+    cleanup handlers nor manual __exit__ calls.
+  review_after: 2026-10-17
+type_suppression:
+  count: 140
+  fingerprint: dddceaafd234083599b4a8e417eeb4825850cd1f8b298701f067deb255cf2774
+  owner: endoreg_db maintainers
+  reason: >-
+    Reviewed legacy inventory after removing four type suppressions from the
+    video-inference cohort and the private NinjaAPI registry suppression.
+    The typed Django manager declaration for the medical-ledger receipt uses
+    the same narrowly scoped framework suppression as comparable models; the
+    remaining inventory is not a general exemption.
+    A local, narrow gender_guesser stub replaces the former missing third-party
+    type suppression and keeps the adapter fully typed.
+  review_after: 2026-10-17

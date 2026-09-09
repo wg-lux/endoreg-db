@@ -1,0 +1,39 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_solid_lesion_fna
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_lymph_node_fna
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_cyst_fna
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_pseudocyst_fna
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_biliary_drainage
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_pancreatic_drainage
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_cyst_gastrostomy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_pancreaticogastrostomy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_cholangioduodenostomy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endosonography_pancreaticoduodenostomy

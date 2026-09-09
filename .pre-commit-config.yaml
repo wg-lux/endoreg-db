@@ -1,0 +1,52 @@
+default_stages:
+  - pre-commit
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.7
+    hooks:
+      - id: ruff
+        args: ["--fix", "endoreg_db", "tests"]
+        pass_filenames: false
+      - id: ruff-format
+        args: ["endoreg_db", "tests"]
+        pass_filenames: false
+  - repo: local
+    hooks:
+      - id: route-matrix-contract
+        name: route matrix contract (backend vs frontend)
+        entry: python scripts/check_route_matrix.py --warn-on-missing-backend
+        language: system
+        pass_filenames: false
+        files: ^(endoreg_db/(urls|views)/.*\.py|endoreg_db/authz/policy\.py|docs/frontend_agent_url_contract\.md)$
+      - id: pyright
+        name: pyright type check
+        entry: .devenv/state/venv/bin/pyright
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: documentation-governance
+        name: documentation governance inventory
+        entry: .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db
+        language: system
+        pass_filenames: false
+        files: ^(README\.md|AGENTS\.md|docs/.*|quality/documentation_governance\.yml|scripts/check_documentation_governance\.py|tests/scripts/test_check_documentation_governance\.py)$
+      - id: django-startup-smoke
+        name: django startup smoke
+        entry: devenv shell -- .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest-expensive
+        name: pytest expensive suite
+        entry: pytest -m "expensive or pipeline or slow"
+        language: system
+        pass_filenames: false
+        stages: [manual]
+      - id: deploy-django
+        name: deploy check for django resolve
+        entry: devenv shell -- env DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test .devenv/state/venv/bin/python manage.py check --deploy
+        language: system
+        pass_filenames: false

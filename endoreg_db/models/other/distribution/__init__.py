@@ -1,18 +1,22 @@
-'''Module for distribution models.'''
+from __future__ import annotations
+
+"""Module for distribution models."""
 
 from .base_value_distribution import BaseValueDistribution
 from .numeric_value_distribution import NumericValueDistribution
 from .single_categorical_value_distribution import SingleCategoricalValueDistribution
-from .multiple_categorical_value_distribution import MultipleCategoricalValueDistribution
+from .multiple_categorical_value_distribution import (
+    MultipleCategoricalValueDistribution,
+)
 from .date_value_distribution import DateValueDistribution
 
 
 __all__ = [
-    'BaseValueDistribution',
-    'NumericValueDistribution',
-    'SingleCategoricalValueDistribution',
-    'MultipleCategoricalValueDistribution',
-    'DateValueDistribution',
+    "BaseValueDistribution",
+    "NumericValueDistribution",
+    "SingleCategoricalValueDistribution",
+    "MultipleCategoricalValueDistribution",
+    "DateValueDistribution",
 ]
 
 # Example Usage

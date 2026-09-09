@@ -1,0 +1,19 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_incomplete_insufficient_preparation"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_incomplete_complication"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_incomplete_pain"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_incomplete_stenosis"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "colonoscopy_incomplete_other"

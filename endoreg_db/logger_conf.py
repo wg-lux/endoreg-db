@@ -1,12 +1,88 @@
-import logging
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import Literal, TypedDict
 
-LOG_DIR = Path("data/logs")
+from endoreg_db.utils.paths import LOG_DIR
+
 DEFAULT_FILE_LOG_LEVEL = "INFO"
 DEFAULT_CONSOLE_LOG_LEVEL = "WARNING"
 
-def clear_log_files(logger_names, log_dir=None):
+
+class _FormatterConfig(TypedDict):
+    format: str
+
+
+_FileHandlerConfig = TypedDict(
+    "_FileHandlerConfig",
+    {
+        "level": str,
+        "class": str,
+        "filename": Path,
+        "formatter": str,
+    },
+)
+
+
+_ConsoleHandlerConfig = TypedDict(
+    "_ConsoleHandlerConfig",
+    {
+        "level": str,
+        "class": str,
+        "formatter": str,
+    },
+)
+
+
+class _LoggerConfig(TypedDict):
+    handlers: list[str]
+    level: str
+    propagate: bool
+
+
+type _HandlerConfig = _FileHandlerConfig | _ConsoleHandlerConfig
+type _FormatterConfigMap = dict[str, _FormatterConfig]
+type _HandlerConfigMap = dict[str, _HandlerConfig]
+type _LoggerConfigMap = dict[str, _LoggerConfig]
+
+
+class LoggingConfig(TypedDict):
+    version: Literal[1]
+    disable_existing_loggers: bool
+    formatters: _FormatterConfigMap
+    handlers: _HandlerConfigMap
+    loggers: _LoggerConfigMap
+
+
+def _file_handler_config(
+    *,
+    level: str,
+    filename: Path,
+    formatter: str,
+) -> _FileHandlerConfig:
+    return {
+        "level": level,
+        "class": "logging.FileHandler",
+        "filename": filename,
+        "formatter": formatter,
+    }
+
+
+def _console_handler_config(
+    *,
+    level: str,
+    formatter: str,
+) -> _ConsoleHandlerConfig:
+    return {
+        "level": level,
+        "class": "logging.StreamHandler",
+        "formatter": formatter,
+    }
+
+
+def clear_log_files(
+    logger_names: list[str],
+    log_dir: Path | None = None,
+) -> None:
     """
     Clears specified log files in the log directory.
 
@@ -20,8 +96,10 @@ def clear_log_files(logger_names, log_dir=None):
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Files to manage
-    log_files_to_clear = [log_dir / f"{logger_name}.log" for logger_name in logger_names]
-    log_files_to_clear.append(log_dir / "root.log") # Add root log file
+    log_files_to_clear = [
+        log_dir / f"{logger_name}.log" for logger_name in logger_names
+    ]
+    log_files_to_clear.append(log_dir / "root.log")  # Add root log file
 
     # Clear existing log files in the directory managed by this config
     for log_file in log_files_to_clear:
@@ -34,7 +112,13 @@ def clear_log_files(logger_names, log_dir=None):
         # Optionally, create the log file to ensure it exists after clearing
         # log_file.touch() # Removed touch to just clear
 
-def get_logging_config(logger_names, file_log_level=None, console_log_level=None, log_dir=None):
+
+def get_logging_config(
+    logger_names: list[str],
+    file_log_level: str | None = None,
+    console_log_level: str | None = None,
+    log_dir: Path | None = None,
+) -> LoggingConfig:
     """
     Generates Django LOGGING configuration dynamically.
 
@@ -47,72 +131,74 @@ def get_logging_config(logger_names, file_log_level=None, console_log_level=None
     Returns:
         dict: The Django LOGGING configuration dictionary.
     """
-    file_log_level = file_log_level or os.environ.get("FILE_LOG_LEVEL", DEFAULT_FILE_LOG_LEVEL)
-    console_log_level = console_log_level or os.environ.get("CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL)
+    file_log_level = file_log_level or os.environ.get(
+        "FILE_LOG_LEVEL", DEFAULT_FILE_LOG_LEVEL
+    )
+    console_log_level = console_log_level or os.environ.get(
+        "CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL
+    )
     log_dir = log_dir or LOG_DIR
 
     # Ensure log directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    handlers = {
-        'console': {
-            'level': console_log_level, # Use console level
-            'class': 'logging.StreamHandler',
-            'formatter': 'standard',
-        },
-        'file_root': { # Handler for the root logger's file
-            'level': file_log_level, # Use file level
-            'class': 'logging.FileHandler',
-            'filename': log_dir / "root.log",
-            'formatter': 'standard',
-        },
+    handlers: _HandlerConfigMap = {
+        "console": _console_handler_config(
+            level=console_log_level,
+            formatter="standard",
+        ),
+        "file_root": _file_handler_config(
+            level=file_log_level,
+            filename=log_dir / "root.log",
+            formatter="standard",
+        ),
     }
-    loggers = {
+    loggers: _LoggerConfigMap = {
         # Root logger configuration - logs INFO+ to file, WARNING+ to console
-        '': {
-            'handlers': ['console', 'file_root'], # Use both handlers
-            'level': file_log_level, # Set to lowest level needed (INFO for file)
-            'propagate': False, # Root logger doesn't propagate further
+        "": {
+            "handlers": ["console", "file_root"],  # Use both handlers
+            "level": file_log_level,  # Set to lowest level needed (INFO for file)
+            "propagate": False,  # Root logger doesn't propagate further
         },
-         # Django's default logger
-        'django': {
-            'handlers': ['console', 'file_root'], # Log to console and root file
-            'level': file_log_level, # Or your preferred level, ensure it's captured by root file
-            'propagate': False, # Don't propagate Django logs to avoid double handling by root
+        # Django's default logger
+        "django": {
+            "handlers": ["console", "file_root"],  # Log to console and root file
+            "level": file_log_level,  # Or your preferred level, ensure it's captured by root file
+            "propagate": False,  # Don't propagate Django logs to avoid double handling by root
         },
     }
 
     # Dynamically create file handlers and logger configurations
     for name in logger_names:
         handler_name = f"file_{name}"
-        handlers[handler_name] = {
-            'level': file_log_level, # Use file level
-            'class': 'logging.FileHandler',
-            'filename': log_dir / f"{name}.log",
-            'formatter': 'standard',
-        }
+        handlers[handler_name] = _file_handler_config(
+            level=file_log_level,
+            filename=log_dir / f"{name}.log",
+            formatter="standard",
+        )
         loggers[name] = {
-            'handlers': [handler_name], # Log only to its own file directly
-            'level': file_log_level, # Use file level
-            'propagate': True, # Propagate to root logger (which handles console and root.log)
+            "handlers": [handler_name],  # Log only to its own file directly
+            "level": file_log_level,  # Use file level
+            "propagate": True,  # Propagate to root logger (which handles console and root.log)
         }
 
     return {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'formatters': {
-            'standard': {
-                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "standard": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
             },
         },
-        'handlers': handlers,
-        'loggers': loggers,
+        "handlers": handlers,
+        "loggers": loggers,
     }
+
 
 # Example usage (optional, for testing the function itself)
 if __name__ == "__main__":
     test_loggers = ["app1", "app2", "database"]
-    log_directory = Path("data/logs_test") # Use a test directory
+    log_directory = LOG_DIR.parent / "logs_test"
 
     # Optionally clear logs before configuring logging
     print("Clearing logs...")
@@ -120,8 +206,14 @@ if __name__ == "__main__":
     print("Log clearing complete.")
 
     # Get logging configuration
-    logging_config = get_logging_config(test_loggers, file_log_level="DEBUG", console_log_level="WARNING", log_dir=log_directory)
+    logging_config = get_logging_config(
+        test_loggers,
+        file_log_level="DEBUG",
+        console_log_level="WARNING",
+        log_dir=log_directory,
+    )
     import json
+
     print("\nGenerated Logging Configuration:")
     print(json.dumps(logging_config, indent=4))
 

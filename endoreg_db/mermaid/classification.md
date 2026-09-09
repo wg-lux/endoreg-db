@@ -1,8 +1,9 @@
 ```mermaid
 graph TD;
-    
-    A["Start: Select Finding Location Classification"] --> B["Store in endoreg_db_findinglocationclassification"]
-    B --> C["Retrieve Available Choices"]
-    C --> D["Save Selected Location in endoreg_db_patientfinding_locations"]
-    D --> E["Link Location to Patient Finding via Foreign Key"]
-    E --> F["Finding Location Process Completed"]
+
+    A["Select a FindingClassification"] --> B["Retrieve its allowed FindingClassificationChoice values"]
+    B --> C["Select a FindingClassificationChoice"]
+    C --> D["Create PatientFindingClassification"]
+    D --> E["Validate that the choice belongs to the classification"]
+    E --> F["Link the classification record to PatientFinding"]
+```

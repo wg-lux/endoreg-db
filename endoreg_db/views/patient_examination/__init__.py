@@ -4,8 +4,8 @@ from .patient_examination_list import PatientExaminationListView
 from .patient_examination import PatientExaminationViewSet
 
 __all__ = [
-    'ExaminationCreateView',
-    'PatientExaminationDetailView',
-    'PatientExaminationListView',
-    'PatientExaminationViewSet'
+    "ExaminationCreateView",
+    "PatientExaminationDetailView",
+    "PatientExaminationListView",
+    "PatientExaminationViewSet",
 ]

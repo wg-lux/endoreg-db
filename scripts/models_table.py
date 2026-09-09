@@ -5,33 +5,38 @@ setup_django()
 from endoreg_db.models import (
     Examination,
     ExaminationIndication,
-    Finding, 
-    FindingIntervention, 
+    Finding,
+    FindingIntervention,
     FindingClassification,
     FindingClassificationChoice,
     FindingClassificationType,
-    Disease, DiseaseClassification,
-    Event, EventClassification,
-    Medication, MedicationIndication,
-
+    Disease,
+    DiseaseClassification,
+    Event,
+    EventClassification,
+    Medication,
+    MedicationIndication,
 )
 
 import pandas as pd
 
-export_models = [    Examination,
+export_models = [
+    Examination,
     ExaminationIndication,
-    Finding, 
-    FindingIntervention, 
-    FindingClassification, FindingClassificationChoice,
+    Finding,
+    FindingIntervention,
+    FindingClassification,
+    FindingClassificationChoice,
     FindingClassificationType,
-    Disease, DiseaseClassification,
-    Event, EventClassification,
-    Medication, MedicationIndication
+    Disease,
+    DiseaseClassification,
+    Event,
+    EventClassification,
+    Medication,
+    MedicationIndication,
 ]
 
-data_dict = {
-    model.__name__: [] for model in export_models
-}
+data_dict = {model.__name__: [] for model in export_models}
 
 for model in export_models:
     # Get all objects of the model
@@ -39,7 +44,7 @@ for model in export_models:
 
     for obj in objects:
         data_dict[model.__name__].append(obj.name)
-    
+
 # Create a data frame with columns ModelName and ObjectName
 df_dict = {"ModelName": [], "ObjectName": []}
 for model_name, object_names in data_dict.items():

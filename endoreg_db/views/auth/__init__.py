@@ -1,12 +1,6 @@
-from .keycloak import (
-    KeycloakVideoView,
-    keycloak_login,
-    keycloak_callback,
-    public_home,
-)
+from .keycloak import keycloak_login, keycloak_callback, public_home
 
 __all__ = [
-    "KeycloakVideoView",
     "keycloak_login",
     "keycloak_callback",
     "public_home",

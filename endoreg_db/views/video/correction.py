@@ -11,178 +11,580 @@ Available Functions from lx_anonymizer (already implemented):
 - FrameCleaner.remove_frames_from_video() - Frame removal
 - VideoImportService._get_processor_roi_info() - ROI extraction
 """
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from django.shortcuts import get_object_or_404
-from django.conf import settings
-from pathlib import Path
+
+from __future__ import annotations
+
 import json
 import logging
+from bisect import bisect_left, bisect_right
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any, Protocol, TypeAlias, cast
 
-from endoreg_db.models import VideoFile, VideoMetadata, VideoProcessingHistory, LabelVideoSegment
-from endoreg_db.serializers import VideoMetadataSerializer, VideoProcessingHistorySerializer
-from lx_anonymizer import FrameCleaner
+from django.db.models.fields.files import FieldFile
+from django.shortcuts import get_object_or_404
+from lx_dtypes.models.contracts import (
+    VideoCorrectionApplyMaskResponsePayload,
+    VideoCorrectionErrorPayload,
+    VideoCorrectionRemoveFramesResponsePayload,
+    VideoCorrectionSegmentUpdateData,
+    VideoCorrectionSegmentUpdatePayload,
+    dump_video_correction_roi_payload,
+    dump_video_correction_segment_update_payload,
+    parse_video_correction_frame_ranges,
+    validate_video_correction_apply_mask_payload,
+    validate_video_correction_frame_removal_payload,
+)
+from pydantic import ValidationError as PydanticValidationError
+from rest_framework import status
+from rest_framework.permissions import (
+    BasePermission,
+    OperandHolder,
+    SingleOperandHolder,
+)
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from endoreg_db.models import VideoFile
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+    suppress_label_video_segment_state_side_effects,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.models.media.video.video_metadata import VideoMetadata
+from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
+from endoreg_db.services.label_video_segment_states import (
+    ensure_label_video_segment_states,
+)
+from endoreg_db.services.hls_media import get_ready_hls_artifact, hls_playlist_path
+from endoreg_db.services.jobs.video_correction_jobs import (
+    VideoAnonymizationCorrectionJobConfig,
+    apply_video_anonymization_strategy,
+    dispatch_video_anonymization_correction,
+)
+from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
+from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.video_segment_validation_workflow import (
+    mark_segment_annotations_stale,
+)
+from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.file_operations import (
+    atomic_move_file,
+    ensure_directory,
+    safe_unlink_file,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.views.access_control import CenterScopedVideoPermission
+from endoreg_db.utils.media_urls import (
+    build_absolute_media_url,
+    build_video_hls_playlist_path,
+)
+from endoreg_db.utils.storage import ensure_local_file, save_local_file
 
 logger = logging.getLogger(__name__)
 
-def update_processed_file(video, output_path: Path):
-    from endoreg_db.utils import data_paths
-    storage_root = Path(data_paths["storage"])
+PermissionClass: TypeAlias = type[BasePermission] | OperandHolder | SingleOperandHolder
+
+
+class ProcessingHistoryRecord(Protocol):
+    def mark_running(self) -> None: ...
+
+    def mark_success(
+        self,
+        output_file: str | None = None,
+        details: str | None = None,
+        save: bool = True,
+    ) -> None: ...
+
+    def mark_failure(self, error_message: str, save: bool = True) -> None: ...
+
+
+try:
+    from lx_anonymizer import FrameCleaner as _FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
+
+    FrameCleaner = cast(Any, _FrameCleaner)
+except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
+    _FRAME_CLEANER_IMPORT_ERROR = exc
+
+    class _UnavailableFrameCleaner:
+        """Import-time placeholder so callers can monkeypatch FrameCleaner in tests."""
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            raise RuntimeError(
+                "lx_anonymizer FrameCleaner is unavailable"
+            ) from _FRAME_CLEANER_IMPORT_ERROR
+
+    FrameCleaner = cast(Any, _UnavailableFrameCleaner)
+
+
+def update_processed_file(video: VideoFile, output_path: Path) -> str:
+    processed_file: FieldFile = video.processed_file
+    if not hasattr(processed_file, "field"):
+        processed_file.name = str(output_path)
+        _save_video_update_fields(video, ["processed_file"])
+        return str(processed_file.name)
+
+    canonical_path = (
+        path_utils.EndoregPathsModel.from_environment().anonym_video / output_path.name
+    )
+    stored_name = save_local_file(
+        processed_file,
+        output_path,
+        name=path_utils.to_storage_relative(canonical_path),
+        save=False,
+        overwrite=True,
+    )
+    _save_video_update_fields(video, ["processed_file"])
+    safe_unlink_file(output_path, missing_ok=True)
     try:
-        rel_path = output_path.relative_to(storage_root)
-    except ValueError:
-        rel_path = output_path.relative_to(Path(settings.MEDIA_ROOT))
-    video.processed_file.name = str(rel_path)
-    video.save(update_fields=["processed_file"])
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=False,
+            include_processed=True,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize processed streamable artifact for video %s: %s",
+            getattr(video, "pk", "unknown"),
+            exc,
+        )
+    return stored_name
+
+
+def _save_video_update_fields(video: VideoFile, update_fields: Sequence[str]) -> None:
+    cast(Any, video).save(update_fields=list(update_fields))
+
+
+def _video_hash(video: VideoFile) -> str:
+    return str(cast(Any, video).video_hash)
+
+
+def _video_frame_count(video: VideoFile) -> int:
+    return int(cast(Any, video).frame_count)
+
+
+def _coerce_frame_number(value: object) -> int:
+    if isinstance(value, int | float | str):
+        return int(value)
+    raise ValueError(f"Invalid frame number: {value!r}")
+
+
+def _request_payload_data(request: Request) -> Mapping[str, Any]:
+    payload = cast(object, request.data)
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("Request payload must be a JSON object.")
+    return cast(Mapping[str, Any], payload)
+
+
+def _validation_error_message(exc: PydanticValidationError | ValueError) -> str:
+    if isinstance(exc, PydanticValidationError):
+        errors = exc.errors()
+        if errors:
+            message = str(errors[0].get("msg") or exc)
+            return message.removeprefix("Value error, ")
+    return str(exc)
+
+
+def _error_response(message: str, status_code: int) -> Response:
+    payload = VideoCorrectionErrorPayload(error=message)
+    return Response(payload.model_dump(mode="json"), status=status_code)
+
+
+def _masked_output_path(video: VideoFile) -> Path:
+    anonym_video_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
+    return ensure_directory(anonym_video_dir) / f"{_video_hash(video)}_masked.mp4"
+
+
+def _cleaned_output_path(video: VideoFile) -> Path:
+    anonym_video_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
+    return ensure_directory(anonym_video_dir) / f"{_video_hash(video)}_cleaned.mp4"
+
+
+def _part_output_path(output_path: Path) -> Path:
+    return output_path.with_name(f"{output_path.stem}.part{output_path.suffix}")
+
+
+def _promote_processed_output(temp_path: Path, final_path: Path) -> Path:
+    if not temp_path.exists():
+        raise FileNotFoundError(f"Temporary processed output missing: {temp_path}")
+    if temp_path.stat().st_size <= 0:
+        raise RuntimeError(f"Temporary processed output is empty: {temp_path}")
+    ensure_directory(final_path.parent)
+    atomic_move_file(source=temp_path, destination=final_path)
+    return final_path
 
 
 class VideoCorrectionView(APIView):
     """
     GET /api/video/media/video-correction/{id}/ - Get video details for correction
     """
-    permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request, pk):
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
+
+    def get(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(VideoFile, pk=pk)
         ser = VideoDetailSerializer(video, context={"request": request})
-        return Response(ser.data, status=status.HTTP_200_OK)
+        return Response(cast(object, cast(Any, ser).data), status=status.HTTP_200_OK)
 
-def update_segments_after_frame_removal(video: VideoFile, removed_frames: list) -> dict:
+
+class VideoAnonymizationCorrectionView(APIView):
+    """Select, apply, and audit a correction-time anonymization strategy."""
+
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
+    _STRATEGIES = ("detector_assisted", "processor_region")
+
+    def get(self, request: Request, pk: int) -> Response:
+        video = get_object_or_404(VideoFile, pk=pk)
+        return Response(self._status_payload(request, video), status=status.HTTP_200_OK)
+
+    def post(self, request: Request, pk: int) -> Response:
+        video = get_object_or_404(VideoFile, pk=pk)
+        try:
+            payload = self._validate_payload(_request_payload_data(request))
+        except ValueError as exc:
+            return _error_response(str(exc), status.HTTP_400_BAD_REQUEST)
+        try:
+            dispatch = dispatch_video_anonymization_correction(video, payload)
+        except PydanticValidationError as exc:
+            return _error_response(
+                _validation_error_message(exc), status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as exc:
+            logger.error(
+                "Anonymization correction dispatch failed for video %s: %s",
+                pk,
+                exc,
+                exc_info=True,
+            )
+            return _error_response(
+                f"Anonymization correction could not be queued: {exc}",
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response(
+            {
+                **self._status_payload(
+                    request,
+                    video,
+                    selected_strategy=cast(str, payload["strategy"]),
+                ),
+                "job": dispatch.to_dict(),
+                "message": "Anonymization correction queued on the FFmpeg worker",
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    @classmethod
+    def _validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
+        strategy = str(data.get("strategy") or "").strip()
+        if strategy not in cls._STRATEGIES:
+            raise ValueError("strategy must be detector_assisted or processor_region")
+        if data.get("human_review_required") is not True:
+            raise ValueError("human_review_required must be true")
+        processing_method = str(data.get("processing_method") or "streaming")
+        if processing_method not in {"streaming", "direct"}:
+            raise ValueError("processing_method must be streaming or direct")
+
+        region_value = data.get("region")
+        region: Mapping[str, object] = (
+            cast(Mapping[str, object], region_value)
+            if isinstance(region_value, Mapping)
+            else cast(Mapping[str, object], {})
+        )
+        normalized_region: dict[str, object] = {
+            "mode": str(region.get("mode") or "device"),
+            "device_name": str(region.get("device_name") or "olympus_cv_1500"),
+        }
+        if normalized_region["mode"] not in {"device", "custom"}:
+            raise ValueError("region.mode must be device or custom")
+        roi_value = region.get("roi")
+        if normalized_region["mode"] == "custom":
+            if not isinstance(roi_value, Mapping):
+                raise ValueError("region.roi is required for a custom processor region")
+            roi_mapping = cast(Mapping[str, object], roi_value)
+            try:
+                roi = {
+                    key: _coerce_frame_number(roi_mapping[key])
+                    for key in ("x", "y", "width", "height")
+                }
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "region.roi requires integer x, y, width, and height"
+                ) from exc
+            if roi["x"] < 0 or roi["y"] < 0 or roi["width"] <= 0 or roi["height"] <= 0:
+                raise ValueError(
+                    "region.roi coordinates must define a positive rectangle"
+                )
+            normalized_region["roi"] = roi
+
+        return {
+            "strategy": strategy,
+            "processing_method": processing_method,
+            "region": normalized_region,
+            "human_review_required": True,
+            "apply_all_frames": True,
+        }
+
+    @staticmethod
+    def _apply_strategy(
+        *,
+        frame_cleaner: Any,
+        raw_path: Path,
+        output_path: Path,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        config = VideoAnonymizationCorrectionJobConfig.model_validate(
+            {
+                "processing_method": "streaming",
+                "region": {
+                    "mode": "device",
+                    "device_name": "olympus_cv_1500",
+                },
+                "human_review_required": True,
+                "apply_all_frames": True,
+                **payload,
+                "queue": queue_for_job_kind(
+                    HeavyJobKind.VIDEO_ANONYMIZATION_CORRECTION
+                ),
+            }
+        )
+        return apply_video_anonymization_strategy(
+            frame_cleaner=frame_cleaner,
+            raw_path=raw_path,
+            output_path=output_path,
+            config=config,
+        )
+
+    def _status_payload(
+        self,
+        request: Request,
+        video: VideoFile,
+        *,
+        selected_strategy: str | None = None,
+    ) -> dict[str, object]:
+        latest = (
+            VideoProcessingHistory.objects.filter(
+                video=video,
+                operation=VideoProcessingHistory.OPERATION_MASKING,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        latest_config = (
+            cast(dict[str, object], latest.config) if latest is not None else {}
+        )
+        processed_name = str(getattr(video.processed_file, "name", "") or "")
+        processed_hls_available = False
+        if processed_name:
+            try:
+                processed_hls = get_ready_hls_artifact(
+                    video=video,
+                    artifact_kind="processed",
+                )
+                hls_playlist_path(processed_hls)
+                processed_hls_available = True
+            except (
+                FileNotFoundError,
+                ValueError,
+                VideoHlsArtifact.DoesNotExist,
+            ):
+                processed_hls_available = False
+        resolved_strategy = (
+            selected_strategy
+            or cast(str | None, latest_config.get("strategy"))
+            or ("processor_region" if processed_name else "detector_assisted")
+        )
+        try:
+            from lx_anonymizer.config import settings as anonymizer_settings  # pyright: ignore[reportMissingTypeStubs]
+
+            model = {
+                "name": "YOLOv8n PHI region detector",
+                "version": "release-candidate",
+                "required": bool(anonymizer_settings.PHI_REGION_DETECTOR_REQUIRED),
+                "sha256": anonymizer_settings.PHI_REGION_DETECTOR_MODEL_SHA256,
+                "confidence": anonymizer_settings.PHI_REGION_DETECTOR_CONFIDENCE,
+                "input_size": anonymizer_settings.PHI_REGION_DETECTOR_INPUT_SIZE,
+            }
+        except Exception:
+            model = {
+                "name": "PHI region detector",
+                "version": None,
+                "required": True,
+                "sha256": None,
+                "confidence": None,
+                "input_size": None,
+            }
+        latest_run: object | None = None
+        if latest is not None:
+            serializer = VideoProcessingHistorySerializer(
+                latest, context={"request": request}
+            )
+            latest_run = cast(object, cast(Any, serializer).data)
+        return {
+            "video_id": video.pk,
+            "strategies": ["detector_assisted", "processor_region"],
+            "default_strategy": "detector_assisted",
+            "selected_strategy": resolved_strategy,
+            "model": model,
+            "ocr_engines": ["RapidOCR", "TesseOCR", "PyTesseract"],
+            "review_required": True,
+            "processed_artifact": {
+                "available": processed_hls_available,
+                "stream_url": build_absolute_media_url(
+                    request,
+                    build_video_hls_playlist_path(
+                        int(cast(Any, video).pk), file_type="processed"
+                    ),
+                )
+                if processed_hls_available
+                else None,
+            },
+            "latest_run": latest_run,
+        }
+
+
+def update_segments_after_frame_removal(
+    video: VideoFile, removed_frames: Sequence[int]
+) -> VideoCorrectionSegmentUpdateData:
     """
     Update LabelVideoSegment frame boundaries after frame removal.
-    
+
     This function shifts segment start/end frames based on which frames were removed.
     Segments are deleted if all their frames are removed.
-    
+
     Args:
         video: VideoFile instance whose segments should be updated
         removed_frames: List of frame numbers that were removed (sorted)
-    
+
     Returns:
         dict: {
             'segments_updated': int,
             'segments_deleted': int,
             'segments_unchanged': int
         }
-    
+
     Algorithm:
         For each segment:
         1. Count frames removed before segment → shift start_frame
         2. Count frames removed within segment → shift end_frame
         3. Delete segment if start_frame >= end_frame (all frames removed)
-    
+
     Example:
         Original segment: frames 100-200
         Removed frames: [50, 75, 120, 150, 180]
-        
+
         Frames before segment (< 100): 2 frames (50, 75)
         Frames within segment (100-200): 3 frames (120, 150, 180)
-        
+
         New segment: frames (100-2) to (200-2-3) = 98-195
     """
     if not removed_frames:
-        return {'segments_updated': 0, 'segments_deleted': 0, 'segments_unchanged': 0}
-    
-    removed_frames = sorted(set(removed_frames))  # Ensure sorted and unique
-    segments = LabelVideoSegment.objects.filter(
-        video_file=video
-    ).order_by('start_frame_number')
-    
+        return dump_video_correction_segment_update_payload(
+            VideoCorrectionSegmentUpdatePayload(
+                segments_updated=0,
+                segments_deleted=0,
+                segments_unchanged=0,
+            )
+        )
+
+    normalized_removed_frames = sorted(set(removed_frames))
+    segments = LabelVideoSegment.objects.filter(video_file=video).order_by(
+        "start_frame_number"
+    )
+
     segments_updated = 0
     segments_deleted = 0
     segments_unchanged = 0
-    
+    segments_to_update: list[LabelVideoSegment] = []
+    segment_ids_to_delete: list[int] = []
+
     for segment in segments:
-        original_start = segment.start_frame_number
-        original_end = segment.end_frame_number
-        
-        # Count frames removed before this segment
-        frames_before = sum(1 for f in removed_frames if f < original_start)
-        
-        # Count frames removed within this segment
-        frames_within = sum(1 for f in removed_frames if original_start <= f <= original_end)
-        
+        segment_obj = cast(Any, segment)
+        original_start = int(segment_obj.start_frame_number)
+        original_end = int(segment_obj.end_frame_number)
+
+        frames_before = bisect_left(normalized_removed_frames, original_start)
+        frames_within = bisect_right(
+            normalized_removed_frames,
+            original_end,
+        ) - bisect_left(normalized_removed_frames, original_start)
+
         # Calculate new boundaries
         new_start = original_start - frames_before
         new_end = original_end - frames_before - frames_within
-        
+
         # Delete segment if all frames were removed
         if new_start >= new_end:
             logger.info(
-                f"Deleting segment {segment.id} (original: {original_start}-{original_end}) "
+                f"Deleting segment {segment.pk} (original: {original_start}-{original_end}) "
                 f"- all {frames_within} frames removed"
             )
-            segment.delete()
+            segment_pk = segment.pk
+            if isinstance(segment_pk, int) and not isinstance(segment_pk, bool):
+                segment_ids_to_delete.append(segment_pk)
             segments_deleted += 1
         elif new_start != original_start or new_end != original_end:
             # Update segment boundaries
             logger.info(
-                f"Updating segment {segment.id}: "
+                f"Updating segment {segment.pk}: "
                 f"{original_start}-{original_end} → {new_start}-{new_end} "
                 f"(before: {frames_before}, within: {frames_within})"
             )
             segment.start_frame_number = new_start
             segment.end_frame_number = new_end
-            segment.save(update_fields=["start_frame_number", "end_frame_number"])
+            segments_to_update.append(segment)
             segments_updated += 1
         else:
             # No change needed
             segments_unchanged += 1
-    
+
+    if segments_to_update or segment_ids_to_delete:
+        with suppress_label_video_segment_state_side_effects():
+            if segments_to_update:
+                LabelVideoSegment.objects.bulk_update(
+                    segments_to_update,
+                    ["start_frame_number", "end_frame_number"],
+                )
+                ensure_label_video_segment_states(segments_to_update)
+            if segment_ids_to_delete:
+                LabelVideoSegment.objects.filter(pk__in=segment_ids_to_delete).delete()
+        mark_segment_annotations_stale(video)
+
     logger.info(
-        f"Segment update complete for video {video.id}: "
+        f"Segment update complete for video {video.pk}: "
         f"{segments_updated} updated, {segments_deleted} deleted, {segments_unchanged} unchanged"
     )
-    
-    return {
-        'segments_updated': segments_updated,
-        'segments_deleted': segments_deleted,
-        'segments_unchanged': segments_unchanged
-    }
 
-
-class VideoMetadataView(APIView):
-    """
-    GET /api/media/videos/{pk}/metadata/
-    
-    Retrieve analysis results for a video.
-    
-    Returns:
-        {
-            "id": 1,
-            "video": 123,
-            "sensitive_frame_count": 42,
-            "sensitive_ratio": 0.05,
-            "sensitive_frame_ids": "[10, 15, 20, ...]",
-            "sensitive_frame_ids_list": [10, 15, 20, ...],
-            "sensitive_percentage": 5.0,
-            "has_analysis": true,
-            "analyzed_at": "2025-10-09T10:00:00Z"
-        }
-    """
-    
-    def get(self, request, pk):
-        """Get video metadata by video ID."""
-        video = get_object_or_404(VideoFile, pk=pk)
-        
-        # Get or create metadata record
-        metadata, created = VideoMetadata.objects.get_or_create(video=video)
-        
-        serializer = VideoMetadataSerializer(metadata, context={'request': request})
-        return Response(serializer.data)
+    return dump_video_correction_segment_update_payload(
+        VideoCorrectionSegmentUpdatePayload(
+            segments_updated=segments_updated,
+            segments_deleted=segments_deleted,
+            segments_unchanged=segments_unchanged,
+        )
+    )
 
 
 class VideoProcessingHistoryView(APIView):
     """
     GET /api/media/videos/{pk}/processing-history/
-    
+
     Retrieve processing history for a video.
-    
+
     Returns list of processing operations:
         [
             {
@@ -205,30 +607,34 @@ class VideoProcessingHistoryView(APIView):
             ...
         ]
     """
-    
-    def get(self, request, pk):
+
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
+
+    def get(self, request: Request, pk: int) -> Response:
         """Get processing history for a video."""
         video = get_object_or_404(VideoFile, pk=pk)
-        
+
         # Get all history records, newest first
-        history = VideoProcessingHistory.objects.filter(
-            video=video
-        ).order_by('-created_at')
-        
-        serializer = VideoProcessingHistorySerializer(
-            history, 
-            many=True, 
-            context={'request': request}
+        history = VideoProcessingHistory.objects.filter(video=video).order_by(
+            "-created_at"
         )
-        return Response(serializer.data)
+
+        serializer = VideoProcessingHistorySerializer(
+            history, many=True, context={"request": request}
+        )
+        return Response(cast(object, cast(Any, serializer).data))
 
 
 class VideoApplyMaskView(APIView):
     """
     POST /api/media/videos/{pk}/apply-mask/
-    
+
     Apply device mask or custom ROI mask to video.
-    
+
     Request body:
         {
             "mask_type": "device",           // or "custom"
@@ -241,7 +647,7 @@ class VideoApplyMaskView(APIView):
             },
             "processing_method": "streaming" // or "direct" (default: streaming)
         }
-    
+
     Returns:
         {
             "task_id": "abc-123-def",        // Celery task ID (future)
@@ -249,118 +655,140 @@ class VideoApplyMaskView(APIView):
             "message": "Masking complete",
             "processing_time": 125.5
         }
-    
+
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
-    
-    def post(self, request, pk):
+
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
+
+    def post(self, request: Request, pk: int) -> Response:
         """Apply masking to video."""
         video = get_object_or_404(VideoFile, pk=pk)
-        
-        # Extract parameters
-        mask_type = request.data.get('mask_type', 'device')
-        device_name = request.data.get('device_name')
-        roi = request.data.get('roi')
-        processing_method = request.data.get('processing_method', 'streaming')
-        
-        # Validate required parameters
-        if mask_type == 'device' and not device_name:
-            return Response(
-                {'error': 'device_name required for device mask'},
-                status=status.HTTP_400_BAD_REQUEST
+
+        try:
+            payload = validate_video_correction_apply_mask_payload(
+                _request_payload_data(request)
             )
-        
-        if mask_type == 'custom' and not roi:
-            return Response(
-                {'error': 'roi required for custom mask'},
-                status=status.HTTP_400_BAD_REQUEST
+        except (PydanticValidationError, ValueError) as exc:
+            return _error_response(
+                _validation_error_message(exc),
+                status.HTTP_400_BAD_REQUEST,
             )
-        
-        # Create processing history record
-        history = VideoProcessingHistory.objects.create(
-            video=video,
-            operation=VideoProcessingHistory.OPERATION_MASKING,
-            status=VideoProcessingHistory.STATUS_PENDING,
-            config={
-                'mask_type': mask_type,
-                'device_name': device_name,
-                'roi': roi,
-                'processing_method': processing_method
-            }
+
+        mask_type = payload.mask_type
+        device_name = payload.device_name
+        roi_payload = payload.resolved_roi
+        roi = (
+            dump_video_correction_roi_payload(roi_payload)
+            if roi_payload is not None
+            else None
         )
-        
+        processing_method = payload.resolved_processing_method
+
+        # Create processing history record
+        history = cast(
+            ProcessingHistoryRecord,
+            VideoProcessingHistory.objects.create(
+                video=video,
+                operation=VideoProcessingHistory.OPERATION_MASKING,
+                status=VideoProcessingHistory.STATUS_PENDING,
+                config=payload.history_config(),
+            ),
+        )
+
         try:
             history.mark_running()
-            
+
             # Initialize FrameCleaner
             frame_cleaner = FrameCleaner()
-            
-            # Get video paths
-            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
-            output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_masked.mp4"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Load or create mask config
-            if mask_type == 'device':
-                # Load device-specific mask from lx_anonymizer/masks/
-                mask_config = frame_cleaner._load_mask(device_name)
-            else:  # custom
-                # Convert ROI to mask config
-                mask_config = frame_cleaner._create_mask_config_from_roi(
-                    endoscope_roi=roi,
+
+            if not video.raw_file or not getattr(video.raw_file, "name", None):
+                raise FileNotFoundError(
+                    f"Raw video file not found for correction: {_video_hash(video)}"
                 )
-            
-            # Apply mask (uses existing FrameCleaner._mask_video)
+            output_path = _masked_output_path(video)
+            temp_output_path = _part_output_path(output_path)
+            ensure_directory(output_path.parent)
+            safe_unlink_file(temp_output_path, missing_ok=True)
+
+            # Load or create mask config against current lx_anonymizer API.
+            if mask_type == "device":
+                frame_cleaner.mask_application.device_name = str(
+                    device_name or "olympus_cv_1500"
+                )
+                mask_config = frame_cleaner.mask_application._load_mask()
+            else:  # custom
+                mask_config = (
+                    frame_cleaner.mask_application.create_mask_config_from_roi(
+                        endoscope_image_roi=roi or {},
+                    )
+                )
+
+            # Apply mask using the current streaming masker API.
             import time
+
             start_time = time.time()
-            
-            success = frame_cleaner._mask_video(
-                input_video=video_path,
-                mask_config=mask_config,
-                output_video=output_path
-            )
-            
+
+            with ensure_local_file(video.raw_file) as raw_path:
+                success = frame_cleaner.mask_application.mask_video_streaming(
+                    input_video=raw_path,
+                    mask_config=mask_config,
+                    output_video=temp_output_path,
+                    use_named_pipe=processing_method == "streaming",
+                )
+
             processing_time = time.time() - start_time
-            
+
             if success:
                 # Update video record with anonymized file
-                from django.core.files import File
-                processed_file_path = output_path
-                update_processed_file(video, processed_file_path)
+                processed_file_path = _promote_processed_output(
+                    temp_output_path, output_path
+                )
+                stored_name = update_processed_file(video, processed_file_path)
                 # Mark history as success
                 history.mark_success(
-                    output_file=str(output_path),
-                    details=f"Masking completed in {processing_time:.1f}s"
+                    output_file=stored_name,
+                    details=f"Masking completed in {processing_time:.1f}s",
                 )
-                
+
                 logger.info(f"Video {pk} masked successfully: {output_path}")
-                
-                return Response({
-                    'task_id': None,  # Will be Celery task ID in Phase 1.2
-                    'output_file': str(output_path),
-                    'message': 'Masking complete',
-                    'processing_time': processing_time
-                })
+
+                response_payload = VideoCorrectionApplyMaskResponsePayload(
+                    task_id=None,
+                    output_file=stored_name,
+                    message="Masking complete",
+                    processing_time=processing_time,
+                )
+                return Response(
+                    response_payload.model_dump(mode="json"),
+                    status=status.HTTP_200_OK,
+                )
             else:
                 raise Exception("Masking failed - check FFmpeg logs")
-                
+
         except Exception as e:
             logger.error(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
-            
+            temp_output_path = _part_output_path(_masked_output_path(video))
+            safe_unlink_file(temp_output_path, missing_ok=True)
+
             history.mark_failure(str(e))
-            
-            return Response(
-                {'error': f'Masking failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+
+            return _error_response(
+                f"Masking failed: {str(e)}",
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
 class VideoRemoveFramesView(APIView):
     """
     POST /api/media/videos/{pk}/remove-frames/
-    
+
     Remove specified frames from video.
-    
+
     Request body:
         {
             "frame_list": [10, 15, 20, 30],      // explicit frame numbers
@@ -368,10 +796,10 @@ class VideoRemoveFramesView(APIView):
             "frame_ranges": "10-20,30,45-50",    // range string
             // OR
             "detection_method": "automatic",     // use analysis results
-            
+
             "processing_method": "streaming"     // or "traditional"
         }
-    
+
     Returns:
         {
             "task_id": "abc-123-def",
@@ -380,151 +808,191 @@ class VideoRemoveFramesView(APIView):
             "message": "Frame removal complete",
             "processing_time": 180.3
         }
-    
+
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
-    
-    def post(self, request, pk):
+
+    permission_classes: Sequence[PermissionClass] = (
+        EnvironmentAwarePermission,
+        PolicyPermission,
+        CenterScopedVideoPermission,
+    )
+
+    def post(self, request: Request, pk: int) -> Response:
         """Remove frames from video."""
         video = get_object_or_404(VideoFile, pk=pk)
-        
-        # Extract parameters
-        frame_list = request.data.get('frame_list')
-        frame_ranges = request.data.get('frame_ranges')
-        detection_method = request.data.get('detection_method')
-        processing_method = request.data.get('processing_method', 'streaming')
-        
+
+        try:
+            payload = validate_video_correction_frame_removal_payload(
+                _request_payload_data(request)
+            )
+        except (PydanticValidationError, ValueError) as exc:
+            return _error_response(
+                _validation_error_message(exc),
+                status.HTTP_400_BAD_REQUEST,
+            )
+
         # Determine frames to remove
-        frames_to_remove = []
-        
-        if frame_list:
-            frames_to_remove = frame_list
-        elif frame_ranges:
-            frames_to_remove = self._parse_frame_ranges(frame_ranges)
-        elif detection_method == 'automatic':
+        frames_to_remove = payload.explicit_frames()
+
+        if (
+            frames_to_remove is None
+            and payload.resolved_detection_method == "automatic"
+        ):
             # Use existing analysis results
             try:
                 metadata = VideoMetadata.objects.get(video=video)
-                if metadata.sensitive_frame_ids:
-                    frames_to_remove = json.loads(metadata.sensitive_frame_ids)
+                sensitive_frame_ids = getattr(metadata, "sensitive_frame_ids", None)
+                if sensitive_frame_ids:
+                    if not isinstance(sensitive_frame_ids, str):
+                        return _error_response(
+                            "Analysis results were not stored as JSON text.",
+                            status.HTTP_400_BAD_REQUEST,
+                        )
+                    raw_frames = json.loads(sensitive_frame_ids)
+                    if not isinstance(raw_frames, list):
+                        return _error_response(
+                            "Analysis results did not contain a frame list.",
+                            status.HTTP_400_BAD_REQUEST,
+                        )
+                    raw_frame_values = cast(list[object], raw_frames)
+                    frames_to_remove = [
+                        _coerce_frame_number(frame) for frame in raw_frame_values
+                    ]
                 else:
-                    return Response(
-                        {'error': 'No analysis results available. Run analysis first.'},
-                        status=status.HTTP_400_BAD_REQUEST
+                    return _error_response(
+                        "No analysis results available. Run analysis first.",
+                        status.HTTP_400_BAD_REQUEST,
                     )
             except VideoMetadata.DoesNotExist:
-                return Response(
-                    {'error': 'Video not analyzed. Run analysis first.'},
-                    status=status.HTTP_400_BAD_REQUEST
+                return _error_response(
+                    "Video not analyzed. Run analysis first.",
+                    status.HTTP_400_BAD_REQUEST,
                 )
-        else:
-            return Response(
-                {'error': 'Must provide frame_list, frame_ranges, or detection_method=automatic'},
-                status=status.HTTP_400_BAD_REQUEST
+
+        if frames_to_remove is None:
+            return _error_response(
+                "Must provide frame_list, frame_ranges, or detection_method=automatic",
+                status.HTTP_400_BAD_REQUEST,
             )
-        
+
         if not frames_to_remove:
-            return Response(
-                {'error': 'No frames to remove'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
+            return _error_response("No frames to remove", status.HTTP_400_BAD_REQUEST)
+
+        processing_method = payload.resolved_processing_method
+
         # Create processing history record
-        history = VideoProcessingHistory.objects.create(
-            video=video,
-            operation=VideoProcessingHistory.OPERATION_FRAME_REMOVAL,
-            status=VideoProcessingHistory.STATUS_PENDING,
-            config={
-                'frames_to_remove': frames_to_remove,
-                'frame_count': len(frames_to_remove),
-                'processing_method': processing_method
-            }
+        history = cast(
+            ProcessingHistoryRecord,
+            VideoProcessingHistory.objects.create(
+                video=video,
+                operation=VideoProcessingHistory.OPERATION_FRAME_REMOVAL,
+                status=VideoProcessingHistory.STATUS_PENDING,
+                config={
+                    "frames_to_remove": frames_to_remove,
+                    "frame_count": len(frames_to_remove),
+                    "processing_method": processing_method,
+                },
+            ),
         )
-        
+
         try:
             history.mark_running()
-            
+
             # Initialize FrameCleaner
             frame_cleaner = FrameCleaner()
-            
-            # Get video paths
-            video_path = Path(video.raw_file.path) if hasattr(video.raw_file, 'path') else Path(str(video.raw_file))
-            output_path = Path(settings.MEDIA_ROOT) / 'anonym_videos' / f"{video.uuid}_cleaned.mp4"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Remove frames (uses existing FrameCleaner.remove_frames_from_video)
+
+            if not video.raw_file or not getattr(video.raw_file, "name", None):
+                raise FileNotFoundError(
+                    f"Raw video file not found for frame removal: {_video_hash(video)}"
+                )
+            output_path = _cleaned_output_path(video)
+            temp_output_path = _part_output_path(output_path)
+            ensure_directory(output_path.parent)
+            safe_unlink_file(temp_output_path, missing_ok=True)
+
+            # Remove frames using the current streaming removal API.
             import time
+
             start_time = time.time()
-            
-            success = frame_cleaner.remove_frames_from_video(
-                original_video=video_path,
-                frames_to_remove=frames_to_remove,
-                output_video=output_path
-            )
-            
+
+            with ensure_local_file(video.raw_file) as raw_path:
+                success = frame_cleaner.remove_frames_from_video_streaming(
+                    original_video=raw_path,
+                    frames_to_remove=frames_to_remove,
+                    output_video=temp_output_path,
+                    total_frames=_video_frame_count(video),
+                    use_named_pipe=processing_method == "streaming",
+                )
+
             processing_time = time.time() - start_time
-            
+
             if success:
                 # Update video record
-                update_processed_file(video, output_path)
+                final_output_path = _promote_processed_output(
+                    temp_output_path, output_path
+                )
+                stored_name = update_processed_file(video, final_output_path)
 
-                
                 # Phase 1.4: Update LabelVideoSegments (shift frame numbers)
-                segment_update_result = update_segments_after_frame_removal(video, frames_to_remove)
-                
+                segment_update_result = update_segments_after_frame_removal(
+                    video, frames_to_remove
+                )
+
                 # Mark history as success with segment update info
                 details_parts = [
                     f"Removed {len(frames_to_remove)} frames in {processing_time:.1f}s"
                 ]
-                if segment_update_result['segments_updated'] > 0:
+                if segment_update_result["segments_updated"] > 0:
                     details_parts.append(
                         f"Updated {segment_update_result['segments_updated']} segments"
                     )
-                if segment_update_result['segments_deleted'] > 0:
+                if segment_update_result["segments_deleted"] > 0:
                     details_parts.append(
                         f"Deleted {segment_update_result['segments_deleted']} segments (all frames removed)"
                     )
-                
+
                 history.mark_success(
-                    output_file=str(output_path),
-                    details="; ".join(details_parts)
+                    output_file=stored_name, details="; ".join(details_parts)
                 )
-                
-                logger.info(f"Video {pk} cleaned: removed {len(frames_to_remove)} frames")
-                
-                return Response({
-                    'task_id': None,  # Will be Celery task ID in Phase 1.2
-                    'output_file': str(output_path),
-                    'frames_removed': len(frames_to_remove),
-                    'segment_updates': segment_update_result,
-                    'message': 'Frame removal complete',
-                    'processing_time': processing_time
-                })
+
+                logger.info(
+                    f"Video {pk} cleaned: removed {len(frames_to_remove)} frames"
+                )
+
+                response_payload = VideoCorrectionRemoveFramesResponsePayload(
+                    task_id=None,
+                    output_file=stored_name,
+                    frames_removed=len(frames_to_remove),
+                    segment_updates=VideoCorrectionSegmentUpdatePayload(
+                        **segment_update_result
+                    ),
+                    message="Frame removal complete",
+                    processing_time=processing_time,
+                )
+                return Response(
+                    response_payload.model_dump(mode="json"),
+                    status=status.HTTP_200_OK,
+                )
             else:
                 raise Exception("Frame removal failed - check FFmpeg logs")
-                
+
         except Exception as e:
             logger.error(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
-            
+            temp_output_path = _part_output_path(_cleaned_output_path(video))
+            safe_unlink_file(temp_output_path, missing_ok=True)
+
             history.mark_failure(str(e))
-            
-            return Response(
-                {'error': f'Frame removal failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+
+            return _error_response(
+                f"Frame removal failed: {str(e)}",
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-    
-    def _parse_frame_ranges(self, ranges_str: str) -> list:
+
+    def _parse_frame_ranges(self, ranges_str: str) -> list[int]:
         """
         Parse frame ranges string to list of frame numbers.
-        
+
         Example: "10-20,30,45-50" -> [10,11,...,20,30,45,...,50]
         """
-        frames = []
-        for part in ranges_str.split(','):
-            part = part.strip()
-            if '-' in part:
-                start, end = map(int, part.split('-'))
-                frames.extend(range(start, end + 1))
-            else:
-                frames.append(int(part))
-        return sorted(set(frames))  # Remove duplicates and sort
+        return parse_video_correction_frame_ranges(ranges_str)

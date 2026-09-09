@@ -1,37 +1,57 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Protocol, TypeAlias, Any, cast
+
 from django.db import models
-from ..person import Person
-from endoreg_db.utils import get_examiner_hash, create_mock_examiner_name
-from typing import TYPE_CHECKING
+
+from endoreg_db.utils import create_mock_examiner_name, get_examiner_hash
 
 from ....utils import DJANGO_NAME_SALT
+from ..person import Person
+
 if TYPE_CHECKING:
-    from endoreg_db.models import administration
+    from ...center.center import Center
+    from ...person.names.first_name import FirstName
+    from ...person.names.last_name import LastName
+    from ..user.portal_user_information import PortalUserInfo
+
+NoExaminerValue: TypeAlias = None
+ExaminerFirstNameInput: TypeAlias = "str | FirstName"
+ExaminerLastNameInput: TypeAlias = "str | LastName"
+
+
+class _ExaminerNameSource(Protocol):
+    name: str
+
+
 class Examiner(Person):
-    center = models.ForeignKey(
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
         "Center", on_delete=models.CASCADE, blank=True, null=True
     )
-    hash = models.CharField(max_length=255, unique=True)
+    hash: models.CharField[str, Any] = models.CharField(max_length=255, unique=True)
 
     if TYPE_CHECKING:
-        center: "administration.Center"
-        portal_user_info: "administration.PortalUserInfo"
+        portal_user_info: PortalUserInfo
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.first_name + " " + self.last_name
 
     @classmethod
-    def custom_get_or_create(cls, first_name: str, last_name: str, center: "administration.Center", substitute_names: bool = True):
-        from endoreg_db.models import (
-            FirstName,
-            LastName,
-        )
+    def custom_get_or_create(
+        cls,
+        first_name: ExaminerFirstNameInput,
+        last_name: ExaminerLastNameInput,
+        center: "Center",
+        substitute_names: bool = True,
+    ) -> tuple["Examiner", bool]:
+        from ...person.names.first_name import FirstName
+        from ...person.names.last_name import LastName
 
         if isinstance(first_name, FirstName):
-            first_name = str(first_name.name)
-        
-        if isinstance(last_name, LastName):
-            last_name = str(last_name.name)
+            first_name = cast(_ExaminerNameSource, first_name).name
 
+        if isinstance(last_name, LastName):
+            last_name = cast(_ExaminerNameSource, last_name).name
 
         real_hash = get_examiner_hash(
             first_name=first_name,
@@ -42,7 +62,7 @@ class Examiner(Person):
 
         if substitute_names:
             name_tuple = create_mock_examiner_name()
-        
+
         else:
             name_tuple = (first_name, last_name)
         defaults = dict(

@@ -1,30 +1,68 @@
-from django.db import models
+from __future__ import annotations
+from typing import Any, Unpack, cast
+
 import numpy as np
+from django.db import models
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.schemas.anonymization import normalize_categorical_distribution
+
 from .base_value_distribution import BaseValueDistribution
 
-class MultipleCategoricalValueDistributionManager(models.Manager):
-    def get_by_natural_key(self, name):
+
+class MultipleCategoricalValueDistributionManager(
+    models.Manager["MultipleCategoricalValueDistribution"]
+):
+    def get_by_natural_key(self, name: str) -> "MultipleCategoricalValueDistribution":
         return self.get(name=name)
+
 
 class MultipleCategoricalValueDistribution(BaseValueDistribution):
     """
     Multiple categorical value distribution model.
     Assigns a specific number or varying number of values based on probabilities.
     """
-    objects = MultipleCategoricalValueDistributionManager()
-    categories = models.JSONField()  # { "category": "probability", ... }
-    min_count = models.IntegerField()
-    max_count = models.IntegerField()
-    count_distribution_type = models.CharField(max_length=20, choices=[('uniform', 'Uniform'), ('normal', 'Normal')])
-    count_mean = models.FloatField(null=True, blank=True)
-    count_std_dev = models.FloatField(null=True, blank=True)
 
-    def generate_value(self):
-        if self.count_distribution_type == 'uniform':
-            count = np.random.randint(self.min_count, self.max_count + 1)
-        elif self.count_distribution_type == 'normal':
-            count = int(np.random.normal(self.count_mean, self.count_std_dev))
-            count = np.clip(count, self.min_count, self.max_count)
+    objects = MultipleCategoricalValueDistributionManager()
+    categories: models.JSONField[dict[str, float]] = models.JSONField()
+    min_count: models.IntegerField[int, Any] = models.IntegerField()
+    max_count: models.IntegerField[int, Any] = models.IntegerField()
+    count_distribution_type: models.CharField[str, Any] = models.CharField(
+        max_length=20, choices=[("uniform", "Uniform"), ("normal", "Normal")]
+    )
+    count_mean: models.FloatField[float | None, Any] = models.FloatField(
+        null=True, blank=True
+    )
+    count_std_dev: models.FloatField[float | None, Any] = models.FloatField(
+        null=True, blank=True
+    )
+
+    def clean(self) -> None:
+        super().clean()
+        self.categories = normalize_categorical_distribution(self.categories)
+
+    def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        self.clean()
+        super().save(**kwargs)
+
+    @property
+    def count_mean_safe(self) -> float:
+        if self.count_mean is None:
+            raise ValueError("count_mean is not set")
+        return self.count_mean
+
+    @property
+    def count_std_dev_safe(self) -> float:
+        if self.count_std_dev is None:
+            raise ValueError("count_std_dev is not set")
+        return self.count_std_dev
+
+    def generate_value(self, *args: object, **kwargs: object) -> object:
+        if self.count_distribution_type == "uniform":
+            count = cast(int, np.random.randint(self.min_count, self.max_count + 1))
+        elif self.count_distribution_type == "normal":
+            count = int(np.random.normal(self.count_mean_safe, self.count_std_dev_safe))
+            count = int(np.clip(count, self.min_count, self.max_count))
         else:
             raise ValueError("Unsupported count distribution type")
 

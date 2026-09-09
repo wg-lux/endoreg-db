@@ -1,0 +1,119 @@
+- model: endoreg_db.finding
+  fields:
+    name: "cecum"
+    description: "Anatomical structure: Cecum"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "terminal_ileum"
+    description: "Anatomical structure: Terminal ileum"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "appendiceal_orifice"
+    description: "Anatomical structure: Appendiceal orifice"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "ileocecal_valve"
+    description: "Anatomical structure: Ileocecal valve"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "ascending_colon"
+    description: "Anatomical structure: Ascending colon"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "right_flexure"
+    description: "Anatomical structure: Right flexure"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "transverse_colon"
+    description: "Anatomical structure: Transverse colon"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "left_flexure"
+    description: "Anatomical structure: Left flexure"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "descending_colon"
+    description: "Anatomical structure: Descending colon"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "sigmoid_colon"
+    description: "Anatomical structure: Sigmoid colon"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "rectum"
+    description: "Anatomical structure: Rectum"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized
+
+- model: endoreg_db.finding
+  fields:
+    name: "rectum_anus"
+    description: "Anatomical structure: Rectum and anus"
+    finding_types:
+      - anatomy
+      - hidden
+    finding_classifications:
+      - visualized

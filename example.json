@@ -1,0 +1,20 @@
+{
+    "required_findings": {
+        "cecum_vizualised": {
+            "required_classifications": [
+                "XXX"
+            ],
+            "optional_classifications": []
+        }
+    },
+    "optional_findings": {
+        "colon_polyp": {
+            "required_classifications": [
+                "size_category"
+            ],
+            "optional_classifications": [
+                "size_mm"
+            ]
+        }
+    }
+}

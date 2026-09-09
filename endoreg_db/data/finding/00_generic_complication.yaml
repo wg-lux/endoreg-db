@@ -1,0 +1,9 @@
+- model: endoreg_db.finding
+  fields:
+    name: "complication_generic"
+    name_de: "Komplikation (generisch)"
+    name_en: "Complication (generic)"
+    finding_types:
+      - complication
+    finding_classifications:
+      - complication_generic_type

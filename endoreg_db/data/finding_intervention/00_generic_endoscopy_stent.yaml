@@ -1,0 +1,9 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_stent_generic
+    description: Stent placement is a technique used to keep a narrowed area
+      in the colon open.
+    intervention_types:
+      - therapeutic
+      - invasive
+      - foreign_body

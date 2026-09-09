@@ -1,0 +1,63 @@
+# Set this explicitly here or export DJANGO_SETTINGS_MODULE before execution.
+# A conflicting environment value fails closed.
+django_settings_module: null
+
+receipt_directory: results/import_receipts
+log_directory: results/import_logs
+
+# The supervised runner supplies a unique batch_id. Direct invocations generate
+# a process-local manual identifier so receipts and logs remain correlated.
+batch_id: null
+
+resources:
+  video:
+    threads: 4
+    mem_mb: 8192
+    # One import rule hashes one source, so additional Rayon workers cannot
+    # increase identity throughput.
+    rust_workers: 1
+    ffmpeg_threads: 4
+    gpu: 1
+    runtime_minutes: 360
+  report:
+    threads: 1
+    mem_mb: 2048
+    rust_workers: 1
+    ffmpeg_threads: 1
+    gpu: 0
+    runtime_minutes: 60
+  video_transcode:
+    threads: 4
+    mem_mb: 16000
+    rust_workers: 4
+    ffmpeg_threads: 4
+    gpu: 1
+    runtime_minutes: 360
+  video_hls:
+    threads: 4
+    mem_mb: 16000
+    rust_workers: 4
+    ffmpeg_threads: 4
+    gpu: 1
+    runtime_minutes: 360
+
+# Map each stable job identifier to:
+# source, center_name, processor_name, and optionally retry.
+video_imports: {}
+
+# Map each stable job identifier to:
+# source, center_name, and optionally retry.
+report_imports: {}
+
+# Optional storage-pressure jobs. Each job selects exactly one source:
+# - video_id: an existing VideoFile primary key
+# - import_job: a key from video_imports
+#
+# apply defaults to false so adding a job first produces a non-mutating receipt.
+video_transcodes: {}
+
+# Optional HLS jobs. Each job selects exactly one source:
+# - video_id: an existing VideoFile primary key
+# - import_job: a key from video_imports
+# - transcode_job: a key from video_transcodes
+video_hls_materializations: {}

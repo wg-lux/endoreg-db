@@ -1,57 +1,37 @@
 import hashlib
-from pathlib import Path
-from datetime import datetime, date
-
 import os
+from datetime import date, datetime
+from pathlib import Path
+import logging
+from django.db.models.fields.files import FieldFile
+from endoreg_db.utils.file_operations import sha256_file
+
+logger = logging.getLogger(__name__)
 
 SALT = os.getenv("DJANGO_SALT", "default_salt")
 DJANGO_NAME_SALT = os.environ.get("DJANGO_SALT", "default_salt")
 
 
-def get_video_hash(video_path):
-    """
-    Get the hash of a video file.
-    """
-    # Open the video file in read-binary mode:
-    with open(video_path, "rb") as f:
-        # Create the hash object, passing in the video contents for hashing:
-        hash_object = hashlib.sha256(f.read())
-        # Get the hexadecimal representation of the hash
-        video_hash = hash_object.hexdigest()
-        assert len(video_hash) <= 255, "Hash length exceeds 255 characters"
-
-    return video_hash
+def get_video_hash(video_file: Path | FieldFile) -> str:
+    """Semantic alias for sha256_file() used by video import workflows."""
+    return sha256_file(video_file)
 
 
-def get_pdf_hash(pdf_path: Path):
-    """
-    Get the hash of a pdf file.
-    """
-    pdf_hash = None
-
-    # Open the file in binary mode and read its contents
-    with open(pdf_path, "rb") as f:
-        pdf_contents = f.read()
-        # Create a hash object using SHA-256 algorithm
-
-    hash_object = hashlib.sha256(pdf_contents, usedforsecurity=False)
-    # Get the hexadecimal representation of the hash
-    pdf_hash = hash_object.hexdigest()
-    assert len(pdf_hash) <= 255, "Hash length exceeds 255 characters"
-
-    return pdf_hash
+def get_pdf_hash(pdf_file: Path | FieldFile) -> str:
+    """Semantic alias for sha256_file() used by report import workflows."""
+    return sha256_file(pdf_file)
 
 
 def _get_date_hash_string(date_obj: date) -> str:
-    # if date is datetime object, convert to date
+    # if date is a datetime value, convert to date
     if isinstance(date_obj, datetime):
-        # warnings.warn("Date is a datetime object. Converting to date object.")
+        # warnings.warn("Date is a datetime value. Converting to date value.")
         date_obj = date_obj.date()
     elif isinstance(date_obj, str):
-        # warnings.warn(f"Date is a string ({date_obj}). Converting to date object.")
+        # warnings.warn(f"Date is a string ({date_obj}). Converting to date value.")
         date_obj = datetime.strptime(date_obj, "%Y-%m-%d").date()
 
-    assert isinstance(date_obj, date), "Date must be a date object"
+    assert isinstance(date_obj, date), "Date must be a date value"
     # if date is 1900-01-01, make it an empty string
     if date_obj == date(1900, 1, 1):
         date_str = ""
@@ -98,7 +78,7 @@ def get_patient_hash(
         center_name=center,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     patient_hash = hash_object.hexdigest()
@@ -126,7 +106,7 @@ def get_patient_examination_hash(
         examination_date=examination_date,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     patient_examination_hash = hash_object.hexdigest()
@@ -134,7 +114,12 @@ def get_patient_examination_hash(
     return patient_examination_hash
 
 
-def get_examiner_hash(first_name, last_name, center_name, salt):
+def get_examiner_hash(
+    first_name: str,
+    last_name: str,
+    center_name: str,
+    salt: str,
+) -> str:
     """
     Get the hash of an examiner's first name, last name, and center name.
     """
@@ -145,7 +130,7 @@ def get_examiner_hash(first_name, last_name, center_name, salt):
         center_name=center_name,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
+    # Create a hash instance using SHA-256 algorithm
     hash_object = hashlib.sha256(hash_str.encode())
     # Get the hexadecimal representation of the hash
     examiner_hash = hash_object.hexdigest()

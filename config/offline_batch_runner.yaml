@@ -1,0 +1,30 @@
+schema_version: "1.0"
+
+# All relative paths are resolved from this configuration file's directory.
+workflow_root: ..
+snakefile: ../workflow/Snakefile
+workflow_config: imports.yaml
+profile: ../workflow/profiles/offline-batch
+lock_path: ../results/import_receipts/.offline-batch-runner.lock
+summary_directory: ../results/import_receipts/runner_summaries
+
+# Startup is fail-closed before Snakemake starts. Stage services still own
+# per-attempt leases, fencing, storage headroom, publication, and cleanup.
+assert_environment_readiness: true
+required_native_capabilities:
+  - name: batch_file_identity
+    contract_version: batch_file_identity_v1
+
+# These are host-wide Snakemake scheduling budgets, not operating-system limits.
+resources:
+  cores: 16
+  mem_mb: 64000
+  gpu: 1
+  rust_workers: 16
+
+# A zero-second lock timeout rejects a second local runner immediately.
+lock_timeout_seconds: 0
+shutdown_grace_seconds: 30
+max_runtime_seconds: 86400
+heartbeat_seconds: 30
+poll_interval_seconds: 1

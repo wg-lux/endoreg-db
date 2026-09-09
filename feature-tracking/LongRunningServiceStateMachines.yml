@@ -1,0 +1,479 @@
+schema_version: '1.0'
+id: long_running_service_state_machines
+name: Zustandsmaschinen für langlaufende Dienste
+description: Einheitlicher, typisierter und wiederanlauffähiger Lebenszyklusvertrag für langlaufende Dienste
+  und Operationen. Deterministische Zustandsentscheidungen sollen standardmäßig in einem versionierten
+  nativen Rust-Kern liegen; Orchestrierung, Persistenz und fachliche Seiteneffekte bleiben in klar getrennten
+  Service-Grenzen.
+owners:
+- endoreg_db maintainers
+- LuxNix platform maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/model_layer_map_for_agents.md
+  disposition: reference
+  note: Definiert die Trennung zwischen Persistenzmodellen und Service-Logik.
+- path: docs/production_workflow_hardening_plan.md
+  disposition: reference
+  note: Beschreibt bestehende Workflowinvarianten und fail-closed Zustandsübergänge.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Referenz für Lease-, Fencing-, Recovery- und atomare Publikationsanforderungen bei Medienoperationen.
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Definiert bestehende Import-Ownership-, Heartbeat-, Lease- und Fencing-Grenzen.
+definition_of_done:
+- id: service_inventory_and_scope
+  category: requirements
+  title: Alle langlaufenden Dienste und Operationen besitzen einen verantworteten Lebenszyklusvertrag
+  acceptance:
+  - Das Prozessinventar umfasst den Gunicorn-Webdienst, die sechs getrennten Celery-Workerprofile pipeline,
+    ffmpeg_media, frame_extraction, inference samt llm_inference, model_training und maintenance sowie
+    Celery Beat; Prozessstart, Drain, Restart und Shutdown bleiben Eigentum des Deployments beziehungsweise
+    Supervisors und werden nicht aus fachlichen Jobzuständen abgeleitet.
+  - Das Operationsinventar umfasst alle 15 Shared Tasks in endoreg_db/tasks.py, Import und Reimport, Anonymisierung
+    und Korrektur, Transcoding und HTTP Live Streaming, Frame- und Segmentverarbeitung, Inferenz und Training,
+    Reportverarbeitung, Cleanup, Transfer, Storage-Balancing und Reconciliation sowie die beiden zeitgesteuerten
+    Videoformat-Audit- und Repair-Oneshots.
+  - 'Begrenzte Kindprozesse und lokale Ausführungskontexte sind separat erfasst: FFmpeg-Aufrufe, Offline-Batch,
+    nativer Report-PDF-Renderer, Video-Probes, der temporäre Seekable-Range-Server sowie die lokalen Executor-Pools
+    für temporale Inferenz und Post-Validation-Rebuild.'
+  - Persistierte Zustands- und Ownership-Ledger sind UploadJob, ReportImportAttempt, VideoProcessingHistory,
+    VideoHlsArtifact, AIModelTrainingRun, AIDataSetExportArtifact, DicomExportJob, StorageReservation,
+    StorageArtifactPlacement, StorageRotation, StorageBalanceWorkItem und StorageReconciliationRun; fachlich
+    unabhängige Zustandsachsen werden nicht in einen Gesamtstatus verdichtet.
+  - Der produktive Watcher-Daemon gehört lx-annotate; endoreg_db besitzt nur den atomaren Watcher-Handoff
+    und den anschließenden UploadJob. Diese externe Prozessgrenze benötigt einen gemeinsamen Start-, Health-,
+    Handoff- und Shutdown-Vertrag, aber keinen zweiten endoreg_db-Daemon.
+  - Nicht erfasste produktive Dauerläufer und implizite Zustände aus Prozesspräsenz, Logtexten oder Zeitüberschreitungen
+    verhindern die Produktionsfreigabe.
+  required: true
+  verification:
+    kind: manual
+    instructions: Inventar gegen systemd-, Nix-, Container-, Task-Queue- und Management-Command-Einstiegspunkte
+      prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: flake.nix; devenv.nix; endoreg_db/tasks.py; endoreg_db/config/settings/base.py
+    - kind: code
+      reference: endoreg_db/services/jobs/heavy_jobs.py; endoreg_db/services/seekable_media_input.py;
+        endoreg_db/services/offline_batch_runner.py
+    - kind: code
+      reference: endoreg_db/models/hub/upload_job.py; endoreg_db/models/state/report_import_attempt.py;
+        endoreg_db/models/media/video/video_processing.py; endoreg_db/models/media/video/hls_artifact.py
+    - kind: code
+      reference: nix/nixos/video-format-reconciliation.nix; docs/wiki/hub_ingest_current_state.md
+    note: Repository-Inventar der beaufsichtigten Prozesse, Shared Tasks, begrenzten Kindprozesse, lokalen
+      Executor-Pools und persistierten Ownership-Ledger ist in der Akzeptanzmatrix erfasst. Offen bleiben
+      der Abgleich mit den produktiven LuxNix-Units und dem lx-annotate-Watcher sowie Owner-, Abhängigkeits-
+      und Shutdown-Nachweise je Deploymentprofil.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T11:50:51.032202Z'
+- id: canonical_state_contract
+  category: functionality
+  title: Zustände, Ereignisse und Übergänge sind kanonisch und deterministisch
+  acceptance:
+  - Der gemeinsame Dienstlebenszyklus unterscheidet mindestens STARTING, RUNNING, DEGRADED, STOPPING,
+    STOPPED, FAILED und LOST; begrenzte Operationen verwenden getrennt QUEUED, CLAIMED, RUNNING, RETRY_WAIT,
+    SUCCEEDED, FAILED, CANCELLED und LOST, soweit der jeweilige Vertrag diese Zustände benötigt.
+  - Jeder Übergang benennt auslösendes typisiertes Ereignis, Vorbedingungen, erlaubte Quellzustände, Zielzustand,
+    Terminalität, Retry-Wirkung und stabilen Ablehnungsgrund.
+  - Unbekannte Zustände, Ereignisse, Schema-Versionen und unmögliche Übergänge schlagen laut und fail-closed
+    fehl; LOST bleibt sichtbar und kann nicht implizit zu Erfolg werden.
+  - Zustandsentscheidungen sind reine, deterministische Reduktionen; Datenbank-, Netzwerk-, Prozess- und
+    Dateisystem-Seiteneffekte werden erst nach einer erfolgreichen Entscheidung an expliziten Service-Grenzen
+    ausgeführt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Zustands- und Ereignismatrizen gegen Service-Einstiegspunkte, Persistenzmodelle und
+      Bedieneraktionen prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; endoreg_db/services/lifecycle_state_machine.py
+    - kind: test
+      reference: tests/services/test_lifecycle_state_machine.py::test_service_lifecycle_matrix_is_exhaustive;
+        tests/services/test_lifecycle_state_machine.py::test_operation_lifecycle_matrix_is_exhaustive
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_state_machine.py; endoreg_db/services/hub/ingest.py;
+        endoreg_db/services/jobs/model_training_jobs.py
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; endoreg_db/services/lifecycle_state_machine.py;
+        endoreg_db/services/hub/upload_job_state_machine.py; endoreg_db/services/hub/ingest.py
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; endoreg_db/services/hub/upload_job_state_machine.py;
+        endoreg_db/services/report_import_state_machine.py
+    note: Der kanonische Operationsvertrag lifecycle_state_v3 ergänzt RETRY_REQUESTED und erlaubt den
+      expliziten Pfad FAILED beziehungsweise SUCCEEDED -> RETRY_WAIT sowie QUEUED -> RETRY_WAIT bei einem
+      Dispatch-Fehler. UploadJob und ReportImportAttempt bilden ihre persistierten Status typisiert auf
+      denselben nativen Reducer ab; jede Reduktion wird unmittelbar vor der bestehenden Mutation validiert.
+      LOST bleibt vom wiederholbaren Retry-Pfad getrennt.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T13:30:02.736579Z'
+- id: rust_transition_core
+  category: maintainability
+  title: Langlaufende Dienste verwenden bevorzugt einen versionierten nativen Rust-Zustandskern
+  acceptance:
+  - Neue produktionskritische Zustandsmaschinen implementieren Ereignisvalidierung und deterministische
+    Transitionen standardmäßig in Rust mit vollständig typisierten Python-Bindings; Python orchestriert
+    und führt Seiteneffekte aus, dupliziert aber nicht die Transitionslogik.
+  - Bestehende langlaufende Dienste besitzen je einen dokumentierten Migrationsentscheid mit Reihenfolge,
+    Kompatibilitätsfenster und Entfernungskriterium für doppelte Implementierungen.
+  - Eine Ausnahme vom Rust-Standard benennt Owner, technische Begründung, Risiko, Ablauf- oder Reviewdatum
+    und weist dieselben Typ-, Determinismus-, Nebenläufigkeits- und Recovery-Invarianten nach.
+  - In Produktionsprofilen führt ein fehlender oder inkompatibler erforderlicher nativer Kern zum sicheren
+    Startabbruch; ein optionaler Referenzreduzierer ist nur für Paritätstests zulässig und kein stiller
+    Produktionsfallback.
+  required: true
+  verification:
+    kind: manual
+    instructions: Rust-Crates, Python-Bindings, Capability-Gates, Ausnahmeentscheidungen und Entfernungskriterien
+      gemeinsam reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; rust/endoreg_rust_backend/src/capabilities.rs;
+        rust/endoreg_rust_backend/src/lib.rs; rust/endoreg_rust_backend/src/stubs.rs
+    - kind: code
+      reference: endoreg_db/endoreg_rust_backend.pyi; endoreg_db/utils/rust_backend.py; endoreg_db/services/lifecycle_state_machine.py
+    - kind: command
+      reference: cargo check --manifest-path rust/endoreg_rust_backend/Cargo.toml (Exit-Code 0); maturin
+        build --compatibility linux (Exit-Code 0)
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; endoreg_db/services/hub/upload_job_state_machine.py;
+        endoreg_db/services/jobs/model_training_jobs.py
+    - kind: command
+      reference: cargo check --manifest-path rust/endoreg_rust_backend/Cargo.toml (Exit-Code 0); maturin
+        build --manifest-path rust/endoreg_rust_backend/Cargo.toml --compatibility linux (Exit-Code 0)
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/capabilities.rs; rust/endoreg_rust_backend/src/lifecycle_state.rs;
+        endoreg_db/utils/rust_backend.py
+    - kind: command
+      reference: cargo check --manifest-path rust/endoreg_rust_backend/Cargo.toml und maturin build --compatibility
+        linux (Exit-Code 0)
+    - kind: command
+      reference: cargo fmt; cargo check --manifest-path rust/endoreg_rust_backend/Cargo.toml; maturin
+        build --manifest-path rust/endoreg_rust_backend/Cargo.toml --compatibility linux (jeweils Exit-Code
+        0)
+    note: Die native Capability ist auf lifecycle_state_v3 angehoben. RETRY_REQUESTED, RETRY_SCHEDULED,
+      OWNERSHIP_LOST und RECONCILE_RETRY werden ausschließlich im Rust-Reducer entschieden; die Python-Adapter
+      ordnen persistierte Status zu und behalten Persistenz, Lease und fachliche Seiteneffekte an den
+      vorhandenen Service-Grenzen. Ältere native Module scheitern am Capability-Gate fail-closed.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T13:30:05.173698Z'
+- id: durable_fenced_persistence
+  category: data_integrity
+  title: Persistierte Zustände sind atomar, idempotent und gegen veraltete Worker geschützt
+  acceptance:
+  - Jede Instanz besitzt stabile Identität, Zustandsversion, Attempt-ID, Owner, Lease-Ablauf, monotonen
+    Fencing-Token sowie Erstellungs- und Aktualisierungszeit aus einer autoritativen Zeitquelle.
+  - Claim, Heartbeat, Transition und Abschluss verwenden atomare Compare-and-Swap- oder Zeilensperr-Semantik;
+    verspätete, doppelte oder fremde Worker dürfen keinen neueren Zustand überschreiben.
+  - Ereignisse und persistierte Workflow- oder Provenienz-Payloads werden am Modellrand durch versionierte
+    typisierte Schemata validiert; Modelle enthalten keine neue Orchestrierungs- oder Seiteneffektlogik.
+  - Redelivery, wiederholte Kommandos und Prozessneustarts sind idempotent und erzeugen weder doppelte
+    fachliche Ressourcen noch parallele Publikationsrechte.
+  required: true
+  verification:
+    kind: manual
+    instructions: Persistenzvertrag gegen Transaktionen, Constraints, Lease-Verwaltung, Fencing und typisierte
+      Modellgrenzen prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/ingest.py; endoreg_db/services/hub/upload_job_import_lease.py;
+        endoreg_db/services/jobs/model_training_jobs.py
+    - kind: test
+      reference: tests/services/test_hub_ingest_import_job_contract.py; tests/services/test_model_training_jobs.py::test_stale_model_training_run_transitions_to_lost
+    - kind: test
+      reference: tests/services/test_ingest_idempotency_quarantine.py; tests/services/test_watcher_storage_import.py
+    - kind: test
+      reference: tests/services/test_upload_job_import_lease.py; tests/services/test_report_import_fencing.py;
+        tests/services/test_import_monitoring.py
+    - kind: test
+      reference: tests/services/test_report_llm_jobs.py; tests/services/test_anonymization_operational_recovery.py;
+        tests/services/test_watcher_storage_import.py; tests/services/test_media_integrity_reconciliation_plan.py
+    - kind: code
+      reference: endoreg_db/models/aidataset/aidataset.py; endoreg_db/services/jobs/model_training_jobs.py;
+        endoreg_db/models/hub/transfer_job.py; endoreg_db/services/hub/transfers.py; endoreg_db/migrations/0076_operation_ownership_ledgers.py
+    - kind: test
+      reference: tests/services/test_model_training_jobs.py; tests/services/test_transfer_job_contract.py
+    - kind: command
+      reference: 'Fokussierter Pyright: 0 Fehler; Training-/Task-Lane 56 passed; TransferJob-Vertrag 38
+        passed plus 3 subtests'
+    - kind: command
+      reference: 'Finale gemeinsame Transfer-/Training-Lane nach Datenbankzeit-CAS und gefencetem Fehlerabschluss:
+        76 passed, 3 subtests passed, 2 warnings'
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:15:23.175644Z'
+- id: concurrency_and_recovery
+  category: operations
+  title: Abbruch, Neustart und Konkurrenz konvergieren ohne Split-Brain
+  acceptance:
+  - Start, kontrollierter Shutdown und Abbruch besitzen begrenzte Fristen; neue Arbeit wird vor Shutdown
+    gestoppt, Kindprozesse werden kontrolliert beendet und aktive Claims werden abgeschlossen oder sicher
+    zurückgelassen.
+  - Abgelaufene Heartbeats oder Leases führen über eine explizite Reconciliation nach RETRY_WAIT, FAILED
+    oder LOST; Prozesspräsenz allein gilt weder als RUNNING- noch als Erfolgsevidenz.
+  - Retry-Policy verwendet begrenzte Versuche, klassifizierte Fehler und Backoff mit Jitter; nicht wiederholbare
+    Integritäts-, Sicherheits- oder Vertragsfehler bleiben terminal und alarmiert.
+  - Zwei konkurrierende Starter, Worker oder Reconciler sowie ein verspäteter alter Worker können zu keinem
+    Zeitpunkt gleichzeitig gültiges Ownership oder Publikationsrecht besitzen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Kill-, Restart-, Lease-Ablauf-, Redelivery- und Split-Brain-Übungen in einem produktionsnahen
+      Mehrprozessprofil durchführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_model_training_jobs.py::test_stale_model_training_run_transitions_to_lost;
+        tests/services/test_hub_ingest_import_job_contract.py
+    - kind: command
+      reference: 'pytest focused lifecycle/fencing/retry suite: 68 passed; import service and handoff
+        contract suite: 139 passed'
+    - kind: code
+      reference: endoreg_db/services/jobs/model_training_jobs.py; endoreg_db/tasks.py; endoreg_db/config/settings/base.py;
+        endoreg_db/services/hub/transfers.py
+    - kind: test
+      reference: tests/services/test_model_training_jobs.py::test_model_training_dispatch_failure_enters_durable_retry_wait;
+        tests/services/test_model_training_jobs.py::test_expired_model_training_lease_rejects_completion;
+        tests/services/test_transfer_job_contract.py
+    - kind: command
+      reference: Training-/Task-Lane 56 passed; TransferJob-Lifecycle-Lane 38 passed plus 3 subtests
+    note: Training-Dispatchfehler wechseln persistent über RETRY_SCHEDULED nach RETRY_WAIT, werden durch
+      den Maintenance-Worker mit begrenztem Backoff erneut versandt und enden nach Erschöpfung FAILED.
+      Abgelaufene Training- und Transfer-Leases werden als verlorene Ownership behandelt; alte Worker
+      verlieren Kandidaten- und Abschlussrecht. Bestätigte Artefaktverluste bleiben davon getrennt LOST.
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:05:19.614973Z'
+- id: security_boundaries
+  category: security
+  title: Zustandsübergänge bewahren Identitäts-, Mandanten- und Speichergrenzen
+  acceptance:
+  - Start, Claim, Steuerung, Retry, Abbruch und manuelle Recovery prüfen Maschinen- oder Nutzeridentität,
+    Berechtigung und Center-Scope serverseitig; interne Netzwerke werden nicht als vertrauenswürdig behandelt.
+  - Zustands- und Fehlerpayloads enthalten keine Secrets, Schlüssel, Patientendaten oder ungeschützten
+    absoluten Speicherpfade; technische Details bleiben in zugriffsgeschützten korrelierten Auditereignissen.
+  - Medien- und Dateisystemoperationen bleiben innerhalb der genehmigten verschlüsselten Speichergrenze
+    und verwenden die typisierten atomaren Dateioperations-Wrapper; Raw-Media-Export bleibt verboten.
+  - Fehlende gegenseitige Transport Layer Security, native Capabilities oder Integritätsevidenz in einem
+    sie verlangenden Profil verhindern Start oder Transition ohne unsicheren Fallback.
+  required: true
+  verification:
+    kind: manual
+    instructions: Negative Autorisierungs-, Mandantentrennungs-, Secret-Leak-, Storage- und Capability-Gate-Tests
+      reviewen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: transition_and_failure_tests
+  category: testing
+  title: Transitionsmatrix, Rust-Parität und Ausfallpfade sind automatisiert geprüft
+  acceptance:
+  - Tabellen- oder eigenschaftsbasierte Tests decken jede erlaubte und verbotene Transition, Terminalität,
+    unbekannte Eingaben und stabile Ablehnungsgründe des Rust-Kerns ab.
+  - Python-Bindingstests prüfen strikte Typkonvertierung, Schema- und Binärversionskompatibilität sowie
+    Parität mit versionierten Vertragsvektoren ohne offenen Any- oder Dictionary-Vertrag.
+  - Mehrprozess-Integrationstests decken Doppelstart, konkurrierenden Claim, Lease-Ablauf, Worker-Abbruch,
+    verspäteten Abschluss, Redelivery, Retry-Erschöpfung, Shutdown und Reconciliation ab.
+  - Failure Injection vor und nach Persistenz- und Seiteneffektgrenzen beweist, dass kein falscher Erfolg,
+    keine doppelte Ressource und kein unbemerkter Verlust entsteht.
+  - AAA-Regressionstests beweisen, dass ein fachlicher Verarbeitungsfehler FAILED bleibt, während fehlende
+    Artefakte nach einem belegten Erfolg beziehungsweise einer Validierung explizit LOST werden und bei
+    jeder Inventur als LOST gezählt werden.
+  - Modelltrainingstests erzwingen exklusives Lease-Ownership mit Fencing, einen dauerhaften Retry-Zustand
+    bei Dispatch-Fehlern, physisch vorhandene Erfolgsartefakte und Datenbank-Framezustände, die erst nach
+    erfolgreicher Dateimaterialisierung gesetzt werden.
+  - Transfer- und Importtests erzwingen, dass veraltete Worker keinen neueren Zustand überschreiben, ein
+    verlorenes Report-Ownership dauerhaft sichtbar wird und eine fehlgeschlagene Video-Finalisierung die
+    zuvor gültige kanonische Generation unverändert lässt.
+  - Transfer-Failure-Injection prüft die Lease nicht nur beim Claim und Heartbeat, sondern auch unmittelbar
+    bei Kandidatenregistrierung und Abschluss; ein abgelaufener Worker besitzt ohne erfolgreichen Reclaim
+    kein Publikationsrecht, und der Erfolgsabschluss akzeptiert ausschließlich APPLIED.
+  - Jeder Fehler nach einem Transfer-Claim, einschließlich Ziel- und Hashvalidierung vor dem Öffnen eines
+    Envelopes, beendet oder verwirft den Claim atomar; kein früher Fehler hinterlässt RUNNING mit einer
+    scheinbar lebenden Lease.
+  - TransferJob unterscheidet reparierbaren Artefaktverlust LOST vom bestätigten Konfliktzustand INCONSISTENT;
+    nur LOST darf über einen expliziten Retry neu geclaimt werden, während INCONSISTENT bis zur autorisierten
+    Auflösung fail-closed bleibt.
+  - Der REST-Adapter bildet einen konkurrierenden Live-Lease-Claim deterministisch auf HTTP 409 Conflict
+    mit sicherem Fehlerpayload ab; erwartete Konkurrenz darf weder als HTTP 500 erscheinen noch Lease-Daten
+    oder interne Pfade offenlegen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Testmatrix und CI-Lanes gegen Inventar, Zustandsverträge und alle Ausfallgrenzen abgleichen
+      und ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py tests/rust_backend/test_rust_backend_fallbacks.py
+        -q (34 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright endoreg_db/utils/rust_backend.py endoreg_db/services/lifecycle_state_machine.py
+        tests/services/test_lifecycle_state_machine.py (0 errors)
+    - kind: test
+      reference: tests/services/test_lifecycle_state_machine.py::test_service_lifecycle_matrix_is_exhaustive;
+        tests/services/test_lifecycle_state_machine.py::test_operation_lifecycle_matrix_is_exhaustive;
+        tests/services/test_lifecycle_state_machine.py::test_lifecycle_transition_requires_native_capability
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py tests/services/test_upload_job_state_machine.py
+        tests/services/test_model_training_jobs_unit.py -q (52 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_model_training_jobs.py -q (16 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_dispatch.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/services/test_watcher_storage_import.py
+        -q (70 passed, 4 subtests passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright auf allen geänderten Python-Dateien und Tests (0 Fehler)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py tests/services/test_upload_job_state_machine.py
+        tests/services/test_ingest_idempotency_quarantine.py tests/services/test_watcher_storage_import.py
+        -q (93 passed)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright auf allen geänderten Dateien (0 Fehler); repositoryweit
+        2 bestehende Fehler in tests/utils/test_storage_materialization.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest tests/rust_backend/test_rust_backend_fallbacks.py tests/services/test_hls_media.py
+        -q (36 passed, 2 fehlgeschlagen: stale Reclaim und forced queue)'
+    - kind: command
+      reference: 'ruff check auf allen geänderten Python-Dateien: bestanden; fokussierter Pyright: 0 Fehler;
+        repositoryweiter Pyright: 2 bestehende Fehler in tests/utils/test_storage_materialization.py;
+        Pytest: 68 plus 139 bestanden'
+    - kind: command
+      reference: 'Nach repositoryweitem Pyright (nur 2 bestehende Fehler in tests/utils/test_storage_materialization.py):
+        fokussierte Report-LLM-/UploadJob-Regression 25 passed; vollständige Report-LLM-/UploadJob-Suite
+        33 passed'
+    - kind: test
+      reference: tests/services/test_media_integrity_reconciliation_plan.py; tests/services/test_model_training_jobs.py;
+        tests/services/test_transfer_job_contract.py; tests/import_files/test_video_finalize_success.py;
+        tests/services/test_report_import_state_machine.py; tests/services/test_upload_job_state_machine.py
+    - kind: command
+      reference: 'Fokussierter Pyright über die sechs AAA-Testmodule: 0 Fehler; fokussierter Pytest-Lauf:
+        91 passed, 2 warnings'
+    - kind: command
+      reference: 'TransferJob-Lifecycle-Lane: fokussierter Pyright 0 Fehler; Pytest 30 passed, 3 subtests
+        passed, 3 erwartete Vertragsfehler (abgelaufene Lease bei Kandidatenpublikation, abgelaufene Lease
+        bei Abschluss, Nicht-APPLIED-Ziel im Erfolgsabschluss)'
+    - kind: command
+      reference: 'Frühe Envelope-Fehlergrenze: 1 passed, 1 erwarteter Vertragsfehler; fehlender erwarteter
+        Medienhash hinterlässt den zuvor erzeugten Transfer-Claim derzeit RUNNING'
+    - kind: command
+      reference: 'TransferJob-Lifecycle nach Lease-/Completion-/Prevalidation-Fixes: fokussierter Pyright
+        0 Fehler; 35 passed, 3 subtests passed, 1 erwarteter Vertragsfehler (INCONSISTENT wird noch wie
+        LOST reclaimt); beide Datenbank-Constraint-Tests zusätzlich bestanden'
+    - kind: command
+      reference: 'Abschließende TransferJob-Lifecycle-Lane einschließlich HTTP-409-Konkurrenzvertrag:
+        fokussierter Pyright 0 Fehler; 39 passed, 3 subtests passed, 2 warnings'
+    - kind: command
+      reference: 'Kombinierte Lifecycle-/Reconciliation-/Watcher-Lane: 171 passed, 3 subtests passed;
+        zusätzlicher abgelaufener Training-Abschluss: 2 passed; Training-/Task-Gesamtlane: 56 passed;
+        jeweils nur bekannte Warnungen'
+    - kind: test
+      reference: tests/services/test_model_training_jobs.py; tests/services/test_transfer_job_contract.py;
+        tests/services/test_media_integrity_reconciliation_plan.py; tests/import_files/test_video_finalize_success.py
+    - kind: command
+      reference: 'Finale gemeinsame Transfer-/Training-Lane: 76 passed, 3 subtests passed, 2 warnings'
+    assessed_by: codex-state-machine-tracker
+    assessed_at: '2026-09-02T15:15:25.596656Z'
+- id: typed_control_api
+  category: interoperability
+  title: Steuerungs- und Statusschnittstellen besitzen einen stabilen typisierten Vertrag
+  acceptance:
+  - API, Kommandozeile und interne Aufrufer verwenden snake_case und liefern getrennt beobachteten Zustand,
+    gewünschten Zustand, Zustandsversion, Attempt-ID, zulässige Aktionen und stabile Fehlercodes.
+  - Clients senden Ereignisse oder Absichten statt frei gesetzter Zielzustände; der autoritative Service
+    entscheidet die Transition und lehnt veraltete Versionsstände explizit ab.
+  - Rollierende Upgrades definieren unterstützte Schema- und Binärversionen; inkompatible Mischversionen
+    werden vor Arbeitsannahme erkannt und fail-closed behandelt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Rust-, Python-, REST- und Consumer-Verträge sowie Upgrade-Kompatibilitätsmatrix vergleichen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: observability_and_slo
+  category: observability
+  title: Zustand, Fortschritt und Stagnation sind ohne Prozesszugriff diagnostizierbar
+  acceptance:
+  - Strukturierte Ereignisse enthalten Service- oder Operations-ID, Zustandsversion, Attempt-ID, Fencing-Token,
+    altes und neues State-Enum, Ereignistyp, Dauer und stabilen Ergebniscode ohne sensible Metrik-Labels.
+  - Metriken erfassen Instanzen und Alter je Zustand, Transitionsrate, Laufzeit, Heartbeat- und Lease-Alter,
+    Retry-Anzahl, Stagnation, LOST, Reconciliation sowie Shutdown-Dauer.
+  - Health-Endpunkte unterscheiden Prozessbereitschaft, Abhängigkeitszustand und fachliche Arbeitsfähigkeit;
+    DEGRADED und LOST werden nicht als gesund oder erfolgreich zusammengefasst.
+  - Service-Level-Ziele und Alarme besitzen getestete Schwellen für Startfehler, Stagnation, Retry-Erschöpfung,
+    Lease-Verlust, Reconciliation-Rückstand und unerwartete Terminalzustände.
+  required: true
+  verification:
+    kind: manual
+    instructions: Erfolg, Degradation, hängende Arbeit, Worker-Verlust und Recovery ausschließlich aus
+      Metriken und Ereignissen rekonstruieren.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: rollout_and_migration
+  category: operations
+  title: Migration und Aktivierung sind gestuft, reversibel und datenverträglich
+  acceptance:
+  - Bestandszustände werden vor Constraint-Aktivierung inventarisiert und deterministisch migriert; unbekannte
+    oder widersprüchliche Datensätze gehen in explizite Quarantäne oder LOST statt geschätzt zu werden.
+  - Der Rollout verwendet Shadow-Auswertung mit Ergebnisvergleich, begrenzte Aktivierung und messbare
+    Abbruchkriterien, bevor der Rust-Kern autoritativ wird.
+  - Rollback erhält persistierte Zustände und Ereignisse, kann keine neuere Zustandsversion überschreiben
+    und reaktiviert keine entfernte unsichere Fallback-Implementierung.
+  - Erst nach nachgewiesener Parität und stabiler Betriebsphase werden doppelte Reducer und Legacy-Direktupdates
+    entfernt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Migration, Shadow-Vergleich, Canary-Aktivierung, Abbruch und Rollback mit produktionsnahen
+      Bestandsdaten üben.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: operator_runbook
+  category: documentation
+  title: Zustandsverträge, Betrieb und sichere Recovery sind dokumentiert
+  acceptance:
+  - Die Dokumentation enthält je Dienst ein Zustandsdiagramm, Ereignismatrix, Invarianten, Owner, Abhängigkeiten,
+    Timeout-, Retry-, Lease-, Fencing- und Terminalzustandsvertrag.
+  - Das Runbook beschreibt Diagnose, kontrollierten Start und Shutdown, Drain, Retry, Cancel, Reconciliation,
+    LOST-Behandlung, Rollback und Eskalation mit erwarteten Auditereignissen.
+  - Manuelle Datenbank-Statusupdates, erzwungene Lease-Übernahme und das Umgehen des Rust-Capability-Gates
+    sind ausdrücklich untersagt; Break-glass-Verfahren sind separat autorisiert und auditierbar.
+  - Rust-Ausnahmen, Migrationsstand und verbleibende Legacy-Pfade verweisen auf dieses Feature und führen
+    keinen parallelen Readiness- oder Aufgabenstatus.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbook anhand eines kontrollierten Worker-Abbruchs und einer LOST-Recovery durch Betrieb
+      und Security prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []

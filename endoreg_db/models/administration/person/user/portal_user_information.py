@@ -1,37 +1,48 @@
+from __future__ import annotations
+
+from typing import Protocol, TypeAlias, cast, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
+
 # models.py in your main app
 
-if TYPE_CHECKING:
-    from ..profession import Profession
-    from endoreg_db.models import Examiner
-    from django.contrib.auth.models import User
+NoPortalUserInfoValue: TypeAlias = None
+PortalUserInfoFlag: TypeAlias = bool | NoPortalUserInfoValue
+
+
+class _PortalUserSource(Protocol):
+    username: str
 
 
 class PortalUserInfo(models.Model):
-    user = models.OneToOneField("auth.User", on_delete=models.CASCADE)
-    profession = models.ForeignKey(
-        'endoreg_db.Profession',
+    user: models.OneToOneField[Any, Any] = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE
+    )
+    profession: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "endoreg_db.Profession",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="portal_user_infos",
     )
-    works_in_endoscopy = models.BooleanField(blank=True, null=True)
+    works_in_endoscopy: models.BooleanField[Any, Any] = models.BooleanField(
+        blank=True, null=True
+    )
     # Add other fields as needed
 
-    examiner = models.OneToOneField(
+    examiner: models.OneToOneField[Any, Any] = models.OneToOneField(
         "endoreg_db.Examiner",
         on_delete=models.CASCADE,
         blank=True,
         null=True,
         related_name="portal_user_info",
     )
+    centers: models.ManyToManyField[Any, Any] = models.ManyToManyField(
+        "endoreg_db.Center",
+        blank=True,
+        related_name="authorized_portal_user_infos",
+    )
 
-    if TYPE_CHECKING:
-        user: "User"
-        profession: "Profession"
-        examiner: "Examiner"
-
-    def __str__(self):
-        return self.user.username
+    def __str__(self) -> str:
+        user = cast(_PortalUserSource, self.user)
+        return user.username

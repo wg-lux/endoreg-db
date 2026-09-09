@@ -1,15 +1,23 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any, Unpack
+
 from django.db import models
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from .abstract import AbstractState
+
 
 class LabelVideoSegmentState(AbstractState):
     """State for label video segment data."""
 
-    prediction = models.BooleanField(default=False)
-    annotation = models.BooleanField(default=False)
-    frames_extracted = models.BooleanField(default=False)
-    is_validated = models.BooleanField(default=False)
+    prediction: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    annotation: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    frames_extracted: models.BooleanField[bool, Any] = models.BooleanField(
+        default=False
+    )
+    is_validated: models.BooleanField[bool, Any] = models.BooleanField(default=False)
 
-    origin = models.OneToOneField(
+    origin: models.OneToOneField["LabelVideoSegment | None"] = models.OneToOneField(
         "LabelVideoSegment",
         on_delete=models.CASCADE,
         related_name="state",
@@ -17,6 +25,25 @@ class LabelVideoSegmentState(AbstractState):
         blank=True,
     )
 
-    class Meta:
+    class Meta(AbstractState.Meta):
         verbose_name = "Label Video Segment State"
         verbose_name_plural = "Label Video Segment States"
+
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        super().save(
+            *args,
+            **kwargs,
+        )
+        origin = getattr(self, "origin", None)
+        video = getattr(origin, "video_file", None) if origin is not None else None
+        if video is not None:
+            from endoreg_db.models.state.video_segment_validation import (
+                mark_segment_annotations_stale,
+            )
+
+            mark_segment_annotations_stale(video)
+
+    if TYPE_CHECKING:
+        from endoreg_db.models import LabelVideoSegment
+
+        pass

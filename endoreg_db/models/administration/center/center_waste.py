@@ -1,24 +1,31 @@
-from django.db import models
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from .center import Center
-    from ...other.waste import Waste
-    from ...other.unit import Unit
-    from ...other.emission import EmissionFactor
-    
+from typing import TypeAlias, Any
+
+from django.db import models
+
+NoCenterWasteValue: TypeAlias = None
+
+
 class CenterWaste(models.Model):
-    center: models.ForeignKey["Center"] = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_wastes",
     )
-    year = models.IntegerField()
-    waste: models.ForeignKey["Waste"] = models.ForeignKey("Waste", on_delete=models.CASCADE)
-    quantity = models.FloatField()
-    unit: models.ForeignKey["Unit"] = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
-    emission_factor: models.ForeignKey["EmissionFactor"] = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
-    
+    year: models.IntegerField[Any, Any] = models.IntegerField()
+    waste: models.ForeignKey[Any] = models.ForeignKey(
+        "Waste",
+        on_delete=models.CASCADE,
+    )
+    quantity: models.FloatField[Any, Any] = models.FloatField()
+    unit: models.ForeignKey[Any] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
+    emission_factor: models.ForeignKey[Any] = models.ForeignKey(
+        "EmissionFactor", on_delete=models.SET_NULL, null=True
+    )
+
     def __str__(self) -> str:
         """
         Returns a formatted string summarizing the waste record, including quantity, unit,

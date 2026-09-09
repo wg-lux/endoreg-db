@@ -1,0 +1,418 @@
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime
+from pathlib import Path
+from typing import cast
+
+import pytest
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
+
+from endoreg_db.models import (
+    AIModelTrainingRun,
+    QuarantineItem,
+    RawPdfFile,
+    TransferJob,
+    VideoFile,
+)
+
+
+def test_transfer_job_resource_rows_reject_unknown_video_keys() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {
+                "video_hash": "abc123",
+                "unexpected": True,
+            }
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        job.clean()
+
+    assert "resource_rows" in exc_info.value.message_dict
+    assert "unexpected" in str(exc_info.value)
+
+
+def test_transfer_job_resource_rows_accept_frame_annotations_and_reports() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {
+                "video_hash": "abc123",
+            },
+            "frame_annotations": [
+                {
+                    "annotation_id": 7,
+                    "video_hash": "abc123",
+                    "frame_number": 3,
+                    "frame_relative_path": "frames/frame_000003.jpg",
+                    "frame_timestamp": 0.12,
+                    "label_name": "lesion_visible",
+                    "value": True,
+                    "float_value": 0.95,
+                    "annotator": "site-a-reviewer",
+                    "information_source_name": "manual_annotation",
+                }
+            ],
+            "reports": [
+                {
+                    "id": 11,
+                    "patient_examination": 99,
+                    "template_name": "star_upper_gi_main",
+                    "template_version": "2026.1",
+                    "template_hash": "template-hash",
+                    "title": "Transferred report",
+                    "status": "final",
+                    "editor_payload": {"sections": [{"id": "findings"}]},
+                    "rendered_text": "Anonymized report text",
+                    "version": 2,
+                    "is_active": True,
+                    "finalized_at": "2026-05-20T10:30:00Z",
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    job.clean()
+
+    frame_annotations = job.resource_rows["frame_annotations"]
+    reports = job.resource_rows["reports"]
+
+    assert isinstance(frame_annotations, Sequence)
+    assert not isinstance(frame_annotations, (str, bytes))
+    assert isinstance(reports, Sequence)
+    assert not isinstance(reports, (str, bytes))
+
+    frame_annotation = cast(Mapping[str, object], frame_annotations[0])
+    report = cast(Mapping[str, object], reports[0])
+
+    assert isinstance(frame_annotation, Mapping)
+    assert isinstance(report, Mapping)
+    assert frame_annotation["label_name"] == "lesion_visible"
+    assert report["template_name"] == "star_upper_gi_main"
+
+
+def test_transfer_job_canonicalizes_all_persisted_json_payloads() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"video_hash": "abc123", "processed_video_hash": None},
+            "frame_annotations": [],
+            "video_segments": [],
+        },
+        processing_snapshot={"sender_processing_success": True},
+        provenance={
+            "entrypoint": "transfer",
+            "media_uploads": [
+                {
+                    "media_role": "processed",
+                    "stored_name": "processed/video.mp4",
+                    "content_hash": "hash-processed",
+                    "uploaded_name": "video.mp4",
+                }
+            ],
+        },
+    )
+
+    job.clean()
+
+    assert job.resource_rows == {
+        "video_file": {"video_hash": "abc123"},
+        "frame_annotations": [],
+        "video_segments": [],
+        "reports": [],
+    }
+    assert job.processing_snapshot == {"sender_processing_success": True}
+    assert job.provenance == {
+        "entrypoint": "transfer",
+        "media_uploads": [
+            {
+                "media_role": "processed",
+                "stored_name": "processed/video.mp4",
+                "content_hash": "hash-processed",
+                "uploaded_name": "video.mp4",
+            }
+        ],
+    }
+
+
+def test_transfer_job_processing_snapshot_rejects_unknown_keys() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.REPORT,
+        resource_rows={},
+        processing_snapshot={"sender_processing_success": True, "raw_media": True},
+        provenance={},
+    )
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        job.clean()
+
+    assert "processing_snapshot" in exc_info.value.message_dict
+    assert "raw_media" in str(exc_info.value)
+
+
+_INVALID_TRANSFER_JSON_SHAPES: list[tuple[str, object]] = [
+    ("processing_snapshot", []),
+    ("provenance", {"media_uploads": [{}]}),
+]
+
+
+@pytest.mark.parametrize(("field_name", "value"), _INVALID_TRANSFER_JSON_SHAPES)
+def test_transfer_job_rejects_invalid_persisted_json_shapes(
+    field_name: str,
+    value: object,
+) -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.REPORT,
+        resource_rows={},
+        processing_snapshot={},
+        provenance={},
+    )
+    setattr(job, field_name, value)
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        job.clean()
+
+    assert field_name in exc_info.value.message_dict
+
+
+def test_transfer_job_resource_rows_validate_video_segments() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"video_hash": "abc123", "frame_count": 20},
+            "video_segments": [
+                {
+                    "source_node_key": "site-a",
+                    "source_segment_id": 7,
+                    "video_hash": "abc123",
+                    "start_frame_number": 4,
+                    "end_frame_number_exclusive": 12,
+                    "label_name": "lesion_visible",
+                    "source_kind": "manual_annotation",
+                    "validation_state": "validated",
+                    "export_segment": True,
+                    "anonymous_provenance": {
+                        "information_source_name": "manual_annotation"
+                    },
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    job.clean()
+
+    assert job.resource_rows["video_segments"][0]["source_segment_id"] == 7
+
+
+def test_transfer_job_resource_rows_reject_segment_outside_video() -> None:
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"video_hash": "abc123", "frame_count": 10},
+            "video_segments": [
+                {
+                    "source_node_key": "site-a",
+                    "source_segment_id": 7,
+                    "video_hash": "abc123",
+                    "start_frame_number": 4,
+                    "end_frame_number_exclusive": 11,
+                    "label_name": "lesion_visible",
+                    "source_kind": "manual_annotation",
+                    "validation_state": "validated",
+                    "export_segment": True,
+                    "anonymous_provenance": {
+                        "information_source_name": "manual_annotation"
+                    },
+                }
+            ],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    with pytest.raises(DjangoValidationError, match="exceeds video frame_count"):
+        job.clean()
+
+
+def test_video_file_meta_validates_known_integrity_keys() -> None:
+    video = VideoFile(video_hash="video-json-validation", meta={"origin": "site-a"})
+    video.clean()
+    assert video.meta == {"origin": "site-a"}
+
+    video.meta = {"integrity_status": "unknown"}
+    with pytest.raises(DjangoValidationError) as exc_info:
+        video.clean()
+    assert "meta" in exc_info.value.message_dict
+
+
+def test_video_file_sequences_validate_and_canonicalize() -> None:
+    video = VideoFile(
+        video_hash="video-sequences-validation",
+        sequences={"finding": [(1, 4)]},
+    )
+
+    video.clean()
+
+    assert video.sequences == {"finding": [[1, 4]]}
+
+
+@pytest.mark.parametrize(
+    "sequences",
+    [
+        {"finding": [[4, 1]]},
+        {"finding": [[-1, 4]]},
+        {"finding": [[1, 2, 3]]},
+        {1: [[1, 4]]},
+    ],
+)
+def test_video_file_sequences_reject_invalid_payloads(
+    sequences: object,
+) -> None:
+    video = VideoFile(
+        video_hash="video-sequences-invalid",
+        sequences=sequences,
+    )
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        video.clean()
+
+    assert "sequences" in exc_info.value.message_dict
+
+
+def test_raw_pdf_meta_preserves_legacy_keys_and_normalizes_dates() -> None:
+    report = RawPdfFile(
+        pdf_hash="pdf-json-validation",
+        raw_meta={
+            "existing": "value",
+            "generated_at": date(2026, 5, 21),
+            "case_resolution": {
+                "last_action": "attach",
+                "linked_patient_id": 7,
+            },
+        },
+    )
+
+    report.clean()
+
+    raw_meta = report.raw_meta
+    assert isinstance(raw_meta, dict)
+    raw_meta_like = cast(dict[str, object], raw_meta)
+    case_resolution_data = cast(
+        dict[str, object],
+        cast(Mapping[str, object], raw_meta_like).get("case_resolution", {}),
+    )
+    assert raw_meta_like["existing"] == "value"
+    assert raw_meta_like["generated_at"] == "2026-05-21"
+    assert isinstance(case_resolution_data, dict)
+    assert case_resolution_data["linked_patient_id"] == 7
+
+
+def test_raw_pdf_meta_treats_blank_template_version_as_unset() -> None:
+    report = RawPdfFile(
+        pdf_hash="pdf-json-validation-template-version",
+        raw_meta={
+            "template_name": "star_upper_gi_main",
+            "template_version": "",
+        },
+    )
+
+    report.clean()
+
+    assert report.raw_meta == {"template_name": "star_upper_gi_main"}
+
+
+def test_ai_model_training_run_validates_request_and_artifact_paths() -> None:
+    run = AIModelTrainingRun(
+        request_payload={"dataset_id": 1, "annotation_source_scope": "all"},
+        result={"model_path": "/tmp/model.pth", "metrics": {"loss": 0.1}},
+        artifact_paths={"model_path": "/tmp/model.pth"},
+    )
+    run.clean()
+    assert run.artifact_paths == {"model_path": "/tmp/model.pth"}
+
+    run.request_payload = {"dataset_id": 1, "unknown": True}
+    with pytest.raises(DjangoValidationError) as exc_info:
+        run.clean()
+    assert "request_payload" in exc_info.value.message_dict
+
+    run.request_payload = {"dataset_id": 1}
+    run.artifact_paths = {"model_url": "https://example.invalid/model.pth"}
+    with pytest.raises(DjangoValidationError) as exc_info:
+        run.clean()
+    assert "artifact_paths" in exc_info.value.message_dict
+
+
+def test_ai_model_training_run_normalizes_command_kwargs() -> None:
+    run = AIModelTrainingRun(
+        command_kwargs={
+            "dataset_id": 1,
+            "output_dir": Path("/tmp/training"),
+            "requested_at": datetime(2026, 5, 21, 10, 30),
+            "ranges": ((1, 4),),
+        }
+    )
+
+    run.clean()
+
+    assert run.command_kwargs == {
+        "dataset_id": 1,
+        "output_dir": "/tmp/training",
+        "requested_at": "2026-05-21T10:30:00",
+        "ranges": [[1, 4]],
+    }
+
+
+@pytest.mark.parametrize(
+    "command_kwargs",
+    [
+        None,
+        ["dataset_id", 1],
+        {1: "dataset-id"},
+        {"learning_rate": float("nan")},
+        {"unsupported": object()},
+    ],
+)
+def test_ai_model_training_run_rejects_invalid_command_kwargs(
+    command_kwargs: object,
+) -> None:
+    run = AIModelTrainingRun(command_kwargs=command_kwargs)
+
+    if command_kwargs is None:
+        run.clean()
+        assert run.command_kwargs == {}
+        return
+
+    with pytest.raises(DjangoValidationError) as exc_info:
+        run.clean()
+
+    assert "command_kwargs" in exc_info.value.message_dict
+
+
+def test_quarantine_item_validates_metadata_boundary() -> None:
+    now = timezone.now()
+    item = QuarantineItem(
+        path="/tmp/endoreg-quarantine/stale.bin",
+        relative_path="stale.bin",
+        size_bytes=5,
+        file_mtime_ns=123,
+        quarantined_at=now,
+        last_seen_at=now,
+        metadata={"source_event": "quarantine.discovered"},
+    )
+    item.clean()
+    assert item.metadata == {"source_event": "quarantine.discovered"}
+
+    item.metadata = {"unknown": True}
+    with pytest.raises(DjangoValidationError) as exc_info:
+        item.clean()
+    assert "metadata" in exc_info.value.message_dict

@@ -1,0 +1,1 @@
+"""Reusable domain validation helpers."""

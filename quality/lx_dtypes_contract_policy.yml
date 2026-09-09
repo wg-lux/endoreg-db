@@ -1,0 +1,11 @@
+schema_version: '1.0'
+source_root: endoreg_db
+dependency_name: lx-dtypes
+maximum_local_type_aliases: 325
+forbid_lx_dtypes_realiases: true
+require_exact_dependency_pin: true
+require_installed_version_match: true
+canonical_import_prefixes:
+- lx_dtypes.models.contracts
+- lx_dtypes.models.interface
+- lx_dtypes.models.knowledge_base

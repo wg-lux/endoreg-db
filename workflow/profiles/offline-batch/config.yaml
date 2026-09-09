@@ -1,0 +1,6 @@
+rerun-incomplete: true
+forceall: true
+retries: 1
+keep-going: false
+latency-wait: 30
+printshellcmds: true

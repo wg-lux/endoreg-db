@@ -32,6 +32,27 @@ Media
    :undoc-members:
    :show-inheritance:
 
+API
+====================
+.. automodule:: tests.api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Services
+====================
+.. automodule:: tests.services
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Contracts
+====================
+.. automodule:: tests.contracts
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Other
 ====================
 .. automodule:: tests.other

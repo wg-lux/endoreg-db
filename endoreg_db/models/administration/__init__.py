@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 # AI
 from .ai import (
     ActiveModel,
     AiModel,
     ModelType,
 )
+from .app_settings import ApplicationSettings
+from ..hub import NetworkNode
 
 # Case
 from .case import (
@@ -30,6 +34,7 @@ from .person import (
     FirstName,
     LastName,
     Patient,
+    PatientExternalID,
     Person,
     PortalUserInfo,
     Profession,
@@ -58,6 +63,8 @@ __all__ = [
     "AiModel",
     "ActiveModel",
     "ModelType",
+    "ApplicationSettings",
+    "NetworkNode",
     # Case
     "Case",
     # Center
@@ -69,6 +76,7 @@ __all__ = [
     # Person
     "Person",
     "Patient",
+    "PatientExternalID",
     "Examiner",
     "PortalUserInfo",
     "FirstName",
