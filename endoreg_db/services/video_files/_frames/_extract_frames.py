@@ -40,8 +40,35 @@ from endoreg_db.utils.rust_backend import (
     parse_extracted_frame_numbers as rust_parse,
 )
 from endoreg_db.utils.storage import materialize_video_file
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadPhase,
+    WorkloadQueue,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    start_workload_timing,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_frame_timing(
+    *,
+    started_at: float,
+    phase: WorkloadPhase,
+    outcome: WorkloadOutcome,
+) -> None:
+    emit_workload_timing(
+        logger,
+        started_at=started_at,
+        operation=WorkloadOperation.FRAME_FULL_MATERIALIZATION,
+        phase=phase,
+        outcome=outcome,
+        task_family=WorkloadTaskFamily.FRAME_EXTRACTION,
+        queue=WorkloadQueue.FRAME_EXTRACTION,
+    )
+
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -717,29 +744,43 @@ def _reuse_complete_frame_cache(
         video.video_hash,
         expected_count,
     )
-    with transaction.atomic():
-        state.refresh_from_db()
-        updated_count = _sync_extracted_frame_records(
-            video,
-            frame_numbers=manifest.frame_numbers,
-            ext=ext,
+    database_started_at = start_workload_timing()
+    try:
+        with transaction.atomic():
+            state.refresh_from_db()
+            updated_count = _sync_extracted_frame_records(
+                video,
+                frame_numbers=manifest.frame_numbers,
+                ext=ext,
+            )
+            logger.info(
+                "Verified %d stable Frame records for video %s based on complete files.",
+                updated_count,
+                video.video_hash,
+            )
+            state.frames_initialized = True
+            state.frame_count = expected_count
+            state.mark_frames_extracted(save=False)
+            state.save(
+                update_fields=[
+                    "frames_initialized",
+                    "frame_count",
+                    "frames_extracted",
+                    "date_modified",
+                ]
+            )
+    except Exception:
+        _emit_frame_timing(
+            started_at=database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.FAILED,
         )
-        logger.info(
-            "Verified %d stable Frame records for video %s based on complete files.",
-            updated_count,
-            video.video_hash,
-        )
-        state.frames_initialized = True
-        state.frame_count = expected_count
-        state.mark_frames_extracted(save=False)
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-                "date_modified",
-            ]
-        )
+        raise
+    _emit_frame_timing(
+        started_at=database_started_at,
+        phase=WorkloadPhase.DATABASE_STATE,
+        outcome=WorkloadOutcome.REUSED,
+    )
     return True
 
 
@@ -774,12 +815,26 @@ def _extract_verified_staged_manifest(
     from_processed: bool,
     expected_count: int | None,
 ) -> tuple[FrameCacheManifest, int | None]:
-    extracted_paths = extract_full_frame_set_to_directory(
-        video,
-        output_dir=staged_frame_dir,
-        quality=quality,
-        ext=ext,
-        from_processed=from_processed,
+    decode_started_at = start_workload_timing()
+    try:
+        extracted_paths = extract_full_frame_set_to_directory(
+            video,
+            output_dir=staged_frame_dir,
+            quality=quality,
+            ext=ext,
+            from_processed=from_processed,
+        )
+    except Exception:
+        _emit_frame_timing(
+            started_at=decode_started_at,
+            phase=WorkloadPhase.DECODE,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        raise
+    _emit_frame_timing(
+        started_at=decode_started_at,
+        phase=WorkloadPhase.DECODE,
+        outcome=WorkloadOutcome.COMPLETED,
     )
     if not extracted_paths:
         logger.warning(
@@ -971,14 +1026,14 @@ def _require_frame_dir(video: "VideoFile") -> Path:
     return frame_dir
 
 
-def _extract_frames(
+def _extract_frames_impl(
     video: "VideoFile",
     quality: int = 2,
     overwrite: bool = False,
     ext: str = "jpg",
     verbose: bool = False,
     from_processed: bool = False,
-) -> bool:
+) -> tuple[bool, WorkloadOutcome]:
     """
     Extract a complete, stable frame set and update frame extraction state.
 
@@ -1023,7 +1078,7 @@ def _extract_frames(
         ext=ext,
         overwrite=overwrite,
     ):
-        return True
+        return True, WorkloadOutcome.REUSED
     _log_frame_cache_replacement(
         video,
         state=state,
@@ -1054,22 +1109,51 @@ def _extract_frames(
             from_processed=from_processed,
             expected_count=expected_count,
         )
-        final_manifest = _install_verified_frame_cache(
-            video,
-            installation=installation,
-            verified_manifest=verified_manifest,
-            ext=ext,
+        publication_started_at = start_workload_timing()
+        try:
+            final_manifest = _install_verified_frame_cache(
+                video,
+                installation=installation,
+                verified_manifest=verified_manifest,
+                ext=ext,
+            )
+        except Exception:
+            _emit_frame_timing(
+                started_at=publication_started_at,
+                phase=WorkloadPhase.PUBLICATION,
+                outcome=WorkloadOutcome.FAILED,
+            )
+            raise
+        _emit_frame_timing(
+            started_at=publication_started_at,
+            phase=WorkloadPhase.PUBLICATION,
+            outcome=WorkloadOutcome.COMPLETED,
         )
-        _persist_verified_frame_cache(
-            video=video,
-            state=state,
-            final_manifest=final_manifest,
-            corrected_frame_count=corrected_frame_count,
-            ext=ext,
+
+        database_started_at = start_workload_timing()
+        try:
+            _persist_verified_frame_cache(
+                video=video,
+                state=state,
+                final_manifest=final_manifest,
+                corrected_frame_count=corrected_frame_count,
+                ext=ext,
+            )
+        except Exception:
+            _emit_frame_timing(
+                started_at=database_started_at,
+                phase=WorkloadPhase.DATABASE_STATE,
+                outcome=WorkloadOutcome.FAILED,
+            )
+            raise
+        _emit_frame_timing(
+            started_at=database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.COMPLETED,
         )
         if installation.replaced_frame_dir is not None:
             safe_rmtree(installation.replaced_frame_dir, missing_ok=True)
-        return True
+        return True, WorkloadOutcome.COMPLETED
 
     except Exception as error:
         logger.error(
@@ -1086,3 +1170,36 @@ def _extract_frames(
         raise RuntimeError(
             f"Frame extraction or update failed for video {video.video_hash}."
         ) from error
+
+
+def _extract_frames(
+    video: "VideoFile",
+    quality: int = 2,
+    overwrite: bool = False,
+    ext: str = "jpg",
+    verbose: bool = False,
+    from_processed: bool = False,
+) -> bool:
+    total_started_at = start_workload_timing()
+    try:
+        result, outcome = _extract_frames_impl(
+            video,
+            quality=quality,
+            overwrite=overwrite,
+            ext=ext,
+            verbose=verbose,
+            from_processed=from_processed,
+        )
+    except Exception:
+        _emit_frame_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        raise
+    _emit_frame_timing(
+        started_at=total_started_at,
+        phase=WorkloadPhase.TOTAL,
+        outcome=outcome,
+    )
+    return result

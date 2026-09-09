@@ -1,0 +1,157 @@
+schema_version: "1.0"
+id: professional_product_foundations
+name: Professional product foundations
+description: >-
+  Cross-cutting production requirements that make the application predictable,
+  resilient, secure, observable, accessible, maintainable, and safe to operate
+  under real-world deployment conditions.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents: []
+definition_of_done:
+  - id: resilient_failure_handling
+    category: functionality
+    title: Expected failures are handled as recoverable user-facing states
+    acceptance:
+      - Network failures, API timeouts, validation errors, and expired sessions produce actionable feedback rather than cryptic errors or an unhandled crash.
+      - Recoverable failures preserve valid user input and expose a deterministic retry or recovery action where retry is safe.
+      - Each retry policy has an explicit timeout, bounded retry limit, and idempotency rule; unsafe operations are not automatically replayed.
+    required: true
+    verification:
+      kind: manual
+      instructions: Exercise representative timeout, invalid-input, expired-session, and connection-loss paths in a production-like profile and inspect the resulting UI state and server response.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: security_privacy_controls
+    category: security
+    title: Security and privacy controls are enforced throughout the stack
+    acceptance:
+      - Data is encrypted at rest within the approved storage boundary and in transit using the deployment-required transport protection.
+      - Authentication, authorization, and resource scoping enforce least privilege and fail closed when identity or scope is missing.
+      - External and user-controlled input is validated at system boundaries; sensitive data, credentials, and raw media are absent from logs, exports, and error responses.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review the threat boundaries, storage and transport configuration, authorization checks, input schemas, logging fields, and export paths; execute negative access and data-leak tests in a production-like profile.
+      timeout_seconds: 900
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: observability_telemetry
+    category: operations
+    title: Failures and performance regressions are diagnosable in production
+    acceptance:
+      - Structured logs include correlation context, operation, resource identity, outcome, and a safe error classification without sensitive payloads.
+      - Unhandled exceptions and background-job failures reach the configured crash-reporting channel with release and environment context.
+      - Service health, latency, error rate, saturation, retries, and queue or workflow stagnation are represented by actionable metrics or alerts with documented ownership.
+    required: true
+    verification:
+      kind: manual
+      instructions: Trace one successful request, one handled failure, and one background failure using only the configured logs, error reporting, dashboards, and alerts.
+      timeout_seconds: 600
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: accessible_design_system
+    category: requirements
+    title: The interface follows a consistent and accessible design system
+    acceptance:
+      - Shared components define consistent visual hierarchy, spacing, states, focus treatment, and error presentation for supported workflows.
+      - Core workflows are operable by keyboard alone, expose meaningful names and status updates to assistive technology, and maintain sufficient contrast and visible focus.
+      - Form errors, loading states, empty states, and destructive actions are understandable without relying on color, animation, or pointer input alone.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review the component inventory and keyboard and screen-reader test the critical workflows, including loading, validation-error, empty, and destructive-action states.
+      timeout_seconds: 900
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: performance_and_loading_states
+    category: functionality
+    title: Slow and unreliable connections remain usable
+    acceptance:
+      - Critical screens expose explicit loading, stale, empty, error, and retry states without blocking unrelated interactions.
+      - Assets and cacheable responses use bounded, versioned caching; user-visible state does not display stale data as current without an explicit indication.
+      - Optimistic updates are used only for operations with safe rollback, and perceived-speed improvements do not weaken server-side confirmation or data integrity.
+    required: true
+    verification:
+      kind: command
+      command:
+        - .devenv/state/venv/bin/pytest
+        - tests
+        - -q
+      timeout_seconds: 1800
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: deterministic_data_integrity
+    category: testing
+    title: Concurrent interactions cannot corrupt or duplicate state
+    acceptance:
+      - State transitions have one authoritative owner and deterministic ordering for concurrent responses, retries, refreshes, and navigation.
+      - Mutating requests are protected against double submission and unsafe replay through server-side idempotency or an equivalent invariant.
+      - Tests cover race-prone success, timeout-after-commit, retry, stale-response, and concurrent-update scenarios and verify rollback or conflict behavior.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review state ownership and mutation contracts, then execute concurrent and delayed-response scenarios while checking that persisted records and user-visible state remain consistent.
+      timeout_seconds: 900
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: automated_quality_gates
+    category: testing
+    title: Changes pass automated quality and delivery gates
+    acceptance:
+      - Unit, integration, API-contract, and end-to-end coverage exists for critical workflows and their principal failure paths.
+      - Continuous integration runs type checking, linting, security checks, migrations or schema checks, and the relevant test suites on every change.
+      - Release automation produces reproducible, versioned artifacts and supports a controlled rollback without bypassing required checks.
+    required: true
+    verification:
+      kind: command
+      command:
+        - devenv
+        - tasks
+        - run
+        - agent:pre-commit
+      timeout_seconds: 1800
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: maintainable_contracts_documentation
+    category: documentation
+    title: Architecture, interfaces, and operational behavior are maintainable
+    acceptance:
+      - Modules have clear ownership boundaries, typed internal contracts, and documented responsibilities with no hidden coupling required for normal operation.
+      - Public API behavior documents authentication, inputs, outputs, errors, retries, and compatibility expectations without camelCase field additions.
+      - Runbooks document deployment, troubleshooting, incident escalation, data recovery, and rollback procedures and are kept aligned with the implementation.
+    required: true
+    verification:
+      kind: manual
+      instructions: Review the module boundaries, type and API contracts, release notes, and operational runbooks against the current implementation and a representative deployment.
+      timeout_seconds: 900
+    assessment:
+      status: not_assessed
+      evidence: []
+  - id: production_operational_readiness
+    category: operations
+    title: Deployment and incident operations are safe and repeatable
+    acceptance:
+      - Configuration is environment-specific, validated at startup, and free of committed secrets, fake credentials, or silent production fallbacks.
+      - Deployments provide health checks, graceful shutdown, bounded resource use, migration safety, and observable rollback or recovery procedures.
+      - Incident response identifies owner, severity, user impact, recovery steps, and post-incident evidence while preserving privacy and data integrity.
+    required: true
+    verification:
+      kind: manual
+      instructions: Perform a production-readiness review and a controlled deployment, failure, rollback, and recovery exercise using the documented operational profile.
+      timeout_seconds: 1200
+    assessment:
+      status: not_assessed
+      evidence: []

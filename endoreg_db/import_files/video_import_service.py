@@ -2,6 +2,7 @@
 import logging
 import shutil
 from contextlib import AbstractContextManager, contextmanager, nullcontext
+from contextvars import ContextVar
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from importlib import import_module
@@ -66,12 +67,31 @@ from endoreg_db.utils.file_operations import (
     sha256_file,
 )
 from endoreg_db.utils.rust_backend import stable_file_identity
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadQueue,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    retry_bucket,
+    start_workload_timing,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+workload_timing_logger = logging.getLogger("endoreg_db.workload_timing")
 PIPELINE_STORAGE_MULTIPLIER = 2.5
+_video_import_outcome: ContextVar[WorkloadOutcome | None] = ContextVar(
+    "video_import_outcome",
+    default=None,
+)
+
+
+def _set_video_import_outcome(outcome: WorkloadOutcome) -> None:
+    if _video_import_outcome.get() is not None:
+        _video_import_outcome.set(outcome)
 
 
 @dataclass(frozen=True)
@@ -449,7 +469,7 @@ class VideoImportService:
         retry: bool = False,
     ) -> "VideoFile | None":
         """Run the legacy unfenced path without claiming cluster ownership."""
-        return self._import_and_anonymize(
+        return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
@@ -472,14 +492,55 @@ class VideoImportService:
         The wrapper must keep its heartbeat active for this method's complete
         lifetime and must make the guard fail after renewal or ownership loss.
         """
-        execution_fence.guard()
-        return self._import_and_anonymize(
+        return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
             retry=retry,
             execution_fence=execution_fence,
         )
+
+    def _timed_import_and_anonymize(
+        self,
+        *,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        execution_fence: VideoImportExecutionFence | None,
+    ) -> "VideoFile | None":
+        started_at = start_workload_timing()
+        outcome_token = _video_import_outcome.set(WorkloadOutcome.FAILED)
+        try:
+            if execution_fence is not None:
+                execution_fence.guard()
+            result = self._import_and_anonymize(
+                file_path=file_path,
+                center_name=center_name,
+                processor_name=processor_name,
+                retry=retry,
+                execution_fence=execution_fence,
+            )
+            if _video_import_outcome.get() is WorkloadOutcome.FAILED:
+                _set_video_import_outcome(WorkloadOutcome.COMPLETED)
+            return result
+        except Exception:
+            _set_video_import_outcome(WorkloadOutcome.FAILED)
+            raise
+        finally:
+            outcome = _video_import_outcome.get() or WorkloadOutcome.FAILED
+            try:
+                emit_workload_timing(
+                    workload_timing_logger,
+                    started_at=started_at,
+                    operation=WorkloadOperation.VIDEO_IMPORT,
+                    outcome=outcome,
+                    task_family=WorkloadTaskFamily.VIDEO_UPLOAD_IMPORT,
+                    queue=WorkloadQueue.PIPELINE,
+                    retry=retry_bucket(int(retry)),
+                )
+            finally:
+                _video_import_outcome.reset(outcome_token)
 
     def _import_and_anonymize(
         self,
@@ -524,6 +585,7 @@ class VideoImportService:
                     self._ensure_duplicate_streaming(ctx, existing_completed_video)
                     if existing_completed_video.raw_file:
                         self._cleanup_duplicate_staging(ctx)
+                    _set_video_import_outcome(WorkloadOutcome.REUSED)
                     return existing_completed_video
 
                 if existing_completed_video is not None and retry:
@@ -568,6 +630,7 @@ class VideoImportService:
                     self._ensure_duplicate_streaming(ctx, ctx.current_video)
                     if ctx.current_video.raw_file:
                         self._cleanup_duplicate_staging(ctx)
+                    _set_video_import_outcome(WorkloadOutcome.REUSED)
                     return ctx.current_video
 
                 try:

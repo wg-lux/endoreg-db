@@ -95,11 +95,73 @@ from endoreg_db.utils.rust_backend import (
     derive_hls_reconciliation_action,
     derive_hls_reservation_action,
 )
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadPhase,
+    WorkloadQueue,
+    WorkloadRetryBucket,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    start_workload_timing,
+)
 
 logger = logging.getLogger(__name__)
 
 HlsArtifactKind = Literal["raw", "processed"]
 HLS_READY_STATUSES = frozenset({"materialized", "already_ready"})
+
+
+def _emit_hls_workload_timing(
+    *,
+    started_at: float,
+    phase: WorkloadPhase,
+    outcome: WorkloadOutcome,
+) -> None:
+    emit_workload_timing(
+        logger,
+        started_at=started_at,
+        operation=WorkloadOperation.HLS_MATERIALIZATION,
+        phase=phase,
+        outcome=outcome,
+        task_family=WorkloadTaskFamily.VIDEO_HLS_MATERIALIZATION,
+        queue=WorkloadQueue.FFMPEG_MEDIA,
+        retry=WorkloadRetryBucket.UNKNOWN,
+    )
+
+
+@contextmanager
+def _timed_hls_phase(phase: WorkloadPhase) -> Generator[None, None, None]:
+    started_at = start_workload_timing()
+    try:
+        yield
+    except MediaOperationDeferred:
+        _emit_hls_workload_timing(
+            started_at=started_at,
+            phase=phase,
+            outcome=WorkloadOutcome.DEFERRED,
+        )
+        raise
+    except VideoStorageNormalizationError:
+        _emit_hls_workload_timing(
+            started_at=started_at,
+            phase=phase,
+            outcome=WorkloadOutcome.VALIDATION_FAILED,
+        )
+        raise
+    except BaseException:
+        _emit_hls_workload_timing(
+            started_at=started_at,
+            phase=phase,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        raise
+    else:
+        _emit_hls_workload_timing(
+            started_at=started_at,
+            phase=phase,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
 
 
 def hls_result_is_ready(status: object) -> bool:
@@ -1794,48 +1856,50 @@ def _run_ffmpeg_hls(
     source_pts: PresentationTimestampTimeline | None = None
     source_frame_timestamps: list[FramePresentationTimestamp] = []
     try:
-        prefix = source.read(MP4_PIPE_COMPATIBILITY_SCAN_BYTES)
-        source_path = _materialize_seekable_plaintext_source(
-            source=source,
-            prefix=prefix,
-            source_file_name=source_file_name,
-            source_size_bytes=source_size_bytes,
-            temp_source_dir=temp_source_dir,
-        )
-        if timeline_validation.proof is not None:
-            source_generation_verified = (
-                timeline_validation.expected_content_hash is not None
-                and get_video_hash(source_path)
-                == timeline_validation.expected_content_hash
+        with _timed_hls_phase(WorkloadPhase.SOURCE_MATERIALIZATION):
+            prefix = source.read(MP4_PIPE_COMPATIBILITY_SCAN_BYTES)
+            source_path = _materialize_seekable_plaintext_source(
+                source=source,
+                prefix=prefix,
+                source_file_name=source_file_name,
+                source_size_bytes=source_size_bytes,
+                temp_source_dir=temp_source_dir,
             )
-            timeline_validation = _HlsTimelineValidation(
-                proof=ProvenResampledHlsContext(
-                    provenance=timeline_validation.proof.provenance,
-                    source_generation_verified=source_generation_verified,
-                    boundaries=timeline_validation.proof.boundaries,
-                ),
-                expected_content_hash=timeline_validation.expected_content_hash,
-                source_generation_id=timeline_validation.source_generation_id,
-                source_content_hash=timeline_validation.source_content_hash,
+        with _timed_hls_phase(WorkloadPhase.SOURCE_VALIDATION):
+            if timeline_validation.proof is not None:
+                source_generation_verified = (
+                    timeline_validation.expected_content_hash is not None
+                    and get_video_hash(source_path)
+                    == timeline_validation.expected_content_hash
+                )
+                timeline_validation = _HlsTimelineValidation(
+                    proof=ProvenResampledHlsContext(
+                        provenance=timeline_validation.proof.provenance,
+                        source_generation_verified=source_generation_verified,
+                        boundaries=timeline_validation.proof.boundaries,
+                    ),
+                    expected_content_hash=timeline_validation.expected_content_hash,
+                    source_generation_id=timeline_validation.source_generation_id,
+                    source_content_hash=timeline_validation.source_content_hash,
+                )
+            source_probe = probe_video_artifact(source_path)
+            assert_normalization_source_supported(
+                source=source_probe,
+                profile=configured_video_storage_profile(),
             )
-        source_probe = probe_video_artifact(source_path)
-        assert_normalization_source_supported(
-            source=source_probe,
-            profile=configured_video_storage_profile(),
-        )
-        source_timeline = source_probe.timeline
-        if timeline_validation.proof is not None and not math.isclose(
-            source_timeline.nominal_fps,
-            source_timeline.measured_average_fps,
-            rel_tol=configured_video_storage_profile().fps_relative_tolerance,
-            abs_tol=0.001,
-        ):
-            source_pts = probe_video_presentation_timeline(
-                source_path,
-                boundaries=list(timeline_validation.proof.boundaries),
-            )
-        input_arg = str(source_path)
-        source_frame_timestamps = probe_video_frame_timestamps(source_path)
+            source_timeline = source_probe.timeline
+            if timeline_validation.proof is not None and not math.isclose(
+                source_timeline.nominal_fps,
+                source_timeline.measured_average_fps,
+                rel_tol=configured_video_storage_profile().fps_relative_tolerance,
+                abs_tol=0.001,
+            ):
+                source_pts = probe_video_presentation_timeline(
+                    source_path,
+                    boundaries=list(timeline_validation.proof.boundaries),
+                )
+            input_arg = str(source_path)
+            source_frame_timestamps = probe_video_frame_timestamps(source_path)
     except BaseException:
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
@@ -1853,10 +1917,11 @@ def _run_ffmpeg_hls(
     )
     ffmpeg_executable = command[0]
     try:
-        assert_hls_encoder_runtime_available(
-            ffmpeg_executable=ffmpeg_executable,
-            profile=encoding_profile,
-        )
+        with _timed_hls_phase(WorkloadPhase.ENCODER_PREFLIGHT):
+            assert_hls_encoder_runtime_available(
+                ffmpeg_executable=ffmpeg_executable,
+                profile=encoding_profile,
+            )
     except (VideoStorageNormalizationError, OSError, RuntimeError, AssertionError):
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
@@ -1865,100 +1930,97 @@ def _run_ffmpeg_hls(
         raise
     stderr_chunks: deque[bytes] = deque()
     try:
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-    except BaseException:
-        _cleanup_seekable_plaintext_source(
-            temp_source_dir=temp_source_dir,
-            source_path=source_path,
-        )
-        raise
-    stderr_thread: threading.Thread | None = None
-    if process.stderr is not None:
-        stderr_thread = threading.Thread(
-            target=_drain_pipe_tail,
-            args=(process.stderr, stderr_chunks),
-            daemon=True,
-        )
-        stderr_thread.start()
+        with _timed_hls_phase(WorkloadPhase.ENCODE):
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            stderr_thread: threading.Thread | None = None
+            if process.stderr is not None:
+                stderr_thread = threading.Thread(
+                    target=_drain_pipe_tail,
+                    args=(process.stderr, stderr_chunks),
+                    daemon=True,
+                )
+                stderr_thread.start()
 
-    try:
-        return_code = _wait_for_ffmpeg_completion(
-            process=process,
-            segment_pattern=segment_pattern,
-            playlist_path=playlist_path,
-        )
+            try:
+                return_code = _wait_for_ffmpeg_completion(
+                    process=process,
+                    segment_pattern=segment_pattern,
+                    playlist_path=playlist_path,
+                )
+            except TimeoutError as exc:
+                try:
+                    process.kill()
+                finally:
+                    try:
+                        return_code = process.wait(timeout=5.0)
+                    except Exception:
+                        return_code = -1
+                raise RuntimeError(
+                    "FFmpeg HLS pipeline timed out: "
+                    f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+                ) from exc
+            except (BrokenPipeError, OSError) as exc:
+                try:
+                    process.kill()
+                finally:
+                    try:
+                        return_code = process.wait(timeout=5.0)
+                    except Exception:
+                        return_code = -1
+                raise RuntimeError(
+                    "FFmpeg HLS pipeline terminated while reading source: "
+                    f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+                ) from exc
+            except RuntimeError as exc:
+                try:
+                    process.kill()
+                finally:
+                    try:
+                        return_code = process.wait(timeout=5.0)
+                    except Exception:
+                        return_code = -1
+                raise RuntimeError(
+                    "FFmpeg HLS stdin pipeline failed: "
+                    f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+                ) from exc
+            except BaseException:
+                try:
+                    process.kill()
+                finally:
+                    try:
+                        process.wait(timeout=5.0)
+                    except Exception:
+                        pass
+                raise
+            finally:
+                if stderr_thread is not None:
+                    stderr_thread.join(timeout=5.0)
 
-    except TimeoutError as exc:
-        try:
-            process.kill()
-        finally:
-            try:
-                return_code = process.wait(timeout=5.0)
-            except Exception:
-                return_code = -1
-        raise RuntimeError(
-            "FFmpeg HLS pipeline timed out: "
-            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
-        ) from exc
-    except (BrokenPipeError, OSError) as exc:
-        try:
-            process.kill()
-        finally:
-            try:
-                return_code = process.wait(timeout=5.0)
-            except Exception:
-                return_code = -1
-        raise RuntimeError(
-            "FFmpeg HLS pipeline terminated while reading source: "
-            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
-        ) from exc
-    except RuntimeError as exc:
-        try:
-            process.kill()
-        finally:
-            try:
-                return_code = process.wait(timeout=5.0)
-            except Exception:
-                return_code = -1
-        raise RuntimeError(
-            "FFmpeg HLS stdin pipeline failed: "
-            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
-        ) from exc
-    except BaseException:
-        try:
-            process.kill()
-        finally:
-            try:
-                process.wait(timeout=5.0)
-            except Exception:
-                pass
-        raise
+            if return_code != 0:
+                raise RuntimeError(
+                    "FFmpeg HLS pipeline failed: "
+                    f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+                )
     finally:
-        if stderr_thread is not None:
-            stderr_thread.join(timeout=5.0)
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
             source_path=source_path,
         )
 
-    if return_code != 0:
-        raise RuntimeError(
-            "FFmpeg HLS pipeline failed: "
-            f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
+    with _timed_hls_phase(WorkloadPhase.OUTPUT_VALIDATION):
+        _validate_generated_hls_profile(
+            playlist_path=playlist_path,
+            key_info_path=key_info_path,
+            source_probe=source_probe,
+            source_pts=source_pts,
+            validation=timeline_validation,
+            source_frame_timestamps=source_frame_timestamps,
         )
-    _validate_generated_hls_profile(
-        playlist_path=playlist_path,
-        key_info_path=key_info_path,
-        source_probe=source_probe,
-        source_pts=source_pts,
-        validation=timeline_validation,
-        source_frame_timestamps=source_frame_timestamps,
-    )
 
 
 def _open_field_file(field_file: FieldFile) -> BinaryIO:
@@ -2239,7 +2301,7 @@ def delete_video_hls_artifacts(
     return removed
 
 
-def materialize_video_hls(
+def _materialize_video_hls_impl(
     video_id: int,
     *,
     artifact_kind: object = VideoArtifactKind.PROCESSED,
@@ -2386,6 +2448,7 @@ def materialize_video_hls(
     segment_base_url = build_video_hls_segment_base_path(int(video.pk), str(key_id))
 
     preserve_validated_output = False
+    segment_count = 0
     try:
         if prepared.should_materialize:
             safe_rmtree(target_dir, missing_ok=True)
@@ -2414,19 +2477,21 @@ def materialize_video_hls(
                 playlist_path=temp_playlist_path,
                 target_dir=temp_output_dir,
             )
-            _mark_artifact_validated(
+        with _timed_hls_phase(WorkloadPhase.PUBLICATION):
+            if prepared.should_materialize:
+                _mark_artifact_validated(
+                    artifact_id=prepared.artifact_id,
+                    expected_key_id=prepared.key_id,
+                    segment_count=segment_count,
+                )
+            artifact, previous = _publish_validated_artifact(
+                video_id=int(video.pk),
+                artifact_kind=parsed_kind,
                 artifact_id=prepared.artifact_id,
                 expected_key_id=prepared.key_id,
-                segment_count=segment_count,
+                temp_output_dir=temp_output_dir,
+                target_dir=target_dir,
             )
-        artifact, previous = _publish_validated_artifact(
-            video_id=int(video.pk),
-            artifact_kind=parsed_kind,
-            artifact_id=prepared.artifact_id,
-            expected_key_id=prepared.key_id,
-            temp_output_dir=temp_output_dir,
-            target_dir=target_dir,
-        )
         try:
             _cleanup_replaced_artifact(previous)
         except Exception as cleanup_exc:
@@ -2480,6 +2545,54 @@ def materialize_video_hls(
     finally:
         if not preserve_validated_output:
             safe_rmtree(temp_output_dir, missing_ok=True)
+
+
+def materialize_video_hls(
+    video_id: int,
+    *,
+    artifact_kind: object = VideoArtifactKind.PROCESSED,
+    force: bool = False,
+    reserved_artifact_id: int | None = None,
+    reservation_key_id: UUID | str | None = None,
+    claim_queued: bool = False,
+) -> HlsMaterializationResult:
+    """Materialize HLS and emit one privacy-safe total-duration outcome."""
+    started_at = start_workload_timing()
+    outcome = WorkloadOutcome.FAILED
+    try:
+        result = _materialize_video_hls_impl(
+            video_id,
+            artifact_kind=artifact_kind,
+            force=force,
+            reserved_artifact_id=reserved_artifact_id,
+            reservation_key_id=reservation_key_id,
+            claim_queued=claim_queued,
+        )
+    except MediaOperationDeferred:
+        outcome = WorkloadOutcome.DEFERRED
+        raise
+    except (VideoStorageNormalizationError, ValueError):
+        outcome = WorkloadOutcome.VALIDATION_FAILED
+        raise
+    except BaseException:
+        outcome = WorkloadOutcome.FAILED
+        raise
+    else:
+        if result.status == "already_ready":
+            outcome = WorkloadOutcome.REUSED
+        elif result.status == "already_materializing":
+            outcome = WorkloadOutcome.DEFERRED
+        elif result.status == "failed_validation":
+            outcome = WorkloadOutcome.VALIDATION_FAILED
+        else:
+            outcome = WorkloadOutcome.COMPLETED
+        return result
+    finally:
+        _emit_hls_workload_timing(
+            started_at=started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=outcome,
+        )
 
 
 def get_ready_hls_artifact(

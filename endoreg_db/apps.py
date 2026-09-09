@@ -46,6 +46,10 @@ class EndoregDbConfig(AppConfig):
         ensure_keycloak_settings()
         import_module("endoreg_db.checks")
 
+        from endoreg_db.celery_observability import register_celery_timing_signals
+
+        register_celery_timing_signals()
+
         from endoreg_db.utils.paths import validate_runtime_storage_contract
 
         validate_runtime_storage_contract()

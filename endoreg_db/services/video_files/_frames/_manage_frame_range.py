@@ -28,11 +28,37 @@ from endoreg_db.utils.media.frame_file_permissions import (
     ensure_frame_staging_dir,
 )
 from endoreg_db.utils.storage import materialize_video_file
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadPhase,
+    WorkloadQueue,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    start_workload_timing,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_frame_range_timing(
+    *,
+    started_at: float,
+    phase: WorkloadPhase,
+    outcome: WorkloadOutcome,
+) -> None:
+    emit_workload_timing(
+        logger,
+        started_at=started_at,
+        operation=WorkloadOperation.FRAME_RANGE_MATERIALIZATION,
+        phase=phase,
+        outcome=outcome,
+        task_family=WorkloadTaskFamily.FRAME_EXTRACTION,
+        queue=WorkloadQueue.FRAME_EXTRACTION,
+    )
 
 
 class _VideoMaterializableLike(Protocol):
@@ -143,21 +169,37 @@ def extract_frame_range_to_directory(
     staged_output_dir = _get_staged_range_dir(output_dir, str(video.video_hash))
     try:
         ensure_frame_staging_dir(staged_output_dir)
-        with _video_source_context(video, from_processed=from_processed) as source_path:
-            if not Path(source_path).exists():
-                raise FileNotFoundError(
-                    f"Video file not found at {source_path} for video {video.video_hash}. Cannot extract frame range."
-                )
+        decode_started_at = start_workload_timing()
+        try:
+            with _video_source_context(
+                video, from_processed=from_processed
+            ) as source_path:
+                if not Path(source_path).exists():
+                    raise FileNotFoundError(
+                        f"Video file not found at {source_path} for video {video.video_hash}. Cannot extract frame range."
+                    )
 
-            ffmpeg_extract_frame_range(
-                Path(source_path),
-                staged_output_dir,
-                start_frame,
-                end_frame,
-                quality=quality,
-                ext=ext,
+                ffmpeg_extract_frame_range(
+                    Path(source_path),
+                    staged_output_dir,
+                    start_frame,
+                    end_frame,
+                    quality=quality,
+                    ext=ext,
+                )
+            apply_frame_file_modes(staged_output_dir.glob(f"frame_*.{ext}"))
+        except Exception:
+            _emit_frame_range_timing(
+                started_at=decode_started_at,
+                phase=WorkloadPhase.DECODE,
+                outcome=WorkloadOutcome.FAILED,
             )
-        apply_frame_file_modes(staged_output_dir.glob(f"frame_*.{ext}"))
+            raise
+        _emit_frame_range_timing(
+            started_at=decode_started_at,
+            phase=WorkloadPhase.DECODE,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
 
         missing_files = [
             frame_number
@@ -172,18 +214,32 @@ def extract_frame_range_to_directory(
                 f"video {video.video_hash}: missing_sample={missing_files[:10]}"
             )
 
+        publication_started_at = start_workload_timing()
         installed_paths: list[Path] = []
-        for frame_number in range(start_frame, end_frame):
-            relative_path = _expected_relative_path(frame_number, ext)
-            source_path = staged_output_dir / relative_path
-            target_path = output_dir / relative_path
-            atomic_move_file(
-                source=source_path,
-                destination=target_path,
-                file_mode=FRAME_FILE_MODE,
-                dir_mode=FRAME_CACHE_DIR_MODE,
+        try:
+            for frame_number in range(start_frame, end_frame):
+                relative_path = _expected_relative_path(frame_number, ext)
+                source_path = staged_output_dir / relative_path
+                target_path = output_dir / relative_path
+                atomic_move_file(
+                    source=source_path,
+                    destination=target_path,
+                    file_mode=FRAME_FILE_MODE,
+                    dir_mode=FRAME_CACHE_DIR_MODE,
+                )
+                installed_paths.append(target_path)
+        except Exception:
+            _emit_frame_range_timing(
+                started_at=publication_started_at,
+                phase=WorkloadPhase.PUBLICATION,
+                outcome=WorkloadOutcome.FAILED,
             )
-            installed_paths.append(target_path)
+            raise
+        _emit_frame_range_timing(
+            started_at=publication_started_at,
+            phase=WorkloadPhase.PUBLICATION,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
         return installed_paths
     finally:
         safe_rmtree(staged_output_dir, missing_ok=True)
@@ -250,7 +306,7 @@ def _delete_frame_range(video: "VideoFile", start_frame: int, end_frame: int) ->
     )
 
 
-def _extract_frame_range(
+def _extract_frame_range_impl(
     video: "VideoFile",
     start_frame: int,
     end_frame: int,
@@ -258,7 +314,7 @@ def _extract_frame_range(
     overwrite: bool = False,
     ext: str = "jpg",
     verbose: bool = False,
-) -> bool:
+) -> tuple[bool, WorkloadOutcome]:
     """
     Extract frames within [start_frame, end_frame) using ffmpeg.
 
@@ -313,12 +369,26 @@ def _extract_frame_range(
                 end_frame,
                 video.video_hash,
             )
-            with transaction.atomic():
-                updated_count = video.frames.filter(
-                    frame_number__gte=start_frame,
-                    frame_number__lt=end_frame,
-                    is_extracted=False,
-                ).update(is_extracted=True)
+            database_started_at = start_workload_timing()
+            try:
+                with transaction.atomic():
+                    updated_count = video.frames.filter(
+                        frame_number__gte=start_frame,
+                        frame_number__lt=end_frame,
+                        is_extracted=False,
+                    ).update(is_extracted=True)
+            except Exception:
+                _emit_frame_range_timing(
+                    started_at=database_started_at,
+                    phase=WorkloadPhase.DATABASE_STATE,
+                    outcome=WorkloadOutcome.FAILED,
+                )
+                raise
+            _emit_frame_range_timing(
+                started_at=database_started_at,
+                phase=WorkloadPhase.DATABASE_STATE,
+                outcome=WorkloadOutcome.REUSED,
+            )
             if updated_count > 0:
                 logger.info(
                     "Marked %d existing Frame objects in range [%d, %d) as extracted for video %s.",
@@ -327,7 +397,7 @@ def _extract_frame_range(
                     end_frame,
                     video.video_hash,
                 )
-            return True  # Indicate success as frames are considered present
+            return True, WorkloadOutcome.REUSED
         else:
             logger.warning(
                 "Frame DB flags indicated extracted frames in range [%d, %d) for video %s, but stable files are missing. Re-extracting range.",
@@ -365,13 +435,27 @@ def _extract_frame_range(
             len(extracted_paths),
         )
 
-        with transaction.atomic():
-            _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
-            frames_in_range = video.frames.filter(
-                frame_number__gte=start_frame,
-                frame_number__lt=end_frame,
+        database_started_at = start_workload_timing()
+        try:
+            with transaction.atomic():
+                _ensure_stable_frame_rows(video, start_frame, end_frame, ext)
+                frames_in_range = video.frames.filter(
+                    frame_number__gte=start_frame,
+                    frame_number__lt=end_frame,
+                )
+                update_count = frames_in_range.update(is_extracted=True)
+        except Exception:
+            _emit_frame_range_timing(
+                started_at=database_started_at,
+                phase=WorkloadPhase.DATABASE_STATE,
+                outcome=WorkloadOutcome.FAILED,
             )
-            update_count = frames_in_range.update(is_extracted=True)
+            raise
+        _emit_frame_range_timing(
+            started_at=database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
         logger.info(
             "Marked %d Frame objects in range [%d, %d) as is_extracted=True for video %s.",
             update_count,
@@ -380,7 +464,7 @@ def _extract_frame_range(
             video.video_hash,
         )
 
-        return True
+        return True, WorkloadOutcome.COMPLETED
 
     except FileNotFoundError as err:
         logger.error(
@@ -432,3 +516,38 @@ def _extract_frame_range(
         raise RuntimeError(
             f"Frame range extraction or update failed for video {video.video_hash} range [{start_frame}, {end_frame})."
         ) from e
+
+
+def _extract_frame_range(
+    video: "VideoFile",
+    start_frame: int,
+    end_frame: int,
+    quality: int = 2,
+    overwrite: bool = False,
+    ext: str = "jpg",
+    verbose: bool = False,
+) -> bool:
+    total_started_at = start_workload_timing()
+    try:
+        result, outcome = _extract_frame_range_impl(
+            video,
+            start_frame,
+            end_frame,
+            quality=quality,
+            overwrite=overwrite,
+            ext=ext,
+            verbose=verbose,
+        )
+    except Exception:
+        _emit_frame_range_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        raise
+    _emit_frame_range_timing(
+        started_at=total_started_at,
+        phase=WorkloadPhase.TOTAL,
+        outcome=outcome,
+    )
+    return result

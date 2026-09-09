@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Protocol, cast
 from uuid import uuid4
@@ -55,8 +56,27 @@ from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
 from endoreg_db.utils.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
 )
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadQueue,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    retry_bucket,
+    start_workload_timing,
+)
 
 logger = logging.getLogger(__name__)
+workload_timing_logger = logging.getLogger("endoreg_db.workload_timing")
+_report_import_outcome: ContextVar[WorkloadOutcome | None] = ContextVar(
+    "report_import_outcome",
+    default=None,
+)
+
+
+def _set_report_import_outcome(outcome: WorkloadOutcome) -> None:
+    if _report_import_outcome.get() is not None:
+        _report_import_outcome.set(outcome)
 
 
 class InvalidReportDocumentError(ValueError):
@@ -209,22 +229,45 @@ class ReportImportService:
         """
         Public entrypoint: wrap import_and_anonymize logic.
         """
-        ctx = self._create_import_context(file_path, center_name)
-        temp_pdf_path: Path | None = None
+        started_at = start_workload_timing()
+        outcome_token = _report_import_outcome.set(WorkloadOutcome.FAILED)
         try:
-            if ctx.file_path.suffix.lower() == ".txt":
-                temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
-                ctx.file_path = temp_pdf_path
-            else:
-                self._validate_pdf_document(ctx.file_path)
+            ctx = self._create_import_context(file_path, center_name)
+            temp_pdf_path: Path | None = None
+            try:
+                if ctx.file_path.suffix.lower() == ".txt":
+                    temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
+                    ctx.file_path = temp_pdf_path
+                else:
+                    self._validate_pdf_document(ctx.file_path)
 
-            lock_path = self._report_source_lock_path(ctx, temp_pdf_path)
-            return self._import_with_source_lock(ctx, lock_path, retry)
+                lock_path = self._report_source_lock_path(ctx, temp_pdf_path)
+                result = self._import_with_source_lock(ctx, lock_path, retry)
+                if _report_import_outcome.get() is WorkloadOutcome.FAILED:
+                    _set_report_import_outcome(WorkloadOutcome.COMPLETED)
+                return result
+            finally:
+                if temp_pdf_path is not None:
+                    self._cleanup_path(
+                        temp_pdf_path, "Cleaned temporary txt-converted pdf:"
+                    )
+        except Exception:
+            _set_report_import_outcome(WorkloadOutcome.FAILED)
+            raise
         finally:
-            if temp_pdf_path is not None:
-                self._cleanup_path(
-                    temp_pdf_path, "Cleaned temporary txt-converted pdf:"
+            outcome = _report_import_outcome.get() or WorkloadOutcome.FAILED
+            try:
+                emit_workload_timing(
+                    workload_timing_logger,
+                    started_at=started_at,
+                    operation=WorkloadOperation.REPORT_IMPORT,
+                    outcome=outcome,
+                    task_family=WorkloadTaskFamily.REPORT_LLM_IMPORT,
+                    queue=WorkloadQueue.PIPELINE,
+                    retry=retry_bucket(int(retry)),
                 )
+            finally:
+                _report_import_outcome.reset(outcome_token)
 
     def _create_import_context(
         self,
@@ -299,6 +342,7 @@ class ReportImportService:
             if existing_completed_report is not None and not retry:
                 ctx.current_report = existing_completed_report
                 self._cleanup_duplicate_staging(ctx)
+                _set_report_import_outcome(WorkloadOutcome.REUSED)
                 return existing_completed_report
 
             fence = acquire_report_import_fence(file_hash)
@@ -344,6 +388,7 @@ class ReportImportService:
         if not needs_processing and not ctx.retry:
             self._cleanup_duplicate_staging(ctx)
             mark_report_import_fence_failed(fence)
+            _set_report_import_outcome(WorkloadOutcome.REUSED)
             return ctx.current_report
         if ctx.retry:
             self._prepare_retry(ctx, fence)

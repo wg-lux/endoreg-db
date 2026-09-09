@@ -19,8 +19,35 @@ from endoreg_db.models.media.video.frame_extraction_request import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import extract_video_frame_range
+from endoreg_db.utils.workload_timing import (
+    WorkloadOperation,
+    WorkloadOutcome,
+    WorkloadPhase,
+    WorkloadQueue,
+    WorkloadTaskFamily,
+    emit_workload_timing,
+    start_workload_timing,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_request_timing(
+    *,
+    started_at: float,
+    phase: WorkloadPhase,
+    outcome: WorkloadOutcome,
+) -> None:
+    emit_workload_timing(
+        logger,
+        started_at=started_at,
+        operation=WorkloadOperation.FRAME_RANGE_MATERIALIZATION,
+        phase=phase,
+        outcome=outcome,
+        task_family=WorkloadTaskFamily.FRAME_EXTRACTION,
+        queue=WorkloadQueue.FRAME_EXTRACTION,
+    )
+
 
 REQUEST_STATUS_QUEUED = "queued"
 REQUEST_STATUS_ALREADY_QUEUED = "already_queued"
@@ -219,18 +246,56 @@ def run_frame_extraction_request(
     video_id: int,
     frame_number: int,
 ) -> bool:
-    with transaction.atomic():
-        request = FrameExtractionRequest.objects.select_for_update().get(pk=request_id)
-        if request.status == FrameExtractionRequest.STATUS_SUCCESS:
-            return True
-        if request.status != FrameExtractionRequest.STATUS_PENDING:
-            logger.info(
-                "Skipping duplicate frame extraction task: request=%s status=%s",
-                request.pk,
-                request.status,
+    total_started_at = start_workload_timing()
+    database_started_at = start_workload_timing()
+    request: FrameExtractionRequest | None = None
+    early_result: bool | None = None
+    initial_database_outcome = WorkloadOutcome.COMPLETED
+    try:
+        with transaction.atomic():
+            request = FrameExtractionRequest.objects.select_for_update().get(
+                pk=request_id
             )
-            return False
-        request.mark_running()
+            if request.status == FrameExtractionRequest.STATUS_SUCCESS:
+                early_result = True
+                initial_database_outcome = WorkloadOutcome.REUSED
+            elif request.status != FrameExtractionRequest.STATUS_PENDING:
+                logger.info(
+                    "Skipping duplicate frame extraction task: request=%s status=%s",
+                    request.pk,
+                    request.status,
+                )
+                early_result = False
+                initial_database_outcome = WorkloadOutcome.DEFERRED
+            else:
+                request.mark_running()
+    except Exception:
+        _emit_request_timing(
+            started_at=database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        _emit_request_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        raise
+
+    _emit_request_timing(
+        started_at=database_started_at,
+        phase=WorkloadPhase.DATABASE_STATE,
+        outcome=initial_database_outcome,
+    )
+    if early_result is not None:
+        _emit_request_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=initial_database_outcome,
+        )
+        return early_result
+
+    assert request is not None
     try:
         video = VideoFile.objects.get(pk=video_id)
         frame = get_or_create_frame_record(video=video, frame_number=frame_number)
@@ -250,8 +315,30 @@ def run_frame_extraction_request(
             Frame.objects.filter(pk=frame.pk, is_extracted=False).update(
                 is_extracted=True
             )
+        database_started_at = start_workload_timing()
         request.mark_success()
+        _emit_request_timing(
+            started_at=database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
+        _emit_request_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=WorkloadOutcome.COMPLETED,
+        )
         return True
     except Exception as exc:
+        failure_database_started_at = start_workload_timing()
         request.mark_failure(str(exc))
+        _emit_request_timing(
+            started_at=failure_database_started_at,
+            phase=WorkloadPhase.DATABASE_STATE,
+            outcome=WorkloadOutcome.FAILED,
+        )
+        _emit_request_timing(
+            started_at=total_started_at,
+            phase=WorkloadPhase.TOTAL,
+            outcome=WorkloadOutcome.FAILED,
+        )
         raise
