@@ -25,8 +25,36 @@ jobs:
       - name: Install devenv
         run: nix profile add nixpkgs#devenv
 
-      - name: Run checks
+      - name: Sync locked dependencies
         shell: devenv shell bash -- -e {0}
         run: |
-          uv sync --extra dev
-          pytest
+          uv sync --locked --extra dev
+
+      - name: Check types and formatting
+        shell: devenv shell bash -- -e {0}
+        run: |
+          .devenv/state/venv/bin/pyright
+          .devenv/state/venv/bin/ruff check endoreg_db tests
+          .devenv/state/venv/bin/ruff format --check endoreg_db tests
+
+      - name: Check quality and API contracts
+        shell: devenv shell bash -- -e {0}
+        run: |
+          .devenv/state/venv/bin/python scripts/check_dead_code.py
+          .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+          .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db
+          .devenv/state/venv/bin/python scripts/check_route_matrix.py
+
+      - name: Check migration drift
+        shell: devenv shell bash -- -e {0}
+        env:
+          DJANGO_SETTINGS_MODULE: endoreg_db.config.settings.test
+        run: .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
+
+      - name: Check authentication and deployment security contracts
+        shell: devenv shell bash -- -e {0}
+        run: .devenv/state/venv/bin/pytest tests/keycloak tests/authz tests/deployment -q
+
+      - name: Run test suite
+        shell: devenv shell bash -- -e {0}
+        run: .devenv/state/venv/bin/pytest
