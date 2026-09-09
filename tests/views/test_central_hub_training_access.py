@@ -6,10 +6,16 @@ import base64
 import hashlib
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
+from typing import Protocol, cast
+from collections.abc import Generator
+from contextlib import contextmanager
+from io import BytesIO
 
 import pytest
 from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
+from django.db.models.fields.files import FieldFile
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
@@ -34,6 +40,14 @@ from endoreg_db.utils.file_operations import safe_rmtree
 from endoreg_db.utils.storage.files import delete_field_file
 
 pytestmark = pytest.mark.django_db
+
+
+class _BackwardLoss(Protocol):
+    def backward(self) -> None: ...
+
+
+class _OptimizerStep(Protocol):
+    def step(self) -> None: ...
 
 
 @pytest.fixture
@@ -175,11 +189,15 @@ def test_hub_read_and_training_after_raw_deletion(
         format="json",
         secure=True,
     )
-    assert manifest.status_code == 400, manifest.content
-    assert (
-        "protected processed-frame materialization"
-        in manifest.json()["errors"]["manifest"]
-    )
+    assert manifest.status_code == 200, manifest.content
+    sample = manifest.json()["lx_ai_core_manifest"]["samples"][0]
+    assert sample["frame_stream"] == {
+        "video_id": video.pk,
+        "frame_number": 0,
+        "artifact_kind": "processed",
+    }
+    assert "path" not in sample
+    assert "relative_path" not in sample["metadata"]
 
 
 @override_settings(DEBUG=False, ENDOREG_DEPLOYMENT_ROLE="central_hub")
@@ -307,10 +325,13 @@ def test_virtual_training_frames_require_validation(
 
 
 @pytest.mark.parametrize("damage", ["wrong_key", "tampered"])
+@pytest.mark.parametrize("consumer", ["image", "stream", "report"])
 def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     monkeypatch: pytest.MonkeyPatch,
     damage: str,
+    consumer: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from endoreg_db.utils.encryption.encrypted import EncryptedStorage
     from endoreg_db.services.frames.training_images import read_processed_training_image
@@ -332,15 +353,44 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
         atomic_write_file(destination=encrypted_path, content=[damaged])
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
     with pytest.raises(
-        (ValueError, OSError, RuntimeError), match="authentication|decrypt|key"
+        (ValueError, OSError, RuntimeError),
+        match="decode failed" if consumer == "report" else "authentication|decrypt|key",
     ):
-        read_processed_training_image(frame)
+        if consumer == "image":
+            read_processed_training_image(frame)
+        elif consumer == "report":
+            from endoreg_db.services.report_frame_export import (
+                materialized_report_frame,
+            )
+
+            with materialized_report_frame(frame):
+                pytest.fail("Damaged media must not produce a report image")
+        else:
+            from lx_ai_core.training import ProcessedFrameReference
+            from endoreg_db.services.frames.training_images import (
+                ProcessedTrainingFrameProvider,
+            )
+
+            provider = ProcessedTrainingFrameProvider(allowed_frame_ids=[int(frame.pk)])
+            with patch.object(Frame.objects, "select_related") as query:
+                query.return_value.get.return_value = frame
+                with provider.open_frame(
+                    ProcessedFrameReference(
+                        video_id=video.pk, frame_number=frame.frame_number
+                    )
+                ) as stream:
+                    stream.read(1)
     assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
 
+    if consumer == "report":
+        assert "authentication failed" in capsys.readouterr().err
 
+
+@pytest.mark.parametrize("consumer", ["image", "stream"])
 def test_training_plaintext_is_private_and_removed_after_decoder_error(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     monkeypatch: pytest.MonkeyPatch,
+    consumer: str,
 ) -> None:
     from endoreg_db.services.frames import training_images
     from endoreg_db.utils.frame_stream import EncodedFrameSample
@@ -364,5 +414,178 @@ def test_training_plaintext_is_private_and_removed_after_decoder_error(
 
     monkeypatch.setattr(training_images, "read_video_path_frame_jpeg", fail_decoder)
     with pytest.raises(RuntimeError, match="decoder failure"):
-        training_images.read_processed_training_image(frame)
+        if consumer == "image":
+            training_images.read_processed_training_image(frame)
+        else:
+            from lx_ai_core.training import ProcessedFrameReference
+
+            provider = training_images.ProcessedTrainingFrameProvider(
+                allowed_frame_ids=[int(frame.pk)]
+            )
+            with provider.open_frame(
+                ProcessedFrameReference(
+                    video_id=frame.video.pk, frame_number=frame.frame_number
+                )
+            ):
+                pytest.fail("decoder error did not propagate")
     assert seen and all(not path.exists() for path in seen)
+
+
+def test_core_training_streams_encrypted_retained_frames(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+) -> None:
+    import torch
+    from lx_ai_core.training import TrainingDatasetManifest
+    from endoreg_db.services.aidataset_training_manifests import (
+        build_frame_multilabel_training_manifest,
+    )
+    from endoreg_db.services.frames.training_images import streamed_training_dataset
+    from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
+
+    video, dataset, label_set, annotation_id = retained_video
+    frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
+    exported = build_frame_multilabel_training_manifest(
+        dataset, label_set=label_set, check_frame_format=False
+    )
+    manifest = TrainingDatasetManifest.model_validate(exported.to_lx_ai_core_dict())
+    before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
+    with patch(
+        "endoreg_db.services.frames.training_images.read_video_path_frame_jpeg",
+        wraps=read_video_path_frame_jpeg,
+    ) as decode:
+        training = streamed_training_dataset(manifest, allowed_frame_ids=[frame_id])
+        decode.assert_not_called()
+        model = torch.nn.Conv2d(3, 1, 1)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+        initial_bias = model.bias.detach().clone() if model.bias is not None else None
+        for _ in range(2):
+            item = training[0]
+            assert tuple(item["image"].shape) == (3, 48, 64)
+            assert torch.equal(item["labels"], torch.tensor([1.0]))
+            optimizer.zero_grad()
+            logits = model(item["image"].unsqueeze(0)).mean().reshape(1)
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                logits, item["labels"]
+            )
+            cast(_BackwardLoss, loss).backward()
+            cast(_OptimizerStep, optimizer).step()
+        assert decode.call_count == 2
+        assert model.bias is not None and initial_bias is not None
+        assert not torch.equal(model.bias, initial_bias)
+    assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
+    assert not video.raw_file.name
+
+
+def test_stream_provider_rejects_unselected_frames_and_rechecks_validation(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+) -> None:
+    from lx_ai_core.training import ProcessedFrameReference
+    from endoreg_db.services.frames.training_images import (
+        ProcessedTrainingFrameProvider,
+    )
+
+    video, _, _, annotation_id = retained_video
+    frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
+    reference = ProcessedFrameReference(video_id=video.pk, frame_number=0)
+    unauthorized = ProcessedTrainingFrameProvider(allowed_frame_ids=[frame_id + 1])
+    with pytest.raises(Frame.DoesNotExist):
+        with unauthorized.open_frame(reference):
+            pytest.fail("unselected frame was streamed")
+    provider = ProcessedTrainingFrameProvider(allowed_frame_ids=[frame_id])
+    with provider.open_frame(reference) as stream:
+        assert stream.read(2) == b"\xff\xd8"
+    state = video.state
+    assert state is not None
+    VideoState.objects.filter(pk=state.pk).update(ready_for_export=False)
+    with pytest.raises(ValueError, match="validated, export-ready"):
+        with provider.open_frame(reference):
+            pytest.fail("revoked processed video was streamed")
+
+
+def test_stream_provider_closes_after_consumer_error(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+) -> None:
+    from lx_ai_core.training import ProcessedFrameReference
+    from endoreg_db.services.frames.training_images import (
+        ProcessedTrainingFrameProvider,
+    )
+
+    video, _, _, annotation_id = retained_video
+    frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
+    provider = ProcessedTrainingFrameProvider(allowed_frame_ids=[frame_id])
+    before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
+    streams: list[BytesIO] = []
+    with pytest.raises(RuntimeError, match="consumer failed"):
+        with provider.open_frame(
+            ProcessedFrameReference(video_id=video.pk, frame_number=0)
+        ) as stream:
+            assert isinstance(stream, BytesIO)
+            streams.append(stream)
+            assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
+            raise RuntimeError("consumer failed")
+    assert len(streams) == 1 and streams[0].closed
+
+
+def test_stream_provider_does_not_yield_after_cleanup_failure(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lx_ai_core.training import ProcessedFrameReference
+    from endoreg_db.services.frames import training_images
+
+    video, _, _, annotation_id = retained_video
+    frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
+    original = training_images.materialized_plaintext_field_file
+    paths: list[Path] = []
+
+    @contextmanager
+    def failed_cleanup(field_file: FieldFile, *, suffix: str) -> Generator[Path]:
+        with original(field_file, suffix=suffix) as path:
+            paths.append(path)
+            yield path
+        raise OSError("cleanup failure")
+
+    monkeypatch.setattr(
+        training_images, "materialized_plaintext_field_file", failed_cleanup
+    )
+    provider = training_images.ProcessedTrainingFrameProvider(
+        allowed_frame_ids=[frame_id]
+    )
+    with pytest.raises(OSError, match="cleanup failure"):
+        with provider.open_frame(
+            ProcessedFrameReference(video_id=video.pk, frame_number=0)
+        ):
+            pytest.fail("stream was exposed before cleanup completed")
+    assert paths and all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("renderer_fails", [False, True])
+def test_report_frame_export_decrypts_and_cleans_up(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+    renderer_fails: bool,
+) -> None:
+    from endoreg_db.services.report_frame_export import materialized_report_frame
+
+    video, _, _, annotation_id = retained_video
+    frame = ImageClassificationAnnotation.objects.get(pk=annotation_id).frame
+    assert Path(video.processed_file.path).read_bytes().startswith(b"LXENC01")
+    before = set(Path("/tmp").glob("endoreg-report-frame-*"))
+    paths: list[Path] = []
+
+    def consume() -> None:
+        with materialized_report_frame(frame) as path:
+            paths.append(path)
+            assert path.read_bytes().startswith(b"\xff\xd8")
+            assert path.stat().st_mode & 0o777 == 0o600
+            if renderer_fails:
+                raise RuntimeError("renderer failed")
+
+    if renderer_fails:
+        with pytest.raises(RuntimeError, match="renderer failed"):
+            consume()
+    else:
+        consume()
+    assert paths and all(not path.exists() for path in paths)
+    assert set(Path("/tmp").glob("endoreg-report-frame-*")) == before
+    frame.refresh_from_db()
+    assert not frame.is_extracted

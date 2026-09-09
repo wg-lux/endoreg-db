@@ -33,6 +33,7 @@ from endoreg_db.models import (
     RawPdfFile,
     SensitiveMeta,
     VideoFile,
+    VideoState,
 )
 from endoreg_db.models.administration.person.user.portal_user_information import (
     PortalUserInfo,
@@ -926,12 +927,67 @@ def test_make_report_returns_404_when_no_report_exists(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "selection_mode", ["default", "preferred", "multiple", "empty"]
+)
 def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     logged_in_client: Client,
     export_context: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
+    selection_mode: str,
 ) -> None:
     from endoreg_db.services import report_pdf_renderer as renderer_module
+    from endoreg_db.utils.frame_stream import EncodedFrameSample
+
+    export_context.video.state = VideoState.objects.create(
+        anonymized=True, anonymization_validated=True
+    )
+    export_context.video.save(update_fields=["state"])
+    clicked_frame = Frame.objects.create(
+        video=export_context.video, frame_number=0, timestamp=0.0, is_extracted=False
+    )
+    selected_frames = {
+        "default": [export_context.frame],
+        "preferred": [clicked_frame],
+        "multiple": [clicked_frame, export_context.frame],
+        "empty": [],
+    }[selection_mode]
+    selected_payload = [
+        {
+            "video_id": export_context.video.pk,
+            "frame_number": frame.frame_number,
+            "timestamp": frame.timestamp,
+        }
+        for frame in selected_frames
+    ]
+    selection_request = (
+        {"preferred_frame": selected_payload[0]}
+        if selection_mode == "preferred"
+        else {"selected_frames": selected_payload}
+        if selection_mode in {"multiple", "empty"}
+        else {}
+    )
+    decoded: list[int] = []
+
+    def decode(
+        video: VideoFile, *, frame_number: int, file_type: str
+    ) -> EncodedFrameSample:
+        assert video.pk == export_context.video.pk
+        selected = selected_frames[len(decoded)]
+        assert frame_number == selected.frame_number
+        assert file_type == "processed"
+        decoded.append(frame_number)
+        return EncodedFrameSample(
+            frame_number=frame_number,
+            timestamp=selected.timestamp,
+            content_type="image/jpeg",
+            image_bytes=b"jpeg",
+        )
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg", decode
+    )
+    temporary_paths: list[Path] = []
 
     captured_payload: _RenderPdfPayload = {
         "header": {"patient_label": "", "patient_birth_date": ""},
@@ -945,6 +1001,12 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         timeout_seconds: int = 20,
     ) -> Path:
         captured_payload.update(payload)
+        for block in payload["blocks"]:
+            for image_path in block.get("image_paths", []):
+                path = Path(image_path)
+                assert path.read_bytes() == b"jpeg"
+                assert path.stat().st_mode & 0o777 == 0o600
+                temporary_paths.append(path)
         atomic_write_file(
             destination=output_path,
             content=[b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n"],
@@ -969,6 +1031,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
                 "report_id": export_context.report.pk,
                 "knowledge_base_module": "star_upper_gi",
                 "knowledge_base_version": "0.1.2",
+                **selection_request,
                 "patient": {
                     "first_name": "Ada",
                     "last_name": "Lovelace",
@@ -985,7 +1048,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     export_context.report.refresh_from_db()
 
     assert export_context.report.status == PatientExaminationReport.Status.FINAL
-    assert data["included_frame_count"] == 1
+    assert data["included_frame_count"] == len(selected_frames)
     assert data["persisted_pdf_artifact_id"]
     assert data["persisted_artifacts"] is not None
     assert data["persisted_artifacts"]["pdf_view_url"]
@@ -993,6 +1056,13 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
 
     assert captured_payload["header"]["patient_label"] == "Ada Lovelace"
     assert captured_payload["header"]["patient_birth_date"] == "1815-12-10"
+
+    if not selected_frames:
+        assert not decoded
+        assert not any(
+            block.get("type") == "image_grid" for block in captured_payload["blocks"]
+        )
+        return
 
     image_grid = next(
         block
@@ -1003,9 +1073,11 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     captions = image_grid.get("captions")
     first_block_text = captured_payload["blocks"][0].get("text", "")
 
-    assert image_paths == [str(export_context.frame.file_path)]
+    assert image_paths == [str(path) for path in temporary_paths]
+    assert temporary_paths and all(not path.exists() for path in temporary_paths)
+    assert decoded == [frame.frame_number for frame in selected_frames]
     assert captions is not None
-    assert "frame 12" in captions[0]
+    assert f"frame {selected_frames[0].frame_number}" in captions[0]
     assert "AI prediction based report text." in first_block_text
 
 
@@ -1161,3 +1233,135 @@ def test_scoped_report_submission_cannot_modify_foreign_examination(
     assert report_patient.first_name == original_name
     assert report_patient.center_id == foreign_center.pk
     assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid", ["timestamp", "foreign_video"])
+def test_report_export_rejects_stale_or_foreign_frame(
+    logged_in_client: Client,
+    export_context: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+) -> None:
+    monkeypatch.setattr(
+        f"{REPORT_API_MODULE}.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
+
+    def unexpected_decode(*args: object, **kwargs: object) -> None:
+        pytest.fail("Invalid selection must not decode media")
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        unexpected_decode,
+    )
+    selected_video = export_context.video
+    if invalid == "foreign_video":
+        selected_video = VideoFile.objects.create(
+            center=export_context.video.center,
+            original_file_name="foreign-examination.mp4",
+        )
+        Frame.objects.create(
+            video=selected_video, frame_number=12, timestamp=99.0, is_extracted=False
+        )
+    response = logged_in_client.post(
+        f"{API_PREFIX}/make-report",
+        data=_json_body(
+            {
+                "patient_examination_id": export_context.patient_examination.pk,
+                "report_id": export_context.report.pk,
+                "knowledge_base_module": "star_upper_gi",
+                "knowledge_base_version": "0.1.2",
+                "patient": {
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                    "dob": "1815-12-10",
+                },
+                "selected_frames": [
+                    {
+                        "video_id": selected_video.pk,
+                        "frame_number": 12,
+                        "timestamp": 99.0,
+                    }
+                ],
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == (409 if invalid == "timestamp" else 404), (
+        response.content
+    )
+    export_context.report.refresh_from_db()
+    assert export_context.report.status != PatientExaminationReport.Status.FINAL
+
+
+@pytest.mark.django_db
+def test_report_frame_candidates_filter_labels_and_paginate_without_extracting(
+    logged_in_client: Client,
+    export_context: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.models import ImageClassificationAnnotation, Label
+
+    export_context.video.state = VideoState.objects.create(
+        anonymized=True, anonymization_validated=True
+    )
+    export_context.video.save(update_fields=["state"])
+    zero = Frame.objects.create(
+        video=export_context.video, frame_number=0, timestamp=0.0, is_extracted=False
+    )
+    label, _ = Label.objects.get_or_create(name="report_selection_test")
+    ImageClassificationAnnotation.objects.create(frame=zero, label=label, value=True)
+    ImageClassificationAnnotation.objects.create(
+        frame=export_context.frame, label=label, value=False
+    )
+
+    def unexpected_decode(*args: object, **kwargs: object) -> None:
+        pytest.fail("Browsing frame identities must not decode media")
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        unexpected_decode,
+    )
+    url = f"{API_PREFIX}/frame-candidates"
+    params = {
+        "patient_examination_id": export_context.patient_examination.pk,
+        "limit": 1,
+    }
+    response = logged_in_client.get(url, params)
+    assert response.status_code == 200, response.content
+    assert response.json()["frames"][0]["frame_number"] == 0
+    assert response.json()["next_offset"] == 1
+    filtered = logged_in_client.get(url, {**params, "label": label.name})
+    assert filtered.status_code == 200, filtered.content
+    assert [frame["frame_number"] for frame in filtered.json()["frames"]] == [0]
+    assert filtered.json()["next_offset"] is None
+    assert label.name in filtered.json()["labels"]
+    zero.refresh_from_db()
+    assert not zero.is_extracted
+
+
+@pytest.mark.parametrize(
+    "frames", [[], [{"video_id": 7, "frame_number": 0, "timestamp": 0.0}]]
+)
+def test_export_schema_preserves_explicit_frame_selection(
+    frames: list[dict[str, int | float]],
+) -> None:
+    from endoreg_db.serializers.report.patient_examination_report import (
+        PatientExaminationReportMakeReportSchema,
+    )
+
+    schema = PatientExaminationReportMakeReportSchema.model_validate(
+        {
+            "patient_examination_id": 7,
+            "knowledge_base_module": "reporting",
+            "knowledge_base_version": "1.2.3",
+            "patient": {
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "dob": "1815-12-10",
+            },
+            "selected_frames": frames,
+        }
+    )
+    assert schema.to_contract_data().get("selected_frames") == frames

@@ -158,6 +158,20 @@ def test_trainer_preserves_frame_identity_in_all_loaders(role: str) -> None:
         assert isinstance(subset, EndoMultiLabelDataset)
         selected.extend(subset.frame_ids)
     assert sorted(selected) == list(range(1, 7))
+    from lx_ai_core.training import TrainingSample
+
+    frames = {
+        pk: Frame(pk=pk, video=VideoFile(pk=pk), frame_number=pk * 10, timestamp=pk / 2)
+        for pk in data.frame_ids
+    }
+    with patch.object(Frame.objects, "select_related") as query:
+        query.return_value.in_bulk.return_value = frames
+        samples = trainer._training_samples(TrainingSample, data)
+    assert [sample.frame_stream.frame_number for sample in samples] == [
+        pk * 10 for pk in data.frame_ids
+    ]
+    assert all(sample.path is None for sample in samples)
+    assert [sample.timestamp for sample in samples] == [pk / 2 for pk in data.frame_ids]
 
 
 @pytest.mark.parametrize(

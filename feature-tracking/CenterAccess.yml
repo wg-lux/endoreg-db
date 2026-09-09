@@ -147,6 +147,9 @@ definition_of_done:
     transferred annotation rows without extracted caches or exact presentation timestamp ticks. It does
     not depend on original files, estimate new frame coordinates, or grant raw-media export.
   - Raw artifact paths remain center-scoped, and anonymous requests are denied in every deployment profile.
+  - Training manifests export typed processed-frame references without cache paths; the lx-ai-core loader
+    reads only independently authorized frame IDs, rechecks processed-media gates per read, and propagates
+    wrong-key, tamper, decoder and cleanup failures without retaining plaintext frame files.
   - Missing or incomplete center membership fails closed outside the explicitly unrestricted central-hub
     processed-video read boundary.
   required: true
@@ -176,12 +179,20 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/frames/training_images.py; endoreg_db/services/aidataset_training_manifests.py;
         endoreg_db/utils/ai/model_training/dataset.py; endoreg_db/export/frames/export_frames_with_labels.py
-    note: Existing Hub viewing contract is preserved. Added processed-only training after original deletion;
-      source-level API, actual JPEG decoding, PyTorch sample, encryption-failure, and cleanup tests pass.
-      The expanded contract requires a new reviewed endoreg-db wheel and named-host acceptance before
-      production promotion.
-    assessed_by: codex-wheel-hygiene-20260907
-    assessed_at: '2026-09-07T14:22:04.429231Z'
+    - kind: document
+      reference: docs/training-streams.yml
+    - kind: test
+      reference: tests/views/test_central_hub_training_access.py
+    - kind: test
+      reference: tests/ai/test_training_media_boundary.py
+    note: 'Processed-frame stream integration verified locally: API and saved trainer manifests export
+      typed lx-ai-core frame_stream references; provider restricts reads to independently authorized frame
+      IDs, rechecks media gates and propagates encryption, decoder and cleanup failures. Focused run:
+      110 passed plus 10 subtests; integration run: 74 passed. Full Pyright: zero errors, one pre-existing
+      missing lx_anonymizer stub warning. Existing hub visibility contract preserved. Reviewed wheel and
+      named-host acceptance remain pending; no deployment.'
+    assessed_by: codex-monitoring-fix-20260909
+    assessed_at: '2026-09-09T13:29:59.726633Z'
 - id: access_regression_tests
   category: testing
   title: Deployment, identity, artifact, and negative authorization paths are regression tested

@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.2.3"
+version = "1.2.5"
 requires-python = ">=3.12,<3.13"
 license = {file = "LICENSE"}
 
@@ -89,7 +89,7 @@ dependencies = [
     "lx-ai-core[torch]==0.0.4",
     "celery-types>=0.26.0",
     "lightning-fabric>=2.6.5",
-    "lx-dtypes==0.3.0",
+    "lx-dtypes==0.3.1",
     "snakemake==9.23.1",
 ]
 

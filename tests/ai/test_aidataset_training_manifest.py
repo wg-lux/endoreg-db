@@ -173,7 +173,7 @@ class AIDataSetTrainingManifestTests(TestCase):
         }
         assert manifest.provenance["materialization_timestamp"]
 
-    def test_export_rejects_relative_cache_paths_but_preserves_identity_manifest(
+    def test_export_streams_processed_frames_without_cache_paths(
         self,
     ) -> None:
         manifest = build_frame_multilabel_training_manifest(
@@ -184,15 +184,18 @@ class AIDataSetTrainingManifestTests(TestCase):
         assert manifest.samples[0].frame_id == self.frames[0].pk
         assert manifest.samples[0].path is None
         assert manifest.samples[0].metadata["annotation_ids_by_label"]
-        with self.assertRaisesRegex(
-            ValueError, "protected processed-frame materialization"
-        ):
-            manifest.to_lx_ai_core_dict()
+        payload = manifest.to_lx_ai_core_dict()
+        sample = payload["samples"][0]
+        assert "path" not in sample
+        assert "relative_path" not in sample["metadata"]
+        assert sample["frame_stream"] == {
+            "video_id": self.video.pk,
+            "frame_number": 0,
+            "artifact_kind": "processed",
+        }
 
     def test_absolute_frame_cache_path_export_is_rejected(self) -> None:
-        with self.assertRaisesRegex(
-            ValueError, "protected processed-frame materialization"
-        ):
+        with self.assertRaisesRegex(ValueError, "include_file_paths must be false"):
             build_frame_multilabel_training_manifest(
                 self.dataset,
                 label_set=self.label_set,

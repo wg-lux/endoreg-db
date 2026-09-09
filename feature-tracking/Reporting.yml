@@ -76,13 +76,25 @@ definition_of_done:
       reference: focused Ruff passed; focused Pyright 0 errors
     - kind: command
       reference: 'tracker report_workflow verification lane: 25 passed'
-    note: Finale Berichte werden jetzt erst nach strengem LXDM-Ledger-Roundtrip und Ausführung der versionierten
-      ReportTemplate-Validatorfamilien gespeichert; fehlende Anforderungen liefern 422 und rollen Patienten-,
-      Ledger- und Reportänderungen zurück. Terminologiebeziehungen für Untersuchung, Befund, Klassifikation,
-      Auswahl, Intervention und Indikation werden vor Mutation geprüft. Die erfolgreiche Laufzeitvalidierung
-      wird als Snapshot persistiert. Offen bleiben klinische Fachfreigabe und Release der neuen Artefaktversionen.
-    assessed_by: codex-contract-coverage-20260813
-    assessed_at: '2026-08-13T10:54:43.641322Z'
+    - kind: code
+      reference: endoreg_db/services/report_frame_export.py
+    - kind: test
+      reference: '59 passed: reporting API and encrypted central-hub media consumer suites; source lx_dtypes
+        contract 16 passed'
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/docs/guides/reporting-frame-selection.yml
+    - kind: test
+      reference: 59 reporting/media integration tests passed; 3 final schema and typed-query tests passed;
+        lx_dtypes contract 16 passed
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 1 existing missing-stub warning; focused Ruff passed'
+    note: Report frame selection supports streamed previews, positive-label browsing, ordered add/remove,
+      last-click fallback and explicitly empty export. Export validates examination scope and timestamps,
+      and removes private temporary JPEGs after success or failure. Existing finalization validation remains.
+      Local source suites pass; clinical acceptance and coordinated lx-dtypes/endoreg-db/frontend release
+      remain outstanding.
+    assessed_by: codex-monitoring-fix-20260909
+    assessed_at: '2026-09-09T14:12:16.968220Z'
 - id: report_draft_persistence_contract
   category: data_integrity
   title: Berichtsentwürfe werden repositoryübergreifend strikt und kanonisch persistiert
@@ -195,10 +207,10 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: bash -lc 'cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit
-        -- src/api/__tests__/reportTemplateBuilderApi.test.ts src/api/__tests__/reportTemplatesApi.test.ts
-        src/stores/__tests__/reportingFlow.template.spec.ts src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
-        src/views/reporting/__tests__/FindingsCapturePage.test.ts src/views/reporting/__tests__/ReportEditorPage.test.ts'
+      reference: bash -lc 'cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- src/api/__tests__/reportTemplateBuilderApi.test.ts
+        src/api/__tests__/reportTemplatesApi.test.ts src/stores/__tests__/reportingFlow.template.spec.ts
+        src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts src/views/reporting/__tests__/FindingsCapturePage.test.ts
+        src/views/reporting/__tests__/ReportEditorPage.test.ts'
       note: Exit-Code 0
     - kind: test
       reference: /dev/lx-annotate/frontend/src/api/__tests__/reportDraftApi.test.ts; src/stores/__tests__/reportingFlow.template.spec.ts;
@@ -272,12 +284,12 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: '/dev/lx-annotate/frontend/src/api/__tests__/reportingLanguagesApi.test.ts;
-        /dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts; /dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportEditorPage.test.ts
-        (Frontend-Gesamtlauf: 82 Dateien, 411 Tests bestanden)'
+      reference: '/dev/lx-annotate/frontend/src/api/__tests__/reportingLanguagesApi.test.ts; /dev/lx-annotate/frontend/src/stores/__tests__/reportingFlow.template.spec.ts;
+        /dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportEditorPage.test.ts (Frontend-Gesamtlauf:
+        82 Dateien, 411 Tests bestanden)'
     - kind: test
-      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py
-        (1 bestanden; Pyright 0 Fehler)
+      reference: /lx-parse/lx-data-models/lx_dtypes/django/api/tests/test_reporting_languages_api.py (1
+        bestanden; Pyright 0 Fehler)
     - kind: code
       reference: endoreg_db/models/report/patient_examination_report.py
     - kind: code
@@ -295,11 +307,10 @@ definition_of_done:
     - kind: code
       reference: /lx-data-models/lx_dtypes/models/knowledge_base/report_template/ReportTemplateSection.py
     - kind: test
-      reference: '/lx-data-models focused localization/route lane: 19 passed, 1 skipped; route
-        contract 3 passed, 1 skipped; full 645-test collection exit 0'
+      reference: '/lx-data-models focused localization/route lane: 19 passed, 1 skipped; route contract
+        3 passed, 1 skipped; full 645-test collection exit 0'
     - kind: test
-      reference: '/dev/lx-annotate localized reporting/API lane: 29 passed; both type-check
-        lanes passed'
+      reference: '/dev/lx-annotate localized reporting/API lane: 29 passed; both type-check lanes passed'
     - kind: test
       reference: 'Endoreg indication compatibility endpoint: Pyright 0; 6 tests passed'
     note: Berichtssprache und KnowledgeBase-Identität sind nun erstklassige persistierte Reportfelder.
@@ -507,11 +518,11 @@ definition_of_done:
       reference: /lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; //lx-anonymizer/lx_anonymizer/report_contracts.py;
         //lx-anonymizer/lx_anonymizer/report_reader.py
     - kind: test
-      reference: /lx-data-models/tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py
-        (5 passed); //lx-anonymizer/tests/test_report_reader_contract.py (8 passed)
+      reference: /lx-data-models/tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py (5
+        passed); //lx-anonymizer/tests/test_report_reader_contract.py (8 passed)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/lx-data-models://lx-anonymizer python
-        -m pytest tests/import_files/test_report_anonymization_contract.py -q (2 passed)
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models://lx-anonymizer python -m pytest tests/import_files/test_report_anonymization_contract.py
+        -q (2 passed)
     - kind: document
       reference: docs/report_import_concurrency_implementation.md; //lx-anonymizer/docs/report_pipeline_concurrency_contract.md
     note: Der einzige serialisierbare Vertrag liegt gemeinsam in lx_dtypes, lx-anonymizer konsumiert ihn

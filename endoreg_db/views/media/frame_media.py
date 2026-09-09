@@ -431,7 +431,7 @@ class DecodedFrameStreamView(APIView):
         )
         response["X-Frame-File-Type"] = artifact_kind.value
         response["X-Frame-Number"] = str(sample.frame_number)
-        response["X-Frame-Timestamp"] = f"{sample.timestamp:.6f}"
+        response["X-Frame-Timestamp"] = str(sample.timestamp)
         response["Cache-Control"] = "no-store"
 
         frontend_origin = resolve_response_origin(request)

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager
 from io import BytesIO
-from collections.abc import Mapping
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+from lx_ai_core.training import (
+    FrameByteStream,
+    ProcessedFrameReference,
+    TrainingDatasetManifest,
+)
 
 from PIL import Image
 
@@ -13,6 +20,10 @@ from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
 from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
+
+if TYPE_CHECKING:
+    from lx_ai_core.backends.torch_training import StreamedFrameDataset
+    from torch import Tensor
 
 
 def validate_processed_training_frame(frame: Frame) -> None:
@@ -39,7 +50,8 @@ def validate_processed_training_frame(frame: Frame) -> None:
         raise ValueError("Training requires validated, export-ready processed video.")
 
 
-def read_processed_training_image(frame: Frame) -> Image.Image:
+def read_processed_training_frame_bytes(frame: Frame) -> bytes:
+    """Decode the persisted frame identity and finish protected cleanup before return."""
     validate_processed_training_frame(frame)
     video = frame.video
     with materialized_plaintext_field_file(video.processed_file, suffix=".mp4") as path:
@@ -48,5 +60,55 @@ def read_processed_training_image(frame: Frame) -> Image.Image:
             frame_number=frame.frame_number,
             timestamp=frame.timestamp,
         )
-        with Image.open(BytesIO(sample.image_bytes)) as image:
+    return sample.image_bytes
+
+
+def read_processed_training_image(frame: Frame) -> Image.Image:
+    with BytesIO(read_processed_training_frame_bytes(frame)) as encoded:
+        with Image.open(encoded) as image:
             return image.convert("RGB")
+
+
+class ProcessedTrainingFrameProvider:
+    """Local training service adapter scoped to independently authorized frame IDs.
+
+    Callers supply IDs from their authorized dataset, never from an untrusted
+    manifest alone. Every read rechecks current frame membership and media state.
+    No database connections or decrypted artifacts are retained across reads.
+    """
+
+    def __init__(self, *, allowed_frame_ids: Sequence[int]) -> None:
+        if not allowed_frame_ids or any(
+            type(pk) is not int or pk < 1 for pk in allowed_frame_ids
+        ):
+            raise ValueError("allowed_frame_ids must contain positive frame identities")
+        self._allowed_frame_ids = tuple(allowed_frame_ids)
+
+    @contextmanager
+    def open_frame(
+        self, reference: ProcessedFrameReference
+    ) -> Generator[FrameByteStream]:
+        reference = ProcessedFrameReference.model_validate(reference.model_dump())
+        frame = Frame.objects.select_related("video__state").get(
+            pk__in=self._allowed_frame_ids,
+            video_id=reference.video_id,
+            frame_number=reference.frame_number,
+        )
+        with BytesIO(read_processed_training_frame_bytes(frame)) as stream:
+            yield stream
+
+
+def streamed_training_dataset(
+    manifest: TrainingDatasetManifest,
+    *,
+    allowed_frame_ids: Sequence[int],
+    transform: Callable[["Tensor"], "Tensor"] | None = None,
+) -> "StreamedFrameDataset":
+    """Bind the core loader to an authorized local training selection."""
+    from lx_ai_core.backends.torch_training import StreamedFrameDataset
+
+    return StreamedFrameDataset(
+        manifest,
+        ProcessedTrainingFrameProvider(allowed_frame_ids=allowed_frame_ids),
+        transform=transform,
+    )

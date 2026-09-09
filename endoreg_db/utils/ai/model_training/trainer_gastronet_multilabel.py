@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, cast
 
 import torch
+from lx_ai_core.training import ProcessedFrameReference
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
 from endoreg_db.utils.ai.model_training.config import (
@@ -688,10 +690,19 @@ def _training_samples(
     TrainingSample: Any,
     data: _PreparedTrainingData,
 ) -> list[Any]:
+    frames = Frame.objects.select_related("video").in_bulk(data.frame_ids)
+    if len(frames) != len(set(data.frame_ids)):
+        raise ValueError("Training frame identities no longer exist")
+    for index, frame_id in enumerate(data.frame_ids):
+        if frames[frame_id].video.pk != data.video_ids[index]:
+            raise ValueError("Training frame video identity changed")
     return [
         TrainingSample(
             sample_index=index,
-            path=data.image_paths[index],
+            frame_stream=ProcessedFrameReference(
+                video_id=frames[data.frame_ids[index]].video.pk,
+                frame_number=frames[data.frame_ids[index]].frame_number,
+            ),
             labels=data.labels_arr[index],
             label_mask=data.masks_arr[index],
             group_id=(
@@ -701,6 +712,8 @@ def _training_samples(
             ),
             frame_id=data.frame_ids[index],
             video_id=data.video_ids[index],
+            frame_number=frames[data.frame_ids[index]].frame_number,
+            timestamp=frames[data.frame_ids[index]].timestamp,
             metadata={"video_id": data.video_ids[index]},
         )
         for index in range(len(data.image_paths))

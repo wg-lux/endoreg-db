@@ -688,7 +688,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         assert payload["summary"]["sample_count"] == 1
         assert payload["config"]["label_set_id"] == label_set.pk
 
-    def test_ai_dataset_training_manifest_endpoint_reports_materialization_requirement(
+    def test_ai_dataset_training_manifest_endpoint_reports_missing_frame_identity(
         self,
     ) -> None:
         dataset = AIDataSet.objects.create(
@@ -700,7 +700,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         class IdentityManifest:
             def to_lx_ai_core_dict(self) -> dict[str, object]:
                 raise ValueError(
-                    "Training path export requires protected processed-frame materialization."
+                    "streamed training samples require video_id and frame_number"
                 )
 
         with patch.object(
@@ -715,7 +715,7 @@ class ApplicationSettingsEndpointTests(TestCase):
             )
         assert response.status_code == 400
         assert (
-            "protected processed-frame materialization"
+            "streamed training samples require video_id and frame_number"
             in response.json()["errors"]["manifest"]
         )
 

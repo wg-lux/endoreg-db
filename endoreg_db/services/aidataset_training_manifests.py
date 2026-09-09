@@ -306,8 +306,8 @@ def build_frame_multilabel_training_manifest(
 ) -> AITrainingDatasetManifest:
     if include_file_paths:
         raise ValueError(
-            "Training path export requires protected processed-frame materialization; "
-            "cached extracted-frame paths are not approved training artifacts."
+            "Training uses processed-frame streams; include_file_paths must be false. "
+            "Cached extracted-frame paths are not approved training artifacts."
         )
     _validate_manifest_dataset(dataset)
     normalized_source_names = _normalize_source_names(information_source_names)

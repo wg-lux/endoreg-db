@@ -224,14 +224,9 @@ class PatientExaminationReportSubmissionSchema(Schema):
         return dump_report_submission_payload(self.to_contract_payload())
 
 
-class PatientExaminationReportMakeReportSchema(Schema):
-    patient_examination_id: int = Field(ge=1)
-    report_id: int | None = Field(default=None, ge=1)
-    knowledge_base_module: str = Field(min_length=1)
-    knowledge_base_version: str = Field(min_length=1)
-    patient: PatientReportIdentitySchema
-    max_frames: int = Field(default=12, ge=1, le=24)
-
+class PatientExaminationReportMakeReportSchema(
+    PatientExaminationReportMakeReportPayload
+):
     @model_validator(mode="before")
     @classmethod
     def validate_contract(cls, value: Any) -> dict[str, Any]:

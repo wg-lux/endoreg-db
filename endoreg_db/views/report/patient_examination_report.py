@@ -5,6 +5,7 @@ import json
 import random
 from collections.abc import Mapping
 from copy import deepcopy
+from contextlib import ExitStack
 from typing import Any, cast
 
 from django.contrib.auth.models import User
@@ -16,6 +17,10 @@ from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientExaminationReportMakeReportData,
     PatientExaminationReportMakeReportPayload,
+    PreferredReportFramePayload,
+    ReportFrameCandidatesQuery,
+    ReportFrameCandidate,
+    ReportFrameCandidatesResponse,
     PatientExaminationReportSubmissionData,
     PatientExaminationReportSubmissionPayload,
     ReportExportFrameDetailData,
@@ -48,6 +53,9 @@ from endoreg_db.helpers.model_ids import model_pk, optional_model_pk
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
@@ -66,6 +74,7 @@ from endoreg_db.services.report_persistence import (
     persist_report_pdf_artifact,
     save_report_submission,
 )
+from endoreg_db.services.report_frame_export import materialized_report_frame
 from endoreg_db.services.report_runtime_validation import (
     ReportRuntimeValidationError,
     validate_final_report_submission,
@@ -74,7 +83,7 @@ from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_patient_timeline_path,
     build_pdf_stream_path,
-    build_video_frame_stream_path,
+    build_video_frame_decoded_stream_path,
 )
 
 router = Router(tags=["patient-examination-reports"])
@@ -511,7 +520,7 @@ class PatientExaminationReportApi:
         selection: ReportSegmentFrameSelectionData,
     ) -> Frame | None:
         stored_frame_number = selection.get("frame_number")
-        if stored_frame_number:
+        if stored_frame_number is not None:
             try:
                 selected_frame_number = int(stored_frame_number)
             except (TypeError, ValueError):
@@ -519,14 +528,13 @@ class PatientExaminationReportApi:
         else:
             selected_frame_number = None
 
-        frame_qs = (
-            segment.get_frames().filter(is_extracted=True).order_by("frame_number")
-        )
+        frame_qs = segment.get_frames().order_by("frame_number")
 
         if selected_frame_number is not None:
             selected = frame_qs.filter(frame_number=selected_frame_number).first()
             if selected is not None:
                 return selected
+            raise HttpError(409, "The selected report frame no longer exists.")
 
         midpoint = self._segment_midpoint_frame(segment)
         return frame_qs.filter(frame_number__gte=midpoint).first() or frame_qs.first()
@@ -563,7 +571,65 @@ class PatientExaminationReportApi:
         patient_examination: PatientExamination,
         report: PatientExaminationReport,
         max_frames: int,
+        frame_scope: ExitStack,
+        preferred_frame: PreferredReportFramePayload | None = None,
+        selected_frames: list[PreferredReportFramePayload] | None = None,
     ) -> tuple[list[str], list[str], list[ReportExportFrameDetailData], list[str]]:
+        explicit_frames = (
+            selected_frames
+            if selected_frames is not None
+            else ([preferred_frame] if preferred_frame is not None else None)
+        )
+        if explicit_frames is not None:
+            if len(explicit_frames) > max_frames:
+                raise HttpError(422, "Selected frames exceed the export limit.")
+            paths: list[str] = []
+            captions: list[str] = []
+            details: list[ReportExportFrameDetailData] = []
+            for preferred_frame in explicit_frames:
+                frame = (
+                    Frame.objects.select_related("video__state")
+                    .filter(
+                        video_id=preferred_frame.video_id,
+                        video__examination_id=patient_examination.pk,
+                        frame_number=preferred_frame.frame_number,
+                    )
+                    .first()
+                )
+                if frame is None:
+                    raise HttpError(
+                        404,
+                        "Selected report frame is not available for this examination.",
+                    )
+                if frame.timestamp != preferred_frame.timestamp:
+                    raise HttpError(
+                        409,
+                        "Selected report frame timestamp changed; reload the preview.",
+                    )
+                path = frame_scope.enter_context(materialized_report_frame(frame))
+                caption = f"frame {frame.frame_number} | {frame.timestamp}s"
+                detail: ReportExportFrameDetailData = {
+                    "segment_id": None,
+                    "video_id": preferred_frame.video_id,
+                    "frame_id": _frame_pk(frame),
+                    "frame_number": frame.frame_number,
+                    "timestamp": preferred_frame.timestamp,
+                    "label_name": None,
+                    "finding_name": None,
+                    "caption": caption,
+                    "stream_url": build_absolute_media_url(
+                        self.request,
+                        build_video_frame_decoded_stream_path(
+                            preferred_frame.video_id,
+                            frame.frame_number,
+                            file_type="processed",
+                        ),
+                    ),
+                }
+                paths.append(str(path))
+                captions.append(caption)
+                details.append(detail)
+            return paths, captions, details, []
         selection_map = self._get_segment_selection_map(report)
 
         selected_segment_ids: list[int] = []
@@ -594,13 +660,10 @@ class PatientExaminationReportApi:
                 selection=selection,
             )
             if frame is None:
-                warnings.append(f"No extracted frame found for segment {segment_id}.")
+                warnings.append(f"No frame identity found for segment {segment_id}.")
                 continue
 
-            frame_path = frame.file_path
-            if not frame_path.is_file():
-                warnings.append(f"Frame file missing for frame {_frame_pk(frame)}.")
-                continue
+            frame_path = frame_scope.enter_context(materialized_report_frame(frame))
 
             patient_finding = (
                 segment.patient_findings.filter(
@@ -637,7 +700,9 @@ class PatientExaminationReportApi:
                     ),
                     "stream_url": build_absolute_media_url(
                         self.request,
-                        build_video_frame_stream_path(video_id, frame_number),
+                        build_video_frame_decoded_stream_path(
+                            video_id, frame_number, file_type="processed"
+                        ),
                     ),
                     "caption": caption,
                 }
@@ -897,9 +962,10 @@ class PatientExaminationReportApi:
         frame_preview: SegmentFramePreviewData | None = None
         if selected_frame is not None:
             selected_frame_number_value = _frame_number(selected_frame)
-            frame_stream_path = build_video_frame_stream_path(
+            frame_stream_path = build_video_frame_decoded_stream_path(
                 _segment_video_id(segment),
                 selected_frame_number_value,
+                file_type="processed",
             )
             frame_preview = {
                 "frame_id": _frame_pk(selected_frame),
@@ -1157,24 +1223,21 @@ def make_report(
         )
     except ReportRuntimeValidationError as exc:
         raise HttpError(422, json.dumps(exc.result)) from exc
-    (
-        frame_paths,
-        frame_captions,
-        frame_details,
-        frame_warnings,
-    ) = api._collect_report_export_frames(
-        patient_examination=patient_examination,
-        report=report,
-        max_frames=data["max_frames"],
-    )
-
-    section_blocks = api._build_report_export_blocks(
-        report=report,
-        frame_details=frame_details,
-    )
-
     try:
-        with transaction.atomic():
+        with transaction.atomic(), ExitStack() as frame_scope:
+            frame_paths, frame_captions, frame_details, frame_warnings = (
+                api._collect_report_export_frames(
+                    patient_examination=patient_examination,
+                    report=report,
+                    max_frames=data["max_frames"],
+                    frame_scope=frame_scope,
+                    preferred_frame=payload.preferred_frame,
+                    selected_frames=payload.selected_frames,
+                )
+            )
+            section_blocks = api._build_report_export_blocks(
+                report=report, frame_details=frame_details
+            )
             report.runtime_validation_snapshot = runtime_validation
             user = _authenticated_user_from_request(request)
             if _report_status(report) != "final":
@@ -1211,6 +1274,8 @@ def make_report(
                 patient_identity=dict(data["patient"]),
                 strict_renderer=True,
             )
+    except HttpError:
+        raise
     except Exception as exc:
         return 500, {"detail": f"PDF report generation failed ({type(exc).__name__})."}
 
@@ -1229,6 +1294,60 @@ def make_report(
         "persisted_pdf_artifact_id": persisted_pdf_artifact_id,
         "persisted_artifacts": persisted_artifacts,
     }
+
+
+@router.get("/frame-candidates", response=ReportFrameCandidatesResponse)
+def get_report_frame_candidates(
+    request: HttpRequest,
+    query: ReportFrameCandidatesQuery = _ninja_query(...),
+) -> ReportFrameCandidatesResponse:
+    api = PatientExaminationReportApi(request)
+    examination = api._get_scoped_patient_examination(query.patient_examination_id)
+    frames = Frame.objects.select_related("video").filter(
+        video__examination=examination,
+        video__state__anonymized=True,
+        video__state__anonymization_validated=True,
+        video__state__processing_error=False,
+        timestamp__gte=0,
+    )
+    annotations = ImageClassificationAnnotation.objects.filter(
+        frame__in=frames, value=True
+    )
+    labels = list(
+        annotations.order_by("label__name")
+        .values_list("label__name", flat=True)
+        .distinct()
+    )
+    if query.label is not None:
+        frames = frames.filter(
+            pk__in=annotations.filter(label__name=query.label).values("frame_id")
+        )
+    rows = list(
+        frames.order_by("video_id", "frame_number", "pk")[
+            query.offset : query.offset + query.limit + 1
+        ]
+    )
+    page = rows[: query.limit]
+    labels_by_frame: dict[int, list[str]] = {}
+    for frame_id, name in (
+        annotations.filter(frame__in=page)
+        .values_list("frame_id", "label__name")
+        .distinct()
+    ):
+        labels_by_frame.setdefault(frame_id, []).append(name)
+    return ReportFrameCandidatesResponse(
+        frames=[
+            ReportFrameCandidate(
+                video_id=model_pk(frame.video),
+                frame_number=frame.frame_number,
+                timestamp=cast(float, frame.timestamp),
+                labels=sorted(labels_by_frame.get(_frame_pk(frame), [])),
+            )
+            for frame in page
+        ],
+        labels=labels,
+        next_offset=query.offset + query.limit if len(rows) > query.limit else None,
+    )
 
 
 @router.get(

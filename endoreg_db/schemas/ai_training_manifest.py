@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
+from lx_ai_core.training import ProcessedFrameReference
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AIFrameFormatStrategy = Literal[
@@ -107,25 +108,20 @@ class AITrainingSample(BaseModel):
 
     @model_validator(mode="after")
     def _validate_sample(self) -> "AITrainingSample":
-        if self.path is None and self.relative_path is None:
-            raise ValueError("training samples require path or relative_path")
+        if self.path is None and (self.video_id is None or self.frame_number is None):
+            raise ValueError(
+                "streamed training samples require video_id and frame_number"
+            )
         if len(self.labels) != len(self.label_mask):
             raise ValueError("label_mask must match labels length")
         return self
 
     def to_lx_ai_core_dict(self) -> dict[str, Any]:
         metadata = dict(self.metadata)
-        if self.relative_path is not None:
-            metadata.setdefault("relative_path", self.relative_path)
         if self.video_uuid is not None:
             metadata.setdefault("video_uuid", self.video_uuid)
 
         path = self.path
-        if path is None:
-            raise ValueError(
-                "Training path export requires protected processed-frame materialization; "
-                "relative frame-cache paths cannot be used as lx-ai-core training inputs."
-            )
 
         payload: dict[str, Any] = {
             "sample_index": self.sample_index,
@@ -138,7 +134,16 @@ class AITrainingSample(BaseModel):
             "timestamp": self.timestamp,
             "metadata": metadata,
         }
-        payload["path"] = str(path)
+        if path is not None:
+            payload["path"] = str(path)
+        else:
+            if self.video_id is None or self.frame_number is None:
+                raise ValueError(
+                    "streamed training samples require video_id and frame_number"
+                )
+            payload["frame_stream"] = ProcessedFrameReference(
+                video_id=self.video_id, frame_number=self.frame_number
+            ).model_dump(mode="json")
         return payload
 
 
