@@ -86,7 +86,7 @@ dependencies = [
     "ffprobe>=0.5",
     "kombu>=5.6.1",
     "report-pdf-renderer>=0.1.0",
-    "lx-ai-core[torch]==0.0.3",
+    "lx-ai-core[torch]==0.0.4",
     "celery-types>=0.26.0",
     "lightning-fabric>=2.6.5",
     "lx-dtypes==0.3.0",

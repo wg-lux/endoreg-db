@@ -1146,7 +1146,7 @@ requires-dist = [
     { name = "lightning-fabric", specifier = ">=2.6.5" },
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
-    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.3" },
+    { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.6" },
     { name = "lx-dtypes", specifier = "==0.3.0" },
     { name = "moviepy", specifier = "==2.2.1" },
@@ -2024,16 +2024,16 @@ wheels = [
 
 [[package]]
 name = "lx-ai-core"
-version = "0.0.3"
+version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "twine" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/9c/70ad7d897365041d585bb60f383e6c00c326e5c1b9974e523a2d49701791/lx_ai_core-0.0.3.tar.gz", hash = "sha256:5b82324c5013527ffed2f5fef5bfefa4b9e531d1c672703cb7f15f43890ace83", size = 26549, upload-time = "2026-09-09T11:29:12.346Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/f0/92989e63904c5ecbabcd4fb2064949f25f6b101b5a8020157eb924f74b48/lx_ai_core-0.0.4.tar.gz", hash = "sha256:91351251c20893a9437effd1f8158dad26ad38241c9a599141c06667a059ebcc", size = 28390, upload-time = "2026-09-09T13:14:35.618Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/f4/5de079296a639ab1d3fa3a36b6bc8e6d9e221470792ce5c9fa838c407ae9/lx_ai_core-0.0.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:59388314655af4f9f88062e560b7120ff688dc6e67407147fa6193b8feaa6f08", size = 250802, upload-time = "2026-09-09T11:29:11.133Z" },
+    { url = "https://files.pythonhosted.org/packages/40/75/53b025c76a5a619bdfc6f96e336afb15f6fac2a440a5d6012bb5557b98c1/lx_ai_core-0.0.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0844d1634b5eab79b6a8ec3ead1aac2ebd9c8eb516527f5a91837b5cc12c486b", size = 253045, upload-time = "2026-09-09T13:14:34.19Z" },
 ]
 
 [package.optional-dependencies]
