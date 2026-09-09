@@ -1415,3 +1415,29 @@ def test_nvenc_preflight_requires_one_isolated_visible_gpu(
             ffmpeg_executable="/usr/bin/ffmpeg",
             profile=profile,
         )
+
+
+def test_nvenc_preflight_uses_supported_frame_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_command: list[str] = []
+
+    def run_preflight(
+        command: list[str], **_kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        captured_command.extend(command)
+        return subprocess.CompletedProcess(command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv(hls_encoding.CUDA_VISIBLE_DEVICES_ENV, "0")
+    monkeypatch.setattr(hls_encoding.subprocess, "run", run_preflight)
+    profile = hls_encoding.hls_encoding_profile_by_name("clinical_h264_nvenc_cq_v1")
+
+    hls_encoding.assert_hls_encoder_runtime_available(
+        ffmpeg_executable="/usr/bin/ffmpeg",
+        profile=profile,
+    )
+
+    assert (
+        captured_command[captured_command.index("-i") + 1]
+        == "color=c=black:s=256x256:r=1"
+    )

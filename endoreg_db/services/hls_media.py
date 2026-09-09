@@ -738,7 +738,7 @@ def reserve_hls_materialization_dispatch(
             and ready.source_file_name == source_file_name
             and ready.source_content_hash == source_content_hash
             and ready.source_generation_id == source_generation_id
-            and ready.encoding_profile_name == encoding_profile.name.value
+            and _has_supported_encoding_profile(ready)
             and _ready_artifact_paths_exist(ready)
         )
         active_status = str(active.status) if active is not None else ""
@@ -988,7 +988,7 @@ def _prepare_artifact_record(
             and ready.source_file_name == source_file_name
             and ready.source_generation_id == source_generation_id
             and ready.source_content_hash == source_content_hash
-            and ready.encoding_profile_name == requested_encoding_profile_name
+            and _has_supported_encoding_profile(ready)
         ):
             return _PreparedArtifact(
                 artifact_id=int(ready.pk),
@@ -1065,11 +1065,6 @@ def _prepare_artifact_record(
                 artifact_kind=artifact_kind.value,
                 encoding_profile_name=requested_encoding_profile_name,
             )
-        elif claim_queued and artifact.status == VideoHlsArtifact.Status.QUEUED.value:
-            # A synchronous importer cannot wait for a task queued behind itself.
-            # The locked row and fresh key fence the superseded queued delivery;
-            # a MATERIALIZING owner always returns above and is never displaced.
-            artifact.encoding_profile_name = requested_encoding_profile_name
         selected_encoding_profile_name = str(artifact.encoding_profile_name)
         hls_encoding_profile_by_name(selected_encoding_profile_name)
         artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
@@ -2046,7 +2041,6 @@ def _existing_ready_result(
     *,
     video_id: int,
     artifact_kind: VideoArtifactKind,
-    encoding_profile_name: str,
 ) -> HlsMaterializationResult | None:
     artifact = (
         VideoHlsArtifact.objects.filter(
@@ -2068,7 +2062,7 @@ def _existing_ready_result(
         return None
     if artifact.source_generation_id != timeline_validation.source_generation_id:
         return None
-    if artifact.encoding_profile_name != encoding_profile_name:
+    if not _has_supported_encoding_profile(artifact):
         return None
     if not _ready_artifact_paths_exist(artifact):
         _mark_artifact_failed(
@@ -2267,7 +2261,6 @@ def materialize_video_hls(
         existing = _existing_ready_result(
             video_id=video_id,
             artifact_kind=parsed_kind,
-            encoding_profile_name=requested_encoding_profile.name.value,
         )
         if existing is not None:
             return existing
@@ -2298,7 +2291,6 @@ def materialize_video_hls(
             reserved.source_file_name != source_file_name
             or reserved.source_generation_id != timeline_validation.source_generation_id
             or reserved.source_content_hash != source_content_hash
-            or reserved.encoding_profile_name != requested_encoding_profile.name.value
         ):
             _mark_artifact_failed(
                 artifact_id=int(reserved.pk),
@@ -2311,6 +2303,11 @@ def materialize_video_hls(
             raise VideoStorageNormalizationError(
                 "HLS reserved source identity changed before claim"
             )
+
+        # Retain the reserved contract and recheck it under the row lock.
+        requested_encoding_profile = hls_encoding_profile_by_name(
+            reserved.encoding_profile_name
+        )
 
     cek = os.urandom(HLS_CONTENT_KEY_BYTES)
     key_id = expected_reservation_key_id or uuid4()
@@ -2532,6 +2529,15 @@ def get_ready_hls_artifact_by_key(
     return artifact
 
 
+def _has_supported_encoding_profile(artifact: VideoHlsArtifact) -> bool:
+    """Validate persisted provenance without applying today's encoder default."""
+    try:
+        hls_encoding_profile_by_name(artifact.encoding_profile_name)
+    except ValueError:
+        return False
+    return True
+
+
 def _ready_artifact_matches_current_source(
     *,
     video: VideoFile,
@@ -2550,8 +2556,7 @@ def _ready_artifact_matches_current_source(
             and artifact.source_content_hash == expected_hash
             and artifact.source_file_name == source.source_file_name
             and artifact.source_generation_id == timeline.source_generation_id
-            and artifact.encoding_profile_name
-            == configured_hls_encoding_profile().name.value
+            and _has_supported_encoding_profile(artifact)
         )
     except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
         return False

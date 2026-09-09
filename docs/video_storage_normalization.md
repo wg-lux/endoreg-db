@@ -161,10 +161,14 @@ logical GPU zero and performs a one-frame encoder preflight before staging any
 HLS publication. Missing or inaccessible NVENC support fails closed; it never
 falls back to CPU.
 
-The selected encoder-profile name is persisted on the HLS artifact. Changing
-the declarative profile rematerializes only HLS and leaves the canonical master
-unchanged. Existing queued work retains its persisted profile during a rolling
-deployment; a later reservation creates the newly selected HLS generation.
+The selected encoder-profile name is persisted on the HLS artifact. The
+declarative profile is the default for new attempts, not a playback readiness
+condition. Existing queued work and redelivery retain the persisted supported
+profile during a rolling deployment, including synchronous claims of queued
+work. Valid READY artifacts remain playable and are reused across default
+changes. An explicit forced reservation selects the new default for a new HLS
+attempt without changing the canonical master. Unknown profiles fail closed;
+source hash, generation, attempt key, and publication checks remain mandatory.
 
 ## Transcoding Steps and Idempotency
 

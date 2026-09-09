@@ -12,6 +12,7 @@ from endoreg_db.services.video_storage.contracts import (
 )
 
 CUDA_VISIBLE_DEVICES_ENV = "CUDA_VISIBLE_DEVICES"
+NVENC_PREFLIGHT_FRAME_SIZE = 256
 _CUDA_DEVICE_SELECTOR_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
@@ -153,7 +154,10 @@ def assert_hls_encoder_runtime_available(
         "-f",
         "lavfi",
         "-i",
-        "color=c=black:s=64x64:r=1",
+        (
+            "color=c=black:"
+            f"s={NVENC_PREFLIGHT_FRAME_SIZE}x{NVENC_PREFLIGHT_FRAME_SIZE}:r=1"
+        ),
         "-frames:v",
         "1",
         *profile.ffmpeg_encoder_args(cpu_threads=1),
@@ -187,6 +191,7 @@ __all__ = [
     "HlsEncoderBackend",
     "HlsEncodingProfile",
     "HlsEncodingProfileName",
+    "NVENC_PREFLIGHT_FRAME_SIZE",
     "assert_hls_encoder_runtime_available",
     "configured_hls_encoding_profile",
     "hls_encoding_profile_by_name",

@@ -913,22 +913,20 @@ definition_of_done:
         tests/views/video/test_hls_stream.py tests/management/commands/test_materialize_video_hls.py tests/import_files/test_video_import_normalization.py
         tests/import_files/test_video_finalize_success.py -q: 110 passed, 2 warnings; vollständiger Pyright:
         0 errors, 0 warnings; Ruff, git diff --check und Tracker-Validierung bestanden.'
-    note: 'Current key/segment admission checks source/profile/generation/key and protected roots without
-      an O(segment-count) sibling scan; playlist/publication/reconciliation retain full-set checks. Missing
-      requested segment, invalid roots, stale identity and foreign-video keys fail closed. Blank legacy
-      identity rejects before hashing. Focused Pyright 0 errors; full playback view lane 24 passed with
-      video/expensive switches enabled. Source-generation concurrency/full-corpus and live-load acceptance
-      remain separate unverified gates.
-
-      2026-09-08: Ein begrenzter prozesslokaler Cache bindet vollständig geprüfte Klartext-SHA-256-Digests
-      an die verschlüsselte Storage-Instanz sowie Geräte-ID, Inode, Größe, Modus und Nanosekunden-Zeitstempel.
-      Quelle wird vor/nach Lookup und Hashing geprüft; Fork verwirft Cache und Sperren. Playback vertraut
-      nicht mehr allein auf persistierte Video-Hashes. Die Layout-Cache-Identität enthält zusätzlich Geräte-ID,
-      Inode und Änderungszeit. Reale verschlüsselte Dateien belegen Wiederverwendung, Konkurrenz, Ersetzung/In-place-Schreiben
-      mit restaurierter mtime, Mutation während Hashing, fehlende Dateien, Schlüsselisolation und Eviction.
-      Keine persistente oder prozessübergreifende Hashwiederverwendung; Produktionsmessung bleibt offen.'
-    assessed_by: codex-processed-priority-20260908
-    assessed_at: '2026-09-08T11:54:01.954232Z'
+    - kind: test
+      reference: '2026-09-09 full pyright: 0 errors/0 warnings; Ruff passed; devenv shell RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false pytest tests/services/test_hls_profile_transition.py tests/services/test_hls_media.py
+        -q: 51 passed, 2 warnings in 54.22s'
+    - kind: code
+      reference: endoreg_db/services/hls_media.py; tests/services/test_hls_profile_transition.py
+    - kind: document
+      reference: docs/video_storage_normalization.md encoder profile default and explicit rebuild contract
+    note: User explicitly chose retain valid HLS and use NVENC for new builds. Default changes do not
+      invalidate supported READY profiles or rewrite queued attempt encoder identities. Legacy blank source
+      hashes remain rejected; gc10 migration0074 applied 2026-09-02T16:54:24Z, 24 processed READY rows
+      still lack hashes. Local verification only; no deployment approval.
+    assessed_by: codex-gc10-hls-20260909
+    assessed_at: '2026-09-09T07:55:20.174001Z'
 - id: hls_callers_require_terminal_readiness
   category: functionality
   title: WP-ER-03 Import and correction callers enforce typed HLS outcomes
