@@ -43,6 +43,7 @@ from .executable_discovery import (
     _resolve_ffprobe_executable,
     check_ffmpeg_availability,
     is_ffmpeg_available,
+    get_ffmpeg_env_candidates,
 )
 from .frame_extraction import (
     assemble_video_from_frames,
