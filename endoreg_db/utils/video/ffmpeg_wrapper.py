@@ -24,8 +24,7 @@ module working for existing callers.
 """
 
 
-import logging
-
+logger = logging.getLogger(__name__)
 from .command_construction import (
     TimestampRepairMode,
     _TIMESTAMP_REPAIR_SEQUENCE,
