@@ -17,6 +17,7 @@ from endoreg_db.models import (
     Center,
     Frame,
     ImageClassificationAnnotation,
+    InformationSource,
     Label,
     LabelVideoSegment,
     VideoFile,
@@ -451,6 +452,9 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
     )
     label = Label.objects.create(name=f"training-label-{uuid.uuid4().hex[:8]}")
     annotation = ImageClassificationAnnotation.objects.create(
+        information_source=InformationSource.objects.get_or_create(
+            name="manual_annotation"
+        )[0],
         frame=frame,
         label=label,
         value=True,
@@ -531,6 +535,9 @@ def test_failed_training_frame_extraction_does_not_publish_database_state(
     )
     label = Label.objects.create(name=f"atomic-label-{uuid.uuid4().hex[:8]}")
     annotation = ImageClassificationAnnotation.objects.create(
+        information_source=InformationSource.objects.get_or_create(
+            name="manual_annotation"
+        )[0],
         frame=frame,
         label=label,
         value=True,
@@ -588,6 +595,9 @@ def test_prepare_model_training_inputs_rejects_unready_processed_video(
     )
     label = Label.objects.create(name=f"training-unready-label-{uuid.uuid4().hex[:8]}")
     annotation = ImageClassificationAnnotation.objects.create(
+        information_source=InformationSource.objects.get_or_create(
+            name="manual_annotation"
+        )[0],
         frame=frame,
         label=label,
         value=True,
@@ -635,6 +645,7 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
     )
     label = Label.objects.create(name=f"training-segment-label-{uuid.uuid4().hex[:8]}")
     segment = LabelVideoSegment.objects.create(
+        source=InformationSource.objects.get_or_create(name="manual_annotation")[0],
         video_file=video,
         label=label,
         start_frame_number=7,
@@ -718,6 +729,7 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
         name=f"training-frame-only-label-{uuid.uuid4().hex[:8]}"
     )
     segment = LabelVideoSegment.objects.create(
+        source=InformationSource.objects.get_or_create(name="manual_annotation")[0],
         video_file=video,
         label=label,
         start_frame_number=7,
@@ -775,6 +787,9 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
         name=f"training-segment-only-label-{uuid.uuid4().hex[:8]}"
     )
     annotation = ImageClassificationAnnotation.objects.create(
+        information_source=InformationSource.objects.get_or_create(
+            name="manual_annotation"
+        )[0],
         frame=frame,
         label=label,
         value=True,
@@ -844,6 +859,7 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
             )
         )
         segment = LabelVideoSegment.objects.create(
+            source=InformationSource.objects.get_or_create(name="manual_annotation")[0],
             video_file=video,
             label=label,
             start_frame_number=frame_number,

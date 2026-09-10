@@ -230,6 +230,27 @@ class Patient(Person):
         return f"{self.first_name} {self.last_name} ({self.dob})"
 
     @classmethod
+    def get_pseudo_patient_by_hash(
+        cls,
+        patient_hash: str,
+        center: "Center | NoPatientValue" = None,
+    ) -> "Patient | None":
+        """Resolve an unambiguous pseudonymous identity without changing records."""
+        if not patient_hash or not patient_hash.strip():
+            raise ValueError("Patient hash is required for pseudonym resolution")
+        try:
+            patient = cls.objects.get(patient_hash=patient_hash)
+        except cls.DoesNotExist:
+            return None
+        except cls.MultipleObjectsReturned as exc:
+            raise ValueError("Ambiguous patient hash requires identity review") from exc
+        if patient.is_real_person:
+            raise ValueError("Patient hash resolves to a real person, not a pseudonym")
+        if center is not None and patient.center_id != center.pk:
+            raise ValueError("Patient pseudonym belongs to a different center")
+        return patient
+
+    @classmethod
     def get_or_create_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
@@ -238,10 +259,12 @@ class Patient(Person):
         birth_month: int | NoPatientValue = None,
         birth_year: int | NoPatientValue = None,
     ) -> tuple["Patient", bool]:
-        existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
+        existing_patient = cls.get_pseudo_patient_by_hash(patient_hash, center)
         if existing_patient:
-            logger.info(f"Patient with hash {patient_hash} already exists")
-            logger.info(f"Returning existing patient: {existing_patient}")
+            logger.info(
+                "Reusing pseudonymous patient",
+                extra={"patient_id": existing_patient.pk},
+            )
             return existing_patient, False
 
         creation_input = _validate_pseudo_patient_creation_input(
@@ -255,9 +278,6 @@ class Patient(Person):
             patient_hash=patient_hash,
         )
 
-        logger.info(f"Creating pseudo patient with hash {patient_hash}")
-        logger.info(f"Generated name: {profile.first_name} {profile.last_name}")
-
         patient = cls.objects.create(
             first_name=profile.first_name,
             last_name=profile.last_name,
@@ -268,7 +288,6 @@ class Patient(Person):
             is_real_person=False,
         )
 
-        cast(_PatientSaveSource, patient).save()
         return patient, True
 
     def get_dob(self) -> PatientDateValue:

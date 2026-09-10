@@ -133,15 +133,21 @@ def test_initialize_video_file_persists_timeline_after_frame_rows_exist(
 
 
 @override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="quality")
+@pytest.mark.parametrize("has_segments", [False, True])
 def test_reimport_normalization_passes_pts_segment_boundaries(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    has_segments: bool,
 ) -> None:
     video = _video_with_pts()
-    segment = LabelVideoSegment.objects.create(
-        video_file=video,
-        start_frame_number=1,
-        end_frame_number=4,
+    segment = (
+        LabelVideoSegment.objects.create(
+            video_file=video,
+            start_frame_number=1,
+            end_frame_number=4,
+        )
+        if has_segments
+        else None
     )
     raw_path = tmp_path / "raw.mp4"
     anonymized_path = tmp_path / "anonymized.mp4"
@@ -156,8 +162,11 @@ def test_reimport_normalization_passes_pts_segment_boundaries(
     context.validated_raw_source_path = raw_path
     context.anonymized_path = anonymized_path
     captured: dict[str, object] = {}
+    probed_paths: list[Path] = []
+    evidence = _normalization_evidence()
 
     def fake_probe_video_artifact(_path: Path) -> VideoArtifactProbe:
+        probed_paths.append(_path)
         return _probe()
 
     monkeypatch.setattr(
@@ -170,7 +179,7 @@ def test_reimport_normalization_passes_pts_segment_boundaries(
         **kwargs: object,
     ) -> VideoStorageNormalizationEvidence:
         captured.update(kwargs)
-        return _normalization_evidence()
+        return evidence
 
     monkeypatch.setattr(
         import_service,
@@ -184,6 +193,11 @@ def test_reimport_normalization_passes_pts_segment_boundaries(
     assert captured["input_path"] == anonymized_path
     assert captured["reference_path"] == raw_path
     assert captured["quality_mode"] == "quality"
+    assert probed_paths == ([raw_path] if has_segments else [])
+    assert context.storage_normalization_evidence == evidence
+    if segment is None:
+        assert references == []
+        return
     assert len(references) == 1
     assert references[0].segment_id == segment.pk
     assert references[0].start_timestamp_seconds == 0.04

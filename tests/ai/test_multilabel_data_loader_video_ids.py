@@ -5,6 +5,7 @@ from endoreg_db.models import (
     Center,
     Frame,
     ImageClassificationAnnotation,
+    InformationSource,
     Label,
     LabelSet,
     LabelVideoSegment,
@@ -23,6 +24,7 @@ from endoreg_db.utils.ai.model_training.trainer_gastronet_multilabel import (
 
 class ImageMultilabelDataLoaderVideoIdTests(TestCase):
     def setUp(self):
+        self.manual_source = InformationSource.objects.create(name="manual_annotation")
         center = Center.objects.create(name="video-id-backfill-center")
         self.video = VideoFile.objects.create(
             center=center,
@@ -53,6 +55,7 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
         )
         annotations = [
             ImageClassificationAnnotation.objects.create(
+                information_source=self.manual_source,
                 frame=frame,
                 label=self.label,
                 value=True,
@@ -83,6 +86,7 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
         segment = LabelVideoSegment.objects.create(
+            source=self.manual_source,
             video_file=self.video,
             label=self.label,
             start_frame_number=0,
@@ -104,6 +108,7 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
         segment = LabelVideoSegment.objects.create(
+            source=self.manual_source,
             video_file=self.video,
             label=self.label,
             start_frame_number=0,
@@ -125,12 +130,14 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
         annotation = ImageClassificationAnnotation.objects.create(
+            information_source=self.manual_source,
             frame=self.frames[0],
             label=self.label,
             value=True,
             annotator="video-id-mixed-source",
         )
         segment = LabelVideoSegment.objects.create(
+            source=self.manual_source,
             video_file=self.video,
             label=self.label,
             start_frame_number=1,
@@ -151,12 +158,14 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
         annotation = ImageClassificationAnnotation.objects.create(
+            information_source=self.manual_source,
             frame=self.frames[0],
             label=self.label,
             value=True,
             annotator="video-id-frame-source",
         )
         segment = LabelVideoSegment.objects.create(
+            source=self.manual_source,
             video_file=self.video,
             label=self.label,
             start_frame_number=1,
@@ -181,12 +190,14 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
             ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
         )
         annotation = ImageClassificationAnnotation.objects.create(
+            information_source=self.manual_source,
             frame=self.frames[0],
             label=self.label,
             value=True,
             annotator="video-id-segment-source",
         )
         segment = LabelVideoSegment.objects.create(
+            source=self.manual_source,
             video_file=self.video,
             label=self.label,
             start_frame_number=1,

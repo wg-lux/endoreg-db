@@ -198,6 +198,30 @@ and structured JSON logging.
 
 ## `lx-anonymizer` Invocation Rules
 
+Video import explicitly constructs `FrameCleaner(quality_profile="exhaustive")`
+inside the existing `VideoAnonymizer` adapter. Deploy this caller with the
+matching lx-anonymizer package; older packages that lack this profile must fail
+rather than silently use sampled analysis. The profile decodes every source
+frame and applies full-frame RapidOCR, with no sampling cap or metadata-driven
+early stopping. It preserves the source timeline and the existing masking,
+storage-validation, and publication paths.
+
+Compute-side optimizations reuse OCR only for pixel-identical consecutive
+frames and cache repeated text within the current invocation. Optional
+language-model candidate retention is bounded after metadata accumulation.
+Frame-observation capacity exhaustion and incomplete decoding raise errors.
+The default limits are 128 retained text candidates and 100,000 frame
+observations; explicitly sized compute profiles may change these budgets.
+The compute profile defaults to two ONNX Runtime intra-operator threads and
+one inter-operator thread per inference session, configurable through its
+`ocr_inference_threads` field.
+The independent PHI-region proposal detector remains sampled under
+`max_frames_to_sample`; it does not gate the exhaustive OCR pass. Its sample
+budget and processed count are reported separately in `frame_analysis`.
+Admission and worker concurrency remain endoreg-db responsibilities. Clinical
+OCR recall and throughput must be measured on representative source videos;
+exhaustive metadata analysis does not certify the masking result.
+
 One invocation processes exactly one immutable source generation and produces
 exactly one unpublished candidate plus typed metadata.
 

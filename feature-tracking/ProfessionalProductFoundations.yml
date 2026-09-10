@@ -520,6 +520,11 @@ definition_of_done:
   category: testing
   title: Active learning preserves reviewed provenance and validated media boundaries
   acceptance:
+  - Trainingsbuilder und Trainingsmanifest verwenden dieselbe Auswahl manuell erstellter Frame-Annotationen
+    sowie manueller oder einzeln bestaetigter Segmente innerhalb des gewaehlten AIDataSet. Unbestaetigte
+    Vorhersagen und unbekannte Quellen werden ausgeschlossen; Segmentlabels werden ausschliesslich im
+    Speicher auf bestehende Frames im halboffenen Intervall abgebildet. Quellenumfang, Konfliktabbruch,
+    unbekannte Labels und getrennte Segmentprovenienz sind getestet.
   - Candidate input has finite numerical values, aligned arrays, unique identities and authoritative presentation
     timestamps; results are bound to supplied candidates, requested configuration, budget and temporal
     spacing.
@@ -566,14 +571,27 @@ definition_of_done:
         oder klinischer Abnahmelauf. Warnungen pytest Assertion-Rewrite und spaCy/Click-Deprecation. devenv
         tasks run agent:smoke exit 0 (46.0s); Ruff alle geaenderten Pythondateien exit 0; check_dead_code.py:
         34 reviewed findings, keine neuen/veralteten/abgelaufenen Eintraege.'
-    note: Expliziter Managementbefehl select_active_learning_candidates erstellt streng gepruefte pending_human_review-Auswahl
-      mit Datensatz-, Modell-, Label- und Framebindung atomar und ohne Ueberschreiben im geschuetzten
-      Speicher. Keine Labelmutation, Trainingsausfuehrung oder Modellpromotion. Interner Trainingsleser
-      verlangt echte Frameidentitaeten und freigegebene verarbeitete Medien in allen Betriebsrollen; Split-/Labelgrenzen
-      und Auswahlergebnisse werden geprueft. Pfadmanifest-API gibt bewusst errors.manifest HTTP 400 zurueck,
-      bis geschuetzte verarbeitete Einzelbilder materialisiert werden; Rohcacheexport gesperrt. Separater
-      gespeicherter Trainer-Artefaktmanifestpfad nutzt weiterhin data.image_paths und bleibt unfreigegeben.
-      Vollstaendige menschliche Korrektur zu versioniertem Trainingssatz, patientengetrennte Evaluation,
-      Promotion, reale Modelllaeufe und Betriebsabnahme fehlen.
-    assessed_by: codex-professional-foundations-20260909
-    assessed_at: '2026-09-09T11:06:19.633270Z'
+    - kind: test
+      reference: '2026-09-10: Vollstaendige .devenv/state/venv/bin/pyright: 0 errors, 1 bestehende MissingTypeStubs-Warnung
+        fuer lx_anonymizer.anonymization.detector_video_masking. Danach TEST_DB_ENGINE=django.db.backends.sqlite3
+        SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true .devenv/state/venv/bin/pytest
+        tests/services/test_aidataset_training_selection.py tests/ai/test_aidataset_training_manifest.py
+        tests/ai/test_multilabel_data_loader_video_ids.py tests/services/test_model_training_jobs.py tests/views/misc/test_application_settings_endpoints.py
+        tests/views/test_central_hub_training_access.py tests/ai/test_training_media_boundary.py tests/ai/test_training_split_validation.py
+        tests/ai/test_trainer_multilabel_unit.py tests/ai/test_segmentation_retraining_lx_ai_core.py tests/services/test_aidataset_frame_buckets_unit.py
+        -q --tb=short: 203 passed, 16 subtests passed, 2 warnings, 55.32s. Frueherer Mehrfachquelltyp-Fehler
+        durch getrennte Quellenausschluss-Unterabfrage behoben und erneut geprueft. Ruff check/format
+        fuer 11 geaenderte Pythondateien bestanden. scripts/check_django_startup_imports.py: startup-smoke
+        ok, 7 root URL patterns. git diff --check bestanden.'
+    - kind: document
+      reference: docs/annotation_training_selection.yml
+    note: Gemeinsame Quellenfreigabe manual_or_confirmed_v1 fuer Trainingsbuilder, Trainingsframe-Vorbereitung
+      und HTTP-Manifest umgesetzt. Direkte manuelle Annotationen sowie manuelle oder einzeln bestaetigte
+      Segmente bleiben innerhalb des ausgewaehlten AIDataSet. Unbestaetigte und mehrdeutig klassifizierte
+      Vorhersagen sind ausgeschlossen; automatisch segmentabgeleitete Frame-Zeilen ersetzen keine Segmentfreigabe.
+      Manifest unterstuetzt all/frame_only/segment_only, getrennte Segmentprovenienz, unbekannte Labelmasken
+      und Konfliktabbruch. Klinische Medienfreigaben und geschuetzte lx-ai-core-Streams bleiben erhalten.
+      Kein Deployment, kein PostgreSQL-Konkurrenzlauf und keine klinische Trainingsabnahme; weitergehende
+      Review-, Evaluations- und Promotionskriterien bleiben offen.
+    assessed_by: codex-lx-ai-annotations-20260910
+    assessed_at: '2026-09-10T13:21:54.359109Z'

@@ -43,3 +43,22 @@
         "water_jet",
         "wound",
       ]
+
+- model:
+  fields:
+    name: "multilabel_classification_colonoscopy_subset"
+    version: 1
+    labels:
+      [
+        "clip",
+        "snare",
+        "grasper",
+        "needle",
+        "digital",
+        "chromo",
+        "nbi",
+        "outside",
+        "water_jet",
+        "skin",
+        "ileum"
+      ]

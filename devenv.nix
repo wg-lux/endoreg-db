@@ -33,25 +33,27 @@ let
     onetbb
     numbaSupport
   ];
-  runtimePackages = with pkgs; [
+  runtimeLibraries = with pkgs; [
     stdenv.cc.cc
     clang
-    ffmpeg-headless.bin
-    jq
-    ripgrep
-    tesseract
-    uvPackage
-    libglvnd # Add libglvnd for libGL.so.1
+    libglvnd
     glib
-    zlib
-    ollama.out
-    tesseract
-    # --- ADDED THESE FOR OPENCV 4.13+ SUPPORT ---
     libxcb      # Provides libxcb.so.1
     libx11      # Common dependency for XCB
     libxext     # Common dependency for OpenCV
     libxrender  # Common dependency for OpenCV
-    libxkbcommon     # Often required by newer Qt/OpenCV builds
+    libxkbcommon     # Often required by newer Qt/OpenCV builds    
+
+  ];
+  runtimePackages = with pkgs; [
+    ffmpeg-headless.bin
+    zlib
+    jq
+    ripgrep
+    tesseract
+    uvPackage
+    ollama.out
+    tesseract
     # ------------------------------------------
     cargo
     rustc
@@ -64,6 +66,7 @@ let
     python312Packages.pyprof2calltree
 
   ];
+
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
@@ -97,25 +100,39 @@ in
   dotenv.enable = true;
   dotenv.disableHint = true;
 
-  packages = runtimePackages ++ buildInputs;
+  packages = runtimePackages ++ runtimeLibraries ++ buildInputs;
 
   env = {
-    # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
-    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages ++ [ pkgs.stdenv.cc.cc.lib ]) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    LD_LIBRARY_PATH =
+      lib.makeLibraryPath (
+        buildInputs
+        ++ runtimePackages
+        ++ [ pkgs.stdenv.cc.cc.lib ]
+      )
+      + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+
     PYO3_PYTHON = "${python}/bin/python";
+
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";
+
+    # Critical: uv and devenv use the same environment.
+    UV_PROJECT_ENVIRONMENT = "${config.devenv.state}/venv";
   };
 
   languages.python = {
     enable = true;
     version = "3.12";
+
+    venv.enable = true;
+
     uv = {
       enable = true;
       package = uvPackage;
       sync.enable = false;
     };
   };
+
 
   languages.rust.enable = true;
 
@@ -436,9 +453,6 @@ in
   };
 
   enterShell = ''
-
-    # Add the uv virtual environment directly to your PATH
-    export PATH="$PWD/.devenv/state/venv/bin:$PATH"
     
   '';
 

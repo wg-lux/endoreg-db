@@ -940,10 +940,14 @@ class TestRemainingDependencyBoundaries:
 
 
 class TestNormalizationExecution:
-    @pytest.mark.parametrize("persisted_video", [False, True])
+    @pytest.mark.parametrize(
+        ("persisted_video", "has_segments"),
+        [(False, False), (True, False), (True, True)],
+    )
     def test_normalizes_against_the_validated_source_timeline(
         self,
         persisted_video: bool,
+        has_segments: bool,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
@@ -956,6 +960,12 @@ class TestNormalizationExecution:
             id=7 if persisted_video else None,
             video_hash="video",
         )
+        if persisted_video:
+            monkeypatch.setattr(
+                type(video.label_video_segments),
+                "exists",
+                lambda _manager: has_segments,
+            )
         ctx = _context(
             tmp_path / "input.mp4",
             anonymized_path=output_path,
@@ -963,7 +973,7 @@ class TestNormalizationExecution:
         )
         ctx.current_video = video
         timeline = object()
-        segments = [object()] if persisted_video else []
+        segments = [object()] if has_segments else []
         evidence = VideoStorageNormalizationEvidence.model_construct(
             profile_name="clinical_h264_bounded_v1"
         )
@@ -988,7 +998,7 @@ class TestNormalizationExecution:
             quality_mode="balanced",
             segments=segments,
         )
-        if persisted_video:
+        if has_segments:
             probe.assert_called_once_with(reference_path)
             segment_references.assert_called_once_with(video, timeline=timeline)
         else:

@@ -25,6 +25,40 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: pseudonym_identity_resolution
+  category: data_integrity
+  title: Import pseudonym resolution rejects ambiguous or conflicting identities
+  acceptance:
+  - Empty hashes, duplicate matches, real-person matches and conflicting supplied centers fail before
+    patient reuse.
+  - Report name resolution uses the same identity checks as patient reuse and preserves established pseudonymous
+    profiles.
+  - Unknown lookup does not create patients; existing hash-only callers remain supported.
+  - Concurrent creation prevention remains a separate unresolved requirement; no uniqueness migration
+    or legacy merge is included.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused patient and report import contract tests and Pyright; review application
+      integration with the backend source.
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '2026-09-10: TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        --ds=endoreg_db.config.settings.test tests/administration/person/test_pseudonym_resolution.py
+        tests/administration/person/test_patient.py tests/import_files/test_report_anonymization_contract.py
+        tests/media/report/test_sensitive_meta_logic.py tests/services/test_report_import_service_unit.py
+        -q --tb=short: 91 passed, 15 skipped, 1 plugin warning in 51.20s.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 1 unrelated missing-stub warning; focused Pyright: 0 errors,
+        0 warnings. Ruff check/format and git diff --check passed.'
+    note: Guarded lookup is shared by report naming and patient reuse. No existing records merged or modified.
+      Initial pytest startup failed because configured PostgreSQL driver was missing; SQLite checks passed.
+      Concurrent creation prevention, PostgreSQL verification and packaged rollout remain unresolved.
+    assessed_by: codex-pseudonym-reliability-20260910
+    assessed_at: '2026-09-10T08:05:37.475282Z'
 - id: source_identity_deduplication_and_legacy_reconciliation
   category: data_integrity
   title: Preserve source identity and human annotations when reconciling duplicate video imports

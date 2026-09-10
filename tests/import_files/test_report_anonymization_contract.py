@@ -22,6 +22,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     persist_sensitive_meta_candidate,
 )
 from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
@@ -493,3 +494,37 @@ def test_report_pseudonym_resolver_reuses_existing_patient_name(
     stored_meta.pseudo_patient.last_name = "Established"
     stored_meta.pseudo_patient.save(update_fields=["first_name", "last_name"])
     assert resolver(candidate) == ("Legacy", "Established")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("conflict", ["duplicate", "real_person", "center"])
+def test_report_pseudonym_resolver_rejects_identity_conflicts(
+    base_db_data: bool,
+    conflict: str,
+) -> None:
+    report = _create_report_for_tests()
+    candidate = LxSensitiveMeta.model_validate(
+        {
+            "first_name": "Max",
+            "last_name": "Muster",
+            "dob": "1980-02-03",
+            "gender": "male",
+        }
+    )
+    stored_meta = persist_sensitive_meta_candidate(instance=report, candidate=candidate)
+    patient = stored_meta.pseudo_patient
+    assert patient is not None
+    if conflict == "duplicate":
+        Patient.objects.create(patient_hash=patient.patient_hash, is_real_person=False)
+        message = "Ambiguous"
+    elif conflict == "real_person":
+        patient.is_real_person = True
+        patient.save(update_fields=["is_real_person"])
+        message = "real person"
+    else:
+        patient.center = Center.objects.create(name="conflicting-report-center")
+        patient.save(update_fields=["center"])
+        message = "different center"
+    resolver = ReportAnonymizer._patient_pseudonym_resolver(report)  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(ValueError, match=message):
+        resolver(candidate)

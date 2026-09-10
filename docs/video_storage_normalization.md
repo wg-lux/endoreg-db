@@ -575,6 +575,27 @@ After process termination, first inspect free capacity, remaining staging
 artifacts, and database/filesystem references. Only then run a read-only
 inventory followed by a small resume batch.
 
+### Retiring replaced processed generations
+
+Import finalization records the previous generated processed master by storage
+name and plaintext SHA-256 digest before replacing its HTTP Live Streaming (HLS)
+generation. Its old processed HLS remains available until the successful import
+transaction commits. A post-commit callback then verifies the current master,
+normalization evidence and matching ready HLS under the video row lock shared
+with media-operation leases. Active leases and other database references defer
+deletion. Only owned generated master paths and their superseded processed HLS
+directories are eligible; raw media and unknown legacy paths are preserved.
+
+The typed `VideoFile.meta.processed_generation_cleanup` receipt remains until
+filesystem deletion succeeds. Failures do not undo successful publication.
+Retry a deferred receipt with `manage.py reap_processed_video_generations
+--video-id <id>` for a dry-run, then add `--apply` to delete eligible artifacts.
+An interrupted deletion is idempotent even if some old files are already absent.
+This command does not discover historical files without receipts. Scope and
+verification evidence belong to
+[`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml),
+criterion `derived_artifact_lifecycle`.
+
 ## Release Gates
 
 Destructive legacy migration remains disabled until all of the following

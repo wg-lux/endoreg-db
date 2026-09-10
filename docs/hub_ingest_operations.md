@@ -153,13 +153,32 @@ The acknowledgment includes the expected hash of the anonymized processed medium
 
 ## Cleanup and Quarantine
 
-* Upload sources are removed only when `cleanup_status=eligible`.
+* Upload sources require explicit cleanup eligibility, including the verified repeated-import rule below; interrupted `deleting` receipts can resume.
 * `preserve_source` is respected; `delete_after_success` becomes cleanup-eligible only after verified media integrity.
 * Outbound processed media are retained by default. A policy of `eligible_after_verified_apply` merely signals local release after confirmed `applied`; it does not un-controlledly delete the sole copy.
 * Hub transfer cleanup remains explicitly traceable as operator intent or `not_requested`.
 * Quarantine deletion requires a documented review decision, explicit approval, and a separate reap step.
 
 ### UploadJob Source Reaper
+
+Terminal `error` jobs are also considered when a newer `anonymized` job proves
+a successful repeat import: the nonempty content hash, known source center,
+content type, source system, ingest mode, storage class, and storage tier must
+match. The failed job must use `delete_after_success`; `pending`, `eligible`,
+and resumable `deleting` cleanup states are supported. The replacement's
+`source_file_delete_eligible_at` must be present and due, and any later explicit
+due date on the failed job still applies. Both jobs must have no pending retry
+or active processing lease. Apply locks both records and rechecks the evidence
+before deletion, including the existing target integrity and video playback gates.
+
+Only the failed job's own persisted upload path may be removed, with no other
+upload or canonical media reference to it. The error status, error details, and
+audit record remain intact. `lost` jobs, unidentified legacy paths, quarantine,
+and arbitrary temporary directories are excluded. Missing repeat evidence yields
+`successful_replacement_missing`; shared files yield `source_still_referenced`.
+The same dry-run and apply commands below cover these sources. Feature scope
+and verification are tracked in
+[`UploadJobSourceReaperSafety.yml`](../feature-tracking/UploadJobSourceReaperSafety.yml).
 
 The source reaper operates in read-only mode by default. Individual selection uses the UploadJob UUID; batch runs strictly require a positive limit. Output contains only UploadJob ID, decision code, stable block reason, media type, ingest mode, age, and byte count—omitting absolute paths, content, patient data, or content hashes.
 

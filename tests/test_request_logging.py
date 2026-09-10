@@ -118,6 +118,7 @@ def test_concurrent_requests_keep_independent_log_contexts(
         assert event["request_id"] == expected[method]
 
 
+@pytest.mark.django_db
 def test_streaming_response_remains_lazy_and_closable(
     caplog: LogCaptureFixture,
 ) -> None:

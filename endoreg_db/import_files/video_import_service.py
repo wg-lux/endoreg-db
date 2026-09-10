@@ -390,7 +390,11 @@ def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
         )
 
     segments = []
-    if isinstance(ctx.current_video, VideoFile) and ctx.current_video.pk:
+    if (
+        isinstance(ctx.current_video, VideoFile)
+        and ctx.current_video.pk
+        and ctx.current_video.label_video_segments.exists()
+    ):
         segments = segment_timeline_references(
             ctx.current_video,
             timeline=probe_video_artifact(reference_path).timeline,

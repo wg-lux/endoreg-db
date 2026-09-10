@@ -593,6 +593,9 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     output_dir = tmp_path / "anonymized"
 
     class FakeFrameCleaner:
+        def __init__(self, *, quality_profile: str) -> None:
+            assert quality_profile == "exhaustive"
+
         def clean_video(
             self,
             *,
@@ -690,6 +693,9 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     canonical_output.write_bytes(b"previous-processed-video")
 
     class FakeFrameCleaner:
+        def __init__(self, *, quality_profile: str) -> None:
+            assert quality_profile == "exhaustive"
+
         def clean_video(
             self,
             *,
@@ -786,6 +792,9 @@ def test_anonymize_video_uses_local_source_path_override(
     cleaned_paths: list[Path] = []
 
     class FakeFrameCleaner:
+        def __init__(self, *, quality_profile: str) -> None:
+            assert quality_profile == "exhaustive"
+
         def clean_video(
             self,
             *,
@@ -870,7 +879,8 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
     frame_cleaner_instances: list[object] = []
 
     class FakeFrameCleaner:
-        def __init__(self) -> None:
+        def __init__(self, *, quality_profile: str) -> None:
+            assert quality_profile == "exhaustive"
             frame_cleaner_instances.append(self)
 
         def clean_video(
@@ -937,6 +947,9 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
     observed_sensitive_rois: list[dict[str, dict[str, int | None]]] = []
 
     class FakeFrameCleaner:
+        def __init__(self, *, quality_profile: str) -> None:
+            assert quality_profile == "exhaustive"
+
         def clean_video(
             self,
             *,

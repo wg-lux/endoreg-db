@@ -26,6 +26,7 @@ from pydantic import (
     model_validator,
 )
 
+from .processed_video_cleanup import ProcessedGenerationCleanupReceipt
 from .video_storage import (
     ClinicalFrameQualityEvidence,
     VideoFpsResamplingEvidence,
@@ -292,6 +293,7 @@ class VideoFileMetaPayload(BaseModel):
     fps_normalization: VideoFpsResamplingEvidence | None = None
     source_timeline: VideoSourceTimelineEvidence | None = None
     clinical_frame_quality: ClinicalFrameQualityEvidence | None = None
+    processed_generation_cleanup: list[ProcessedGenerationCleanupReceipt] | None = None
 
     @model_validator(mode="before")
     @classmethod

@@ -101,6 +101,256 @@ def _target_video(upload_job: UploadJob) -> VideoFile:
     )
 
 
+def _stored_name(job: UploadJob) -> str:
+    name = job.file.name
+    assert isinstance(name, str) and name
+    return name
+
+
+def _repeated_report_jobs() -> tuple[UploadJob, UploadJob]:
+    center = Center.objects.create(name="repeated-cleanup", display_name="Cleanup")
+    failed = _eligible_report_job(
+        source_center=center,
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        error_detail="Preserved failure evidence",
+        cleanup_status=UploadJob.CleanupStatus.PENDING,
+        source_file_delete_eligible_at=None,
+    )
+    replacement = _eligible_report_job(source_center=center)
+    return failed, replacement
+
+
+@pytest.mark.django_db
+def test_repeated_failed_import_is_selected_and_cleaned_idempotently() -> None:
+    failed, replacement = _repeated_report_jobs()
+    source_name = _stored_name(failed)
+    preview = run_upload_job_source_reaper(apply=False, limit=1)
+    assert preview.items[0].upload_job_id == failed.pk
+    assert preview.items[0].decision == UploadSourceCleanupDecision.DELETE
+    assert failed.file.storage.exists(source_name)
+    result = run_upload_job_source_reaper(apply=True, limit=1)
+    assert result.cleaned == 1
+    assert result.freed_bytes > 0
+    failed.refresh_from_db()
+    replacement.refresh_from_db()
+    assert failed.status == UploadJob.Status.ERROR
+    assert failed.error_detail == "Preserved failure evidence"
+    assert failed.cleanup_status == UploadJob.CleanupStatus.COMPLETED
+    assert not failed.file.storage.exists(source_name)
+    assert replacement.file.storage.exists(_stored_name(replacement))
+    assert not apply_upload_job_source_cleanup(failed.pk).applied
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "older",
+        "hash",
+        "center",
+        "content_type",
+        "source_system",
+        "ingest_mode",
+        "storage_class",
+        "storage_tier",
+        "processing",
+        "error",
+    ],
+)
+def test_failed_import_requires_matching_successful_repeat(change: str) -> None:
+    failed, replacement = _repeated_report_jobs()
+    updates: dict[str, object] = {}
+    if change == "missing":
+        replacement.delete()
+    elif change == "older":
+        updates["created_at"] = failed.created_at - timedelta(seconds=1)
+    elif change == "hash":
+        updates["content_hash"] = "a" * 64
+    elif change == "center":
+        updates["source_center"] = Center.objects.create(name="different-cleanup")
+    elif change in {"processing", "error"}:
+        updates["status"] = change
+        updates["error_code"] = UploadJob.ErrorCode.PROCESSING_FAILED
+    else:
+        updates[change] = "different"
+    if updates:
+        UploadJob.objects.filter(pk=replacement.pk).update(**updates)
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.blocker == UploadSourceCleanupBlocker.SUCCESSFUL_REPLACEMENT_MISSING
+    assert failed.file.storage.exists(_stored_name(failed))
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "case,expected",
+    [
+        ("preserve", UploadSourceCleanupBlocker.RETENTION_POLICY_BLOCKS),
+        ("future_source", UploadSourceCleanupBlocker.NOT_DUE),
+        ("future_replacement", UploadSourceCleanupBlocker.NOT_DUE),
+        ("missing_due", UploadSourceCleanupBlocker.NOT_DUE),
+        ("source_lease", UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE),
+        ("replacement_lease", UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE),
+        ("shared", UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED),
+        ("lost", UploadSourceCleanupBlocker.STATUS_NOT_SUCCESSFUL),
+        ("integrity", UploadSourceCleanupBlocker.TARGET_INTEGRITY_FAILED),
+    ],
+)
+def test_failed_repeat_preserves_blocked_source(
+    case: str,
+    expected: UploadSourceCleanupBlocker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed, replacement = _repeated_report_jobs()
+    target = (
+        replacement
+        if case
+        in {
+            "future_replacement",
+            "missing_due",
+            "replacement_lease",
+            "shared",
+        }
+        else failed
+    )
+    updates: dict[str, object] = {}
+    if case == "preserve":
+        updates["retention_policy"] = UploadJob.RetentionPolicy.PRESERVE_SOURCE
+    elif case.startswith("future"):
+        updates["source_file_delete_eligible_at"] = timezone.now() + timedelta(days=1)
+    elif case == "missing_due":
+        updates["source_file_delete_eligible_at"] = None
+    elif case.endswith("lease"):
+        updates.update(
+            processing_lease_owner="worker",
+            processing_lease_expires_at=timezone.now() + timedelta(hours=1),
+            processing_heartbeat_at=timezone.now(),
+        )
+    elif case == "shared":
+        updates["file"] = failed.file.name
+    elif case == "lost":
+        updates["status"] = UploadJob.Status.LOST
+    elif case == "integrity":
+
+        def invalid_target(_job: UploadJob) -> UploadSourceCleanupBlocker:
+            return UploadSourceCleanupBlocker.TARGET_INTEGRITY_FAILED
+
+        monkeypatch.setattr(
+            cleanup_service,
+            "_report_target_blocker",
+            invalid_target,
+        )
+    if updates:
+        UploadJob.objects.filter(pk=target.pk).update(**updates)
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.blocker == expected
+    assert failed.file.storage.exists(_stored_name(failed))
+
+
+@pytest.mark.django_db
+def test_replacement_failure_after_authorization_prevents_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    failed, replacement = _repeated_report_jobs()
+    original_save = UploadJob.save
+
+    def invalidate_replacement(
+        self: UploadJob,
+        *args: object,
+        **kwargs: Unpack[DjangoModelSaveKwargs],
+    ) -> None:
+        original_save(self, *args, **kwargs)
+        if (
+            self.pk == failed.pk
+            and self.cleanup_status == UploadJob.CleanupStatus.DELETING
+        ):
+            replacement.mark_error("Replacement no longer valid")
+
+    monkeypatch.setattr(UploadJob, "save", invalidate_replacement)
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.blocker == UploadSourceCleanupBlocker.SUCCESSFUL_REPLACEMENT_MISSING
+    failed.refresh_from_db()
+    assert failed.cleanup_status == UploadJob.CleanupStatus.DELETING
+    assert failed.file.storage.exists(_stored_name(failed))
+
+
+@pytest.mark.django_db
+def test_failed_repeat_rejects_another_attempt_path() -> None:
+    failed, replacement = _repeated_report_jobs()
+    foreign_name = _stored_name(replacement)
+    UploadJob.objects.filter(pk=failed.pk).update(file=foreign_name)
+    UploadJob.objects.filter(pk=replacement.pk).update(
+        file="", source_file_persisted=False
+    )
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.blocker == UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
+    assert replacement.file.storage.exists(foreign_name)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("missing", ["content_hash", "source_center"])
+def test_failed_repeat_requires_known_source_identity(missing: str) -> None:
+    failed, _replacement = _repeated_report_jobs()
+    UploadJob.objects.filter(pk=failed.pk).update(
+        **{missing: "" if missing == "content_hash" else None}
+    )
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.blocker == UploadSourceCleanupBlocker.SUCCESSFUL_REPLACEMENT_MISSING
+    assert failed.file.storage.exists(_stored_name(failed))
+
+
+@pytest.mark.django_db
+def test_shared_repeat_source_is_preserved_by_entire_batch() -> None:
+    failed, replacement = _repeated_report_jobs()
+    UploadJob.objects.filter(pk=replacement.pk).update(file=failed.file.name)
+    result = run_upload_job_source_reaper(apply=True, limit=2)
+    assert result.cleaned == 0
+    assert all(
+        item.blocker == UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
+        for item in result.items
+    )
+    assert failed.file.storage.exists(_stored_name(failed))
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("ready", [True, False])
+def test_failed_video_repeat_requires_ready_target(
+    monkeypatch: pytest.MonkeyPatch,
+    ready: bool,
+) -> None:
+    center = Center.objects.create(name="video-repeat-cleanup")
+    failed = _eligible_video_job(
+        source_center=center,
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        cleanup_status=UploadJob.CleanupStatus.PENDING,
+        source_file_delete_eligible_at=None,
+    )
+    replacement = _eligible_video_job(source_center=center)
+
+    def target_blocker(
+        job: UploadJob,
+        *,
+        database_now: datetime,
+    ) -> UploadSourceCleanupBlocker:
+        assert job.pk == failed.pk
+        assert database_now.tzinfo is not None
+        return (
+            UploadSourceCleanupBlocker.NONE
+            if ready
+            else UploadSourceCleanupBlocker.VIDEO_HLS_NOT_READY
+        )
+
+    monkeypatch.setattr(cleanup_service, "_video_target_blocker", target_blocker)
+    result = apply_upload_job_source_cleanup(failed.pk)
+    assert result.applied is ready
+    assert replacement.file.storage.exists(_stored_name(replacement))
+    if not ready:
+        assert result.blocker == UploadSourceCleanupBlocker.VIDEO_HLS_NOT_READY
+        assert failed.file.storage.exists(_stored_name(failed))
+
+
 @pytest.fixture(autouse=True)
 def _verified_target(  # pyright: ignore[reportUnusedFunction] -- discovered by pytest
     monkeypatch: pytest.MonkeyPatch,
@@ -541,10 +791,15 @@ def test_reaper_respects_positive_limit() -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_two_concurrent_reapers_serialize_one_source_deletion() -> None:
+@pytest.mark.parametrize("repeated_failure", [False, True])
+def test_two_concurrent_reapers_serialize_one_source_deletion(
+    repeated_failure: bool,
+) -> None:
     if connection.vendor != "postgresql":
         pytest.skip("row-lock concurrency evidence requires PostgreSQL")
-    upload_job = _eligible_report_job()
+    upload_job = (
+        _repeated_report_jobs()[0] if repeated_failure else _eligible_report_job()
+    )
     barrier = threading.Barrier(2)
 
     def apply_in_thread() -> UploadSourceCleanupItem:

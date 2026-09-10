@@ -897,7 +897,7 @@ class VideoAnonymizer:
             raise RuntimeError("Frame cleaning is unavailable.")
         # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
         # A fresh instance is mandatory for every attempt.
-        return cast(_FrameCleaner, FrameCleaner())
+        return cast(_FrameCleaner, FrameCleaner(quality_profile="exhaustive"))
 
     def _persist_anonymizer_metadata(
         self,

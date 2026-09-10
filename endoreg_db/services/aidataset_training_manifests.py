@@ -9,6 +9,14 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from endoreg_db.services.aidataset_training_selection import (
+    ANNOTATION_SOURCE_SCOPE_ALL,
+    frames_for_training_segments,
+    infer_training_labelset,
+    normalize_annotation_source_scope,
+    training_annotation_querysets,
+)
+
 from endoreg_db.schemas import (
     AIFrameFormatManifest,
     AIFrameFormatStrategy,
@@ -71,6 +79,19 @@ class _TrainingImageAnnotation(Protocol):
     value: bool
     frame: _TrainingFrame
     information_source: _TrainingInformationSource | None
+
+
+@dataclass
+class _SegmentFrameAnnotation:
+    """In-memory projection; segment identity is never an image annotation ID."""
+
+    frame: _TrainingFrame
+    frame_id: int
+    label_id: int
+    information_source: _TrainingInformationSource | None
+    segment_id: int
+    value: bool = True
+    pk: int | None = None
 
 
 @dataclass(frozen=True)
@@ -303,6 +324,7 @@ def build_frame_multilabel_training_manifest(
     preprocessing_strategy: AIFrameFormatStrategy = "preserve_dimensions_black_mask",
     recommended_model_input_strategy: AIFrameFormatStrategy = "crop_to_endoscope_roi",
     information_source_names: Iterable[str] | None = None,
+    annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
 ) -> AITrainingDatasetManifest:
     if include_file_paths:
         raise ValueError(
@@ -311,17 +333,64 @@ def build_frame_multilabel_training_manifest(
         )
     _validate_manifest_dataset(dataset)
     normalized_source_names = _normalize_source_names(information_source_names)
-    annotations_qs = _manifest_annotations(dataset, normalized_source_names)
+    source_scope = normalize_annotation_source_scope(annotation_source_scope)
+    annotations_qs, segments_qs = training_annotation_querysets(
+        dataset, source_scope=source_scope
+    )
+    annotations_qs = annotations_qs.filter(_approved_video_filter("frame__video__"))
+    segments_qs = segments_qs.filter(_approved_video_filter("video_file__"))
+    if normalized_source_names:
+        annotations_qs = annotations_qs.filter(
+            information_source__name__in=normalized_source_names
+        )
+        segments_qs = segments_qs.filter(source__name__in=normalized_source_names)
+    if not annotations_qs.exists() and not segments_qs.exists():
+        raise ValueError(
+            "AIDataSet has no extracted or validated processed frame annotations "
+            "from manual or confirmed sources for the selected scope."
+        )
     resolved_label_set = cast(
         _TrainingLabelSet,
-        label_set or infer_training_label_set_from_annotations(annotations_qs),
+        label_set
+        or infer_training_labelset(
+            annotations_qs=annotations_qs, segments_qs=segments_qs
+        ),
     )
     labels = _training_label_set_labels(resolved_label_set)
     label_id_to_index = _label_id_to_index(labels)
-    annotations_qs = _filter_annotations_for_labels(
-        annotations_qs, label_id_to_index, resolved_label_set
-    )
+    annotations_qs = annotations_qs.filter(label_id__in=label_id_to_index)
+    segments_qs = segments_qs.filter(label_id__in=label_id_to_index)
     annotations_by_frame_id, frame_order = _group_annotations(annotations_qs)
+    frames_by_video = frames_for_training_segments(segments_qs)
+    for segment in segments_qs.iterator():
+        for frame_number, frame in frames_by_video.get(
+            int(getattr(segment, "video_file_id")), {}
+        ).items():
+            if segment.start_frame_number <= frame_number < segment.end_frame_number:
+                if frame.pk not in annotations_by_frame_id:
+                    frame_order.append(frame.pk)
+                annotations_by_frame_id[frame.pk].append(
+                    _SegmentFrameAnnotation(
+                        frame=cast(_TrainingFrame, frame),
+                        frame_id=frame.pk,
+                        label_id=int(getattr(segment, "label_id")),
+                        information_source=cast(
+                            _TrainingInformationSource | None, segment.source
+                        ),
+                        segment_id=segment.pk,
+                    )
+                )
+    if not frame_order:
+        raise ValueError(
+            "AIDataSet has no frame samples for the selected LabelSet and source scope."
+        )
+    frame_order.sort(
+        key=lambda frame_id: (
+            annotations_by_frame_id[frame_id][0].frame.video.pk,
+            annotations_by_frame_id[frame_id][0].frame.frame_number,
+            frame_id,
+        )
+    )
     training_labels = _training_labels(labels, resolved_label_set)
     manifest_samples = _build_samples(
         frame_order,
@@ -353,6 +422,7 @@ def build_frame_multilabel_training_manifest(
             dataset=dataset,
             label_set=resolved_label_set,
             normalized_source_names=normalized_source_names,
+            annotation_source_scope=source_scope,
             frame_provenance=frame_provenance,
             treat_unlabeled_as_negative=treat_unlabeled_as_negative,
             include_file_paths=include_file_paths,
@@ -387,39 +457,22 @@ def _normalize_source_names(
     ]
 
 
-def _manifest_annotations(
-    dataset: AIDataSet, normalized_source_names: list[str] | None
-) -> QuerySet[ImageClassificationAnnotation]:
-    # Extraction is a cache state, not evidence of anonymization or clinical
-    # approval. Apply the same source eligibility gates to every frame.
-    annotations_qs = (
-        dataset.image_annotations.select_related(
-            "frame__video", "label", "information_source"
+def _approved_video_filter(prefix: str) -> Q:
+    """Apply existing clinical media gates to either annotation relationship."""
+    return (
+        ~Q(**{f"{prefix}processed_file": ""})
+        & Q(
+            **{
+                f"{prefix}state__anonymized": True,
+                f"{prefix}state__anonymization_validated": True,
+                f"{prefix}state__segment_annotations_validated": True,
+                f"{prefix}state__outside_segments_removed": True,
+                f"{prefix}state__ready_for_export": True,
+                f"{prefix}state__processing_error": False,
+            }
         )
-        .filter(frame__isnull=False)
-        .filter(
-            ~Q(frame__video__processed_file="")
-            & Q(
-                frame__video__state__anonymized=True,
-                frame__video__state__anonymization_validated=True,
-                frame__video__state__segment_annotations_validated=True,
-                frame__video__state__outside_segments_removed=True,
-                frame__video__state__ready_for_export=True,
-                frame__video__state__processing_error=False,
-            )
-            & ~Q(frame__video__meta__integrity_status__iexact="lost")
-        )
-        .order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
+        & ~Q(**{f"{prefix}meta__integrity_status__iexact": "lost"})
     )
-    if normalized_source_names:
-        annotations_qs = annotations_qs.filter(
-            information_source__name__in=normalized_source_names
-        )
-    if not annotations_qs.exists():
-        raise ValueError(
-            f"AIDataSet id={dataset.pk} has no extracted or validated processed frame annotations."
-        )
-    return annotations_qs
 
 
 def _training_label_set_labels(
@@ -439,20 +492,6 @@ def _label_id_to_index(labels: Sequence[_TrainingLabel]) -> dict[int, int]:
         for index, label in enumerate(labels)
         if label.pk is not None
     }
-
-
-def _filter_annotations_for_labels(
-    annotations_qs: QuerySet[ImageClassificationAnnotation],
-    label_id_to_index: dict[int, int],
-    label_set: _TrainingLabelSet,
-) -> QuerySet[ImageClassificationAnnotation]:
-    filtered_qs = annotations_qs.filter(label_id__in=label_id_to_index)
-    if not filtered_qs.exists():
-        raise ValueError(
-            "AIDataSet has no extracted frame annotations for the selected "
-            f"LabelSet id={label_set.pk}."
-        )
-    return filtered_qs
 
 
 def _group_annotations(
@@ -567,6 +606,22 @@ def _build_sample(
         timestamp=frame.timestamp,
         metadata={
             "annotation_ids_by_label": annotation_ids_by_label,
+            "segment_ids_by_label": {
+                label.name: sorted(
+                    {
+                        annotation.segment_id
+                        for annotation in frame_annotations
+                        if isinstance(annotation, _SegmentFrameAnnotation)
+                        and annotation.label_id == label.id
+                    }
+                )
+                for label in training_labels
+                if any(
+                    isinstance(annotation, _SegmentFrameAnnotation)
+                    and annotation.label_id == label.id
+                    for annotation in frame_annotations
+                )
+            },
             "information_source_names": sorted(source_names),
         },
     )
@@ -705,6 +760,7 @@ def _manifest_provenance(
     dataset: AIDataSet,
     label_set: _TrainingLabelSet,
     normalized_source_names: list[str] | None,
+    annotation_source_scope: str,
     frame_provenance: _FrameProvenance,
     treat_unlabeled_as_negative: bool,
     include_file_paths: bool,
@@ -720,6 +776,8 @@ def _manifest_provenance(
         "include_file_paths": include_file_paths,
         "check_frame_format": check_frame_format,
         "information_source_names": normalized_source_names,
+        "annotation_source_scope": annotation_source_scope,
+        "annotation_selection_policy": "manual_or_confirmed_v1",
         "frame_source_mode": "selected_frame_materialization",
         "source_video_kind": _aggregate_source_video_kind(
             frame_provenance.source_video_kind_by_video_uuid

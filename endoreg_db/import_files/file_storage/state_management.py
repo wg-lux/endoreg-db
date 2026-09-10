@@ -32,6 +32,11 @@ from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
 )
 from endoreg_db.services.video_storage_normalization import evidence_as_json
+from endoreg_db.services.processed_video_cleanup import (
+    commit_processed_replacements,
+    record_processed_replacement,
+    schedule_processed_generation_cleanup,
+)
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
@@ -432,6 +437,7 @@ def finalize_video_success(
         / f"{video_hash}-{uuid.uuid4().hex}.mp4"
     )
     candidate_name = path_utils.to_storage_relative(candidate_path)
+    cleanup_pending = False
 
     try:
         _require_execution_ownership(ctx)
@@ -447,6 +453,9 @@ def finalize_video_success(
         )
         next_meta["processed_generation"] = saved_name
         instance.meta = next_meta
+        record_processed_replacement(
+            instance, previous_name=previous_name, previous_hash=previous_hash
+        )
         cast(_StatefulImportInstance, instance).save()
         _require_execution_ownership(ctx)
         ensure_video_hls(instance, force=True, execution_guard=ctx.execution_guard)
@@ -463,6 +472,7 @@ def finalize_video_success(
                 processable_state.mark_anonymized()
                 processable_state.mark_sensitive_meta_processed()
                 processable_state.save()
+            cleanup_pending = commit_processed_replacements(instance)
             cast(_StatefulImportInstance, instance).save()
     except Exception:
         candidate_field = instance.processed_file
@@ -482,6 +492,8 @@ def finalize_video_success(
         )
         raise
 
+    if cleanup_pending:
+        schedule_processed_generation_cleanup(instance.pk)
     safe_cleanup_staging_file(
         src,
         label="processed video staging output",

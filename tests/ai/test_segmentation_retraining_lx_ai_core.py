@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -20,7 +21,8 @@ from lx_ai_core.training import (
     TrainingSample,
     TrainingStatus,
 )
-from pydantic import ValidationError
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.frame.frame import Frame
 
 from endoreg_db.utils.ai.model_training import trainer_gastronet_multilabel as trainer
 from endoreg_db.utils.ai.model_training.config import TrainingConfig
@@ -37,7 +39,7 @@ def _prepared_training_data(*, image_paths: list[str]) -> trainer._PreparedTrain
         labels=labels,
         labelset=SimpleNamespace(id=7, name="segmentation-v2", version=2),
         frame_ids=[101, 102],
-        video_ids=[11, None],
+        video_ids=[11, 12],
         kept_indices=[0, 1],
         labels_arr=[[1, 0], [0, 1]],
         masks_arr=[[1, 1], [1, 0]],
@@ -94,9 +96,11 @@ def test_segmentation_retraining_loads_installed_lx_ai_core_contracts() -> None:
     assert loaded_contracts == expected_contracts
 
 
+@pytest.mark.parametrize("remote_paths", [False, True])
 def test_segmentation_retraining_artifacts_match_lx_ai_core_contracts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    remote_paths: bool,
 ) -> None:
     # Arrange
     monkeypatch.setattr(trainer, "RUNS_DIR", tmp_path)
@@ -111,7 +115,12 @@ def test_segmentation_retraining_artifacts_match_lx_ai_core_contracts(
         treat_unlabeled_as_negative=False,
     )
     data = _prepared_training_data(
-        image_paths=[str(tmp_path / "frame-101.jpg"), str(tmp_path / "frame-102.jpg")]
+        image_paths=[
+            f"https://example.test/frame-{pk}.jpg"
+            if remote_paths
+            else str(tmp_path / f"frame-{pk}.jpg")
+            for pk in (101, 102)
+        ]
     )
     history: trainer.TrainingHistory = {
         "train_loss": [0.25],
@@ -121,14 +130,28 @@ def test_segmentation_retraining_artifacts_match_lx_ai_core_contracts(
     metrics = _metrics()
 
     # Act
-    result = trainer._save_training_artifacts(
-        config,
-        data,
-        _training_runtime(),
-        history,
-        metrics,
-        trainer._EvaluationResult(loss=0.15, metrics=metrics),
-    )
+    frames = {
+        pk: Frame(
+            pk=pk,
+            video=VideoFile(pk=video_id),
+            frame_number=index,
+            timestamp=index / 25,
+        )
+        for index, (pk, video_id) in enumerate(
+            zip(data.frame_ids, data.video_ids, strict=True)
+        )
+    }
+    with patch.object(Frame.objects, "select_related") as query:
+        query.return_value.in_bulk.return_value = frames
+        result = trainer._save_training_artifacts(
+            config,
+            data,
+            _training_runtime(),
+            history,
+            metrics,
+            trainer._EvaluationResult(loss=0.15, metrics=metrics),
+        )
+        query.return_value.in_bulk.assert_called_once_with(data.frame_ids)
 
     # Assert
     manifest_path = Path(result["manifest_path"])
@@ -147,8 +170,14 @@ def test_segmentation_retraining_artifacts_match_lx_ai_core_contracts(
     assert manifest.class_frequencies == [0.5, 0.0]
     assert [sample.group_id for sample in manifest.samples] == [
         "video:11",
-        "frame:102",
+        "video:12",
     ]
+    assert all(sample.path is None for sample in manifest.samples)
+    assert [
+        sample.frame_stream.video_id
+        for sample in manifest.samples
+        if sample.frame_stream is not None
+    ] == [11, 12]
     assert manifest.samples[1].label_mask == [1, 0]
     assert persisted_result == TrainingResult.model_validate(result["training_result"])
     assert persisted_result.status is TrainingStatus.SUCCESS
@@ -170,7 +199,7 @@ def test_segmentation_retraining_artifacts_match_lx_ai_core_contracts(
     assert metadata["config"]["treat_unlabeled_as_negative"] is False
 
 
-def test_segmentation_retraining_rejects_remote_samples_before_writing_artifacts(
+def test_segmentation_retraining_rejects_missing_frames_before_writing_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -182,7 +211,11 @@ def test_segmentation_retraining_rejects_remote_samples_before_writing_artifacts
     metrics = _metrics()
 
     # Act
-    with pytest.raises(ValidationError, match="remote paths"):
+    with (
+        patch.object(Frame.objects, "select_related") as query,
+        pytest.raises(ValueError, match="frame identities no longer exist"),
+    ):
+        query.return_value.in_bulk.return_value = {}
         trainer._save_training_artifacts(
             TrainingConfig(dataset_id=41),
             data,

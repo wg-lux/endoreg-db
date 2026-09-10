@@ -160,6 +160,12 @@ def test_failed_video_finalization_preserves_previous_generation(
     sensitive_path = tmp_path / "sensitive.mp4"
     sensitive_path.write_bytes(b"sensitive")
     guard_calls = 0
+    cleanup_calls: list[int] = []
+    monkeypatch.setattr(
+        state_management_module,
+        "schedule_processed_generation_cleanup",
+        cleanup_calls.append,
+    )
 
     class DummyState:
         processing_started = True
@@ -181,7 +187,7 @@ def test_failed_video_finalization_preserves_previous_generation(
     class DummyVideo:
         pk = 1
         video_hash = "video-hash"
-        processed_video_hash: str | None = "previous-processed-hash"
+        processed_video_hash: str | None = "a" * 64
         processed_file = SimpleNamespace(name="anonymized_videos/previous.mp4")
         meta: dict[str, object] = {"generation": "previous"}
         state = DummyState()
@@ -288,9 +294,10 @@ def test_failed_video_finalization_preserves_previous_generation(
     assert video.state.sensitive_meta_processed is False
     assert sensitive_path.exists()
     assert anonymized_path.exists()
-    assert video.processed_video_hash == "previous-processed-hash"
+    assert video.processed_video_hash == "a" * 64
     assert video.processed_file.name == "anonymized_videos/previous.mp4"
     assert video.meta == {"generation": "previous"}
+    assert cleanup_calls == []
 
 
 @pytest.mark.unit

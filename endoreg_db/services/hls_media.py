@@ -31,6 +31,7 @@ from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.schemas.video_storage import (
     PresentationTimestampBoundary,
     PresentationTimestampTimeline,
@@ -2192,6 +2193,25 @@ def _cleanup_partial_output(target_dir: Path) -> None:
 
 def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
     if snapshot is None:
+        return
+
+    artifact = (
+        VideoHlsArtifact.objects.select_related("video")
+        .filter(
+            pk=snapshot.artifact_id,
+            key_id=snapshot.key_id,
+            status=VideoHlsArtifact.Status.SUPERSEDED.value,
+        )
+        .first()
+    )
+    if artifact is None:
+        return
+    # A processed master replacement owns retirement of its old HLS. Keep it
+    # recoverable until the import success transaction commits and leases expire.
+    if artifact.artifact_kind == "processed" and any(
+        item.source_name == snapshot.source_file_name
+        for item in cleanup_receipts(artifact.video.meta)
+    ):
         return
 
     playlist_path = resolve_existing_protected_media_path(

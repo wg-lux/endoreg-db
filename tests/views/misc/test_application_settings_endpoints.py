@@ -667,6 +667,7 @@ class ApplicationSettingsEndpointTests(TestCase):
                     "preprocessing_strategy": "crop_to_endoscope_roi",
                     "recommended_model_input_strategy": "crop_to_endoscope_roi",
                     "information_source_names": ["manual_annotation"],
+                    "annotation_source_scope": "segment_only",
                 },
                 content_type="application/json",
             )
@@ -682,11 +683,28 @@ class ApplicationSettingsEndpointTests(TestCase):
             "preprocessing_strategy": "crop_to_endoscope_roi",
             "recommended_model_input_strategy": "crop_to_endoscope_roi",
             "information_source_names": ["manual_annotation"],
+            "annotation_source_scope": "segment_only",
         }
         payload = response.json()
         assert payload["dataset_id"] == dataset.pk
         assert payload["summary"]["sample_count"] == 1
         assert payload["config"]["label_set_id"] == label_set.pk
+
+    def test_training_manifest_rejects_invalid_annotation_source_scope(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-invalid-scope-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        for scope in ("predictions", 42, []):
+            with self.subTest(scope=scope):
+                response = self.client.post(
+                    f"/api/settings/application/ai_datasets/{dataset.pk}/training_manifest/",
+                    data={"annotation_source_scope": scope},
+                    content_type="application/json",
+                )
+                assert response.status_code == 400
+                assert "annotation_source_scope" in response.json()["errors"]
 
     def test_ai_dataset_training_manifest_endpoint_reports_missing_frame_identity(
         self,

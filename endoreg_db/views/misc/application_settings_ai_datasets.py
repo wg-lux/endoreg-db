@@ -38,6 +38,7 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,
 )
+from endoreg_db.services.aidataset_training_selection import AnnotationSourceScope
 from endoreg_db.services.aidataset_frame_buckets import (
     build_frame_bucket_distribution,
 )
@@ -85,6 +86,7 @@ class _AttachmentResult:
 
 @dataclass(frozen=True, slots=True)
 class _TrainingManifestOptions:
+    annotation_source_scope: AnnotationSourceScope
     label_set: LabelSet | None
     treat_unlabeled_as_negative: bool
     include_file_paths: bool
@@ -780,6 +782,21 @@ def _parse_manifest_strategies(
 def _parse_training_manifest_options(
     payload: dict[str, Any],
 ) -> tuple[_TrainingManifestOptions | None, Response | None]:
+    from endoreg_db.services.aidataset_training_selection import (
+        normalize_annotation_source_scope,
+    )
+
+    raw_scope = payload.get("annotation_source_scope")
+    if raw_scope is not None and not isinstance(raw_scope, str):
+        return None, Response(
+            {"errors": {"annotation_source_scope": "Must be a string."}}, status=400
+        )
+    try:
+        source_scope = normalize_annotation_source_scope(raw_scope)
+    except ValueError as exc:
+        return None, Response(
+            {"errors": {"annotation_source_scope": str(exc)}}, status=400
+        )
     label_set, error = _resolve_manifest_label_set(payload)
     if error is not None:
         return None, error
@@ -798,6 +815,7 @@ def _parse_training_manifest_options(
     assert strategies is not None
     return (
         _TrainingManifestOptions(
+            annotation_source_scope=source_scope,
             label_set=label_set,
             treat_unlabeled_as_negative=flags[0],
             include_file_paths=flags[1],
@@ -824,6 +842,7 @@ def _training_manifest_response(
             preprocessing_strategy=options.preprocessing_strategy,
             recommended_model_input_strategy=(options.recommended_model_input_strategy),
             information_source_names=options.information_source_names,
+            annotation_source_scope=options.annotation_source_scope,
         )
         lx_ai_core_manifest = manifest.to_lx_ai_core_dict()
     except ValueError as exc:
@@ -839,6 +858,7 @@ def _training_manifest_response(
             "dataset_type": _ai_dataset_type(dataset),
             "ai_model_type": _ai_dataset_model_type(dataset),
             "config": {
+                "annotation_source_scope": options.annotation_source_scope,
                 "label_set_id": (
                     options.label_set.pk if options.label_set is not None else None
                 ),

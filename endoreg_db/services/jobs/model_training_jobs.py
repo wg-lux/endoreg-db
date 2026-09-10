@@ -48,12 +48,13 @@ from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_frame_dir_path,
 )
+from endoreg_db.services.aidataset_training_selection import (
+    training_annotation_querysets,
+)
 from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     AnnotationSourceScope,
     normalize_annotation_source_scope,
-    uses_frame_annotations,
-    uses_segment_annotations,
 )
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
@@ -601,32 +602,16 @@ def _materialize_missing_multilabel_frames(
 
     frames_by_video: dict[int, dict[int, Frame]] = defaultdict(dict)
 
-    if uses_frame_annotations(source_scope):
-        annotations = (
-            dataset.image_annotations.select_related("frame__video")
-            .filter(frame__isnull=False)
-            .order_by("frame__video_id", "frame__frame_number", "frame_id")
-        )
-        for annotation in annotations:
-            frame = annotation.frame
-            frame_video = frame.video
-            frames_by_video[int(frame_video.pk)][frame.frame_number] = frame
-
-    if uses_segment_annotations(source_scope):
-        video_segments = list(
-            dataset.video_annotations.select_related("video_file", "label")
-            .filter(
-                label__isnull=False,
-                video_file_id__isnull=False,
-                start_frame_number__isnull=False,
-                end_frame_number__isnull=False,
-            )
-            .order_by("video_file_id", "start_frame_number", "end_frame_number", "pk")
-        )
-        _add_segment_training_frames(
-            frames_by_video=frames_by_video,
-            segments=video_segments,
-        )
+    annotations, segments = training_annotation_querysets(
+        dataset, source_scope=source_scope
+    )
+    for annotation in annotations:
+        frame = annotation.frame
+        frames_by_video[int(frame.video.pk)][frame.frame_number] = frame
+    _add_segment_training_frames(
+        frames_by_video=frames_by_video,
+        segments=list(segments),
+    )
 
     materialized_count = 0
     existing_count = 0

@@ -293,11 +293,7 @@ class ReportAnonymizer:
                 )
                 seed = hashlib.sha256(hash_material.encode()).hexdigest()
 
-            existing = (
-                Patient.objects.filter(patient_hash=seed)
-                .only("first_name", "last_name")
-                .first()
-            )
+            existing = Patient.get_pseudo_patient_by_hash(seed, center)
             if existing is not None:
                 return existing.first_name, existing.last_name
             return canonical_pseudo_patient_name(

@@ -224,6 +224,10 @@ definition_of_done:
   category: functionality
   title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte
   acceptance:
+  - Videoimporte wählen ausdrücklich das exhaustive-Profil von lx-anonymizer. Jeder Quellframe wird vollständig
+    mit RapidOCR analysiert; Sampling und Metadaten-Early-Stopping dürfen Einzelbild-Patienteninformationen
+    nicht ausschließen. Exakte OCR-Caches bleiben versuchslokal; Storage-, Lease- und Publikationseigentum
+    bleiben unverändert.
   - Ein persistierter, typisierter Importversuch besitzt eine eindeutige aktive Lease, durch Datenbankzeit
     bestimmte Ablaufzeit, Heartbeat und monotonen Fencing-Token. Dateisperren sind ausschließlich lokale
     Optimierungen und dürfen nicht allein anhand ihres Alters fremd übernommen werden.
@@ -347,15 +351,19 @@ definition_of_done:
         tests/lx-annotate/test_lx_annotate_filewatcher_wheel_key_env.py -q (20 passed)
     - kind: document
       reference: docs/video_storage_normalization.md#transcoding-steps-and-idempotency
-    note: 'Watcher- und Transcode-Zeitgrenzen sind nun fail-closed: Polling muss positiv und endlich,
-      die Stabilitätsdauer nichtnegativ und endlich sowie der FFmpeg-Timeout positiv ganzzahlig sein.
-      Der autoritative Handoff-Service verkürzt die konfigurierte Stabilitätsdauer nicht mehr auf eine
-      interne Ein-Sekunden-Grenze und validiert auch direkte Aufrufer; eine Null-Stabilitätsdauer bleibt
-      für explizite atomare Test-Handoffs zulässig. EndoReg-, lx-annotate- und LuxNix-Verträge sind grün.
-      Produktionsnahe Last-, Abbruch- und Failure-Injection-Evidenz sowie formale Owner-Abnahme bleiben
-      offen.'
-    assessed_by: Codex
-    assessed_at: '2026-08-04T18:21:18.592686Z'
+    - kind: test
+      reference: '2026-09-10 exhaustive RapidOCR: lx-anonymizer focused decode/OCR/concurrency/strand
+        suite 72 passed; endoreg-db test_video_anonymization.py 19 passed, 2 warnings; both full Pyright
+        checks 0 errors. Installed endoreg-db dependency still requires local source integration verification.'
+    - kind: test
+      reference: '2026-09-10 final exhaustive OCR: lx focused suite 97 passed; full lx Pyright 0 errors,
+        8 existing warnings. Endoreg adapter/import-normalization/storage-normalization/import-service
+        suite 106 passed, 2 warnings in 528.37s including real 501-frame 1080p import; full endoreg Pyright
+        0 errors, 1 existing warning. Full-frame OCR uses exact image/text caches and bounded ONNX threads;
+        auxiliary PHI proposals retain their independent sample budget. Paired caller and compute package
+        deployment is required; no controlled throughput or clinical recall claim.'
+    assessed_by: codex-metadata-boundaries-20260910
+    assessed_at: '2026-09-10T09:04:41.728863Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
@@ -535,6 +543,10 @@ definition_of_done:
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
   acceptance:
+  - Nach erfolgreichem Commit einer Processed-Ersatzgeneration werden das vorherige generierte Mastervideo
+    und sein superseded Processed-HLS anhand persistierter Hash- und Besitznachweise bereinigt. Aktive
+    Leases, fremde Referenzen oder fehlende Ersatzartefakte verhindern die Löschung. Teilfehler behalten
+    einen wiederholbaren Cleanup-Auftrag; der gezielte Management-Befehl ist standardmäßig ein Dry-Run.
   - Roh-HLS und kanonisches Rohvideo werden nach erfolgreicher menschlicher Validierung nur entfernt,
     wenn normalisiertes Mastervideo, benötigtes Processed-HLS, Segmentdaten und Temporal-/Qualitätsnachweise
     vollständig und integritätsgeprüft vorliegen.
@@ -589,13 +601,15 @@ definition_of_done:
     - kind: command
       reference: 'Live dry-run /var/lib/lx-annotate: scanned_entries=99, candidate_count=83, candidate_bytes=2420525134,
         removed_count=0; post-run inventory unchanged'
-    note: Existing HLS lifecycle work remains in progress. This change additionally provides a bounded,
-      typed, dry-run-by-default cleanup for obsolete LX-Annotate deployment wheel staging. It validates
-      canonical roots and wheel identities, rejects symlinks, malformed names and races, never descends
-      into media, and deletes only through safe_unlink_file structured logging. Production apply awaits
-      coordinated LuxNix deployment.
-    assessed_by: codex-storage-optimization-20260824
-    assessed_at: '2026-08-25T07:45:44.708398Z'
+    - kind: command
+      reference: '/tmp/endoreg-cleanup-focused.log: 221 passed, 1 integration test deselected; full Pyright
+        0 errors, 1 existing warning'
+    note: Processed-generation cleanup now journals previous masters, retains their superseded HLS until
+      successful publication commits, and retries deletion with lease/reference/hash checks. Focused cleanup,
+      finalization and HLS tests passed within a 221-test cohort. Broader raw-media and production readiness
+      gates remain open.
+    assessed_by: codex-storage-reaper-20260910
+    assessed_at: '2026-09-10T12:42:55.210812Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze

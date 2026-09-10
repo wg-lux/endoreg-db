@@ -11,7 +11,7 @@ from pathlib import Path
 
 from django.core.exceptions import SuspiciousFileOperation
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.db.models.fields.files import FieldFile
 from django.db.models.functions import Now
 
@@ -52,6 +52,8 @@ class UploadSourceCleanupDecision(StrEnum):
 class UploadSourceCleanupBlocker(StrEnum):
     NONE = "none"
     STATUS_NOT_SUCCESSFUL = "status_not_successful"
+    SUCCESSFUL_REPLACEMENT_MISSING = "successful_replacement_missing"
+    SOURCE_STILL_REFERENCED = "source_still_referenced"
     RETENTION_POLICY_BLOCKS = "retention_policy_blocks"
     SOURCE_NOT_PERSISTED = "source_not_persisted"
     CLEANUP_STATUS_BLOCKS = "cleanup_status_blocks"
@@ -213,6 +215,14 @@ def _source_snapshot(
         return None, UploadSourceCleanupBlocker.SOURCE_NAME_MISSING
 
     media_type = _media_type(upload_job)
+    if upload_job.status == UploadJob.Status.ERROR.value:
+        expected_name = path_utils.build_upload_job_relative_path(
+            tier=upload_job.storage_tier,
+            filename=Path(storage_name).name,
+            key=str(upload_job.pk),
+        )
+        if storage_name != expected_name:
+            return None, UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
     if Path(storage_name).suffix.lower() not in _expected_suffixes(media_type):
         return None, UploadSourceCleanupBlocker.SOURCE_FILE_TYPE_UNEXPECTED
 
@@ -334,11 +344,47 @@ def _target_integrity_blocker(
     return _report_target_blocker(upload_job)
 
 
+def _successful_replacement(
+    upload_job: UploadJob,
+    *,
+    lock: bool,
+) -> UploadJob | None:
+    """Require durable repeat-import evidence, never infer it from a filename."""
+    if not upload_job.content_hash or upload_job.source_center is None:
+        return None
+    candidates = UploadJob.objects.filter(
+        content_hash=upload_job.content_hash,
+        source_center=upload_job.source_center,
+        content_type=upload_job.content_type,
+        source_system=upload_job.source_system,
+        ingest_mode=upload_job.ingest_mode,
+        storage_class=upload_job.storage_class,
+        storage_tier=upload_job.storage_tier,
+        status=UploadJob.Status.ANONYMIZED.value,
+        created_at__gt=upload_job.created_at,
+    ).order_by("created_at", "pk")
+    if lock:
+        candidates = candidates.select_for_update(of=("self",))
+    return candidates.first()
+
+
+def _source_still_referenced(upload_job: UploadJob) -> bool:
+    name = str(upload_job.file.name or "")
+    if not name:
+        return False
+    return (
+        UploadJob.objects.filter(file=name).exclude(pk=upload_job.pk).exists()
+        or VideoFile.objects.filter(Q(raw_file=name) | Q(processed_file=name)).exists()
+        or RawPdfFile.objects.filter(Q(file=name) | Q(processed_file=name)).exists()
+    )
+
+
 def _evaluate_locked_job(
     upload_job: UploadJob,
     *,
     database_now: datetime,
     allow_deleting: bool = False,
+    lock_replacement: bool = False,
 ) -> tuple[UploadSourceCleanupItem, UploadSourceSnapshot | None]:
     media_type = _media_type(upload_job)
     if upload_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED.value:
@@ -354,9 +400,24 @@ def _evaluate_locked_job(
     allowed_statuses = {UploadJob.CleanupStatus.ELIGIBLE.value}
     if allow_deleting:
         allowed_statuses.add(UploadJob.CleanupStatus.DELETING.value)
+    failed = upload_job.status == UploadJob.Status.ERROR.value
+    replacement = (
+        _successful_replacement(upload_job, lock=lock_replacement) if failed else None
+    )
+    due_at = upload_job.source_file_delete_eligible_at
+    if failed and replacement is not None:
+        allowed_statuses.add(UploadJob.CleanupStatus.PENDING.value)
+        replacement_due_at = replacement.source_file_delete_eligible_at
+        due_at = (
+            max(due_at, replacement_due_at)
+            if due_at is not None and replacement_due_at is not None
+            else replacement_due_at
+        )
     if upload_job.retryable or upload_job.next_retry_at is not None:
         blocker = UploadSourceCleanupBlocker.RETRY_ALLOWED
-    elif upload_job.status != UploadJob.Status.ANONYMIZED.value:
+    elif failed and replacement is None:
+        blocker = UploadSourceCleanupBlocker.SUCCESSFUL_REPLACEMENT_MISSING
+    elif not failed and upload_job.status != UploadJob.Status.ANONYMIZED.value:
         blocker = UploadSourceCleanupBlocker.STATUS_NOT_SUCCESSFUL
     elif (
         upload_job.retention_policy
@@ -367,10 +428,7 @@ def _evaluate_locked_job(
         blocker = UploadSourceCleanupBlocker.SOURCE_NOT_PERSISTED
     elif upload_job.cleanup_status not in allowed_statuses:
         blocker = UploadSourceCleanupBlocker.CLEANUP_STATUS_BLOCKS
-    elif (
-        upload_job.source_file_delete_eligible_at is None
-        or upload_job.source_file_delete_eligible_at > database_now
-    ):
+    elif due_at is None or due_at > database_now:
         blocker = UploadSourceCleanupBlocker.NOT_DUE
     elif (
         upload_job.processing_lease_owner
@@ -380,6 +438,18 @@ def _evaluate_locked_job(
         blocker = UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE
     elif media_type == UploadSourceMediaType.UNKNOWN:
         blocker = UploadSourceCleanupBlocker.UNSUPPORTED_MEDIA_TYPE
+    elif replacement is not None and (
+        replacement.retryable or replacement.next_retry_at is not None
+    ):
+        blocker = UploadSourceCleanupBlocker.RETRY_ALLOWED
+    elif replacement is not None and (
+        replacement.processing_lease_owner
+        and replacement.processing_lease_expires_at is not None
+        and replacement.processing_lease_expires_at > database_now
+    ):
+        blocker = UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE
+    elif _source_still_referenced(upload_job):
+        blocker = UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
     else:
         blocker = _target_integrity_blocker(upload_job, database_now=database_now)
 
@@ -490,6 +560,7 @@ def _authorize_cleanup(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
             upload_job,
             database_now=database_now,
             allow_deleting=True,
+            lock_replacement=True,
         )
         if item.decision != UploadSourceCleanupDecision.DELETE:
             return item
@@ -571,6 +642,7 @@ def _delete_and_finalize(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
                 upload_job,
                 database_now=database_now,
                 allow_deleting=True,
+                lock_replacement=True,
             )
             if item.decision != UploadSourceCleanupDecision.DELETE:
                 return item
@@ -642,12 +714,18 @@ def _selected_jobs(
     queryset = UploadJob.objects.order_by("created_at", "pk")
     if upload_job_id is not None:
         return queryset.filter(pk=upload_job_id)
-    queryset = queryset.filter(
-        source_file_persisted=True,
-        cleanup_status__in=[
-            UploadJob.CleanupStatus.ELIGIBLE.value,
-            UploadJob.CleanupStatus.DELETING.value,
-        ],
+    queryset = queryset.filter(source_file_persisted=True).filter(
+        Q(
+            cleanup_status__in=[
+                UploadJob.CleanupStatus.ELIGIBLE.value,
+                UploadJob.CleanupStatus.DELETING.value,
+            ]
+        )
+        | Q(
+            status=UploadJob.Status.ERROR.value,
+            cleanup_status=UploadJob.CleanupStatus.PENDING.value,
+            retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS.value,
+        )
     )
     if limit is not None:
         queryset = queryset[:limit]

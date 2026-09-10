@@ -19,13 +19,55 @@ source_documents:
   disposition: reference
   note: Definiert fail-closed Cleanup, Mediengenerationen, Integritätsprüfung und Lease-Schutz.
 definition_of_done:
+- id: repeated_failed_import_sources
+  category: functionality
+  title: Fehlgeschlagene Quellen nach nachgewiesen erfolgreichem Wiederholungsimport bereinigen
+  acceptance:
+  - Ein terminaler ERROR-Job darf seine persistierte Quelle mit DELETE_AFTER_SUCCESS freigeben, wenn ein
+    neuerer erfolgreicher Job denselben nichtleeren Inhalts-Hash, Center, Medientyp, Quellsystem, Ingest-Modus
+    und Storage-Scope besitzt. LOST und unbekannte Identitäten bleiben erhalten.
+  - Beide Jobs dürfen weder Retry noch aktive Processing-Lease besitzen. Die Fälligkeit des erfolgreichen
+    Ersatzes und eine spätere explizite Fälligkeit der Fehlerquelle werden respektiert. Ersatz und Zielintegrität
+    werden vor jeder Mutation erneut geprüft; Apply sperrt beide Jobs.
+  - Nur die eigene persistierte Upload-Datei wird entfernt. Gemeinsam referenzierte Quellen, kanonische
+    Medien, Quarantäne und unbekannte temporäre Dateien bleiben erhalten. Fehlerstatus, Fehlerdetails
+    und vorhandene Auditdaten bleiben unverändert.
+  - Dry-Run, Batch-Auswahl, wiederholtes Apply, fehlender oder unvollständiger Ersatz, Scope-Abweichungen,
+    Retention, aktive Leases und Änderungen zwischen Freigabe und Löschung sind regressionsgetestet. Bestehende
+    Receipt- und Integritätsprüfungen bleiben verbindlich.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_hub_cleanup.py
+    - tests/management/commands/test_reap_upload_job_sources.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: '2026-09-10: TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_NAME=storage_reaper_check
+        TEST_DB_USER=postgres TEST_DB_HOST=/run/postgresql RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py tests/management/commands/test_reap_upload_job_sources.py
+        tests/services/test_upload_job_import_lease.py -q: 68 passed, 2 warnings in 372.06s'
+    - kind: code
+      reference: endoreg_db/services/hub/cleanup.py; tests/services/test_hub_cleanup.py
+    note: 'Lokal gegen PostgreSQL geprüft: 68 Tests bestanden, einschließlich konkurrierender Reaper für
+      erfolgreiche und wiederholt fehlgeschlagene Jobs, Lease-Schutz und Receipt-Recovery. Vollständiger
+      Pyright: 0 Fehler, 1 fremde Missing-Stub-Warnung; fokussierter Pyright: 0 Fehler/0 Warnungen. Ruff
+      und Tracker-Validierung bestanden. Kein Deployment und keine Produktionslöschung; produktionsnahe
+      Rollout-Abnahme bleibt separat offen.'
+    assessed_by: codex-storage-reaper-20260910
+    assessed_at: '2026-09-10T09:02:07.053441Z'
 - id: authoritative_cleanup_contract
   category: requirements
   title: Die autoritative Löschfreigabe ist vollständig und medienartspezifisch definiert
   acceptance:
-  - Eine Quelle ist nur löschbar, wenn der UploadJob erfolgreich und terminal ist, die Retention-Policy
-    DELETE_AFTER_SUCCESS verlangt, source_file_persisted wahr ist, cleanup_status die Löschung erlaubt
-    und source_file_delete_eligible_at nach Datenbankzeit erreicht wurde.
+  - Eine Quelle ist nur löschbar, wenn der UploadJob erfolgreich und terminal ist oder der Vertrag repeated_failed_import_sources
+    erfüllt ist, die Retention-Policy DELETE_AFTER_SUCCESS verlangt, source_file_persisted wahr ist, cleanup_status
+    die Löschung erlaubt und source_file_delete_eligible_at nach Datenbankzeit erreicht wurde.
   - Es bestehen weder eine aktive Processing-Lease noch ein zulässiger Retry, und der aktuelle Fencing-Token
     wird innerhalb der autoritativen Löschentscheidung erneut geprüft.
   - Für Video und Report ist vor der Freigabe ein typisierter Integritätsnachweis der jeweils erforderlichen
@@ -48,12 +90,11 @@ definition_of_done:
       reference: Independent state-matrix review of UploadJob eligibility, database time, retry and processing/media
         lease exclusion, fencing receipt, report/video integrity, and fail-closed blockers.
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
-        endoreg_db/services/hub/media_integrity.py endoreg_db/models/hub/upload_job.py tests/services/test_hub_cleanup.py
-        (0 errors)
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py endoreg_db/services/hub/media_integrity.py
+        endoreg_db/models/hub/upload_job.py tests/services/test_hub_cleanup.py (0 errors)
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
-        -q (25 passed, 1 PostgreSQL-only concurrency test skipped)
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py -q (25 passed,
+        1 PostgreSQL-only concurrency test skipped)
     note: Independent review confirmed that deletion eligibility is re-evaluated under a row lock using
       database time, retries and active processing/media leases block cleanup, the fencing token and source
       identity are captured and rechecked, and report/video cleanup requires validated anonymized targets
@@ -124,13 +165,12 @@ definition_of_done:
         fencing receipt, protected-root and source identity checks, typed deletion wrapper, structured
         audit events, and video/report target preservation.
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py
-        endoreg_db/services/hub/upload_job_import_lease.py endoreg_db/utils/file_operations.py endoreg_db/utils/filesystem/file_operations.py
-        tests/services/test_hub_cleanup.py tests/services/test_upload_job_import_lease.py (0 errors)
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/services/hub/cleanup.py endoreg_db/services/hub/upload_job_import_lease.py
+        endoreg_db/utils/file_operations.py endoreg_db/utils/filesystem/file_operations.py tests/services/test_hub_cleanup.py
+        tests/services/test_upload_job_import_lease.py (0 errors)
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py
-        tests/services/test_upload_job_import_lease.py -q (27 passed, 1 PostgreSQL-only concurrency test
-        skipped)
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_hub_cleanup.py tests/services/test_upload_job_import_lease.py
+        -q (27 passed, 1 PostgreSQL-only concurrency test skipped)
     note: Independent review confirmed that apply authorizes and revalidates under a row lock using database
       time; a durable deleting receipt excludes late retries and import leases; protected-root, suffix,
       regular-file, symlink, content hash, size and fencing checks fail closed; deletion uses the typed
