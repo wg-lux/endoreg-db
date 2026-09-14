@@ -57,6 +57,85 @@ def test_oidc_create_and_reauthentication_replace_center_memberships() -> None:
     assert set(portal_info.centers.all()) == {south}
 
 
+@pytest.mark.parametrize("userinfo_groups", (None, [], ["/centers/south"]))
+def test_browser_userinfo_preserves_verified_token_groups_unless_explicit(
+    userinfo_groups: list[str] | None,
+) -> None:
+    north = Center.objects.create(name="North", center_key="north")
+    south = Center.objects.create(name="South", center_key="south")
+    backend = object.__new__(KeycloakOIDCBackend)
+    payload = _claims("browser-center-user", ["/centers/north"])
+    userinfo = dict(payload)
+    userinfo.pop("groups")
+    if userinfo_groups is not None:
+        userinfo["groups"] = cast(list[JsonValue], userinfo_groups)
+    with patch(
+        "mozilla_django_oidc.auth.OIDCAuthenticationBackend.get_userinfo",
+        return_value=userinfo,
+    ):
+        claims = backend.get_userinfo("access-token", "id-token", payload)
+    user = backend.create_user(claims)
+    expected: set[Center] = (
+        {north} if userinfo_groups is None else ({south} if userinfo_groups else set())
+    )
+    assert set(PortalUserInfo.objects.get(user=user).centers.all()) == expected
+    assert User.objects.values_list("is_staff", "is_superuser").get(pk=user.pk) == (
+        False,
+        False,
+    )
+
+
+@pytest.mark.parametrize("subject", (None, "different-subject"))
+def test_browser_rejects_userinfo_subject_mismatch(subject: str | None) -> None:
+    Center.objects.create(name="North", center_key="north")
+    backend = object.__new__(KeycloakOIDCBackend)
+    payload = _claims("subject-user", ["/centers/north"])
+    with (
+        patch(
+            "mozilla_django_oidc.auth.OIDCAuthenticationBackend.get_userinfo",
+            return_value={"sub": subject},
+        ),
+        pytest.raises(CenterAccessConfigurationError, match="subject"),
+    ):
+        backend.get_userinfo("access-token", "id-token", payload)
+
+
+@pytest.mark.parametrize("groups", (None, "/centers/north", ["/centers/unknown"]))
+def test_browser_invalid_explicit_userinfo_groups_never_use_token_groups(
+    groups: JsonValue,
+) -> None:
+    Center.objects.create(name="North", center_key="north")
+    backend = object.__new__(KeycloakOIDCBackend)
+    payload = _claims("invalid-userinfo", ["/centers/north"])
+    with (
+        patch(
+            "mozilla_django_oidc.auth.OIDCAuthenticationBackend.get_userinfo",
+            return_value={"sub": payload["sub"], "groups": groups},
+        ),
+        pytest.raises(CenterAccessConfigurationError),
+    ):
+        backend.get_userinfo("access-token", "id-token", payload)
+
+
+def test_missing_groups_rejects_login_without_erasing_existing_membership() -> None:
+    center = Center.objects.create(name="North", center_key="north")
+    backend = object.__new__(KeycloakOIDCBackend)
+    claims = _claims("missing-groups", ["/centers/north"])
+    user = backend.create_user(claims)
+    claims.pop("groups")
+    with (
+        patch(
+            "mozilla_django_oidc.auth.OIDCAuthenticationBackend.get_userinfo",
+            return_value=claims,
+        ),
+        pytest.raises(CenterAccessConfigurationError, match="groups claim is missing"),
+    ):
+        backend.get_userinfo("access-token", "id-token", claims)
+    with pytest.raises(CenterAccessConfigurationError, match="groups claim is missing"):
+        backend.update_user(cast(Any, user), claims)
+    assert set(PortalUserInfo.objects.get(user=user).centers.all()) == {center}
+
+
 def test_oidc_unknown_center_claim_preserves_existing_membership() -> None:
     north = Center.objects.create(name="North", center_key="north")
     user = User.objects.create_user(username="oidc-unknown-center-user")
@@ -119,7 +198,7 @@ def test_oidc_session_overview_tracks_center_and_role_revocation(
         assert response.status_code == 200, response.content
         assert {row["id"] for row in response.json()} == {south_video.pk}
 
-        claims.pop("groups")
+        claims["groups"] = []
         backend.update_user(cast(Any, user), claims)
         response = client.get("/api/anonymization/items/overview/")
         assert response.status_code == 403, response.content

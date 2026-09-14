@@ -94,6 +94,10 @@ definition_of_done:
     commits atomically or rolls back together.
   - A session created from verified claims exposes the application role through auth bootstrap and returns
     only its permitted center overview; reauthentication and revocation change both gates.
+  - Browser login preserves verified ID-token center groups when UserInfo omits groups, requires matching
+    subjects, and gives an explicit UserInfo groups claim precedence, including empty revocation.
+  - Missing groups in every trusted claim source fails authentication without changing cached memberships;
+    operators receive an actionable mapper error rather than a successful empty synchronization.
   required: true
   verification:
     kind: command
@@ -108,7 +112,7 @@ definition_of_done:
     - -q
     timeout_seconds: 600
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pytest tests/services/test_center_access.py tests/authz/test_center_group_sync.py
@@ -119,14 +123,19 @@ definition_of_done:
         pytest tests/authz/test_center_group_sync.py tests/keycloak/test_auth_bootstrap.py: 13 passed'
     - kind: code
       reference: endoreg_db/authz/auth.py; endoreg_db/authz/backends.py; tests/authz/test_center_group_sync.py
-    note: Verified application-level identity synchronization, typed multi-center relationships and legacy
-      migration, explicit global access, atomic rollback, empty/missing bearer-role revocation, session
-      bootstrap endoregdb_user role and center-scoped overview across three site profiles. Focused Pyright
-      clean; auth/center/JWT/access matrix 38 passed and final updated auth/bootstrap lane 13 passed.
-      Explicit test switches prevent claims tests silently skipping. Live Keycloak mapper and actual browser
-      login remain a separate operational gate.
-    assessed_by: codex-remote-review-20260907
-    assessed_at: '2026-09-07T09:00:49.026795Z'
+    - kind: test
+      reference: '2026-09-14: TEST_DB_ENGINE=django.db.backends.sqlite3 RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_center_access.py tests/authz/test_center_group_sync.py
+        tests/keycloak/test_jwt_auth.py tests/keycloak/test_auth_bootstrap.py tests/views/test_center_access_matrix.py
+        -q: 49 passed, 2 warnings.'
+    note: 'Implemented subject-bound verified ID-token groups when UserInfo omits the claim. Explicit
+      UserInfo groups take precedence, including empty revocation. Missing claims fail authentication
+      without erasing memberships. Focused Pyright: 0 errors and warnings; Ruff clean; 49 regressions
+      passed. Full Pyright initially found four errors in new code, resolved and rechecked in focused
+      scope; one unrelated missing lx_anonymizer stub warning. Live Keycloak mapper/browser login and
+      deployment remain unverified.'
+    assessed_by: codex-gc10-diagnosis-20260914
+    assessed_at: '2026-09-14T09:44:11.496895Z'
 - id: deployment_aware_video_reads
   category: functionality
   title: Video discovery and playback enforce the same deployment-aware policy

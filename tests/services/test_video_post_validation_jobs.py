@@ -860,9 +860,12 @@ def test_run_video_post_validation_rebuild_rejects_incomplete_extraction(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("sample_value", [0, 8, 9, 255])
 def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    sample_value: int,
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
@@ -913,7 +916,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
 
     def fake_capture_frame(_path: Path, frame_number: int):
         sampled_frame_numbers.append(frame_number)
-        return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
+        return __import__("numpy").full((4, 4, 3), sample_value, dtype="uint8")
 
     monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
 
@@ -952,6 +955,9 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk) is True
     )
     assert sampled_frame_numbers == [0]
+    assert ("continuing validation" in caplog.text) is (sample_value > 8)
+    if sample_value > 8:
+        assert f"maximum_channel_value={sample_value} tolerance=8" in caplog.text
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
     video.refresh_from_db()

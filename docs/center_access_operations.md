@@ -27,6 +27,27 @@ the cache. Zero, one, or multiple centers are valid. The workflow's configured
 default center grants no permission. `is_staff` and `is_superuser` remain
 explicit global exceptions; missing memberships never imply global access.
 
+### Keycloak claim delivery
+
+Assign users to `/centers/<center_key>` in Keycloak and configure a Group
+Membership mapper with token claim name `groups` and full group paths enabled.
+Include the claim in UserInfo and the ID token for browser login, and in the
+access token for bearer authentication. The mapper's client scope must be
+assigned to the application client. A group assignment without a delivered
+claim cannot authorize the user locally.
+
+Browser authentication checks that UserInfo's subject matches the verified ID
+token. When UserInfo omits `groups`, it uses the groups from that verified ID
+token. An explicit UserInfo list takes precedence, including `[]` for revocation.
+Bearer authentication uses only its verified access-token groups. If no trusted
+source supplies the claim, authentication fails with `missing_groups_claim`
+without changing memberships; missing mapper configuration is not treated as
+an intentional revocation. Malformed and unknown groups also fail authentication.
+
+After changing groups or mappers, sign out and sign in again. Verify the
+`center_access_identity_sync_completed` event and the assigned center IDs.
+Manual PostgreSQL membership edits are not a durable assignment mechanism.
+
 ## Access matrix
 
 In this table, “own” always means assigned to a center through verified
@@ -136,6 +157,8 @@ devenv shell -- python manage.py shell -c \
 Relevant structured JavaScript Object Notation (JSON) events:
 
 - `center_access_identity_sync_completed`: membership cache was replaced.
+- `center_access_identity_sync_rejected` with `missing_groups_claim`: configure
+  the client mapper and renew authentication; no explicit groups were delivered.
 - `center_access_identity_sync_rejected` with `malformed_groups_claim`: claim
   shape is invalid.
 - `center_access_identity_sync_rejected` with `unknown_center_keys`: identity

@@ -25,8 +25,22 @@ class CenterAccessConfigurationError(ValueError):
 def validated_center_group_paths(
     claims: Mapping[str, JsonValue],
 ) -> tuple[str, ...]:
-    """Read the optional Keycloak groups claim without coercing invalid input."""
-    raw_groups = claims.get("groups", [])
+    """Require an explicit Keycloak groups claim; omission is not revocation."""
+    if "groups" not in claims:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "center_access_identity_sync_rejected",
+                    "reason": "missing_groups_claim",
+                },
+                sort_keys=True,
+            )
+        )
+        raise CenterAccessConfigurationError(
+            "Keycloak groups claim is missing. Configure the Group Membership "
+            "mapper with full group paths for ID token/UserInfo and access token."
+        )
+    raw_groups = claims["groups"]
     if not isinstance(raw_groups, list) or not all(
         isinstance(group_path, str) for group_path in raw_groups
     ):

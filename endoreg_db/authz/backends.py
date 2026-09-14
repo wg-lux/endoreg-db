@@ -37,11 +37,18 @@ from django.db.models.query import QuerySet
 from lx_dtypes.models.contracts import KeycloakClaimsPayload, validate_keycloak_claims
 from lx_dtypes.models.contracts.json_types import JsonValue
 from endoreg_db.services.center_access import (
+    CenterAccessConfigurationError,
     synchronize_user_center_groups,
     validated_center_group_paths,
 )
 
 User = get_user_model()
+
+
+class _OIDCUserInfoSource(Protocol):
+    def get_userinfo(
+        self, access_token: str, id_token: str, payload: Mapping[str, JsonValue]
+    ) -> object: ...
 
 
 class _UserGroups(Protocol):
@@ -95,6 +102,30 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
       - Update the user on subsequent logins (update_user)
       - Sync Keycloak roles → Django Groups so your PolicyPermission can check them
     """
+
+    def get_userinfo(
+        self, access_token: str, id_token: str, payload: Mapping[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        """Keep center claims from the ID token already verified by OIDC.
+
+        UserInfo is authoritative when it explicitly supplies groups, including
+        an empty list. Never decode an unverified token or combine identities.
+        """
+        userinfo = cast(_OIDCUserInfoSource, super()).get_userinfo(
+            access_token, id_token, payload
+        )
+        if not isinstance(userinfo, dict):
+            raise CenterAccessConfigurationError("Keycloak UserInfo must be an object")
+        claims = dict(cast(Mapping[str, JsonValue], userinfo))
+        subject = payload.get("sub")
+        if not isinstance(subject, str) or not subject or claims.get("sub") != subject:
+            raise CenterAccessConfigurationError(
+                "Keycloak UserInfo subject does not match the verified ID token"
+            )
+        if "groups" not in claims and "groups" in payload:
+            claims["groups"] = payload["groups"]
+        validated_center_group_paths(claims)
+        return claims
 
     # Called by the base class when no existing user matches the claims.
     @transaction.atomic

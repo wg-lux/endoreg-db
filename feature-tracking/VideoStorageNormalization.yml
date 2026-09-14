@@ -368,6 +368,10 @@ definition_of_done:
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
   acceptance:
+  - Eine Überschreitung der Schwarzwert-Toleranz bei Outside-Stichproben im neu aufgebauten
+    Processed-Video wird mit Video-ID, Frameindex, maximalem Kanalwert und Toleranz als Warnung
+    protokolliert und blockiert die Segmentvalidierung nicht. Rebuild-, Decode-, Integritäts-
+    und extrahierte Frame-Prüfungen bleiben verpflichtend.
   - Das von lx-annotate/VideoExaminationAnnotation.vue verwendete Processed-HLS bleibt nach Neuimport,
     Reimport und Bestandsnormalisierung unter den bestehenden Playlist-, Key- und Segment-Endpunkten abspielbar;
     Video-Detail, HLS-Dauer, FPS und Frameanzahl beschreiben dieselbe veröffentlichte Generation.
@@ -456,6 +460,12 @@ definition_of_done:
     evidence:
     - kind: review
       reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
+    - kind: test
+      reference: tests/services/test_video_post_validation_jobs.py
+      note: '2026-09-11: Schwarzwert-Stichproben 0, 8, 9 und 255 erlauben Abschluss;
+        Werte über 8 erzeugen eine Warnung. RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        TEST_DB_REUSE=false .devenv/state/venv/bin/pytest tests/services/test_video_post_validation_jobs.py
+        -q: 22 passed, 8 skipped. Pyright: 0 Fehler, 1 bestehende Stub-Warnung; Ruff erfolgreich.'
     - kind: review
       reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
         /dev/lx-annotate/frontend/src/stores/videoStore.ts

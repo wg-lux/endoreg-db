@@ -48,6 +48,7 @@ def test_extract_roles_ignores_untrusted_client_resource_roles() -> None:
 def test_oidc_group_sync_ignores_untrusted_client_resource_roles() -> None:
     claims: dict[str, JsonValue] = {
         "preferred_username": "oidc-scoped-role-user",
+        "groups": [],
         "roles": ["flat-role"],
         "realm_access": {"roles": ["realm-role"]},
         "resource_access": {
