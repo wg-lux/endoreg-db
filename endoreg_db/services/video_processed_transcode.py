@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
-import os
-from dataclasses import dataclass
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, Never, Protocol, cast
+from typing import Literal, Never
 from uuid import uuid4
 
 from django.db import transaction
+from django.db.models import Q
+from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
@@ -20,10 +23,18 @@ from endoreg_db.schemas.video_storage import (
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services.hls_media import materialize_video_hls
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.services.video_files.io import ensure_local_processed_video_file
+from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
+from endoreg_db.services.media_operation_gate import (
+    TranscodeLeaseClaim,
+    video_transcode_lease,
+    video_transcode_publication,
+)
+from endoreg_db.services.processed_video_cleanup import (
+    cleanup_processed_video_generations,
+    commit_processed_replacements,
+    record_processed_replacement,
+)
+from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.services.video_storage_normalization import (
     assert_temporal_equivalence,
     configured_video_storage_profile,
@@ -38,14 +49,23 @@ from endoreg_db.services.video_storage_normalization import (
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     ensure_directory,
+    atomic_create_file,
     ensure_disk_capacity,
-    safe_unlink_file,
+    safe_delete_field_file,
+    sha256_file,
+    safe_rmtree,
+    set_path_mode,
 )
+from endoreg_db.utils.encryption.storage_materialization import (
+    materialized_plaintext_field_file,
+)
+from endoreg_db.utils.structured_logging import emit_structured_event
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.transcode_execution import transcode_video
 
 logger = logging.getLogger(__name__)
+
 
 TranscodeStatus = Literal[
     "changed",
@@ -57,14 +77,36 @@ TranscodeStatus = Literal[
 ]
 
 
-class _StorageWithDelete(Protocol):
-    def exists(self, name: str) -> bool: ...
-
-    def delete(self, name: str) -> None: ...
+CleanupPhase = Literal["published_generation", "failed_candidate"]
 
 
-class _ProcessedFileWithStorage(Protocol):
-    storage: _StorageWithDelete
+class ProcessedVideoTranscodeCleanupError(RuntimeError):
+    """Cleanup needs reconciliation; never retry by deleting a published master."""
+
+    video_id: int
+    phase: CleanupPhase
+
+    def __init__(self, *, video_id: int, phase: CleanupPhase) -> None:
+        self.video_id = video_id
+        self.phase = phase
+        super().__init__(
+            f"Processed video cleanup requires reconciliation: video={video_id}, phase={phase}"
+        )
+
+
+def _raise_cleanup_error(
+    *, video_id: int, phase: CleanupPhase, cause: Exception
+) -> Never:
+    emit_structured_event(
+        logger,
+        "processed_video_transcode_cleanup_failed",
+        level=logging.ERROR,
+        video_id=video_id,
+        phase=phase,
+        error_type=type(cause).__name__,
+        requires_reconciliation=True,
+    )
+    raise ProcessedVideoTranscodeCleanupError(video_id=video_id, phase=phase) from cause
 
 
 @dataclass(frozen=True)
@@ -80,6 +122,8 @@ class ProcessedVideoTranscodeResult:
     old_streamable_relative_path: str
     new_streamable_relative_path: str
     detail: str = ""
+    published: bool = False
+    failure_stage: str = ""
 
     @property
     def changed(self) -> bool:
@@ -134,59 +178,23 @@ def _processed_storage_name(*, video: VideoFile, content_hash: str) -> str:
     return path_utils.to_storage_relative(target_path)
 
 
-def _managed_streamable_path(relative_path: str) -> Path | None:
-    normalized = str(relative_path or "").strip()
-    if not normalized:
-        return None
-
+def _cleanup_committed_processed_assets(*, video_id: int) -> None:
     try:
-        return path_utils.resolve_protected_media_path(normalized)
-    except ValueError:
-        pass
-
-    relative = Path(normalized)
-    if relative.is_absolute():
-        return None
-
-    for storage_root in dict.fromkeys(
-        (
-            Path(path_utils.STORAGE_DIR).resolve(),
-            path_utils.EndoregPathsModel.from_environment().storage.resolve(),
-        )
-    ):
-        candidate = (storage_root / relative).resolve()
-        try:
-            candidate.relative_to(storage_root)
-        except ValueError:
-            continue
-        return candidate
-    return None
+        result = cleanup_processed_video_generations(video_id, apply=True)
+        if result.pending:
+            raise RuntimeError(f"Processed cleanup is pending: {result.reason}")
+    except Exception as exc:
+        _raise_cleanup_error(video_id=video_id, phase="published_generation", cause=exc)
 
 
-def _cleanup_replaced_processed_assets(
-    *,
-    video_id: int,
-    old_processed_name: str,
-    new_processed_name: str,
-    old_streamable_relative_path: str,
-    new_streamable_relative_path: str,
-) -> None:
-    video = VideoFile.objects.get(pk=video_id)
-    if old_processed_name and old_processed_name != new_processed_name:
-        processed_file = cast(_ProcessedFileWithStorage, video.processed_file)
-        storage = processed_file.storage
-        try:
-            if storage.exists(old_processed_name):
-                storage.delete(old_processed_name)
-        except FileNotFoundError:
-            pass
-
-    old_streamable_path = _managed_streamable_path(old_streamable_relative_path)
-    if (
-        old_streamable_path is not None
-        and old_streamable_relative_path != new_streamable_relative_path
-    ):
-        safe_unlink_file(old_streamable_path, missing_ok=True)
+def _delete_unreferenced_processed_file(video: VideoFile, name: str) -> None:
+    # In-memory FieldFile state can reflect a rolled-back publication. Consult the
+    # database before deleting; an unavailable database must retain the artifact.
+    with transaction.atomic():
+        VideoFile.objects.select_for_update().get(pk=video.pk)
+        if VideoFile.objects.filter(Q(processed_file=name) | Q(raw_file=name)).exists():
+            raise RuntimeError("Refusing to delete a referenced processed artifact")
+        safe_delete_field_file(FieldFile(video, video.processed_file.field, name))
 
 
 def _original_processed_state(video: VideoFile) -> _OriginalProcessedState:
@@ -208,6 +216,8 @@ def _transcode_result(
     new_processed_name: str = "",
     new_streamable_relative_path: str | None = None,
     detail: str = "",
+    published: bool = False,
+    failure_stage: str = "",
 ) -> ProcessedVideoTranscodeResult:
     return ProcessedVideoTranscodeResult(
         video_id=video.pk,
@@ -225,6 +235,8 @@ def _transcode_result(
             else new_streamable_relative_path
         ),
         detail=detail,
+        published=published,
+        failure_stage=failure_stage,
     )
 
 
@@ -331,6 +343,9 @@ def _probe_transcoded_candidate(
             detail="ffmpeg transcode failed",
         )
     candidate_path = Path(transcoded_path)
+    if candidate_path != output_path:
+        raise RuntimeError("Encoder returned a path outside its scoped output.")
+    set_path_mode(candidate_path, 0o600)
     new_size = candidate_path.stat().st_size
     if new_size <= 0:
         _stop_transcode(
@@ -514,19 +529,30 @@ def _publish_transcode_candidate(
     video: VideoFile,
     original: _OriginalProcessedState,
     candidate: _TranscodeCandidate,
+    *,
+    claim: TranscodeLeaseClaim,
 ) -> str:
-    with transaction.atomic():
-        save_local_file(
-            video.processed_file,
-            candidate.path,
-            name=candidate.processed_name,
-            save=False,
-            overwrite=True,
+    # Encryption/upload has already finished. Hold the publication row lock only
+    # while checking the source generation and swapping database references.
+    with video_transcode_publication(claim) as current:
+        if (
+            str(current.processed_file.name or "") != original.processed_name
+            or str(current.processed_video_hash or "") != original.content_hash
+        ):
+            raise RuntimeError("Processed source generation changed during transcode.")
+        current.processed_file.name = candidate.processed_name
+        current.processed_video_hash = candidate.content_hash
+        _apply_candidate_metadata(current, candidate)
+        record_processed_replacement(
+            current,
+            previous_name=original.processed_name,
+            previous_hash=original.content_hash,
+            strict=True,
         )
-        video.processed_video_hash = candidate.content_hash
-        video.processed_streamable_relative_path = ""
-        _apply_candidate_metadata(video, candidate)
-        video.save(
+        _record_legacy_playback_retirement(current)
+        if not commit_processed_replacements(current):
+            raise RuntimeError("Replacement publication requires a cleanup receipt.")
+        current.save(
             update_fields=[
                 "processed_file",
                 "processed_video_hash",
@@ -538,31 +564,36 @@ def _publish_transcode_candidate(
                 "date_modified",
             ]
         )
-        _reset_frames_after_resampling(video, candidate)
-        sync_video_streamable_artifacts(
-            video,
-            include_raw=False,
-            include_processed=True,
-            save=True,
-        )
-        new_streamable_relative_path = str(
-            video.processed_streamable_relative_path or ""
-        )
-        materialize_video_hls(
-            int(video.pk),
-            artifact_kind="processed",
-            force=True,
-        )
-        transaction.on_commit(
-            lambda: _cleanup_replaced_processed_assets(
-                video_id=video.pk,
-                old_processed_name=original.processed_name,
-                new_processed_name=candidate.processed_name,
-                old_streamable_relative_path=original.streamable_relative_path,
-                new_streamable_relative_path=new_streamable_relative_path,
+        _reset_frames_after_resampling(current, candidate)
+    video.refresh_from_db()
+    return str(video.processed_streamable_relative_path or "")
+
+
+def _stage_encrypted_candidate(
+    video: VideoFile,
+    candidate: _TranscodeCandidate,
+) -> _TranscodeCandidate:
+    target = video.processed_file
+    name = path_utils.to_storage_relative(
+        path_utils.EndoregPathsModel.from_environment().anonym_video
+        / ".generations"
+        / f"{video.video_hash}-{uuid4().hex}.mp4"
+    )
+    staged = FieldFile(video, target.field, "")
+    stored_name = save_local_file(staged, candidate.path, name=name, save=False)
+    # Confirm authenticated round-trip identity before database publication.
+    try:
+        if get_video_hash(staged) != candidate.content_hash:
+            raise RuntimeError("Encrypted candidate identity verification failed.")
+    except Exception:
+        try:
+            safe_delete_field_file(staged)
+        except Exception as cleanup_error:
+            _raise_cleanup_error(
+                video_id=int(video.pk), phase="failed_candidate", cause=cleanup_error
             )
-        )
-    return new_streamable_relative_path
+        raise
+    return replace(candidate, processed_name=stored_name)
 
 
 def _cleanup_failed_candidate(
@@ -574,16 +605,60 @@ def _cleanup_failed_candidate(
     if not candidate_name or candidate_name == original_name:
         return
     try:
-        processed_file = cast(_ProcessedFileWithStorage, video.processed_file)
-        storage = processed_file.storage
-        if storage.exists(candidate_name):
-            storage.delete(candidate_name)
-    except Exception:
-        logger.warning(
-            "Failed to clean up orphaned transcoded processed file %s",
-            candidate_name,
-            exc_info=True,
+        _delete_unreferenced_processed_file(video, candidate_name)
+    except Exception as exc:
+        _raise_cleanup_error(
+            video_id=int(video.pk), phase="failed_candidate", cause=exc
         )
+
+
+def _prepare_existing_generations(video: VideoFile) -> None:
+    """Retire journaled replacements before permitting another generation."""
+    if cleanup_receipts(video.meta):
+        result = materialize_video_hls(int(video.pk), artifact_kind="processed")
+        if not hls_result_is_ready(result.status):
+            raise RuntimeError("Pending replacement playback is not ready.")
+        _cleanup_committed_processed_assets(video_id=video.pk)
+        video.refresh_from_db()
+
+
+def _record_legacy_playback_retirement(video: VideoFile) -> None:
+    if video.processed_streamable_relative_path:
+        legacy_path = path_utils.resolve_protected_media_path(
+            video.processed_streamable_relative_path
+        )
+        record_processed_replacement(
+            video,
+            previous_name=video.processed_streamable_relative_path,
+            previous_hash=sha256_file(legacy_path),
+            source_kind="legacy_streamable",
+            strict=True,
+        )
+    video.processed_streamable_relative_path = ""
+
+
+def _retire_existing_playback(video: VideoFile, *, claim: TranscodeLeaseClaim) -> None:
+    if not video.processed_streamable_relative_path:
+        return
+    with video_transcode_publication(claim) as current:
+        _record_legacy_playback_retirement(current)
+        if not commit_processed_replacements(current):
+            raise RuntimeError("Legacy playback retirement requires a cleanup receipt.")
+        current.save(
+            update_fields=[
+                "processed_streamable_relative_path",
+                "meta",
+                "date_modified",
+            ]
+        )
+    video.refresh_from_db()
+    result = materialize_video_hls(int(video.pk), artifact_kind="processed", force=True)
+    if not hls_result_is_ready(result.status):
+        raise RuntimeError(
+            "Canonical playback is not ready for legacy-copy retirement."
+        )
+    _cleanup_committed_processed_assets(video_id=video.pk)
+    video.refresh_from_db()
 
 
 def _dry_run_result(
@@ -611,8 +686,64 @@ def transcode_processed_video_for_storage_pressure(
     force_cpu: bool = False,
     allow_larger: bool = False,
     resample_max_fps: float | None = None,
+    transcode_claim: TranscodeLeaseClaim | None = None,
+    expected_processed_name: str | None = None,
+    expected_processed_hash: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+) -> ProcessedVideoTranscodeResult:
+    with video_transcode_lease(video_id=int(video.pk), claim=transcode_claim) as claim:
+        video.refresh_from_db()
+        return _transcode_under_lease(
+            video,
+            apply=apply,
+            quality_mode=quality_mode,
+            force_cpu=force_cpu,
+            allow_larger=allow_larger,
+            resample_max_fps=resample_max_fps,
+            claim=claim,
+            expected_processed_name=expected_processed_name,
+            expected_processed_hash=expected_processed_hash,
+            progress_callback=progress_callback,
+        )
+
+
+@contextmanager
+def ensure_local_processed_video_file(
+    video: VideoFile,
+    *,
+    directory: Path | None = None,
+) -> Generator[Path]:
+    """Authenticated source materialization; never return a ciphertext path."""
+    with materialized_plaintext_field_file(
+        video.processed_file,
+        suffix=".mp4",
+        prefix="processed-transcode-source-",
+        directory=directory,
+    ) as source_path:
+        yield source_path
+
+
+def _transcode_under_lease(
+    video: VideoFile,
+    *,
+    apply: bool,
+    quality_mode: str,
+    force_cpu: bool,
+    allow_larger: bool,
+    resample_max_fps: float | None,
+    claim: TranscodeLeaseClaim,
+    expected_processed_name: str | None,
+    expected_processed_hash: str | None,
+    progress_callback: Callable[[str], None] | None,
 ) -> ProcessedVideoTranscodeResult:
     original = _original_processed_state(video)
+    if (
+        expected_processed_name is not None
+        and expected_processed_name != original.processed_name
+        or expected_processed_hash is not None
+        and expected_processed_hash != original.content_hash
+    ):
+        raise RuntimeError("Queued processed source generation no longer matches.")
     if not original.processed_name:
         return _transcode_result(
             video,
@@ -621,15 +752,44 @@ def transcode_processed_video_for_storage_pressure(
             detail="processed_file is empty",
         )
     paths = path_utils.EndoregPathsModel.from_environment()
-    work_dir = ensure_directory(paths.transcoding / "processed_storage_pressure")
-    output_path = (
-        work_dir
-        / f"video-{video.pk}.{os.getpid()}.{uuid4().hex}.processed.transcoded.mp4"
+    attempt_root = paths.transcoding / "processed_storage_pressure" / str(video.uuid)
+    if attempt_root.exists():
+        raise RuntimeError(
+            "Previous transcode staging requires cleanup reconciliation."
+        )
+    ensure_directory(attempt_root, dir_mode=0o700)
+    work_dir = ensure_directory(
+        attempt_root / uuid4().hex,
+        dir_mode=0o700,
     )
+    output_path = work_dir / "candidate.mp4"
     saved_new_processed_name = ""
+    published = False
+    cleanup_complete = True
+    stage = "materializing"
+    candidate: _TranscodeCandidate | None = None
+
+    def progress(value: str) -> None:
+        nonlocal stage
+        stage = value
+        if progress_callback is not None:
+            progress_callback(value)
+
     try:
-        defer_if_video_media_busy(video_id=int(video.pk))
-        with ensure_local_processed_video_file(video) as source_path:
+        if apply:
+            progress("cleanup")
+            _prepare_existing_generations(video)
+            original = _original_processed_state(video)
+        progress("materializing")
+        atomic_create_file(destination=output_path, content=(), file_mode=0o600)
+        with ensure_local_processed_video_file(
+            video, directory=work_dir
+        ) as source_path:
+            if get_video_hash(source_path) != original.content_hash:
+                raise RuntimeError(
+                    "Processed source content identity does not match its generation."
+                )
+            progress("transcoding")
             candidate = _build_transcode_candidate(
                 video,
                 original,
@@ -640,41 +800,93 @@ def transcode_processed_video_for_storage_pressure(
                 allow_larger=allow_larger,
                 resample_max_fps=resample_max_fps,
             )
-            if not apply:
-                return _dry_run_result(video, original, candidate)
-            saved_new_processed_name = candidate.processed_name
-            new_streamable_relative_path = _publish_transcode_candidate(
-                video,
-                original,
-                candidate,
-            )
-            return _transcode_result(
-                video,
-                original,
-                status="changed",
-                old_size=candidate.old_size,
-                new_size=candidate.new_size,
-                new_hash=candidate.content_hash,
-                new_processed_name=candidate.processed_name,
-                new_streamable_relative_path=new_streamable_relative_path,
-            )
-    except _TerminalTranscodeResult as terminal:
-        return terminal.result
-    except Exception as exc:
-        logger.exception("Failed to transcode processed video %s", video.pk)
-        _cleanup_failed_candidate(
+        # Source plaintext is gone before encryption or publication begins.
+        progress("validating")
+        if not apply:
+            return _dry_run_result(video, original, candidate)
+        candidate = _stage_encrypted_candidate(video, candidate)
+        saved_new_processed_name = candidate.processed_name
+        progress("publishing")
+        new_streamable_relative_path = _publish_transcode_candidate(
             video,
-            original_name=original.processed_name,
-            candidate_name=saved_new_processed_name,
+            original,
+            candidate,
+            claim=claim,
         )
+        published = True
+        progress("rebuilding_playback")
+        hls_result = materialize_video_hls(
+            int(video.pk), artifact_kind="processed", force=True
+        )
+        if not hls_result_is_ready(hls_result.status):
+            raise RuntimeError("Published video playback generation is not ready.")
+        progress("cleanup")
+        _cleanup_committed_processed_assets(video_id=video.pk)
+        return _transcode_result(
+            video,
+            original,
+            status="changed",
+            old_size=candidate.old_size,
+            new_size=candidate.new_size,
+            new_hash=candidate.content_hash,
+            new_processed_name=candidate.processed_name,
+            new_streamable_relative_path=new_streamable_relative_path,
+            published=True,
+        )
+    except _TerminalTranscodeResult as terminal:
+        if apply and terminal.result.status in {
+            "skipped_not_smaller",
+            "skipped_same_hash",
+        }:
+            _retire_existing_playback(video, claim=claim)
+        return terminal.result
+    except ProcessedVideoTranscodeCleanupError:
+        cleanup_complete = bool(published or cleanup_receipts(video.meta))
+        # Cleanup failures must never enter candidate rollback cleanup.
+        raise
+    except Exception as exc:
+        emit_structured_event(
+            logger,
+            "processed_video_transcode_failed",
+            level=logging.ERROR,
+            video_id=int(video.pk),
+            error_type=type(exc).__name__,
+            stage=stage,
+            published=published,
+        )
+        if not published:
+            try:
+                _cleanup_failed_candidate(
+                    video,
+                    original_name=original.processed_name,
+                    candidate_name=saved_new_processed_name,
+                )
+            except ProcessedVideoTranscodeCleanupError:
+                cleanup_complete = False
+                raise
         return _transcode_result(
             video,
             original,
             status="failed",
-            detail=str(exc),
+            published=published,
+            failure_stage=stage,
+            old_size=candidate.old_size if candidate else 0,
+            new_size=candidate.new_size if candidate else 0,
+            new_hash=candidate.content_hash if candidate else "",
+            new_processed_name=saved_new_processed_name if published else "",
+            detail=f"Transcode failed during {stage}; {type(exc).__name__}.",
         )
     finally:
-        safe_unlink_file(output_path, missing_ok=True)
+        try:
+            safe_rmtree(work_dir, missing_ok=True)
+            if cleanup_complete:
+                safe_rmtree(attempt_root, missing_ok=True)
+        except Exception as exc:
+            _raise_cleanup_error(
+                video_id=int(video.pk),
+                phase="published_generation" if published else "failed_candidate",
+                cause=exc,
+            )
 
 
 def summarize_processed_video_transcode_results(

@@ -105,7 +105,9 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         video_hash="stream-anonym-hash",
         raw_file="sensitive_videos/raw.mp4",
         sensitive_meta=sensitive_meta,
-        frame_count=100,
+        frame_count=250,
+        fps=25,
+        duration=10,
     )
     outside_label = Label.objects.create(name="outside")
     LabelVideoSegment.objects.create(
@@ -205,6 +207,16 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         fake_get_video_hash,
     )
     monkeypatch.setattr(anonymize_module, "save_local_file", fake_save_local_file)
+    from tests.services.test_video_processed_transcode_encryption import probe
+
+    def fake_probe(path: Path):
+        return probe()
+
+    def fake_ready(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(anonymize_module, "probe_video_artifact", fake_probe)
+    monkeypatch.setattr(anonymize_module, "ensure_video_hls", fake_ready)
 
     def fake_sync_video_streamable_artifacts(*args: object, **kwargs: object) -> None:
         return None

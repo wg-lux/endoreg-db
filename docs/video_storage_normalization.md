@@ -34,6 +34,14 @@ to the whole import; this coordination does not extend those limits.
 
 ## Database recovery and version mismatches
 
+The upload cancellation API requires the cancellation contracts shipped in
+`lx-dtypes` 0.3.3. Keep the installed dependency aligned with `pyproject.toml`
+and `uv.lock` before running the application or collecting tests. An older
+installed package can fail while importing the overview routes even when
+Pyright succeeds using the sibling `lx-data-models` source checkout. Verify
+runtime imports with the project virtual environment, without a source-path
+override; static source checks alone do not verify the installed contract.
+
 Video import and HLS Celery deliveries retry database connection failures,
 missing-table/column errors, and a PostgreSQL NOT NULL violation for a column
 absent from the installed model. Retry delays grow from 60 seconds to a maximum
@@ -111,7 +119,7 @@ described where they are introduced.
 | Canonical anonymized MP4 | Import, reimport, or reanonymization | Permanent; exactly one published generation | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active |
 | Raw HLS | Successful import or reimport | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
 | Processed HLS | Successful import, reimport, or reanonymization | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
-| Streamable MP4 | Compatibility materialization | Only while the associated master generation is published | With the superseded master generation, after reference reconciliation and expiry of every lease |
+| Legacy streamable MP4 | Historical compatibility output; no new copies are created | Retained until verified retirement | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion |
 | Extracted frame | Segment or frame workflow | According to the case-specific retention policy; it is not a storage-normalization cache | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
 | Temporary transcode artifact | Normalization inside the protected transcoding directory | Only for the duration of one attempt | Through the `finally` path after success or failure; it is never marked as a valid master |
 | Quarantine artifact | Explicit fail-closed exception process | Until documented review | Only after separate quarantine approval; never through an automatic production fallback |
@@ -120,6 +128,12 @@ HLS eviction is generation- and reference-based, not time-based. An old
 generation may be removed only after the new generation has been published
 completely and atomically, the database and filesystem agree, and no playback
 or segment-update lease is active. Unknown references block eviction.
+
+HLS is the playback copy. Storage-pressure transcoding only replaces the
+processed master with a smaller verified generation and rebuilds processed HLS.
+It does not create another full-video playback copy. A normal raw import keeps
+one raw master, one processed master, and raw and processed HLS generations after
+cleanup. Repeated transcoding must not add permanent generations to that set.
 
 ## Production Profile
 
@@ -576,6 +590,34 @@ artifacts, and database/filesystem references. Only then run a read-only
 inventory followed by a small resume batch.
 
 ### Retiring replaced processed generations
+
+Storage-pressure transcoding records replacement receipts before publication and
+reconciles outstanding receipts before encoding another generation. Legacy
+streamable full-video copies are included using exact ownership
+and digest evidence. Existing copies remain on disk until verified retirement;
+retirement also runs when encoding produces no smaller replacement, provided the
+current canonical master and its HLS can be verified. The undeployed optimized
+playback-copy model fields, migration and supporting code have been removed;
+the transcode operation always replaces the canonical processed master.
+
+If deletion is deferred or fails, the job cannot claim reclaimed bytes. Retry
+cleanup after resolving the reported condition. Transcode staging is scoped to
+the video's stable UUID; leftover staging blocks another attempt so repeated
+failures cannot allocate additional attempt directories. Process-loss staging
+requires explicit reconciliation under the process-termination procedure above.
+HLS similarly retries known failed or superseded output cleanup before starting
+another encoder. Unrecorded historical files are never deleted by guessing their
+ownership.
+
+Import finalization and reanonymization use the same cleanup admission check
+before allocating another canonical generation. Reanonymization publishes a
+unique encrypted candidate and verifies its stored timeline, normalization
+profile and HLS before committing retirement of the previous master. Failed
+cleanup preserves the committed replacement and its receipt for retry.
+Cleanup establishes writer ownership before its storage transaction. Heartbeats
+renew the owned lease row independently of the video row held during integrity
+checks, so large-file hashing does not block renewal. Expired ownership cannot
+be revived.
 
 Import finalization records the previous generated processed master by storage
 name and plaintext SHA-256 digest before replacing its HTTP Live Streaming (HLS)

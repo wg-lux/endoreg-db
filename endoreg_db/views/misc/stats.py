@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Protocol, cast
 
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Count, Q

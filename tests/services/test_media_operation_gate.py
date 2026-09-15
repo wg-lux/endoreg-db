@@ -19,12 +19,22 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationLeaseAcquisition,
     MediaOperationLeaseType,
     acquire_media_operation_lease,
+    acquire_video_transcode_lease,
+    assert_video_transcode_lease,
     active_media_operation_lease_summary,
     create_segment_update_lease_on_commit,
     create_video_segment_update_lease,
     create_video_stream_lease,
     defer_if_video_media_busy,
     get_ffmpeg_stream_throttle_state,
+    release_video_transcode_lease,
+    renew_video_transcode_lease,
+    renew_video_artifact_write_lease,
+    TranscodeLeaseClaim,
+    video_artifact_mutation,
+    video_segment_mutation,
+    video_transcode_lease,
+    video_transcode_publication,
     video_has_active_media_operation_leases,
     wrap_iterator_with_media_lease,
 )
@@ -217,3 +227,281 @@ def test_segment_update_lease_is_created_after_transaction_commit() -> None:
         == MediaOperationLease.LEASE_SEGMENT_UPDATE
     )
     assert lease.metadata == {"source": "segment_validation"}
+
+
+@pytest.mark.django_db
+def test_transcode_claim_excludes_playback_segment_writes_and_duplicate_delivery() -> (
+    None
+):
+    video = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        create_video_stream_lease(video, file_type="processed")
+    with pytest.raises(MediaOperationDeferred):
+        with video_segment_mutation(video_id=video.pk):
+            pytest.fail("Segment mutation was admitted during exclusive transcode")
+    release_video_transcode_lease(claim)
+    with video_segment_mutation(video_id=video.pk):
+        video.fps = 25
+        video.save(update_fields=["fps"])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("operation", ["stream", "segment_update"])
+def test_transcode_waits_for_preexisting_read_or_write_lease(operation: str) -> None:
+    video = _create_video()
+    if operation == "stream":
+        create_video_stream_lease(video, file_type="processed")
+    else:
+        with video_segment_mutation(video_id=video.pk):
+            pass
+    with pytest.raises(MediaOperationDeferred):
+        acquire_video_transcode_lease(video_id=video.pk)
+
+
+@pytest.mark.django_db
+def test_expired_worker_cannot_renew_publish_or_release_replacement_claim() -> None:
+    video = _create_video()
+    old = acquire_video_transcode_lease(video_id=video.pk)
+    MediaOperationLease.objects.filter(token=old.token).update(
+        expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    current = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        renew_video_transcode_lease(old)
+    with pytest.raises(MediaOperationDeferred):
+        with video_transcode_publication(old):
+            pytest.fail("Expired worker entered publication")
+    release_video_transcode_lease(old)
+    assert_video_transcode_lease(current)
+
+
+@pytest.mark.django_db
+def test_publication_rolls_back_if_ownership_expires_before_commit() -> None:
+    video = _create_video()
+    initial_fps = video.fps
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        with video_transcode_publication(claim) as locked_video:
+            locked_video.fps = 17
+            locked_video.save(update_fields=["fps"])
+            MediaOperationLease.objects.filter(token=claim.token).update(
+                expires_at=timezone.now() - timedelta(seconds=1)
+            )
+    video.refresh_from_db()
+    assert video.fps == initial_fps
+
+
+@pytest.mark.django_db
+def test_claim_scope_allows_nested_rebuild_checks_but_never_playback_admission() -> (
+    None
+):
+    video = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        defer_if_video_media_busy(video_id=video.pk)
+    with video_transcode_lease(video_id=video.pk, claim=claim):
+        defer_if_video_media_busy(video_id=video.pk)
+        assert not video_has_active_media_operation_leases(video.pk)
+        with pytest.raises(MediaOperationDeferred):
+            create_video_stream_lease(video, file_type="processed")
+    assert_video_transcode_lease(claim)
+    with pytest.raises(MediaOperationDeferred):
+        defer_if_video_media_busy(video_id=video.pk)
+
+
+@pytest.mark.django_db
+def test_failed_heartbeat_fences_still_unexpired_claim() -> None:
+    video = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    claim.heartbeat_failed.set()
+    with pytest.raises(MediaOperationDeferred):
+        with video_transcode_publication(claim):
+            pytest.fail("Worker published after heartbeat failure")
+
+
+@pytest.mark.django_db
+def test_segment_admission_and_mutation_rollback_together() -> None:
+    video = _create_video()
+    with pytest.raises(RuntimeError, match="abort mutation"):
+        with video_segment_mutation(video_id=video.pk):
+            assert MediaOperationLease.objects.filter(video=video).exists()
+            raise RuntimeError("abort mutation")
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+    acquire_video_transcode_lease(video_id=video.pk)
+
+
+@pytest.mark.django_db
+def test_unowned_model_timeline_mutation_is_rejected_during_transcode() -> None:
+    video = _create_video()
+    old_fps = video.fps
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    video.fps = 25
+    with pytest.raises(MediaOperationDeferred):
+        video.save(update_fields=["fps"])
+    video.refresh_from_db()
+    assert video.fps == old_fps
+    with video_transcode_publication(claim) as current:
+        current.fps = 25
+        current.save(update_fields=["fps"])
+    video.refresh_from_db()
+    assert video.fps == 25
+
+
+@pytest.mark.django_db
+def test_expired_artifact_writer_is_retained_as_fail_closed_barrier() -> None:
+    video = _create_video()
+    writer = MediaOperationLease.objects.create(
+        video=video,
+        lease_type=MediaOperationLease.LEASE_ARTIFACT_WRITE,
+        expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    assert video_has_active_media_operation_leases(video.pk)
+    assert MediaOperationLease.objects.filter(pk=writer.pk).exists()
+    with pytest.raises(MediaOperationDeferred):
+        acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        create_video_stream_lease(video, file_type="processed")
+    with pytest.raises(MediaOperationDeferred):
+        with video_artifact_mutation(video_id=video.pk):
+            pytest.fail("Expired writer was replaced while IO may still run")
+
+
+@pytest.mark.django_db
+def test_nested_artifact_writer_retains_single_barrier_through_exception() -> None:
+    video = _create_video()
+    with pytest.raises(RuntimeError, match="storage failed"):
+        with video_artifact_mutation(video_id=video.pk):
+            with video_artifact_mutation(video_id=video.pk):
+                assert MediaOperationLease.objects.filter(video=video).count() == 1
+                with pytest.raises(MediaOperationDeferred):
+                    acquire_video_transcode_lease(video_id=video.pk)
+                raise RuntimeError("storage failed")
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+
+
+@pytest.mark.django_db
+def test_transcode_expiry_during_storage_io_keeps_writer_barrier_until_return() -> None:
+    video = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        with video_transcode_lease(video_id=video.pk, claim=claim):
+            with video_artifact_mutation(video_id=video.pk):
+                MediaOperationLease.objects.filter(token=claim.token).update(
+                    expires_at=timezone.now() - timedelta(seconds=1)
+                )
+                with pytest.raises(MediaOperationDeferred):
+                    acquire_video_transcode_lease(video_id=video.pk)
+    assert not MediaOperationLease.objects.filter(
+        video=video,
+        lease_type=MediaOperationLease.LEASE_ARTIFACT_WRITE,
+    ).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_artifact_writer_allows_owned_hls_checks_but_blocks_other_admission() -> None:
+    video = _create_video()
+    with video_artifact_mutation(video_id=video.pk):
+        assert not video_has_active_media_operation_leases(video.pk)
+        defer_if_video_media_busy(video_id=video.pk)
+        with pytest.raises(MediaOperationDeferred):
+            create_video_stream_lease(video, file_type="processed")
+        with pytest.raises(MediaOperationDeferred):
+            acquire_video_transcode_lease(video_id=video.pk)
+        MediaOperationLease.objects.filter(video=video).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        with pytest.raises(MediaOperationDeferred):
+            video_has_active_media_operation_leases(video.pk)
+        # Restore ownership so context exit tests the verified release path.
+        MediaOperationLease.objects.filter(video=video).update(
+            expires_at=timezone.now() + timedelta(seconds=30)
+        )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "lease_type",
+    [MediaOperationLeaseType.TRANSCODE, MediaOperationLeaseType.ARTIFACT_WRITE],
+)
+def test_exclusive_renewal_does_not_reacquire_the_cleanup_video_lock(
+    lease_type: MediaOperationLeaseType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _create_video()
+    lease = acquire_media_operation_lease(
+        request=MediaOperationLeaseAcquisition(
+            video_id=video.pk,
+            lease_type=lease_type,
+            expires_at=timezone.now() + timedelta(seconds=10),
+            metadata={},
+        )
+    )
+    previous_expiry = lease.expires_at
+
+    def reject_video_lock(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("Heartbeat tried to lock the video being cleaned")
+
+    # The real lease row is renewed. Any attempt to take the video lock fails,
+    # reproducing the dependency that previously blocked/failed long cleanup.
+    monkeypatch.setattr(VideoFile.objects, "select_for_update", reject_video_lock)
+    if lease_type == MediaOperationLeaseType.TRANSCODE:
+        renew_video_transcode_lease(
+            TranscodeLeaseClaim(video_id=video.pk, token=lease.token)
+        )
+    else:
+        renew_video_artifact_write_lease(video_id=video.pk, token=lease.token)
+    lease.refresh_from_db()
+    assert lease.expires_at > previous_expiry
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "lease_type",
+    [MediaOperationLeaseType.TRANSCODE, MediaOperationLeaseType.ARTIFACT_WRITE],
+)
+def test_exclusive_renewal_never_revives_an_expired_token(
+    lease_type: MediaOperationLeaseType,
+) -> None:
+    video = _create_video()
+    expired_at = timezone.now() - timedelta(seconds=1)
+    lease = MediaOperationLease.objects.create(
+        video=video, lease_type=lease_type.value, expires_at=expired_at
+    )
+    with pytest.raises(MediaOperationDeferred):
+        if lease_type == MediaOperationLeaseType.TRANSCODE:
+            renew_video_transcode_lease(
+                TranscodeLeaseClaim(video_id=video.pk, token=lease.token)
+            )
+        else:
+            renew_video_artifact_write_lease(video_id=video.pk, token=lease.token)
+    lease.refresh_from_db()
+    assert lease.expires_at == expired_at
+
+
+@pytest.mark.django_db
+def test_writer_renewal_cannot_renew_a_different_lease_type_or_video() -> None:
+    video = _create_video()
+    other = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    with pytest.raises(MediaOperationDeferred):
+        renew_video_artifact_write_lease(video_id=video.pk, token=claim.token)
+    with pytest.raises(MediaOperationDeferred):
+        renew_video_transcode_lease(
+            TranscodeLeaseClaim(video_id=other.pk, token=claim.token)
+        )
+    assert_video_transcode_lease(claim)
+
+
+@pytest.mark.django_db
+def test_failed_transcode_heartbeat_cannot_extend_its_lease() -> None:
+    video = _create_video()
+    claim = acquire_video_transcode_lease(video_id=video.pk)
+    lease = MediaOperationLease.objects.get(token=claim.token)
+    before = lease.expires_at
+    claim.heartbeat_failed.set()
+    with pytest.raises(MediaOperationDeferred):
+        renew_video_transcode_lease(claim)
+    lease.refresh_from_db()
+    assert lease.expires_at == before

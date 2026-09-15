@@ -6,7 +6,7 @@ from typing import cast
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.services.anonymization_metrics import (

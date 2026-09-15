@@ -16,7 +16,7 @@ import logging
 from django.http import HttpResponseRedirect
 from django.http.response import HttpResponseBase
 from rest_framework.request import Request
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.video.video_file import VideoFile

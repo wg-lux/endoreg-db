@@ -23,6 +23,7 @@ def materialized_plaintext_field_file(
     *,
     suffix: str = "",
     prefix: str = "endoreg-fieldfile-",
+    directory: Path | None = None,
 ) -> Generator[Path]:
     tmp_path: Path | None = None
     try:
@@ -32,6 +33,7 @@ def materialized_plaintext_field_file(
             prefix=prefix,
             suffix=suffix,
             delete=False,
+            dir=directory,
         ) as tmp:
             tmp_path = Path(tmp.name)
             for chunk in iter_field_file_bytes(field_file, start=0, end=size - 1):

@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol, TypedDict, cast
 
-from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -23,6 +22,7 @@ from endoreg_db.serializers.label_video_segment.label_video_segment import (
 from endoreg_db.services.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
+from endoreg_db.services.media_operation_gate import video_segment_mutation
 from endoreg_db.services.segment_frame_annotations import (
     delete_frame_annotations_for_segment as default_delete_frame_annotations,
     sync_frame_annotations_for_segment as default_sync_frame_annotations,
@@ -96,7 +96,10 @@ def bulk_mutate_video_segments(
     serializer_context = _bulk_serializer_context(video, mutation_request)
 
     try:
-        with transaction.atomic(), suppress_label_video_segment_state_side_effects():
+        with (
+            video_segment_mutation(video_id=int(video.pk)),
+            suppress_label_video_segment_state_side_effects(),
+        ):
             _create_segments(
                 video=video,
                 creates=mutation_request.creates,

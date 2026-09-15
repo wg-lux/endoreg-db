@@ -358,6 +358,55 @@ def _require_execution_ownership(ctx: ImportContext) -> None:
         ctx.execution_guard()
 
 
+@contextmanager
+def cleanup_cancelled_import_staging(ctx: ImportContext) -> Generator[None]:
+    """Remove only this invocation's staging before acknowledging cancellation."""
+    from endoreg_db.services.hub.upload_job_cancellation import (
+        UploadJobCancellationCleanupFailed,
+        UploadJobImportCancelled,
+    )
+
+    try:
+        yield
+    except UploadJobImportCancelled:
+        staging_root = path_utils.EndoregPathsModel.from_environment().transcoding
+        try:
+            for candidate in (ctx.anonymized_path, ctx.sensitive_path):
+                if candidate is None:
+                    continue
+                if candidate.resolve() == ctx.file_path.resolve() or (
+                    ctx.original_path is not None
+                    and candidate.resolve() == ctx.original_path.resolve()
+                ):
+                    raise UploadJobCancellationCleanupFailed(
+                        "Cancellation staging overlaps its source"
+                    )
+                if candidate.is_symlink():
+                    raise UploadJobCancellationCleanupFailed(
+                        "Cancellation staging is a symbolic link"
+                    )
+                if not candidate.exists():
+                    continue
+                if not safe_cleanup_staging_file(
+                    candidate,
+                    label="cancelled video import staging",
+                    allowed_roots=(staging_root,),
+                    missing_ok=False,
+                ):
+                    raise UploadJobCancellationCleanupFailed(
+                        "Cancellation staging cleanup rejected"
+                    )
+                if candidate.exists():
+                    raise UploadJobCancellationCleanupFailed(
+                        "Cancellation staging remains after cleanup"
+                    )
+        except (OSError, UploadJobCancellationCleanupFailed) as exc:
+            raise UploadJobCancellationCleanupFailed(
+                "Video import staging cleanup failed"
+            ) from exc
+        raise
+
+
 def _finalize_video_failure_if_owned(
     ctx: ImportContext,
     *,
@@ -577,7 +626,7 @@ class VideoImportService:
         ctx.original_path = ctx.file_path
         lock_path = ctx.original_path
 
-        with file_lock(lock_path):
+        with cleanup_cancelled_import_staging(ctx), file_lock(lock_path):
             logger.info("Acquired video source lock")
             ctx.file_hash = _raw_source_identity(ctx.file_path).sha256
             with content_hash_lock(ctx.file_hash, _hash_lock_dir()):

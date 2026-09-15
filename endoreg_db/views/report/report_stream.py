@@ -12,7 +12,7 @@ from django.http.response import HttpResponseBase
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.request import Request
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile

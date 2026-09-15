@@ -11,9 +11,10 @@ Provides RESTful endpoints for video segment management:
 import logging
 import os
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, cast
+from functools import wraps
+from typing import Any, ParamSpec, cast
 
 from django.conf import settings
 from django.db import transaction
@@ -22,7 +23,8 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import permission_classes
+from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 from lx_dtypes.models.contracts.video_segments import (
@@ -66,7 +68,8 @@ from endoreg_db.services.video_segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
 from endoreg_db.services.media_operation_gate import (
-    create_segment_update_lease_on_commit,
+    MediaOperationDeferred,
+    video_segment_mutation,
 )
 from endoreg_db.services.jobs.video_post_validation_jobs import (
     JobDispatchResult,
@@ -100,6 +103,30 @@ logger = logging.getLogger(__name__)
 
 SegmentSnapshot = dict[str, Any]
 PREDICTION_CORRECTION_SOURCE_NAME = "prediction_correction"
+
+
+_ViewParameters = ParamSpec("_ViewParameters")
+
+
+def _media_operation_conflicts(
+    view: Callable[_ViewParameters, Response],
+) -> Callable[_ViewParameters, Response]:
+    @wraps(view)
+    def guarded(
+        *args: _ViewParameters.args, **kwargs: _ViewParameters.kwargs
+    ) -> Response:
+        try:
+            return view(*args, **kwargs)
+        except MediaOperationDeferred:
+            return Response(
+                {
+                    "error": "Video media operation is active.",
+                    "code": "media_operation_busy",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+    return guarded
 
 
 def _request_payload(request: Request) -> Mapping[str, Any]:
@@ -345,6 +372,8 @@ def _segment_annotation_integrity_errors(
             continue
         try:
             model_meta = segment.get_model_meta()
+        except MediaOperationDeferred:
+            raise
         except Exception:
             model_meta = None
 
@@ -582,6 +611,8 @@ def video_segments_blacken_outside(request: Request, pk: int) -> Response:
             video_id=video.pk,
             only_validated=only_validated,
         )
+    except MediaOperationDeferred:
+        raise
     except Exception as exc:
         logger.exception(
             "Outside-frame blackening dispatch failed for video %s.", video.pk
@@ -697,6 +728,9 @@ def video_segments_stats(request: Request) -> Response:
 
         return Response(stats, status=status.HTTP_200_OK)
 
+    except MediaOperationDeferred:
+        raise
+
     except Exception as e:
         logger.error(f"Error fetching video segment stats: {e}")
         return Response(
@@ -709,6 +743,7 @@ def video_segments_stats(request: Request) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segments_collection(request: Request) -> Response:
     """
     Collection endpoint for all video segments across all videos.
@@ -739,7 +774,13 @@ def video_segments_collection(request: Request) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
-        with transaction.atomic():
+        target_video_id = crud_payload.video_id or crud_payload.video_file
+        if target_video_id is None:
+            return Response(
+                {"error": "video_id is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        get_object_or_404(VideoFile, pk=target_video_id)
+        with video_segment_mutation(video_id=target_video_id):
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
                 try:
@@ -752,6 +793,8 @@ def video_segments_collection(request: Request) -> Response:
                         _serializer_data(LabelVideoSegmentSerializer(segment)),
                         status=status.HTTP_201_CREATED,
                     )
+                except MediaOperationDeferred:
+                    raise
                 except Exception as e:
                     logger.error(f"Error creating video segment: {str(e)}")
                     return Response(
@@ -817,6 +860,7 @@ def video_segments_collection(request: Request) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segments_by_video(request: Request, pk: int) -> Response:
     """
     Video-specific segments endpoint.
@@ -884,7 +928,7 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload(video_id=pk)
 
-        with transaction.atomic():
+        with video_segment_mutation(video_id=int(video.pk)):
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
                 try:
@@ -899,6 +943,8 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
                         _serializer_data(LabelVideoSegmentSerializer(segment)),
                         status=status.HTTP_201_CREATED,
                     )
+                except MediaOperationDeferred:
+                    raise
                 except Exception as e:
                     logger.error(f"Error creating segment for video {pk}: {str(e)}")
                     return Response(
@@ -922,6 +968,7 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
     """
     Bulk mutate manual timeline segments for a video.
@@ -977,6 +1024,7 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
     """
     Replace or extend the prediction-correction segment layer for a video using
@@ -1032,7 +1080,7 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
         validated_serializers.append(serializer)
 
     created_segments: list[LabelVideoSegment] = []
-    with transaction.atomic():
+    with video_segment_mutation(video_id=int(video.pk)):
         if import_payload.replace_existing:
             correction_segments = LabelVideoSegment.objects.filter(
                 video_file=video,
@@ -1081,6 +1129,7 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response:
     """
     Detail endpoint for a specific video segment.
@@ -1123,7 +1172,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
-        with transaction.atomic():
+        with video_segment_mutation(video_id=int(video.pk)):
             old_snapshot = _segment_snapshot(segment)
             serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
             if serializer.is_valid():
@@ -1139,6 +1188,8 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
                     return Response(
                         _serializer_data(LabelVideoSegmentSerializer(segment))
                     )
+                except MediaOperationDeferred:
+                    raise
                 except Exception as e:
                     logger.error(f"Error updating segment {segment_id}: {str(e)}")
                     return Response(
@@ -1156,7 +1207,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
     elif request.method == "DELETE":
         logger.info(f"Deleting segment {segment_id} from video {pk}")
         try:
-            with transaction.atomic():
+            with video_segment_mutation(video_id=int(video.pk)):
                 segment_label = _segment_label(segment)
                 if segment_label is not None:
                     delete_model_meta = segment.get_model_meta()
@@ -1176,6 +1227,8 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
                     {"message": f"Segment {segment_id} deleted successfully"},
                     status=status.HTTP_204_NO_CONTENT,
                 )
+        except MediaOperationDeferred:
+            raise
         except Exception as e:
             logger.error(f"Error deleting segment {segment_id}: {str(e)}")
             return Response(
@@ -1192,6 +1245,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segment_validate(request: Request, pk: int, segment_id: int) -> Response:
     """
     Validate a single video segment.
@@ -1246,7 +1300,7 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
 
         # Optional: update times (seconds) before validation
         annotation_input = payload.to_annotation_input(video_id=int(video.pk))
-        with transaction.atomic():
+        with video_segment_mutation(video_id=int(video.pk)):
             if annotation_input is not None:
                 segment_video = _segment_video_file(segment)
                 new_start = video_seconds_to_frame_number(
@@ -1300,7 +1354,6 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
                 )
 
             transaction.on_commit(_log_after_commit)
-            create_segment_update_lease_on_commit(video)
 
             """
             status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
@@ -1354,6 +1407,8 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
             response_data["post_processing_job"] = post_processing_job_payload
 
         return Response(response_data, status=response_status)
+    except MediaOperationDeferred:
+        raise
     except Exception as e:
         logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
         return Response(
@@ -1497,6 +1552,8 @@ def _validate_one_bulk_segment(
             annotator=annotator,
         )
         return True
+    except MediaOperationDeferred:
+        raise
     except Exception as exc:
         logger.error("Error validating segment %s: %s", segment.pk, exc)
         return False
@@ -1514,7 +1571,7 @@ def _update_bulk_segments_atomically(
 ) -> tuple[int, list[int]]:
     updated_count = 0
     failed_ids: list[int] = []
-    with transaction.atomic():
+    with video_segment_mutation(video_id=int(video.pk)):
         for segment in segments:
             segment_id = _segment_pk(segment)
             succeeded = _validate_one_bulk_segment(
@@ -1530,7 +1587,6 @@ def _update_bulk_segments_atomically(
                 updated_count += 1
             else:
                 failed_ids.append(segment_id)
-        create_segment_update_lease_on_commit(video)
     return updated_count, failed_ids
 
 
@@ -1644,6 +1700,8 @@ def _postprocess_bulk_validation(
                 dispatch_post_validation_rebuild=requires_outside_cleanup,
             )
         )
+    except MediaOperationDeferred:
+        raise
     except Exception as exc:
         return _bulk_validation_dispatch_error(
             video=video,
@@ -1806,6 +1864,8 @@ def _execute_bulk_validation(
             failed_ids=failed_ids,
             post_processing=post_processing,
         )
+    except MediaOperationDeferred:
+        raise
     except Exception as exc:
         logger.error(
             "Error in bulk validation for video %s: %s",
@@ -1823,6 +1883,7 @@ def _execute_bulk_validation(
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segments_validate_bulk(request: Request, pk: int) -> Response:
     """
     Validate multiple video segments at once.
@@ -1860,6 +1921,7 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
 @permission_classes(
     [EnvironmentAwarePermission, PolicyPermission, CenterScopedVideoPermission]
 )
+@_media_operation_conflicts
 def video_segments_validation_status(request: Request, pk: int) -> Response:
     """
     Get or update validation status for all segments of a video.
@@ -1982,11 +2044,10 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
         ]
         failed_count = len(segment_list) - len(segment_state_ids)
 
-        with transaction.atomic():
+        with video_segment_mutation(video_id=int(video.pk)):
             updated_count = LabelVideoSegmentState.objects.filter(
                 pk__in=segment_state_ids
             ).update(is_validated=True)
-            create_segment_update_lease_on_commit(video)
 
         logger.info(f"Completed validation for {updated_count} segments in video {pk}")
         logger.info("Queueing segment annotation expansion job")

@@ -1059,7 +1059,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==0.9.7" },
-    { name = "lx-dtypes", specifier = ">=0.3.1" },
+    { name = "lx-dtypes", specifier = "==0.3.3" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -1884,7 +1884,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.3.1"
+version = "0.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1907,9 +1907,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/56/d8a598d1072b79648247130986a64a5dccae65e07be06eb7e595522685ec/lx_dtypes-0.3.1.tar.gz", hash = "sha256:e51236ad515717f159fed0dd01d15f0dc11fb5285f70a743c6aed40c62bcc609", size = 2679198, upload-time = "2026-09-09T14:15:08.157Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/30/da/bcf41631c364439686b178fb1f6c72247f5b19acc3ac29b5f7e7ad67f59c/lx_dtypes-0.3.3.tar.gz", hash = "sha256:9794612ba04a558cc11eb968e1ef328dcc1b91fc411f86fb46855ebfed856786", size = 2688055, upload-time = "2026-09-15T06:40:59.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3a/7b/762331af311b83c17e23f6c54b172a18156dcb6834872f2294e98e588415/lx_dtypes-0.3.1-py3-none-any.whl", hash = "sha256:20fd0f0570ada8ef595f1f6e13074854ec94000b09181ef1023f04eaf3e8aacf", size = 870198, upload-time = "2026-09-09T14:15:03.757Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/ef/c55cd732c32ea5ca8d965036067e7ec50f8c776a94171b47c77664f0dd52/lx_dtypes-0.3.3-py3-none-any.whl", hash = "sha256:2fc3310fcd33b962ec5a77fdd920df745d49954b29a0b80a87da7de5ef90c079", size = 874695, upload-time = "2026-09-15T06:40:54.876Z" },
 ]
 
 [[package]]

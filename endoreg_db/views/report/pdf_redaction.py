@@ -20,7 +20,7 @@ from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHistory

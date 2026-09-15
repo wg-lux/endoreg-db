@@ -747,6 +747,18 @@ def safe_delete_field_file(
     *,
     missing_ok: bool = True,
 ) -> bool:
+    """Audit deletion while retaining canonical video write ownership across IO."""
+    from endoreg_db.utils.storage.video_fields import video_field_mutation
+
+    with video_field_mutation(field_file):
+        return _safe_delete_field_file_contents(field_file, missing_ok=missing_ok)
+
+
+def _safe_delete_field_file_contents(
+    field_file: FieldFile,
+    *,
+    missing_ok: bool = True,
+) -> bool:
     """Delete a Django-managed file through its storage backend with audit logs."""
     storage_name = str(field_file.name or "").strip()
     if not storage_name:

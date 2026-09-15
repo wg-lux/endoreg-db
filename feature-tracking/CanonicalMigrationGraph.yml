@@ -84,9 +84,14 @@ definition_of_done:
     - kind: command
       reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed;
         manage.py makemigrations --check --dry-run: No changes detected'
-    note: The additive ownership-ledger leaf 0076_operation_ownership_ledgers is the only conflict-free
-      Endoreg leaf; an isolated fresh SQLite installation applies the complete graph with no unapplied
-      migrations.
+    - kind: test
+      reference: '2026-09-15, codex-api-overview-20260914: project-venv pytest -q tests/migrations/test_canonical_graph.py
+        => 1 passed in 43.20s, one existing pytest plugin warning. The expected endpoint now comes from
+        max_migration.txt (0081_video_optimized_playback), independently of the loaded graph. Exactly one
+        matching leaf, no conflicts and no unapplied migrations remain required. Focused Pyright and Ruff passed.'
+    note: The declared endpoint in max_migration.txt is the only conflict-free Endoreg leaf; an isolated
+      fresh SQLite installation applies the complete graph with no unapplied migrations. Numbered
+      migration files were not modified by the assertion correction.
     assessed_by: codex-state-machine-tracker
     assessed_at: '2026-09-02T15:09:26.442727Z'
 - id: fresh_install
@@ -119,8 +124,11 @@ definition_of_done:
     - kind: command
       reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed
         in 52.30s'
+    - kind: test
+      reference: '2026-09-15, codex-api-overview-20260914: isolated fresh-install test through
+        0081_video_optimized_playback passed in 43.20s with no conflicts or unapplied migrations.'
     note: An isolated fresh SQLite installation applied the complete Endoreg migration graph through
-      0076_operation_ownership_ledgers without conflicts; no unapplied migrations remained.
+      0081_video_optimized_playback without conflicts; no unapplied migrations remained.
     assessed_by: codex-state-machine-tracker
     assessed_at: '2026-09-02T15:09:56.011434Z'
 - id: safe_boundary

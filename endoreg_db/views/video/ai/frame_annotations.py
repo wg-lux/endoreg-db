@@ -20,7 +20,7 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.schemas.frame_annotation_ingress import (

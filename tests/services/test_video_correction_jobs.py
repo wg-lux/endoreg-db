@@ -259,7 +259,7 @@ def test_detector_correction_missing_capability_never_publishes(
 
 
 def test_detector_correction_uses_canonical_runtime_summary(tmp_path: Path) -> None:
-    from lx_anonymizer.anonymization.detector_video_masking import (
+    from lx_anonymizer.anonymization.detector_video_masking import (  # pyright: ignore[reportMissingTypeStubs]
         DetectorVideoMaskingSummary,
     )
 

@@ -57,6 +57,8 @@ definition_of_done:
     Explizit oder in den Anwendungseinstellungen gewählte Datasets behalten ihre Auswahlgrenzen.
   - Backend and wire contracts use snake_case; the centralized lx-annotate client boundary may convert requests
     to snake_case and responses to camelCase without endpoint-specific special paths.
+  - Every Django REST Framework APIView and @api_view endpoint exposes either a concrete serializer or the
+    endoreg_db.openapi fallback serializer metadata, so schema generation does not omit the operation.
   - GET media/videos/{id}/fps/ and GET/POST media/videos/{id}/segments/normalize-fps/ validate the persisted
     positive, finite frame rate without complete media staging. Missing or invalid persisted values return
     HTTP 422; file-based verification remains reserved for the resource-intensive worker or an explicit

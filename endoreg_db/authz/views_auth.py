@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol, TypedDict, cast
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import permission_classes
+from endoreg_db.openapi import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response

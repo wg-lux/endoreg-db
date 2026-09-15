@@ -308,6 +308,25 @@ def delete_field_file(
     missing_ok: bool = True,
     save: bool = False,
 ) -> bool:
+    """Keep video ownership across deletion, including direct storage adapters."""
+    from endoreg_db.utils.storage.video_fields import video_field_mutation
+
+    field_file = getattr(target, field_name, None) if field_name else target
+    if not _has_field_file(field_file):
+        return False
+    with video_field_mutation(cast(FieldFile, field_file)):
+        return _delete_field_file_contents(
+            target, field_name, missing_ok=missing_ok, save=save
+        )
+
+
+def _delete_field_file_contents(
+    target: Optional[FieldFile] | object,
+    field_name: str | None = None,
+    *,
+    missing_ok: bool = True,
+    save: bool = False,
+) -> bool:
     """
     Delete a canonical FileField through Django storage.
 
@@ -340,6 +359,31 @@ def delete_field_file(
 
 
 def save_local_file(
+    field_file: FieldFile,
+    source_path: Path,
+    *,
+    name: Optional[str] = None,
+    save: bool = False,
+    overwrite: bool = False,
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+) -> str:
+    """Hold durable writer ownership before an existing video artifact can change."""
+    from endoreg_db.utils.storage.video_fields import video_field_mutation
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source path does not exist: {source_path}")
+    with video_field_mutation(field_file):
+        return _save_local_file_contents(
+            field_file,
+            source_path,
+            name=name,
+            save=save,
+            overwrite=overwrite,
+            chunk_size=chunk_size,
+        )
+
+
+def _save_local_file_contents(
     field_file: FieldFile,
     source_path: Path,
     *,

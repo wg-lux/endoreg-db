@@ -45,6 +45,7 @@ from endoreg_db.utils.paths import (
     SENSITIVE_VIDEO_DIR,
 )
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
+from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from endoreg_db.schemas import validate_video_file_meta_payload
 from .video_file_queries import VideoQuerySet
 
@@ -148,6 +149,9 @@ class VideoFile(models.Model):
         null=True,
         blank=True,
     )
+
+    raw_file.attr_class = VideoArtifactFieldFile
+    processed_file.attr_class = VideoArtifactFieldFile
 
     uuid: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
         default=uuid_lib.uuid4, unique=True, editable=False
@@ -848,25 +852,28 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
-        if self.joined_dataset_id is None:
-            self.joined_dataset_id = get_default_joined_dataset_id()
+        from endoreg_db.services.media_operation_gate import video_file_save_guard
 
-        previous_processed_name = None
-        if self.pk:
-            previous_processed_name = (
-                type(self)
-                .objects.filter(pk=self.pk)
-                .values_list("processed_file", flat=True)
-                .first()
-            )
-        current_processed_name = getattr(self.processed_file, "name", None) or ""
-        self.clean()
-        super().save(*args, **kwargs)
-        if self.pk and previous_processed_name is not None:
-            if str(previous_processed_name or "") != str(current_processed_name):
-                self.get_or_create_state().clear_export_readiness(
-                    clear_outside_segments_removed=True
+        with video_file_save_guard(self, update_fields=kwargs.get("update_fields")):
+            if self.joined_dataset_id is None:
+                self.joined_dataset_id = get_default_joined_dataset_id()
+
+            previous_processed_name = None
+            if self.pk:
+                previous_processed_name = (
+                    type(self)
+                    .objects.filter(pk=self.pk)
+                    .values_list("processed_file", flat=True)
+                    .first()
                 )
+            current_processed_name = getattr(self.processed_file, "name", None) or ""
+            self.clean()
+            super().save(*args, **kwargs)
+            if self.pk and previous_processed_name is not None:
+                if str(previous_processed_name or "") != str(current_processed_name):
+                    self.get_or_create_state().clear_export_readiness(
+                        clear_outside_segments_removed=True
+                    )
 
     def get_or_create_state(self) -> "VideoState":
         from endoreg_db.services.video_files import get_or_create_video_state

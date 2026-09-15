@@ -9,10 +9,11 @@ from lx_dtypes.models.contracts import DocumentType as DocumentTypeContract
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import permission_classes
+from endoreg_db.openapi import api_view
 from rest_framework.response import Response
 from rest_framework.request import Request
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile

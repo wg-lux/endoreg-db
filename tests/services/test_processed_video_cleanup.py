@@ -170,11 +170,42 @@ def test_blockers_preserve_previous_generation(
     else:
         video.processed_video_hash = "0" * 64
         video.save()
-    result = cleanup.cleanup_processed_video_generations(video.pk, apply=True)
+    with (
+        patch.object(cleanup, "sha256_file", wraps=cleanup.sha256_file) as digest,
+        patch.object(
+            hls_media, "get_ready_hls_artifact", wraps=hls_media.get_ready_hls_artifact
+        ) as ready,
+    ):
+        result = cleanup.cleanup_processed_video_generations(video.pk, apply=True)
+    if blocker in {"raw_reference", "other_video"}:
+        assert result.reason == "referenced"
+        digest.assert_not_called()
+        ready.assert_not_called()
     assert result.cleaned == 0
     assert result.pending == 1
     assert replacement.old_hls.exists()
     assert video.processed_file.storage.exists(replacement.old_name)
+
+
+def test_reference_added_during_validation_preserves_old(
+    replacement: Replacement,
+) -> None:
+    video = replacement.video
+
+    def ready_with_new_reference(**kwargs: object) -> VideoHlsArtifact:
+        VideoFile.objects.create(
+            center=video.center,
+            video_hash=uuid4().hex,
+            processed_file=replacement.old_name,
+        )
+        return replacement.ready
+
+    with patch.object(hls_media, "get_ready_hls_artifact", ready_with_new_reference):
+        result = cleanup.cleanup_processed_video_generations(video.pk, apply=True)
+    assert result.reason == "referenced"
+    assert result.cleaned == 0 and result.pending == 1
+    assert video.processed_file.storage.exists(replacement.old_name)
+    assert replacement.old_hls.exists()
 
 
 def test_missing_replacement_preserves_old(replacement: Replacement) -> None:
@@ -322,6 +353,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
     ctx.anonymized_path = source
     ctx.storage_normalization_evidence = _normalization_evidence()
     scheduled: list[int] = []
+    previous_master = str(replacement.video.processed_file.name)
 
     def store(field: FieldFile, path: Path, *, relative_name: str) -> str:
         saved = field.storage.save(relative_name, ContentFile(path.read_bytes()))
@@ -330,10 +362,12 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
 
     def ensure_hls(video: VideoFile, **kwargs: object) -> None:
         receipts = cleanup_receipts(video.meta)
-        assert len(receipts) == 2
+        assert len(receipts) == 1
+        assert receipts[-1].source_name == previous_master
         assert receipts[-1].committed is False
         assert scheduled == []
-        assert replacement.old_hls.exists()
+        assert not replacement.old_hls.exists()
+        assert video.processed_file.storage.exists(previous_master)
 
     with (
         patch.object(state_management, "_verify_final_video_output"),
@@ -351,4 +385,48 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
     replacement.video.refresh_from_db()
     assert all(item.committed for item in cleanup_receipts(replacement.video.meta))
     assert scheduled == [replacement.video.pk]
-    assert replacement.old_hls.exists()
+    assert not replacement.old_hls.exists()
+    assert replacement.video.processed_file.storage.exists(previous_master)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cleanup_writer_is_visible_before_storage_transaction(
+    replacement: Replacement,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from django.db import close_old_connections, connection
+    from endoreg_db.services.media_operation_gate import video_transcode_lease
+
+    real_cleanup = cleanup._cleanup_processed_video_generations_owned
+    visible: list[bool] = []
+
+    def observe_committed_writer() -> bool:
+        close_old_connections()
+        try:
+            return MediaOperationLease.objects.filter(
+                video_id=replacement.video.pk,
+                lease_type=MediaOperationLease.LEASE_ARTIFACT_WRITE,
+            ).exists()
+        finally:
+            close_old_connections()
+
+    def inspect_before_transaction(
+        video_id: int, *, apply: bool
+    ) -> cleanup.ProcessedGenerationCleanupResult:
+        assert not connection.in_atomic_block
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            visible.append(executor.submit(observe_committed_writer).result(timeout=5))
+        return real_cleanup(video_id, apply=apply)
+
+    with video_transcode_lease(video_id=replacement.video.pk):
+        with patch.object(
+            cleanup,
+            "_cleanup_processed_video_generations_owned",
+            side_effect=inspect_before_transaction,
+        ):
+            result = cleanup.cleanup_processed_video_generations(
+                replacement.video.pk, apply=True
+            )
+    assert visible == [True]
+    assert result.cleaned == 1
+    assert not replacement.video.processed_file.storage.exists(replacement.old_name)

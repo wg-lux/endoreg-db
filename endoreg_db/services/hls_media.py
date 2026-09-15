@@ -89,6 +89,7 @@ from endoreg_db.utils.paths import (
     ensure_within_protected_media_root,
     ensure_within_protected_root,
     resolve_existing_protected_media_path,
+    resolve_protected_media_path,
     to_protected_media_relative,
 )
 from endoreg_db.utils.rust_backend import (
@@ -356,7 +357,9 @@ def _source_field_file(
     return field_file
 
 
-def _hls_source(video: VideoFile, artifact_kind: VideoArtifactKind) -> _HlsSource:
+def resolve_hls_source(
+    video: VideoFile, artifact_kind: VideoArtifactKind
+) -> _HlsSource:
     field_file = _source_field_file(video, artifact_kind)
     return _HlsSource(
         source_file_name=str(field_file.name),
@@ -423,7 +426,7 @@ def _persisted_hls_boundaries(
     return tuple(boundaries)
 
 
-def _hls_timeline_validation(
+def resolve_hls_timeline_validation(
     video: VideoFile,
     artifact_kind: VideoArtifactKind,
 ) -> _HlsTimelineValidation:
@@ -530,6 +533,7 @@ def _artifact_snapshot(
     artifact: VideoHlsArtifact,
     *,
     allow_queued_ready_artifact: bool = False,
+    allow_superseded_artifact: bool = False,
 ) -> _ArtifactSnapshot | None:
     is_ready = artifact.status == VideoHlsArtifact.Status.READY.value
     is_queued_ready = (
@@ -540,7 +544,11 @@ def _artifact_snapshot(
         and bool(artifact.iv_hex)
         and _ready_artifact_paths_exist(artifact)
     )
-    if not is_ready and not is_queued_ready:
+    is_superseded = (
+        allow_superseded_artifact
+        and artifact.status == VideoHlsArtifact.Status.SUPERSEDED.value
+    )
+    if not is_ready and not is_queued_ready and not is_superseded:
         return None
     return _ArtifactSnapshot(
         artifact_id=int(artifact.pk),
@@ -782,10 +790,10 @@ def reserve_hls_materialization_dispatch(
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     encoding_profile = configured_hls_encoding_profile()
     source_video = VideoFile.objects.get(pk=int(video_id))
-    source_ref = _hls_source(source_video, parsed_kind)
+    source_ref = resolve_hls_source(source_video, parsed_kind)
     source_file_name = source_ref.source_file_name
     source_content_hash = _source_content_hash(source_ref)
-    source_generation_id = _hls_timeline_validation(
+    source_generation_id = resolve_hls_timeline_validation(
         source_video, parsed_kind
     ).source_generation_id
     with transaction.atomic():
@@ -1230,8 +1238,8 @@ def _publish_validated_artifact(
                 f"current_key={artifact.key_id} current_status={artifact.status}"
             )
 
-        current_source = _hls_source(video, artifact_kind)
-        current_timeline = _hls_timeline_validation(video, artifact_kind)
+        current_source = resolve_hls_source(video, artifact_kind)
+        current_timeline = resolve_hls_timeline_validation(video, artifact_kind)
         if (
             artifact.source_file_name != current_source.source_file_name
             or artifact.source_content_hash != _source_content_hash(current_source)
@@ -1372,40 +1380,15 @@ def _temporary_hls_key_material(
     ensure_directory(temp_key_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
     key_path = temp_key_dir / "hls.key"
     key_info_path = temp_key_dir / "key_info.txt"
-    _write_transient_key_files(
-        temp_dir=temp_key_dir,
-        cek=cek,
-        key_uri=key_uri,
-        iv_hex=iv_hex,
-    )
     try:
+        _write_transient_key_files(
+            temp_dir=temp_key_dir, cek=cek, key_uri=key_uri, iv_hex=iv_hex
+        )
         yield key_path, key_info_path
     finally:
-        try:
-            safe_unlink_file(key_info_path, missing_ok=True)
-        except Exception as cleanup_exc:
-            logger.warning(
-                "Failed to remove HLS key info file %s during cleanup: %s",
-                key_info_path,
-                cleanup_exc,
-            )
-
-        try:
-            secure_unlink_file(key_path, missing_ok=True)
-        except Exception as cleanup_exc:
-            logger.warning(
-                "Failed to remove HLS key file %s during cleanup: %s",
-                key_path,
-                cleanup_exc,
-            )
-        try:
-            safe_rmtree(temp_key_dir, missing_ok=True)
-        except Exception as cleanup_exc:
-            logger.warning(
-                "Failed to remove temporary HLS key dir %s during cleanup: %s",
-                temp_key_dir,
-                cleanup_exc,
-            )
+        secure_unlink_file(key_path, missing_ok=True)
+        safe_unlink_file(key_info_path, missing_ok=True)
+        safe_rmtree(temp_key_dir, missing_ok=True)
 
 
 def _stderr_tail(chunks: deque[bytes]) -> str:
@@ -1475,22 +1458,8 @@ def _cleanup_seekable_plaintext_source(
     source_path: Path | None,
 ) -> None:
     if source_path is not None:
-        try:
-            secure_unlink_file(source_path, missing_ok=True)
-        except Exception as cleanup_exc:
-            logger.warning(
-                "Failed to securely remove temporary HLS source %s: %s",
-                source_path,
-                cleanup_exc,
-            )
-    try:
-        safe_rmtree(temp_source_dir, missing_ok=True)
-    except Exception as cleanup_exc:
-        logger.warning(
-            "Failed to remove temporary HLS source dir %s: %s",
-            temp_source_dir,
-            cleanup_exc,
-        )
+        secure_unlink_file(source_path, missing_ok=True)
+    safe_rmtree(temp_source_dir, missing_ok=True)
 
 
 def _hls_output_progress(
@@ -2117,8 +2086,8 @@ def _existing_ready_result(
     if artifact is None:
         return None
 
-    source_ref = _hls_source(artifact.video, artifact_kind)
-    timeline_validation = _hls_timeline_validation(artifact.video, artifact_kind)
+    source_ref = resolve_hls_source(artifact.video, artifact_kind)
+    timeline_validation = resolve_hls_timeline_validation(artifact.video, artifact_kind)
     if artifact.source_file_name != source_ref.source_file_name:
         return None
     if artifact.source_content_hash != _source_content_hash(source_ref):
@@ -2214,15 +2183,15 @@ def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
     ):
         return
 
+    # Missing files are an idempotent retry; an unsafe persisted path is not.
+    resolve_protected_media_path(snapshot.playlist_relative_path)
+    resolve_protected_media_path(snapshot.segment_directory_relative_path)
     playlist_path = resolve_existing_protected_media_path(
         snapshot.playlist_relative_path
     )
     segment_dir = resolve_existing_protected_media_path(
         snapshot.segment_directory_relative_path
     )
-    if segment_dir is None and playlist_path is None:
-        return
-
     if segment_dir is not None:
         safe_rmtree(segment_dir, missing_ok=True)
         parent = segment_dir.parent
@@ -2235,6 +2204,73 @@ def _cleanup_replaced_artifact(snapshot: _ArtifactSnapshot | None) -> None:
         key_id=snapshot.key_id,
         status=VideoHlsArtifact.Status.SUPERSEDED.value,
     ).delete()
+
+
+def _retry_failed_hls_cleanup(
+    *, video_id: int, artifact_kind: VideoArtifactKind
+) -> None:
+    from endoreg_db.services.media_operation_gate import (
+        video_has_active_media_operation_leases,
+    )
+
+    with transaction.atomic():
+        video = VideoFile.objects.select_for_update().get(pk=video_id)
+        failed = VideoHlsArtifact.objects.filter(
+            video_id=video_id,
+            artifact_kind=artifact_kind.value,
+            status=VideoHlsArtifact.Status.FAILED.value,
+        ).order_by("pk")
+        if not failed.exists():
+            return
+        if video_has_active_media_operation_leases(video_id):
+            raise MediaOperationDeferred(
+                "HLS staging cleanup deferred by active media leases."
+            )
+        # Retain failure diagnostics; only directories owned by these terminal
+        # attempt keys are eligible. Stream records in bounded memory.
+        for artifact in failed.iterator(chunk_size=100):
+            _cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
+            _cleanup_partial_output(
+                _artifact_target_dir(
+                    video=video, artifact_kind=artifact_kind, key_id=artifact.key_id
+                )
+            )
+
+
+def _retry_superseded_hls_cleanup(
+    *, video_id: int, artifact_kind: VideoArtifactKind
+) -> None:
+    """Retire persisted cache generations before allocating another attempt."""
+    from endoreg_db.services.media_operation_gate import (
+        video_has_active_media_operation_leases,
+    )
+
+    with transaction.atomic():
+        VideoFile.objects.select_for_update().get(pk=video_id)
+        superseded = VideoHlsArtifact.objects.filter(
+            video_id=video_id,
+            artifact_kind=artifact_kind.value,
+            status=VideoHlsArtifact.Status.SUPERSEDED.value,
+        ).order_by("pk")
+        if not superseded.exists():
+            return
+        if video_has_active_media_operation_leases(video_id):
+            raise MediaOperationDeferred("HLS cleanup deferred by active media leases.")
+        if not VideoHlsArtifact.objects.filter(
+            video_id=video_id,
+            artifact_kind=artifact_kind.value,
+            status=VideoHlsArtifact.Status.READY.value,
+        ).exists():
+            raise RuntimeError("HLS cleanup requires a published replacement.")
+        snapshots = [
+            _artifact_snapshot(artifact, allow_superseded_artifact=True)
+            for artifact in superseded[:100]
+        ]
+        for snapshot in snapshots:
+            _cleanup_replaced_artifact(snapshot)
+        backlog_remaining = superseded.count() > 100
+    if backlog_remaining:
+        raise RuntimeError("HLS cleanup backlog requires another bounded retry.")
 
 
 def _cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
@@ -2339,6 +2375,8 @@ def _materialize_video_hls_impl(
     )
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     requested_encoding_profile = configured_hls_encoding_profile()
+    _retry_failed_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
+    _retry_superseded_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
     if not force and reserved_artifact_id is None:
         existing = _existing_ready_result(
             video_id=video_id,
@@ -2352,8 +2390,8 @@ def _materialize_video_hls_impl(
     defer_if_video_media_busy(video_id=int(video_id))
 
     video = VideoFile.objects.get(pk=int(video_id))
-    source_ref = _hls_source(video, parsed_kind)
-    timeline_validation = _hls_timeline_validation(video, parsed_kind)
+    source_ref = resolve_hls_source(video, parsed_kind)
+    timeline_validation = resolve_hls_timeline_validation(video, parsed_kind)
     source_content_hash = _source_content_hash(source_ref)
     timeline_validation = replace(
         timeline_validation,
@@ -2468,6 +2506,7 @@ def _materialize_video_hls_impl(
     segment_base_url = build_video_hls_segment_base_path(int(video.pk), str(key_id))
 
     preserve_validated_output = False
+    published = False
     segment_count = 0
     try:
         if prepared.should_materialize:
@@ -2504,7 +2543,7 @@ def _materialize_video_hls_impl(
                     expected_key_id=prepared.key_id,
                     segment_count=segment_count,
                 )
-            artifact, previous = _publish_validated_artifact(
+            artifact, _previous = _publish_validated_artifact(
                 video_id=int(video.pk),
                 artifact_kind=parsed_kind,
                 artifact_id=prepared.artifact_id,
@@ -2512,19 +2551,16 @@ def _materialize_video_hls_impl(
                 temp_output_dir=temp_output_dir,
                 target_dir=target_dir,
             )
-        try:
-            _cleanup_replaced_artifact(previous)
-        except Exception as cleanup_exc:
-            logger.warning(
-                "Could not remove replaced HLS artifact after materialization: %s",
-                cleanup_exc,
-                exc_info=True,
-            )
+        published = True
+        _retry_superseded_hls_cleanup(video_id=int(video.pk), artifact_kind=parsed_kind)
         return _result_from_ready_artifact(artifact, status="materialized")
     except MediaOperationDeferred:
         preserve_validated_output = True
         raise
     except BaseException as exc:
+        if published:
+            # Cleanup failure must not invalidate or delete the committed cache.
+            raise
         if database_recovery_reason(exc) is not None:
             # A commit may have succeeded even when its acknowledgement was
             # lost. Preserve both staged and published encrypted output and the
@@ -2681,8 +2717,8 @@ def _ready_artifact_matches_current_source(
         return False
     try:
         artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
-        source = _hls_source(video, artifact_kind)
-        timeline = _hls_timeline_validation(video, artifact_kind)
+        source = resolve_hls_source(video, artifact_kind)
+        timeline = resolve_hls_timeline_validation(video, artifact_kind)
         expected_hash = _source_content_hash(source)
         return bool(
             artifact.source_content_hash

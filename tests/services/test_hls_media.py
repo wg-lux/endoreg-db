@@ -854,43 +854,67 @@ def test_materialize_video_hls_rebuilds_when_source_file_name_changes(
 def test_force_materialize_video_hls_keeps_new_artifact_when_old_cleanup_fails(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     video = _create_processed_video(center=hls_center, payload=b"first source")
     paths = EndoregPathsModel.from_environment()
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
-
     first = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
-    cast(Any, video.processed_file).save(
-        "hls-source-cleanup-failure.mp4",
-        ContentFile(b"replacement source"),
-        save=True,
-    )
+    cleanup = hls_media._cleanup_replaced_artifact
 
     def fail_cleanup(snapshot: object) -> None:
-        raise RuntimeError("old cleanup failed")
+        raise OSError("old cleanup failed")
 
-    monkeypatch.setattr(
-        hls_media,
-        "_cleanup_replaced_artifact",
-        fail_cleanup,
-        raising=True,
-    )
-    caplog.set_level("WARNING", logger=hls_media.__name__)
-
-    second = hls_media.materialize_video_hls(
-        video.pk,
-        artifact_kind="processed",
-        force=True,
-    )
-
-    assert second.status == "materialized"
-    assert second.key_id != first.key_id
+    monkeypatch.setattr(hls_media, "_cleanup_replaced_artifact", fail_cleanup)
+    with pytest.raises(OSError, match="old cleanup failed"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed", force=True)
+    ready = VideoHlsArtifact.objects.get(video=video, status="ready")
+    assert str(ready.key_id) != first.key_id
     assert (
-        Path(paths.storage / second.segment_directory_relative_path) / "seg_000.ts"
+        paths.storage / ready.segment_directory_relative_path / "seg_000.ts"
     ).exists()
-    assert "Could not remove replaced HLS artifact" in caplog.text
+    assert len(fake_hls.source_payloads) == 2
+
+    # Repeated force requests cannot allocate another generation while retirement fails.
+    with pytest.raises(OSError, match="old cleanup failed"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed", force=True)
+    assert len(fake_hls.source_payloads) == 2
+    monkeypatch.setattr(hls_media, "_cleanup_replaced_artifact", cleanup)
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.models.media.operation_lease import MediaOperationLease
+
+    lease = MediaOperationLease.objects.create(
+        video=video,
+        lease_type=MediaOperationLease.LEASE_STREAM,
+        expires_at=timezone.now() + timedelta(minutes=1),
+    )
+    with pytest.raises(MediaOperationDeferred, match="HLS cleanup deferred"):
+        hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    assert (paths.storage / first.segment_directory_relative_path).exists()
+    assert VideoHlsArtifact.objects.filter(video=video).count() == 2
+    lease.delete()
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
+    assert result.status == "already_ready"
+    assert VideoHlsArtifact.objects.filter(video=video).count() == 1
+    assert not (paths.storage / first.segment_directory_relative_path).exists()
+
+
+def test_repeated_hls_materialization_retires_previous_generations(
+    hls_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    paths = EndoregPathsModel.from_environment()
+    previous: Path | None = None
+    for _ in range(4):
+        result = hls_media.materialize_video_hls(video.pk, force=True)
+        current = paths.storage / result.segment_directory_relative_path
+        assert current.is_dir()
+        if previous is not None:
+            assert not previous.exists()
+        assert VideoHlsArtifact.objects.filter(video=video).count() == 1
+        previous = current
 
 
 def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
@@ -1441,3 +1465,32 @@ def test_nvenc_preflight_uses_supported_frame_dimensions(
         captured_command[captured_command.index("-i") + 1]
         == "color=c=black:s=256x256:r=1"
     )
+
+
+def test_hls_key_cleanup_failure_blocks_new_attempt_until_reconciled(
+    hls_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    fake_hls = FakeHlsOutputRecorder()
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
+    unlink = hls_media.secure_unlink_file
+
+    def fail_key_unlink(path: Path, *, missing_ok: bool = False) -> None:
+        if path.name == "hls.key":
+            raise OSError("HLS key cleanup denied")
+        return unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(hls_media, "secure_unlink_file", fail_key_unlink)
+    with pytest.raises(OSError, match="HLS key cleanup denied"):
+        hls_media.materialize_video_hls(video.pk)
+    failed = VideoHlsArtifact.objects.get(video=video, status="failed")
+    key_dir = hls_media._temporary_key_dir(video_id=video.pk, key_id=failed.key_id)
+    assert (key_dir / "hls.key").is_file()
+    with pytest.raises(OSError, match="HLS key cleanup denied"):
+        hls_media.materialize_video_hls(video.pk)
+    assert len(fake_hls.source_payloads) == 1
+    monkeypatch.setattr(hls_media, "secure_unlink_file", unlink)
+    result = hls_media.materialize_video_hls(video.pk)
+    assert result.status == "materialized"
+    assert not key_dir.exists()
+    assert len(fake_hls.source_payloads) == 2

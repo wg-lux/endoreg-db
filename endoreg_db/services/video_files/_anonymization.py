@@ -1,6 +1,7 @@
 # pyright: reportUnusedFunction=false, reportPrivateUsage=false, reportMissingTypeStubs=false
 
 import logging
+from uuid import uuid4
 from collections.abc import Mapping
 from contextlib import AbstractContextManager
 from pathlib import Path
@@ -15,11 +16,28 @@ from tqdm import tqdm
 
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.import_files.file_storage.state_management import ensure_video_hls
+from endoreg_db.services.processed_video_cleanup import (
+    commit_processed_replacements,
+    record_processed_replacement,
+    reconcile_previous_processed_cleanup,
+    schedule_processed_generation_cleanup,
+)
+from endoreg_db.services.video_storage_normalization import (
+    configured_video_storage_profile,
+    assert_temporal_equivalence,
+    timeline_from_video_metadata,
+    evidence_as_json,
+    probe_video_artifact,
+    segment_timeline_references,
+    validate_normalized_output,
+)
 from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
+    safe_delete_field_file,
     safe_unlink_file,
 )
 from endoreg_db.utils.media.frame_file_permissions import (
@@ -328,6 +346,14 @@ def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
 
 
 def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+    """Acquire storage ownership before any anonymization work or transaction."""
+    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+
+    with video_artifact_mutation(video_id=int(video.pk)):
+        return _anonymize_owned(video, delete_original_raw=delete_original_raw)
+
+
+def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     """
     Stream a raw video through FFmpeg ROI masking instead of materializing every
     frame. File-backed frames are reserved for explicit frame workflows such as
@@ -360,7 +386,16 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     if endo_roi is None or not validate_endo_roi(endo_roi):
         raise ValueError(f"Endoscope ROI is not valid for video {video.video_hash}")
 
+    reconcile_previous_processed_cleanup(video)
+    previous_name = str(video.processed_file.name or "")
+    previous_hash = video.processed_video_hash
     final_storage_path = video.get_target_anonymized_video_path()
+    if previous_name:
+        final_storage_path = (
+            final_storage_path.parent
+            / ".generations"
+            / f"{video.video_hash}-{uuid4().hex}.mp4"
+        )
     anonymized_video_path = (
         ensure_directory(
             path_utils.EndoregPathsModel.from_environment().transcoding
@@ -382,8 +417,24 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         len(outside_intervals),
     )
 
+    published = False
+    candidate_name = ""
     try:
         with cast(_LocalRawFileProvider, video).ensure_local_raw_file() as raw_path:
+            source_probe = probe_video_artifact(Path(raw_path))
+            if video.fps is None or video.duration is None or video.frame_count is None:
+                raise RuntimeError(
+                    "Stored video timeline is required for reanonymization."
+                )
+            assert_temporal_equivalence(
+                timeline_from_video_metadata(
+                    fps=float(video.fps),
+                    duration_seconds=float(video.duration),
+                    frame_count=int(video.frame_count),
+                ),
+                source_probe.timeline,
+                profile=configured_video_storage_profile(),
+            )
             streamed_path = mask_video_to_roi_and_blacken_intervals(
                 Path(raw_path),
                 anonymized_video_path,
@@ -399,6 +450,12 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                 f"Processed video file not found after streamed anonymization for {video.video_hash}: {anonymized_video_path}"
             )
 
+        normalization_evidence = validate_normalized_output(
+            source=source_probe,
+            output=probe_video_artifact(anonymized_video_path),
+            profile=configured_video_storage_profile(),
+            segments=segment_timeline_references(video, timeline=source_probe.timeline),
+        )
         new_processed_hash = get_video_hash(anonymized_video_path)
         if (
             type(video)
@@ -413,22 +470,43 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         original_raw_file_name_to_delete = ""
         original_raw_frame_dir_to_delete = None
 
+        processed_relative_name = path_utils.to_storage_relative(final_storage_path)
+        save_local_file(
+            video.processed_file,
+            anonymized_video_path,
+            name=processed_relative_name,
+            save=False,
+        )
+        candidate_name = str(video.processed_file.name or "")
+        if get_video_hash(video.processed_file) != new_processed_hash:
+            raise RuntimeError("Encrypted anonymized candidate identity mismatch.")
         with transaction.atomic():
             video.processed_video_hash = new_processed_hash
-            processed_relative_name = path_utils.to_storage_relative(final_storage_path)
-            save_local_file(
-                video.processed_file,
-                anonymized_video_path,
-                name=processed_relative_name,
-                save=False,
-                overwrite=True,
-            )
+            video.meta = {
+                **(video.meta or {}),
+                "storage_normalization": evidence_as_json(normalization_evidence),
+            }
+            if previous_name:
+                record_processed_replacement(
+                    video,
+                    previous_name=previous_name,
+                    previous_hash=previous_hash,
+                    strict=True,
+                )
+            video.save(update_fields=["processed_video_hash", "processed_file", "meta"])
+        published = True
 
-            update_fields = [
-                "processed_video_hash",
-                "processed_file",
-            ]
-
+        # The writer lease spans HLS work, without a long publication transaction.
+        ensure_video_hls(video, force=True)
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=True,
+            include_processed=True,
+            save=True,
+        )
+        with transaction.atomic():
+            cleanup_pending = commit_processed_replacements(video)
+            update_fields = ["meta"]
             if delete_original_raw:
                 original_raw_file_name_to_delete = getattr(video.raw_file, "name", "")
                 original_raw_frame_dir_to_delete = video.get_frame_dir_path()
@@ -441,43 +519,34 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
                         raw_frame_dir=original_raw_frame_dir_to_delete,
                     )
                 )
-
-            transaction.on_commit(
-                lambda: sync_video_streamable_artifacts(
-                    video,
-                    include_raw=not delete_original_raw,
-                    include_processed=True,
-                    save=True,
-                )
-            )
-
             video.save(update_fields=update_fields)
             assert video.state is not None
             video.state.mark_anonymized(save=True)
+        if cleanup_pending:
+            schedule_processed_generation_cleanup(int(video.pk))
 
-        safe_cleanup_staging_file(
-            anonymized_video_path,
-            label="streamed anonymized video output after storage save",
-            allowed_roots=(anonymized_video_path.parent,),
-            missing_ok=True,
-        )
         video.refresh_from_db()
         return True
 
     except Exception as e:
+        if not published and candidate_name and candidate_name != previous_name:
+            safe_delete_field_file(video.processed_file, missing_ok=True)
+            video.processed_file.name = previous_name
+            video.processed_video_hash = previous_hash
         logger.error(
             "Streamed anonymization failed for video %s: %s",
             video.video_hash,
             e,
             exc_info=True,
         )
+        raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e
+    finally:
         safe_cleanup_staging_file(
             anonymized_video_path,
-            label="streamed anonymized video output after failure",
+            label="streamed anonymized video output",
             allowed_roots=(anonymized_video_path.parent,),
             missing_ok=True,
         )
-        raise RuntimeError(f"Anonymization failed for video {video.video_hash}") from e
 
 
 def _cleanup_raw_assets(

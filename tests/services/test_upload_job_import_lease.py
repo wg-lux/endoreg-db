@@ -4,6 +4,7 @@ from datetime import timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import InterfaceError, OperationalError
 from django.utils import timezone
 
 from endoreg_db.models import Center, UploadJob
@@ -11,11 +12,59 @@ from endoreg_db.services.hub.upload_job_import_lease import (
     UploadJobCleanupInProgress,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseLost,
+    UploadJobImportLeaseHeartbeat,
     acquire_upload_job_import_lease,
     heartbeat_upload_job_import_lease,
     locked_upload_job_import_lease,
     release_upload_job_import_lease,
 )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("error_type", [OperationalError, InterfaceError])
+def test_heartbeat_database_outage_preserves_retryable_error_and_ownership(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[OperationalError] | type[InterfaceError],
+) -> None:
+    center = Center.objects.create(name="heartbeat-database-outage")
+    job = _upload_job(center)
+    source_name = job.file.name
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="live-worker"
+    )
+    heartbeat = UploadJobImportLeaseHeartbeat(lease)
+    outage = error_type("database connection unavailable")
+    monkeypatch.setattr(heartbeat, "_failure", outage)
+
+    with pytest.raises(error_type) as raised:
+        heartbeat.guard()
+
+    assert raised.value is outage
+    job.refresh_from_db()
+    assert job.processing_lease_owner == lease.owner
+    assert job.processing_fencing_token == lease.fencing_epoch
+    assert job.processing_lease_expires_at == lease.expires_at
+    assert job.retry_count == 0
+    assert job.file.name == source_name
+
+
+@pytest.mark.django_db
+def test_heartbeat_observed_ownership_loss_still_fences_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    center = Center.objects.create(name="heartbeat-ownership-loss")
+    job = _upload_job(center)
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="old-worker"
+    )
+    heartbeat = UploadJobImportLeaseHeartbeat(lease)
+    lost = UploadJobImportLeaseLost("lease superseded")
+    monkeypatch.setattr(heartbeat, "_failure", lost)
+
+    with pytest.raises(UploadJobImportLeaseLost) as raised:
+        heartbeat.guard()
+
+    assert raised.value.__cause__ is lost
 
 
 def _upload_job(center: Center) -> UploadJob:

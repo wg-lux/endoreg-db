@@ -110,8 +110,8 @@ def adopt_legacy_hls(
                 "An active HLS encode or publication must finish before adoption"
             )
         kind = hls_media.coerce_hls_artifact_kind(artifact.artifact_kind)
-        source = hls_media._hls_source(video, kind)
-        timeline = hls_media._hls_timeline_validation(video, kind)
+        source = hls_media.resolve_hls_source(video, kind)
+        timeline = hls_media.resolve_hls_timeline_validation(video, kind)
         hls_media.hls_encoding_profile_by_name(artifact.encoding_profile_name)
         if not hls_media._ready_artifact_paths_exist(artifact):
             raise ValueError("Legacy playlist or referenced segments are incomplete")

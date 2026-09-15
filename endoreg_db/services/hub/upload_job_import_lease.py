@@ -96,6 +96,11 @@ def acquire_upload_job_import_lease(
 
     with transaction.atomic():
         job = _locked_job(upload_job_id)
+        from endoreg_db.services.hub.upload_job_cancellation import (
+            raise_if_upload_job_cancellation_requested,
+        )
+
+        raise_if_upload_job_cancellation_requested(job)
         if job.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
             emit_structured_event(
                 logger,
@@ -233,6 +238,11 @@ def locked_upload_job_import_lease(
             lease,
             database_now=_database_now(lease.upload_job_id),
         )
+        from endoreg_db.services.hub.upload_job_cancellation import (
+            raise_if_upload_job_cancellation_requested,
+        )
+
+        raise_if_upload_job_cancellation_requested(job)
         yield job
 
 
@@ -285,10 +295,19 @@ class UploadJobImportLeaseHeartbeat:
 
     def guard(self) -> None:
         if self._failure is not None:
+            from endoreg_db.services.jobs.error_handling import database_recovery_reason
+
+            if database_recovery_reason(self._failure) is not None:
+                # Unavailability does not prove another worker owns the attempt.
+                # Preserve the database exception so Celery's existing recovery
+                # path redelivers after repair rather than acknowledging failure.
+                raise self._failure
             raise UploadJobImportLeaseLost(
                 f"Upload import heartbeat failed: {self._failure}"
             ) from self._failure
         self._lease = heartbeat_upload_job_import_lease(self._lease)
+        with locked_upload_job_import_lease(self._lease):
+            pass
 
     def __exit__(
         self,

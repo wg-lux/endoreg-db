@@ -33,6 +33,7 @@ from endoreg_db.services.raw_pdf_files.integrity import (
 )
 from endoreg_db.services.video_storage_normalization import evidence_as_json
 from endoreg_db.services.processed_video_cleanup import (
+    reconcile_previous_processed_cleanup,
     commit_processed_replacements,
     record_processed_replacement,
     schedule_processed_generation_cleanup,
@@ -409,6 +410,15 @@ def finalize_video_success(
         logger.warning("finalize_video_success called with unsaved instance")
         return
 
+    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+
+    with video_artifact_mutation(video_id=int(instance.pk)):
+        _require_execution_ownership(ctx)
+        reconcile_previous_processed_cleanup(instance)
+        _finalize_video_success_owned(ctx, instance)
+
+
+def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> None:
     if ctx.anonymized_path is None:
         raise RuntimeError(
             "Cannot finalize video import without anonymized output "

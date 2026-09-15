@@ -368,10 +368,10 @@ definition_of_done:
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
   acceptance:
-  - Eine Überschreitung der Schwarzwert-Toleranz bei Outside-Stichproben im neu aufgebauten
-    Processed-Video wird mit Video-ID, Frameindex, maximalem Kanalwert und Toleranz als Warnung
-    protokolliert und blockiert die Segmentvalidierung nicht. Rebuild-, Decode-, Integritäts-
-    und extrahierte Frame-Prüfungen bleiben verpflichtend.
+  - Eine Überschreitung der Schwarzwert-Toleranz bei Outside-Stichproben im neu aufgebauten Processed-Video
+    wird mit Video-ID, Frameindex, maximalem Kanalwert und Toleranz als Warnung protokolliert und blockiert
+    die Segmentvalidierung nicht. Rebuild-, Decode-, Integritäts- und extrahierte Frame-Prüfungen bleiben
+    verpflichtend.
   - Das von lx-annotate/VideoExaminationAnnotation.vue verwendete Processed-HLS bleibt nach Neuimport,
     Reimport und Bestandsnormalisierung unter den bestehenden Playlist-, Key- und Segment-Endpunkten abspielbar;
     Video-Detail, HLS-Dauer, FPS und Frameanzahl beschreiben dieselbe veröffentlichte Generation.
@@ -462,10 +462,10 @@ definition_of_done:
       reference: endoreg_db/services/jobs/video_fps_normalization_jobs.py; endoreg_db/services/video_processed_transcode.py
     - kind: test
       reference: tests/services/test_video_post_validation_jobs.py
-      note: '2026-09-11: Schwarzwert-Stichproben 0, 8, 9 und 255 erlauben Abschluss;
-        Werte über 8 erzeugen eine Warnung. RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3
-        TEST_DB_REUSE=false .devenv/state/venv/bin/pytest tests/services/test_video_post_validation_jobs.py
-        -q: 22 passed, 8 skipped. Pyright: 0 Fehler, 1 bestehende Stub-Warnung; Ruff erfolgreich.'
+      note: '2026-09-11: Schwarzwert-Stichproben 0, 8, 9 und 255 erlauben Abschluss; Werte über 8 erzeugen
+        eine Warnung. RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false
+        .devenv/state/venv/bin/pytest tests/services/test_video_post_validation_jobs.py -q: 22 passed,
+        8 skipped. Pyright: 0 Fehler, 1 bestehende Stub-Warnung; Ruff erfolgreich.'
     - kind: review
       reference: endoreg_db/services/video_files/metadata.py; endoreg_db/views/video/video_fps.py; /dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue;
         /dev/lx-annotate/frontend/src/stores/videoStore.ts
@@ -565,6 +565,15 @@ definition_of_done:
     Löschung.
   - Nach einem Teilfehler bleibt ein wiederanlauffähiger, eindeutig beobachtbarer Zustand zurück; ein
     Cleanup-Erfolg wird erst nach Prüfung des tatsächlichen Dateisystemzustands persistiert.
+  - HLS is the playback copy. Storage-pressure operations create only a replacement processed master;
+    repeated attempts reconcile recorded old generations before encoding another candidate. Cleanup
+    failures preserve the current master and block further artifact accumulation. Legacy full-video
+    playback copies require exact ownership and digest evidence for retirement.
+  - The undeployed optimized-playback schema and supporting code are removed directly.
+    Fresh installations end at migration 0080 without optimized-playback columns; no forward
+    retirement migration or optimized-copy compatibility layer is introduced.
+  - Cleanup rejects known database references before reading replacement media, and rechecks
+    references after validation so references added meanwhile still prevent deletion.
   - Eine versionierte native Rust-Zustandsmaschine entscheidet deterministisch über Reservierung, Veröffentlichung
     und Reconciliation. Datenbankzeilen, Media-Operation-Leases, Dateibesitz und atomare Veröffentlichung
     bleiben autoritativ im Python-Service.
@@ -614,12 +623,66 @@ definition_of_done:
     - kind: command
       reference: '/tmp/endoreg-cleanup-focused.log: 221 passed, 1 integration test deselected; full Pyright
         0 errors, 1 existing warning'
-    note: Processed-generation cleanup now journals previous masters, retains their superseded HLS until
-      successful publication commits, and retries deletion with lease/reference/hash checks. Focused cleanup,
-      finalization and HLS tests passed within a 221-test cohort. Broader raw-media and production readiness
-      gates remain open.
-    assessed_by: codex-storage-reaper-20260910
-    assessed_at: '2026-09-10T12:42:55.210812Z'
+    - kind: test
+      reference: '2026-09-14: source-overlay SQLite, RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false:
+        tests/services/test_video_processed_transcode_encryption.py tests/services/test_media_operation_gate.py
+        tests/services/test_canonical_playback_selection.py tests/management/commands/test_transcode_processed_videos.py
+        => 46 passed, no skips. tests/utils/test_video_artifact_writer_entry.py tests/import_files/test_storage_state_management.py
+        => 17 passed, no skips. Focused Pyright 0 errors; Ruff and git diff --check passed.'
+    - kind: test
+      reference: '2026-09-14 final source checks: HLS media and stream integration 66 passed; latest operation-gate
+        plus media/import anonymization suites 41 passed; finalization unit suite 10 passed after explicitly
+        mocking its DummyVideo writer boundary. No skips. Focused Pyright 0 errors, Ruff and git diff
+        --check passed. Real writer admission remains covered by test_video_artifact_writer_entry.py.'
+    - kind: test
+      reference: '2026-09-15, codex-api-overview-20260914: installed lx-dtypes 0.3.3 provides the cancellation
+        contract and matches the dependency pin and lockfile. Full .devenv/state/venv/bin/pyright endoreg_db
+        tests reports 0 errors and 1 existing lx-anonymizer missing-stub warning. Project-venv pytest
+        --collect-only -q collects 3812 tests with no import errors, without a source-path override.'
+    - kind: test
+      reference: '2026-09-15, codex-api-overview-20260914: isolated SQLite, RUN_VIDEO_TESTS=true and
+        SKIP_EXPENSIVE_TESTS=false, project-venv pytest of optimized playback selection, encrypted
+        processed transcoding, cancellation service/view, artifact writer entry, HLS media and legacy
+        HLS adoption: 105 passed, no skips, 2 existing dependency/plugin warnings. Focused Ruff and
+        diff checks passed. This does not establish PostgreSQL or deployed acceptance.'
+    - kind: test
+      reference: '2026-09-15 replacement-only cleanup, codex-api-overview-20260914: owning-backend
+        transcode/encrypted-filesystem/reaper/management lane 39 passed; HLS cleanup lane 44 passed.
+        Repeated encrypted replacements retain one canonical master; pending receipts block another
+        encode; legacy copies retire on replacement or a verified skipped encode; failed staging
+        cleanup blocks further attempt allocation. Full Pyright 0 errors, 1 existing missing-stub
+        warning; focused Ruff and diff checks passed. These remain local SQLite checks.'
+    - kind: test
+      reference: '2026-09-15 cleanup admission: import finalization, storage-state and writer-entry
+        cohort 30 passed; reanonymization and writer-entry cohort 17 passed. Repeated replacements
+        delete prior encrypted masters; failed HLS or cleanup preserves the committed replacement
+        and blocks further generation allocation. Stored timeline changes are rejected before
+        reanonymization encoding. Full backend Pyright 0 errors and 1 existing stub warning.'
+    - kind: test
+      reference: '2026-09-15 final lease/reaper/transcode/import/reanonymization cohort: 68 passed;
+        one stale finalization expectation corrected and its regression separately passed (1).
+        All seven new lease regressions passed, including independent-connection visibility of
+        committed writer ownership, lease-row renewal and expired-token fencing. Full backend
+        Pyright 0 errors, 1 existing stub warning; focused typing, Ruff and diff checks passed.
+        No real PostgreSQL contention or deployed acceptance was performed.'
+    - kind: test
+      reference: '2026-09-15 undeployed-copy revert, codex-api-overview-20260914: removed 0081 and
+        restored 0080_media_transcode_lease as canonical leaf; no 0082 retirement migration.
+        Removed optimized model fields, selector branch, mode enum/parameter and compatibility
+        cleanup paths. Earlier optimized-copy evidence describes superseded code. Full backend
+        Pyright 0 errors and 1 existing stub warning; migration drift check reports no changes.
+        Fresh graph, canonical playback selection and artifact writer lane: 14 passed, including
+        database introspection proving optimized-playback columns are absent. Simplified transcode,
+        encrypted-storage cleanup and management-command cohort: 37 passed, no skips. No optimized
+        playback symbols remain in backend runtime Python sources.'
+    - kind: test
+      reference: '2026-09-15 cleanup early rejection, codex-api-overview-20260914: 23 cleanup tests
+        passed in 42.06s. Referenced raw/other-video artifacts cause zero replacement hash or HLS
+        readiness calls; a reference introduced during validation still prevents deletion.
+        Focused Pyright 0 errors/0 warnings, Ruff and diff checks passed. Two existing test warnings;
+        no production performance benchmark or PostgreSQL concurrency acceptance was performed.'
+    assessed_by: codex-finish-storage-20260914
+    assessed_at: '2026-09-14T15:34:02.383048Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze

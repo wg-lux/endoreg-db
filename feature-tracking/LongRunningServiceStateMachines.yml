@@ -400,6 +400,11 @@ definition_of_done:
   category: interoperability
   title: Steuerungs- und Statusschnittstellen besitzen einen stabilen typisierten Vertrag
   acceptance:
+  - Video import cancellation is an authenticated, center-scoped, idempotent intent. Queued deliveries
+    cannot revive cancelled work; running workers acknowledge cancellation at owned checkpoints. Cancellation
+    retains encrypted sources and published valid media, disables automatic retry and cleanup, and never
+    claims a worker stopped before acknowledgement. Focused tests cover completion races, redelivery,
+    source retention, and permission rejection.
   - API, Kommandozeile und interne Aufrufer verwenden snake_case und liefern getrennt beobachteten Zustand,
     gewünschten Zustand, Zustandsversion, Attempt-ID, zulässige Aktionen und stabile Fehlercodes.
   - Clients senden Ereignisse oder Absichten statt frei gesetzter Zielzustände; der autoritative Service
@@ -412,8 +417,36 @@ definition_of_done:
     instructions: Rust-, Python-, REST- und Consumer-Verträge sowie Upgrade-Kompatibilitätsmatrix vergleichen.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_cancellation.py
+    - kind: code
+      reference: endoreg_db/import_files/video_import_service.py
+    - kind: code
+      reference: endoreg_db/migrations/0079_upload_job_cancellation.py
+    - kind: test
+      reference: tests/services/test_upload_job_cancellation.py
+    - kind: test
+      reference: tests/views/anonymization/test_upload_job_cancellation.py
+    - kind: command
+      reference: 'TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest tests/services/test_upload_job_cancellation.py tests/views/anonymization/test_upload_job_cancellation.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py tests/services/test_import_monitoring.py
+        tests/import_files/test_video_anonymization.py tests/import_files/test_video_finalize_success.py
+        -q -rs --tb=short: 100 passed'
+    note: 'Cooperative cancellation is implemented in owning source repositories with queued-delivery
+      fencing, authenticated center scope, strict attempt-staging cleanup, retained encrypted sources,
+      and no task termination. SQLite cancellation/API/lease/watcher/monitoring/anonymizer/finalization
+      integration: 100 passed, 2 existing warnings, 312.07s. Final changed-service and test Pyright: 0
+      errors and warnings; Ruff, migration drift check and diff checks pass. Full repository Pyright using
+      the lx-annotate environment reports 1360 errors and 1 warning, predominantly existing Django typing
+      incompatibilities; three initial cancellation adapter errors were subsequently fixed and targeted
+      checks rerun. Activation requires coordinated endoreg-db/lx-dtypes release, migration 0079, and
+      matching workers. Real PostgreSQL/process-loss/broker concurrency and cancellation reconciliation
+      remain unverified; this is not production approval.'
+    assessed_by: codex-api-review-20260914
+    assessed_at: '2026-09-14T14:52:35.807910Z'
 - id: observability_and_slo
   category: observability
   title: Zustand, Fortschritt und Stagnation sind ohne Prozesszugriff diagnostizierbar

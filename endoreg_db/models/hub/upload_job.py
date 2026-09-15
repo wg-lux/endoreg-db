@@ -83,6 +83,8 @@ class UploadJob(models.Model):
         ANONYMIZED = "anonymized", "Anonymized"
         ERROR = "error", "Error"
         LOST = "lost", "Lost"
+        CANCEL_REQUESTED = "cancel_requested", "Cancellation requested"
+        CANCELLED = "cancelled", "Cancelled"
 
     class ErrorCode(models.TextChoices):
         NONE = "", "None"
@@ -143,6 +145,20 @@ class UploadJob(models.Model):
 
     content_type: models.CharField[str, Any] = models.CharField(
         max_length=100, blank=True, help_text="MIME type of the uploaded file"
+    )
+
+    cancellation_requested_at: models.DateTimeField[
+        datetime | None, datetime | None
+    ] = models.DateTimeField(null=True, blank=True, editable=False)
+    cancellation_requested_by: models.ForeignKey[User | None, User | None] = (
+        models.ForeignKey(
+            User,
+            null=True,
+            blank=True,
+            editable=False,
+            on_delete=models.SET_NULL,
+            related_name="cancelled_upload_jobs",
+        )
     )
 
     overview_dismissed_at: models.DateTimeField[datetime | None, datetime | None] = (
@@ -553,6 +569,7 @@ class UploadJob(models.Model):
             self.Status.ANONYMIZED.value,
             self.Status.ERROR.value,
             self.Status.LOST.value,
+            self.Status.CANCELLED.value,
         ]
 
     @property

@@ -45,7 +45,20 @@ def _overview_upload_job_payload(
     upload_job: _FileOverviewUploadJobLike,
 ) -> OverviewUploadJobMonitoringPayload:
     source_center = getattr(upload_job, "source_center", None)
-    if upload_job.status == "anonymized":
+    if (
+        upload_job.status in {"pending", "processing", "retrying"}
+        and str(getattr(upload_job, "content_type", "")).startswith("video/")
+        and getattr(upload_job, "storage_tier", None)
+        != UploadJob.StorageTier.UPLOAD_PREANONYMIZED.value
+        and (
+            upload_job.status != "processing"
+            or bool(getattr(upload_job, "processing_lease_owner", ""))
+        )
+        and upload_job.source_file_persisted
+        and upload_job.cleanup_status in {"pending", "skipped"}
+    ):
+        allowed_actions = ["cancel"]
+    elif upload_job.status == "anonymized":
         allowed_actions = ["delete"]
     elif (
         upload_job.status in {"error", "lost"}

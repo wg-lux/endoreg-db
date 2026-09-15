@@ -15,6 +15,7 @@ class ProcessedGenerationCleanupReceipt(BaseModel):
 
     receipt_id: UUID = Field(default_factory=uuid4)
     source_name: str
+    source_kind: Literal["processed", "legacy_streamable"] = "processed"
     source_sha256: Digest
     replacement_name: str
     replacement_sha256: Digest

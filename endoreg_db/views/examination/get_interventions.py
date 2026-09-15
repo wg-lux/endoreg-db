@@ -3,7 +3,7 @@ from collections.abc import Iterable
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.decorators import api_view
+from endoreg_db.openapi import api_view
 from rest_framework.response import Response
 
 from endoreg_db.models.medical.examination.examination import Examination

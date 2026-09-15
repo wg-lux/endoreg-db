@@ -8,6 +8,13 @@ from pathlib import Path
 
 
 def test_canonical_migration_graph_fresh_install(tmp_path: Path) -> None:
+    migration_marker = (
+        Path(__file__).resolve().parents[2]
+        / "endoreg_db"
+        / "migrations"
+        / "max_migration.txt"
+    )
+    expected_leaf = migration_marker.read_text(encoding="utf-8").strip()
     database_path = tmp_path / "canonical.sqlite3"
     script = """
 import json
@@ -51,7 +58,14 @@ unapplied = sorted(
     for app, name in loader.graph.nodes
     if app == "endoreg_db" and (app, name) not in loader.applied_migrations
 )
-print(json.dumps({"conflicts": conflicts, "leaf_names": leaf_names, "unapplied": unapplied}))
+with connection.cursor() as cursor:
+    playback_columns = [
+        column.name
+        for column in connection.introspection.get_table_description(cursor, "endoreg_db_videofile")
+        if column.name.startswith("optimized_playback")
+    ]
+print(json.dumps({"conflicts": conflicts, "leaf_names": leaf_names, "unapplied": unapplied,
+                  "playback_columns": playback_columns}))
 """
     result = subprocess.run(
         [sys.executable, "-c", script],
@@ -67,6 +81,7 @@ print(json.dumps({"conflicts": conflicts, "leaf_names": leaf_names, "unapplied":
 
     assert payload == {
         "conflicts": {},
-        "leaf_names": ["0078_video_joined_dataset"],
+        "leaf_names": [expected_leaf],
         "unapplied": [],
+        "playback_columns": [],
     }

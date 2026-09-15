@@ -24,9 +24,13 @@ class MediaOperationLease(models.Model):
 
     LEASE_STREAM = "stream"
     LEASE_SEGMENT_UPDATE = "segment_update"
+    LEASE_TRANSCODE = "transcode"
+    LEASE_ARTIFACT_WRITE = "artifact_write"
     LEASE_TYPES = (
         (LEASE_STREAM, "Active stream"),
         (LEASE_SEGMENT_UPDATE, "Segment update"),
+        (LEASE_TRANSCODE, "Exclusive video transcode"),
+        (LEASE_ARTIFACT_WRITE, "Exclusive video artifact write"),
     )
 
     video: models.ForeignKey[Any] = models.ForeignKey(

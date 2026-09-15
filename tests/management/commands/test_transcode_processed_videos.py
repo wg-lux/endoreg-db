@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
+from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
 from typing import Any, Callable, cast
@@ -9,14 +11,21 @@ import pytest
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
 from django.core.management import call_command
+from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services import video_processed_transcode as service
+from endoreg_db.services import (
+    video_processed_transcode as service,
+    processed_video_cleanup as cleanup,
+    hls_media,
+)
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.utils.paths import to_protected_media_relative
+from endoreg_db.services.hls_media import HlsMaterializationResult
 from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.paths import EndoregPathsModel
 
 pytestmark = pytest.mark.django_db
 
@@ -42,7 +51,7 @@ def _create_processed_video(
         frame_count=250,
     )
     cast(Any, video.processed_file).save(
-        "old-processed.mp4",
+        f"{video.video_hash}.mp4",
         ContentFile(payload),
         save=True,
     )
@@ -52,18 +61,15 @@ def _create_processed_video(
 
 
 def _old_streamable_path(video: VideoFile) -> Path:
-    paths = EndoregPathsModel.from_environment()
     streamable_path = (
-        paths.storage
-        / "streamable_videos"
-        / "processed"
+        hls_media.streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
         / f"{video.video_hash}.old.mp4"
     )
     streamable_path.parent.mkdir(parents=True, exist_ok=True)
     streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42old-streamable")
-    video.processed_streamable_relative_path = streamable_path.relative_to(
-        paths.storage
-    ).as_posix()
+    video.processed_streamable_relative_path = to_protected_media_relative(
+        streamable_path
+    )
     video.save(update_fields=["processed_streamable_relative_path", "date_modified"])
     return streamable_path
 
@@ -82,35 +88,6 @@ def _patch_transcode_and_streamable(
         _ = kwargs
         output_path.write_bytes(output_payload)
         return output_path
-
-    def fake_sync_video_streamable_artifacts(
-        video: VideoFile,
-        *,
-        include_raw: bool = True,
-        include_processed: bool = True,
-        save: bool = True,
-    ) -> list[str]:
-        _ = include_raw
-        if not include_processed:
-            return []
-        processed_video_hash = cast(str, video.processed_video_hash)
-        paths = EndoregPathsModel.from_environment()
-        streamable_path = (
-            paths.storage
-            / "streamable_videos"
-            / "processed"
-            / f"{processed_video_hash}.mp4"
-        )
-        streamable_path.parent.mkdir(parents=True, exist_ok=True)
-        streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42new-streamable")
-        video.processed_streamable_relative_path = streamable_path.relative_to(
-            paths.storage
-        ).as_posix()
-        if save:
-            video.save(
-                update_fields=["processed_streamable_relative_path", "date_modified"]
-            )
-        return ["processed_streamable_relative_path"]
 
     monkeypatch.setattr(service, "transcode_video", fake_transcode_video)
     probe = VideoArtifactProbe(
@@ -131,20 +108,41 @@ def _patch_transcode_and_streamable(
     def fake_probe_video_artifact(_path: Path) -> VideoArtifactProbe:
         return probe
 
-    def fake_materialize_video_hls(*args: object, **kwargs: object) -> None:
-        _ = args
+    def fake_materialize_video_hls(
+        video_id: int, **kwargs: object
+    ) -> HlsMaterializationResult:
         _ = kwargs
+        current = VideoFile.objects.get(pk=video_id)
+        VideoHlsArtifact.objects.update_or_create(
+            video_id=video_id,
+            artifact_kind="processed",
+            status="ready",
+            defaults={
+                "source_file_name": str(current.processed_file.name),
+                "source_content_hash": current.processed_video_hash,
+            },
+        )
+        return HlsMaterializationResult(
+            video_id=video_id,
+            artifact_kind="processed",
+            status="materialized",
+            key_id="test",
+            playlist_relative_path="test/index.m3u8",
+            segment_directory_relative_path="test",
+            segment_count=1,
+        )
 
+    def ready(*, video: VideoFile, artifact_kind: str) -> VideoHlsArtifact:
+        return VideoHlsArtifact.objects.get(
+            video=video, artifact_kind=artifact_kind, status="ready"
+        )
+
+    monkeypatch.setattr(hls_media, "get_ready_hls_artifact", ready)
     monkeypatch.setattr(service, "probe_video_artifact", fake_probe_video_artifact)
     monkeypatch.setattr(
         service,
         "materialize_video_hls",
         fake_materialize_video_hls,
-    )
-    monkeypatch.setattr(
-        service,
-        "sync_video_streamable_artifacts",
-        fake_sync_video_streamable_artifacts,
     )
 
 
@@ -184,10 +182,7 @@ def test_transcode_processed_videos_apply_updates_hash_reencrypts_and_cleans_old
     processed_storage = cast(Storage, getattr(processed_file, "storage"))
     assert processed_name is not None
     assert processed_storage.exists(processed_name)
-    processed_video_hash = cast(str, video.processed_video_hash)
-    assert video.processed_streamable_relative_path.endswith(
-        f"{processed_video_hash}.mp4"
-    )
+    assert video.processed_streamable_relative_path == ""
     with Path(video.processed_file.path).open("rb") as stored:
         assert stored.read(len(MAGIC)) == MAGIC
     with video.processed_file.open("rb") as decrypted:
@@ -247,3 +242,90 @@ def test_transcode_processed_videos_skips_output_that_is_not_smaller(
     assert payload["results"][0]["status"] == "skipped_not_smaller"
     video.refresh_from_db()
     assert video.processed_video_hash == old_hash
+
+
+@pytest.mark.django_db(transaction=True)
+def test_post_commit_cleanup_failure_preserves_published_encrypted_master(
+    media_center: Center,
+    monkeypatch: MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    video = _create_processed_video(center=media_center)
+    old_name = video.processed_file.name
+    _patch_transcode_and_streamable(monkeypatch)
+
+    def reject_deletion(_field_file: FieldFile, **_kwargs: object) -> bool:
+        raise OSError("cleanup unavailable")
+
+    monkeypatch.setattr(cleanup, "safe_delete_field_file", reject_deletion)
+    with pytest.raises(service.ProcessedVideoTranscodeCleanupError) as raised:
+        service.transcode_processed_video_for_storage_pressure(video, apply=True)
+
+    assert raised.value.phase == "published_generation"
+    video.refresh_from_db()
+    assert video.processed_file.name != old_name
+    with video.processed_file.open("rb") as decrypted:
+        assert decrypted.read() == b"small mp4"
+    with Path(video.processed_file.path).open("rb") as encrypted:
+        assert encrypted.read(len(MAGIC)) == MAGIC
+    assert "processed_video_transcode_cleanup_failed" in caplog.text
+    assert "requires_reconciliation" in caplog.text
+
+
+def test_source_cleanup_failure_prevents_publication(
+    media_center: Center,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=media_center)
+    _patch_transcode_and_streamable(monkeypatch)
+    materialize = service.ensure_local_processed_video_file
+
+    @contextmanager
+    def fail_source_cleanup(
+        current_video: VideoFile, *, directory: Path | None = None
+    ) -> Generator[Path]:
+        with materialize(current_video, directory=directory) as source:
+            yield source
+        raise OSError("source cleanup failed before publication")
+
+    monkeypatch.setattr(
+        service, "ensure_local_processed_video_file", fail_source_cleanup
+    )
+
+    result = service.transcode_processed_video_for_storage_pressure(video, apply=True)
+    assert result.status == "failed"
+    assert not result.published
+    video.refresh_from_db()
+    with video.processed_file.open("rb") as decrypted:
+        assert decrypted.read() == b"old processed video payload"
+
+
+def test_prepublication_cleanup_failure_is_loud_and_preserves_original(
+    media_center: Center,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    video = _create_processed_video(center=media_center)
+    old_name = video.processed_file.name
+    _patch_transcode_and_streamable(monkeypatch)
+
+    def reject_streamable(*_args: object, **_kwargs: object) -> list[str]:
+        raise RuntimeError("streamable publication failed")
+
+    def reject_deletion(_field_file: FieldFile, **_kwargs: object) -> bool:
+        raise OSError("candidate cleanup unavailable")
+
+    monkeypatch.setattr(service, "_publish_transcode_candidate", reject_streamable)
+    monkeypatch.setattr(service, "safe_delete_field_file", reject_deletion)
+    with pytest.raises(service.ProcessedVideoTranscodeCleanupError) as raised:
+        service.transcode_processed_video_for_storage_pressure(video, apply=True)
+
+    assert raised.value.phase == "failed_candidate"
+    video.refresh_from_db()
+    assert video.processed_file.name == old_name
+    with video.processed_file.open("rb") as decrypted:
+        assert decrypted.read() == b"old processed video payload"
+
+    retained = set(Path(video.processed_file.path).parent.rglob("*.mp4"))
+    with pytest.raises(RuntimeError, match="staging requires cleanup"):
+        service.transcode_processed_video_for_storage_pressure(video, apply=True)
+    assert set(Path(video.processed_file.path).parent.rglob("*.mp4")) == retained

@@ -819,6 +819,11 @@ def _reserve_video_upload_import_handoff(
             )
             .get(id=upload_job_id)
         )
+        if job.status in {
+            UploadJob.Status.CANCEL_REQUESTED,
+            UploadJob.Status.CANCELLED,
+        }:
+            return job, None, False
         if job.status == UploadJob.Status.ANONYMIZED.value:
             return job, None, False
         if not job.file or not job.file.name:
@@ -1016,6 +1021,11 @@ def _assess_completed_upload_job_reuse(
 def _assess_upload_job_reuse(
     existing_job: UploadJob,
 ) -> _InvalidUploadJobReuse | None:
+    if existing_job.status in {
+        UploadJob.Status.CANCEL_REQUESTED,
+        UploadJob.Status.CANCELLED,
+    }:
+        return None
     if existing_job.status == UploadJob.Status.RETRYING:
         return None
     if existing_job.status in {
@@ -2032,6 +2042,8 @@ def process_upload_job(job_id: str) -> bool:
     job = upload_job_manager.select_related("source_center", "sensitive_meta").get(
         id=job_id
     )
+    if job.status in {UploadJob.Status.CANCEL_REQUESTED, UploadJob.Status.CANCELLED}:
+        return False
     if job.status == UploadJob.Status.ANONYMIZED.value:
         return True
 
@@ -2459,6 +2471,18 @@ def _handle_video_upload_import_failure(
     attempt: _VideoUploadImportAttempt,
     exc: Exception,
 ) -> bool:
+    from endoreg_db.services.hub.upload_job_cancellation import (
+        UploadJobCancellationCleanupFailed,
+        UploadJobImportCancelled,
+        finalize_upload_job_cancellation,
+    )
+
+    if isinstance(exc, UploadJobCancellationCleanupFailed):
+        # Preserve the pending intent, lease evidence and source for explicit review.
+        raise exc
+    if isinstance(exc, UploadJobImportCancelled):
+        finalize_upload_job_cancellation(attempt.lease)
+        return False
     if database_recovery_reason(exc) is not None:
         # Keep the source and lease intact. Celery redelivers after repair and
         # must reacquire an expired lease rather than stealing a live epoch.
@@ -2503,6 +2527,11 @@ def _run_video_upload_import_job(
     # must not revive a job completed between an unlocked read and acquisition.
     with transaction.atomic():
         job = UploadJob.objects.select_for_update().get(id=job_id)
+        if job.status in {
+            UploadJob.Status.CANCEL_REQUESTED,
+            UploadJob.Status.CANCELLED,
+        }:
+            return False
         if job.status == UploadJob.Status.ANONYMIZED.value:
             integrity = check_upload_job_media_integrity(job, require_review=False)
             if not integrity.ok:
@@ -2544,7 +2573,14 @@ def _run_watcher_upload_job_inline(
     processor_name: str | None = None,
 ) -> UploadJob:
     upload_job.refresh_from_db()
-    mark_upload_job_processing(upload_job)
+    if upload_job.status in {
+        UploadJob.Status.CANCEL_REQUESTED,
+        UploadJob.Status.CANCELLED,
+    }:
+        return upload_job
+    _mark_watcher_upload_job_processing(
+        upload_job=upload_job, watched_path=watched_path
+    )
     _update_upload_provenance(
         upload_job,
         processing_handoff="inline",
@@ -2676,6 +2712,11 @@ def start_upload_job_processing(
             exc,
         )
         upload_job.refresh_from_db()
+        if upload_job.status in {
+            UploadJob.Status.CANCEL_REQUESTED,
+            UploadJob.Status.CANCELLED,
+        }:
+            raise
         if upload_job.status != UploadJob.Status.RETRYING.value:
             if _is_celery_broker_connection_error(exc):
                 schedule_dispatch_retry(
@@ -2803,6 +2844,11 @@ def _reuse_watcher_upload_job(
     created: bool,
     watched_path: Path,
 ) -> UploadJob | None:
+    if upload_job.status in {
+        UploadJob.Status.CANCEL_REQUESTED,
+        UploadJob.Status.CANCELLED,
+    }:
+        return upload_job
     if not created:
         safe_unlink_file(watched_path, missing_ok=True)
         return upload_job
@@ -2824,12 +2870,19 @@ def _mark_watcher_upload_job_processing(
     upload_job: UploadJob,
     watched_path: Path,
 ) -> None:
-    mark_upload_job_processing(upload_job)
-    _ = _update_upload_provenance(
-        upload_job,
-        watcher_processing_path=str(watched_path),
+    from endoreg_db.services.hub.upload_job_cancellation import (
+        raise_if_upload_job_cancellation_requested,
     )
-    upload_job.save(update_fields=["processing_provenance", "updated_at"])
+
+    with transaction.atomic():
+        owned_job = UploadJob.objects.select_for_update().get(pk=upload_job.pk)
+        raise_if_upload_job_cancellation_requested(owned_job)
+        mark_upload_job_processing(owned_job)
+        _ = _update_upload_provenance(
+            owned_job, watcher_processing_path=str(watched_path)
+        )
+        owned_job.save(update_fields=["processing_provenance", "updated_at"])
+    upload_job.refresh_from_db()
 
 
 def _prepare_watcher_video_dispatch(
@@ -2903,6 +2956,11 @@ def _handle_watcher_handoff_failure(
         error=safe_log_value(technical_error, key="error"),
     )
     upload_job.refresh_from_db()
+    if upload_job.status in {
+        UploadJob.Status.CANCEL_REQUESTED,
+        UploadJob.Status.CANCELLED,
+    }:
+        return upload_job
     if upload_job.status == UploadJob.Status.RETRYING.value:
         safe_unlink_file(watched_path, missing_ok=True)
         return upload_job

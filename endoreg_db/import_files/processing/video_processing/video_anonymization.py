@@ -785,6 +785,8 @@ class VideoAnonymizer:
         video, anonymized_output_path, temp_output_path = (
             self._prepare_anonymization_attempt(ctx)
         )
+        # Register ownership before compute so interruption can remove partial output.
+        ctx.anonymized_path = temp_output_path
         frame_cleaner = self._new_frame_cleaner()
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         temp_result_path, extracted_metadata = self._run_frame_cleaner(

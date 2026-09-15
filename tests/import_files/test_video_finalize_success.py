@@ -1,4 +1,4 @@
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -18,6 +18,29 @@ from endoreg_db.schemas.video_storage import (
     VideoTimelineContract,
 )
 from endoreg_db.utils import paths as paths_module
+
+
+@pytest.fixture(autouse=True)
+def dummy_video_writer_scope(monkeypatch: MonkeyPatch) -> None:
+    # These unit fixtures replace VideoFile with DummyVideo and have no database.
+    # Real lease admission and release are covered in test_video_artifact_writer_entry.
+    from endoreg_db.services import media_operation_gate
+
+    def writer_scope(*, video_id: int) -> nullcontext[None]:
+        assert video_id > 0
+        return nullcontext()
+
+    monkeypatch.setattr(media_operation_gate, "video_artifact_mutation", writer_scope)
+    from endoreg_db.import_files.file_storage import state_management
+
+    def skip_cleanup_admission(instance: VideoFile) -> None:
+        assert instance.pk > 0
+
+    monkeypatch.setattr(
+        state_management,
+        "reconcile_previous_processed_cleanup",
+        skip_cleanup_admission,
+    )
 
 
 def _runtime_storage_root() -> Path:

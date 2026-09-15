@@ -12,7 +12,7 @@ from rest_framework.permissions import (
 )
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from lx_dtypes.models.meta.VideoMeta import (
     VideoFpsDetailsPayload,
     VideoFpsErrorPayload,

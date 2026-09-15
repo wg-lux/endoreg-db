@@ -7,10 +7,11 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import permission_classes
+from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -59,6 +60,8 @@ import logging
 
 from lx_dtypes.models.contracts.anonymization_overview import (
     AnonymizationStatusInfoData,
+    OverviewUploadJobMonitoringPayload,
+    UploadJobCancellationResponsePayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -231,6 +234,8 @@ class AnonymizationOverviewView(APIView):
                     UploadJob.Status.RETRYING,
                     UploadJob.Status.ERROR,
                     UploadJob.Status.LOST,
+                    UploadJob.Status.CANCEL_REQUESTED,
+                    UploadJob.Status.CANCELLED,
                 )
             )
             .exclude(pk__in=attached_job_ids)
@@ -258,6 +263,8 @@ class AnonymizationOverviewView(APIView):
                         "failed"
                         if upload_job.status
                         in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
+                        else "not_started"
+                        if upload_job.status == UploadJob.Status.CANCELLED.value
                         else AnonymizationState.PROCESSING_ANONYMIZING
                     ),
                     "annotation_status": "",
@@ -347,6 +354,53 @@ class AnonymizationOverviewView(APIView):
             reverse=True,
         )
         return combined
+
+
+class UploadJobCancelView(APIView):
+    """Request interruption without deleting encrypted sources or valid media."""
+
+    permission_classes = [IsAuthenticated, PolicyPermission]
+
+    @transaction.atomic
+    def post(self, request: Request, job_id: UUID | str) -> Response:
+        from endoreg_db.services.hub.upload_job_cancellation import (
+            UploadJobCancellationConflict,
+            request_upload_job_cancellation,
+        )
+
+        job = UploadJob.objects.select_for_update().filter(pk=job_id).first()
+        if job is None:
+            return Response(
+                {"detail": "Upload job not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        centers = resolve_allowed_center_ids(request.user)
+        source_center_id = cast(int | None, getattr(job, "source_center_id", None))
+        if centers is not None and source_center_id not in centers:
+            raise PermissionDenied("Upload job is outside the assigned center scope.")
+        if request.data:
+            return Response(
+                {"detail": "Cancellation does not accept a request payload."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            job = request_upload_job_cancellation(
+                job_id=str(job.pk), actor_id=cast(User, request.user).pk
+            )
+        except UploadJobCancellationConflict as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        payload = UploadJobCancellationResponsePayload(
+            upload_job=OverviewUploadJobMonitoringPayload.model_validate(
+                overview_upload_job_summary(cast(Any, job)), strict=False
+            )
+        )
+        return Response(
+            payload.to_data(),
+            status=(
+                status.HTTP_202_ACCEPTED
+                if job.status == UploadJob.Status.CANCEL_REQUESTED.value
+                else status.HTTP_200_OK
+            ),
+        )
 
 
 class UploadJobDismissView(APIView):
