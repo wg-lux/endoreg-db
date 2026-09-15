@@ -6,8 +6,7 @@ from io import BufferedIOBase
 from pathlib import Path
 from typing import Protocol, TypeGuard, cast
 
-from django.http import StreamingHttpResponse
-from django.http.response import HttpResponseBase
+from django.http import HttpResponse, StreamingHttpResponse
 
 from lx_dtypes.models.contracts.media_streaming import (
     ByteRange,
@@ -327,9 +326,9 @@ def build_partial_content_response_from_path(
     return response
 
 
-def add_cors_headers(
-    response: HttpResponseBase, frontend_origin: str
-) -> HttpResponseBase:
+def add_cors_headers[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT, frontend_origin: str
+) -> _ResponseT:
     response["Access-Control-Allow-Origin"] = frontend_origin
     response["Access-Control-Allow-Credentials"] = "true"
     return response

@@ -6,7 +6,6 @@ import posixpath
 from pathlib import Path
 
 from django.http import HttpResponse
-from django.http.response import HttpResponseBase
 
 from lx_dtypes.models.contracts.nginx_accel import (
     NginxAccelResponseHeadersPayload,
@@ -40,7 +39,7 @@ def build_nginx_accel_response(
     frontend_origin: str | None = None,
     buffering: str = "no",
     accept_ranges: bool = True,
-) -> HttpResponseBase:
+) -> HttpResponse:
     safe_relative_path = normalize_protected_media_relative_path(
         protected_relative_path
     )
@@ -60,7 +59,7 @@ def build_nginx_accel_response(
             ),
         }
     )
-    response: HttpResponseBase = HttpResponse()
+    response: HttpResponse = HttpResponse()
     response["Content-Type"] = headers.content_type
     response["X-Accel-Redirect"] = headers.x_accel_redirect
     response["X-Accel-Buffering"] = headers.x_accel_buffering
@@ -82,7 +81,7 @@ def build_nginx_accel_response_for_path(
     frontend_origin: str | None = None,
     buffering: str = "no",
     accept_ranges: bool = True,
-) -> HttpResponseBase:
+) -> HttpResponse:
     relative_path = to_protected_media_relative(path.resolve())
     return build_nginx_accel_response(
         protected_relative_path=str(relative_path),

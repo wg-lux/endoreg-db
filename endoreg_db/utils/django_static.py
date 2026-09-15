@@ -10,14 +10,14 @@ try:
     from django.conf.urls.static import static as _django_static
 except ImportError:
     from django.core.exceptions import ImproperlyConfigured
-    from django.http.response import HttpResponseBase
+    from django.http import HttpResponse, StreamingHttpResponse
     from django.urls import URLPattern
     from django.urls import re_path
     from django.views.static import serve
 
     def static(
         prefix: str,
-        view: Callable[..., HttpResponseBase] = serve,
+        view: Callable[..., HttpResponse | StreamingHttpResponse] = serve,
         **kwargs: Any,
     ) -> list[URLPattern]:
         if not prefix:

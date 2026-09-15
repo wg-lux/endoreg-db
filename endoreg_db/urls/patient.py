@@ -1,19 +1,19 @@
 from collections.abc import Callable
 from typing import Protocol, cast
 
-from django.http.response import HttpResponseBase
 from endoreg_db.views import (
     GenderViewSet,
     CenterViewSet,
     PatientViewSet,
 )
 from rest_framework.routers import DefaultRouter
+from django.http import HttpResponse
 from django.urls import path, include
 from rest_framework.viewsets import ViewSetMixin
 
 
 class _ViewSetAsViewLike(Protocol):
-    def as_view(self, actions: dict[str, str]) -> Callable[..., HttpResponseBase]: ...
+    def as_view(self, actions: dict[str, str]) -> Callable[..., HttpResponse]: ...
 
 
 router = DefaultRouter()

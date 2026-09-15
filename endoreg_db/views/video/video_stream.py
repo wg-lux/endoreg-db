@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from django.http import HttpResponseRedirect
-from django.http.response import HttpResponseBase
+from django.http import HttpResponse, HttpResponseRedirect
 from rest_framework.request import Request
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
@@ -36,8 +35,8 @@ LEGACY_VIDEO_STREAM_STATE = "hls_compat_redirect"
 
 
 def _add_cors_headers_if_configured(
-    response: HttpResponseBase, frontend_origin: str | None
-) -> HttpResponseBase:
+    response: HttpResponse, frontend_origin: str | None
+) -> HttpResponse:
     if frontend_origin is None:
         return response
     return add_cors_headers(response, frontend_origin)
@@ -54,7 +53,7 @@ class VideoStreamView(APIView):
         self,
         request: Request,
         pk: int | str | None = None,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse:
         video = self._get_video_or_404(pk)
         assert_anonymized_center_scope_allowed(request=request, obj=video)
         self.check_object_permissions(request, video)

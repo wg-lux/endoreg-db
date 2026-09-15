@@ -12,7 +12,7 @@ from django.contrib.auth.models import Group, User
 from django.core.handlers.wsgi import WSGIRequest
 from django.core.management.base import CommandError, CommandParser
 from django.db import transaction
-from django.http.response import HttpResponseBase
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
@@ -445,10 +445,12 @@ def _profile_frontend_client(
     origin: str | None,
     hls_support: _FrontendHlsSupport,
 ) -> dict[str, object]:
-    playlist_view = cast(Callable[..., HttpResponseBase], HLSPlaylistView.as_view())
-    key_view = cast(Callable[..., HttpResponseBase], HLSKeyView.as_view())
-    segment_view = cast(Callable[..., HttpResponseBase], HLSSegmentView.as_view())
-    stream_view = cast(Callable[..., HttpResponseBase], VideoStreamView.as_view())
+    playlist_view = cast(
+        Callable[..., HttpResponse | StreamingHttpResponse], HLSPlaylistView.as_view()
+    )
+    key_view = cast(Callable[..., HttpResponse], HLSKeyView.as_view())
+    segment_view = cast(Callable[..., HttpResponse], HLSSegmentView.as_view())
+    stream_view = cast(Callable[..., HttpResponse], VideoStreamView.as_view())
     artifacts_by_video_id = _ready_processed_hls_artifacts_for_videos(videos)
 
     request_count = 0
@@ -520,10 +522,10 @@ def _ready_processed_hls_artifacts_for_videos(
 def _simulate_frontend_video(
     *,
     factory: APIRequestFactory,
-    playlist_view: Callable[..., HttpResponseBase],
-    key_view: Callable[..., HttpResponseBase],
-    segment_view: Callable[..., HttpResponseBase],
-    stream_view: Callable[..., HttpResponseBase],
+    playlist_view: Callable[..., HttpResponse | StreamingHttpResponse],
+    key_view: Callable[..., HttpResponse],
+    segment_view: Callable[..., HttpResponse],
+    stream_view: Callable[..., HttpResponse],
     video: VideoFile,
     hls_artifact: VideoHlsArtifact | None,
     user: User,
@@ -644,7 +646,7 @@ def _simulate_progressive_from_context(
     simulation: _FrontendVideoSimulation,
     *,
     factory: APIRequestFactory,
-    stream_view: Callable[..., HttpResponseBase],
+    stream_view: Callable[..., HttpResponse],
     user: User,
     origin: str | None,
     fallback_reason: str,
@@ -663,7 +665,7 @@ def _simulate_progressive_from_context(
 
 def _record_unavailable_hls_playlist(
     simulation: _FrontendVideoSimulation,
-    response: HttpResponseBase,
+    response: HttpResponse | StreamingHttpResponse,
 ) -> None:
     simulation.issues.append("hls_playlist_unavailable")
     simulation.result["playback_mode"] = "error"
@@ -675,7 +677,7 @@ def _record_unavailable_hls_playlist(
 
 def _record_available_hls_playlist(
     simulation: _FrontendVideoSimulation,
-    response: HttpResponseBase,
+    response: HttpResponse | StreamingHttpResponse,
     *,
     hls_support: _FrontendHlsSupport,
 ) -> bool:
@@ -694,7 +696,7 @@ def _probe_frontend_hls_key(
     simulation: _FrontendVideoSimulation,
     *,
     factory: APIRequestFactory,
-    key_view: Callable[..., HttpResponseBase],
+    key_view: Callable[..., HttpResponse],
     user: User,
     origin: str | None,
 ) -> bool:
@@ -730,7 +732,7 @@ def _probe_frontend_hls_segment(
     simulation: _FrontendVideoSimulation,
     *,
     factory: APIRequestFactory,
-    segment_view: Callable[..., HttpResponseBase],
+    segment_view: Callable[..., HttpResponse],
     user: User,
     origin: str | None,
 ) -> bool:
@@ -781,7 +783,7 @@ def _finalize_frontend_hls_simulation(
 def _simulate_frontend_progressive_fallback(
     *,
     factory: APIRequestFactory,
-    stream_view: Callable[..., HttpResponseBase],
+    stream_view: Callable[..., HttpResponse],
     video_id: int,
     user: User,
     origin: str | None,
@@ -904,9 +906,11 @@ def _profile_hls_targets(
     user: User,
     origin: str | None,
 ) -> dict[str, object]:
-    playlist_view = cast(Callable[..., HttpResponseBase], HLSPlaylistView.as_view())
-    key_view = cast(Callable[..., HttpResponseBase], HLSKeyView.as_view())
-    segment_view = cast(Callable[..., HttpResponseBase], HLSSegmentView.as_view())
+    playlist_view = cast(
+        Callable[..., HttpResponse | StreamingHttpResponse], HLSPlaylistView.as_view()
+    )
+    key_view = cast(Callable[..., HttpResponse], HLSKeyView.as_view())
+    segment_view = cast(Callable[..., HttpResponse], HLSSegmentView.as_view())
     samples: list[dict[str, object]] = []
     request_count = 0
 
@@ -939,7 +943,7 @@ def _profile_mp4_targets(
     user: User,
     origin: str | None,
 ) -> dict[str, object]:
-    stream_view = cast(Callable[..., HttpResponseBase], VideoStreamView.as_view())
+    stream_view = cast(Callable[..., HttpResponse], VideoStreamView.as_view())
     samples: list[dict[str, object]] = []
     request_count = 0
 
@@ -965,9 +969,9 @@ def _profile_mp4_targets(
 def _exercise_hls_target(
     *,
     factory: APIRequestFactory,
-    playlist_view: Callable[..., HttpResponseBase],
-    key_view: Callable[..., HttpResponseBase],
-    segment_view: Callable[..., HttpResponseBase],
+    playlist_view: Callable[..., HttpResponse | StreamingHttpResponse],
+    key_view: Callable[..., HttpResponse],
+    segment_view: Callable[..., HttpResponse],
     target: _HlsStreamingTarget,
     user: User,
     origin: str | None,
@@ -1034,7 +1038,7 @@ def _exercise_hls_target(
 def _exercise_mp4_target(
     *,
     factory: APIRequestFactory,
-    stream_view: Callable[..., HttpResponseBase],
+    stream_view: Callable[..., HttpResponse],
     target: _Mp4StreamingTarget,
     user: User,
     origin: str | None,
@@ -1089,14 +1093,18 @@ def _authenticated_get(
     return request
 
 
-def _assert_status_ok(response: HttpResponseBase, *, label: str) -> None:
+def _assert_status_ok(
+    response: HttpResponse | StreamingHttpResponse, *, label: str
+) -> None:
     if response.status_code != 200:
         raise CommandError(
             f"{label} returned status={response.status_code}; expected 200."
         )
 
 
-def _required_x_accel_redirect(response: HttpResponseBase, *, label: str) -> str:
+def _required_x_accel_redirect(
+    response: HttpResponse | StreamingHttpResponse, *, label: str
+) -> str:
     redirect = response.headers.get("X-Accel-Redirect", "")
     if not redirect:
         raise CommandError(f"{label} did not return X-Accel-Redirect.")
@@ -1109,14 +1117,16 @@ def _required_x_accel_redirect(response: HttpResponseBase, *, label: str) -> str
     return redirect
 
 
-def _optional_x_accel_redirect(response: HttpResponseBase) -> str | None:
+def _optional_x_accel_redirect(
+    response: HttpResponse | StreamingHttpResponse,
+) -> str | None:
     redirect = response.headers.get("X-Accel-Redirect")
     if redirect is None or redirect == "":
         return None
     return redirect
 
 
-def _x_accel_handoff_ok(response: HttpResponseBase) -> bool:
+def _x_accel_handoff_ok(response: HttpResponse | StreamingHttpResponse) -> bool:
     redirect = _optional_x_accel_redirect(response)
     if redirect is None:
         return False
@@ -1124,7 +1134,9 @@ def _x_accel_handoff_ok(response: HttpResponseBase) -> bool:
     return redirect.startswith(protected_prefix)
 
 
-def _content_length_header(response: HttpResponseBase) -> int | None:
+def _content_length_header(
+    response: HttpResponse | StreamingHttpResponse,
+) -> int | None:
     value = response.headers.get("Content-Length")
     if value is None:
         return None

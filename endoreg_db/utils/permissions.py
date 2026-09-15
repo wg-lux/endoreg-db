@@ -14,7 +14,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, ParamSpec, Protocol, TypeAlias, cast
 
 from django.conf import settings
-from django.http.response import HttpResponseBase
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from rest_framework.request import Request
 
@@ -62,7 +62,10 @@ class DynamicAuthPermission:
 
 def dynamic_permission_classes(
     force_auth: PermissionMode = "default",
-) -> Callable[[Callable[P, HttpResponseBase]], Callable[P, HttpResponseBase]]:
+) -> Callable[
+    [Callable[P, HttpResponse | StreamingHttpResponse]],
+    Callable[P, HttpResponse | StreamingHttpResponse],
+]:
     """
     Decorator that applies permission classes based on environment settings.
     """
@@ -71,10 +74,12 @@ def dynamic_permission_classes(
     config = DynamicPermissionConfigPayload.model_validate({"mode": force_auth})
 
     def decorator(
-        view_func: Callable[P, HttpResponseBase],
-    ) -> Callable[P, HttpResponseBase]:
+        view_func: Callable[P, HttpResponse | StreamingHttpResponse],
+    ) -> Callable[P, HttpResponse | StreamingHttpResponse]:
         @wraps(view_func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> HttpResponseBase:
+        def wrapper(
+            *args: P.args, **kwargs: P.kwargs
+        ) -> HttpResponse | StreamingHttpResponse:
             return view_func(*args, **kwargs)
 
         if config.mode == "force_auth":
@@ -92,7 +97,7 @@ def dynamic_permission_classes(
             )
 
         return cast(
-            Callable[P, HttpResponseBase],
+            Callable[P, HttpResponse | StreamingHttpResponse],
             drf_permission_classes(permission_cls)(wrapper),
         )
 

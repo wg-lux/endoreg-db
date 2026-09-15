@@ -6,7 +6,6 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
-from django.http.response import HttpResponseBase
 from django.shortcuts import redirect
 from lx_dtypes.models.contracts import JsonValue
 from lx_dtypes.models.contracts.authz import validate_keycloak_token_response
@@ -48,7 +47,7 @@ def _token_response_payload(response: requests.Response) -> Mapping[str, JsonVal
     return cast(Mapping[str, JsonValue], raw_payload)
 
 
-def keycloak_login(request: HttpRequest) -> HttpResponseBase:
+def keycloak_login(request: HttpRequest) -> HttpResponse:
     """
     - This gets triggered when middleware redirects to /login/.
     """
@@ -71,7 +70,7 @@ def keycloak_login(request: HttpRequest) -> HttpResponseBase:
     return redirect(f"{auth_url}?{urlencode(params)}")
 
 
-def keycloak_callback(request: HttpRequest) -> HttpResponseBase:
+def keycloak_callback(request: HttpRequest) -> HttpResponse:
     # User lands here after login (Keycloak redirects here with code).
     """
     Handles the OAuth2 callback from Keycloak, exchanging the authorization code for tokens.

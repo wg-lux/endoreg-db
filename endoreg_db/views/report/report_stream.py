@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, BinaryIO, TypeGuard, cast
 
 from django.db.models.fields.files import FieldFile
 from django.http import Http404, HttpResponse, StreamingHttpResponse
-from django.http.response import HttpResponseBase
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from rest_framework.request import Request
@@ -160,7 +159,7 @@ def _serve_with_nginx(
     *,
     disposition: MediaStreamDisposition,
     frontend_origin: str | None,
-) -> HttpResponseBase | None:
+) -> HttpResponse | None:
     path = _resolve_local_path_for_nginx(field_file)
     if path is None:
         return None
@@ -181,9 +180,9 @@ def _serve_with_nginx(
         return None
 
 
-def _add_cors_headers_if_configured(
-    response: HttpResponseBase, frontend_origin: str | None
-) -> HttpResponseBase:
+def _add_cors_headers_if_configured[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT, frontend_origin: str | None
+) -> _ResponseT:
     if frontend_origin is None:
         return response
     return add_cors_headers(response, frontend_origin)
@@ -280,7 +279,7 @@ def _serve_remote_processed_report(
     range_header: str | None,
     disposition: MediaStreamDisposition,
     frontend_origin: str | None,
-) -> HttpResponseBase:
+) -> HttpResponse | StreamingHttpResponse:
     from endoreg_db.services.hub.remote_processed_report import (
         materialize_remote_processed_report,
     )
@@ -366,7 +365,7 @@ class ReportStreamView(APIView):
         pk: int | str,
         *args: object,
         **kwargs: object,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse | StreamingHttpResponse:
         try:
             report_id = int(pk)
         except (TypeError, ValueError):

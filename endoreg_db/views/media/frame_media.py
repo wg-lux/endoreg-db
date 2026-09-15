@@ -5,9 +5,9 @@ import mimetypes
 from pathlib import Path
 from typing import Protocol, TypeGuard, cast
 
+from django.http import StreamingHttpResponse
 from django.core.files import File
 from django.http import Http404, HttpResponse
-from django.http.response import HttpResponseBase
 from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -71,9 +71,9 @@ read_video_file_frame_jpeg = cast(
 )
 
 
-def _add_cors_headers_if_configured(
-    response: HttpResponseBase, frontend_origin: str | None
-) -> HttpResponseBase:
+def _add_cors_headers_if_configured[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT, frontend_origin: str | None
+) -> _ResponseT:
     if frontend_origin is None:
         return response
     return add_cors_headers(response, frontend_origin)
@@ -138,7 +138,7 @@ class FrameStreamView(APIView):
         content_type: str,
         *,
         frontend_origin: str | None,
-    ) -> HttpResponseBase | None:
+    ) -> HttpResponse | None:
         try:
             return build_nginx_accel_response_for_path(
                 path=frame_path,
@@ -235,7 +235,7 @@ class FrameStreamView(APIView):
         request: Request,
         video_id: int | str | None = None,
         frame_number: int | str | None = None,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse | StreamingHttpResponse:
         if video_id is None or frame_number is None:
             raise Http404("video_id and frame_number are required")
 
@@ -355,7 +355,7 @@ class DecodedFrameStreamView(APIView):
         request: Request,
         video_id: int | str | None = None,
         frame_number: int | str | None = None,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse:
         if video_id is None or frame_number is None:
             raise Http404("video_id and frame_number are required")
 

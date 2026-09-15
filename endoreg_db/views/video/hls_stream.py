@@ -3,8 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse
-from django.http.response import HttpResponseBase
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpResponse,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 from django.db import transaction
 from rest_framework.request import Request
 from endoreg_db.openapi import OpenApiAPIView as APIView
@@ -42,22 +47,26 @@ HLS_SEGMENT_CACHE_CONTROL = "private, max-age=31536000, immutable"
 HLS_PENDING_RETRY_AFTER_SECONDS = 3
 
 
-def _private_no_store(response: HttpResponseBase) -> HttpResponseBase:
+def _private_no_store[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT,
+) -> _ResponseT:
     response["Cache-Control"] = "no-store, private"
     response["Pragma"] = "no-cache"
     response["Expires"] = "0"
     return response
 
 
-def _harden_media_response(response: HttpResponseBase) -> HttpResponseBase:
+def _harden_media_response[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT,
+) -> _ResponseT:
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
 
-def _add_cors_if_configured(
-    response: HttpResponseBase,
+def _add_cors_if_configured[_ResponseT: HttpResponse | StreamingHttpResponse](
+    response: _ResponseT,
     request: Request,
-) -> HttpResponseBase:
+) -> _ResponseT:
     frontend_origin = resolve_response_origin(request)
     if frontend_origin is None:
         return response
@@ -86,7 +95,7 @@ def _hls_not_ready_response(
     artifact_kind: VideoArtifactKind,
     status: str,
     unavailable: bool = False,
-) -> HttpResponseBase:
+) -> HttpResponse:
     response = JsonResponse(
         {
             "status": status,
@@ -130,7 +139,7 @@ class HLSPlaylistView(APIView):
         self,
         request: Request,
         pk: int | str | None = None,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse | StreamingHttpResponse:
         video = _get_video_or_404(pk)
         artifact_kind = _artifact_kind_from_request(request)
         if artifact_kind == VideoArtifactKind.PROCESSED:
@@ -210,7 +219,7 @@ class HLSKeyView(APIView):
         request: Request,
         pk: int | str | None = None,
         key_id: UUID | None = None,
-    ) -> HttpResponseBase:
+    ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)
@@ -255,7 +264,7 @@ class HLSSegmentView(APIView):
         pk: int | str | None = None,
         key_id: UUID | None = None,
         segment_name: str = "",
-    ) -> HttpResponseBase:
+    ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
         video = _get_video_or_404(pk)

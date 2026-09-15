@@ -6,8 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 
-from django.http import HttpRequest
-from django.http.response import HttpResponseBase
+from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
 
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
@@ -29,12 +28,15 @@ class RequestLoggingMiddleware:
     simultaneous requests isolated across its thread adapters.
     """
 
-    get_response: Callable[[HttpRequest], HttpResponseBase]
+    get_response: Callable[[HttpRequest], HttpResponse | StreamingHttpResponse]
 
-    def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]) -> None:
+    def __init__(
+        self,
+        get_response: Callable[[HttpRequest], HttpResponse | StreamingHttpResponse],
+    ) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponseBase:
+    def __call__(self, request: HttpRequest) -> HttpResponse | StreamingHttpResponse:
         with request_log_context() as request_id:
             started_at = time.monotonic()
             status_code = 500

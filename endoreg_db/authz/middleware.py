@@ -26,7 +26,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.http import HttpRequest
-from django.http.response import HttpResponseBase
+from django.http.response import HttpResponse
 from django.shortcuts import redirect
 
 # Every URL path that starts with one of these prefixes is considered "protected" for browser UX.
@@ -57,7 +57,7 @@ NODE_AUTHENTICATED_PATH_PREFIXES = (
 )
 
 
-type GetResponse = Callable[[HttpRequest], HttpResponseBase]
+type GetResponse = Callable[[HttpRequest], HttpResponse]
 
 
 def _is_node_authenticated_path(path: str) -> bool:
@@ -83,7 +83,7 @@ class LoginRequiredForAPIsMiddleware:
     def __init__(self, get_response: GetResponse) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponseBase:
+    def __call__(self, request: HttpRequest) -> HttpResponse:
         # request.path is the URL path without scheme/host/query.
         # If for any reason it's None/empty, coerce to empty string so startswith won’t explode.
         path = request.path or ""

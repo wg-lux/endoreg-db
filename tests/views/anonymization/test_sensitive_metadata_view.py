@@ -7,8 +7,8 @@ from datetime import date, datetime, time
 from uuid import uuid4
 import json
 import pytest
+from django.http import HttpResponse
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.http.response import HttpResponseBase
 from django.test import Client as DjangoClient
 from django.utils import timezone
 from rest_framework import status
@@ -111,7 +111,7 @@ class TestSensitiveMetadataEndpoints:
 
     def _call_view(
         self,
-        view: Callable[..., HttpResponseBase],
+        view: Callable[..., HttpResponse],
         request: Request,
         **kwargs: object,
     ) -> DRFResponse:

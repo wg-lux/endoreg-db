@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeVar, cast
 
-from django.http import HttpResponseBase
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework import serializers
 from rest_framework.decorators import api_view as drf_api_view
 from rest_framework.views import APIView
@@ -26,7 +26,9 @@ class OpenApiAPIView(APIView):
     serializer_class = OpenApiUnspecifiedObjectSerializer
 
 
-ViewFunction = TypeVar("ViewFunction", bound=Callable[..., HttpResponseBase])
+ViewFunction = TypeVar(
+    "ViewFunction", bound=Callable[..., HttpResponse | StreamingHttpResponse]
+)
 
 
 def api_view(http_method_names: list[str]) -> Callable[[ViewFunction], ViewFunction]:
