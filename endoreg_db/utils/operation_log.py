@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import logging
+
+from django.http import HttpRequest
+
+from endoreg_db.models.operation_log import OperationLog
+from endoreg_db.utils.structured_logging import StructuredLogPayload
+
+logger = logging.getLogger(__name__)
+
+
+# -----------------------------
+# Operation actions
+# -----------------------------
+
+ACTION_ANONYMIZATION_START = "anonymization.start"
+ACTION_ANONYMIZATION_VALIDATED = "anonymization.validated"
+
+ACTION_SEGMENT_ANNOTATED = "segment.annotated"
+ACTION_SEGMENT_CREATED = "segment.created"
+
+# -----------------------------
+# Operation statuses
+# -----------------------------
+
+STATUS_VALIDATED = "validated"
+STATUS_UNVALIDATED = "unvalidated"
+
+STATUS_NOT_STARTED = "not_started"
+STATUS_PROCESSING = "processing"
+STATUS_ANONYMIZED = "anonymized"
+
+
+def record_operation(
+    request: HttpRequest,
+    *,
+    action: str,
+    resource_type: str = "",
+    resource_id: int | None = None,
+    status_before: str | None = None,
+    status_after: str | None = None,
+    meta: StructuredLogPayload | None = None,
+) -> None:
+    """
+    Create an OperationLog entry from a view.
+    """
+    user = getattr(request, "user", None)
+
+    try:
+        log = OperationLog(
+            actor_user=user if getattr(user, "is_authenticated", False) else None,
+            actor_username=getattr(user, "username", "") if user else "",
+            actor_email=getattr(user, "email", "") if user else "",
+            actor_keycloak_id="",  # fill later if you add it to your user model
+            action=action,
+            http_method=getattr(request, "method", ""),
+            path=getattr(request, "path", ""),
+            resource_type=resource_type,
+            resource_id=resource_id,
+            status_before=status_before or "",
+            status_after=status_after or "",
+            meta=meta or None,
+        )
+        log.save()
+    except Exception:
+        # Never kill the main request flow because of logging
+        logger.exception(
+            "Failed to record operation %s for %s(%s)",
+            action,
+            resource_type,
+            resource_id,
+        )
+
+
+# TODO: will make the name more generic later based on the requirement,after merge
+def get_resource_type_from_instance(obj: object) -> str:
+    name = obj.__class__.__name__
+    '''if name == "VideoFile":
+        return "video"
+    if name == "RawPdfFile":
+        return "pdf"'''
+    return name.lower()

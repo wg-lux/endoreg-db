@@ -1,0 +1,46 @@
+schema_version: '1.0'
+title: Processed frame streams for lx-ai-core training
+feature: center_access
+feature_definition: feature-tracking/CenterAccess.yml
+contract:
+  manifest_endpoint: POST /api/settings/application/ai_datasets/<id>/training_manifest/
+  core_payload: lx_ai_core_manifest
+  sample_input: frame_stream
+  reference_fields: [video_id, frame_number, artifact_kind]
+  artifact_kind: processed
+  path_export: include_file_paths=true is rejected; relative cache paths are not core training inputs.
+  dependencies: lx-ai-core 0.0.4 with the torch extra includes the streaming contract and loader.
+implementation:
+  provider: endoreg_db.services.frames.training_images.ProcessedTrainingFrameProvider
+  dataset_factory: endoreg_db.services.frames.training_images.streamed_training_dataset
+  reader: endoreg_db.services.frames.training_images.read_processed_training_frame_bytes
+  existing_trainer: EndoMultiLabelDataset continues using the same processed reader with its existing resize and normalization; saved trainer manifests now contain stream references.
+security:
+  - The provider accepts only independently authorized frame IDs from the caller's selected dataset.
+  - A manifest is a description, not authorization; do not derive allowed_frame_ids from untrusted input.
+  - Each access queries current frame identity within the allowed IDs and rechecks processed-media clinical and integrity gates.
+  - The persisted frame number and timestamp are passed to the existing decoder without deriving coordinates from frame rate.
+  - Raw files and extracted cache paths are never read by the provider.
+  - The protected storage helper authenticates and decrypts the processed video within its existing restrictive temporary scope.
+  - Video materialization is cleaned before JPEG bytes are yielded; frames remain in memory and streams close on success and failure.
+  - Wrong-key, tamper, decoder and cleanup failures propagate without falling back to raw media or caches.
+  - No network client, credentials, master keys, or new transport policy are introduced.
+usage: |
+  from lx_ai_core.training import TrainingDatasetManifest
+  from endoreg_db.services.frames.training_images import streamed_training_dataset
+  from torch.utils.data import DataLoader
+
+  manifest = TrainingDatasetManifest.model_validate(exported_core_manifest)
+  dataset = streamed_training_dataset(
+      manifest, allowed_frame_ids=authorized_frame_ids, transform=training_transform
+  )
+  loader = DataLoader(dataset, batch_size=32, num_workers=0)
+  for batch in loader:
+      logits = model(batch["image"])
+      # Apply batch["label_mask"] to the unreduced loss.
+limits:
+  - Frames are fetched lazily on each indexed access, including subsequent epochs.
+  - The core loader limits encoded bytes and decoded pixels per frame.
+  - The existing storage helper materializes one processed video for each read; this is not range-based encrypted-video decoding.
+  - Choose training transforms, groupwise splits, batch size and worker configuration in the training caller.
+  - Installed lx-annotate wheels require their normal dependency refresh before these source changes affect that application.

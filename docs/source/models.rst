@@ -34,7 +34,7 @@ Person
 
 Product
 ====================
-.. automodule:: endoreg_db.models.administration.person
+.. automodule:: endoreg_db.models.administration.product
    :members:
    :undoc-members:
    :show-inheritance:
@@ -126,13 +126,6 @@ Organ
 Metadata
 ====================
 .. automodule:: endoreg_db.models.metadata
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Requirement
-====================
-.. automodule:: endoreg_db.models.requirement
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,27 +1,39 @@
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, TypeAlias, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
 
 from endoreg_db.utils.product.sum_emissions import sum_emissions
 from endoreg_db.utils.product.sum_weights import sum_weights
+from ...other.unit import Unit
+from .product_material import ProductMaterial
+from .reference_product import ReferenceProduct
 
-if TYPE_CHECKING:
-    from ...other.transport_route import TransportRoute
-    from .product_group import ProductGroup
-    from .reference_product import ReferenceProduct
-    from .product_material import ProductMaterial
-    # from .product_weight import ProductWeight
+NoProductValue: TypeAlias = None
+ProductMetric: TypeAlias = tuple[float, Unit | NoProductValue]
+ProductMetricResult: TypeAlias = ProductMetric | NoProductValue
+ProductMaterialMetricCalculator: TypeAlias = Callable[
+    [Iterable[ProductMaterial]],
+    ProductMetric,
+]
 
-class ProductManager(models.Manager):
-    def get_by_natural_key(self, name):
+
+class ProductManager(models.Manager["Product"]):
+    def get_by_natural_key(self, name: str) -> "Product":
         return self.get(name=name)
-    
+
+
 class Product(models.Model):
     objects = ProductManager()
 
-    name = models.CharField(max_length=255)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
 
-    transport_route = models.ForeignKey("TransportRoute", on_delete=models.SET_NULL, null=True)
-    product_group = models.ForeignKey(
+    transport_route: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "TransportRoute", on_delete=models.SET_NULL, null=True
+    )
+    product_group: models.ForeignKey[Any, Any] = models.ForeignKey(
         "ProductGroup",
         on_delete=models.SET_NULL,
         null=True,
@@ -29,16 +41,13 @@ class Product(models.Model):
     )
 
     if TYPE_CHECKING:
-        transport_route: "TransportRoute"
-        product_group: "ProductGroup"
-        reference_products: models.QuerySet["ReferenceProduct"]
-        product_product_materials: models.QuerySet["ProductMaterial"]
+        reference_products: models.QuerySet[ReferenceProduct]
+        product_product_materials: models.QuerySet[ProductMaterial]
 
-
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         return (self.name,)
-    
-    def __str__(self):
+
+    def __str__(self) -> str:
         result = f"{self.name}"
         if self.product_group:
             result += f" ({self.product_group}, "
@@ -49,49 +58,52 @@ class Product(models.Model):
             result += f"{self.transport_route})"
         else:
             result += "no transport route)"
-        
+
         return result
-    
-    def _calculate_material_metric(self, component: str, calculation_func):
-        """Helper method to calculate weight or emission for materials of a specific component."""
-        from .product_material import ProductMaterial # Import locally to avoid circular dependency issues at module level
+
+    def _calculate_material_metric(
+        self,
+        component: str,
+        calculation_func: ProductMaterialMetricCalculator,
+    ) -> ProductMetric:
+        """Calculate weight or emission for materials of a specific component."""
+        from .product_material import (
+            ProductMaterial,
+        )
+
         materials = ProductMaterial.objects.filter(product=self, component=component)
         return calculation_func(materials)
 
-    def get_product_weight(self):
+    def get_product_weight(self) -> ProductMetricResult:
         """Get the product weight, prioritizing material definitions."""
         from .product_material import ProductMaterial
-        # Check if there are specific material definitions for the product component
+
         if ProductMaterial.objects.filter(product=self, component="product").exists():
             return self.get_product_material_weight()
-        
-        # Fallback: check if there is a direct product weight defined (Not implemented yet)
-        # TODO: Implement logic for ProductWeight lookup
-        return None # Or appropriate default/error
 
-    def get_package_weight(self):
+        return None
+
+    def get_package_weight(self) -> ProductMetricResult:
         """Get the package weight, prioritizing material definitions."""
         from .product_material import ProductMaterial
-        # Check if there are specific material definitions for the package component
+
         if ProductMaterial.objects.filter(product=self, component="package").exists():
             return self.get_package_material_weight()
-        
-        # Fallback: check if there is a direct package weight defined (Not implemented yet)
-        # TODO: Implement logic for PackageWeight lookup (if different from ProductWeight)
-        return None # Or appropriate default/error
 
-    def get_product_material_weight(self):
+        return None
+
+    def get_product_material_weight(self) -> ProductMetric:
         """Calculate the total weight based on defined product materials."""
         return self._calculate_material_metric("product", sum_weights)
-    
-    def get_package_material_weight(self):
+
+    def get_package_material_weight(self) -> ProductMetric:
         """Calculate the total weight based on defined package materials."""
         return self._calculate_material_metric("package", sum_weights)
 
-    def get_product_material_emission(self):
+    def get_product_material_emission(self) -> ProductMetric:
         """Calculate the total emissions based on defined product materials."""
         return self._calculate_material_metric("product", sum_emissions)
 
-    def get_package_material_emission(self):
+    def get_package_material_emission(self) -> ProductMetric:
         """Calculate the total emissions based on defined package materials."""
         return self._calculate_material_metric("package", sum_emissions)

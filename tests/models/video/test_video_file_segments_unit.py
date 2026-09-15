@@ -1,0 +1,186 @@
+# pyright: reportPrivateUsage=false
+from pathlib import Path
+
+import pytest
+
+from endoreg_db.models import (
+    AiModel,
+    Center,
+    Frame,
+    Label,
+    LabelSet,
+    LabelType,
+    LabelVideoSegment,
+    ModelMeta,
+    VideoFile,
+    VideoPredictionMeta,
+)
+from endoreg_db.services.video_files import _segments as segments_module
+
+
+@pytest.mark.django_db
+def test_convert_sequences_creates_segments() -> None:
+    center = Center.objects.create(
+        name="segments-center", display_name="Segments Center"
+    )
+    video = VideoFile.objects.create(center=center, video_hash="segments-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="lesion", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-a", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-a")
+    model_meta = ModelMeta.objects.create(
+        name="meta-a", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    sequences = {
+        "lesion": [(0, 4), (10, 12)],
+    }
+
+    segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
+
+    created = LabelVideoSegment.objects.filter(
+        video_file=video, label=label, prediction_meta=prediction_meta
+    )
+    assert created.count() == 2
+    assert all(segment.state is not None for segment in created)
+    source_names: set[str] = set()
+    for segment in created:
+        assert segment.source is not None
+        source_names.add(str(segment.source.name))
+    assert source_names == {"prediction"}
+
+
+@pytest.mark.django_db
+def test_convert_sequences_rejects_unknown_label_atomically() -> None:
+    center = Center.objects.create(name="unknown-center", display_name="Unknown Center")
+    video = VideoFile.objects.create(center=center, video_hash="unknown-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="lesion", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-unknown", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-unknown")
+    model_meta = ModelMeta.objects.create(
+        name="meta-unknown", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="unresolved prediction label 'unknown'",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            {"lesion": [(0, 4)], "unknown": [(3, 6)]},
+            prediction_meta,
+        )
+
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=prediction_meta,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_convert_sequences_rejects_single_frame_segments_atomically() -> None:
+    center = Center.objects.create(
+        name="singleton-center", display_name="Singleton Center"
+    )
+    video = VideoFile.objects.create(center=center, video_hash="singleton-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="appendix", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-b", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-b")
+    model_meta = ModelMeta.objects.create(
+        name="meta-b", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    sequences = {
+        "appendix": [(5, 5), (10, 12)],
+    }
+
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="Invalid prediction sequence",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            sequences,
+            prediction_meta,
+        )
+
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        label=label,
+        prediction_meta=prediction_meta,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_get_outside_helpers_return_expected_frames(tmp_path: Path) -> None:
+    center = Center.objects.create(name="outside-center", display_name="Outside Center")
+    video = VideoFile.objects.create(center=center, video_hash="outside-hash")
+    frame_dir = tmp_path / "frames"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    video.frame_dir = str(frame_dir)
+
+    label_type = LabelType.objects.create(name="video")
+    outside_label = Label.objects.create(name="outside", label_type=label_type)
+
+    first_segment = LabelVideoSegment.objects.create(
+        video_file=video, label=outside_label, start_frame_number=1, end_frame_number=3
+    )
+    LabelVideoSegment.objects.create(
+        video_file=video, label=outside_label, start_frame_number=5, end_frame_number=6
+    )
+
+    Frame.objects.create(video=video, frame_number=0, relative_path="frame_0.jpg")
+    Frame.objects.create(video=video, frame_number=1, relative_path="frame_1.jpg")
+    Frame.objects.create(video=video, frame_number=2, relative_path="frame_2.jpg")
+    Frame.objects.create(video=video, frame_number=5, relative_path="frame_5.jpg")
+
+    numbers = segments_module._get_outside_frame_numbers(video)
+    assert numbers == {1, 2, 3, 5, 6}
+
+    frames_qs = segments_module._get_outside_frames(video)
+    assert list(frames_qs.values_list("frame_number", flat=True)) == [1, 2, 5]
+
+    first_segment.mark_validated(
+        is_validated=True,
+        information_source_name="manual_annotation",
+    )
+    validated_numbers = segments_module._get_outside_frame_numbers(
+        video,
+        only_validated=True,
+    )
+    assert validated_numbers == {1, 2, 3}
+
+    validated_frames_qs = segments_module._get_outside_frames(
+        video,
+        only_validated=True,
+    )
+    assert list(validated_frames_qs.values_list("frame_number", flat=True)) == [1, 2]
+
+    validated_paths = segments_module._get_outside_frame_paths(
+        video,
+        only_validated=True,
+    )
+    assert [path.name for path in validated_paths] == ["frame_1.jpg", "frame_2.jpg"]

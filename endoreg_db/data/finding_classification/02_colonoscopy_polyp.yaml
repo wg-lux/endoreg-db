@@ -1,0 +1,101 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_paris"
+    classification_types: ["shape", "morphology"]
+    name_de: "Formklassifikation Kolonläsion"
+    name_en: "Colon Lesion Shape Classification"
+    choices: [
+        "colon_lesion_paris_Is", # maps to colon_lesion_planarity_sessile
+        "colon_lesion_paris_Ip", # colon_lesion_planarity_pedunculated
+        "colon_lesion_paris_IIa",
+        "colon_lesion_paris_IIb",
+        "colon_lesion_paris_IIc",
+        "colon_lesion_paris_III",
+        "colon_lesion_paris_IIa_IIc",
+        "colon_lesion_paris_IIb_IIc",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_sano"
+    classification_types: ["capillary_pattern", "morphology"]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    choices:
+      [
+        "colon_lesion_sano_1",
+        "colon_lesion_sano_2",
+        "colon_lesion_sano_3a",
+        "colon_lesion_sano_3b",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_size_categorical"
+    classification_types: ["size", "morphology"]
+    name_de: "Größenklassifikation Kolonläsion (kategorisch)"
+    name_en: "Colon Lesion Size Classification (categorical)"
+    choices: [
+        "colon_lesion_size_categorical_diminutive", # 0 - 5 mm
+        "colon_lesion_size_categorical_small", # 6 - 9 mm
+        "colon_lesion_size_categorical_medium", # 10 - 20 mm
+        "colon_lesion_size_categorical_large", # 21+ mm
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_lst"
+    classification_types: ["shape", "morphology"]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    choices:
+      [
+        "colon_lesion_lst_granular_homogeneous",
+        "colon_lesion_lst_granular_nodular_mixed",
+        "colon_lesion_lst_non_granular_flat_elevated",
+        "colon_lesion_lst_non_granular_pseudodepressed",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_kudo"
+    classification_types: ["colon_lesion_advanced_imaging", "morphology"]
+    name_de: "Oberflächenklassifikation Kolonläsion"
+    name_en: "Colon Lesion Surface Classification"
+    choices:
+      [
+        "colon_lesion_kudo_1",
+        "colon_lesion_kudo_2",
+        "colon_lesion_kudo_3s",
+        "colon_lesion_kudo_3l",
+        "colon_lesion_kudo_4",
+        "colon_lesion_kudo_5i",
+        "colon_lesion_kudo_5n",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_jnet"
+    name_de: "Kolonläsion - JNET"
+    name_en: "Colon lesion - JNET"
+    classification_types: ["morphology", "colon_lesion_advanced_imaging"]
+    choices:
+      [
+        "colon_lesion_jnet_1",
+        "colon_lesion_jnet_2a",
+        "colon_lesion_jnet_2b",
+        "colon_lesion_jnet_3",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colon_lesion_nice"
+    classification_types: ["colon_lesion_advanced_imaging", "morphology"]
+    name_de: "Kolonläsion - NICE"
+    name_en: "Colon lesion - NICE"
+    choices:
+      [
+        "colon_lesion_NICE_type_1",
+        "colon_lesion_NICE_type_2",
+        "colon_lesion_NICE_type_3",
+      ]

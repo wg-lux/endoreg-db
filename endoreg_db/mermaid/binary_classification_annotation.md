@@ -48,3 +48,4 @@ X1(["Example: Frame classified as 'Polyp Present'"]) -.-> A;
 X2(["Example: Video segment marked from 100s to 200s"]) -.-> C;
 
 X3(["Example: 10 unclassified frames found"]) -.-> F;
+```

@@ -1,8 +1,10 @@
 # Use faker library to generate fake names by gender
 # Use german names by default
 
+from typing import Literal
+
 from faker import Faker
-import gender_guesser.detector as gender_detector
+from gender_guesser.detector import Detector
 
 
 def create_mock_examiner_name() -> tuple[str, str]:
@@ -54,7 +56,7 @@ def create_mock_patient_name(gender: str) -> tuple[str, str]:
     return first_name, last_name
 
 
-def guess_name_gender(name: str) -> str:
+def guess_name_gender(name: str) -> Literal["male", "female", "unknown"]:
     """Return a normalized gender slug (male|female|unknown) for the given name.
 
     Uses :mod:`gender_guesser` to infer gender without touching the database. All
@@ -62,15 +64,13 @@ def guess_name_gender(name: str) -> str:
     their own model lookups or fall back safely.
     """
 
-    detector = gender_detector.Detector(case_sensitive=False)
-    try:
-        detected = detector.get_gender(name or "")
-    except Exception:  # pragma: no cover - defensive, detector is pure-Python
-        detected = None
+    detector = Detector(case_sensitive=False)
+    detected = detector.get_gender(name or "")
 
     if not detected:
         return "unknown"
 
+    # detected is now safely tracked as a standard python str
     normalized = detected.lower()
     if normalized in {"male", "mostly_male"}:
         return "male"

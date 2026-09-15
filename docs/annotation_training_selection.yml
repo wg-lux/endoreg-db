@@ -1,0 +1,40 @@
+schema_version: '1.0'
+title: Gemeinsame Auswahl der Trainingsannotationen
+feature_tracking: feature-tracking/ProfessionalProductFoundations.yml
+criterion: reviewed_active_learning
+selection_service: endoreg_db.services.aidataset_training_selection
+policy: manual_or_confirmed_v1
+rules:
+  - Die Zugehoerigkeit zum ausgewaehlten AIDataSet bleibt verbindlich.
+  - Direkte Frame-Annotationen brauchen eine explizite manuelle Informationsquelle gemaess dem bestehenden manual_frame_annotation_preference_filter.
+  - Frame-Annotationen haben kein separates Bestaetigungsfeld. Ein Annotatorname oder eine allgemeine Videofreigabe bestaetigt keine einzelne Vorhersage.
+  - Automatisch aus Segmenten erzeugte Frame-Zeilen werden nicht als eigenstaendige menschliche Annotationen verwendet. Die zugehoerigen zulaessigen Segmente muessen am Datensatz haengen.
+  - Segmente sind zulaessig, wenn state.is_validated wahr ist oder eine manuelle Quelle ohne Vorhersagemetadaten beziehungsweise Vorhersage-Quelltyp vorliegt.
+  - Unbestaetigte Vorhersagen und nicht klassifizierte Quellen sind ausgeschlossen.
+  - Bereits bestaetigte Vorhersagesegmente behalten ihre urspruengliche Quelle und Segmentidentitaet in der Manifestprovenienz.
+  - Segmentlabels werden im Speicher auf vorhandene Frames im Intervall '[start_frame_number, end_frame_number)' abgebildet. Es werden keine Annotationszeilen oder Framekoordinaten geschrieben.
+  - Widerspruechliche zulaessige Werte fuer denselben Frame und dasselbe Label brechen den Aufbau ab.
+  - Unbekannte Labels erhalten die Maske 0, sofern der Aufrufer nicht ausdruecklich treat_unlabeled_as_negative aktiviert.
+scopes:
+  default: all
+  all: Zulaessige direkte Frame-Annotationen und zulaessige Segmente.
+  frame_only: Nur zulaessige direkte Frame-Annotationen.
+  segment_only: Nur zulaessige Segmente.
+manifest_api:
+  method: POST
+  path: /settings/application/ai_datasets/{dataset_id}/training_manifest/
+  body:
+    label_set_id: Ausgewaehlte LabelSet-ID
+    annotation_source_scope: all
+    treat_unlabeled_as_negative: false
+    include_file_paths: false
+  source_filter: information_source_names schraenkt beide Quellenarten zusaetzlich ein und kann die Freigaberegel nicht umgehen.
+  provenance: annotation_ids_by_label und segment_ids_by_label enthalten getrennte Identitaeten.
+media:
+  - Die bisherigen klinischen Medienfreigaben des Manifestexports und des Trainingslesers bleiben zwingend.
+  - Der Extraktionsstatus eines Frames ist kein Nachweis einer Annotationsbestaetigung.
+  - lx-ai-core erhaelt typisierte Referenzen auf verarbeitete Frames, Labels und Masken; es liest keine Datenbank.
+  - Der Frame-Bucket-Endpunkt bleibt eine diagnostische Verteilung und kann weiterhin unbestaetigte Vorhersagen anzeigen. Seine Zahlen sind keine Freigabe fuer Training.
+compatibility:
+  - Bestehende Datensaetze ohne explizite Quellen koennen weniger oder keine Trainingssamples liefern; fehlende Freigaben werden nicht automatisch ergaenzt.
+  - Der separate SQL-Loader im lx-ai-Checkout verwendet diesen Backend-Vertrag nicht.

@@ -1,0 +1,59 @@
+from uuid import uuid4
+
+from workflow.scripts.import_common import WorkflowConfig
+
+
+configfile: "config/imports.yaml"
+
+
+WORKFLOW_CONFIG = WorkflowConfig.model_validate(config)
+RECEIPT_DIRECTORY = WORKFLOW_CONFIG.receipt_directory
+LOG_DIRECTORY = WORKFLOW_CONFIG.log_directory
+BATCH_ID = WORKFLOW_CONFIG.batch_id or f"manual-{uuid4().hex}"
+CONFIG_SHA256 = WORKFLOW_CONFIG.configuration_sha256()
+JOB_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9_.-]*"
+
+VIDEO_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "video/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.video_imports),
+)
+REPORT_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "report/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.report_imports),
+)
+VIDEO_TRANSCODE_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "video_transcode/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.video_transcodes),
+)
+VIDEO_HLS_RECEIPTS = expand(
+    str(RECEIPT_DIRECTORY / "video_hls/{job}.json"),
+    job=sorted(WORKFLOW_CONFIG.video_hls_materializations),
+)
+
+
+resource_scopes:
+    gpu="global",
+    mem_mb="global",
+    rust_workers="global",
+
+
+localrules: all
+
+
+rule all:
+    input:
+        VIDEO_RECEIPTS,
+        REPORT_RECEIPTS,
+        VIDEO_TRANSCODE_RECEIPTS,
+        VIDEO_HLS_RECEIPTS,
+
+
+wildcard_constraints:
+    job=JOB_ID_PATTERN
+
+
+include: "rules/common.smk"
+include: "rules/video_import.smk"
+include: "rules/video_transcode.smk"
+include: "rules/video_hls_materialization.smk"
+include: "rules/report_import.smk"

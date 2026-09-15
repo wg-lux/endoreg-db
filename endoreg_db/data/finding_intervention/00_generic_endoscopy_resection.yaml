@@ -1,0 +1,85 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_cold_snare_resection_generic
+    description:
+      Cold snare polypectomy is a technique used to remove small polyps
+      from the colon. It is performed using a snare wire loop that is passed through
+      the colonoscope and used to remove the polyp by cutting it off at the base.
+      The procedure is usually done without the need for sedation and is considered
+      to be a safe and effective way to remove small polyps from the colon.
+    intervention_types:
+      - diagnostic
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_diathermic_snare_resection_generic
+    description:
+      Hot snare polypectomy is a technique used to remove small polyps
+      from the colon. It is performed using a snare wire loop that is passed through
+      the colonoscope and used to remove the polyp by cutting it off at the base.
+      The procedure is usually done without the need for sedation and is considered
+      to be a safe and effective way to remove small polyps from the colon.
+    intervention_types:
+      - diagnostic
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_biopsy_foreceps_resection_generic
+    description:
+      Biopsy is a technique used to take a small sample of tissue from
+      a lesion in the colon. It is performed by inserting a small instrument through
+      the colonoscope and removing a small piece of tissue from the lesion. The tissue
+      sample is then sent to a laboratory for analysis to determine if the lesion
+      is cancerous or benign.
+    intervention_types:
+      - diagnostic
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_emr_generic
+    description:
+      Endoscopic mucosal resection (EMR) is a technique used to remove
+      large polyps or early-stage cancers from the colon. It is performed by injecting
+      a solution under the lesion to create a cushion of fluid that lifts the lesion
+      away from the colon wall. A snare wire loop is then used to remove the lesion
+      by cutting it off at the base. The procedure is usually done under sedation
+      and is considered to be a safe and effective way to remove large polyps or early-stage
+      cancers from the colon.
+    intervention_types:
+      - diagnostic
+      - therapeutic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_esd_generic
+    description:
+      Endoscopic submucosal dissection (ESD) is a technique used to remove
+      large polyps or early-stage cancers from the colon. It is performed by injecting
+      a solution under the lesion to create a cushion of fluid that lifts the lesion
+      away from the colon wall. A snare wire loop is then used to remove the lesion
+      by cutting it off at the base. The procedure is usually done under sedation
+      and is considered to be a safe and effective way to remove large polyps or early-stage
+      cancers from the colon.
+    intervention_types:
+      - therapeutic
+      - diagnostic
+      - invasive
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_eftr_generic
+    description:
+      Endoscopic full-thickness resection (EFTR) is a technique used to
+      remove lesions in the colon.
+    intervention_types:
+      - therapeutic
+      - invasive
+      - diagnostic
+      - foreign_body
