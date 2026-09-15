@@ -5,6 +5,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet
+from endoreg_db.services.frame_annotation_sampling import FrameQueueSampler
+from endoreg_db.services.frame_annotation_buckets import (
+    build_dataset_target_buckets,
+    build_dataset_label_distribution,
+    build_segment_frame_buckets,
+    build_annotation_frame_buckets,
+    build_dataset_candidate_frame_ids,
+)
 from endoreg_db.models.state.frame_annotation import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     SUPPORTED_FRAME_SAMPLING_STRATEGIES,
@@ -16,18 +24,11 @@ from endoreg_db.models.state.frame_annotation import (
     FrameSamplingStrategy,
     FrameTaskMode,
     RequestLike,
-    build_annotation_frame_buckets,
     build_balanced_label_order,
-    build_dataset_candidate_frame_ids,
-    build_dataset_label_distribution,
-    build_dataset_target_buckets,
-    build_segment_frame_buckets,
     mark_frame_prediction_completed,
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
     merge_frame_buckets,
-    pick_balanced_dataset_frame,
-    pick_random_frame,
     serialize_frame_task,
     serialize_label_distribution,
 )
@@ -123,6 +124,7 @@ class _QueueInputs:
     annotation_frame_buckets: dict[int, set[int]]
     balanced_frame_buckets: dict[int, set[int]]
     dataset_candidate_frame_ids: set[int] | None
+    sampler: FrameQueueSampler
 
 
 @dataclass
@@ -143,8 +145,34 @@ def _build_queue_inputs(spec: FrameAnnotationQueueSpec) -> _QueueInputs:
         dataset=spec.ai_dataset,
         label_set=spec.label_set,
     )
-    segment_frame_buckets = _requested_segment_buckets(spec)
+    candidate_segment_buckets = build_segment_frame_buckets(
+        dataset=spec.ai_dataset,
+        label_set=spec.label_set,
+        only_prediction_segments=spec.prediction_segments_only,
+        require_extracted_frames=spec.require_extracted_frames,
+    )
+    segment_frame_buckets = (
+        candidate_segment_buckets
+        if spec.sampling_strategy
+        in {
+            FrameSamplingStrategy.BALANCED,
+            FrameSamplingStrategy.SEGMENTS,
+        }
+        else {}
+    )
     annotation_frame_buckets = _requested_annotation_buckets(spec)
+    candidate_ids = build_dataset_candidate_frame_ids(
+        dataset=spec.ai_dataset,
+        label_set=spec.label_set,
+        only_prediction_segments=spec.prediction_segments_only,
+        require_extracted_frames=spec.require_extracted_frames,
+        segment_frame_buckets=candidate_segment_buckets,
+    )
+    sampler_candidates = (
+        None
+        if candidate_ids is None
+        else candidate_ids.union(*dataset_buckets.values())
+    )
     return _QueueInputs(
         dataset_buckets=dataset_buckets,
         label_distribution=label_distribution,
@@ -159,28 +187,8 @@ def _build_queue_inputs(spec: FrameAnnotationQueueSpec) -> _QueueInputs:
             segment_frame_buckets,
             annotation_frame_buckets,
         ),
-        dataset_candidate_frame_ids=build_dataset_candidate_frame_ids(
-            dataset=spec.ai_dataset,
-            label_set=spec.label_set,
-            only_prediction_segments=spec.prediction_segments_only,
-            require_extracted_frames=spec.require_extracted_frames,
-        ),
-    )
-
-
-def _requested_segment_buckets(
-    spec: FrameAnnotationQueueSpec,
-) -> dict[int, set[int]]:
-    if spec.sampling_strategy not in {
-        FrameSamplingStrategy.BALANCED,
-        FrameSamplingStrategy.SEGMENTS,
-    }:
-        return {}
-    return build_segment_frame_buckets(
-        dataset=spec.ai_dataset,
-        label_set=spec.label_set,
-        only_prediction_segments=spec.prediction_segments_only,
-        require_extracted_frames=spec.require_extracted_frames,
+        dataset_candidate_frame_ids=candidate_ids,
+        sampler=FrameQueueSampler(spec, sampler_candidates),
     )
 
 
@@ -248,12 +256,14 @@ def _next_balanced_frame(
             label_id,
         ),
     )
-    return pick_balanced_dataset_frame(
-        spec=spec,
-        label_order=label_order,
-        frame_buckets=queue_inputs.balanced_frame_buckets,
-        exclude_frame_ids=queue_state.excluded_ids,
-    )
+    for label_id in label_order:
+        bucket = queue_inputs.balanced_frame_buckets.get(label_id)
+        if not bucket:
+            continue
+        frame = queue_inputs.sampler.pick(bucket, queue_state.excluded_ids)
+        if frame is not None:
+            return frame, label_id
+    return None, None
 
 
 def _with_selection_label(
@@ -335,11 +345,7 @@ def _append_from_target_bucket(
     bucket_frame_ids = queue_inputs.dataset_buckets.get(bucket_name)
     if not bucket_frame_ids:
         return
-    frame = pick_random_frame(
-        spec=spec,
-        exclude_frame_ids=queue_state.excluded_ids,
-        candidate_frame_ids=bucket_frame_ids,
-    )
+    frame = queue_inputs.sampler.pick(bucket_frame_ids, queue_state.excluded_ids)
     if frame is None:
         return
     task = serialize_frame_task(frame, spec=spec).model_copy(
@@ -355,11 +361,7 @@ def _fill_queue_randomly(
 ) -> None:
     candidate_frame_ids = _random_candidate_frame_ids(queue_inputs)
     while len(queue_state.tasks) < spec.limit:
-        frame = pick_random_frame(
-            spec=spec,
-            exclude_frame_ids=queue_state.excluded_ids,
-            candidate_frame_ids=candidate_frame_ids,
-        )
+        frame = queue_inputs.sampler.pick(candidate_frame_ids, queue_state.excluded_ids)
         frame = _retry_without_bucket_limit(spec, queue_inputs, queue_state, frame)
         if frame is None:
             return
@@ -395,10 +397,7 @@ def _retry_without_bucket_limit(
         or queue_inputs.dataset_candidate_frame_ids is not None
     ):
         return None
-    return pick_random_frame(
-        spec=spec,
-        exclude_frame_ids=queue_state.excluded_ids,
-    )
+    return queue_inputs.sampler.pick(None, queue_state.excluded_ids)
 
 
 def _queue_result(

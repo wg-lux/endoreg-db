@@ -392,3 +392,91 @@ class FrameAnnotationBucketBuilderUnitTests(TestCase):
             self.target_label.pk: {self.frames[0].pk, self.frames[1].pk},
             self.segment_label.pk: {self.frames[2].pk},
         }
+
+    def test_annotation_query_count_is_independent_of_row_count(self) -> None:
+        from endoreg_db.services.frame_annotation_buckets import (
+            build_dataset_label_distribution,
+        )
+
+        for count in (1, 100):
+            annotations = [
+                self._annotation(
+                    frame=self.frames[0],
+                    label=self.target_label,
+                    value=True,
+                    annotator=f"scale-{count}-{index}",
+                )
+                for index in range(count)
+            ]
+            self.dataset.image_annotations.add(*annotations)
+            with self.assertNumQueries(1):
+                buckets = build_annotation_frame_buckets(
+                    dataset=self.dataset,
+                    label_set=self.label_set,
+                    require_extracted_frames=True,
+                )
+            self.assertEqual(buckets, {self.target_label.pk: {self.frames[0].pk}})
+            with self.assertNumQueries(2):
+                distribution = build_dataset_label_distribution(
+                    dataset=self.dataset, label_set=self.label_set
+                )
+            self.assertEqual(
+                distribution[self.target_label.pk]["frame_positive"],
+                1 if count == 1 else 101,
+            )
+
+    def test_reused_segment_buckets_require_only_annotation_query(self) -> None:
+        with self.assertNumQueries(1):
+            candidates = build_dataset_candidate_frame_ids(
+                dataset=self.dataset,
+                label_set=self.label_set,
+                only_prediction_segments=False,
+                require_extracted_frames=True,
+                segment_frame_buckets={self.target_label.pk: {self.frames[0].pk}},
+            )
+        self.assertEqual(candidates, {self.frames[0].pk})
+
+    def test_overlapping_segments_use_one_frame_query_per_video(self) -> None:
+        segments = [
+            self._segment(
+                label=self.segment_label,
+                source=self.manual_source,
+                start_frame_number=0,
+                end_frame_number=4,
+            )
+            for _ in range(50)
+        ]
+        self.dataset.video_annotations.add(*segments)
+        with self.assertNumQueries(2):
+            buckets = build_segment_frame_buckets(
+                dataset=self.dataset,
+                label_set=self.label_set,
+                only_prediction_segments=False,
+                require_extracted_frames=True,
+            )
+        self.assertEqual(
+            buckets, {self.segment_label.pk: {frame.pk for frame in self.frames[:4]}}
+        )
+
+    def test_sampler_evaluates_candidate_eligibility_once_per_batch(self) -> None:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from endoreg_db.services.frame_annotation_sampling import FrameQueueSampler
+        from tests.models.state.test_frame_annotation import queue_spec
+
+        candidate_ids = {frame.pk for frame in self.frames}
+        sampler = FrameQueueSampler(
+            queue_spec(limit=4, label_set=self.label_set, exclude_annotated=False),
+            candidate_ids,
+        )
+        excluded: set[int] = set()
+        with CaptureQueriesContext(connection) as queries:
+            for _ in range(4):
+                frame = sampler.pick(candidate_ids, excluded)
+                self.assertIsNotNone(frame)
+                if frame is not None:
+                    excluded.add(frame.id)
+            self.assertIsNone(sampler.pick(candidate_ids, excluded))
+        self.assertEqual(excluded, {frame.pk for frame in self.frames[:4]})
+        self.assertEqual(len(queries), 5)
+        self.assertEqual(sum(" IN (" in query["sql"] for query in queries), 1)

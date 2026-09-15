@@ -60,7 +60,7 @@ def _model_name(value: object | None) -> str:
     return str(getattr(value, "name", value))
 
 
-def _queue_spec(
+def queue_spec(
     *,
     limit: int,
     task_mode: object = "random",
@@ -183,7 +183,7 @@ class FrameAnnotationStateTest(TestCase):
         )
 
     def test_plain_queue_uses_extracted_frames_only(self):
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=10,
             video_id=self.video.pk,
             information_source_name=self.manual_source.name,
@@ -210,7 +210,7 @@ class FrameAnnotationStateTest(TestCase):
             annotator="model",
         )
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
@@ -299,7 +299,7 @@ class FrameAnnotationStateTest(TestCase):
             information_source=frontend_source,
         )
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
@@ -332,7 +332,7 @@ class FrameAnnotationStateTest(TestCase):
             annotator="alice",
         )
 
-        alice_spec = _queue_spec(
+        alice_spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             target_label=self.target_label,
@@ -340,7 +340,7 @@ class FrameAnnotationStateTest(TestCase):
             sampling_strategy=FrameSamplingStrategy.NONE.value,
             annotator="alice",
         )
-        bob_spec = _queue_spec(
+        bob_spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             target_label=self.target_label,
@@ -378,7 +378,7 @@ class FrameAnnotationStateTest(TestCase):
         )
         dataset.image_annotations.add(annotation)
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
@@ -421,7 +421,7 @@ class FrameAnnotationStateTest(TestCase):
         )
         dataset.video_annotations.add(prediction_segment, manual_segment)
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=1,
             video_id=self.video.pk,
             label_set=self.label_set,
@@ -487,7 +487,7 @@ class FrameAnnotationStateTest(TestCase):
             ),
         )
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=10,
             information_source_name=self.manual_source.name,
             ai_dataset=dataset,
@@ -588,7 +588,7 @@ class FrameAnnotationStateTest(TestCase):
             annotator="dataset",
         )
 
-        spec = _queue_spec(
+        spec = queue_spec(
             limit=4,
             label_set=self.label_set,
             information_source_name=self.manual_source.name,
