@@ -1648,13 +1648,13 @@ def _filter_annotations_by_segments(
         )
 
         if segment.source_id is None:
-            seg_filter &= Q(information_source__isNone=True)
+            seg_filter &= Q(information_source__isnull=True)
         else:
             seg_filter &= Q(information_source_id=segment.source_id)
 
         model_meta = segment.get_model_meta()
         if model_meta is None:
-            seg_filter &= Q(model_meta__isNone=True)
+            seg_filter &= Q(model_meta__isnull=True)
         else:
             seg_filter &= Q(model_meta_id=model_meta.pk)
 

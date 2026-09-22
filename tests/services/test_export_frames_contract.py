@@ -25,6 +25,7 @@ from endoreg_db.models import (
     Frame,
     InformationSource,
     Label,
+    LabelVideoSegment,
     VideoState,
 )
 from endoreg_db.schemas.video_storage import (
@@ -202,6 +203,63 @@ def test_pts_dataset_forces_frames_from_processed_artifact() -> None:
     assert normalized.transcode_frames is True
     assert normalized.transcode_overwrite is True
     assert normalized.use_frame_pk_paths is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("has_source", [False, True])
+@pytest.mark.parametrize("use_export_flags", [False, True])
+def test_segment_export_filters_nullable_provenance(
+    has_source: bool,
+    use_export_flags: bool,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="segment-export-center"),
+        raw_video_hash="segment-export-video",
+        fps=25,
+        frame_count=4,
+        duration=0.16,
+    )
+    label = Label.objects.create(name="segment-export-label")
+    source = InformationSource.objects.create(name="segment-export-source")
+    selected_source = source if has_source else None
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        label=label,
+        source=selected_source,
+        start_frame_number=1,
+        end_frame_number=3,
+        export_segment=True,
+    )
+    expected_ids: list[int] = []
+    for frame_number in range(4):
+        frame = Frame.objects.create(
+            video=video,
+            frame_number=frame_number,
+            relative_path=f"frame_{frame_number}.jpg",
+        )
+        matching = ImageClassificationAnnotation.objects.create(
+            frame=frame,
+            label=label,
+            information_source=selected_source,
+            value=True,
+        )
+        ImageClassificationAnnotation.objects.create(
+            frame=frame,
+            label=label,
+            information_source=None if has_source else source,
+            value=True,
+        )
+        if 1 <= frame_number < 3:
+            expected_ids.append(matching.pk)
+
+    selected = export_module._filter_annotations_by_segments(
+        ImageClassificationAnnotation.objects.all(),
+        video_id=video.pk,
+        segment_ids=None if use_export_flags else [segment.pk],
+        use_export_flags=use_export_flags,
+    )
+
+    assert list(selected.order_by("pk").values_list("pk", flat=True)) == expected_ids
 
 
 @pytest.mark.django_db

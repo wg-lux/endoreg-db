@@ -400,8 +400,15 @@ def _serialize_filters(filters: StudyCohortFilters) -> StudyFiltersPayload:
     }
 
 
-def _build_cohort_scope(filters: StudyCohortFilters) -> _CohortScope:
-    filtered_cases = _apply_filters(_base_case_queryset(), filters)
+def _build_cohort_scope(
+    filters: StudyCohortFilters,
+    *,
+    case_scope: QuerySet[PatientExamination] | None = None,
+) -> _CohortScope:
+    candidates = _base_case_queryset()
+    if case_scope is not None:
+        candidates = candidates.filter(pk__in=case_scope.values("pk"))
+    filtered_cases = _apply_filters(candidates, filters)
     patient_count = filtered_cases.values("patient__patient_hash").distinct().count()
     reports = _eligible_report_queryset().filter(_report_case_filter(filtered_cases))
     videos = _eligible_video_queryset().filter(_video_case_filter(filtered_cases))
@@ -769,8 +776,9 @@ def build_study_cohort_payload(
     filters: StudyCohortFilters,
     *,
     request: Any | None = None,
+    case_scope: QuerySet[PatientExamination] | None = None,
 ) -> StudyCohortPayload:
-    scope = _build_cohort_scope(filters)
+    scope = _build_cohort_scope(filters, case_scope=case_scope)
     preview_case_ids = [case.pk for case in scope.preview_cases]
     media = _collect_preview_media(preview_case_ids, request=request)
     findings_by_case = _findings_by_case(preview_case_ids)

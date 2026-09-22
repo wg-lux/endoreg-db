@@ -368,6 +368,9 @@ definition_of_done:
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
   acceptance:
+  - Segment-scoped annotation export uses valid Django null lookups for missing information sources and
+    model metadata, preserving source identity and inclusive-start, exclusive-end frame selection for
+    both explicit segment IDs and export flags.
   - Eine Überschreitung der Schwarzwert-Toleranz bei Outside-Stichproben im neu aufgebauten Processed-Video
     wird mit Video-ID, Frameindex, maximalem Kanalwert und Toleranz als Warnung protokolliert und blockiert
     die Segmentvalidierung nicht. Rebuild-, Decode-, Integritäts- und extrahierte Frame-Prüfungen bleiben
@@ -529,6 +532,13 @@ definition_of_done:
         tests/services/test_hls_media.py tests/services/test_video_storage_normalization.py tests/services/test_video_storage_atomic_migration.py
         tests/import_files/test_video_import_normalization.py tests/import_files/test_video_finalize_success.py
         -q: 118 passed, 2 warnings; vollständiger Pyright: 0 errors, 0 warnings; fokussierter Ruff bestanden.'
+    - kind: command
+      reference: '2026-09-22: Fixed both invalid __isNone export lookups to __isnull. TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/services/test_export_frames_contract.py
+        tests/views/misc/test_export_annotated_contract.py -q: 24 passed, 7 skipped (video tests disabled).
+        Separate nullable-provenance regression run: 4 passed, 13 deselected. Focused Pyright: 0 errors,
+        0 warnings; Ruff and git diff --check passed. Initial inherited PostgreSQL configuration lacked
+        psycopg/psycopg2. No deployment performed; broader readiness blockers unchanged.'
     note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
       FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
       Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,
@@ -547,8 +557,8 @@ definition_of_done:
       entfällt. Reale FFmpeg-Tests belegen genau einen Kodierdurchlauf für Raw und Processed mit profilkonformen
       sowie konvertierungsbedürftigen Pixelformaten. Quellzulassung, Ausgabegates, Mastererhalt und Cleanup
       bleiben geprüft. Deployment, Produktionsmessung und klinische Abnahme bleiben offen.'
-    assessed_by: codex-processed-priority-20260908
-    assessed_at: '2026-09-08T11:13:30.345923Z'
+    assessed_by: codex-export-20260922
+    assessed_at: '2026-09-22T10:16:36.897933Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt

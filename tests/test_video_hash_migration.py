@@ -1,10 +1,11 @@
 from importlib import import_module
+from typing import Generator, Sequence
 
 import pytest
 from django.db import IntegrityError, models
+from django.db.backends.base.base import BaseDatabaseWrapper
 from django.db.migrations.state import ModelState, ProjectState
 from django.db.utils import ConnectionHandler
-
 
 migration_module = import_module(
     "endoreg_db.migrations.0083_repair_raw_video_hash_column"
@@ -30,7 +31,7 @@ def _state(*hash_columns: str) -> ProjectState:
 
 
 @pytest.fixture
-def isolated_connection():
+def isolated_connection() -> Generator[BaseDatabaseWrapper, None, None]:
     handler = ConnectionHandler(
         {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
     )
@@ -43,8 +44,8 @@ def isolated_connection():
 
 @pytest.mark.parametrize("column", ["video_hash", "raw_video_hash"])
 def test_hash_repair_preserves_values_uniqueness_and_is_idempotent(
-    isolated_connection, column
-):
+    isolated_connection: BaseDatabaseWrapper, column: str
+) -> None:
     connection = isolated_connection
     with connection.schema_editor() as editor:
         editor.create_model(_state(column).apps.get_model("endoreg_db", "VideoFile"))
@@ -75,7 +76,9 @@ def test_hash_repair_preserves_values_uniqueness_and_is_idempotent(
 
 
 @pytest.mark.parametrize("columns", [("video_hash", "raw_video_hash"), ()])
-def test_hash_repair_rejects_ambiguous_or_missing_columns(isolated_connection, columns):
+def test_hash_repair_rejects_ambiguous_or_missing_columns(
+    isolated_connection: BaseDatabaseWrapper, columns: Sequence[str]
+) -> None:
     with isolated_connection.schema_editor() as editor:
         editor.create_model(_state(*columns).apps.get_model("endoreg_db", "VideoFile"))
     with pytest.raises(RuntimeError, match="manual schema review"):
@@ -93,7 +96,9 @@ def test_hash_repair_rejects_ambiguous_or_missing_columns(isolated_connection, c
     assert actual == {"id", *columns}
 
 
-def test_migration_apply_and_reverse_keep_canonical_state(isolated_connection):
+def test_migration_apply_and_reverse_keep_canonical_state(
+    isolated_connection: BaseDatabaseWrapper,
+) -> None:
     connection = isolated_connection
     before = _state("raw_video_hash")
     migration = migration_module.Migration(

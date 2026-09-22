@@ -333,6 +333,21 @@ class StudyCohortPreviewViewTests(TestCase):
         }
         assert response.json()["cases"] == []
 
+    def test_candidate_scope_is_applied_before_preview_limit(self) -> None:
+        self._validated_report()
+        scoped = PatientExamination.objects.filter(pk=self.patient_examination.pk)
+        payload = build_study_cohort_payload(
+            StudyCohortFilters(limit=1), case_scope=scoped
+        )
+        assert [row["patient_examination_id"] for row in payload["cases"]] == [
+            self.patient_examination.pk
+        ]
+        empty = build_study_cohort_payload(
+            StudyCohortFilters(), case_scope=PatientExamination.objects.none()
+        )
+        assert empty["cases"] == []
+        assert empty["summary"]["patient_count"] == 0
+
     def test_rejects_ambiguous_filters_and_unbounded_preview(self) -> None:
         invalid_bool = self.client.get(
             "/api/media/studies/cohort-preview/", {"has_report": "sometimes"}
