@@ -20,7 +20,7 @@ from endoreg_db.services.video_segment_validation_workflow import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import ensure_within_protected_media_root
 from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
 
@@ -219,7 +219,7 @@ def mark_video_ready_for_export(
 
     processed_file = _processed_file(video)
     _verify_processed_path(processed_file)
-    processed_file_sha256 = sha256_file(processed_file)
+    processed_file_sha256 = get_file_hash(processed_file)
 
     expected_sha = str(expected_processed_file_sha256 or "").strip().lower()
     if expected_sha and expected_sha != processed_file_sha256:

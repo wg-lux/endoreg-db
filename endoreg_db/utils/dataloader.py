@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, TypedDict, cast
+from typing import Any, Protocol, cast
 import yaml
 from django.core.management.base import BaseCommand
 from django.core.exceptions import ObjectDoesNotExist
@@ -16,35 +16,16 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.paths import LOG_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
-YamlNull: TypeAlias = None
-YamlScalar: TypeAlias = str | int | float | bool | YamlNull
-YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
-
-
-class YamlEntry(TypedDict):
-    fields: dict[str, YamlValue]
-
-
-if TYPE_CHECKING:
-    DataLoaderModel: TypeAlias = "_ModelLike"
-
-    class DataLoaderValidator(Protocol):
-        def __call__(
-            self,
-            fields: dict[str, YamlValue],
-            *,
-            entry: YamlEntry,
-            model: DataLoaderModel,
-        ) -> None: ...
-
-    class LoadModelDataMetadata(TypedDict):
-        dir: str | Path
-        model: DataLoaderModel
-        foreign_keys: list[str]
-        foreign_key_models: list[DataLoaderModel]
-        validators: list[DataLoaderValidator]
+from endoreg_db.helpers.typing import (
+    LoadModelDataMetadata,
+    LoadModelDataModel,
+    LoadModelDataValidator,
+    YamlEntry,
+    YamlScalar,
+    YamlValue as YamlValue,
+)
 
 
 class _CommandLike(Protocol):
@@ -127,9 +108,11 @@ def _get_warning_log_path() -> Path:
     """Return the path used for warning logs, creating it on first access."""
     global _warning_log_path
     if _warning_log_path is None:
-        ensure_directory(LOG_DIR)
+        ensure_directory(get_runtime_paths().logs)
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        _warning_log_path = LOG_DIR / f"dataloader_warnings_{timestamp}.log"
+        _warning_log_path = (
+            get_runtime_paths().logs / f"dataloader_warnings_{timestamp}.log"
+        )
     return _warning_log_path
 
 
@@ -224,11 +207,11 @@ def load_model_data_from_yaml(
 
 def load_data_with_foreign_keys(
     command: BaseCommand,
-    model: DataLoaderModel,
+    model: LoadModelDataModel,
     yaml_data: list[YamlEntry],
     foreign_keys: list[str],
-    foreign_key_models: list[DataLoaderModel],
-    validators: list[DataLoaderValidator],
+    foreign_key_models: list[LoadModelDataModel],
+    validators: list[LoadModelDataValidator],
     verbose: bool = False,
     log_context: str | None = None,
 ) -> None:
@@ -252,8 +235,8 @@ def load_data_with_foreign_keys(
 
 def _prepare_entry_fields(
     entry: YamlEntry,
-    model: DataLoaderModel,
-    validators: list[DataLoaderValidator],
+    model: LoadModelDataModel,
+    validators: list[LoadModelDataValidator],
 ) -> tuple[str | None, dict[str, Any]]:
     raw_fields = dict(entry.get("fields", {}))
     for validator in validators:
@@ -268,10 +251,10 @@ def _prepare_entry_fields(
 
 def _resolve_relationships(
     command: BaseCommand,
-    model: DataLoaderModel,
+    model: LoadModelDataModel,
     fields: dict[str, Any],
     foreign_keys: list[str],
-    foreign_key_models: list[DataLoaderModel],
+    foreign_key_models: list[LoadModelDataModel],
     verbose: bool,
     context_label: str,
 ) -> dict[str, list[object]]:
@@ -292,8 +275,8 @@ def _resolve_relationships(
 
 def _resolve_relationship_field(
     command: BaseCommand,
-    model: DataLoaderModel,
-    related_model: DataLoaderModel,
+    model: LoadModelDataModel,
+    related_model: LoadModelDataModel,
     field_name: str,
     fields: dict[str, Any],
     relationships: dict[str, list[object]],
@@ -338,7 +321,7 @@ def _resolve_relationship_field(
 
 def _resolve_many_relationships(
     command: BaseCommand,
-    related_model: DataLoaderModel,
+    related_model: LoadModelDataModel,
     target_keys: list[Any],
     verbose: bool,
     context_label: str,
@@ -363,8 +346,8 @@ def _resolve_many_relationships(
 
 def _resolve_single_relationship(
     command: BaseCommand,
-    model: DataLoaderModel,
-    related_model: DataLoaderModel,
+    model: LoadModelDataModel,
+    related_model: LoadModelDataModel,
     field_name: str,
     target_key: YamlScalar,
     fields: dict[str, Any],
@@ -398,7 +381,7 @@ def _resolve_single_relationship(
 
 def _resolve_model_meta_labelset(
     command: BaseCommand,
-    labelset_model: DataLoaderModel,
+    labelset_model: LoadModelDataModel,
     labelset_name: YamlScalar,
     fields: dict[str, Any],
     verbose: bool,
@@ -444,7 +427,7 @@ def _normalize_labelset_version(labelset_version: Any) -> Any:
 
 def _record_missing_related_object(
     command: BaseCommand,
-    related_model: DataLoaderModel,
+    related_model: LoadModelDataModel,
     target_key: object,
     verbose: bool,
     context_label: str,
@@ -458,7 +441,7 @@ def _record_missing_related_object(
 
 
 def _save_with_lock_retry(
-    model: DataLoaderModel,
+    model: LoadModelDataModel,
     name: str | None,
     fields: dict[str, Any],
 ) -> object:
@@ -475,7 +458,7 @@ def _save_with_lock_retry(
 
 
 def _save_instance(
-    model: DataLoaderModel,
+    model: LoadModelDataModel,
     name: str | None,
     fields: dict[str, Any],
 ) -> object:
@@ -495,7 +478,7 @@ def _find_or_create_unnamed_instance(
 
 def _create_or_update_named_instance(
     manager: _ModelManagerLike,
-    model: DataLoaderModel,
+    model: LoadModelDataModel,
     name: str,
     fields: dict[str, Any],
 ) -> object:

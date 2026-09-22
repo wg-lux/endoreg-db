@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
 
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.paths import IMPORT_VIDEO_DIR
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
     processor_name: str | None
-    video_hash: str | None
+    raw_video_hash: str | None
     save: bool
 
 
@@ -39,7 +38,7 @@ def create_video_file_from_path(
     model_cls: type["VideoFile"] | None = None,
     **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
-    from endoreg_db.utils.hashs import get_video_hash
+    from endoreg_db.utils.file_operations import get_file_hash
 
     from ._imports import _create_from_file
 
@@ -56,18 +55,17 @@ def create_video_file_from_path(
             return None
 
     processor_name = kwargs.pop("processor_name", None)
-    video_hash = kwargs.pop("video_hash", None)
+    raw_video_hash = kwargs.pop("raw_video_hash", None)
     save = kwargs.pop("save", True)
-    if not video_hash:
-        video_hash = str(get_video_hash(file_path))
+    if not raw_video_hash:
+        raw_video_hash = str(get_file_hash(file_path))
 
     return _create_from_file(
         model_cls or _video_file_model(),
         file_path,
         center_name=center_name,
         processor_name=processor_name,
-        video_hash=video_hash,
-        video_dir=IMPORT_VIDEO_DIR,
+        raw_video_hash=raw_video_hash,
         save=save,
     )
 
@@ -76,7 +74,7 @@ def create_initialized_video_file_from_path(
     file_path: Union[str, Path],
     center_name: str,
     processor_name: Optional[str],
-    video_hash: str,
+    raw_video_hash: str,
     *,
     save_video_file: bool = True,
     initialize: bool = True,
@@ -92,8 +90,7 @@ def create_initialized_video_file_from_path(
         file_path,
         center_name=center_name,
         processor_name=processor_name,
-        video_hash=video_hash,
-        video_dir=IMPORT_VIDEO_DIR,
+        raw_video_hash=raw_video_hash,
         save=save_video_file,
     )
     if not initialize:
@@ -117,11 +114,11 @@ def initialize_video_file(
         else:
             logger.debug(
                 "Skipping OpenCV video spec init for %s; specs already available or raw file missing.",
-                video.video_hash,
+                video.raw_video_hash,
             )
     except Exception as exc:
         logger.error(
-            "Failed to initialize video specs for %s: %s", video.video_hash, exc
+            "Failed to initialize video specs for %s: %s", video.raw_video_hash, exc
         )
 
     set_video_frame_dir(video)

@@ -99,7 +99,7 @@ class TestVideoProcessingHistorySerializer:  # pylint: disable=too-many-public-m
             processor=processor,
             uuid=uuid.uuid4(),
             raw_file=raw_file,
-            video_hash=f"hash-{uuid.uuid4()}",
+            raw_video_hash=f"hash-{uuid.uuid4()}",
         )
 
     @pytest.fixture

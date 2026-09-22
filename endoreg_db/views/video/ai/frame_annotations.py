@@ -658,7 +658,7 @@ def _as_bool(value: Any, default: bool = False) -> bool:
 
 def _parse_frame_file_type(value: Any) -> tuple[str | None, Response | None]:
     if value is None or value == "":
-        return None, None
+        return VideoArtifactKind.PROCESSED.value, None
     normalized = str(value).strip().lower()
     if normalized in SUPPORTED_FRAME_FILE_TYPES:
         return normalized, None
@@ -699,8 +699,6 @@ def _resolve_task_artifact_kind(
         )
     if _video_has_artifact(video, VideoArtifactKind.PROCESSED):
         return VideoArtifactKind.PROCESSED
-    if _video_has_artifact(video, VideoArtifactKind.RAW):
-        return VideoArtifactKind.RAW
     return None
 
 
@@ -1037,8 +1035,9 @@ def _build_task_queue_payload(
         prediction_segments_only=options.prediction_segments_only,
         require_extracted_frames=frame_file_type is None,
         require_raw_video=frame_file_type == VideoArtifactKind.RAW.value,
-        require_processed_video=frame_file_type == VideoArtifactKind.PROCESSED.value,
-        require_streamable_video_artifact=frame_file_type == FRAME_FILE_TYPE_AUTO,
+        require_processed_video=frame_file_type
+        in {VideoArtifactKind.PROCESSED.value, FRAME_FILE_TYPE_AUTO},
+        require_streamable_video_artifact=False,
     )
 
 

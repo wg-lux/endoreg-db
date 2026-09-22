@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -11,13 +10,15 @@ from endoreg_db.models.medical.contraindication import Contraindication
 
 from ...data import CONTRAINDICATION_DATA_DIR as SOURCE_DIR
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from endoreg_db.helpers.typing import LoadModelDataMetadata
+from lx_dtypes.terminology.terminology_loader import (
+    active_kb_identity,
+    hydrate_shipped_terminology,
+    load_module_kb,
+)
+
 
 MODEL_0 = Contraindication
-
-
-class LoadContraindicationCommandOptions(TypedDict):
-    verbose: bool
 
 
 IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
@@ -32,6 +33,15 @@ IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
         "foreign_key_models": [],  # e.g. [InterventionType]
     }
 }
+
+registry_path = hydrate_shipped_terminology()
+
+# Resolve a complete identity and keep it for the operation.
+module_name, version = active_kb_identity()
+kb = load_module_kb(module_name, version=version)
+
+print(registry_path)
+print(kb.config.source_file)
 
 
 class Command(BaseCommand):
@@ -48,7 +58,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadContraindicationCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:

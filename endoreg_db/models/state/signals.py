@@ -70,9 +70,9 @@ def cleanup_video_upload_jobs(
     """
     Preserve UploadJob provenance when managed video media is deleted.
     """
-    if instance.video_hash:
+    if instance.raw_video_hash:
         _mark_upload_jobs_lost_for_deleted_media(
-            content_hash=instance.video_hash,
+            content_hash=instance.raw_video_hash,
             media_kind="VideoFile",
         )
 

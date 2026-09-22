@@ -67,7 +67,7 @@ def main() -> None:
             frame_source_mode="stream",
         )
 
-        print(f"✓ Video imported successfully with UUID: {video_file.video_hash}")
+        print(f"✓ Video imported successfully with UUID: {video_file.raw_video_hash}")
         assert isinstance(video_file, VideoFile)
 
         # Verify temporal prediction completed
@@ -139,7 +139,7 @@ def main() -> None:
         return
 
     print("\n=== Pipeline Completed Successfully ===")
-    print(f"Video UUID: {video_file.video_hash}")
+    print(f"Video UUID: {video_file.raw_video_hash}")
     print(
         f"Processed file: {video_file.processed_file.name if video_file.processed_file else 'None'}"
     )

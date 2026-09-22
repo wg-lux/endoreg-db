@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ..user.portal_user_information import PortalUserInfo
-
-NoProfessionValue: TypeAlias = None
-ProfessionDescription: TypeAlias = str | NoProfessionValue
 
 
 class ProfessionManager(models.Manager["Profession"]):

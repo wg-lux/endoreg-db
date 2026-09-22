@@ -35,7 +35,7 @@ else:
 
 class _VideoFileSerializerLike(Protocol):
     id: int
-    video_hash: str
+    raw_video_hash: str
     frame_dir: str
     duration: float | None
     fps: float | None
@@ -97,7 +97,7 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
         Returns:
             str: The UUID of the video.
         """
-        return obj.video_hash
+        return obj.raw_video_hash
 
     def get_video_url(
         self, obj: _VideoFileSerializerLike

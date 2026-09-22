@@ -9,7 +9,8 @@ import pytest
 from django.contrib.auth.models import Group, User
 from django.test import Client
 
-from endoreg_db.config.env import DATA_DIR_ENV
+from endoreg_db.config.env import RUNTIME_ROOT_ENV
+from endoreg_db.utils.paths import clear_runtime_paths_cache
 from endoreg_db.helpers.typing import m2m_add_relation
 
 
@@ -37,7 +38,8 @@ def test_quarantine_retention_api_requires_approval_before_reap(
     stale_file = quarantine_dir / "stale.bin"
     stale_file.write_bytes(b"stale")
     _set_old_mtime(stale_file)
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
     user = User.objects.create_user(username="quarantine-reviewer")
     m2m_add_relation(user.groups).add(Group.objects.create(name="anonymization:write"))  # type: ignore[arg-type]
     client.force_login(user)

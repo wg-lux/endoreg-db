@@ -59,7 +59,7 @@ def test_quality_manifest_is_phi_safe_and_includes_phi_region_matrix(
     video = VideoFile.objects.create(
         center=center,
         sensitive_meta=sensitive_meta,
-        video_hash=f"manifest-video-{uuid4().hex}",
+        raw_video_hash=f"manifest-video-{uuid4().hex}",
         original_file_name="private-patient-video.mp4",
         frame_count=100,
         duration=2.0,
@@ -156,7 +156,7 @@ def test_performance_manifest_is_sanitized_and_keeps_denominators(
     center = Center.objects.create(name=f"perf-manifest-center-{uuid4().hex[:8]}")
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"perf-video-{uuid4().hex}",
+        raw_video_hash=f"perf-video-{uuid4().hex}",
         original_file_name="private-source.mp4",
         frame_count=250,
         duration=5.0,

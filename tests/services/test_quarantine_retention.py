@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.config.env import DATA_DIR_ENV
+from endoreg_db.config.env import RUNTIME_ROOT_ENV
+from endoreg_db.utils.paths import clear_runtime_paths_cache
 from endoreg_db.models.hub.quarantine_item import QuarantineItem
 from endoreg_db.services.hub.quarantine import (
     approve_stale_quarantine_items,
@@ -32,7 +33,8 @@ def test_sync_quarantine_inventory_indexes_existing_files(
     stale_file = quarantine_dir / "stale.bin"
     stale_file.write_bytes(b"stale")
     _set_old_mtime(stale_file)
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
 
     result = sync_quarantine_inventory()
 
@@ -55,7 +57,8 @@ def test_approved_stale_quarantine_item_is_reaped(
     stale_file = quarantine_dir / "stale.bin"
     stale_file.write_bytes(b"stale")
     _set_old_mtime(stale_file)
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
     sync_quarantine_inventory()
 
     approval = approve_stale_quarantine_items(
@@ -86,7 +89,8 @@ def test_retained_quarantine_item_is_not_reaped(
     stale_file = quarantine_dir / "stale.bin"
     stale_file.write_bytes(b"stale")
     _set_old_mtime(stale_file)
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
     sync_quarantine_inventory()
     item = QuarantineItem.objects.get()
     retain_quarantine_item(item, reason="manual investigation required")

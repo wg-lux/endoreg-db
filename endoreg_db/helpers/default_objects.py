@@ -15,7 +15,7 @@ from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.administration.center.center import Center
@@ -516,7 +516,7 @@ def get_default_video_file() -> VideoFile:
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,  # Pass center name as expected by _create_from_file
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
-        video_hash=sha256_file(video_path),
+        raw_video_hash=get_file_hash(video_path),
     )
 
     return video_file

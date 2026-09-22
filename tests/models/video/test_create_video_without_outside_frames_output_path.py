@@ -21,7 +21,7 @@ from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-from endoreg_db.utils.paths import data_paths, to_storage_relative
+from endoreg_db.utils.paths import to_storage_relative, get_runtime_paths
 
 
 @dataclass(frozen=True)
@@ -69,10 +69,10 @@ def _ensure_processed_file_context(
 
 
 def _constant_video_hash(hash_value: str) -> Callable[[Path], str]:
-    def get_video_hash(path: Path) -> str:
+    def get_file_hash(path: Path) -> str:
         return hash_value
 
-    return get_video_hash
+    return get_file_hash
 
 
 def _sync_streamable_noop(
@@ -144,7 +144,7 @@ def _create_video(tmp_path: Path) -> tuple[VideoFile, Path]:
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"outside-stream-{uuid.uuid4().hex}",
+        raw_video_hash=f"outside-stream-{uuid.uuid4().hex}",
         fps=25.0,
         width=1920,
         height=1080,
@@ -155,7 +155,7 @@ def _create_video(tmp_path: Path) -> tuple[VideoFile, Path]:
     processed_path = processed_dir / "input.mp4"
     processed_path.write_bytes(b"processed-input")
     video.processed_file.name = to_storage_relative(
-        data_paths["anonym_video"] / f"{video.video_hash}_filtered.mp4"
+        get_runtime_paths().anonym_video / f"{video.raw_video_hash}_filtered.mp4"
     )
     video.save(update_fields=["processed_file", "processed_video_hash"])
     return video, processed_path
@@ -205,7 +205,7 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
         _constant_video_hash("new-processed-hash"),
     )
     streamable_sync: list[tuple[VideoFile, bool, bool, bool]] = []
@@ -229,8 +229,8 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
 
     assert ok is True
     expected_output_path = (
-        data_paths["transcoding"]
-        / f"{video.video_hash}.outside_frame_blackening.staged.mp4"
+        get_runtime_paths().transcoding
+        / f"{video.raw_video_hash}.outside_frame_blackening.staged.mp4"
     )
     assert len(captured) == 1
     assert captured[0].input_path == processed_path
@@ -243,8 +243,8 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
     video.refresh_from_db()
     assert video.processed_video_hash == "new-processed-hash"
     assert video.processed_file.name == to_storage_relative(
-        data_paths["anonym_video"]
-        / f"{video.video_hash}.post_validation.new-processed-hash.mp4"
+        get_runtime_paths().anonym_video
+        / f"{video.raw_video_hash}.new-processed-hash.mp4"
     )
     assert len(streamable_sync) == 1
 
@@ -283,7 +283,7 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
         _constant_video_hash("new-processed-hash"),
     )
     monkeypatch.setattr(
@@ -347,7 +347,7 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
         _constant_video_hash("merged-hash"),
     )
     monkeypatch.setattr(
@@ -394,7 +394,7 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
         _constant_video_hash("supplied-interval-hash"),
     )
     monkeypatch.setattr(
@@ -456,7 +456,7 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_video_hash",
+        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
         _constant_video_hash("annotation-hash"),
     )
     monkeypatch.setattr(

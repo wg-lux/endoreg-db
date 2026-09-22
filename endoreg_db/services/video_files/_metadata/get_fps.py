@@ -155,7 +155,7 @@ def _get_fps_from_video_file(video: "VideoFile") -> Optional[float]:
     except Exception as exc:
         logger.warning(
             "Could not stage active video file locally while resolving FPS for %s: %s",
-            getattr(video, "video_hash", "<unknown>"),
+            getattr(video, "raw_video_hash", "<unknown>"),
             exc,
         )
 
@@ -210,7 +210,7 @@ def _get_fps(video: "VideoFile") -> float:
         logger.debug(
             "Resolved FPS %.6f from active video file for %s.",
             file_fps,
-            video.video_hash,
+            video.raw_video_hash,
         )
         return _persist_video_fps(video, file_fps)
 
@@ -219,20 +219,22 @@ def _get_fps(video: "VideoFile") -> float:
         logger.warning(
             "Using cached FPS %.6f for %s because active file was unavailable.",
             float(current_fps),
-            video.video_hash,
+            video.raw_video_hash,
         )
         return float(current_fps)
 
-    logger.debug("FPS not available on %s, checking VideoMeta.", video.video_hash)
+    logger.debug("FPS not available on %s, checking VideoMeta.", video.raw_video_hash)
 
     if not video.video_meta:
-        logger.info("VideoMeta not linked for %s, attempting update.", video.video_hash)
+        logger.info(
+            "VideoMeta not linked for %s, attempting update.", video.raw_video_hash
+        )
         try:
             _update_video_meta(video, save_instance=True)
         except Exception as exc:
             logger.warning(
                 "VideoMeta update failed for %s while resolving FPS: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 exc,
             )
 
@@ -243,7 +245,7 @@ def _get_fps(video: "VideoFile") -> float:
         logger.info(
             "Retrieved FPS %.6f from VideoMeta for %s.",
             float(meta_fps),
-            video.video_hash,
+            video.raw_video_hash,
         )
         return _persist_video_fps(video, float(meta_fps))
 
@@ -253,12 +255,12 @@ def _get_fps(video: "VideoFile") -> float:
             logger.warning(
                 "Falling back to default FPS %.6f for %s because no verifiable file FPS was found.",
                 default_fps,
-                video.video_hash,
+                video.raw_video_hash,
             )
             return default_fps
 
     raise ValueError(
-        f"Could not determine FPS from the actual video file for {video.video_hash}. "
+        f"Could not determine FPS from the actual video file for {video.raw_video_hash}. "
         "Ensure the file exists and has valid stream metadata."
     )
 

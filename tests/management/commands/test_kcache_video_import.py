@@ -18,12 +18,10 @@ from django.core.management import call_command
 
 from endoreg_db.config.env import (
     BASE_DIR,
-    DATA_DIR_ENV,
     DJANGO_SETTINGS_MODULE_ENV,
-    PROTECTED_MEDIA_ROOT_ENV,
-    PROTECTED_ROOT_ENV,
-    STORAGE_DIR_ENV,
+    RUNTIME_ROOT_ENV,
 )
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.management.commands import kcache_video_import as command_module
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.upload_job import UploadJob
@@ -31,9 +29,9 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils.paths import EndoregPathsModel
+from endoreg_db.utils.paths import EndoregPathsModel, clear_runtime_paths_cache
 
 pytestmark = pytest.mark.django_db
 
@@ -44,12 +42,8 @@ def isolated_runtime_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> EndoregPathsModel:
     protected_root = tmp_path / "protected"
-    storage_root = protected_root / "storage"
-    data_root = tmp_path / "data"
-    monkeypatch.setenv(PROTECTED_ROOT_ENV, str(protected_root))
-    monkeypatch.setenv(STORAGE_DIR_ENV, str(storage_root))
-    monkeypatch.setenv(PROTECTED_MEDIA_ROOT_ENV, str(storage_root))
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_root))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(protected_root))
+    clear_runtime_paths_cache()
     return EndoregPathsModel.from_environment()
 
 
@@ -124,7 +118,7 @@ import django
 from django.core.management import call_command
 
 django.setup()
-from endoreg_db.utils.paths import EndoregPathsModel
+from endoreg_db.utils.paths import EndoregPathsModel, clear_runtime_paths_cache
 
 stdout = StringIO()
 call_command("kcache_video_import", sys.argv[1], "--json", stdout=stdout)
@@ -201,7 +195,7 @@ def test_kcache_video_import_dry_run_reports_watcher_target_without_ingest(
     assert payload["status"] == "would_ingest"
     assert payload["center_name"] == command_center.name
     assert payload["processor_name"] == command_processor.name
-    assert payload["source_sha256"] == sha256_file(source_path)
+    assert payload["source_sha256"] == get_file_hash(source_path)
     assert watched_path.parent == isolated_runtime_paths.watcher_video_drop
     assert not watched_path.exists()
     assert UploadJob.objects.count() == 0
@@ -312,7 +306,7 @@ def test_kcache_video_import_payload_backfills_missing_processed_video_hash(
         center=command_center,
         processor=command_processor,
         original_file_name=watched_path.name,
-        video_hash=upload_job.content_hash,
+        raw_video_hash=upload_job.content_hash,
         suffix=watched_path.suffix,
     )
     video.processed_file.save(
@@ -357,5 +351,5 @@ def test_test_settings_management_commands_reuse_stable_test_database() -> None:
     )
 
     assert result.stdout.strip() == str(
-        BASE_DIR / "endoreg_db/data/tests/db/test_db.sqlite3"
+        get_runtime_paths().test / "data/tests/db/test_db.sqlite3"
     )

@@ -34,7 +34,7 @@ def _create_video() -> VideoFile:
     )
     return VideoFile.objects.create(
         center=center,
-        video_hash=f"segment-state-{uuid.uuid4().hex}",
+        raw_video_hash=f"segment-state-{uuid.uuid4().hex}",
     )
 
 

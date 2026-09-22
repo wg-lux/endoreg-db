@@ -5,7 +5,6 @@ import time
 from collections.abc import Callable
 from enum import StrEnum
 import logging
-
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 

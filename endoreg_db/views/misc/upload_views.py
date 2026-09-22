@@ -19,6 +19,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 from kombu.exceptions import OperationalError as KombuOperationalError
+from lx_dtypes.models.contracts.json_types import JsonScalar
 
 
 class _MagicModule(Protocol):
@@ -49,7 +50,6 @@ from endoreg_db.utils.permissions import EnvironmentAwarePermission
 if TYPE_CHECKING:
     from endoreg_db.services.hub.ingest import CeleryTaskDispatcher, UploadProvenance
 
-JsonScalar: TypeAlias = str | int | float | bool
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 UploadContext: TypeAlias = dict[str, JsonValue]
 

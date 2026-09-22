@@ -55,7 +55,7 @@ def test_report_import_emits_one_bounded_terminal_total_timing(
         report_import_module._set_report_import_outcome(terminal_outcome)
         return result
 
-    setattr(service, "_import_with_source_lock", locked_import)
+    setattr(service, "_process_import_pipeline", locked_import)
 
     with (
         caplog.at_level(logging.INFO, logger="endoreg_db.workload_timing"),
@@ -100,7 +100,7 @@ def test_report_import_failure_emits_once_without_exception_payload(
     setattr(service, "_validate_pdf_document", Mock())
     setattr(
         service,
-        "_import_with_source_lock",
+        "_process_import_pipeline",
         Mock(side_effect=RuntimeError("protected patient detail")),
     )
 

@@ -7,15 +7,12 @@ import hashlib
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
-from typing import Protocol, cast
-from collections.abc import Generator
-from contextlib import contextmanager
+from typing import NoReturn, Protocol, cast
 from io import BytesIO
 
 import pytest
 from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
-from django.db.models.fields.files import FieldFile
 from django.test import override_settings
 from django.utils import timezone
 from PIL import Image
@@ -104,7 +101,7 @@ def retained_video(
     video = VideoFile.objects.create(
         center=center,
         state=state,
-        video_hash=digest,
+        raw_video_hash=digest,
         processed_video_hash=digest,
         fps=25.0,
         frame_count=2,
@@ -335,7 +332,6 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
     monkeypatch: pytest.MonkeyPatch,
     damage: str,
     consumer: str,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from endoreg_db.utils.encryption.encrypted import EncryptedStorage
     from endoreg_db.services.frames.training_images import read_processed_training_image
@@ -358,7 +354,7 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
     with pytest.raises(
         (ValueError, OSError, RuntimeError),
-        match="decode failed" if consumer == "report" else "authentication|decrypt|key",
+        match="authentication|decrypt|key",
     ):
         if consumer == "image":
             read_processed_training_image(frame)
@@ -386,12 +382,9 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
                     stream.read(1)
     assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
 
-    if consumer == "report":
-        assert "authentication failed" in capsys.readouterr().err
-
 
 @pytest.mark.parametrize("consumer", ["image", "stream"])
-def test_training_plaintext_is_private_and_removed_after_decoder_error(
+def test_training_decoder_failure_does_not_materialize_plaintext(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     monkeypatch: pytest.MonkeyPatch,
     consumer: str,
@@ -401,22 +394,22 @@ def test_training_plaintext_is_private_and_removed_after_decoder_error(
 
     _, _, _, annotation_id = retained_video
     frame = ImageClassificationAnnotation.objects.get(pk=annotation_id).frame
-    seen: list[Path] = []
+    before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
+    seen: list[int] = []
 
     def fail_decoder(
-        path: Path,
+        video: VideoFile,
         *,
         frame_number: int,
-        timestamp: float | None,
+        file_type: str,
     ) -> EncodedFrameSample:
         assert frame_number == 0
-        assert timestamp == 0.0
-        assert path.stat().st_mode & 0o777 == 0o600
-        assert not path.read_bytes().startswith(b"LXENC01")
-        seen.append(path)
+        assert file_type == "processed"
+        assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
+        seen.append(int(video.pk))
         raise RuntimeError("decoder failure")
 
-    monkeypatch.setattr(training_images, "read_video_path_frame_jpeg", fail_decoder)
+    monkeypatch.setattr(training_images, "read_video_file_frame_jpeg", fail_decoder)
     with pytest.raises(RuntimeError, match="decoder failure"):
         if consumer == "image":
             training_images.read_processed_training_image(frame)
@@ -432,7 +425,8 @@ def test_training_plaintext_is_private_and_removed_after_decoder_error(
                 )
             ):
                 pytest.fail("decoder error did not propagate")
-    assert seen and all(not path.exists() for path in seen)
+    assert seen == [int(frame.video.pk)]
+    assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
 
 
 def test_core_training_streams_encrypted_retained_frames(
@@ -444,7 +438,7 @@ def test_core_training_streams_encrypted_retained_frames(
         build_frame_multilabel_training_manifest,
     )
     from endoreg_db.services.frames.training_images import streamed_training_dataset
-    from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
+    from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
 
     video, dataset, label_set, annotation_id = retained_video
     frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
@@ -454,8 +448,8 @@ def test_core_training_streams_encrypted_retained_frames(
     manifest = TrainingDatasetManifest.model_validate(exported.to_lx_ai_core_dict())
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
     with patch(
-        "endoreg_db.services.frames.training_images.read_video_path_frame_jpeg",
-        wraps=read_video_path_frame_jpeg,
+        "endoreg_db.services.frames.training_images.read_video_file_frame_jpeg",
+        wraps=read_video_file_frame_jpeg,
     ) as decode:
         training = streamed_training_dataset(manifest, allowed_frame_ids=[frame_id])
         decode.assert_not_called()
@@ -530,7 +524,7 @@ def test_stream_provider_closes_after_consumer_error(
     assert len(streams) == 1 and streams[0].closed
 
 
-def test_stream_provider_does_not_yield_after_cleanup_failure(
+def test_stream_provider_does_not_yield_after_decode_failure(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -539,28 +533,19 @@ def test_stream_provider_does_not_yield_after_cleanup_failure(
 
     video, _, _, annotation_id = retained_video
     frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
-    original = training_images.materialized_plaintext_field_file
-    paths: list[Path] = []
 
-    @contextmanager
-    def failed_cleanup(field_file: FieldFile, *, suffix: str) -> Generator[Path]:
-        with original(field_file, suffix=suffix) as path:
-            paths.append(path)
-            yield path
-        raise OSError("cleanup failure")
+    def failed_decode(*args: object, **kwargs: object) -> NoReturn:
+        raise OSError("decode failure")
 
-    monkeypatch.setattr(
-        training_images, "materialized_plaintext_field_file", failed_cleanup
-    )
+    monkeypatch.setattr(training_images, "read_video_file_frame_jpeg", failed_decode)
     provider = training_images.ProcessedTrainingFrameProvider(
         allowed_frame_ids=[frame_id]
     )
-    with pytest.raises(OSError, match="cleanup failure"):
+    with pytest.raises(OSError, match="decode failure"):
         with provider.open_frame(
             ProcessedFrameReference(video_id=video.pk, frame_number=0)
         ):
             pytest.fail("stream was exposed before cleanup completed")
-    assert paths and all(not path.exists() for path in paths)
 
 
 @pytest.mark.parametrize("renderer_fails", [False, True])
@@ -589,7 +574,6 @@ def test_report_frame_export_decrypts_and_cleans_up(
             consume()
     else:
         consume()
-    assert paths and all(not path.exists() for path in paths)
     assert set(Path("/tmp").glob("endoreg-report-frame-*")) == before
     frame.refresh_from_db()
     assert not frame.is_extracted

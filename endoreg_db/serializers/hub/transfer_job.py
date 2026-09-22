@@ -15,7 +15,7 @@ from endoreg_db.schemas import (
 
 
 class _VideoFilePayload(TypedDict):
-    video_hash: str
+    raw_video_hash: str
     processed_video_hash: str
 
 
@@ -309,16 +309,20 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         resource_hash: object,
         transfer_mode: str,
     ) -> None:
-        video_hash = video_file["video_hash"].strip()
-        if not video_hash:
+        raw_video_hash = video_file["raw_video_hash"].strip()
+        if not raw_video_hash:
             raise serializers.ValidationError(
-                {"resource_rows": ("resource_rows.video_file.video_hash is required")}
+                {
+                    "resource_rows": (
+                        "resource_rows.video_file.raw_video_hash is required"
+                    )
+                }
             )
-        if video_hash != resource_hash:
+        if raw_video_hash != resource_hash:
             raise serializers.ValidationError(
                 {
                     "resource_hash": (
-                        "resource_hash must match resource_rows.video_file.video_hash"
+                        "resource_hash must match resource_rows.video_file.raw_video_hash"
                     )
                 }
             )

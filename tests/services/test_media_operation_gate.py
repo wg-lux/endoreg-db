@@ -47,7 +47,7 @@ def _create_video() -> VideoFile:
     )
     return VideoFile.objects.create(
         center=center,
-        video_hash=f"media-operation-gate-{uuid.uuid4().hex}",
+        raw_video_hash=f"media-operation-gate-{uuid.uuid4().hex}",
     )
 
 

@@ -13,6 +13,40 @@ from endoreg_db.apps import EndoregDbConfig
 
 
 @pytest.mark.unit
+def test_runtime_reconciliation_receiver_accepts_django_signal_kwargs(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from django.dispatch import Signal
+    from django.test import override_settings
+
+    import endoreg_db.apps as apps_module
+    import endoreg_db.services.reconciliation as reconciliation
+    import endoreg_db.utils.paths as paths_module
+
+    signal = Signal()
+    calls: list[bool] = []
+    monkeypatch.setattr(apps_module, "connection_created", signal)
+    monkeypatch.setattr(apps_module, "ensure_keycloak_settings", lambda: None)
+    monkeypatch.setattr(paths_module, "validate_runtime_storage_contract", lambda: None)
+    monkeypatch.setattr(sys, "argv", ["manage.py", "runserver"])
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+
+    def mock_run_once(self: object) -> None:
+        calls.append(True)
+
+    monkeypatch.setattr(
+        reconciliation.ReconciliationService,
+        "run_once",
+        mock_run_once,
+    )
+    config = EndoregDbConfig("endoreg_db", importlib.import_module("endoreg_db"))
+    with override_settings(DEBUG=True):
+        config.ready()
+        signal.send(sender=object, connection=object(), future_argument=True)  # pyright: ignore[reportUnknownMemberType]
+    assert calls == [True]
+
+
+@pytest.mark.unit
 def test_root_urlconf_has_one_canonical_module() -> None:
     assert settings.ROOT_URLCONF == "endoreg_db.root_urls"
     assert find_spec("endoreg_db.urls.root_urls") is None

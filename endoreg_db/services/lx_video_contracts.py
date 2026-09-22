@@ -309,7 +309,7 @@ def build_lx_patient_video_file(
             )
             patient_video_segments[str(lx_segment.uuid)] = lx_segment
 
-    external_ids = {"video_hash": video.video_hash}
+    external_ids = {"raw_video_hash": video.raw_video_hash}
     if video.processed_video_hash:
         external_ids["processed_video_hash"] = video.processed_video_hash
 
@@ -364,7 +364,7 @@ def build_lx_video_file(video: VideoFile) -> LxVideoFile:
             "sensitive_meta": _video_relation_id(
                 cast(_VideoFileRelation | None, video.sensitive_meta)
             ),
-            "video_hash": video.video_hash,
+            "raw_video_hash": video.raw_video_hash,
             "processed_video_hash": video.processed_video_hash,
             "original_file_name": video.original_file_name,
             "storage_mode": str(video.storage_mode),

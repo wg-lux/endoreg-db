@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...qualification.qualification import Qualification
     from .employee import Employee
-
-NoEmployeeTypeValue: TypeAlias = None
-EmployeeTypeDescription: TypeAlias = str | NoEmployeeTypeValue
 
 
 class EmployeeTypeManager(models.Manager["EmployeeType"]):

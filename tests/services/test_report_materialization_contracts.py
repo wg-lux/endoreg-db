@@ -2,9 +2,10 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
+from django.utils import timezone
 
 from endoreg_db.models import (
     AnonymExaminationReport,
@@ -21,20 +22,16 @@ from endoreg_db.services.report_materialization import (
 
 
 @pytest.mark.django_db
-def test_build_report_context_from_validation_uses_contract_fields() -> None:
+def test_build_report_context_from_validation_uses_contract_fields(
+    base_db_data: bool,
+) -> None:
     center = Center.objects.create(name="contract-center")
-    patient = Patient.objects.create(
-        patient_hash="contract-patient-hash",
-        center=center,
-    )
-    patient_examination = PatientExamination.objects.create(patient=patient)
     sensitive_meta = SensitiveMeta.objects.create(
         center=center,
+        patient_first_name="Ada",
+        patient_last_name="Lovelace",
+        patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
         examination_date=date(2024, 2, 15),
-        patient_hash="patient-hash",
-        examination_hash="exam-hash",
-        pseudo_patient=patient,
-        pseudo_examination=patient_examination,
     )
 
     pdf = RawPdfFile.objects.create(

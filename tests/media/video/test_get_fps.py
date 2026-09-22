@@ -22,7 +22,7 @@ def _build_video(
         fps=fps,
         use_default_fps=use_default_fps,
         video_meta=None,
-        video_hash="video-hash-test",
+        raw_video_hash="video-hash-test",
         pk=1,
         _saving=False,
         save=MagicMock(),

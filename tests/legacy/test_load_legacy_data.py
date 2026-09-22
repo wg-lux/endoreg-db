@@ -167,7 +167,7 @@ class LegacyLoadCommandBackfillTest(TransactionTestCase):
             ] == [1]
             assert (
                 VideoFile.objects.filter(
-                    video_hash__startswith=f"legacy_exam_c{_model_pk(center)}_"
+                    raw_video_hash__startswith=f"legacy_exam_c{_model_pk(center)}_"
                 ).count()
                 == 2
             )

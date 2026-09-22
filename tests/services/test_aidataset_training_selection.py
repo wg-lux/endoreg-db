@@ -54,7 +54,7 @@ def test_training_sources_require_manual_origin_or_segment_confirmation(
             )
     video = VideoFile.objects.create(
         center=Center.objects.create(name="selection-center"),
-        video_hash="selection-video",
+        raw_video_hash="selection-video",
         fps=25.0,
         frame_count=2,
     )

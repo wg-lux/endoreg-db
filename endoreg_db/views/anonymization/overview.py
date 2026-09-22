@@ -94,7 +94,7 @@ class _SerializerDataCarrier(Protocol):
 
 def _overview_content_hash(item: VideoFile | RawPdfFile) -> str:
     if isinstance(item, VideoFile):
-        return getattr(item, "video_hash", "") or ""
+        return getattr(item, "raw_video_hash", "") or ""
     return getattr(item, "pdf_hash", "") or ""
 
 
@@ -302,7 +302,7 @@ class AnonymizationOverviewView(APIView):
                 "processed_file",
                 "raw_file",
                 "uploaded_at",
-                "video_hash",
+                "raw_video_hash",
                 "state",
                 "sensitive_meta",
                 "center",

@@ -29,7 +29,7 @@ from endoreg_db.utils import create_mock_patient_name
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 
 from .model_weights import ensure_managed_stub_weights
@@ -412,7 +412,7 @@ def get_default_video_file() -> "VideoFile":
         file_path=video_path,
         center_name=DEFAULT_CENTER_NAME,
         processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
-        video_hash=sha256_file(video_path),
+        raw_video_hash=get_file_hash(video_path),
     )
 
     return video_file

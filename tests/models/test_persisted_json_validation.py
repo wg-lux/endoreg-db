@@ -23,7 +23,7 @@ def test_transfer_job_resource_rows_reject_unknown_video_keys() -> None:
         resource_kind=TransferJob.ResourceKind.VIDEO,
         resource_rows={
             "video_file": {
-                "video_hash": "abc123",
+                "raw_video_hash": "abc123",
                 "unexpected": True,
             }
         },
@@ -43,12 +43,12 @@ def test_transfer_job_resource_rows_accept_frame_annotations_and_reports() -> No
         resource_kind=TransferJob.ResourceKind.VIDEO,
         resource_rows={
             "video_file": {
-                "video_hash": "abc123",
+                "raw_video_hash": "abc123",
             },
             "frame_annotations": [
                 {
                     "annotation_id": 7,
-                    "video_hash": "abc123",
+                    "raw_video_hash": "abc123",
                     "frame_number": 3,
                     "frame_relative_path": "frames/frame_000003.jpg",
                     "frame_timestamp": 0.12,
@@ -103,7 +103,7 @@ def test_transfer_job_canonicalizes_all_persisted_json_payloads() -> None:
     job = TransferJob(
         resource_kind=TransferJob.ResourceKind.VIDEO,
         resource_rows={
-            "video_file": {"video_hash": "abc123", "processed_video_hash": None},
+            "video_file": {"raw_video_hash": "abc123", "processed_video_hash": None},
             "frame_annotations": [],
             "video_segments": [],
         },
@@ -124,7 +124,7 @@ def test_transfer_job_canonicalizes_all_persisted_json_payloads() -> None:
     job.clean()
 
     assert job.resource_rows == {
-        "video_file": {"video_hash": "abc123"},
+        "video_file": {"raw_video_hash": "abc123"},
         "frame_annotations": [],
         "video_segments": [],
         "reports": [],
@@ -187,12 +187,12 @@ def test_transfer_job_resource_rows_validate_video_segments() -> None:
     job = TransferJob(
         resource_kind=TransferJob.ResourceKind.VIDEO,
         resource_rows={
-            "video_file": {"video_hash": "abc123", "frame_count": 20},
+            "video_file": {"raw_video_hash": "abc123", "frame_count": 20},
             "video_segments": [
                 {
                     "source_node_key": "site-a",
                     "source_segment_id": 7,
-                    "video_hash": "abc123",
+                    "raw_video_hash": "abc123",
                     "start_frame_number": 4,
                     "end_frame_number_exclusive": 12,
                     "label_name": "lesion_visible",
@@ -218,12 +218,12 @@ def test_transfer_job_resource_rows_reject_segment_outside_video() -> None:
     job = TransferJob(
         resource_kind=TransferJob.ResourceKind.VIDEO,
         resource_rows={
-            "video_file": {"video_hash": "abc123", "frame_count": 10},
+            "video_file": {"raw_video_hash": "abc123", "frame_count": 10},
             "video_segments": [
                 {
                     "source_node_key": "site-a",
                     "source_segment_id": 7,
-                    "video_hash": "abc123",
+                    "raw_video_hash": "abc123",
                     "start_frame_number": 4,
                     "end_frame_number_exclusive": 11,
                     "label_name": "lesion_visible",
@@ -245,7 +245,7 @@ def test_transfer_job_resource_rows_reject_segment_outside_video() -> None:
 
 
 def test_video_file_meta_validates_known_integrity_keys() -> None:
-    video = VideoFile(video_hash="video-json-validation", meta={"origin": "site-a"})
+    video = VideoFile(raw_video_hash="video-json-validation", meta={"origin": "site-a"})
     video.clean()
     assert video.meta == {"origin": "site-a"}
 
@@ -257,7 +257,7 @@ def test_video_file_meta_validates_known_integrity_keys() -> None:
 
 def test_video_file_sequences_validate_and_canonicalize() -> None:
     video = VideoFile(
-        video_hash="video-sequences-validation",
+        raw_video_hash="video-sequences-validation",
         sequences={"finding": [(1, 4)]},
     )
 
@@ -279,7 +279,7 @@ def test_video_file_sequences_reject_invalid_payloads(
     sequences: object,
 ) -> None:
     video = VideoFile(
-        video_hash="video-sequences-invalid",
+        raw_video_hash="video-sequences-invalid",
         sequences=sequences,
     )
 

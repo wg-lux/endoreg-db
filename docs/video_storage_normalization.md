@@ -5,6 +5,37 @@ This document is the operational and architecture runbook for the
 feature. The feature definition in YAML Ain't Markup Language (YAML) format is
 the only authoritative source for implementation and approval status.
 
+## Canonical runtime paths and filenames
+
+`LX_RUNTIME_ROOT` is the single runtime root. Application code resolves the
+topology at use time through `endoreg_db.utils.paths.get_runtime_paths()`.
+Packaged seed resources under `endoreg_db.data` are independent of this root.
+Media FileField names are relative to `<runtime_root>/storage`; the Django
+storage adapter and local streaming resolvers use that same boundary.
+
+The central filename policy is `canonical_media_name()` in
+`endoreg_db/utils/storage/files.py`. Videos and Portable Document Format (PDF)
+reports use `<media_hash>.<extension>`, with a lowercase extension. A published
+video generation can use `<media_hash>.<generation>.<extension>`; generation
+publication, leases, and previous-master retention remain unchanged. Raw videos,
+processed videos, raw reports, and processed reports retain distinct directories:
+`sensitive_videos`, `processed_videos_final`, `sensitive_reports`, and
+`processed_reports_final`. Streamable copies remain derivatives, not masters.
+
+Run `migrate_media_storage --json` to inspect legacy paths and filenames. The
+command discovers persisted basenames, hash names, known processed-name variants,
+and suffixed names in canonical and older runtime-root directories. It refuses
+ambiguous content. It verifies destination bytes before publishing the database
+reference; an occupied destination is reused only when its decrypted content
+matches. Existing immutable generation paths remain valid references. Sources
+are preserved unless the existing explicit deletion policy permits their removal.
+Ordinary report reads do not search import folders or guess replacement files.
+
+LuxNix retains `lx-annotate-video-streamable-migration.service` as the operational
+alias for the shared video/PDF `migrate_media_storage --apply` command. The unit
+is manually started, uses the encrypted runtime root, and does not bypass the
+feature-tracker migration gates. No deployed migration is implied by a code change.
+
 ## Import reservation and delivery recovery
 
 Queued imports reserve a database lease with owner `queued-task:<Celery task ID>`.
@@ -71,6 +102,21 @@ must be present in the deployed worker to protect its deliveries.
 
 ## Terms and Abbreviations
 
+Online encryption-key and identity-salt rotation is governed by
+`feature-tracking/Anonymization.yml`, criterion `online_secret_rotation`.
+The operational procedure is in `docs/secret_rotation.yml`. Rotation preserves
+the plaintext video bytes and timeline; it is not a storage-normalization or
+frame-rate conversion. Compatible readers must be deployed before key activation.
+Active media leases defer ciphertext replacement. HTTP Live Streaming generations
+use the existing validated generation-publication workflow with fresh content keys.
+
+- **Keyring:** an explicit private manifest containing one active secret-file
+  reference and bounded retiring references used during a reviewed rotation.
+- **Data encryption key:** a fresh per-file key wrapped by the local master key;
+  recovery from master-key compromise replaces the data key and ciphertext too.
+
+- **Joint Photographic Experts Group (JPEG):** the encoded image format used
+  for in-memory annotation responses and explicit frame exports.
 - **MPEG-4 Part 14 (MP4):** the Moving Picture Experts Group container format
   used for canonical and compatibility video files.
 - **HTTP Live Streaming (HLS):** the playlist-and-segment streaming format used
@@ -120,7 +166,7 @@ described where they are introduced.
 | Raw HLS | Successful import or reimport | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
 | Processed HLS | Successful import, reimport, or reanonymization | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
 | Legacy streamable MP4 | Historical compatibility output; no new copies are created | Retained until verified retirement | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion |
-| Extracted frame | Segment or frame workflow | According to the case-specific retention policy; it is not a storage-normalization cache | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
+| Extracted frame | Explicit export requiring image files | Export-scoped; annotation, inference, and local training decode in memory | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
 | Temporary transcode artifact | Normalization inside the protected transcoding directory | Only for the duration of one attempt | Through the `finally` path after success or failure; it is never marked as a valid master |
 | Quarantine artifact | Explicit fail-closed exception process | Until documented review | Only after separate quarantine approval; never through an automatic production fallback |
 
@@ -357,6 +403,18 @@ regeneration, and cleanup are deferred in a resumable state while a stream or
 segment-update lease is active.
 
 ### On-Demand Single-Frame Decode
+
+Frame files are export artifacts. Both frame image routes use the same decoder;
+the legacy `/stream/` route accepts only processed media. Ordinary annotation
+selects processed media by default, including the historical `auto` option.
+Explicit raw decoding remains restricted to authorized anonymization review.
+Requests renew the existing playback lease before resolving the current source.
+Post-validation verifies the rebuilt video without creating a JPEG cache. Local
+training uses the existing processed-frame stream provider. The retired `cache`
+inference option and frame-cache extraction/repair entry points fail explicitly;
+operators must select streaming or invoke an explicit export. Existing frame
+identities, timestamps, and legacy files are preserved.
+
 
 Single-frame annotation requests must not materialize the complete encrypted
 video as a temporary plaintext file. The backend resolves the requested frame

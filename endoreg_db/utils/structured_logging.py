@@ -9,9 +9,10 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeAlias, cast
+from typing import Any, cast
 from uuid import uuid4
 
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 SENSITIVE_KEY_PARTS = (
     "authorization",
@@ -32,11 +33,6 @@ MEDIA_FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 MAX_LOG_STRING_LENGTH = 512
-StructuredLogScalar: TypeAlias = str | int | float | bool | None
-StructuredLogValue: TypeAlias = (
-    StructuredLogScalar | list["StructuredLogValue"] | dict[str, "StructuredLogValue"]
-)
-StructuredLogPayload: TypeAlias = dict[str, StructuredLogValue]
 _request_id: ContextVar[str | None] = ContextVar(
     "structured_log_request_id", default=None
 )
@@ -57,7 +53,7 @@ def hash_identifier(value: object) -> str:
     return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
 
 
-def path_reference(path: str | Path) -> StructuredLogPayload:
+def path_reference(path: str | Path) -> JsonObject:
     raw_path = str(path)
     suffix = Path(raw_path).suffix.lower()
     return {
@@ -89,7 +85,7 @@ def sanitize_log_string(value: str, *, key: str | None = None) -> str:
     return value
 
 
-def safe_log_value(value: Any, *, key: str | None = None) -> StructuredLogValue:
+def safe_log_value(value: Any, *, key: str | None = None) -> JsonValue:
     if _is_sensitive_key(key):
         return "<redacted:sensitive>"
     if isinstance(value, Path):
@@ -129,7 +125,7 @@ def safe_log_value(value: Any, *, key: str | None = None) -> StructuredLogValue:
     return str(value)
 
 
-def safe_log_payload(payload: Mapping[str, Any]) -> StructuredLogPayload:
+def safe_log_payload(payload: Mapping[str, Any]) -> JsonObject:
     return {
         str(key): safe_log_value(value, key=str(key)) for key, value in payload.items()
     }
@@ -141,7 +137,7 @@ def emit_structured_event(
     *,
     level: int = logging.INFO,
     message: str | None = None,
-    **payload: StructuredLogValue,
+    **payload: JsonValue,
 ) -> None:
     structured_payload = safe_log_payload({"event": event, **payload})
     request_id = _request_id.get()
@@ -179,9 +175,7 @@ def emit_structured_event(
         logger.log(level, log_message, extra=extra)
 
 
-def _default_event_message(
-    event: str, payload: Mapping[str, StructuredLogValue]
-) -> str:
+def _default_event_message(event: str, payload: Mapping[str, JsonValue]) -> str:
     reason = payload.get("reason")
     if isinstance(reason, str) and reason:
         return f"{event} reason={reason}"
@@ -193,7 +187,7 @@ def _default_event_message(
 
 class StructuredJsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        payload: StructuredLogPayload = {
+        payload: JsonObject = {
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -232,7 +226,7 @@ class StructuredJsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str, ensure_ascii=False, sort_keys=True)
 
     @staticmethod
-    def _json_message_payload(record: logging.LogRecord) -> StructuredLogPayload:
+    def _json_message_payload(record: logging.LogRecord) -> JsonObject:
         message = record.getMessage()
         if not message.startswith("{"):
             return {}

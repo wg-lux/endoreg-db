@@ -21,7 +21,7 @@ from lx_dtypes.models.contracts.model_meta_logic import (
     ModelMetaCreateFromFilePayload,
 )
 
-from ..utils import WEIGHTS_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from . import model_meta_logic
 
@@ -90,7 +90,7 @@ class ModelMeta(models.Model):
         help_text="Output activation function (e.g., 'sigmoid', 'softmax', 'none').",
     )
     weights: models.FileField = models.FileField(
-        upload_to=WEIGHTS_DIR.name,
+        upload_to=get_runtime_paths().weights.name,
         storage=LazyEncryptedStorage(),
         validators=[
             FileExtensionValidator(allowed_extensions=["safetensors", "pth", "pt"])

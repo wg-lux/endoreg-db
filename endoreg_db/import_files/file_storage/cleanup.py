@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Iterable
 
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ def _path_is_relative_to(path: Path, root: Path) -> bool:
 
 
 def staging_cleanup_roots() -> tuple[Path, ...]:
-    paths = path_utils.EndoregPathsModel.from_environment()
+    paths = get_runtime_paths()
     return (
         paths.transcoding,
         paths.import_video,

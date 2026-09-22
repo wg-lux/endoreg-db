@@ -2,9 +2,14 @@
 Centralized environment configuration for EndoReg-DB.
 
 This module is the single place to read environment variables and .env files.
-It avoids loading .env during pytest, and provides typed helpers plus the
-runtime-setting defaults consumed by ``config/settings/base.py``.
-No Django imports here to prevent early settings configuration.
+It avoids loading .env during pytest, provides typed configuration helpers, and
+defines one canonical filesystem contract:
+
+    LX_RUNTIME_ROOT
+
+All application runtime paths are derived from that root by the path layer.
+This module never rewrites path-related environment variables.
+No Django imports are allowed here.
 """
 
 from __future__ import annotations
@@ -17,27 +22,25 @@ from typing import (
     Any,
     Dict,
     Literal,
-    Mapping,
-    MutableMapping,
     Optional,
     TypeAlias,
     TypeVar,
 )
 
+from lx_dtypes.models.contracts.video_file import FrameSourceMode
+
 EnvironmentChoice = TypeVar("EnvironmentChoice", bound=str)
 EnvironmentSnapshotValue: TypeAlias = str | bool | None
 JobExecutionMode: TypeAlias = Literal["celery", "thread", "inline"]
-VideoTemporalInferenceFrameSourceMode: TypeAlias = Literal[
-    "cache",
-    "stream",
-    "auto",
-]
+
+# Repository root. This is used only for development/test defaults and generic
+# repo-relative helper paths. Production runtime storage must never be inferred
+# from an installed package path.
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 DJANGO_SETTINGS_MODULE_ENV = "DJANGO_SETTINGS_MODULE"
-PROTECTED_ROOT_ENV = "LX_ANNOTATE_ENCRYPTED_DATA_DIR"
-STORAGE_DIR_ENV = "STORAGE_DIR"
-DATA_DIR_ENV = "DATA_DIR"
-PROTECTED_MEDIA_ROOT_ENV = "PROTECTED_MEDIA_ROOT"
+RUNTIME_ROOT_ENV = "LX_RUNTIME_ROOT"
+
 DEFAULT_DJANGO_SETTINGS_MODULE = "endoreg_db.config.settings.dev"
 DEFAULT_TIME_ZONE = "Europe/Berlin"
 DEFAULT_STATIC_URL = "/static/"
@@ -68,7 +71,7 @@ DEFAULT_VIDEO_POST_VALIDATION_DISPATCH_DELAY_SECONDS = 60
 DEFAULT_MEDIA_OPERATION_STREAM_LEASE_SECONDS = 120
 DEFAULT_MEDIA_OPERATION_SEGMENT_UPDATE_GRACE_SECONDS = 75
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE: JobExecutionMode = "celery"
-DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE: VideoTemporalInferenceFrameSourceMode = "stream"
+DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE: FrameSourceMode = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
 DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
@@ -80,29 +83,30 @@ DEFAULT_CELERY_MAINTENANCE_QUEUE = "maintenance"
 DEFAULT_CELERY_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS = 300
 DEFAULT_MODEL_TRAINING_JOB_MODE: JobExecutionMode = "celery"
 DEFAULT_MODEL_TRAINING_STAGING_ROOT = "/mnt/fast-nvme-cache/endoreg-training"
+
 SECURE_PROXY_SSL_HEADER_NAME_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_NAME"
 SECURE_PROXY_SSL_HEADER_VALUE_ENV = "DJANGO_SECURE_PROXY_SSL_HEADER_VALUE"
+
 ENDOREG_DEPLOYMENT_ROLE_VALUES = (
     "standalone",
     "site_node",
     "local_study_server",
     "central_hub",
 )
+
 TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
+
 DOTENV_DEVELOPMENT_SETTINGS_MODULES = frozenset(
     {
         DEFAULT_DJANGO_SETTINGS_MODULE,
-        "endoreg_db.config.settings.case_gen",
     }
 )
+
 SNAPSHOT_REDACTED_VALUE = "<redacted>"
 SNAPSHOT_REDACTED_ENV_KEYS = frozenset(
     {
-        STORAGE_DIR_ENV,
-        DATA_DIR_ENV,
-        PROTECTED_ROOT_ENV,
-        PROTECTED_MEDIA_ROOT_ENV,
+        RUNTIME_ROOT_ENV,
         "ASSET_DIR",
         "DEV_DB_NAME",
         "TEST_DB_NAME",
@@ -112,13 +116,15 @@ SNAPSHOT_REDACTED_ENV_KEYS = frozenset(
         "CACHE_LOCATION",
     }
 )
+
 JOB_EXECUTION_MODES: tuple[JobExecutionMode, ...] = (
     "celery",
     "thread",
     "inline",
 )
+
 VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODES: tuple[
-    VideoTemporalInferenceFrameSourceMode,
+    FrameSourceMode,
     ...,
 ] = ("cache", "stream", "auto")
 
@@ -137,189 +143,91 @@ class EnvironmentValueError(ValueError):
         super().__init__(f"{key} must be {expected}")
 
 
-# Compute repository BASE_DIR (repo root). This file is endoreg_db/config/env.py.
-BASE_DIR = Path(__file__).resolve().parents[2]
-TEST_PROTECTED_ROOT = BASE_DIR / "data" / "tests" / "protected_runtime"
-TEST_DATA_ROOT = BASE_DIR / "data" / "tests" / "runtime"
-
-
-def _resolve_candidate_path(raw_value: str | Path, *, base_dir: Path) -> Path:
-    candidate = Path(raw_value)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return (base_dir / candidate).resolve()
-
-
-def _configured_path_value(
-    source: Mapping[str, str],
-    key: str,
-    *,
-    default: str | Path,
-) -> str | Path:
-    raw_value = source.get(key)
-    if raw_value is None:
-        return default
-    normalized = raw_value.strip()
-    if not normalized:
-        raise EnvironmentValueError(key, "a non-empty filesystem path")
-    return normalized
-
-
-def build_protected_runtime_env(
-    *,
-    default_protected_root: Path | None = None,
-    default_data_root: Path | None = None,
-    base_dir: Path | None = None,
-    source: Mapping[str, str] | MutableMapping[str, str] | None = None,
-) -> dict[str, str]:
-    resolved_base_dir = (base_dir or BASE_DIR).resolve()
-    env_source = source if source is not None else os.environ
-    protected_root_default = default_protected_root or (resolved_base_dir / "data")
-
-    protected_root = _resolve_candidate_path(
-        _configured_path_value(
-            env_source,
-            PROTECTED_ROOT_ENV,
-            default=protected_root_default,
-        ),
-        base_dir=resolved_base_dir,
-    )
-    storage_dir = _resolve_candidate_path(
-        _configured_path_value(
-            env_source,
-            STORAGE_DIR_ENV,
-            default=protected_root / "storage",
-        ),
-        base_dir=resolved_base_dir,
-    )
-    if protected_root not in (storage_dir, *storage_dir.parents):
-        storage_dir = protected_root / "storage"
-
-    data_dir = _resolve_candidate_path(
-        _configured_path_value(
-            env_source,
-            DATA_DIR_ENV,
-            default=default_data_root or (resolved_base_dir / "data"),
-        ),
-        base_dir=resolved_base_dir,
-    )
-    protected_media_root = _resolve_candidate_path(
-        _configured_path_value(
-            env_source,
-            PROTECTED_MEDIA_ROOT_ENV,
-            default=storage_dir,
-        ),
-        base_dir=resolved_base_dir,
-    )
-    if protected_root not in (protected_media_root, *protected_media_root.parents):
-        protected_media_root = storage_dir
-
-    return {
-        PROTECTED_ROOT_ENV: str(protected_root),
-        STORAGE_DIR_ENV: str(storage_dir),
-        DATA_DIR_ENV: str(data_dir),
-        PROTECTED_MEDIA_ROOT_ENV: str(protected_media_root),
-    }
-
-
 def _is_explicit_test_settings() -> bool:
     settings_module = os.environ.get(
         DJANGO_SETTINGS_MODULE_ENV,
         DEFAULT_DJANGO_SETTINGS_MODULE,
-    )
+    ).strip()
+
     return settings_module in {
         "endoreg_db.config.settings.test",
         "tests.settings_test",
     } or settings_module.endswith(".settings.test")
 
 
-def _dotenv_loading_allowed() -> bool:
+def _is_production_runtime() -> bool:
     settings_module = os.environ.get(
         DJANGO_SETTINGS_MODULE_ENV,
         DEFAULT_DJANGO_SETTINGS_MODULE,
     ).strip()
-    return settings_module in DOTENV_DEVELOPMENT_SETTINGS_MODULES
+
+    return (
+        os.environ.get("DJANGO_ENV", "").strip().lower() == "production"
+        or settings_module.endswith(".prod")
+        or settings_module.endswith(".settings_prod")
+    )
 
 
-def _default_protected_runtime_root() -> Path:
+def _default_test_runtime_root() -> Path:
+    namespace = os.environ.get("ENDOREG_TEST_RUN_NAMESPACE", "").strip()
+    root = BASE_DIR / "data" / "tests" / "runtime"
+    return (root / namespace).resolve() if namespace else root.resolve()
+
+
+def get_runtime_root() -> Path:
+    """Return the one deployment-owned application runtime root.
+
+    ``LX_RUNTIME_ROOT`` is the only runtime path environment variable.
+
+    Production requires an explicit absolute path. Tests and development have
+    deterministic repository-local defaults.
+    """
+
+    raw = os.environ.get(RUNTIME_ROOT_ENV, "").strip()
+
+    if raw:
+        candidate = Path(raw).expanduser()
+        if not candidate.is_absolute():
+            raise EnvironmentValueError(
+                RUNTIME_ROOT_ENV,
+                "an absolute filesystem path",
+            )
+        return candidate.resolve()
+
     if _is_explicit_test_settings():
-        return TEST_PROTECTED_ROOT
-    return BASE_DIR / "data"
+        return _default_test_runtime_root()
 
-
-def _default_data_root() -> Path:
-    if _is_explicit_test_settings():
-        return TEST_DATA_ROOT
-    return BASE_DIR / "data"
-
-
-def _normalize_protected_runtime_paths(
-    default_protected_root: Path,
-    *,
-    default_data_root: Path | None = None,
-) -> None:
-    # LX_ANNOTATE_ENCRYPTED_DATA_DIR is the single canonical runtime root for
-    # deployment-owned protected data. STORAGE_DIR is normalized to
-    # live inside that root even if callers provide legacy or invalid values.
-    os.environ.update(
-        build_protected_runtime_env(
-            default_protected_root=default_protected_root,
-            default_data_root=default_data_root,
+    if _is_production_runtime():
+        raise EnvironmentValueError(
+            RUNTIME_ROOT_ENV,
+            "an absolute filesystem path in production",
         )
-    )
+
+    return (BASE_DIR / "data").resolve()
 
 
-_dotenv_loaded = False
+def get_runtime_storage_root() -> Path:
+    """Return the canonical protected storage tree."""
 
-if _dotenv_loading_allowed():
-    import dotenv
+    return get_runtime_root() / "storage"
 
-    _dotenv_loaded = dotenv.load_dotenv(override=False)
 
-if _is_explicit_test_settings():
-    test_root = (BASE_DIR / "data" / "tests").resolve()
-    configured_protected_root = _resolve_candidate_path(
-        os.environ.get(PROTECTED_ROOT_ENV, str(TEST_PROTECTED_ROOT)),
-        base_dir=BASE_DIR,
-    )
-    if test_root not in (configured_protected_root, *configured_protected_root.parents):
-        configured_protected_root = TEST_PROTECTED_ROOT.resolve()
-        os.environ[PROTECTED_ROOT_ENV] = str(configured_protected_root)
+def get_terminology_root() -> Path:
+    """Return the canonical mutable terminology root."""
 
-    configured_storage_root = _resolve_candidate_path(
-        os.environ.get(STORAGE_DIR_ENV, str(configured_protected_root / "storage")),
-        base_dir=BASE_DIR,
-    )
-    if configured_protected_root not in (
-        configured_storage_root,
-        *configured_storage_root.parents,
-    ):
-        configured_storage_root = (configured_protected_root / "storage").resolve()
-        os.environ[STORAGE_DIR_ENV] = str(configured_storage_root)
+    return get_runtime_root() / "terminology"
 
-    configured_data_root = _resolve_candidate_path(
-        os.environ.get(DATA_DIR_ENV, str(TEST_DATA_ROOT)),
-        base_dir=BASE_DIR,
-    )
-    if test_root not in (configured_data_root, *configured_data_root.parents):
-        configured_data_root = TEST_DATA_ROOT.resolve()
-        os.environ[DATA_DIR_ENV] = str(configured_data_root)
 
-    configured_media_root = _resolve_candidate_path(
-        os.environ.get(PROTECTED_MEDIA_ROOT_ENV, str(configured_storage_root)),
-        base_dir=BASE_DIR,
-    )
-    if configured_protected_root not in (
-        configured_media_root,
-        *configured_media_root.parents,
-    ):
-        os.environ[PROTECTED_MEDIA_ROOT_ENV] = str(configured_storage_root)
+def _resolve_candidate_path(raw_value: str | Path, *, base_dir: Path) -> Path:
+    """Resolve a generic, non-runtime path helper.
 
-_normalize_protected_runtime_paths(
-    _default_protected_runtime_root(),
-    default_data_root=_default_data_root(),
-)
-os.environ.setdefault(DATA_DIR_ENV, str(_default_data_root().resolve()))
+    Runtime storage must use ``get_runtime_root()`` instead.
+    """
+
+    candidate = Path(raw_value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (base_dir / candidate).resolve()
 
 
 def _get(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -669,19 +577,13 @@ def get_protected_media_url() -> str:
 
 
 def get_protected_media_root() -> Path:
-    runtime_env = build_protected_runtime_env()
-    default_root = runtime_env[PROTECTED_MEDIA_ROOT_ENV]
-    return env_path(PROTECTED_MEDIA_ROOT_ENV, default_root)
+    """Return Django's protected-media root derived from ``LX_RUNTIME_ROOT``."""
+
+    return get_runtime_storage_root()
 
 
 def allow_insecure_protected_media_serving() -> bool:
     return env_bool("ALLOW_INSECURE_PROTECTED_MEDIA", False)
-
-
-def get_data_dir() -> Path:
-    runtime_env = build_protected_runtime_env()
-    default_root = runtime_env[DATA_DIR_ENV]
-    return env_path(DATA_DIR_ENV, default_root)
 
 
 def get_media_url() -> str:
@@ -689,7 +591,9 @@ def get_media_url() -> str:
 
 
 def get_media_root() -> Path:
-    return get_protected_media_root()
+    """Return Django's MEDIA_ROOT derived from ``LX_RUNTIME_ROOT``."""
+
+    return get_runtime_storage_root()
 
 
 def get_django_cors_allowed_origins() -> list[str]:
@@ -942,9 +846,7 @@ def get_video_temporal_inference_job_mode() -> JobExecutionMode:
     )
 
 
-def get_video_temporal_inference_frame_source_mode() -> (
-    VideoTemporalInferenceFrameSourceMode
-):
+def get_video_temporal_inference_frame_source_mode() -> FrameSourceMode:
     return env_choice(
         "VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE",
         VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODES,
@@ -1008,15 +910,14 @@ def build_base_rest_framework_settings() -> Dict[str, Any]:
 
 def snapshot() -> dict[str, EnvironmentSnapshotValue]:
     """Return a secret- and topology-safe configuration snapshot."""
+
     keys = [
         # Core
         "DJANGO_SETTINGS_MODULE",
         "TIME_ZONE",
-        # Paths
-        "STORAGE_DIR",
-        "DATA_DIR",
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR",
-        "PROTECTED_MEDIA_ROOT",
+        # Runtime topology: exactly one configurable root.
+        RUNTIME_ROOT_ENV,
+        # Framework / service path settings that remain independently configurable.
         "ALLOW_INSECURE_PROTECTED_MEDIA",
         "ASSET_DIR",
         "STATIC_URL",
@@ -1049,6 +950,7 @@ def snapshot() -> dict[str, EnvironmentSnapshotValue]:
         "DRF_THROTTLE_USER",
         "DRF_THROTTLE_ANON",
     ]
+
     data: dict[str, EnvironmentSnapshotValue] = {
         key: (
             SNAPSHOT_REDACTED_VALUE
@@ -1059,8 +961,10 @@ def snapshot() -> dict[str, EnvironmentSnapshotValue]:
     }
     data.update(
         {
-            "DOTENV_LOADED": _dotenv_loaded,
             "BASE_DIR": SNAPSHOT_REDACTED_VALUE,
+            "RUNTIME_ROOT": SNAPSHOT_REDACTED_VALUE,
+            "STORAGE_ROOT": SNAPSHOT_REDACTED_VALUE,
+            "TERMINOLOGY_ROOT": SNAPSHOT_REDACTED_VALUE,
         }
     )
     return data
@@ -1071,6 +975,6 @@ DJANGO_SETTINGS_MODULE = env_str(
     DEFAULT_DJANGO_SETTINGS_MODULE,
 )
 
-
-# Back-compat short aliases used by settings modules
+# Generic shorthand retained for non-path settings callers. It is not part of
+# the runtime path contract.
 ENV = os.environ.get

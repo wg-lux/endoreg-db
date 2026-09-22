@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -18,8 +18,6 @@ if TYPE_CHECKING:
     from ...medical.patient.patient_medication_schedule import (
         PatientMedicationSchedule,
     )
-NoCaseEndDate: TypeAlias = None
-CaseEndDate: TypeAlias = datetime | NoCaseEndDate
 
 
 class Case(models.Model):
@@ -135,7 +133,7 @@ class Case(models.Model):
             string_representation += f" - {self.end_date.strftime('%Y-%m-%d')}"
         return string_representation
 
-    def close(self, end_date: CaseEndDate = None) -> None:
+    def close(self, end_date: datetime | None = None) -> None:
         """Close this case with a provided end date or the current time."""
         self.is_closed = True
         self.is_active = False

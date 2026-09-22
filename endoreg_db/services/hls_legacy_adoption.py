@@ -23,7 +23,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services import hls_media
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.utils.file_operations import atomic_create_file
-from endoreg_db.utils.paths import EndoregPathsModel, ensure_within_protected_root
+from endoreg_db.utils.paths import get_runtime_paths, ensure_within_runtime_root
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +53,8 @@ class AdoptionReceipt(BaseModel):
 
 
 def _write_receipt(receipt: AdoptionReceipt) -> None:
-    destination = ensure_within_protected_root(
-        EndoregPathsModel.from_environment().protected_root
+    destination = ensure_within_runtime_root(
+        get_runtime_paths().runtime_root
         / "hls-legacy-adoption"
         / f"{receipt.receipt_id}-{receipt.status}.json"
     )

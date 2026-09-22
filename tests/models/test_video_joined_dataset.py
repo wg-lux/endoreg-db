@@ -10,11 +10,11 @@ class VideoJoinedDatasetTests(TestCase):
     def test_new_videos_share_the_system_joined_dataset(self) -> None:
         first_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="joined-video-dataset-first",
+            raw_video_hash="joined-video-dataset-first",
         )
         second_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="joined-video-dataset-second",
+            raw_video_hash="joined-video-dataset-second",
         )
 
         assert first_video.joined_dataset_id == second_video.joined_dataset_id
@@ -30,7 +30,7 @@ class VideoJoinedDatasetTests(TestCase):
 
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="joined-video-dataset-explicit",
+            raw_video_hash="joined-video-dataset-explicit",
             joined_dataset=assigned_dataset,
         )
 
@@ -40,7 +40,7 @@ class VideoJoinedDatasetTests(TestCase):
     def test_attach_video_assigns_the_explicit_dataset(self) -> None:
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="joined-video-dataset-attach",
+            raw_video_hash="joined-video-dataset-attach",
         )
         assigned_dataset = AIDataSet.objects.create(
             name="attached-video-dataset",

@@ -20,7 +20,6 @@ from endoreg_db.utils.file_operations import atomic_write_file
 QualityMediaType: TypeAlias = Literal["all", "video", "pdf"]
 QUALITY_MEDIA_TYPE_CHOICES: tuple[QualityMediaType, ...] = ("all", "video", "pdf")
 type _CommandOption = None | bool | int | list[int] | str
-type _MaybeInt = None | int
 
 
 @dataclass(frozen=True)
@@ -311,7 +310,7 @@ def _int_option(options: dict[str, _CommandOption], name: str) -> int:
     raise CommandError(f"--{name.replace('_', '-')} must be an integer")
 
 
-def _maybe_int_option(options: dict[str, _CommandOption], name: str) -> _MaybeInt:
+def _maybe_int_option(options: dict[str, _CommandOption], name: str) -> int | None:
     value = options[name]
     if value is None:
         return None

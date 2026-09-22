@@ -3,17 +3,15 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Q
-from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 
@@ -30,13 +28,7 @@ from endoreg_db.models.media.video.storage_mode import (
 )
 from endoreg_db.services.video_files._frames._extract_frames import (
     FrameCacheManifest,
-    _sync_extracted_frame_records,
-    _normalize_full_extraction_paths,
     build_frame_cache_manifest,
-    extract_full_frame_set_to_directory,
-)
-from endoreg_db.services.video_files._frames._manage_frame_range import (
-    extract_frame_range_to_directory,
 )
 from endoreg_db.services.streamable_media import (
     STREAMABLE_FILE_MODE,
@@ -56,28 +48,13 @@ from endoreg_db.services.video_files import (
     get_or_create_video_state,
     get_video_frame_dir_path,
 )
-from endoreg_db.utils.file_operations import (
-    atomic_move_file,
-    atomic_move_path,
-    ensure_directory,
-    safe_rmtree,
-    sha256_file,
-)
-from endoreg_db.utils.media.frame_file_permissions import (
-    FRAME_CACHE_DIR_MODE,
-    FRAME_FILE_MODE,
-    apply_frame_cache_dir_mode,
-    apply_frame_file_modes,
-    ensure_frame_cache_dir,
-    ensure_frame_staging_dir,
-)
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
-    hash_identifier,
     safe_log_value,
 )
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.hashs import get_file_hash
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +194,7 @@ class MediaIntegrityOptions:
 @dataclass(slots=True)
 class FrameCacheClassification:
     video_id: int | None
-    video_hash: str
+    raw_video_hash: str
     frame_dir: str
     expected_count: int | None
     db_frame_count: int
@@ -259,7 +236,7 @@ class FrameCacheClassification:
     def as_dict(self) -> dict[str, Any]:
         return {
             "video_id": self.video_id,
-            "video_hash": self.video_hash,
+            "raw_video_hash": self.raw_video_hash,
             "frame_dir": self.frame_dir,
             "expected_count": self.expected_count,
             "db_frame_count": self.db_frame_count,
@@ -340,15 +317,11 @@ class MediaIntegritySummary:
 
 
 def _storage_absolute_path(relative_name: str) -> Path:
-    return STORAGE_DIR / str(relative_name)
+    return get_runtime_paths().storage / str(relative_name)
 
 
 def _file_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
-
-
-def _field_hash(field_file: FieldFile) -> str:
-    return sha256_file(field_file)
 
 
 def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) -> None:
@@ -408,7 +381,7 @@ def _mark_video_state_failed(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -428,7 +401,7 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -442,7 +415,7 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
         video.meta = payload
         video.save(update_fields=["meta", "date_modified"])
         _mark_applied_transfer_jobs_lost(
-            resource_hash=video.video_hash,
+            resource_hash=video.raw_video_hash,
             detail=detail,
         )
         _mark_video_training_dependencies_lost(video)
@@ -452,7 +425,7 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
         level=logging.ERROR,
         media_type="video",
         video_id=video.pk,
-        video_hash_sha256=hash_identifier(video.video_hash),
+        video_hash_sha256=video.raw_video_hash,
         dry_run=False,
         detail=safe_log_value(detail),
     )
@@ -477,7 +450,7 @@ def _mark_video_warning(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             status="warning_not_applied",
             detail=safe_log_value(_video_integrity_detail(video)),
             suppressed_warning=safe_log_value(detail),
@@ -490,7 +463,7 @@ def _mark_video_warning(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -507,7 +480,7 @@ def _mark_video_warning(
         level=logging.WARNING,
         media_type="video",
         video_id=video.pk,
-        video_hash_sha256=hash_identifier(video.video_hash),
+        video_hash_sha256=video.raw_video_hash,
         dry_run=False,
         detail=safe_log_value(detail),
     )
@@ -521,7 +494,7 @@ def _mark_video_ok(video: VideoFile, *, dry_run: bool = False) -> None:
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             status="ok_not_applied",
             detail=safe_log_value(_video_integrity_detail(video)),
         )
@@ -824,7 +797,7 @@ def _missing_frame_cache_classification(
 ) -> FrameCacheClassification:
     return FrameCacheClassification(
         video_id=video.pk,
-        video_hash=str(video.video_hash),
+        raw_video_hash=str(video.raw_video_hash),
         frame_dir=str(frame_dir or ""),
         expected_count=expected_count,
         db_frame_count=database_contract.frame_count,
@@ -881,7 +854,7 @@ def classify_frame_cache(
 
     return FrameCacheClassification(
         video_id=video.pk,
-        video_hash=str(video.video_hash),
+        raw_video_hash=str(video.raw_video_hash),
         frame_dir=str(frame_dir or ""),
         expected_count=expected_count,
         db_frame_count=database_contract.frame_count,
@@ -905,317 +878,6 @@ def classify_frame_cache(
     )
 
 
-def _staged_frame_dir(frame_dir: Path, video: VideoFile) -> Path:
-    return frame_dir.with_name(
-        f".extracting_{video.video_hash}_{os.getpid()}_{uuid4().hex}"
-    )
-
-
-def _staged_replacement_dir(frame_dir: Path) -> Path:
-    return frame_dir.with_name(f"{frame_dir.name}.pending_replace.{uuid4().hex}")
-
-
-def _use_processed_for_frame_repair(video: VideoFile) -> bool:
-    return bool(getattr(video.processed_file, "name", ""))
-
-
-@dataclass(frozen=True, slots=True)
-class _FullFrameCacheRepairTarget:
-    frame_dir: Path
-    expected_count: int
-
-
-@dataclass(slots=True)
-class _FullFrameCacheReplacement:
-    frame_dir: Path
-    staged_dir: Path
-    replaced_dir: Path | None = None
-    installed_new_cache: bool = False
-
-
-def _repair_specific_frames(
-    video: VideoFile,
-    *,
-    frame_numbers: list[int],
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    frame_dir = get_video_frame_dir_path(video)
-    if frame_dir is None:
-        return 0, "frame_dir unavailable"
-
-    unique_numbers = sorted(set(frame_numbers))
-    if not unique_numbers:
-        return 0, "no missing frames to repair"
-    if dry_run:
-        return 0, f"would repair frames {unique_numbers[:20]}"
-
-    ensure_directory(frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
-    ensure_frame_cache_dir(frame_dir)
-    staged_dir = _staged_frame_dir(frame_dir, video)
-    repaired = 0
-    try:
-        ensure_frame_staging_dir(staged_dir)
-        for frame_number in unique_numbers:
-            extract_frame_range_to_directory(
-                video,
-                output_dir=staged_dir,
-                start_frame=frame_number,
-                end_frame=frame_number + 1,
-                from_processed=_use_processed_for_frame_repair(video),
-                ext=ext,
-            )
-            staged_path = staged_dir / _expected_relative_path(frame_number, ext)
-            stable_path = frame_dir / _expected_relative_path(frame_number, ext)
-            if not staged_path.is_file():
-                raise RuntimeError(f"missing staged frame file: {staged_path}")
-            atomic_move_file(
-                source=staged_path,
-                destination=stable_path,
-                file_mode=FRAME_FILE_MODE,
-                dir_mode=FRAME_CACHE_DIR_MODE,
-            )
-            repaired += 1
-
-        with transaction.atomic():
-            existing_frames = {
-                frame.frame_number: frame
-                for frame in Frame.objects.filter(
-                    video=video,
-                    frame_number__in=unique_numbers,
-                )
-            }
-            frames_to_create: list[Frame] = []
-            frames_to_update: list[Frame] = []
-            for frame_number in unique_numbers:
-                relative_path = _expected_relative_path(frame_number, ext)
-                frame = existing_frames.get(frame_number)
-                if frame is None:
-                    frames_to_create.append(
-                        Frame(
-                            video=video,
-                            frame_number=frame_number,
-                            relative_path=relative_path,
-                            is_extracted=True,
-                        )
-                    )
-                    continue
-                changed = False
-                if frame.relative_path != relative_path:
-                    frame.relative_path = relative_path
-                    changed = True
-                if not frame.is_extracted:
-                    frame.is_extracted = True
-                    changed = True
-                if changed:
-                    frames_to_update.append(frame)
-            if frames_to_create:
-                Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
-            if frames_to_update:
-                Frame.objects.bulk_update(
-                    frames_to_update,
-                    ["relative_path", "is_extracted"],
-                )
-        return repaired, f"repaired frames {unique_numbers[:20]}"
-    finally:
-        safe_rmtree(staged_dir, missing_ok=True)
-
-
-def _repair_full_frame_cache(
-    video: VideoFile,
-    *,
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    target = _resolve_full_frame_cache_repair_target(
-        video,
-        dry_run=dry_run,
-    )
-    if isinstance(target, str):
-        return 0, target
-    ensure_directory(target.frame_dir.parent, dir_mode=FRAME_CACHE_DIR_MODE)
-    replacement = _FullFrameCacheReplacement(
-        frame_dir=target.frame_dir,
-        staged_dir=_staged_frame_dir(target.frame_dir, video),
-    )
-    try:
-        _extract_and_validate_full_frame_cache(
-            video,
-            target=target,
-            replacement=replacement,
-            ext=ext,
-        )
-        _install_full_frame_cache(replacement, ext=ext)
-        _persist_full_frame_cache_records(
-            video,
-            expected_count=target.expected_count,
-            ext=ext,
-        )
-        if replacement.replaced_dir is not None:
-            safe_rmtree(replacement.replaced_dir, missing_ok=True)
-        return target.expected_count, "replaced frame cache atomically"
-    except Exception:
-        _restore_full_frame_cache(replacement)
-        raise
-
-
-def _resolve_full_frame_cache_repair_target(
-    video: VideoFile,
-    *,
-    dry_run: bool,
-) -> _FullFrameCacheRepairTarget | str:
-    frame_dir = get_video_frame_dir_path(video)
-    if frame_dir is None:
-        return "frame_dir unavailable"
-    expected_count = _expected_frame_count(video)
-    if expected_count is None:
-        return "expected frame count unavailable"
-    if dry_run:
-        return "would replace frame cache atomically"
-    return _FullFrameCacheRepairTarget(
-        frame_dir=frame_dir,
-        expected_count=expected_count,
-    )
-
-
-def _extract_and_validate_full_frame_cache(
-    video: VideoFile,
-    *,
-    target: _FullFrameCacheRepairTarget,
-    replacement: _FullFrameCacheReplacement,
-    ext: str,
-) -> None:
-    extracted_paths = extract_full_frame_set_to_directory(
-        video,
-        output_dir=replacement.staged_dir,
-        from_processed=_use_processed_for_frame_repair(video),
-        ext=ext,
-    )
-    extracted_paths = _normalize_full_extraction_paths(
-        extracted_paths,
-        frame_dir=replacement.staged_dir,
-        ext=ext,
-    )
-    apply_frame_file_modes(extracted_paths)
-    expected_names = {
-        _expected_relative_path(frame_number, ext)
-        for frame_number in range(target.expected_count)
-    }
-    actual_names = {
-        path.name
-        for path in replacement.staged_dir.glob(f"frame_*.{ext}")
-        if path.is_file()
-    }
-    if actual_names == expected_names:
-        return
-    missing = sorted(expected_names - actual_names)
-    extra = sorted(actual_names - expected_names)
-    raise RuntimeError(
-        "staged full cache does not match expected frame set: "
-        f"missing_sample={missing[:10]}, extra_sample={extra[:10]}"
-    )
-
-
-def _install_full_frame_cache(
-    replacement: _FullFrameCacheReplacement,
-    *,
-    ext: str,
-) -> None:
-    if replacement.frame_dir.exists():
-        replacement.replaced_dir = _staged_replacement_dir(replacement.frame_dir)
-        atomic_move_path(
-            source=replacement.frame_dir,
-            destination=replacement.replaced_dir,
-        )
-        apply_frame_cache_dir_mode(replacement.replaced_dir)
-    atomic_move_path(
-        source=replacement.staged_dir,
-        destination=replacement.frame_dir,
-    )
-    apply_frame_cache_dir_mode(replacement.frame_dir)
-    apply_frame_file_modes(replacement.frame_dir.glob(f"frame_*.{ext}"))
-    replacement.installed_new_cache = True
-
-
-def _persist_full_frame_cache_records(
-    video: VideoFile,
-    *,
-    expected_count: int,
-    ext: str,
-) -> None:
-    with transaction.atomic():
-        _sync_extracted_frame_records(
-            video,
-            frame_numbers=list(range(expected_count)),
-            ext=ext,
-        )
-        state = get_or_create_video_state(video)
-        state.frames_initialized = True
-        state.frame_count = expected_count
-        state.mark_frames_extracted(save=False)
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-                "date_modified",
-            ]
-        )
-
-
-def _restore_full_frame_cache(
-    replacement: _FullFrameCacheReplacement,
-) -> None:
-    safe_rmtree(replacement.staged_dir, missing_ok=True)
-    replaced_dir = replacement.replaced_dir
-    if replaced_dir is not None and replaced_dir.exists():
-        _restore_replaced_full_frame_cache(replacement, replaced_dir=replaced_dir)
-    elif replacement.installed_new_cache and replacement.frame_dir.exists():
-        safe_rmtree(replacement.frame_dir, missing_ok=True)
-
-
-def _restore_replaced_full_frame_cache(
-    replacement: _FullFrameCacheReplacement,
-    *,
-    replaced_dir: Path,
-) -> None:
-    if replacement.frame_dir.exists():
-        safe_rmtree(replacement.frame_dir, missing_ok=True)
-    atomic_move_path(source=replaced_dir, destination=replacement.frame_dir)
-
-
-def _repair_complete_frame_cache_db_contract(
-    video: VideoFile,
-    *,
-    expected_count: int,
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    if dry_run:
-        return 0, "would sync extracted frame DB rows from complete disk cache"
-
-    frame_numbers = list(range(expected_count))
-    with transaction.atomic():
-        synced_count = _sync_extracted_frame_records(
-            video,
-            frame_numbers=frame_numbers,
-            ext=ext,
-        )
-        state = get_or_create_video_state(video)
-        state.frames_initialized = True
-        state.frame_count = expected_count
-        state.mark_frames_extracted(save=False)
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-                "date_modified",
-            ]
-        )
-    return synced_count, "synced extracted frame DB rows from complete disk cache"
-
-
 def repair_frame_cache(
     video: VideoFile,
     classification: FrameCacheClassification,
@@ -1223,77 +885,10 @@ def repair_frame_cache(
     dry_run: bool,
     requested_frame_numbers: tuple[int, ...] = (),
 ) -> tuple[int, FrameCacheClassification]:
-    repaired = 0
-    action = "skipped"
-    detail = ""
-    requested = sorted(set(requested_frame_numbers))
-
-    if (
-        classification.cache_complete
-        and not classification.db_extracted_frame_contract_valid
-        and classification.expected_count is not None
-    ):
-        repaired, detail = _repair_complete_frame_cache_db_contract(
-            video,
-            expected_count=classification.expected_count,
-            dry_run=dry_run,
-        )
-        action = "sync_db_from_complete_cache"
-    elif classification.cache_complete:
-        action = "none"
-        detail = "cache already complete"
-    elif classification.cache_missing and not requested:
-        action = "skipped"
-        detail = "missing cache is not repaired without explicit frame numbers"
-    elif classification.cache_missing and requested:
-        repaired, detail = _repair_specific_frames(
-            video,
-            frame_numbers=requested,
-            dry_run=dry_run,
-        )
-        action = "repair_specific_frames"
-    elif classification.cache_shifted:
-        if classification.has_manual_annotations:
-            action = "manual_review_required"
-            detail = "shifted cache has manual annotations"
-        else:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-    elif classification.cache_corrupt:
-        if classification.has_manual_annotations:
-            action = "manual_review_required"
-            detail = "corrupt cache has manual annotations"
-        else:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-    else:
-        frame_numbers = sorted(
-            set(classification.missing_frame_numbers) | set(requested)
-        )
-        if frame_numbers:
-            repaired, detail = _repair_specific_frames(
-                video,
-                frame_numbers=frame_numbers,
-                dry_run=dry_run,
-            )
-            action = "repair_specific_frames"
-        elif (
-            classification.unexpected_file_names
-            and classification.has_manual_annotations
-        ):
-            action = "manual_review_required"
-            detail = "partial cache has unexpected files and manual annotations"
-        elif classification.unexpected_file_names:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-        else:
-            action = "none"
-            detail = "no repairable cache issue"
-
-    classification.repair_action = action
-    classification.repair_detail = detail
-    classification.repaired_frames = repaired
-    return repaired, classification
+    """Legacy caches may be inspected, but must not be regenerated."""
+    raise ValueError(
+        "Frame cache repair is retired. Use video frame streaming or an explicit frame export."
+    )
 
 
 def _is_valid_fps(value: Any) -> bool:
@@ -1639,7 +1234,7 @@ def _processed_hash_matches_after_repair(
 ) -> tuple[bool, int]:
     if not _repair_processed_metadata_from_streamable(video, dry_run=dry_run):
         return False, 0
-    actual_hash = expected_hash if dry_run else _field_hash(video.processed_file)
+    actual_hash = expected_hash if dry_run else get_file_hash(video.processed_file)
     return actual_hash == expected_hash, 1
 
 
@@ -1676,7 +1271,7 @@ def _reconcile_processed_hash(
     report: dict[str, Any],
 ) -> tuple[int, bool]:
     expected_hash = (video.processed_video_hash or "").strip()
-    actual_hash = _field_hash(video.processed_file)
+    actual_hash = get_file_hash(video.processed_file)
     if not expected_hash:
         repaired = _persist_missing_processed_hash(
             video,
@@ -1855,7 +1450,7 @@ def reconcile_video_integrity(
     lost = 0
     report: dict[str, Any] = {
         "video_id": video.pk,
-        "video_hash": str(video.video_hash),
+        "raw_video_hash": str(video.raw_video_hash),
     }
 
     existing_loss = _mark_existing_integrity_loss(
@@ -1942,7 +1537,7 @@ def reconcile_upload_job_integrity(
     if not upload_path.is_file():
         return repaired, lost, report
 
-    actual_hash = _field_hash(upload_job.file)
+    actual_hash = get_file_hash(upload_job.file)
     expected_hash = (upload_job.content_hash or "").strip()
     if not expected_hash:
         if not dry_run:

@@ -15,9 +15,6 @@ from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.media_integrity import reconcile_media_integrity
 from endoreg_db.services.streamable_media import (
-    STREAMABLE_PROCESSED_VIDEO_ROOT,
-    STREAMABLE_RAW_VIDEO_ROOT,
-    STREAMABLE_VIDEO_ROOT,
     sync_video_streamable_artifacts,
 )
 from endoreg_db.utils.file_operations import (
@@ -25,9 +22,9 @@ from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils.paths import data_paths
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -87,7 +84,10 @@ class ReconciliationService:
     def clear_stale_lock_files(self) -> int:
         """Retain local lock files; age is not authoritative ownership evidence."""
 
-        for root in (data_paths["import_video"], data_paths["import_report"]):
+        for root in (
+            get_runtime_paths().import_video,
+            get_runtime_paths().import_report,
+        ):
             for lock_path in Path(root).glob("*.lock"):
                 logger.warning(
                     "Retaining local import lock during reconciliation because "
@@ -101,17 +101,17 @@ class ReconciliationService:
 
         removed = 0
         reproducible_cache_roots = {
-            STREAMABLE_VIDEO_ROOT,
-            STREAMABLE_RAW_VIDEO_ROOT,
-            STREAMABLE_PROCESSED_VIDEO_ROOT,
+            get_runtime_paths().streamable_videos_raw_media,
+            get_runtime_paths().streamable_videos_processed_media,
+            get_runtime_paths().streamable_videos_root,
         }
         scan_dirs = (
-            Path(data_paths["sensitive_video"]),
-            Path(data_paths["anonym_video"]),
-            Path(data_paths["transcoding"]),
-            STREAMABLE_VIDEO_ROOT,
-            STREAMABLE_RAW_VIDEO_ROOT,
-            STREAMABLE_PROCESSED_VIDEO_ROOT,
+            get_runtime_paths().sensitive_video,
+            get_runtime_paths().anonym_video,
+            get_runtime_paths().transcoding,
+            get_runtime_paths().streamable_videos_raw_media,
+            get_runtime_paths().streamable_videos_processed_media,
+            get_runtime_paths().streamable_videos_root,
         )
         for root in scan_dirs:
             if not root.exists():
@@ -144,13 +144,13 @@ class ReconciliationService:
         """Repair `VideoFile.raw_file` pointers whose referenced file is missing.
 
         The service first looks for deterministic candidates such as the
-        canonical `<video_hash>.<suffix>` name and then falls back to content
+        canonical `<raw_video_hash>.<suffix>` name and then falls back to content
         hash matches in the sensitive video directory. Ambiguous matches are
         skipped rather than guessed.
         """
 
         recovered = 0
-        sensitive_dir = Path(data_paths["sensitive_video"])
+        sensitive_dir = get_runtime_paths().sensitive_video
         unresolved: list[VideoFile] = []
         claimed_hashes: set[str] = set()
 
@@ -165,15 +165,15 @@ class ReconciliationService:
 
         hashed_candidates = self._build_content_hash_index(
             sensitive_dir=sensitive_dir,
-            target_hashes={str(video.video_hash) for video in unresolved},
+            target_hashes={str(video.raw_video_hash) for video in unresolved},
         )
 
         for video in unresolved:
-            video_hash = str(video.video_hash)
-            if video_hash in claimed_hashes:
+            raw_video_hash = str(video.raw_video_hash)
+            if raw_video_hash in claimed_hashes:
                 logger.warning(
                     "Skipping relink for video %s because that hash was already claimed in this reconciliation run.",
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
                 continue
 
@@ -206,15 +206,15 @@ class ReconciliationService:
             except Exception as exc:
                 logger.warning(
                     "Could not synchronize reconciled raw streamable artifact for video %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     exc,
                 )
 
             recovered += 1
-            claimed_hashes.add(video_hash)
+            claimed_hashes.add(raw_video_hash)
             logger.warning(
                 "Relinked raw file for video %s to %s",
-                video.video_hash,
+                video.raw_video_hash,
                 final_path,
             )
 
@@ -239,7 +239,7 @@ class ReconciliationService:
         for state in video_states:
             logger.warning(
                 "Retaining incomplete video processing state for fenced recovery: %s",
-                getattr(getattr(state, "video_file", None), "video_hash", None),
+                getattr(getattr(state, "video_file", None), "raw_video_hash", None),
             )
 
         pdf_states = RawPdfState.objects.select_related("raw_pdf_file").filter(
@@ -271,7 +271,7 @@ class ReconciliationService:
             video=video,
             sensitive_dir=sensitive_dir,
         )
-        content_matches = hashed_candidates.get(str(video.video_hash), [])
+        content_matches = hashed_candidates.get(str(video.raw_video_hash), [])
         competing_content_matches = [
             path
             for path in content_matches
@@ -304,7 +304,7 @@ class ReconciliationService:
         raw_name = Path(raw_file_name).name if raw_file_name else None
         suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
         canonical_path = (
-            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
+            sensitive_dir / f"{video.raw_video_hash}{suffix}" if suffix else None
         )
         return raw_name, canonical_path
 
@@ -322,7 +322,7 @@ class ReconciliationService:
             return canonical_path
         logger.warning(
             "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
-            video.video_hash,
+            video.raw_video_hash,
             canonical_path,
             [str(path) for path in competing_content_matches],
         )
@@ -357,7 +357,7 @@ class ReconciliationService:
         if len(content_matches) > 1:
             logger.warning(
                 "Multiple content-hash candidates found for video %s: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 [str(path) for path in content_matches],
             )
         return None
@@ -375,7 +375,7 @@ class ReconciliationService:
             if raw_name
             else (video.suffix or candidate.suffix or ".mp4")
         )
-        canonical_path = sensitive_dir / f"{video.video_hash}{suffix}"
+        canonical_path = sensitive_dir / f"{video.raw_video_hash}{suffix}"
         relative_name = str(Path(sensitive_dir.name) / canonical_path.name)
 
         if candidate == canonical_path:
@@ -388,7 +388,7 @@ class ReconciliationService:
         if canonical_path.exists():
             logger.warning(
                 "Cannot relink video %s because canonical path already exists: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 canonical_path,
             )
             return None, relative_name
@@ -470,7 +470,7 @@ class ReconciliationService:
             if not path.is_file() or self._should_skip_recovery_candidate(path):
                 continue
             try:
-                file_hash = sha256_file(path)
+                file_hash = get_file_hash(path)
             except OSError as exc:
                 logger.warning("Could not hash recovery candidate %s: %s", path, exc)
                 continue
@@ -505,7 +505,7 @@ class ReconciliationService:
             return False
 
     def _startup_lock(self):
-        lock_path = data_paths["storage"] / self.lock_filename
+        lock_path = get_runtime_paths().storage / self.lock_filename
         return _exclusive_lock(lock_path)
 
 

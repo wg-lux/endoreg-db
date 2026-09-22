@@ -74,7 +74,7 @@ def test_dismissal_preserves_source_history_and_media_and_is_idempotent(
         file=SimpleUploadedFile("retained.mp4", b"retained source"),
         error_detail="original technical evidence",
     )
-    video = VideoFile.objects.create(center=center, video_hash="source-identity")
+    video = VideoFile.objects.create(center=center, raw_video_hash="source-identity")
     ciphertext = Path(job.file.path).read_bytes()
     assert ciphertext.startswith(b"LXENC01")
     updated_at = job.updated_at

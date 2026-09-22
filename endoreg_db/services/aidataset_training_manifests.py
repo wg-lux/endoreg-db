@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import Literal, TYPE_CHECKING, Protocol, cast
 
 from django.db.models import Q, QuerySet
 from django.utils import timezone
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 
 class _LabelSetRelation(Protocol):
-    def values_list(self, *fields: str, flat: bool = False) -> Iterable[int]: ...
+    def values_list(self, *fields: str, flat: Literal[True]) -> Iterable[int]: ...
 
 
 class _TrainingLabel(Protocol):

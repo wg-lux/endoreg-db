@@ -287,7 +287,7 @@ def test_cleanup_requires_persisted_reconciler_receipt() -> None:
     )
     sample_video_file = VideoFile.objects.create(
         center=center,
-        video_hash="storage-cleanup-video-hash",
+        raw_video_hash="storage-cleanup-video-hash",
     )
     source, target = _placement_pair(artifact_kind=StorageArtifactKind.SIDECAR)
     source.media_lease_video = sample_video_file

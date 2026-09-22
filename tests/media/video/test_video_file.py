@@ -111,14 +111,14 @@ class VideoFileModelTest(TestCase):
             # Cleanup
             if video_file and video_file.pk:
                 logger.info(
-                    f"Cleaning up video file from test_initialize_video_specs (UUID: {video_file.video_hash})"
+                    f"Cleaning up video file from test_initialize_video_specs (UUID: {video_file.raw_video_hash})"
                 )
                 try:
                     # Reload from DB before deleting
                     video_to_delete = VideoFile.objects.get(pk=video_file.pk)
                     video_to_delete.delete_with_file()
                     logger.info(
-                        f"Successfully cleaned up video file (UUID: {video_file.video_hash})"
+                        f"Successfully cleaned up video file (UUID: {video_file.raw_video_hash})"
                     )
                 except VideoFile.DoesNotExist:
                     logger.warning(
@@ -126,6 +126,6 @@ class VideoFileModelTest(TestCase):
                     )
                 except Exception as e:
                     logger.error(
-                        f"Error during cleanup of video file (UUID: {video_file.video_hash}): {e}",
+                        f"Error during cleanup of video file (UUID: {video_file.raw_video_hash}): {e}",
                         exc_info=True,
                     )

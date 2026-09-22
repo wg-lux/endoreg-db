@@ -19,7 +19,7 @@ import logging
 from bisect import bisect_left, bisect_right
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol, TypeAlias, cast
+from typing import Any, Protocol, cast
 
 from django.db.models.fields.files import FieldFile
 from django.shortcuts import get_object_or_404
@@ -37,57 +37,52 @@ from lx_dtypes.models.contracts import (
 )
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import status
-from rest_framework.permissions import (
-    BasePermission,
-    OperandHolder,
-    SingleOperandHolder,
-)
 from rest_framework.request import Request
 from rest_framework.response import Response
-from endoreg_db.openapi import OpenApiAPIView as APIView
 
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.helpers.typing import CompositePermissionClass
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
     suppress_label_video_segment_state_side_effects,
 )
-from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_metadata import VideoMetadata
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
-from endoreg_db.services.label_video_segment_states import (
-    ensure_label_video_segment_states,
-)
 from endoreg_db.services.hls_media import get_ready_hls_artifact, hls_playlist_path
+from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.jobs.video_correction_jobs import (
     VideoAnonymizationCorrectionJobConfig,
     apply_video_anonymization_strategy,
     dispatch_video_anonymization_correction,
 )
-from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
+from endoreg_db.services.label_video_segment_states import (
+    ensure_label_video_segment_states,
+)
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_segment_validation_workflow import (
     mark_segment_annotations_stale,
 )
-from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.views.access_control import CenterScopedVideoPermission
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_hls_playlist_path,
 )
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
+from endoreg_db.utils.storage.files import canonical_media_name
+from endoreg_db.views.access_control import CenterScopedVideoPermission
 
 logger = logging.getLogger(__name__)
-
-PermissionClass: TypeAlias = type[BasePermission] | OperandHolder | SingleOperandHolder
 
 
 class ProcessingHistoryRecord(Protocol):
@@ -104,7 +99,9 @@ class ProcessingHistoryRecord(Protocol):
 
 
 try:
-    from lx_anonymizer import FrameCleaner as _FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
+    from lx_anonymizer import (
+        FrameCleaner as _FrameCleaner,  # pyright: ignore[reportMissingTypeStubs]
+    )
 
     FrameCleaner = cast(Any, _FrameCleaner)
 except ImportError as exc:  # pragma: no cover - exercised by dependency-light tests
@@ -128,13 +125,11 @@ def update_processed_file(video: VideoFile, output_path: Path) -> str:
         _save_video_update_fields(video, ["processed_file"])
         return str(processed_file.name)
 
-    canonical_path = (
-        path_utils.EndoregPathsModel.from_environment().anonym_video / output_path.name
-    )
+    canonical_path = get_runtime_paths().anonym_video / output_path.name
     stored_name = save_local_file(
         processed_file,
         output_path,
-        name=path_utils.to_storage_relative(canonical_path),
+        name=canonical_path.relative_to(get_runtime_paths().storage).as_posix(),
         save=False,
         overwrite=True,
     )
@@ -161,7 +156,7 @@ def _save_video_update_fields(video: VideoFile, update_fields: Sequence[str]) ->
 
 
 def _video_hash(video: VideoFile) -> str:
-    return str(cast(Any, video).video_hash)
+    return str(cast(Any, video).raw_video_hash)
 
 
 def _video_frame_count(video: VideoFile) -> int:
@@ -198,13 +193,17 @@ def _error_response(message: str, status_code: int) -> Response:
 
 
 def _masked_output_path(video: VideoFile) -> Path:
-    anonym_video_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
-    return ensure_directory(anonym_video_dir) / f"{_video_hash(video)}_masked.mp4"
+    anonym_video_dir = get_runtime_paths().anonym_video
+    return ensure_directory(anonym_video_dir) / canonical_media_name(
+        _video_hash(video), ".mp4", generation="masked"
+    )
 
 
 def _cleaned_output_path(video: VideoFile) -> Path:
-    anonym_video_dir = path_utils.EndoregPathsModel.from_environment().anonym_video
-    return ensure_directory(anonym_video_dir) / f"{_video_hash(video)}_cleaned.mp4"
+    anonym_video_dir = get_runtime_paths().anonym_video
+    return ensure_directory(anonym_video_dir) / canonical_media_name(
+        _video_hash(video), ".mp4", generation="cleaned"
+    )
 
 
 def _part_output_path(output_path: Path) -> Path:
@@ -226,7 +225,7 @@ class VideoCorrectionView(APIView):
     GET /api/video/media/video-correction/{id}/ - Get video details for correction
     """
 
-    permission_classes: Sequence[PermissionClass] = (
+    permission_classes: Sequence[CompositePermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
         CenterScopedVideoPermission,
@@ -241,7 +240,7 @@ class VideoCorrectionView(APIView):
 class VideoAnonymizationCorrectionView(APIView):
     """Select, apply, and audit a correction-time anonymization strategy."""
 
-    permission_classes: Sequence[PermissionClass] = (
+    permission_classes: Sequence[CompositePermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
         CenterScopedVideoPermission,
@@ -410,7 +409,9 @@ class VideoAnonymizationCorrectionView(APIView):
             or ("processor_region" if processed_name else "detector_assisted")
         )
         try:
-            from lx_anonymizer.config import settings as anonymizer_settings  # pyright: ignore[reportMissingTypeStubs]
+            from lx_anonymizer.config import (
+                settings as anonymizer_settings,  # pyright: ignore[reportMissingTypeStubs]
+            )
 
             model = {
                 "name": "YOLOv8n PHI region detector",
@@ -608,7 +609,7 @@ class VideoProcessingHistoryView(APIView):
         ]
     """
 
-    permission_classes: Sequence[PermissionClass] = (
+    permission_classes: Sequence[CompositePermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
         CenterScopedVideoPermission,
@@ -659,7 +660,7 @@ class VideoApplyMaskView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
 
-    permission_classes: Sequence[PermissionClass] = (
+    permission_classes: Sequence[CompositePermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
         CenterScopedVideoPermission,
@@ -812,7 +813,7 @@ class VideoRemoveFramesView(APIView):
     Note: Currently synchronous. Will be converted to Celery task in Phase 1.2.
     """
 
-    permission_classes: Sequence[PermissionClass] = (
+    permission_classes: Sequence[CompositePermissionClass] = (
         EnvironmentAwarePermission,
         PolicyPermission,
         CenterScopedVideoPermission,

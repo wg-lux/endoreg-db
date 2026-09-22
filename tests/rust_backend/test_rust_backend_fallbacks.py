@@ -2,14 +2,12 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 
-import hashlib
 from pathlib import Path
 from typing import NoReturn
 
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.file_operations import sha256_file
 from endoreg_db.utils.rust_backend import (
     parse_extracted_frame_numbers,
 )
@@ -17,16 +15,6 @@ from endoreg_db.utils.rust_backend import (
 
 def raise_bad_frame_count(*args: object, **kwargs: object) -> NoReturn:
     raise ValueError("bad frame count")
-
-
-def test_sha256_file_matches_python_hashlib(tmp_path: Path) -> None:
-    payload = (b"video-chunk-1234567890" * 4096) + b"tail"
-    test_file = tmp_path / "sample.bin"
-    test_file.write_bytes(payload)
-
-    expected = hashlib.sha256(payload).hexdigest()
-
-    assert sha256_file(test_file) == expected
 
 
 def test_render_single_page_pdf_returns_valid_pdf_bytes() -> None:

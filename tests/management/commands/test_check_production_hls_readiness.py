@@ -28,7 +28,7 @@ def _create_processed_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"hls-readiness-video-{payload.hex()}",
+        raw_video_hash=f"hls-readiness-video-{payload.hex()}",
     )
     cast(Any, video.processed_file).save(
         "hls-readiness-source.mp4",

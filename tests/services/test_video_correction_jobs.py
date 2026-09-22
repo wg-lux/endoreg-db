@@ -72,7 +72,7 @@ def test_correction_job_marks_success_only_after_processed_hls_is_ready(
 ) -> None:
     history = _History(_job_config().model_dump(mode="json"))
     raw_file = SimpleNamespace(name="raw/source.mp4")
-    video = SimpleNamespace(pk=11, video_hash="hash-11", raw_file=raw_file)
+    video = SimpleNamespace(pk=11, raw_video_hash="hash-11", raw_file=raw_file)
     events: list[str] = []
 
     monkeypatch.setattr(
@@ -139,7 +139,7 @@ def test_correction_job_fails_when_processed_hls_is_not_ready(
     history = _History(_job_config().model_dump(mode="json"))
     video = SimpleNamespace(
         pk=11,
-        video_hash="hash-11",
+        raw_video_hash="hash-11",
         raw_file=SimpleNamespace(name="raw/source.mp4"),
     )
     monkeypatch.setattr(
@@ -211,7 +211,7 @@ def test_detector_correction_missing_capability_never_publishes(
     history = _History(config.model_dump(mode="json"))
     video = SimpleNamespace(
         pk=11,
-        video_hash="hash-11",
+        raw_video_hash="hash-11",
         raw_file=SimpleNamespace(name="raw/source.mp4"),
     )
     output_path = tmp_path / "corrected.mp4"

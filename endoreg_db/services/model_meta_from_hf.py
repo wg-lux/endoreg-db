@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
 from django.db import IntegrityError, transaction
 
-from endoreg_db.models.utils import WEIGHTS_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.metadata.model_meta import ModelMeta
@@ -76,9 +76,7 @@ def _store_downloaded_weights(
         relative_name = str(weights.name)
 
     if not relative_name:
-        relative_name = (
-            f"{WEIGHTS_DIR.name}/{model_meta.name}_v{model_meta.version}.safetensors"
-        )
+        relative_name = f"{get_runtime_paths().weights.name}/{model_meta.name}_v{model_meta.version}.safetensors"
 
     try:
         with weights_path.open("rb") as source_file:

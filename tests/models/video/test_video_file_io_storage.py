@@ -13,9 +13,9 @@ from django.core.files.base import File
 from django.core.files.storage import default_storage
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
-from endoreg_db.services.video_files._io import (
-    _ensure_local_processed_file,
-    _ensure_local_raw_file,
+from endoreg_db.services.video_files.io import (
+    ensure_local_processed_video_file,
+    ensure_local_raw_video_file,
 )
 from endoreg_db.utils import delete_field_file
 
@@ -98,11 +98,11 @@ def video_with_files(
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"hash-{uuid.uuid4()}",
+        raw_video_hash=f"hash-{uuid.uuid4()}",
     )
 
-    raw_name = f"videos/{video.video_hash}_raw.mp4"
-    processed_name = f"anonym_videos/{video.video_hash}_processed.mp4"
+    raw_name = f"videos/{video.raw_video_hash}_raw.mp4"
+    processed_name = f"anonym_videos/{video.raw_video_hash}_processed.mp4"
 
     with video_asset_file.open("rb") as raw_handle:
         _field_file(video.raw_file).save(raw_name, File(raw_handle), save=True)
@@ -161,11 +161,11 @@ def test_delete_with_file_handles_pathless_storage(video_with_files: VideoFile):
     with (
         patch.object(video, "delete_frames", return_value="ok"),
         patch(
-            "endoreg_db.services.video_files._io._get_raw_file_path",
+            "endoreg_db.services.video_files.io.get_raw_video_file_path",
             return_value=None,
         ),
         patch(
-            "endoreg_db.services.video_files._io._get_processed_file_path",
+            "endoreg_db.services.video_files.io.get_processed_video_file_path",
             return_value=None,
         ),
     ):
@@ -183,7 +183,7 @@ def test_ensure_local_raw_file_downloads_without_path(video_with_files: VideoFil
     video = video_with_files
 
     with patch("endoreg_db.utils.storage._resolve_local_path", return_value=None):
-        with _ensure_local_raw_file(video) as local_path:
+        with ensure_local_raw_video_file(video) as local_path:
             assert local_path.exists()
             assert local_path.is_file()
             assert local_path.stat().st_size > 0
@@ -196,7 +196,7 @@ def test_ensure_local_processed_file_downloads_without_path(
     video = video_with_files
 
     with patch("endoreg_db.utils.storage._resolve_local_path", return_value=None):
-        with _ensure_local_processed_file(video) as local_path:
+        with ensure_local_processed_video_file(video) as local_path:
             assert local_path.exists()
             assert local_path.is_file()
             assert local_path.stat().st_size > 0

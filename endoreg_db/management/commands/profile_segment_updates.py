@@ -374,7 +374,7 @@ def _resolve_video(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"profile-segment-updates-{uuid4().hex}",
+        raw_video_hash=f"profile-segment-updates-{uuid4().hex}",
         original_file_name="profile_segment_updates.mp4",
         fps=options.fps,
         frame_count=frame_count,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -27,13 +28,13 @@ def isolated_hash_cache() -> None:
 
 @pytest.fixture
 def encrypted_source(tmp_path: Path) -> FieldFile:
-    storage = EncryptedStorage(location=tmp_path, master_key=b"k" * 32)
+    storage = EncryptedStorage(location=tmp_path)
     name = storage.save("source.mp4", ContentFile(b"original source"))
     return FieldFile(VideoFile(), models.FileField(storage=storage), name)
 
 
 def test_unchanged_generation_is_hashed_once(encrypted_source: FieldFile) -> None:
-    with patch.object(hashes, "get_video_hash", wraps=hashes.get_video_hash) as read:
+    with patch.object(hashes, "get_file_hash", wraps=hashes.get_file_hash) as read:
         first = hashes.verified_video_source_hash(encrypted_source)
         assert hashes.verified_video_source_hash(encrypted_source) == first
     assert first == hashlib.sha256(b"original source").hexdigest()
@@ -42,7 +43,7 @@ def test_unchanged_generation_is_hashed_once(encrypted_source: FieldFile) -> Non
 
 def test_concurrent_requests_share_verification(encrypted_source: FieldFile) -> None:
     with (
-        patch.object(hashes, "get_video_hash", wraps=hashes.get_video_hash) as read,
+        patch.object(hashes, "get_file_hash", wraps=hashes.get_file_hash) as read,
         ThreadPoolExecutor(max_workers=4) as pool,
     ):
         results = list(
@@ -81,7 +82,7 @@ def test_missing_source_does_not_reuse_hash(encrypted_source: FieldFile) -> None
 
 
 def test_mutation_during_hash_is_rejected(encrypted_source: FieldFile) -> None:
-    read = hashes.get_video_hash
+    read = hashes.get_file_hash
 
     def mutate(source: FieldFile) -> str:
         digest = read(source)
@@ -89,18 +90,19 @@ def test_mutation_during_hash_is_rejected(encrypted_source: FieldFile) -> None:
         return digest
 
     with (
-        patch.object(hashes, "get_video_hash", side_effect=mutate),
+        patch.object(hashes, "get_file_hash", side_effect=mutate),
         pytest.raises(VideoStorageNormalizationError, match="generation changed"),
     ):
         hashes.verified_video_source_hash(encrypted_source)
     assert not hashes._cache
 
 
-def test_different_storage_key_cannot_reuse_hash(encrypted_source: FieldFile) -> None:
+def test_different_storage_key_cannot_reuse_hash(
+    encrypted_source: FieldFile, monkeypatch: pytest.MonkeyPatch
+) -> None:
     hashes.verified_video_source_hash(encrypted_source)
-    storage = EncryptedStorage(
-        location=Path(encrypted_source.path).parent, master_key=b"x" * 32
-    )
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", base64.b64encode(b"x" * 32).decode())
+    storage = EncryptedStorage(location=Path(encrypted_source.path).parent)
     source = FieldFile(
         VideoFile(), models.FileField(storage=storage), encrypted_source.name
     )
@@ -115,7 +117,7 @@ def test_cache_is_bounded_and_eviction_reverifies(
     storage = encrypted_source.storage
     other_name = storage.save("other.mp4", ContentFile(b"other source"))
     other = FieldFile(VideoFile(), models.FileField(storage=storage), other_name)
-    with patch.object(hashes, "get_video_hash", wraps=hashes.get_video_hash) as read:
+    with patch.object(hashes, "get_file_hash", wraps=hashes.get_file_hash) as read:
         hashes.verified_video_source_hash(encrypted_source)
         hashes.verified_video_source_hash(other)
         hashes.verified_video_source_hash(encrypted_source)
@@ -127,14 +129,14 @@ def test_other_storage_retains_full_verification(tmp_path: Path) -> None:
     storage = FileSystemStorage(location=tmp_path)
     name = storage.save("source.mp4", ContentFile(b"source"))
     source = FieldFile(VideoFile(), models.FileField(storage=storage), name)
-    with patch.object(hashes, "get_video_hash", wraps=hashes.get_video_hash) as read:
+    with patch.object(hashes, "get_file_hash", wraps=hashes.get_file_hash) as read:
         hashes.verified_video_source_hash(source)
         hashes.verified_video_source_hash(source)
     assert read.call_count == 2
 
 
 def test_fork_reset_requires_fresh_verification(encrypted_source: FieldFile) -> None:
-    with patch.object(hashes, "get_video_hash", wraps=hashes.get_video_hash) as read:
+    with patch.object(hashes, "get_file_hash", wraps=hashes.get_file_hash) as read:
         hashes.verified_video_source_hash(encrypted_source)
         hashes._reset_after_fork()
         hashes.verified_video_source_hash(encrypted_source)

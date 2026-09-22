@@ -40,10 +40,7 @@ from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     get_default_video_storage_mode_value,
 )
-from endoreg_db.utils.paths import (
-    ANONYM_VIDEO_DIR,
-    SENSITIVE_VIDEO_DIR,
-)
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from endoreg_db.schemas import validate_video_file_meta_payload
@@ -91,8 +88,6 @@ def get_default_joined_dataset_id() -> int:
 
 
 if TYPE_CHECKING:
-    from django.db.models.fields.files import FieldFile
-
     from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
     )
@@ -134,30 +129,34 @@ class VideoFile(models.Model):
     default_fps: float = DEFAULT_VIDEO_FPS
     use_default_fps = True
 
-    raw_file: models.FileField = models.FileField(
-        upload_to=SENSITIVE_VIDEO_DIR.name,  # Use .name for relative path
-        storage=LazyEncryptedStorage(),
-        validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        null=True,
-        blank=True,
-    )
-    processed_file: models.FileField = models.FileField(
-        max_length=500,
-        upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
-        storage=LazyEncryptedStorage(),
-        validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        null=True,
-        blank=True,
-    )
+    if TYPE_CHECKING:
+        raw_file: VideoArtifactFieldFile
+        processed_file: VideoArtifactFieldFile
+    else:
+        raw_file: models.FileField = models.FileField(
+            upload_to=get_runtime_paths().sensitive_video.name,  # Use .name for relative path
+            storage=LazyEncryptedStorage(),
+            validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
+            null=True,
+            blank=True,
+        )
+        processed_file: models.FileField = models.FileField(
+            max_length=500,
+            upload_to=get_runtime_paths().anonym_video.name,  # Use .name for relative path
+            storage=LazyEncryptedStorage(),
+            validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
+            null=True,
+            blank=True,
+        )
 
-    raw_file.attr_class = VideoArtifactFieldFile
-    processed_file.attr_class = VideoArtifactFieldFile
+        raw_file.attr_class = VideoArtifactFieldFile
+        processed_file.attr_class = VideoArtifactFieldFile
 
     uuid: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
         default=uuid_lib.uuid4, unique=True, editable=False
     )
 
-    video_hash: models.CharField[str, Any] = models.CharField(
+    raw_video_hash: models.CharField[str, Any] = models.CharField(
         max_length=255, unique=True, help_text="Hash of the raw video file."
     )
     processed_video_hash: models.CharField[str | None, Any] = models.CharField(
@@ -352,7 +351,7 @@ class VideoFile(models.Model):
         return ensure_local_processed_video_file(self)
 
     @property
-    def active_raw_file(self) -> "FieldFile":
+    def active_raw_file(self) -> "VideoArtifactFieldFile":
         from endoreg_db.services.video_files import get_active_raw_video_file
 
         return get_active_raw_video_file(self)
@@ -568,10 +567,10 @@ class VideoFile(models.Model):
 
         return get_video_base_frame_dir(self)
 
-    def set_frame_dir(self, force_update: bool = False) -> None:
+    def set_frame_dir(self) -> Path:
         from endoreg_db.services.video_files import set_video_frame_dir
 
-        return set_video_frame_dir(self, force_update=force_update)
+        return set_video_frame_dir(self)
 
     def get_frame_dir_path(self) -> Path | None:
         from endoreg_db.services.video_files import get_video_frame_dir_path
@@ -618,29 +617,10 @@ class VideoFile(models.Model):
 
         return anonymize_video_file(self, delete_original_raw=delete_original_raw)
 
-    def _create_anonymized_frame_files(
-        self,
-        anonymized_frame_dir: Path,
-        endo_roi: dict[str, int],
-        frames: models.QuerySet["Frame"],
-        outside_frame_numbers: set[int],
-        censor_color: tuple[int, int, int] = (0, 0, 0),
-    ) -> list[Path]:
-        from endoreg_db.services.video_files import create_anonymized_video_frame_files
-
-        return create_anonymized_video_frame_files(
-            self,
-            anonymized_frame_dir=anonymized_frame_dir,
-            endo_roi=endo_roi,
-            frames=frames,
-            outside_frame_numbers=outside_frame_numbers,
-            censor_color=censor_color,
-        )
-
-    def _cleanup_raw_assets(self, video_hash: str) -> None:
+    def _cleanup_raw_assets(self, raw_video_hash: str) -> None:
         from endoreg_db.services.video_files import cleanup_video_raw_assets
 
-        return cleanup_video_raw_assets(video_hash)
+        return cleanup_video_raw_assets(raw_video_hash)
 
     def predict_video(
         self,
@@ -694,7 +674,7 @@ class VideoFile(models.Model):
         return bool(self.raw_file and self.raw_file.name)
 
     @property
-    def active_file(self) -> "FieldFile":
+    def active_file(self) -> "VideoArtifactFieldFile":
         from endoreg_db.services.video_files import get_active_video_file
 
         return get_active_video_file(self)
@@ -733,7 +713,7 @@ class VideoFile(models.Model):
         file_path: str | Path,
         center_name: str,
         processor_name: str | None,
-        video_hash: str,
+        raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
     ) -> "VideoFile":
@@ -750,7 +730,7 @@ class VideoFile(models.Model):
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             save_video_file=save_video_file,
             initialize=initialize,
             model_cls=cls,
@@ -793,7 +773,7 @@ class VideoFile(models.Model):
         state = (
             "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
         )
-        return f"VideoFile ({state}): {file_name} (UUID: {self.video_hash})"
+        return f"VideoFile ({state}): {file_name} (UUID: {self.raw_video_hash})"
 
     # --- Convenience state/meta helpers used in tests and admin workflows ---
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> "VideoFile":
@@ -956,7 +936,7 @@ class VideoFile(models.Model):
         file_type: str,
         *,
         materialize_if_missing: bool = False,
-    ) -> tuple["FieldFile", Path | None]:
+    ) -> tuple["VideoArtifactFieldFile", Path | None]:
         from endoreg_db.services.video_files import (
             parse_video_artifact_kind,
             resolve_video_stream_source,

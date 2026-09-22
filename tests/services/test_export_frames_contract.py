@@ -93,7 +93,7 @@ class _VideoState:
 @dataclass
 class _VideoDouble:
     pk: int
-    video_hash: str = "raw-hash"
+    raw_video_hash: str = "raw-hash"
     raw_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     processed_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     active_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
@@ -138,7 +138,7 @@ def test_export_videos_prefers_processed_artifact_over_raw(
 
     video = _VideoDouble(
         pk=7,
-        video_hash="raw-hash",
+        raw_video_hash="raw-hash",
         raw_file=_NamedFile(
             name=raw_path.relative_to(storage_dir).as_posix(),
         ),
@@ -174,7 +174,7 @@ def test_export_videos_prefers_processed_artifact_over_raw(
     )
 
     assert exported_count == 1
-    exported_file = output_dir / f"video_{video.pk}_{video.video_hash}.mp4"
+    exported_file = output_dir / f"{video.raw_video_hash}.mp4"
     assert exported_file.read_bytes() == b"processed-video-bytes"
 
 
@@ -238,7 +238,7 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     video = VideoFile.objects.create(
         center=center,
         state=state,
-        video_hash="pts-export-video",
+        raw_video_hash="pts-export-video",
         fps=timeline.fps,
         duration=timeline.duration_seconds,
         frame_count=timeline.frame_count,
@@ -311,7 +311,7 @@ def test_export_videos_rejects_unvalidated_media(
 ) -> None:
     video = _VideoDouble(
         pk=7,
-        video_hash="raw-hash",
+        raw_video_hash="raw-hash",
         processed_file=_NamedFile(name="processed-final.mp4"),
         state=_VideoState(anonymization_validated=False),
     )

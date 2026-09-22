@@ -21,7 +21,7 @@ class FrameExtractionJobsTest(TestCase):
         )
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"frame-extraction-video-{uuid.uuid4().hex}",
+            raw_video_hash=f"frame-extraction-video-{uuid.uuid4().hex}",
             frame_count=20,
             original_file_name="frame_extraction_test.mp4",
         )

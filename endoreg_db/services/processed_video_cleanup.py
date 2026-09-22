@@ -26,13 +26,13 @@ from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
 )
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.filesystem.file_operations import (
     safe_delete_field_file,
     safe_rmtree,
     safe_unlink_file,
 )
-from endoreg_db.utils.paths import EndoregPathsModel, to_protected_media_relative
+from endoreg_db.utils.paths import get_runtime_paths, to_protected_media_relative
 
 logger = logging.getLogger(__name__)
 
@@ -162,16 +162,18 @@ def _old_master(
     if receipt.source_kind == "legacy_streamable":
         return _old_streamable(video, receipt)
     field = FieldFile(video, video.processed_file.field, receipt.source_name)
-    root = EndoregPathsModel.from_environment().anonym_video
+    root = get_runtime_paths().anonym_video
+
     path = _owned_path(Path(field.path), root)
+
     relative = path.relative_to(root).as_posix()
-    identity = re.escape(str(video.video_hash))
-    pattern = rf"(?:{identity}\.mp4|\.generations/{identity}-[0-9a-f]{{32}}\.mp4|{identity}\.[0-9a-f]{{64}}\.mp4|[0-9a-f]{{64}}\.[0-9a-f]{{32}}\.mp4)"
+    identity = re.escape(str(video.raw_video_hash))
+    pattern = rf"(?:{identity}\.mp4|\.generations/{identity}-[0-9a-f]{{32}}\.mp4|(?:\.generations/)?{identity}\.(?:[0-9a-f]{{32}}|[0-9a-f]{{64}})\.mp4|[0-9a-f]{{64}}\.[0-9a-f]{{32}}\.mp4)"
     if re.fullmatch(pattern, relative) is None:
         raise ValueError("Previous file is not an owned generated processed master")
     if (
         field.storage.exists(receipt.source_name)
-        and sha256_file(field) != receipt.source_sha256
+        and get_file_hash(field) != receipt.source_sha256
     ):
         raise ValueError("Previous master digest differs from the cleanup receipt")
     return field
@@ -180,27 +182,26 @@ def _old_master(
 def _old_streamable(
     video: VideoFile, receipt: ProcessedGenerationCleanupReceipt
 ) -> Path:
-    from endoreg_db.services import streamable_media
+    root = get_runtime_paths().streamable_videos_processed_media
 
-    root = streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
     path = _owned_path(root / Path(receipt.source_name).name, root)
+
     if (
         to_protected_media_relative(path) != receipt.source_name
         or re.fullmatch(
-            rf"{re.escape(str(video.video_hash))}(?:\.[a-zA-Z0-9_-]+)?\.mp4", path.name
+            rf"{re.escape(str(video.raw_video_hash))}(?:\.[a-zA-Z0-9_-]+)?\.mp4",
+            path.name,
         )
         is None
     ):
         raise ValueError("Legacy playback identity is not owned by this video")
-    if path.exists() and sha256_file(path) != receipt.source_sha256:
+    if path.exists() and get_file_hash(path) != receipt.source_sha256:
         raise ValueError("Legacy playback digest differs from its cleanup receipt")
     return path
 
 
 def _old_hls_paths(video: VideoFile, artifacts: list[VideoHlsArtifact]) -> list[Path]:
-    from endoreg_db.services import streamable_media
-
-    root = streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT / "hls"
+    root = get_runtime_paths().streamable_videos_processed_media / "hls"
     paths: list[Path] = []
     for artifact in artifacts:
         directory = _owned_path(
@@ -313,7 +314,7 @@ def _cleanup_processed_video_generations_owned(
 
     try:
         ready = get_ready_hls_artifact(video=video, artifact_kind="processed")
-        digest = sha256_file(video.processed_file)
+        digest = get_file_hash(video.processed_file)
     except (FileNotFoundError, VideoHlsArtifact.DoesNotExist):
         return result
     if (

@@ -16,7 +16,7 @@ def _get_frame_path(video: "VideoFile", frame_number: int) -> Optional[Path]:
     if not target_dir:
         logger.warning(
             "Cannot get frame path for video %s: Frame directory not set.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return None
 

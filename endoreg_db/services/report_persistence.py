@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.storage.files import canonical_media_name
+from endoreg_db.utils.storage.report_fields import (
+    ReportArtifactFieldFile,
+    report_staging_path,
+)
+from endoreg_db.utils.file_operations import get_file_hash, atomic_write_file
+
 import json
-import re
-import tempfile
 from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, time
-from pathlib import Path
+from datetime import date, datetime
 from typing import Protocol, cast
 
 from django.contrib.auth import get_user_model
@@ -18,14 +21,10 @@ from django.utils import timezone
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
-from lx_dtypes.models.interface.KnowledgeBaseResolver import (
-    KnowledgeBaseRegistryError,
-    KnowledgeBaseVersionNotFoundError,
-    get_knowledge_base_identity,
-)
+from lx_dtypes.terminology.terminology_loader import load_module_kb
+from lx_dtypes.terminology.terminology_service import TerminologyError
 
 from endoreg_db.models.administration.center.center import Center
-from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
@@ -71,10 +70,6 @@ class ReportKnowledgeBaseRegistryUnavailableError(RuntimeError):
     """Deployment-owned knowledge-base resolution is unavailable."""
 
 
-class _IdentifiedLike(Protocol):
-    id: int
-
-
 class _PatientContextLike(Protocol):
     dob: date | None
     first_name: str
@@ -85,12 +80,6 @@ class _PatientContextLike(Protocol):
     center: Center | None
 
     def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _WritableFileLike(Protocol):
-    def save(
-        self, name: str, content: ContentFile[bytes], save: bool = True
-    ) -> None: ...
 
 
 class _PatientExaminationReportLike(Protocol):
@@ -114,34 +103,6 @@ class _PatientExaminationReportLike(Protocol):
     updated_by: AuthUser | None
     finalized_at: datetime | None
     finalized_by: AuthUser | None
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _AnonymExaminationReportLike(Protocol):
-    pk: int | None
-    patient_examination: PatientExamination | None
-    patient: Patient | None
-    center: Center | None
-    text: str | None
-    meta: Mapping[str, object] | None
-    date: date | None
-    time: time | None
-    file: _WritableFileLike
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _RawPdfFileLike(Protocol):
-    pk: int | None
-    pdf_hash: str
-    patient: Patient | None
-    examination: PatientExamination | None
-    center: Center | None
-    text: str | None
-    raw_meta: PdfFileMetaJsonObject | None
-    anonym_examination_report: AnonymExaminationReport | None
-    file: _WritableFileLike
 
     def save(self, *args: object, **kwargs: object) -> None: ...
 
@@ -176,11 +137,6 @@ def _normalize_pdf_meta_payload(
 ) -> PdfFileMetaJsonObject:
     validated_pdf_meta = validate_raw_pdf_meta_payload(value)
     return cast(PdfFileMetaJsonObject, validated_pdf_meta or {})
-
-
-def _safe_file_component(value: str, *, fallback: str = "report") -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", (value or "").strip()).strip("._")
-    return cleaned or fallback
 
 
 def _escape_pdf_text(text: str) -> str:
@@ -271,12 +227,10 @@ def persist_report_pdf_artifact(
     )
     patient = patient_obj
     patient_ref = cast(_PatientContextLike, patient)
-    patient_examination_ref = cast(_IdentifiedLike, patient_examination)
     center = patient_ref.center
     report_date = patient_examination.date_start
 
     report_id = report_ref.id
-    patient_examination_id = patient_examination_ref.id
     report_language = report_ref.language
     report_title = report_ref.title or (
         f"{report_ref.template_name} Befundbericht"
@@ -304,33 +258,34 @@ def persist_report_pdf_artifact(
         None if patient_identity is None else dict(patient_identity)
     )
 
-    pdf_bytes: bytes
-    try:
-        from endoreg_db.services.report_pdf_renderer import (
-            build_report_template_pdf_payload,
-            render_pdf_with_rust_renderer,
-        )
+    with report_staging_path() as out_path:
+        try:
+            from endoreg_db.services.report_pdf_renderer import (
+                build_report_template_pdf_payload,
+                render_pdf_with_rust_renderer,
+            )
 
-        payload = build_report_template_pdf_payload(
-            report=report,
-            patient_examination=patient_examination,
-            section_blocks=renderer_section_blocks,
-            frame_image_paths=frame_image_paths,
-            frame_captions=frame_captions,
-            patient_identity=renderer_patient_identity,
-        )
-        with tempfile.TemporaryDirectory(prefix="endoreg_report_pdf_") as tmp_dir:
-            out_path = Path(tmp_dir) / "report.pdf"
+            payload = build_report_template_pdf_payload(
+                report=report,
+                patient_examination=patient_examination,
+                section_blocks=renderer_section_blocks,
+                frame_image_paths=frame_image_paths,
+                frame_captions=frame_captions,
+                patient_identity=renderer_patient_identity,
+            )
             render_pdf_with_rust_renderer(payload, output_path=out_path)
-            pdf_bytes = out_path.read_bytes()
-    except Exception:
-        if strict_renderer:
-            raise
-        pdf_bytes = _render_minimal_pdf_bytes(
-            title=report_title,
-            body_text=pdf_body,
-        )
-    pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        except Exception:
+            if strict_renderer:
+                raise
+            atomic_write_file(
+                destination=out_path,
+                content=[
+                    _render_minimal_pdf_bytes(title=report_title, body_text=pdf_body)
+                ],
+                file_mode=0o600,
+            )
+        pdf_hash = get_file_hash(out_path)
+        pdf_bytes = out_path.read_bytes()
 
     full_report = AnonymExaminationReport.objects.filter(
         meta__patient_examination_report_id=report_id
@@ -341,22 +296,18 @@ def persist_report_pdf_artifact(
             patient=patient,
             center=center,
         )
-    full_report_ref = cast(_AnonymExaminationReportLike, full_report)
-    full_report_ref.patient = patient
-    full_report_ref.center = center
-    full_report_ref.text = pdf_body
-    full_report_ref.meta = pdf_meta
-    full_report_ref.date = report_date
-    full_report_ref.time = None
+    full_report.patient = patient
+    full_report.center = center
+    full_report.text = pdf_body
+    full_report.meta = pdf_meta
+    full_report.date = report_date
+    full_report.time = None
 
-    pdf_filename = _safe_file_component(
-        f"report_{patient_examination_id}_r{report_id}_v{report_ref.version}.pdf",
-        fallback=f"report_{report_id}.pdf",
-    )
+    pdf_filename = canonical_media_name(pdf_hash, ".pdf")
 
     # Keep full report file in sync too (optional but useful for timeline/display)
-    full_report_ref.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
-    full_report_ref.save()
+    full_report.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
+    full_report.save()
 
     raw_pdf = RawPdfFile.objects.filter(anonym_examination_report=full_report).first()
     raw_pdf_is_new = raw_pdf is None
@@ -385,20 +336,28 @@ def persist_report_pdf_artifact(
                 .exists()
             )
             if collision:
-                pdf_hash = hashlib.sha256(
-                    pdf_bytes
-                    + f"|report:{report_id}|v:{report_ref.version}".encode("utf-8")
-                ).hexdigest()
+                pdf_hash = ReportArtifactFieldFile.hash_content(
+                    ContentFile(
+                        pdf_bytes
+                        + f"|report:{report_id}|v:{report_ref.version}".encode("utf-8")
+                    )
+                )
             raw_pdf.pdf_hash = pdf_hash
 
     # New object may also collide with an existing row hash.
     if raw_pdf_is_new and RawPdfFile.objects.filter(pdf_hash=raw_pdf.pdf_hash).exists():
-        raw_pdf.pdf_hash = hashlib.sha256(
-            pdf_bytes + f"|report:{report_id}|v:{report_ref.version}".encode("utf-8")
-        ).hexdigest()
+        raw_pdf.pdf_hash = ReportArtifactFieldFile.hash_content(
+            ContentFile(
+                pdf_bytes
+                + f"|report:{report_id}|v:{report_ref.version}".encode("utf-8")
+            )
+        )
 
-    raw_pdf_ref = cast(_RawPdfFileLike, raw_pdf)
-    raw_pdf_ref.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
+    raw_pdf.file.save(
+        canonical_media_name(raw_pdf.pdf_hash, ".pdf"),
+        ContentFile[bytes](pdf_bytes),
+        save=False,
+    )
     raw_pdf.save()
 
     return full_report.pk, raw_pdf.pk
@@ -518,13 +477,15 @@ def _bind_submission_knowledge_base_identity(
             knowledge_base_module=module_name,
             knowledge_base_version=version,
         )
-        resolved = get_knowledge_base_identity(
+        load_module_kb(
             identity.knowledge_base_module,
             version=identity.knowledge_base_version,
         )
-    except KnowledgeBaseRegistryError as exc:
-        raise ReportKnowledgeBaseRegistryUnavailableError(str(exc)) from exc
-    except KnowledgeBaseVersionNotFoundError as exc:
+    except TerminologyError as exc:
+        # A missing registry is a deployment failure even when the terminology
+        # service reports 404. Unknown module identities have no I/O cause.
+        if exc.status >= 500 or isinstance(exc.__cause__, OSError):
+            raise ReportKnowledgeBaseRegistryUnavailableError(str(exc)) from exc
         raise ReportPersistenceValidationError(
             {"knowledge_base_module": str(exc)}
         ) from exc
@@ -536,15 +497,6 @@ def _bind_submission_knowledge_base_identity(
         identity.knowledge_base_module,
         identity.knowledge_base_version,
     )
-    if resolved != expected:
-        raise ReportPersistenceValidationError(
-            {
-                "knowledge_base_module": (
-                    "Resolved knowledge-base identity does not match the submitted "
-                    "identity."
-                )
-            }
-        )
     if (
         patient_examination.knowledge_base_module,
         patient_examination.knowledge_base_version,

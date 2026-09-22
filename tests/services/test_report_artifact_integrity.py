@@ -15,7 +15,7 @@ from endoreg_db.services.raw_pdf_files import (
     validate_report_metadata_annotation,
     verify_and_persist_processed_report_sha256,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.storage import file_exists
 from tests.helpers.default_objects import get_default_center
 
@@ -69,7 +69,7 @@ def test_processed_report_sha256_is_persisted_and_mismatch_fails(
     assert state is not None
     state.refresh_from_db()
 
-    assert digest == sha256_file(report.processed_file)
+    assert digest == get_file_hash(report.processed_file)
     assert state.processed_file_sha256 == digest
 
     state.processed_file_sha256 = "0" * 64
@@ -105,4 +105,4 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert file_exists(report.processed_file)
     assert report.state is not None
     assert report.state.anonymization_validated is True
-    assert report.state.processed_file_sha256 == sha256_file(report.processed_file)
+    assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)

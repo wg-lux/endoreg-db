@@ -20,7 +20,7 @@ from endoreg_db.services.aidataset_active_learning_shortlist import (
     build_active_learning_review_shortlist,
     write_active_learning_review_shortlist,
 )
-from endoreg_db.utils.paths import ensure_within_protected_root
+from endoreg_db.utils.paths import ensure_within_runtime_root
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -96,7 +96,7 @@ class Command(BaseCommand):
                 )
             if type(dataset_id) is not int or type(model_meta_id) is not int:
                 raise ValueError("Dataset and model identities must be integers.")
-            destination = ensure_within_protected_root(cast(Path, output_path))
+            destination = ensure_within_runtime_root(cast(Path, output_path))
             candidate_text = _read_bounded(cast(Path, candidate_path), 32 * 1024 * 1024)
             config_text = _read_bounded(cast(Path, config_path), 64 * 1024)
             raw_candidates: object = json.loads(

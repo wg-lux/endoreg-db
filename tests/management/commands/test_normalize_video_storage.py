@@ -25,7 +25,7 @@ def _video_with_storage() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="storage-normalization-video",
+        raw_video_hash="storage-normalization-video",
         fps=25.0,
         duration=10.0,
         frame_count=250,
@@ -83,14 +83,14 @@ def test_normalize_video_storage_applies_cursor_and_limit_before_inventory() -> 
     first = _video_with_storage()
     second = VideoFile.objects.create(
         center=first.center,
-        video_hash="storage-normalization-video-second",
+        raw_video_hash="storage-normalization-video-second",
         fps=25.0,
         duration=10.0,
         frame_count=250,
     )
     third = VideoFile.objects.create(
         center=first.center,
-        video_hash="storage-normalization-video-third",
+        raw_video_hash="storage-normalization-video-third",
         fps=25.0,
         duration=10.0,
         frame_count=250,

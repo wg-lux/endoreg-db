@@ -41,7 +41,7 @@ class _FfprobeStreamInfo(TypedDict):
 
 
 class _VideoLike(Protocol):
-    video_hash: str
+    raw_video_hash: str
 
     def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
 
@@ -509,7 +509,7 @@ def read_video_file_frame_jpeg(
     if not isinstance(field_file_name, str) or not field_file_name:
         raise FileNotFoundError(
             f"{normalized_type.title()} video file is not available for "
-            f"{video.video_hash}."
+            f"{video.raw_video_hash}."
         )
 
     timestamp = float(video.frame_number_to_s(frame_number))

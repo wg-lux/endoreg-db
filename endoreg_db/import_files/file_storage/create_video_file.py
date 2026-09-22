@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -40,7 +40,7 @@ def _context_source_path(ctx: ImportContext) -> Path:
 
 def _ensure_context_file_hash(ctx: ImportContext) -> str:
     if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = sha256_file(ctx.file_path)
+        ctx.file_hash = get_file_hash(ctx.file_path)
     return ctx.file_hash
 
 
@@ -132,7 +132,7 @@ def _get_or_create_video_instance(
         file_path=file_path,
         center_name=ctx.center_name,
         processor_name=ctx.processor_name,
-        video_hash=file_hash,
+        raw_video_hash=file_hash,
         initialize=not bool(getattr(ctx, "defer_video_initialization", False)),
     )
 

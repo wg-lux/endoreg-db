@@ -69,12 +69,12 @@ def _locked_carrier(instance: RawPdfFile | VideoFile) -> RawPdfFile | VideoFile:
     if isinstance(instance, RawPdfFile):
         return (
             RawPdfFile.objects.select_for_update(of=("self",))
-            .select_related("center", "sensitive_meta")
+            .select_related("center")
             .get(pk=instance.pk)
         )
     return (
         VideoFile.objects.select_for_update(of=("self",))
-        .select_related("center", "sensitive_meta")
+        .select_related("center")
         .get(pk=instance.pk)
     )
 
@@ -93,6 +93,8 @@ def persist_sensitive_meta_candidate(
     """
     locked_instance = _locked_carrier(instance)
     typed_instance = cast(_SensitiveMetaCarrier, locked_instance)
+    # Load this nullable relation in a fresh statement after the media lock.
+    # A joined read can retain its pre-lock snapshot after another writer attaches it.
     local_meta = typed_instance.sensitive_meta
     if not isinstance(local_meta, SensitiveMeta):
         # If sensitive meta does not exist yet, ensure it.

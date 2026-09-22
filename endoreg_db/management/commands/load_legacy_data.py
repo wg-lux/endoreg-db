@@ -19,7 +19,6 @@ from lx_dtypes.models.contracts.legacy_data_import import (
     LegacyImportManifestPayload,
     LegacyIntOrNull,
     LegacyTextOrNull,
-    NullValue,
     dump_legacy_import_manifest,
 )
 from pydantic import ValidationError
@@ -38,21 +37,18 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.paths import (
-    EndoregPathsModel,
-    ensure_within_protected_root,
-)
+from endoreg_db.utils.paths import get_runtime_paths, ensure_within_runtime_root
 
 DEFAULT_LABELSET_NAME = (
     "multilabel_classification_colonoscopy_default"  # must be present in the DB
 )
 DEFAULT_LABELSET_VERSION = 1
 
-VideoFileOrNull: TypeAlias = VideoFile | NullValue
-AiDataSetOrNull: TypeAlias = AIDataSet | NullValue
-ExceptionTypeOrNull: TypeAlias = type[BaseException] | NullValue
-ExceptionValueOrNull: TypeAlias = BaseException | NullValue
-TracebackOrNull: TypeAlias = TracebackType | NullValue
+VideoFileOrNull: TypeAlias = VideoFile | None
+AiDataSetOrNull: TypeAlias = AIDataSet | None
+ExceptionTypeOrNull: TypeAlias = type[BaseException] | None
+ExceptionValueOrNull: TypeAlias = BaseException | None
+TracebackOrNull: TypeAlias = TracebackType | None
 
 
 class LegacyDataImportCommandOptions(TypedDict):
@@ -85,7 +81,7 @@ class LabelSetRecord(NamedPersistedRecord, Protocol):
 class LegacyVideoRecord(PersistedRecord, Protocol):
     center_id: int
     center: Center
-    video_hash: str
+    raw_video_hash: str
     frame_dir: LegacyTextOrNull
 
     def save(self, *, update_fields: list[str]) -> None: ...
@@ -726,7 +722,7 @@ class Command(BaseCommand):
     class _noop_context:
         """Simple no-op context manager used for dry-run."""
 
-        def __enter__(self) -> NullValue:
+        def __enter__(self) -> None:
             return None
 
         def __exit__(
@@ -787,24 +783,24 @@ class Command(BaseCommand):
         if old_examination_id in cache:
             return cache[old_examination_id]
 
-        video_hash = self._build_legacy_video_hash(
+        raw_video_hash = self._build_legacy_video_hash(
             center_id=_persisted_record(center).id,
             old_examination_id=old_examination_id,
         )
         defaults = {
             "center": center,
-            "original_file_name": f"{video_hash}.legacy",
+            "original_file_name": f"{raw_video_hash}.legacy",
         }
         if dry_run:
-            video = VideoFile(video_hash=video_hash, **defaults)
+            video = VideoFile(raw_video_hash=raw_video_hash, **defaults)
             self.stdout.write(
                 self.style.WARNING(
-                    f"[DRY RUN] Would create/reuse VideoFile video_hash='{video_hash}'."
+                    f"[DRY RUN] Would create/reuse VideoFile raw_video_hash='{raw_video_hash}'."
                 )
             )
         else:
             video, created = VideoFile.objects.get_or_create(
-                video_hash=video_hash,
+                raw_video_hash=raw_video_hash,
                 defaults=defaults,
             )
             video_record = _legacy_video_record(video)
@@ -812,7 +808,7 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.NOTICE(
                         f"Created synthetic legacy VideoFile id={video_record.id}, "
-                        f"video_hash='{video_record.video_hash}'."
+                        f"raw_video_hash='{video_record.raw_video_hash}'."
                     )
                 )
         cache[old_examination_id] = video
@@ -831,8 +827,8 @@ class Command(BaseCommand):
         if video_key in staged_dirs_by_video_key:
             return staged_dirs_by_video_key[video_key]
 
-        video_staged_root = ensure_within_protected_root(
-            staged_images_root / target_video_record.video_hash
+        video_staged_root = ensure_within_runtime_root(
+            staged_images_root / target_video_record.raw_video_hash
         )
         staged_dirs_by_video_key[video_key] = video_staged_root
 
@@ -840,7 +836,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.WARNING(
                     "[DRY RUN] Would set frame_dir for VideoFile "
-                    f"'{target_video_record.video_hash}' to '{video_staged_root}'."
+                    f"'{target_video_record.raw_video_hash}' to '{video_staged_root}'."
                 )
             )
             return video_staged_root
@@ -883,7 +879,7 @@ class Command(BaseCommand):
                 f"Unsafe filename on line {line_num}: '{filename}' escapes images_root."
             ) from exc
 
-        destination = ensure_within_protected_root(
+        destination = ensure_within_runtime_root(
             (video_staged_root / relative_filename).resolve()
         )
         try:
@@ -915,7 +911,9 @@ class Command(BaseCommand):
     def _video_key(self, video: VideoFile) -> int | str:
         video_record = _legacy_video_record(video)
         return (
-            video_record.pk if video_record.pk is not None else video_record.video_hash
+            video_record.pk
+            if video_record.pk is not None
+            else video_record.raw_video_hash
         )
 
     def _build_legacy_video_hash(
@@ -929,8 +927,8 @@ class Command(BaseCommand):
         self, *, raw_path: LegacyTextOrNull, import_key: str
     ) -> Path:
         if raw_path:
-            return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
-        return ensure_within_protected_root(
+            return ensure_within_runtime_root(Path(raw_path).expanduser().resolve())
+        return ensure_within_runtime_root(
             self._protected_migration_root() / "legacy_data" / import_key
         )
 
@@ -938,8 +936,8 @@ class Command(BaseCommand):
         self, *, raw_path: LegacyTextOrNull, import_key: str
     ) -> Path:
         if raw_path:
-            return ensure_within_protected_root(Path(raw_path).expanduser().resolve())
-        return ensure_within_protected_root(
+            return ensure_within_runtime_root(Path(raw_path).expanduser().resolve())
+        return ensure_within_runtime_root(
             self._protected_migration_root()
             / "manifests"
             / "load_legacy_data"
@@ -947,6 +945,6 @@ class Command(BaseCommand):
         )
 
     def _protected_migration_root(self) -> Path:
-        return ensure_within_protected_root(
-            EndoregPathsModel.from_environment().storage / "migration_staging"
+        return ensure_within_runtime_root(
+            get_runtime_paths().storage / "migration_staging"
         )

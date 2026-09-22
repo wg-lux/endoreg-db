@@ -28,7 +28,7 @@ class ImageMultilabelDataLoaderVideoIdTests(TestCase):
         center = Center.objects.create(name="video-id-backfill-center")
         self.video = VideoFile.objects.create(
             center=center,
-            video_hash="video-id-backfill-video",
+            raw_video_hash="video-id-backfill-video",
             original_file_name="video_id_backfill.mp4",
             fps=25.0,
             frame_count=2,

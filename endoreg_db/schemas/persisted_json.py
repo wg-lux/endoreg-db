@@ -407,7 +407,7 @@ class TransferFrameAnnotationRow(BaseModel):
 
     annotation_id: int | str
     annotator: str | None = None
-    video_hash: str | None = None
+    raw_video_hash: str | None = None
     frame_number: int = Field(ge=0)
     frame_relative_path: str
     frame_timestamp: float | None = Field(default=None, ge=0)
@@ -505,7 +505,7 @@ def _empty_transfer_report_rows() -> list[TransferPatientExaminationReportRow]:
 class TransferVideoFileRow(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    video_hash: str
+    raw_video_hash: str
     processed_video_hash: str | None = None
     fps: float | None = Field(default=None, ge=0)
     duration: float | None = Field(default=None, ge=0)
@@ -514,7 +514,7 @@ class TransferVideoFileRow(BaseModel):
     height: int | None = Field(default=None, ge=1)
     suffix: str | None = None
 
-    @field_validator("video_hash", "processed_video_hash", mode="before")
+    @field_validator("raw_video_hash", "processed_video_hash", mode="before")
     @classmethod
     def _normalize_hash(cls, value: Any) -> Any:
         if value is None:
@@ -576,8 +576,8 @@ class TransferVideoResourceRows(BaseModel):
         frame_count = self.video_file.frame_count
         identities: set[tuple[str, str]] = set()
         for segment in self.video_segments:
-            if segment.video_hash != self.video_file.video_hash:
-                raise ValueError("video segment video_hash must match video_file")
+            if segment.raw_video_hash != self.video_file.raw_video_hash:
+                raise ValueError("video segment raw_video_hash must match video_file")
             if frame_count is None or frame_count <= 0:
                 raise ValueError(
                     "video_file.frame_count is required when video_segments are present"

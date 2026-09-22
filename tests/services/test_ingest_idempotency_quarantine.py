@@ -250,8 +250,6 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
     def test_process_upload_job_retains_video_and_schedules_retry_on_failure(self):
         filename = "failed_upload.mp4"
-        temp_file_path = self._create_temp_file(filename, self.pdf_content)
-
         upload_job = UploadJob.objects.create(
             file=SimpleUploadedFile(
                 name=filename,
@@ -262,10 +260,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             source_center=self.center,
             source_system="test",
         )
-        upload_job.file.name = temp_file_path.relative_to(
-            self.test_media_dir
-        ).as_posix()
-        upload_job.save()
+        temp_file_path = Path(upload_job.file.path)
 
         with (
             patch(
@@ -294,7 +289,6 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
     def test_insufficient_storage_retains_source_and_schedules_retry(self):
         filename = "storage_blocked_upload.mp4"
-        temp_file_path = self._create_temp_file(filename, self.video_content)
         upload_job = UploadJob.objects.create(
             file=SimpleUploadedFile(
                 name=filename,
@@ -306,10 +300,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
             source_system="test",
             original_filename=filename,
         )
-        upload_job.file.name = temp_file_path.relative_to(
-            self.test_media_dir
-        ).as_posix()
-        upload_job.save()
+        temp_file_path = Path(upload_job.file.path)
 
         with (
             patch(
@@ -441,7 +432,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 side_effect=ValueError("Watcher dispatch error"),
             ),
             patch(
-                "endoreg_db.services.hub.ingest.sha256_file",
+                "endoreg_db.services.hub.ingest.get_file_hash",
                 return_value="dummy_hash",
             ),
             patch(
@@ -492,7 +483,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 side_effect=ValueError("Preanonymized processing error"),
             ),
             patch(
-                "endoreg_db.services.hub.ingest.sha256_file",
+                "endoreg_db.services.hub.ingest.get_file_hash",
                 return_value="dummy_hash_preanonymized",
             ),
             patch(
@@ -575,7 +566,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
 
         with (
             patch(
-                "endoreg_db.services.hub.ingest.sha256_file",
+                "endoreg_db.services.hub.ingest.get_file_hash",
                 return_value="stale-hash",
             ),
             patch(

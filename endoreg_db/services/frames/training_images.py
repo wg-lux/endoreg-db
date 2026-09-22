@@ -16,10 +16,7 @@ from lx_ai_core.training import (
 from PIL import Image
 
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.utils.encryption.storage_materialization import (
-    materialized_plaintext_field_file,
-)
-from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
+from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
 
 if TYPE_CHECKING:
     from lx_ai_core.backends.torch_training import StreamedFrameDataset
@@ -51,15 +48,12 @@ def validate_processed_training_frame(frame: Frame) -> None:
 
 
 def read_processed_training_frame_bytes(frame: Frame) -> bytes:
-    """Decode the persisted frame identity and finish protected cleanup before return."""
+    """Decode the persisted frame identity through seekable input without frame files."""
     validate_processed_training_frame(frame)
     video = frame.video
-    with materialized_plaintext_field_file(video.processed_file, suffix=".mp4") as path:
-        sample = read_video_path_frame_jpeg(
-            path,
-            frame_number=frame.frame_number,
-            timestamp=frame.timestamp,
-        )
+    sample = read_video_file_frame_jpeg(
+        video, frame_number=frame.frame_number, file_type="processed"
+    )
     return sample.image_bytes
 
 

@@ -42,11 +42,11 @@ def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
     frame_dir.mkdir(parents=True, exist_ok=True)
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"post-validation-{uuid.uuid4().hex}",
+        raw_video_hash=f"post-validation-{uuid.uuid4().hex}",
         frame_count=2,
         frame_dir=str(frame_dir),
     )
-    video.processed_file.name = f"anonym_videos/{video.video_hash}.mp4"
+    video.processed_file.name = f"anonym_videos/{video.raw_video_hash}.mp4"
     video.save(update_fields=["processed_file"])
     return video
 
@@ -498,6 +498,7 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_an
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
+    frame_dir.mkdir(parents=True, exist_ok=True)
     (frame_dir / "frame_0000000.jpg").write_bytes(b"partial")
     Frame.objects.create(
         video=video,
@@ -559,6 +560,7 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
+    frame_dir.mkdir(parents=True, exist_ok=True)
 
     def fake_create_video_without_outside_frames(
         video_obj: VideoFile,
@@ -640,7 +642,7 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
 
 
 @pytest.mark.django_db
-def test_run_video_post_validation_rebuild_extracts_missing_processed_frames_before_censoring(
+def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -648,6 +650,7 @@ def test_run_video_post_validation_rebuild_extracts_missing_processed_frames_bef
     video = _create_video_for_post_validation(tmp_path)
     frame_dir = video.get_frame_dir_path()
     assert frame_dir is not None
+    frame_dir.mkdir(parents=True, exist_ok=True)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
     outside_frame = Frame.objects.create(
@@ -760,103 +763,12 @@ def test_run_video_post_validation_rebuild_extracts_missing_processed_frames_bef
 
     # Assert
     assert rebuilt is True
-    assert extraction_calls == [(True, True)]
+    assert extraction_calls == []
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_SUCCESS
     state.refresh_from_db()
-    assert state.frames_extracted is True
-    outside_image = __import__("cv2").imread(outside_frame.file_path.as_posix())
-    assert outside_image is not None
-    assert int(outside_image.max()) == 0
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("extraction_result", "expected_error"),
-    [
-        (False, "could not extract processed frames"),
-        (True, "did not extract frames"),
-    ],
-)
-def test_run_video_post_validation_rebuild_rejects_incomplete_extraction(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    extraction_result: bool,
-    expected_error: str,
-) -> None:
-    # Arrange
-    video = _create_video_for_post_validation(tmp_path)
-    history = VideoProcessingHistory.objects.create(
-        video=video,
-        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-        status=VideoProcessingHistory.STATUS_PENDING,
-        config=blackening.blackening_history_config(only_validated=False),
-    )
-
-    def fake_merge_outside_frame_intervals(
-        _video: VideoFile,
-        *,
-        only_validated: bool = False,
-    ) -> list[tuple[int, int]]:
-        return [(0, 1)]
-
-    def fake_rebuild(
-        _video: VideoFile,
-        *,
-        only_validated: bool = False,
-        outside_intervals: Sequence[tuple[int, int]] | None = None,
-    ) -> bool:
-        return True
-
-    def fake_verify_processed_video_contract(
-        _video: VideoFile,
-        *,
-        only_validated: bool = False,
-        outside_intervals: Sequence[tuple[int, int]] | None = None,
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        jobs,
-        "_merge_outside_frame_intervals",
-        fake_merge_outside_frame_intervals,
-    )
-    monkeypatch.setattr(
-        jobs,
-        "rebuild_processed_video_without_outside_frames",
-        fake_rebuild,
-    )
-    monkeypatch.setattr(
-        jobs,
-        "_verify_processed_video_contract",
-        fake_verify_processed_video_contract,
-    )
-    extract_frames = Mock(return_value=extraction_result)
-    censor_frames = Mock(side_effect=AssertionError("incomplete cache must not censor"))
-    monkeypatch.setattr(jobs, "extract_video_frames", extract_frames)
-    monkeypatch.setattr(jobs, "censor_outside_video_frames", censor_frames)
-
-    # Act
-    with pytest.raises(RuntimeError, match=expected_error):
-        jobs._run_video_post_validation_rebuild(
-            video.pk,
-            history_id=history.pk,
-        )
-
-    # Assert
-    extract_frames.assert_called_once_with(
-        video,
-        overwrite=True,
-        from_processed=True,
-    )
-    censor_frames.assert_not_called()
-    history.refresh_from_db()
-    assert history.status == VideoProcessingHistory.STATUS_FAILURE
-    state = video.get_or_create_state()
-    state.refresh_from_db()
     assert state.frames_extracted is False
-    assert state.segment_annotations_validated is False
-    assert state.outside_segments_removed is False
+    assert not outside_frame.file_path.exists()
 
 
 @pytest.mark.django_db
@@ -936,13 +848,29 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         return None
 
     monkeypatch.setattr(
-        jobs, "censor_outside_video_frames", fake_censor_outside_video_frames
+        jobs,
+        "censor_outside_video_frames",
+        fake_censor_outside_video_frames,
+        raising=False,
     )
     monkeypatch.setattr(
-        jobs, "_verify_outside_frames_blackened", fake_verify_outside_frames_blackened
+        jobs,
+        "_verify_outside_frames_blackened",
+        fake_verify_outside_frames_blackened,
+        raising=False,
     )
-    monkeypatch.setattr(jobs, "extract_video_frames", Mock(return_value=True))
-    monkeypatch.setattr(jobs, "_verify_extracted_frame_contract", Mock())
+    monkeypatch.setattr(
+        jobs,
+        "extract_video_frames",
+        Mock(side_effect=AssertionError("No extraction")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_verify_extracted_frame_contract",
+        Mock(side_effect=AssertionError("No cache verification")),
+        raising=False,
+    )
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1036,14 +964,26 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         jobs,
         "censor_outside_video_frames",
         fake_censor_outside_video_frames,
+        raising=False,
     )
     monkeypatch.setattr(
         jobs,
         "_verify_outside_frames_blackened",
         fake_verify_outside_frames_blackened,
+        raising=False,
     )
-    monkeypatch.setattr(jobs, "extract_video_frames", Mock(return_value=True))
-    monkeypatch.setattr(jobs, "_verify_extracted_frame_contract", Mock())
+    monkeypatch.setattr(
+        jobs,
+        "extract_video_frames",
+        Mock(side_effect=AssertionError("No extraction")),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        jobs,
+        "_verify_extracted_frame_contract",
+        Mock(side_effect=AssertionError("No cache verification")),
+        raising=False,
+    )
 
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1058,7 +998,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
     assert merge_calls == [(video.pk, False)]
     assert create_calls == [(False, merged_intervals)]
     assert verify_calls == [(False, merged_intervals, 8)]
-    assert frame_blackening_calls == [False]
+    assert frame_blackening_calls == []
 
 
 @pytest.mark.django_db
@@ -1268,52 +1208,3 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
     state = video.get_or_create_state()
     assert state.outside_segments_removed is False
     assert state.segment_annotations_validated is False
-
-
-@pytest.mark.django_db
-def test_outside_blackening_verification_uses_frame_annotation_targets(
-    tmp_path: Path,
-) -> None:
-    video = _create_video_for_post_validation(tmp_path)
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-
-    import cv2
-    import numpy as np
-
-    black_path = frame_dir / "frame_0000000.jpg"
-    white_path = frame_dir / "frame_0000001.jpg"
-    cv2.imwrite(black_path.as_posix(), np.zeros((4, 4, 3), dtype=np.uint8))
-    cv2.imwrite(white_path.as_posix(), np.full((4, 4, 3), 255, dtype=np.uint8))
-
-    black_frame = Frame.objects.create(
-        video=video,
-        frame_number=0,
-        relative_path=black_path.name,
-        is_extracted=True,
-    )
-    white_frame = Frame.objects.create(
-        video=video,
-        frame_number=1,
-        relative_path=white_path.name,
-        is_extracted=True,
-    )
-    outside_label, _ = Label.objects.get_or_create(name="outside")
-    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
-    ImageClassificationAnnotation.objects.create(
-        frame=black_frame,
-        label=outside_label,
-        information_source=source,
-        value=True,
-    )
-
-    jobs._verify_outside_frames_blackened(video)
-
-    ImageClassificationAnnotation.objects.create(
-        frame=white_frame,
-        label=outside_label,
-        information_source=source,
-        value=True,
-    )
-    with pytest.raises(RuntimeError, match="outside frames blackened"):
-        jobs._verify_outside_frames_blackened(video)

@@ -168,114 +168,25 @@ class LabelVideoSegmentModelTest(TestCase):
             "No frames should be extracted initially",
         )
 
-    def test_extract_and_delete_segment_frame_files(self):
-        """
-        Tests extraction and deletion of frame files for a video segment.
+    def test_segment_frame_materialization_is_rejected(self):
+        """Annotation segments retain frame identities without creating a cache."""
+        frames_before = list(
+            self.segment.get_frames().values_list("pk", "frame_number", "timestamp")
+        )
+        with self.assertRaisesRegex(RuntimeError, "materialization is export-only"):
+            self.segment.extract_segment_frame_files(overwrite=True)
 
-        Verifies that no frames are initially extracted, successfully extracts frame files for all frames in the segment, and ensures only segment frames are marked as extracted. Confirms that extracted frame files exist on disk, then deletes the frame files and checks that no frames remain marked as extracted and the files are removed from disk. Skips the test if required video assets or FFmpeg are missing.
-        """
-        frames_qs = self.segment.get_frames()
+        self.segment.refresh_from_db()
         self.assertEqual(
-            frames_qs.filter(is_extracted=True).count(),
-            0,
-            "No frames should be extracted initially",
+            list(
+                self.segment.get_frames().values_list("pk", "frame_number", "timestamp")
+            ),
+            frames_before,
         )
-
-        segment_pk_before = self.segment.pk
-
-        extract_success = False
-        try:
-            extract_success = self.segment.extract_segment_frame_files(overwrite=True)
-            self.assertTrue(
-                extract_success,
-                "extract_segment_frame_files should return True on success",
-            )
-        except FileNotFoundError as e:
-            self.skipTest(
-                f"Skipping frame file test: FFmpeg not found or video asset missing? ({e})"
-            )
-        except RuntimeError as e:
-            self.fail(f"Frame extraction failed: {e}")
-        except Exception as e:
-            self.fail(f"Unexpected error during frame extraction: {e}")
-
-        logger.info(f"Segment PK before refresh: {segment_pk_before}")
-        segment_exists = LabelVideoSegment.objects.filter(pk=segment_pk_before).exists()
-        logger.info(
-            f"Does segment {segment_pk_before} exist in DB before refresh? {segment_exists}"
+        self.assertFalse(self.segment.get_frames().filter(is_extracted=True).exists())
+        self.assertFalse(
+            any(frame.file_path.exists() for frame in self.segment.get_frames())
         )
-        if not segment_exists:
-            self.fail(
-                f"Segment with PK {segment_pk_before} was deleted during extract_segment_frame_files call."
-            )
-
-        try:
-            self.segment.refresh_from_db()
-        except LabelVideoSegment.DoesNotExist:
-            self.fail(
-                f"Segment PK {segment_pk_before} exists in DB but refresh_from_db failed (transaction issue?)."
-            )
-        except Exception as e:
-            self.fail(f"refresh_from_db failed with unexpected error: {e}")
-
-        self.video_file.refresh_from_db()
-        frames_after_extract = self.segment.get_frames().order_by("frame_number")
-        self.assertEqual(
-            frames_after_extract.count(),
-            self.segment_frame_count,
-            "Should still have the same number of frames",
-        )
-        extracted_count = frames_after_extract.filter(is_extracted=True).count()
-        self.assertEqual(
-            extracted_count,
-            self.segment_frame_count,
-            "All frames in the segment should now be marked as extracted",
-        )
-
-        outside_frames_before = self.video_file.frames.filter(
-            frame_number__lt=self.segment.start_frame_number
-        )
-        outside_frames_after = self.video_file.frames.filter(
-            frame_number__gte=self.segment.end_frame_number
-        )
-        self.assertEqual(
-            outside_frames_before.filter(is_extracted=True).count(),
-            0,
-            "Frames before the segment should not be extracted",
-        )
-        self.assertEqual(
-            outside_frames_after.filter(is_extracted=True).count(),
-            0,
-            "Frames after the segment should not be extracted",
-        )
-
-        sample_frame = frames_after_extract.first()
-        if sample_frame:
-            self.assertTrue(
-                sample_frame.file_path.exists(),
-                f"Frame file {sample_frame.file_path} should exist after extraction",
-            )
-        else:
-            self.fail("Could not get a sample frame after extraction.")
-
-        try:
-            self.segment.delete_frame_files()
-        except Exception as e:
-            self.fail(f"Unexpected error during frame deletion: {e}")
-
-        frames_after_delete = self.segment.get_frames()
-        self.assertEqual(
-            frames_after_delete.filter(is_extracted=True).count(),
-            0,
-            "No frames in the segment should be extracted after deletion",
-        )
-
-        if sample_frame:
-            sample_frame.refresh_from_db()
-            self.assertFalse(
-                sample_frame.file_path.exists(),
-                f"Frame file {sample_frame.file_path} should NOT exist after deletion",
-            )
 
     def test_create_segment_with_video_seg_label_name(self):
         """

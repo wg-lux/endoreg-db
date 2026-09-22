@@ -5,7 +5,6 @@ mod errors;
 mod file_copy;
 mod file_identity;
 mod frames;
-mod hashing;
 mod hls_state;
 mod import_state;
 mod lifecycle_state;
@@ -42,11 +41,6 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         file_identity::stable_file_identity,
         module
     )?)?;
-    module.add_function(wrap_pyfunction!(
-        file_identity::stable_snapshot_to_path,
-        module
-    )?)?;
-    module.add_function(wrap_pyfunction!(hashing::sha256_file_hex, module)?)?;
     module.add_function(wrap_pyfunction!(
         hls_state::derive_hls_reservation_action,
         module

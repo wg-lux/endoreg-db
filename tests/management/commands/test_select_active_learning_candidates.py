@@ -25,12 +25,12 @@ from endoreg_db.models import (
     VideoState,
 )
 from endoreg_db.utils.filesystem.file_operations import atomic_write_file
-from endoreg_db.utils.paths import PROTECTED_DATA_ROOT
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 class ActiveLearningShortlistCommandTests(TestCase):
     def setUp(self):
-        self.directory = TemporaryDirectory(dir=PROTECTED_DATA_ROOT)
+        self.directory = TemporaryDirectory(dir=get_runtime_paths().runtime_root)
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
         self.candidates_path = root / "candidates.json"
@@ -48,7 +48,7 @@ class ActiveLearningShortlistCommandTests(TestCase):
         )
         self.video = VideoFile.objects.create(
             center=Center.objects.create(name="shortlist-center"),
-            video_hash="shortlist-video",
+            raw_video_hash="shortlist-video",
             original_file_name="shortlist.mp4",
             fps=25.0,
             frame_count=200,

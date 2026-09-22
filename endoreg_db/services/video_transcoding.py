@@ -21,10 +21,7 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.paths import (
-    ensure_within_data_root,
-    ensure_within_protected_root,
-)
+from endoreg_db.utils.paths import ensure_within_runtime_root
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.utils import ffmpeg_wrapper
 
@@ -415,12 +412,12 @@ def _validate_input_dir(input_root: Path) -> None:
 
 def _validate_managed_output_dir(output_root: Path) -> None:
     try:
-        ensure_within_protected_root(output_root)
+        ensure_within_runtime_root(output_root)
         return
     except ValueError:
         pass
     try:
-        ensure_within_data_root(output_root)
+        ensure_within_runtime_root(output_root)
     except ValueError as exc:
         raise ValueError(
             "output_dir must be inside the configured protected or data root. "

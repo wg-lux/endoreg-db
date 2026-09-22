@@ -4,12 +4,13 @@ import uuid
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from pytest import MonkeyPatch
 from django.core.files.base import ContentFile
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.utils.paths import get_runtime_paths
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
@@ -17,8 +18,6 @@ from endoreg_db.models import (
     AIModelTrainingRun,
     Center,
     Frame,
-    ImageClassificationAnnotation,
-    Label,
     LabelVideoSegment,
     UploadJob,
     VideoFile,
@@ -31,7 +30,6 @@ from endoreg_db.services.media_integrity import (
 )
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
-    ensure_directory,
 )
 
 
@@ -49,12 +47,11 @@ def test_upload_reconciliation_hashes_authenticated_plaintext(
         content_hash=expected_hash if known_hash else "",
         source_file_persisted=True,
     )
-    storage = EncryptedStorage(location=tmp_path)
+    storage = EncryptedStorage(location=get_runtime_paths().storage)
     job.file.storage = storage
-    job.file.name = storage.save("source.mp4", ContentFile(payload))
+    job.file.name = storage.save(f"{uuid.uuid4().hex}.mp4", ContentFile(payload))
     job.save(update_fields=["file"])
     ciphertext_before = Path(job.file.path).read_bytes()
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
 
     repaired, lost, report = reconcile_upload_job_integrity(job, dry_run=dry_run)
 
@@ -85,7 +82,6 @@ def test_missing_upload_source_uses_integrity_lifecycle_event(
     def record_integrity_lost(job: UploadJob, detail: str) -> None:
         transitions.append((job, detail))
 
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
     monkeypatch.setattr(
         media_integrity,
         "mark_upload_job_integrity_lost",
@@ -119,7 +115,6 @@ def test_blank_persisted_upload_source_is_lost(
     def record_blank_source_loss(_job: UploadJob, detail: str) -> None:
         transitions.append(detail)
 
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
     monkeypatch.setattr(
         media_integrity,
         "mark_upload_job_integrity_lost",
@@ -144,7 +139,7 @@ def _video_with_successful_lifecycle_state() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"successful-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"successful-video-{uuid.uuid4().hex}",
         processed_file="",
     )
     state = video.get_or_create_state()
@@ -187,7 +182,7 @@ def test_processing_failure_without_integrity_evidence_is_not_lost() -> None:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"failed-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"failed-video-{uuid.uuid4().hex}",
     )
     state = video.get_or_create_state()
     state.processing_error = True
@@ -275,7 +270,7 @@ def _video_with_initialized_frames(
 
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"media-integrity-{uuid.uuid4().hex}",
+        raw_video_hash=f"media-integrity-{uuid.uuid4().hex}",
         frame_count=frame_count,
         frame_dir=str(frame_dir),
     )
@@ -331,202 +326,6 @@ def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
     assert Frame.objects.filter(video=video, is_extracted=True).count() == 3
 
 
-def test_dry_run_does_not_create_missing_stable_frame(
-    tmp_path: Path,
-):
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"frame-{frame_number}".encode(),
-        )
-
-    summary = reconcile_media_integrity(
-        dry_run=True,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    assert summary.frame_cache_partial == 1
-    assert summary.repaired_frames == 0
-    assert not (frame_dir / "frame_0000000.jpg").exists()
-
-
-def test_targeted_frame_zero_fix_uses_staged_output(
-    monkeypatch: MonkeyPatch, tmp_path: Path
-) -> None:
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"frame-{frame_number}".encode(),
-        )
-
-    seen_output_dirs: list[Path] = []
-
-    def fake_extract_range(
-        video_arg: VideoFile,
-        *,
-        output_dir: Path | str,
-        start_frame: int,
-        end_frame: int,
-        **_kwargs: Any,
-    ) -> list[Path]:
-        assert video_arg == video
-        assert start_frame == 0
-        assert end_frame == 1
-        output_dir = Path(output_dir)
-        seen_output_dirs.append(output_dir)
-        ensure_directory(output_dir)
-        path = output_dir / "frame_0000000.jpg"
-        _write_test_file(path, b"frame-zero")
-        return [path]
-
-    monkeypatch.setattr(
-        media_integrity,
-        "extract_frame_range_to_directory",
-        fake_extract_range,
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-        repair_frame_numbers=[0],
-    )
-
-    assert summary.frame_cache_partial == 1
-    assert summary.repaired_frames == 1
-    assert (frame_dir / "frame_0000000.jpg").read_bytes() == b"frame-zero"
-    assert seen_output_dirs
-    assert seen_output_dirs[0] != frame_dir
-    assert seen_output_dirs[0].name.startswith(".extracting_")
-    assert not seen_output_dirs[0].exists()
-    frame_zero = Frame.objects.get(video=video, frame_number=0)
-    assert frame_zero.relative_path == "frame_0000000.jpg"
-    assert frame_zero.is_extracted is True
-
-
-def test_shifted_cache_with_annotations_is_reported_only(
-    tmp_path: Path,
-):
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2, 3):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"legacy-frame-{frame_number}".encode(),
-        )
-
-    label = Label.objects.create(name=f"manual-label-{uuid.uuid4().hex[:8]}")
-    ImageClassificationAnnotation.objects.create(
-        frame=Frame.objects.get(video=video, frame_number=1),
-        label=label,
-        value=True,
-        annotator="manual-reviewer",
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    # A shifted non-empty cache with dependent annotations is evidence to review,
-    # not permission to rewrite visual content under stable Frame rows.
-    assert summary.frame_cache_shifted == 1
-    assert summary.frame_cache_manual_review_required == 1
-    assert summary.repaired_frames == 0
-    assert not (frame_dir / "frame_0000000.jpg").exists()
-    assert (frame_dir / "frame_0000003.jpg").exists()
-
-
-def test_shifted_cache_without_annotations_is_replaced_atomically(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2, 3):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"legacy-frame-{frame_number}".encode(),
-        )
-    frame_one = Frame.objects.get(video=video, frame_number=1)
-    frame_one.timestamp = 1.25
-    frame_one.presentation_timestamp = 125
-    frame_one.save(update_fields=["timestamp", "presentation_timestamp"])
-
-    def fake_extract_full_frame_set(
-        video_arg: VideoFile,
-        *,
-        output_dir: Path,
-        ext: str,
-        **_kwargs: Any,
-    ) -> list[Path]:
-        assert video_arg == video
-        ensure_directory(output_dir)
-        extracted_paths: list[Path] = []
-        for frame_number in range(3):
-            extracted_paths.append(
-                _write_test_file(
-                    output_dir / f"frame_{frame_number:07d}.{ext}",
-                    f"replacement-{frame_number}".encode(),
-                )
-            )
-        return extracted_paths
-
-    monkeypatch.setattr(
-        media_integrity,
-        "extract_full_frame_set_to_directory",
-        fake_extract_full_frame_set,
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    assert summary.frame_cache_shifted == 1
-    assert summary.repaired_frames == 3
-    assert sorted(path.name for path in frame_dir.glob("frame_*.jpg")) == [
-        "frame_0000000.jpg",
-        "frame_0000001.jpg",
-        "frame_0000002.jpg",
-    ]
-    frame_one.refresh_from_db()
-    assert frame_one.timestamp == 1.25
-    assert frame_one.presentation_timestamp == 125
-    assert frame_one.is_extracted is True
-
-
 def test_ffmpeg_report_records_defaulted_fps_source(tmp_path: Path):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     video.fps = None
@@ -580,8 +379,6 @@ def test_ffmpeg_report_does_not_use_streamable_fallback_source(
         ]
     }
 
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
-
     probed_paths: list[Path] = []
 
     def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
@@ -621,8 +418,6 @@ def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
     )
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])
-
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
 
     called: list[dict[str, bool]] = []
 

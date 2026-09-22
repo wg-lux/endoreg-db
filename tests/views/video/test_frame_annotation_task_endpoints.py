@@ -33,7 +33,8 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.center = Center.objects.create(name="frame-task-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="frame-task-video-hash",
+            raw_video_hash="frame-task-video-hash",
+            processed_file="processed_videos_final/frame-task.mp4",
             original_file_name="frame_task.mp4",
             fps=25.0,
             frame_count=100,
@@ -753,7 +754,7 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
     def test_random_task_stream_mode_allows_initialized_unextracted_frame(self):
         stream_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="frame-task-stream-only-video",
+            raw_video_hash="frame-task-stream-only-video",
             original_file_name="stream_only.mp4",
             fps=25.0,
             frame_count=1,
@@ -788,6 +789,8 @@ class FrameAnnotationTaskEndpointsTest(TestCase):
         self.assertEqual(data["task"]["frame_file_type"], "processed")
 
     def test_random_task_explicit_processed_does_not_fall_back_to_raw(self):
+        self.video.processed_file.name = ""
+        self.video.save(update_fields=["processed_file"])
         self.video.raw_file.name = "videos/frame_task_raw_only.mp4"
         self.video.save(update_fields=["raw_file"])
 

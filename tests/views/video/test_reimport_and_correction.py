@@ -2,6 +2,7 @@ import importlib.util
 import sys
 import types
 from contextlib import contextmanager
+from collections.abc import Generator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -45,18 +46,26 @@ def _context_path(path: Path) -> Any:
 def _patch_anonym_video_dir(
     module: Any, monkeypatch: pytest.MonkeyPatch, output_dir: Path
 ) -> None:
-    def _from_environment(cls: Any) -> SimpleNamespace:
+    @contextmanager
+    def local_file(field: object) -> Generator[Path]:
+        path = getattr(field, "path", None)
+        assert isinstance(path, str)
+        yield Path(path)
+
+    monkeypatch.setattr(module, "ensure_local_file", local_file)
+
+    def _runtime_paths() -> SimpleNamespace:
         return SimpleNamespace(anonym_video=output_dir, transcoding=output_dir)
 
     monkeypatch.setattr(
-        module.path_utils.EndoregPathsModel,
-        "from_environment",
-        classmethod(_from_environment),
+        module,
+        "get_runtime_paths",
+        _runtime_paths,
         raising=True,
     )
 
     def _masked_output_path(video: Any) -> Path:
-        return output_dir / f"{video.video_hash}_masked.mp4"
+        return output_dir / f"{video.raw_video_hash}_masked.mp4"
 
     monkeypatch.setattr(
         module,
@@ -66,7 +75,7 @@ def _patch_anonym_video_dir(
     )
 
     def _cleaned_output_path(video: Any) -> Path:
-        return output_dir / f"{video.video_hash}_cleaned.mp4"
+        return output_dir / f"{video.raw_video_hash}_cleaned.mp4"
 
     monkeypatch.setattr(
         module,
@@ -141,7 +150,7 @@ class _FakeHistoryModel:
 class _FakeVideo:
     id: int
     pk: int
-    video_hash: str
+    raw_video_hash: str
     raw_file: SimpleNamespace
     center: Any
     center_id: Any
@@ -160,7 +169,7 @@ class _FakeVideo:
     def __init__(self, raw_path: Path) -> None:
         self.id = 1
         self.pk = 1
-        self.video_hash = "video-hash"
+        self.raw_video_hash = "video-hash"
         self.raw_file = SimpleNamespace(name=raw_path.name, path=str(raw_path))
         self.center = SimpleNamespace(name="university_hospital_wuerzburg")
         self.center_id = None
@@ -529,14 +538,14 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
     video = _FakeVideo(raw_path)
     video.center = center
     video.center_id = center.pk
-    video.video_hash = "duplicate-video-hash"
+    video.raw_video_hash = "duplicate-video-hash"
 
     active_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
         status=UploadJob.Status.ANONYMIZED,
         content_type="video/mp4",
         source_center=center,
-        content_hash=video.video_hash,
+        content_hash=video.raw_video_hash,
     )
     failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
@@ -544,7 +553,7 @@ def test_reset_reimport_state_does_not_reactivate_duplicate_upload_jobs(
         error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
         content_type="video/mp4",
         source_center=center,
-        content_hash=video.video_hash,
+        content_hash=video.raw_video_hash,
     )
 
     def _init_specs_mock(target_video: Any) -> None:
@@ -590,14 +599,14 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(
     video = _FakeVideo(raw_path)
     video.center = center
     video.center_id = center.pk
-    video.video_hash = "complete-duplicate-video-hash"
+    video.raw_video_hash = "complete-duplicate-video-hash"
 
     active_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("active.mp4", b"active", content_type="video/mp4"),
         status=UploadJob.Status.PROCESSING,
         content_type="video/mp4",
         source_center=center,
-        content_hash=video.video_hash,
+        content_hash=video.raw_video_hash,
     )
     failed_job: Any = UploadJob.objects.create(
         file=SimpleUploadedFile("failed.mp4", b"failed", content_type="video/mp4"),
@@ -605,7 +614,7 @@ def test_mark_upload_jobs_anonymized_leaves_duplicate_failed_jobs_inactive(
         error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
         content_type="video/mp4",
         source_center=center,
-        content_hash=video.video_hash,
+        content_hash=video.raw_video_hash,
     )
 
     completed_count: Any = getattr(reimport_jobs, "_mark_upload_jobs_anonymized")(
@@ -665,8 +674,8 @@ def test_mask_replace_denied_cleans_part_and_preserves_processed_path(
     )
 
     original_name = video.processed_file.name
-    final_output: Path = output_dir / f"{video.video_hash}_masked.mp4"
-    stale_part: Path = output_dir / f"{video.video_hash}_masked.part.mp4"
+    final_output: Path = output_dir / f"{video.raw_video_hash}_masked.mp4"
+    stale_part: Path = output_dir / f"{video.raw_video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
 
     def _replace_fail(*, source: Any, destination: Any) -> None:
@@ -743,7 +752,7 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(
     )
     _patch_processed_file_save(module, monkeypatch)
 
-    stale_part: Path = output_dir / f"{video.video_hash}_masked.part.mp4"
+    stale_part: Path = output_dir / f"{video.raw_video_hash}_masked.part.mp4"
     stale_part.write_bytes(b"stale")
 
     response: Any = module.VideoApplyMaskView.as_view()(
@@ -759,13 +768,13 @@ def test_mask_overwrites_stale_part_and_updates_processed_file(
         pk=1,
     )
 
-    final_output: Path = output_dir / f"{video.video_hash}_masked.mp4"
+    final_output: Path = output_dir / f"{video.raw_video_hash}_masked.mp4"
 
     assert response.status_code == 200
     assert final_output.exists()
     assert final_output.read_bytes() == b"fresh-mask"
     assert not stale_part.exists()
-    assert video.processed_file.name.endswith(f"{video.video_hash}_masked.mp4")
+    assert video.processed_file.name.endswith(f"{video.raw_video_hash}_masked.mp4")
     assert history.success is not None
 
 
@@ -836,8 +845,8 @@ def test_remove_frames_replace_denied_keeps_existing_processed_path(
         pk=1,
     )
 
-    part_path: Path = output_dir / f"{video.video_hash}_cleaned.part.mp4"
-    final_output: Path = output_dir / f"{video.video_hash}_cleaned.mp4"
+    part_path: Path = output_dir / f"{video.raw_video_hash}_cleaned.part.mp4"
+    final_output: Path = output_dir / f"{video.raw_video_hash}_cleaned.mp4"
 
     assert response.status_code == 500
     assert video.processed_file.name == original_name

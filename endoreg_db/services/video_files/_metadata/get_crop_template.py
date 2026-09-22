@@ -20,7 +20,7 @@ def _get_crop_template(video: "VideoFile") -> list[int] | None:
     if endo_roi is None:
         logger.warning(
             "Cannot generate crop template for video %s: Endo ROI not available.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return None
 
@@ -32,7 +32,7 @@ def _get_crop_template(video: "VideoFile") -> list[int] | None:
     if crop_template is None:
         logger.warning(
             "Invalid ROI or crop bounds for video %s: ROI=%s, Img=%sx%s",
-            video.video_hash,
+            video.raw_video_hash,
             endo_roi,
             video.width,
             video.height,
@@ -41,7 +41,7 @@ def _get_crop_template(video: "VideoFile") -> list[int] | None:
 
     logger.debug(
         "Generated crop template for video %s: %s",
-        video.video_hash,
+        video.raw_video_hash,
         crop_template,
     )
     return crop_template

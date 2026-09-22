@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from math import isnan
-from typing import TypeAlias, Any
+from typing import Any
 
 from django.db import models
-
-NoProductWeightValue: TypeAlias = None
-ProductWeightValue: TypeAlias = float | NoProductWeightValue
-ProductWeightSource: TypeAlias = str | NoProductWeightValue
 
 
 class ProductWeight(models.Model):
@@ -25,12 +21,12 @@ class ProductWeight(models.Model):
     )
 
     @staticmethod
-    def _has_weight(value: ProductWeightValue) -> bool:
+    def _has_weight(value: float | None) -> bool:
         if value is None:
             return False
         return not isnan(value)
 
-    def get_weight(self) -> ProductWeightValue:
+    def get_weight(self) -> float | None:
         if self._has_weight(self.verified):
             return self.verified
         if self._has_weight(self.measured):
@@ -39,7 +35,7 @@ class ProductWeight(models.Model):
             return self.manufacturer
         return None
 
-    def get_weight_source(self) -> ProductWeightSource:
+    def get_weight_source(self) -> str | None:
         if self._has_weight(self.verified):
             return "verified"
         if self._has_weight(self.measured):

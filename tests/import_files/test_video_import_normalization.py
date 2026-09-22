@@ -61,7 +61,7 @@ def _video_with_pts() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="import-normalization-video",
+        raw_video_hash="import-normalization-video",
         fps=25.0,
         duration=0.3,
         frame_count=5,

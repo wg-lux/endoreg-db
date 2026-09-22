@@ -28,7 +28,7 @@ class AIDataSetTrainingManifestTests(TestCase):
         center = Center.objects.create(name="training-manifest-center")
         self.video = VideoFile.objects.create(
             center=center,
-            video_hash="training-manifest-video",
+            raw_video_hash="training-manifest-video",
             original_file_name="training_manifest.mp4",
             fps=25.0,
             frame_count=2,

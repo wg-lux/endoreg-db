@@ -330,7 +330,7 @@ class ResolvedVideoReference(BaseModel):
 
 class _PersistedVideoReference(Protocol):
     @property
-    def video_hash(self) -> object: ...
+    def raw_video_hash(self) -> object: ...
 
     @property
     def processed_video_hash(self) -> object: ...
@@ -564,7 +564,7 @@ def assert_video_reference_is_current(
 ) -> None:
     if (
         reference.source_video_hash is not None
-        and str(video.video_hash) != reference.source_video_hash
+        and str(video.raw_video_hash) != reference.source_video_hash
     ):
         raise RuntimeError(
             "Upstream import receipt does not match the current source generation."

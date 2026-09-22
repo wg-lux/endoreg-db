@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from datetime import date
 from typing import TypeAlias, Any
 
 from django.db import models
 
 from ...other.gender import Gender
 
-NoPersonValue: TypeAlias = None
-PersonTextValue: TypeAlias = str | NoPersonValue
-PersonDateValue: TypeAlias = date | NoPersonValue
-PersonGenderValue: TypeAlias = "Gender | NoPersonValue"
+PersonGenderValue: TypeAlias = "Gender | None"
 
 
 class Person(models.Model):

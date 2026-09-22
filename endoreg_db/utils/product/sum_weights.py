@@ -9,8 +9,7 @@ if TYPE_CHECKING:
     )
     from endoreg_db.models.other.unit import Unit
 
-NoProductMaterialValue: TypeAlias = None
-ProductMaterialMetric: TypeAlias = tuple[float, "Unit | NoProductMaterialValue"]
+ProductMaterialMetric: TypeAlias = tuple[float, "Unit | None"]
 
 
 class _ProductMaterialWeightSource(Protocol):
@@ -22,7 +21,7 @@ def sum_weights(
     product_materials: Iterable["ProductMaterial"],
 ) -> ProductMaterialMetric:
     weight = 0.0
-    reference_unit: Unit | NoProductMaterialValue = None
+    reference_unit: Unit | None = None
     for product_material in product_materials:
         material = cast(_ProductMaterialWeightSource, product_material)
         if not reference_unit:

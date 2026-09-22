@@ -20,7 +20,7 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     prepare_ai_dataset_export_download,
     sanitize_export_token,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 
 
 class _UserManager(Protocol):
@@ -69,7 +69,7 @@ def test_create_ai_dataset_export_writes_json_artifact(tmp_path: Path) -> None:
     assert output_path.is_file()
     assert output_path.parent == tmp_path / "ai_datasets"
     assert json.loads(output_path.read_text(encoding="utf-8")) == export_payload
-    assert payload["sha256"] == sha256_file(output_path)
+    assert payload["sha256"] == get_file_hash(output_path)
     assert payload["byte_size"] == output_path.stat().st_size
     assert payload["summary"] == {
         "image_annotation_count": 0,
@@ -252,7 +252,7 @@ def test_prepare_ai_dataset_export_download_returns_file_metadata(
         status=AIDataSetExportArtifact.STATUS_COMPLETED,
         output_path=str(output_path),
         download_filename="download.json",
-        sha256=sha256_file(output_path),
+        sha256=get_file_hash(output_path),
         byte_size=len(content),
     )
 

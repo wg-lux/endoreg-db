@@ -32,23 +32,6 @@ KNOWN_ENDOREG_API_COMPATIBILITY_URLS = {
     "/api/patient-examinations/list/",
 }
 
-KNOWN_BASE_API_URLS = {
-    "/base_api/terminology/bundles",
-    "/base_api/terminology/bundles/import",
-    "/base_api/terminology/bundles/select",
-    "/base_api/examinations/",
-    "/base_api/examinations/<examination_id>/",
-    "/base_api/examinations/<examination_id>/findings/",
-    "/base_api/findings/<finding_id>/classifications/",
-    "/base_api/classifications/<classification_id>/choices/",
-    "/base_api/patient-examinations/<patient_examination_id>/dtypes-record/",
-    "/base_api/patient-findings/",
-    "/base_api/patient-findings/<patient_finding_id>/",
-    "/base_api/patient-findings/<patient_finding_id>/classifications/",
-    "/base_api/knowledge-bases/<module_name>/<version>/graph",
-    "/base_api/knowledge-bases/<module_name>/<version>/examinations/<examination_name>/reporting-context",
-}
-
 KNOWN_DTYPES_API_URLS = {
     "/dtypes-api/terminology/bundles",
     "/dtypes-api/terminology/bundles/import",
@@ -121,7 +104,6 @@ def test_show_urls_csv_contains_known_api_urls(tmp_path: Path) -> None:
             KNOWN_ENDOREG_API_URLS
             | KNOWN_ENDOREG_API_COMPATIBILITY_URLS
             | KNOWN_DTYPES_API_URLS
-            | KNOWN_BASE_API_URLS
         )
         - url_patterns
     )
@@ -132,7 +114,7 @@ def test_show_urls_csv_contains_known_api_urls(tmp_path: Path) -> None:
     )
 
 
-def test_lx_dtypes_base_api_is_not_mounted_under_endoreg_api(
+def test_lx_dtypes_api_has_no_compatibility_or_nested_mount(
     tmp_path: Path,
 ) -> None:
     urls_csv_path = tmp_path / "urls.csv"
@@ -143,12 +125,15 @@ def test_lx_dtypes_base_api_is_not_mounted_under_endoreg_api(
     forbidden_urls = {
         prefixed
         for mount in ("/endoreg-api", "/api")
-        for prefixed in (f"{mount}{url}" for url in KNOWN_BASE_API_URLS)
+        for prefixed in (f"{mount}{url}" for url in KNOWN_DTYPES_API_URLS)
     }
+    forbidden_urls.update(
+        url.replace("/dtypes-api/", "/base_api/") for url in KNOWN_DTYPES_API_URLS
+    )
     mounted_under_api = sorted(forbidden_urls & url_patterns)
 
     assert not mounted_under_api, (
-        "lx-dtypes base_api routes must not be mounted under the endoreg API:\n"
+        "lx-dtypes routes must only use the canonical mount:\n"
         + "\n".join(mounted_under_api)
     )
 
@@ -162,6 +147,6 @@ def test_legacy_findings_api_routes_are_hard_cut(tmp_path: Path) -> None:
     still_mounted = sorted(LEGACY_FINDINGS_API_URLS & url_patterns)
 
     assert not still_mounted, (
-        "legacy endoreg findings routes must be cut in favor of /base_api/:\n"
+        "legacy endoreg findings routes must be cut in favor of /dtypes-api/:\n"
         + "\n".join(still_mounted)
     )

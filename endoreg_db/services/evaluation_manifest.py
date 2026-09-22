@@ -41,7 +41,7 @@ from endoreg_db.services.anonymization_metrics import (
 from endoreg_db.services.anonymization_quality_evaluation import (
     evaluate_phi_region_confusion_matrix,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 
 ManifestJson = dict[str, object]
 
@@ -598,8 +598,10 @@ def _pdf_map(pdf_ids: Sequence[int]) -> dict[int, RawPdfFile]:
 
 
 def _video_ref(video: VideoFile | None, *, context: _EvaluationRunContext) -> str:
-    if video is not None and video.video_hash:
-        return _hash_identifier(context, namespace="video_hash", value=video.video_hash)
+    if video is not None and video.raw_video_hash:
+        return _hash_identifier(
+            context, namespace="raw_video_hash", value=video.raw_video_hash
+        )
     return _hash_identifier(
         context, namespace="missing_video", value=secrets.token_hex(8)
     )
@@ -788,7 +790,7 @@ def _devenv_lock_hash() -> str:
     if not lock_path.exists():
         return ""
     try:
-        return sha256_file(lock_path)
+        return get_file_hash(lock_path)
     except OSError:
         return ""
 

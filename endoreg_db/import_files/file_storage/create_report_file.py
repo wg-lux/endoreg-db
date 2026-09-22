@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,
@@ -49,7 +49,7 @@ def create_or_retrieve_report_file(
     needs_processing = True
 
     if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = sha256_file(ctx.file_path)
+        ctx.file_hash = get_file_hash(ctx.file_path)
 
     # Check if we already have a successful history entry for this object
     has_success_history = ProcessingHistory.has_history_for_hash(

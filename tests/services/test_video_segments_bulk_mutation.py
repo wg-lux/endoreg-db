@@ -23,7 +23,7 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
         self.center = Center.objects.create(name="Bulk Segment Service Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="bulk-segments-service-video",
+            raw_video_hash="bulk-segments-service-video",
             original_file_name="bulk_segments_service.mp4",
             fps=25.0,
             frame_count=200,

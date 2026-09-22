@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Unpack, cast, Any
+from typing import TYPE_CHECKING, Unpack, cast, Any
 
 from django.db import models
 from django.utils.text import slugify
@@ -13,10 +13,6 @@ if TYPE_CHECKING:
     from ...medical import Endoscope, EndoscopyProcessor
     from ..person.names.first_name import FirstName
     from ..person.names.last_name import LastName
-
-
-NoCenterSaveValue: TypeAlias = None
-CenterPk: TypeAlias = int | NoCenterSaveValue
 
 
 class CenterManager(models.Manager["Center"]):
@@ -86,7 +82,7 @@ class Center(models.Model):
         return cls.objects.get(center_key=center_key)
 
     @classmethod
-    def resolve_identity(cls, identifier: str) -> "Center | NoCenterSaveValue":
+    def resolve_identity(cls, identifier: str) -> "Center | None":
         return (
             cls.objects.filter(center_key=identifier).first()
             or cls.objects.filter(name=identifier).first()
@@ -100,7 +96,7 @@ class Center(models.Model):
         cls,
         value: str,
         *,
-        exclude_pk: CenterPk = None,
+        exclude_pk: int | None = None,
     ) -> str:
         base = slugify(value or "") or "center"
         candidate = base
@@ -128,7 +124,7 @@ class Center(models.Model):
             source_value = self.display_name or self.name
             self.center_key = self.build_center_key(
                 source_value,
-                exclude_pk=cast(CenterPk, self.pk),
+                exclude_pk=cast(int | None, self.pk),
             )
         if not self.display_name:
             self.display_name = self.name

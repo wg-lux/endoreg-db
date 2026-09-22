@@ -65,33 +65,33 @@ def _build_initialization_plan(
         logger.info(
             "Initializing Frame objects based on %d provided paths for video %s.",
             len(frame_paths),
-            video.video_hash,
+            video.raw_video_hash,
         )
         return _FrameInitializationPlan(
             records=_provided_frame_records(frame_paths),
             frame_count=len(frame_paths),
             mark_as_extracted=True,
-            progress_description=f"Initializing Frames from Paths {video.video_hash}",
+            progress_description=f"Initializing Frames from Paths {video.raw_video_hash}",
         )
 
     expected_frame_count = video.frame_count
     if expected_frame_count is None or expected_frame_count <= 0:
         logger.warning(
             "Cannot initialize frames for video %s: Frame count is %s.",
-            video.video_hash,
+            video.raw_video_hash,
             expected_frame_count,
         )
         return None
     logger.info(
         "Initializing %d expected Frame objects for video %s (is_extracted=False).",
         expected_frame_count,
-        video.video_hash,
+        video.raw_video_hash,
     )
     return _FrameInitializationPlan(
         records=_expected_frame_records(expected_frame_count),
         frame_count=expected_frame_count,
         mark_as_extracted=False,
-        progress_description=f"Initializing Expected Frames {video.video_hash}",
+        progress_description=f"Initializing Expected Frames {video.raw_video_hash}",
     )
 
 
@@ -128,7 +128,7 @@ def _reset_empty_initialization_state(video: "VideoFile") -> None:
     except Exception as error:
         logger.error(
             "Failed to reset state during empty initialization for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -152,7 +152,7 @@ def _mark_existing_frames_extracted(
         logger.info(
             "Marked %d existing Frame objects as is_extracted=True for video %s.",
             update_count,
-            video.video_hash,
+            video.raw_video_hash,
         )
 
 
@@ -169,18 +169,18 @@ def _update_initialization_state(
     except Exception as error:
         logger.error(
             "Failed to update state after frame initialization for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
         raise RuntimeError(
             "Failed to update state after frame initialization for video "
-            f"{video.video_hash}"
+            f"{video.raw_video_hash}"
         ) from error
     logger.info(
         "Set frames_initialized=True and frame_count=%d for video %s.",
         frame_count,
-        video.video_hash,
+        video.raw_video_hash,
     )
 
 
@@ -199,7 +199,7 @@ def _persist_initialization_attempt(
         "Bulk create attempted for %d Frame objects for video %s "
         "(ignore_conflicts=True).",
         len(frames),
-        video.video_hash,
+        video.raw_video_hash,
     )
     if plan.mark_as_extracted:
         _mark_existing_frames_extracted(video, frames)
@@ -224,21 +224,21 @@ def _persist_initialization_with_retry(
             if not _database_is_locked(error):
                 logger.error(
                     "Error initializing frames for video %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     error,
                     exc_info=True,
                 )
                 raise RuntimeError(
-                    f"Failed to initialize frames for video {video.video_hash}."
+                    f"Failed to initialize frames for video {video.raw_video_hash}."
                 ) from error
             logger.warning(
                 "Database is locked, retrying frame initialization for video %s "
                 "(attempt %d/5).",
-                video.video_hash,
+                video.raw_video_hash,
                 attempt + 1,
             )
             time.sleep(2**attempt)
-    raise RuntimeError(f"Failed to initialize frames for video {video.video_hash}.")
+    raise RuntimeError(f"Failed to initialize frames for video {video.raw_video_hash}.")
 
 
 def _initialize_frames(
@@ -271,7 +271,7 @@ def _initialize_frames(
     if not frames:
         logger.warning(
             "No valid frames found/generated to initialize for video %s.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         _reset_empty_initialization_state(video)
         return

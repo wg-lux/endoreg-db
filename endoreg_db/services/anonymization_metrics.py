@@ -1085,7 +1085,7 @@ def _find_upload_job(
     if sensitive_meta is not None and sensitive_meta.pk:
         filters |= Q(sensitive_meta_id=sensitive_meta.pk)
     content_hash = (
-        getattr(media_obj, "video_hash", None)
+        getattr(media_obj, "raw_video_hash", None)
         if media_type == "video"
         else getattr(media_obj, "pdf_hash", None)
     )

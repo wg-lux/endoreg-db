@@ -10,6 +10,10 @@ from django.db import transaction
 from django.http import Http404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.contracts.transfer_validation import (
+    TransferValidationFailureLogPayload,
+)
 from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import (
@@ -21,25 +25,25 @@ from rest_framework.parsers import BaseParser
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
-from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from endoreg_db.serializers.hub import (
     TransferJobCreateSerializer,
     TransferJobStatusSerializer,
 )
 from endoreg_db.services.hub import (
+    HubMediaEnvelopeReplayConflict,
     apply_transfer_metadata,
     attach_enveloped_transfer_media,
     authenticate_network_node,
     create_or_reuse_transfer_job,
     get_media_envelope_receipt,
-    HubMediaEnvelopeReplayConflict,
     transfer_api_enabled,
 )
-from endoreg_db.services.hub.transfers import TransferOperationBusy
+from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
 from endoreg_db.services.hub.transfer_logging import (
     decision,
     error,
@@ -51,14 +55,10 @@ from endoreg_db.services.hub.transfer_logging import (
     transfer_summary,
     warning,
 )
-from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
+from endoreg_db.services.hub.transfers import TransferOperationBusy
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     hash_identifier,
-)
-from lx_dtypes.models.contracts.json_types import JsonValue
-from lx_dtypes.models.contracts.transfer_validation import (
-    TransferValidationFailureLogPayload,
 )
 
 if TYPE_CHECKING:
@@ -80,16 +80,6 @@ _TransferPayloadValue: TypeAlias = (
     | None
     | list["_TransferPayloadValue"]
     | dict[str, "_TransferPayloadValue"]
-)
-
-_StructuredLogValue: TypeAlias = (
-    str
-    | int
-    | float
-    | bool
-    | None
-    | list["_StructuredLogValue"]
-    | dict[str, "_StructuredLogValue"]
 )
 
 
@@ -204,7 +194,7 @@ def _log_transfer_validation_failure(
         logger,
         event,
         level=logging.WARNING,
-        error_fields=cast(list[_StructuredLogValue], structured_payload.error_fields),
+        error_fields=cast(list[JsonValue], structured_payload.error_fields),
         request_method=structured_payload.request_method,
         remote_addr_sha256=structured_payload.remote_addr_sha256,
         transfer_key_sha256=structured_payload.transfer_key_sha256,

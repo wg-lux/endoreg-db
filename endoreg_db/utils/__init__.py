@@ -7,7 +7,6 @@ from . import dataloader as dataloader
 
 # file_operations
 from . import file_operations as file_operations
-from . import paths as paths
 
 # dates
 from .dates import (
@@ -25,12 +24,10 @@ from .file_operations import (
 
 # hashs
 from .hashs import (
-    DJANGO_NAME_SALT,
     get_examiner_hash,
     get_hash_string,
     get_patient_examination_hash,
-    get_pdf_hash,
-    get_video_hash,
+    get_file_hash,
 )
 
 # names
@@ -42,7 +39,6 @@ from .names import (
 from .parse_and_generate_yaml import collect_center_names
 
 # paths
-from .paths import data_paths
 
 # pydantic_models
 from .pydantic_models import DbConfig
@@ -116,19 +112,17 @@ __all__ = [
     "copy_with_progress",
     "create_mock_examiner_name",
     "create_mock_patient_name",
-    "data_paths",
     "dataloader",
     "DbConfig",
     "DEBUG",
-    "DJANGO_NAME_SALT",
     "ensure_aware_datetime",
     "get_env_var",
     "get_examiner_hash",
     "get_hash_string",
     "get_patient_examination_hash",
-    "get_pdf_hash",
+    "get_file_hash",
     "get_content_hash_filename",
-    "get_video_hash",
+    "get_file_hash",
     "guess_name_gender",
     "load_model_data_from_yaml",
     "random_day_by_month_year",
@@ -143,7 +137,6 @@ __all__ = [
     "ensure_local_file",
     "field_file_is_readable",
     "file_operations",
-    "paths",
     "save_local_file",
     "storage_file_exists",
 ]

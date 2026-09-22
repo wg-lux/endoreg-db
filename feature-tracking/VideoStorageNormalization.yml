@@ -553,6 +553,10 @@ definition_of_done:
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
   acceptance:
+  - Speicherplatz-Transkodierung erhält Video-Primärschlüssel, UUID und raw_video_hash sowie die Importauflösung
+    über get_video_by_content_hash und video_hash_exists auch nach wiederholtem Ersatz. processed_video_hash
+    entspricht dem entschlüsselten Inhalt der neuen Generation; reale Encoder- und HLS-Integration bestätigt
+    kleinere Ausgabe, unveränderte Frame-Identitäten und passende Wiedergabe.
   - Nach erfolgreichem Commit einer Processed-Ersatzgeneration werden das vorherige generierte Mastervideo
     und sein superseded Processed-HLS anhand persistierter Hash- und Besitznachweise bereinigt. Aktive
     Leases, fremde Referenzen oder fehlende Ersatzartefakte verhindern die Löschung. Teilfehler behalten
@@ -566,14 +570,14 @@ definition_of_done:
   - Nach einem Teilfehler bleibt ein wiederanlauffähiger, eindeutig beobachtbarer Zustand zurück; ein
     Cleanup-Erfolg wird erst nach Prüfung des tatsächlichen Dateisystemzustands persistiert.
   - HLS is the playback copy. Storage-pressure operations create only a replacement processed master;
-    repeated attempts reconcile recorded old generations before encoding another candidate. Cleanup
-    failures preserve the current master and block further artifact accumulation. Legacy full-video
-    playback copies require exact ownership and digest evidence for retirement.
-  - The undeployed optimized-playback schema and supporting code are removed directly.
-    Fresh installations end at migration 0080 without optimized-playback columns; no forward
-    retirement migration or optimized-copy compatibility layer is introduced.
-  - Cleanup rejects known database references before reading replacement media, and rechecks
-    references after validation so references added meanwhile still prevent deletion.
+    repeated attempts reconcile recorded old generations before encoding another candidate. Cleanup failures
+    preserve the current master and block further artifact accumulation. Legacy full-video playback copies
+    require exact ownership and digest evidence for retirement.
+  - The undeployed optimized-playback schema and supporting code are removed directly. Fresh installations
+    end at migration 0080 without optimized-playback columns; no forward retirement migration or optimized-copy
+    compatibility layer is introduced.
+  - Cleanup rejects known database references before reading replacement media, and rechecks references
+    after validation so references added meanwhile still prevent deletion.
   - Eine versionierte native Rust-Zustandsmaschine entscheidet deterministisch über Reservierung, Veröffentlichung
     und Reconciliation. Datenbankzeilen, Media-Operation-Leases, Dateibesitz und atomare Veröffentlichung
     bleiben autoritativ im Python-Service.
@@ -640,53 +644,80 @@ definition_of_done:
         tests reports 0 errors and 1 existing lx-anonymizer missing-stub warning. Project-venv pytest
         --collect-only -q collects 3812 tests with no import errors, without a source-path override.'
     - kind: test
-      reference: '2026-09-15, codex-api-overview-20260914: isolated SQLite, RUN_VIDEO_TESTS=true and
-        SKIP_EXPENSIVE_TESTS=false, project-venv pytest of optimized playback selection, encrypted
-        processed transcoding, cancellation service/view, artifact writer entry, HLS media and legacy
-        HLS adoption: 105 passed, no skips, 2 existing dependency/plugin warnings. Focused Ruff and
-        diff checks passed. This does not establish PostgreSQL or deployed acceptance.'
+      reference: '2026-09-15, codex-api-overview-20260914: isolated SQLite, RUN_VIDEO_TESTS=true and SKIP_EXPENSIVE_TESTS=false,
+        project-venv pytest of optimized playback selection, encrypted processed transcoding, cancellation
+        service/view, artifact writer entry, HLS media and legacy HLS adoption: 105 passed, no skips,
+        2 existing dependency/plugin warnings. Focused Ruff and diff checks passed. This does not establish
+        PostgreSQL or deployed acceptance.'
     - kind: test
-      reference: '2026-09-15 replacement-only cleanup, codex-api-overview-20260914: owning-backend
-        transcode/encrypted-filesystem/reaper/management lane 39 passed; HLS cleanup lane 44 passed.
-        Repeated encrypted replacements retain one canonical master; pending receipts block another
-        encode; legacy copies retire on replacement or a verified skipped encode; failed staging
-        cleanup blocks further attempt allocation. Full Pyright 0 errors, 1 existing missing-stub
-        warning; focused Ruff and diff checks passed. These remain local SQLite checks.'
+      reference: '2026-09-15 replacement-only cleanup, codex-api-overview-20260914: owning-backend transcode/encrypted-filesystem/reaper/management
+        lane 39 passed; HLS cleanup lane 44 passed. Repeated encrypted replacements retain one canonical
+        master; pending receipts block another encode; legacy copies retire on replacement or a verified
+        skipped encode; failed staging cleanup blocks further attempt allocation. Full Pyright 0 errors,
+        1 existing missing-stub warning; focused Ruff and diff checks passed. These remain local SQLite
+        checks.'
     - kind: test
-      reference: '2026-09-15 cleanup admission: import finalization, storage-state and writer-entry
-        cohort 30 passed; reanonymization and writer-entry cohort 17 passed. Repeated replacements
-        delete prior encrypted masters; failed HLS or cleanup preserves the committed replacement
-        and blocks further generation allocation. Stored timeline changes are rejected before
-        reanonymization encoding. Full backend Pyright 0 errors and 1 existing stub warning.'
+      reference: '2026-09-15 cleanup admission: import finalization, storage-state and writer-entry cohort
+        30 passed; reanonymization and writer-entry cohort 17 passed. Repeated replacements delete prior
+        encrypted masters; failed HLS or cleanup preserves the committed replacement and blocks further
+        generation allocation. Stored timeline changes are rejected before reanonymization encoding. Full
+        backend Pyright 0 errors and 1 existing stub warning.'
     - kind: test
-      reference: '2026-09-15 final lease/reaper/transcode/import/reanonymization cohort: 68 passed;
-        one stale finalization expectation corrected and its regression separately passed (1).
-        All seven new lease regressions passed, including independent-connection visibility of
-        committed writer ownership, lease-row renewal and expired-token fencing. Full backend
-        Pyright 0 errors, 1 existing stub warning; focused typing, Ruff and diff checks passed.
-        No real PostgreSQL contention or deployed acceptance was performed.'
+      reference: '2026-09-15 final lease/reaper/transcode/import/reanonymization cohort: 68 passed; one
+        stale finalization expectation corrected and its regression separately passed (1). All seven new
+        lease regressions passed, including independent-connection visibility of committed writer ownership,
+        lease-row renewal and expired-token fencing. Full backend Pyright 0 errors, 1 existing stub warning;
+        focused typing, Ruff and diff checks passed. No real PostgreSQL contention or deployed acceptance
+        was performed.'
     - kind: test
-      reference: '2026-09-15 undeployed-copy revert, codex-api-overview-20260914: removed 0081 and
-        restored 0080_media_transcode_lease as canonical leaf; no 0082 retirement migration.
-        Removed optimized model fields, selector branch, mode enum/parameter and compatibility
-        cleanup paths. Earlier optimized-copy evidence describes superseded code. Full backend
-        Pyright 0 errors and 1 existing stub warning; migration drift check reports no changes.
-        Fresh graph, canonical playback selection and artifact writer lane: 14 passed, including
-        database introspection proving optimized-playback columns are absent. Simplified transcode,
-        encrypted-storage cleanup and management-command cohort: 37 passed, no skips. No optimized
-        playback symbols remain in backend runtime Python sources.'
+      reference: '2026-09-15 undeployed-copy revert, codex-api-overview-20260914: removed 0081 and restored
+        0080_media_transcode_lease as canonical leaf; no 0082 retirement migration. Removed optimized
+        model fields, selector branch, mode enum/parameter and compatibility cleanup paths. Earlier optimized-copy
+        evidence describes superseded code. Full backend Pyright 0 errors and 1 existing stub warning;
+        migration drift check reports no changes. Fresh graph, canonical playback selection and artifact
+        writer lane: 14 passed, including database introspection proving optimized-playback columns are
+        absent. Simplified transcode, encrypted-storage cleanup and management-command cohort: 37 passed,
+        no skips. No optimized playback symbols remain in backend runtime Python sources.'
     - kind: test
-      reference: '2026-09-15 cleanup early rejection, codex-api-overview-20260914: 23 cleanup tests
-        passed in 42.06s. Referenced raw/other-video artifacts cause zero replacement hash or HLS
-        readiness calls; a reference introduced during validation still prevents deletion.
-        Focused Pyright 0 errors/0 warnings, Ruff and diff checks passed. Two existing test warnings;
-        no production performance benchmark or PostgreSQL concurrency acceptance was performed.'
-    assessed_by: codex-finish-storage-20260914
-    assessed_at: '2026-09-14T15:34:02.383048Z'
+      reference: '2026-09-15 cleanup early rejection, codex-api-overview-20260914: 23 cleanup tests passed
+        in 42.06s. Referenced raw/other-video artifacts cause zero replacement hash or HLS readiness calls;
+        a reference introduced during validation still prevents deletion. Focused Pyright 0 errors/0 warnings,
+        Ruff and diff checks passed. Two existing test warnings; no production performance benchmark or
+        PostgreSQL concurrency acceptance was performed.'
+    - kind: test
+      reference: '2026-09-21: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/services/test_video_processed_transcode_integration.py
+        tests/services/test_video_processed_transcode_encryption.py tests/management/commands/test_transcode_processed_videos.py
+        tests/services/test_media_operation_gate.py tests/services/test_video_file_services_contract.py
+        -q: 53 passed, 2 warnings. Reale FFmpeg-Verkleinerung mit verschlüsselter Veröffentlichung und
+        passendem HLS; stabile Import-Hashauflösung und Frame-Identitäten, wiederholte Ersatzgenerationen
+        und Fehlerpfade geprüft.'
+    - kind: command
+      reference: '2026-09-21: Gesamt-Pyright 0 errors, 5 warnings; finale geänderte Backend-Tests 0 errors,
+        0 warnings; Ruff und git diff --check bestanden.'
+    - kind: test
+      reference: '2026-09-21: lx-annotate mit PYTHONPATH=/home/admin/endoreg-db: Transcode-Worker, API,
+        Bulk-Reparatur und Access-Management 90 passed; Frontend-Panel/API 23 passed. Installiertes Endoreg-Paket
+        scheitert zuvor am fehlenden endoreg_db.config.identity_hashing; keine Paket- oder Produktionsfreigabe.'
+    - kind: test
+      reference: '2026-09-21: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/import_files/test_video_import_normalization.py
+        tests/services/test_video_source_hash.py -q: 13 passed, 2 warnings. Insgesamt 66 fokussierte Backendtests,
+        90 lx-annotate-Quellintegrationstests und 23 Frontendtests bestanden. Tracker check bleibt wegen
+        offener übergreifender Produktionsfreigaben nicht erfolgreich (4/19); keine Deployment-Aussage.'
+    assessed_by: codex-downsize-20260921
+    assessed_at: '2026-09-21T14:54:53.621535Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze
   acceptance:
+  - VideoArtifactFieldFile bündelt Existenzprüfung, geschützten Klartextzugriff und lokale Materialisierung;
+    Video-Services verwenden diese Schnittstelle ohne alternative direkte Dateipfade. Hashes stammen ausschließlich
+    aus utils.file_operations.get_file_hash.
+  - Video and PDF runtime paths resolve through get_runtime_paths() using LX_RUNTIME_ROOT only; package
+    seed-data paths remain separate from runtime storage.
+  - Video and PDF filenames use the central storage filename policy. Legacy artifact discovery reconciles
+    known names without choosing ambiguous candidates or overwriting a valid master.
+  - The manual LuxNix migration unit invokes the shared video and PDF reconciliation command; source deletion
+    remains behind the existing verified migration gates.
   - Temporäre und finale Medien liegen ausschließlich im freigegebenen, verschlüsselten Storage; Klartext-Artefakte
     werden weder exportiert noch in öffentliche Mounts oder ungeschützte Temp-Verzeichnisse geschrieben.
   - Dateiänderungen verwenden den kanonischen typisierten Wrapper, atomare Veröffentlichung und strukturierte
@@ -709,12 +740,16 @@ definition_of_done:
       reference: 3f7084c4
     - kind: test
       reference: tests/services/test_hls_media.py::test_materialize_video_hls_profile_failure_prevents_publication
-    note: Zusätzlich zu den bestehenden Failure-Injection-Nachweisen wird verschlüsseltes HLS jetzt vor
-      Veröffentlichung über eine versuchsspezifische lokale Prüfplaylist validiert. Profilfehler markieren
-      den Versuch als fehlgeschlagen und entfernen Staging, Prüfplaylist und Schlüsselmaterial. Offen
-      bleibt die manuelle Abnahme im verschlüsselten Produktionsprofil einschließlich harter Prozessbeendigung.
-    assessed_by: Codex
-    assessed_at: '2026-07-23T09:07:39.713637Z'
+    - kind: command
+      reference: '2026-09-21: VideoArtifactFieldFile zentralisiert Existenzprüfung, geschützten Klartextzugriff
+        und Materialisierung; Video-Hashing verwendet utils.file_operations.get_file_hash mit Rust-Entschlüsselung.
+        Kombinierte Feld-, Lease-, Hash-Cache-, Importnormalisierungs- und HLS-Prüfung: 118 bestanden;
+        drei Finalisierungsfehler anschließend behoben. Folgeprüfung von Finalisierung, Datei-I/O und
+        Encryption-Streaming: 25 bestanden, eine Dateinamen-Testannahme korrigiert; abschließende Finalisierungssuite:
+        10 bestanden. Gezielter Pyright, Ruff und Diff-Prüfung bestanden. Repository-Pyright: 112 Fehler
+        und 4 Warnungen außerhalb des Patches. Keine Produktionsabnahme.'
+    assessed_by: codex-video-field-20260921-a
+    assessed_at: '2026-09-21T08:35:06.869433Z'
 - id: migration_regression_tests
   category: testing
   title: Größen-, Timeline-, Qualitäts- und Cleanup-Invarianten sind regressionsgetestet
@@ -890,12 +925,20 @@ definition_of_done:
       reference: 'Bounded cursor inventory tests: 3 passed sequentially with 4 destructive/expensive tests
         skipped by policy; the resume-safety failure path passed separately with the expensive-test skip
         disabled (1 passed)'
+    - kind: document
+      reference: docs/secret_rotation.yml; docs/video_storage_normalization.md
     note: 'The English runbook documents eager HLS readiness, encrypted pre-publication validation, timeline
       gates, and now the bounded inventory contract: default/max batch sizes, stable primary-key cursor
       fields, resume commands, within-batch prioritization, and partial-apply reconciliation. Formal operations,
-      security, storage-owner, and clinical review remain outstanding.'
-    assessed_by: codex-storage-optimization-20260824
-    assessed_at: '2026-08-25T08:26:18.303628Z'
+      security, storage-owner, and clinical review remain outstanding.
+
+
+      2026-09-21: Der kanonische englische Runbook verweist jetzt auf docs/secret_rotation.yml und Anonymization.yml#online_secret_rotation.
+      Dokumentiert sind Schlüsselüberlappung, frische Dateischlüssel, HLS-Neugenerierung, Medien-Leases,
+      Wiederaufnahme und getrennte Stilllegungsprüfung. 189 Integrationsprüfungen bestanden einschließlich
+      echter HLS-Schlüsselrotation. Die bestehenden formalen Freigaben bleiben offen.'
+    assessed_by: codex-gc02-storage-20260921
+    assessed_at: '2026-09-21T16:31:35.398806Z'
 - id: hls_dispatch_recovery_and_fencing
   category: functionality
   title: WP-ER-01 Lost HLS deliveries and worker loss converge safely
@@ -1200,3 +1243,53 @@ definition_of_done:
       blockiert.
     assessed_by: codex-state-machine-tracker
     assessed_at: '2026-09-02T13:12:28.803565Z'
+- id: frame_materialization_boundary
+  category: functionality
+  title: Frame-Dateien entstehen ausschließlich an notwendigen Exportgrenzen
+  acceptance:
+  - Frame-Annotation liest anonymisierte Video-Frames über einen gemeinsamen Decoder ohne JPEG-Dateien
+    oder Extraktionsjobs.
+  - Postvalidierung und Inferenz erzeugen keinen Frame-Dateicache; lokale Trainingskonsumenten verwenden
+    vorhandene Streaming-Adapter.
+  - Unbenutzte Anonymisierungs-Wrapper sind entfernt; Regressionstests schützen die zulässigen Dateischreiber
+    und den Streaming-Pfad.
+  - Exportdateien behalten persistierte Frame-Identitäten und entstehen ausschließlich innerhalb der geschützten
+    Speichergrenze.
+  required: true
+  verification:
+    kind: manual
+    instructions: Architektur-, Decoder-, Annotation-, Export-, Postvalidierungs- und Importregressionen
+      sowie Pyright ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_frame_materialization_boundary.py; tests/views/media/test_frame_stream.py;
+        tests/views/test_central_hub_training_access.py; tests/services/test_frame_file_permissions.py
+    - kind: command
+      reference: '2026-09-21: fokussierte Suite: 277 passed, 4 failed, 2 warnings in 81.77s. Ein veralteter
+        Anonymizer-Pfadvergleich korrigiert; drei bestehende Import-Unit-Fixtures betreffen State-Rückgabe/Initialisierungsannahmen.
+        Abschließender Gesamt-Pyright: 22 errors, 6 warnings; geänderte Streaming-/Trainings-/Annotationsmodule
+        separat ohne Fehler geprüft.'
+    - kind: command
+      reference: '2026-09-21: Anonymizer-Einzelregression nach Anpassung an kanonischen Speicherpfad:
+        1 passed, 2 warnings in 44.42s. Damit 278 unterschiedliche fokussierte Tests bestanden; drei bestehende
+        Import-Unit-Fixtures bleiben offen. Ruff für geänderte Streaming- und Testdateien sowie git diff
+        --check bestanden.'
+    - kind: command
+      reference: '2026-09-21 Fehlerbericht-Nachprüfung: 111 passed, 2 warnings, 1 teardown error in 276.26s.
+        Alle gemeldeten Assertions korrigiert: Segmentcache-Abweisung, Streaming-Annotation, Legacy-Hashfeld
+        und Upload-Retry-Fixtures. Cache-Teardown-Korrektur wird in frischem Prozess separat geprüft.
+        Gesamt-Pyright 0 errors, 5 warnings; fokussierte spätere Änderungen 0 errors.'
+    - kind: command
+      reference: '2026-09-21 frischer Prozess: 68 passed, 1 failed in 59.43s; beide Annotationssuiten
+        inklusive processed-Streaming-URLs bestanden, setup-Endoreg-Teardown bestanden. Einzig neue Cache-Test-Gleichheitsannahme
+        korrigiert; Cache-Neuinstanz und Wiederverwendung werden separat geprüft.'
+    - kind: command
+      reference: '2026-09-21 abschließend: Cache-Regression und ursprünglicher Setup-Teardown 2 passed,
+        1 warning in 0.16s; Pyright des finalen Tests 0 errors, 0 warnings. Sämtliche Fehler aus dem eingefügten
+        Bericht über fokussierte Läufe behoben (111-passed-Lauf, 68-passed-Nachlauf, finaler 2-passed-Lauf).
+        Ruff und git diff --check bestanden.'
+    assessed_by: codex-frame-standardization-20260921
+    assessed_at: '2026-09-21T11:48:34.232997Z'

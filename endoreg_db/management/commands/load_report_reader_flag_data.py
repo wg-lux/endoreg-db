@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -12,11 +11,7 @@ from endoreg_db.models.media.pdf.report_reader.report_reader_flag import (
     ReportReaderFlag,
 )
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
-
-
-class LoadReportReaderFlagCommandOptions(TypedDict):
-    verbose: bool
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 
 SOURCE_DIR = REPORT_READER_FLAG_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
@@ -51,7 +46,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadReportReaderFlagCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:

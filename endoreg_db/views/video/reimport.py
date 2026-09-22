@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 def _video_hash(video: VideoFile) -> str:
-    return str(getattr(video, "video_hash", ""))
+    return str(getattr(video, "raw_video_hash", ""))
 
 
 def _api_response(payload: Mapping[str, Any], *, status_code: int) -> Response:
@@ -83,8 +83,8 @@ class VideoReimportView(APIView):
                 "processor",
                 "video_meta__processor",
             ).get(id=pk)
-            video_hash = _video_hash(video)
-            logger.info("Found video %s (ID: %s) for re-import", video_hash, pk)
+            raw_video_hash = _video_hash(video)
+            logger.info("Found video %s (ID: %s) for re-import", raw_video_hash, pk)
         except VideoFile.DoesNotExist:
             logger.warning("Video with ID %s not found", pk)
             return _api_response(

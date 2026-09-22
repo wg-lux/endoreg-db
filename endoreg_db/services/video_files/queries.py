@@ -15,12 +15,12 @@ def _video_file_model() -> type[VideoFile]:
 
 
 def video_hash_exists(
-    video_hash: str, *, model_cls: type["VideoFile"] | None = None
+    raw_video_hash: str, *, model_cls: type["VideoFile"] | None = None
 ) -> bool:
     model = model_cls or _video_file_model()
     return (
-        bool(video_hash)
-        and cast(Any, model.objects).filter(video_hash=video_hash).exists()
+        bool(raw_video_hash)
+        and cast(Any, model.objects).filter(raw_video_hash=raw_video_hash).exists()
     )
 
 
@@ -29,4 +29,4 @@ def get_video_by_pk(pk: int) -> "VideoFile":
 
 
 def get_video_by_content_hash(content_hash: str) -> "VideoFile":
-    return _video_file_model().objects.get(video_hash=content_hash)
+    return _video_file_model().objects.get(raw_video_hash=content_hash)

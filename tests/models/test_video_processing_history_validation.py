@@ -13,7 +13,7 @@ def _video() -> VideoFile:
         name="video-processing-history-validation-center",
     )
     return VideoFile.objects.create(
-        video_hash="video-processing-history-validation",
+        raw_video_hash="video-processing-history-validation",
         center=center,
     )
 

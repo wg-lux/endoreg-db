@@ -88,13 +88,25 @@ definition_of_done:
         lx_dtypes contract 16 passed
     - kind: command
       reference: 'Full Pyright: 0 errors, 1 existing missing-stub warning; focused Ruff passed'
-    note: Report frame selection supports streamed previews, positive-label browsing, ordered add/remove,
-      last-click fallback and explicitly empty export. Export validates examination scope and timestamps,
-      and removes private temporary JPEGs after success or failure. Existing finalization validation remains.
-      Local source suites pass; clinical acceptance and coordinated lx-dtypes/endoreg-db/frontend release
-      remain outstanding.
-    assessed_by: codex-monitoring-fix-20260909
-    assessed_at: '2026-09-09T14:12:16.968220Z'
+    - kind: test
+      reference: tests/services/test_report_import_service_unit.py
+    - kind: test
+      reference: tests/import_files/test_report_import_workload_timing.py
+    - kind: test
+      reference: tests/services/test_report_import_concurrency.py
+    - kind: test
+      reference: tests/services/test_report_import_fencing.py
+    - kind: test
+      reference: tests/services/test_report_artifact_integrity.py
+    - kind: code
+      reference: 'endoreg_db/services/report_persistence.py: fehlende Registry anhand OSError-Ursache
+        als Deploymentfehler (503); unbekannte Modulidentität bleibt Eingabefehler (422).'
+    - kind: command
+      reference: '2026-09-21: vollständige tests/views/report/test_patient_examination_report_ninja_api.py
+        im fokussierten 111-passed-Lauf bestanden; fehlende, unlesbare und fehlerhafte Registry liefern
+        503, unbekannte Module weiterhin 422. Pyright report_persistence.py: 0 errors, 0 warnings.'
+    assessed_by: codex-frame-standardization-20260921
+    assessed_at: '2026-09-21T11:46:02.468158Z'
 - id: report_draft_persistence_contract
   category: data_integrity
   title: Berichtsentwürfe werden repositoryübergreifend strikt und kanonisch persistiert
@@ -370,6 +382,10 @@ definition_of_done:
   category: data_integrity
   title: Berichtsversionen und PDF-Artefakte sind atomar und nachvollziehbar
   acceptance:
+  - ReportArtifactFieldFile bündelt Dateioperationen für RawPdfFile und generierte Berichte. Report- und
+    PDF-Pfade leiten sich aus utils.paths ab; Datei-Hashes verwenden ausschließlich utils.file_operations.get_file_hash.
+    Verschlüsselte Dateien werden nicht als Klartextpfade ausgegeben; Import-Fencing und Redaktionssperren
+    bleiben erhalten.
   - Hash, Version, Quelldokument und Renderergebnis bleiben konsistent.
   - Fehlgeschlagene Materialisierung hinterlässt kein freigegebenes Teilprodukt.
   required: true
@@ -390,12 +406,19 @@ definition_of_done:
       reference: tests/services/test_report_persistence_service.py::test_final_submission_rolls_back_when_pdf_materialization_fails
     - kind: test
       reference: tests/services/test_report_persistence_service.py::test_final_submission_rolls_back_when_template_requirements_fail
-    note: Finale Submissionen verwenden den strikten Renderer; Renderer- oder Templatevalidierungsfehler
-      werden nicht mehr in Warnungen umgewandelt und lassen weder finalen Report noch gelöschten Draft
-      zurück. Atomarer DB-Rollback ist getestet. Eine vollständige Dateisystem-Reconciliation und Betriebsfreigabe
-      bleibt offen.
-    assessed_by: codex-contract-coverage-20260813
-    assessed_at: '2026-08-13T10:52:25.288580Z'
+    - kind: command
+      reference: '2026-09-21: ReportArtifactFieldFile für RawPdfFile sowie generierte Berichte verdrahtet.
+        Geschützte Staging-Pfade aus utils.paths; Datei-Hashes ausschließlich über utils.file_operations.get_file_hash/Rust.
+        Snapshot erstellt und validiert die Kopie vor atomarer Veröffentlichung; Redaktionsnamen passen
+        ohne Schemaänderung in das FileField; verschlüsselter nginx-Offload wird abgelehnt; Storage-Löschfehler
+        erhalten den Datensatz. Breite PDF-Lane: 84 bestanden, ein Test-Setup-Fehler beim unnötigen Django-Start
+        des Lock-Unterprozesses anschließend behoben. Abschließende Feld-, Integritäts- und Concurrency-Lane:
+        13 bestanden, 2 bestehende Warnungen. Gezielter Pyright und Ruff bestanden. Repository-Pyright:
+        104 Fehler/4 Warnungen außerhalb des Patches (vorher 112/4). Separater Alt-Unit-Testlauf: 27 Fehler
+        wegen entfernter Import-Helper und alter Erwartungen im unveränderten test_report_import_service_unit.py.
+        Keine Produktionsabnahme.'
+    assessed_by: codex-video-field-20260921-a
+    assessed_at: '2026-09-21T08:56:02.726364Z'
 - id: stable_report_snapshot
   category: functionality
   title: Berichtsquellen werden als stabile, unveränderliche Snapshots übernommen
@@ -538,14 +561,36 @@ definition_of_done:
   acceptance:
   - Status, Fehlergrund, Retry-Entscheidung und Abhängigkeiten sind für Betreiber sichtbar.
   - Wiederholung ist idempotent und verliert keine Historie.
+  - Der eigenständige Rust-PDF-Renderer baut mit gesperrten Abhängigkeiten im Release-Profil; der devenv-Bootstrap
+    und das Rendern der vorhandenen Beispiel-Payload funktionieren.
   required: true
   verification:
     kind: manual
     instructions: Renderer- und LLM-Fehler samt Wiederanlauf im Betriebsprofil durchführen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: lx-report-generator/src/main.rs
+    - kind: command
+      reference: 'lx-report-generator: devenv shell -- cargo check --locked; Bootstrap-Release-Build erfolgreich;
+        devenv test erfolgreich'
+    - kind: command
+      reference: 'Vollständiger Pyright-Lauf: 0 Fehler, 0 Warnungen. Vorhandene Beispiel-Payload: PDF
+        mit einer A4-Seite erzeugt; Text und Variablenersetzung mit pdfminer geprüft.'
+    - kind: command
+      reference: 'lx-report-generator: devenv shell -- cargo build --release --locked: erfolgreich'
+    - kind: test
+      reference: 'devenv shell mit synchronisierter Projektumgebung: .devenv/state/venv/bin/pytest tests/services/test_report_materialization_contracts.py
+        -q: 4 passed, 1 Plugin-Warnung'
+    note: 'Die 22 Rust-Typfehler sind behoben: Layoutwerte verwenden f32 entsprechend printpdf 0.7; PDF-Ausgabe
+      verwendet BufWriter mit expliziter, fehlergeprüfter Leerung. Lokaler Build, devenv-Start und Beispiel-PDF
+      funktionieren. Direkter pytest-Start außerhalb devenv scheiterte an libstdc++.so.6; der Lauf innerhalb
+      devenv bestand. Der Beispieltest enthält keine verfügbaren Bilddateien und belegt daher keine Bildeinbettung.
+      LLM-Wiederanlauf und vollständige betriebliche Freigabe bleiben ungeprüft.'
+    assessed_by: codex-report-rust-20260915
+    assessed_at: '2026-09-15T14:45:26.024926Z'
 - id: user_documentation
   category: documentation
   title: API-, Nutzer- und Betriebsdokumentation entspricht dem Berichtsworkflow

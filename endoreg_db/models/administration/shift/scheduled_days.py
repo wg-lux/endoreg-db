@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center_shift import CenterShift
-
-NoScheduledDaysBooleanValue: TypeAlias = None
-NoScheduledDaysDateValue: TypeAlias = None
-ScheduledDaysBoolean: TypeAlias = "bool | NoScheduledDaysBooleanValue"
-ScheduledDaysDate: TypeAlias = "date | NoScheduledDaysDateValue"
 
 
 class ScheduledDaysManager(models.Manager["ScheduledDays"]):

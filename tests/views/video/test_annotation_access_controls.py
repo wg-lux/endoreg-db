@@ -53,8 +53,9 @@ class AnnotationAccessControlsTest(TestCase):
     def _video(center: Center, suffix: str) -> VideoFile:
         return VideoFile.objects.create(
             center=center,
-            video_hash=f"annotation-access-{suffix}",
+            raw_video_hash=f"annotation-access-{suffix}",
             original_file_name=f"annotation_access_{suffix}.mp4",
+            processed_file=f"annotation_access_{suffix}.mp4",
             fps=25.0,
             frame_count=100,
         )
@@ -65,7 +66,7 @@ class AnnotationAccessControlsTest(TestCase):
             video=video,
             frame_number=frame_number,
             relative_path=f"frame_{frame_number:07d}.jpg",
-            is_extracted=True,
+            is_extracted=False,
         )
 
     @staticmethod
@@ -180,6 +181,9 @@ class AnnotationAccessControlsTest(TestCase):
             {task["video_id"] for task in response.data["tasks"]},
             {self.video.pk, self.other_video.pk},
         )
+        for task in response.data["tasks"]:
+            self.assertEqual(task["frame_file_type"], "processed")
+            self.assertIn("file_type=processed", task["decoded_frame_stream_path"])
 
     def test_skip_allows_frame_from_other_center(self) -> None:
         request = self._request(

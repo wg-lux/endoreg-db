@@ -36,17 +36,12 @@ if TYPE_CHECKING:
     from ...center.center import Center
     from .patient_external_id import PatientExternalID
 
-NoPatientValue: TypeAlias = None
-PatientDateValue: TypeAlias = date | NoPatientValue
-PatientTextValue: TypeAlias = str | NoPatientValue
-PatientDateTimeValue: TypeAlias = datetime | NoPatientValue
-PatientGenderInput: TypeAlias = "Gender | str | NoPatientValue"
+PatientGenderInput: TypeAlias = "Gender | str | None"
 PatientCenterInput: TypeAlias = "Center | str"
-PatientLabSampleDate: TypeAlias = datetime | NoPatientValue
 
 
 class _PatientGenderManager(Protocol):
-    def resolve_by_name(self, name: str) -> "Gender | NoPatientValue": ...
+    def resolve_by_name(self, name: str) -> "Gender | None": ...
 
 
 class _PatientGenderSource(Protocol):
@@ -58,13 +53,13 @@ class _PatientSaveSource(Protocol):
 
 
 class _PatientDiseaseLinkSource(Protocol):
-    disease: "Disease | NoPatientValue"
+    disease: "Disease | None"
     classification_choices: models.Manager["DiseaseClassificationChoice"]
 
 
 class _PatientMedicationLinkSource(Protocol):
-    medication: "Medication | NoPatientValue"
-    medication_indication: "MedicationIndication | NoPatientValue"
+    medication: "Medication | None"
+    medication_indication: "MedicationIndication | None"
     intake_times: models.Manager["MedicationIntakeTime"]
 
 
@@ -99,10 +94,10 @@ def _resolve_pseudo_patient_gender(gender: "Gender | str") -> "Gender":
 
 def _validate_pseudo_patient_creation_input(
     *,
-    center: "Center | NoPatientValue",
+    center: "Center | None",
     gender: PatientGenderInput,
-    birth_month: int | NoPatientValue,
-    birth_year: int | NoPatientValue,
+    birth_month: int | None,
+    birth_year: int | None,
 ) -> _PseudoPatientCreationInput:
     assert center, "Center must be provided to create a new pseudo patient"
     assert gender, "Gender must be provided to create a new pseudo patient"
@@ -233,7 +228,7 @@ class Patient(Person):
     def get_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
-        center: "Center | NoPatientValue" = None,
+        center: "Center | None" = None,
     ) -> "Patient | None":
         """Resolve an unambiguous pseudonymous identity without changing records."""
         if not patient_hash or not patient_hash.strip():
@@ -254,10 +249,10 @@ class Patient(Person):
     def get_or_create_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
-        center: "Center | NoPatientValue" = None,
+        center: "Center | None" = None,
         gender: PatientGenderInput = None,
-        birth_month: int | NoPatientValue = None,
-        birth_year: int | NoPatientValue = None,
+        birth_month: int | None = None,
+        birth_year: int | None = None,
     ) -> tuple["Patient", bool]:
         existing_patient = cls.get_pseudo_patient_by_hash(patient_hash, center)
         if existing_patient:
@@ -290,7 +285,7 @@ class Patient(Person):
 
         return patient, True
 
-    def get_dob(self) -> PatientDateValue:
+    def get_dob(self) -> date | None:
         return self.dob
 
     def get_patient_examinations(
@@ -301,9 +296,9 @@ class Patient(Person):
 
     def create_examination(
         self,
-        examination_name_str: PatientTextValue = None,
-        date_start: PatientDateTimeValue = None,
-        date_end: PatientDateTimeValue = None,
+        examination_name_str: str | None = None,
+        date_start: datetime | None = None,
+        date_end: datetime | None = None,
         save: bool = True,
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
@@ -331,9 +326,9 @@ class Patient(Person):
     def create_event(
         self,
         event_name_str: str,
-        date_start: PatientDateTimeValue = None,
-        date_end: PatientDateTimeValue = None,
-        description: PatientTextValue = None,
+        date_start: datetime | None = None,
+        date_end: datetime | None = None,
+        description: str | None = None,
     ) -> "PatientEvent":
         """
         Creates a patient event with the specified event name and start date.
@@ -436,7 +431,7 @@ class Patient(Person):
     def get_dob_from_age(
         cls,
         age: int,
-        current_date: date | datetime | NoPatientValue = None,
+        current_date: date | datetime | None = None,
     ) -> date:
         """
         Get a date of birth based on the given age and current date.
@@ -535,7 +530,7 @@ class Patient(Person):
         assert age is not None, "Patient age is not set."
         return age
 
-    def age(self) -> int | NoPatientValue:
+    def age(self) -> int | None:
         """
         Get the age of the patient.
 
@@ -559,7 +554,7 @@ class Patient(Person):
     def create_lab_sample(
         self,
         sample_type: "PatientLabSampleType | str" = "generic",
-        date: PatientLabSampleDate = None,
+        date: datetime | None = None,
         save: bool = True,
     ) -> "PatientLabSample":
         """

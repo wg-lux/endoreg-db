@@ -60,7 +60,7 @@ class StatsEndpointTests(TestCase):
             patient=self.patient,
             examination=self.patient_examination,
             sensitive_meta=self.sensitive_meta,
-            video_hash=f"stats-video-{uuid4().hex}",
+            raw_video_hash=f"stats-video-{uuid4().hex}",
             original_file_name="stats.mp4",
         )
         label = Label.objects.create(name=f"stats-label-{suffix}")

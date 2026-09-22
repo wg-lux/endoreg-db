@@ -6,10 +6,11 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Unpack
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
-from lx_dtypes.models.contracts.json_types import JsonNull, JsonValue
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.report_llm import (
+    ReportLlmOperation,
     dump_report_llm_job_config,
     dump_report_llm_job_result,
 )
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     pass
 
 
-type ReportLlmJobOperation = Literal["report_llm_reimport", "report_llm_import"]
 type ReportLlmJobStatus = Literal[
     "queued",
     "running",
@@ -27,13 +27,6 @@ type ReportLlmJobStatus = Literal[
     "lost",
     "cancelled",
 ]
-type ReportLlmJobJsonValue = (
-    JsonValue
-    | JsonNull
-    | list["ReportLlmJobJsonValue"]
-    | dict[str, "ReportLlmJobJsonValue"]
-)
-type ReportLlmJobJsonObject = dict[str, ReportLlmJobJsonValue]
 
 
 class ReportLlmInferenceJob(models.Model):
@@ -43,7 +36,7 @@ class ReportLlmInferenceJob(models.Model):
 
     OPERATION_REIMPORT: Literal["report_llm_reimport"] = "report_llm_reimport"
     OPERATION_IMPORT: Literal["report_llm_import"] = "report_llm_import"
-    OPERATION_CHOICES: ClassVar[tuple[tuple[ReportLlmJobOperation, str], ...]] = (
+    OPERATION_CHOICES: ClassVar[tuple[tuple[ReportLlmOperation, str], ...]] = (
         (OPERATION_REIMPORT, "Report LLM Reimport"),
         (OPERATION_IMPORT, "Report LLM Import"),
     )
@@ -152,7 +145,7 @@ class ReportLlmInferenceJob(models.Model):
         self.started_at = self.started_at or timezone.now()
         self.save(update_fields=["status", "started_at", "updated_at"])
 
-    def mark_success(self, *, result: ReportLlmJobJsonObject | None = None) -> None:
+    def mark_success(self, *, result: JsonObject | None = None) -> None:
         self.status = self.STATUS_SUCCESS
         self.completed_at = timezone.now()
         self.error = ""

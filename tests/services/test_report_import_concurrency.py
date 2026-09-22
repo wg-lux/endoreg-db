@@ -62,26 +62,21 @@ def test_report_import_snapshots_after_path_lock_and_before_content_lock(
     ) -> NoReturn:
         raise RuntimeError("stop after lock ordering")
 
-    monkeypatch.setattr(report_import_module, "report_source_lock", fake_file_lock)
+    monkeypatch.setattr(report_import_module, "file_lock", fake_file_lock)
     monkeypatch.setattr(
         report_import_module,
-        "create_sensitive_report_snapshot",
+        "create_snapshot",
         fake_snapshot,
     )
     monkeypatch.setattr(
         report_import_module,
-        "report_content_hash_lock",
+        "content_hash_lock",
         fake_content_lock,
     )
     monkeypatch.setattr(
         ReportImportService,
         "_get_existing_completed_report",
         stop_after_lock_ordering,
-    )
-    monkeypatch.setattr(
-        report_import_module,
-        "_sensitive_report_dir",
-        lambda: tmp_path / "sensitive",
     )
 
     with pytest.raises(RuntimeError, match="stop after lock ordering"):
@@ -156,13 +151,8 @@ def test_advisory_lock_is_process_owned_and_not_age_reclaimed(
 def test_advisory_lock_releases_after_process_exit(tmp_path: Path) -> None:
     lock_path = tmp_path / "report-process.lock"
     child_script = """
-import os
 import sys
 from pathlib import Path
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
-import django
-django.setup()
 
 from endoreg_db.utils.filesystem.file_operations import advisory_file_lock
 

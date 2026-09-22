@@ -21,7 +21,7 @@ from endoreg_db.services.video_files import (
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.utils.storage import save_local_file
 
@@ -243,7 +243,7 @@ def backfill_video_anonymized_dimensions(
                     detail=f"repaired_dimensions={repaired_dimensions}",
                 )
 
-            video.processed_video_hash = sha256_file(temp_output)
+            video.processed_video_hash = get_file_hash(temp_output)
             _store_repaired_processed_video(video, temp_output, processed_path)
             video.save(update_fields=["processed_video_hash", "date_modified"])
             logger.info(

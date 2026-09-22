@@ -19,7 +19,8 @@ from lx_dtypes.models.contracts.patient_examination_report import (
 from lx_dtypes.models.interface.KnowledgeBaseResolver import (
     clear_knowledge_base_resolver_caches,
 )
-from pytest_django.fixtures import SettingsWrapper
+from lx_dtypes.terminology import terminology_loader
+from lx_dtypes.terminology.terminology_service import TerminologyService
 
 from endoreg_db.models import (
     Center,
@@ -152,7 +153,7 @@ def selector_context(
 ) -> SimpleNamespace:
     video = VideoFile.objects.create(
         center=report_center,
-        video_hash=f"selector-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"selector-video-{uuid.uuid4().hex}",
         examination=patient_examination,
         patient=report_patient,
         fps=25.0,
@@ -192,7 +193,7 @@ def export_context(
 ) -> Iterator[SimpleNamespace]:
     video = VideoFile.objects.create(
         center=report_center,
-        video_hash=f"export-report-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"export-report-video-{uuid.uuid4().hex}",
         examination=patient_examination,
         patient=report_patient,
         fps=25.0,
@@ -468,7 +469,7 @@ def test_save_submission_maps_unregistered_knowledge_base_to_422(
     )
 
     assert response.status_code == 422, response.content
-    assert "not provisioned" in str(response.json())
+    assert "not registered" in str(response.json())
     assert PatientExaminationReport.objects.count() == 0
 
 
@@ -479,7 +480,6 @@ def test_save_submission_maps_registry_deployment_failures_to_503(
     patient_examination: PatientExamination,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
     registry_failure: str,
 ) -> None:
     registry_path = tmp_path / "deployment_registry.json"
@@ -492,8 +492,8 @@ def test_save_submission_maps_registry_deployment_failures_to_503(
     elif registry_failure == "unreadable":
         registry_path.mkdir()
 
-    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
-    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+    service = TerminologyService(registry_path=registry_path)
+    monkeypatch.setattr(terminology_loader, "get_terminology_service", lambda: service)
     clear_knowledge_base_resolver_caches()
     try:
         response = logged_in_client.post(
@@ -702,7 +702,7 @@ def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta
 
     linked_by_meta_video = VideoFile.objects.create(
         center=selector_context.center,
-        video_hash=f"selector-shared-meta-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"selector-shared-meta-video-{uuid.uuid4().hex}",
         patient=selector_context.patient,
         sensitive_meta=sensitive_meta,
         fps=25.0,

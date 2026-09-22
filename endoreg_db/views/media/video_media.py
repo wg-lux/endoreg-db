@@ -95,7 +95,7 @@ def _video_contract_payload(video: VideoFile) -> VideoFilePayload:
         {
             "pk": video.pk,
             "id": video.pk,
-            "video_hash": str(video.video_hash),
+            "raw_video_hash": str(video.raw_video_hash),
             "original_file_name": getattr(video, "original_file_name", None),
             "fps": getattr(video, "fps", None),
             "duration": getattr(video, "duration", None),

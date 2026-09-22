@@ -8,77 +8,30 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.test import Client
-from lx_dtypes.knowledge_bases import (
-    BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-    get_packaged_knowledge_base,
-)
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
-from lx_dtypes.models.interface.KnowledgeBaseResolver import (
-    clear_knowledge_base_resolver_caches,
-    load_module_config,
+from lx_dtypes.terminology.terminology_loader import (
+    get_terminology_service,
+    load_module_kb,
 )
-from pytest_django.fixtures import SettingsWrapper
+from lx_dtypes.terminology.terminology_service import TerminologyService
 
 from endoreg_db.models import Examination, Patient, PatientExamination
 
 
-def _write_packaged_registry(
-    path: Path,
-    *,
-    active: KnowledgeBaseIdentity,
-) -> None:
-    descriptors = [
-        get_packaged_knowledge_base("dgvs_reporting"),
-        get_packaged_knowledge_base("star_upper_gi"),
-        get_packaged_knowledge_base("mst_3_0"),
-    ]
-    modules = {
-        descriptor.module_name: {
-            descriptor.version: {
-                "sources": [
-                    {
-                        "kind": "provider",
-                        "provider": BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-                        "content_sha256": descriptor.content_sha256,
-                    }
-                ]
-            }
-        }
-        for descriptor in descriptors
-    }
-    path.write_text(
-        json.dumps(
-            {
-                "active": {
-                    "module_name": active.knowledge_base_module,
-                    "version": active.knowledge_base_version,
-                },
-                "modules": modules,
-            }
-        ),
-        encoding="utf-8",
-    )
-
-
 @pytest.fixture
-def packaged_registry(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
-) -> Iterator[Path]:
-    path = tmp_path / "knowledge_base_registry.json"
-    _write_packaged_registry(
-        path,
-        active=KnowledgeBaseIdentity(
-            knowledge_base_module="star_upper_gi",
-            knowledge_base_version="0.1.2",
-        ),
-    )
-    settings.LX_DTYPES_KB_REGISTRY = str(path)
-    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(path))
-    clear_knowledge_base_resolver_caches()
-    yield path
-    clear_knowledge_base_resolver_caches()
+def packaged_terminology(packaged_registry: Path) -> Iterator[TerminologyService]:
+    service = get_terminology_service()
+    original = service.active_identity()
+    assert original is not None
+    try:
+        yield service
+    finally:
+        service.select(
+            *original,
+            expected_revision=service.list_bundles().revision,
+            on_selected=lambda kb: None,
+            clear_application_caches=lambda: None,
+        )
 
 
 @pytest.mark.django_db
@@ -106,12 +59,13 @@ def test_patient_examination_rejects_partial_identity(
 
 @pytest.mark.django_db
 def test_persisted_identity_beats_changed_active_knowledge_base(
-    packaged_registry: Path,
+    packaged_terminology: TerminologyService,
 ) -> None:
     selected = KnowledgeBaseIdentity(
         knowledge_base_module="dgvs_reporting",
         knowledge_base_version="0.1.0",
     )
+
     patient = Patient.objects.create(
         patient_hash="kb-persistence-patient",
         first_name="KB",
@@ -122,36 +76,56 @@ def test_persisted_identity_beats_changed_active_knowledge_base(
         knowledge_base_module=selected.knowledge_base_module,
         knowledge_base_version=selected.knowledge_base_version,
     )
+
     patient_examination_id = patient_examination.pk
 
     del patient_examination
+
     reloaded = PatientExamination.objects.get(pk=patient_examination_id)
+
     reconstructed = KnowledgeBaseIdentity(
         knowledge_base_module=reloaded.knowledge_base_module,
         knowledge_base_version=reloaded.knowledge_base_version,
     )
     assert reconstructed == selected
-    resolved = load_module_config(
+
+    resolved = load_module_kb(
         reconstructed.knowledge_base_module,
         version=reconstructed.knowledge_base_version,
     )
-    assert resolved.knowledge_base_identity == selected
+    assert resolved.config is not None
+    assert resolved.config.name == selected.knowledge_base_module
+    assert resolved.config.version == selected.knowledge_base_version
 
-    _write_packaged_registry(
-        packaged_registry,
-        active=KnowledgeBaseIdentity(
-            knowledge_base_module="mst_3_0",
-            knowledge_base_version="3.0.0",
-        ),
+    bundles = packaged_terminology.list_bundles()
+
+    packaged_terminology.select(
+        "mst_3_0",
+        "3.0.0",
+        expected_revision=bundles.revision,
+        on_selected=lambda kb: None,
+        clear_application_caches=lambda: None,
     )
-    clear_knowledge_base_resolver_caches()
+
+    assert packaged_terminology.active_identity() == (
+        "mst_3_0",
+        "3.0.0",
+    )
 
     reloaded.refresh_from_db()
-    resolved_after_default_change = load_module_config(
+
+    # Explicit persisted identity must still resolve DGVS,
+    # irrespective of the newly active bundle.
+    resolved_after_default_change = load_module_kb(
         reloaded.knowledge_base_module,
         version=reloaded.knowledge_base_version,
     )
-    assert resolved_after_default_change.knowledge_base_identity == selected
+
+    assert resolved_after_default_change.config is not None
+    assert (
+        resolved_after_default_change.config.name,
+        resolved_after_default_change.config.version,
+    ) == ("dgvs_reporting", "0.1.0")
 
 
 @pytest.mark.django_db
@@ -208,11 +182,12 @@ def test_patient_examination_api_round_trip_preserves_frontend_identity(
     assert reloaded_response.json()["knowledge_base_module"] == "dgvs_reporting"
     assert reloaded_response.json()["knowledge_base_version"] == "0.1.0"
 
-    resolved = load_module_config(
+    resolved = load_module_kb(
         patient_examination.knowledge_base_module,
         version=patient_examination.knowledge_base_version,
     )
-    assert resolved.knowledge_base_identity == KnowledgeBaseIdentity(
+    assert resolved.config is not None
+    assert resolved.config.knowledge_base_identity == KnowledgeBaseIdentity(
         knowledge_base_module="dgvs_reporting",
         knowledge_base_version="0.1.0",
     )

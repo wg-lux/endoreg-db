@@ -20,7 +20,7 @@ automatic metadata generation.
 The search order and filename patterns are defined in
 `endoreg_db/data/setup_config.yaml`. The current configured directories are:
 
-1. `${STORAGE_DIR}/model_weights`
+1. `${get_runtime_paths().storage}/model_weights`
 2. `tests/assets`
 3. `assets`
 4. `model_weights`

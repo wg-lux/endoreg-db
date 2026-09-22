@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -13,13 +12,9 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.label.label_type import LabelType
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 SOURCE_DIR = LABEL_DATA_DIR
-
-
-class LoadAiModelLabelCommandOptions(TypedDict):
-    verbose: bool
 
 
 IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
@@ -70,7 +65,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadAiModelLabelCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:

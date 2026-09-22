@@ -40,7 +40,7 @@ def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_f
 
     video = VideoFile.objects.create(
         center=center,
-        video_hash="state-storage-video",
+        raw_video_hash="state-storage-video",
         raw_streamable_relative_path=raw_stream.relative_to(storage_root).as_posix(),
         processed_streamable_relative_path=processed_stream.relative_to(
             storage_root
@@ -87,7 +87,7 @@ def test_delete_associated_files_preserves_existing_video_artifacts_for_reimport
 
     video = VideoFile.objects.create(
         center=center,
-        video_hash="state-reimport-video",
+        raw_video_hash="state-reimport-video",
         raw_streamable_relative_path=raw_stream.relative_to(storage_root).as_posix(),
         processed_streamable_relative_path=processed_stream.relative_to(
             storage_root

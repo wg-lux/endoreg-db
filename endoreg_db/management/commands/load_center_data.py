@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -12,14 +11,10 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.names.first_name import FirstName
 from endoreg_db.models.administration.person.names.last_name import LastName
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 
 SOURCE_DIR = CENTER_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
-
-
-class LoadCenterCommandOptions(TypedDict):
-    verbose: bool
 
 
 IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
@@ -69,7 +64,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadCenterCommandOptions],
+        **options: object,
     ) -> None:
         """
         Load YAML data for each predefined model.

@@ -29,7 +29,7 @@ def _make_source_record(center: Center) -> VideoFile:
     return VideoFile.objects.create(
         center=center,
         state=state,
-        video_hash=f"reimport-view-{token}",
+        raw_video_hash=f"reimport-view-{token}",
         original_file_name=f"reimport-view-{token}.mp4",
         raw_file=f"raw/reimport-view-{token}.mp4",
     )

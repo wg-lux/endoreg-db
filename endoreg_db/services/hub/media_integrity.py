@@ -11,7 +11,7 @@ from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.storage import field_file_is_readable, file_exists
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.storage_streaming import field_file_size
 
 
@@ -71,7 +71,7 @@ _VIDEO_REPROCESSING_REQUIRED_ARTIFACTS: frozenset[str] = frozenset(
         "content_hash",
         "raw_file",
         "video_file",
-        "video_hash",
+        "raw_video_hash",
     }
 )
 
@@ -173,7 +173,7 @@ def require_reusable_video_raw_source(video: VideoFile) -> None:
                     "manual reconciliation is required. Preserve the video, "
                     "annotations, published media and incoming source."
                 ),
-                content_hash=video.video_hash,
+                content_hash=video.raw_video_hash,
                 media_pk=video.pk,
                 missing_artifacts=artifacts,
             )
@@ -198,7 +198,7 @@ def has_verified_processed_video_transfer(video: VideoFile) -> bool:
         "source_node", "target_node", "source_center"
     ).filter(
         resource_kind=TransferJob.ResourceKind.VIDEO,
-        resource_hash=video.video_hash,
+        resource_hash=video.raw_video_hash,
         source_center_id=video.center_id,
         target_object_id=video.pk,
         transfer_mode=TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA,
@@ -212,7 +212,7 @@ def has_verified_processed_video_transfer(video: VideoFile) -> bool:
             receipt.receiver_transfer_id != str(transfer.pk)
             or receipt.transfer_key != transfer.transfer_key
             or receipt.resource_kind != "video"
-            or receipt.resource_hash != video.video_hash
+            or receipt.resource_hash != video.raw_video_hash
             or receipt.processed_media_hash != video.processed_video_hash
             or receipt.source_center_key != transfer.source_center.center_key
             or receipt.source_node_key != transfer.source_node.node_key
@@ -223,7 +223,7 @@ def has_verified_processed_video_transfer(video: VideoFile) -> bool:
             return False
         return (
             field_file_size(video.processed_file) == receipt.plaintext_size
-            and sha256_file(video.processed_file) == receipt.plaintext_sha256
+            and get_file_hash(video.processed_file) == receipt.plaintext_sha256
         )
     return False
 
@@ -253,13 +253,13 @@ def check_video_media_integrity(
         )
 
     media_pk = getattr(video, "pk", None)
-    if (getattr(video, "video_hash", "") or "").strip() != normalized_hash:
+    if (getattr(video, "raw_video_hash", "") or "").strip() != normalized_hash:
         return _failed_result(
             status=MediaIntegrityStatus.HASH_MISMATCH,
-            reason="VideoFile.video_hash does not match the expected content hash.",
+            reason="VideoFile.raw_video_hash does not match the expected content hash.",
             content_hash=normalized_hash,
             media_pk=media_pk,
-            missing_artifacts=("video_hash",),
+            missing_artifacts=("raw_video_hash",),
         )
 
     required_artifacts: list[tuple[str, object]] = []
@@ -443,7 +443,7 @@ def check_upload_job_media_integrity(
 
     video = (
         VideoFile.objects.select_related("state")
-        .filter(video_hash=content_hash, center_id=center_id)
+        .filter(raw_video_hash=content_hash, center_id=center_id)
         .first()
     )
     return check_video_media_integrity(

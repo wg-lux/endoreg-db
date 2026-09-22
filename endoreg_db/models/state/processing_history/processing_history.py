@@ -12,7 +12,7 @@ class ProcessingHistory(models.Model):
     """
     Processing history keyed by a stable file *content hash*.
 
-    - For videos: use VideoFile.video_hash (raw mp4 bytes)
+    - For videos: use VideoFile.raw_video_hash (raw mp4 bytes)
     - For reports: use RawPdfFile.pdf_hash (raw pdf bytes)
 
     We *optionally* link back to a concrete model instance using
@@ -22,7 +22,7 @@ class ProcessingHistory(models.Model):
     file_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         primary_key=True,
-        help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
+        help_text="Content hash of the original file (e.g. raw_video_hash/pdf_hash).",
         blank=True,
     )
 

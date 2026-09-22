@@ -10,10 +10,6 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 from lx_dtypes.django.api.findings_routes import clear_findings_route_caches
-from lx_dtypes.knowledge_bases import (
-    BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-    get_packaged_knowledge_base,
-)
 
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     DtypesRecordPersistencePayload,
@@ -23,7 +19,6 @@ from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.interface.KnowledgeBaseResolver import (
     clear_knowledge_base_resolver_caches,
 )
-from pytest_django.fixtures import SettingsWrapper
 
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -207,36 +202,7 @@ def _create_center_user(*, center: Center, username: str) -> User:
 
 
 @pytest.fixture(autouse=True)
-def _use_frontend_owned_test_registry(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
-) -> Iterator[None]:
-    descriptor = get_packaged_knowledge_base("dgvs_reporting")
-    registry_path = tmp_path / "kb_registry.json"
-    registry_path.write_text(
-        json.dumps(
-            {
-                "active": None,
-                "modules": {
-                    descriptor.module_name: {
-                        descriptor.version: {
-                            "sources": [
-                                {
-                                    "kind": "provider",
-                                    "provider": BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-                                    "content_sha256": descriptor.content_sha256,
-                                }
-                            ]
-                        }
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
-    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+def _use_frontend_owned_test_registry(packaged_registry: Path) -> Iterator[None]:
     clear_findings_route_caches()
     clear_knowledge_base_resolver_caches()
     yield
@@ -244,7 +210,7 @@ def _use_frontend_owned_test_registry(
     clear_knowledge_base_resolver_caches()
 
 
-def test_base_api_persists_full_dtypes_record() -> None:
+def test_dtypes_api_persists_full_dtypes_record() -> None:
     client = Client()
     patient_examination = _create_patient_examination()
     payload: dict[str, str | list[JsonValue]] = {
@@ -258,7 +224,7 @@ def test_base_api_persists_full_dtypes_record() -> None:
     }
 
     response = client.post(
-        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
+        f"/dtypes-api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         data=json.dumps(payload),
         content_type="application/json",
         secure=True,
@@ -274,7 +240,7 @@ def test_base_api_persists_full_dtypes_record() -> None:
     assert patient_examination.dtypes_record_updated_at is not None
 
     get_response = client.get(
-        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
+        f"/dtypes-api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         secure=True,
     )
 
@@ -282,12 +248,12 @@ def test_base_api_persists_full_dtypes_record() -> None:
     assert get_response.json()["examination"] == "colonoscopy"
 
 
-def test_base_api_rejects_unknown_nested_dtypes_record_fields() -> None:
+def test_dtypes_api_rejects_unknown_nested_dtypes_record_fields() -> None:
     client = Client()
     patient_examination = _create_patient_examination()
 
     response = client.post(
-        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
+        f"/dtypes-api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         data=json.dumps(
             {
                 "patient": str(patient_examination.patient_id),
@@ -310,12 +276,12 @@ def test_base_api_rejects_unknown_nested_dtypes_record_fields() -> None:
     assert patient_examination.dtypes_record == {}
 
 
-def test_base_api_rejects_dtypes_record_for_wrong_examination() -> None:
+def test_dtypes_api_rejects_dtypes_record_for_wrong_examination() -> None:
     client = Client()
     patient_examination = _create_patient_examination()
 
     response = client.post(
-        f"/base_api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
+        f"/dtypes-api/patient-examinations/{model_pk(patient_examination)}/dtypes-record/",
         data=json.dumps(
             {
                 "patient": str(patient_examination.patient_id),
@@ -344,7 +310,7 @@ def test_patient_finding_create_updates_dtypes_record() -> None:
     client.force_login(center_user)
 
     response = client.post(
-        "/base_api/patient-findings/",
+        "/dtypes-api/patient-findings/",
         data=json.dumps(
             {
                 "patient_examination": model_pk(patient_examination),
@@ -387,7 +353,7 @@ def test_patient_finding_delete_refreshes_dtypes_record() -> None:
     client.force_login(center_user)
 
     create_response = client.post(
-        "/base_api/patient-findings/",
+        "/dtypes-api/patient-findings/",
         data=json.dumps(
             {
                 "patient_examination": model_pk(patient_examination),
@@ -402,7 +368,7 @@ def test_patient_finding_delete_refreshes_dtypes_record() -> None:
     create_payload = _json_mapping(create_response.json())
     patient_finding_id = _json_int(create_payload, "id")
     delete_response = client.delete(
-        f"/base_api/patient-findings/{patient_finding_id}/", secure=True
+        f"/dtypes-api/patient-findings/{patient_finding_id}/", secure=True
     )
 
     assert delete_response.status_code == 200, delete_response.content.decode()
@@ -732,7 +698,7 @@ def test_patient_finding_classification_append_is_idempotent() -> None:
     client.force_login(center_user)
 
     create_response = client.post(
-        "/base_api/patient-findings/",
+        "/dtypes-api/patient-findings/",
         data=json.dumps(
             {
                 "patient_examination": model_pk(patient_examination),
@@ -752,13 +718,13 @@ def test_patient_finding_classification_append_is_idempotent() -> None:
         ],
     }
     first_response = client.post(
-        f"/base_api/patient-findings/{patient_finding_id}/classifications/",
+        f"/dtypes-api/patient-findings/{patient_finding_id}/classifications/",
         data=json.dumps(payload),
         content_type="application/json",
         secure=True,
     )
     second_response = client.post(
-        f"/base_api/patient-findings/{patient_finding_id}/classifications/",
+        f"/dtypes-api/patient-findings/{patient_finding_id}/classifications/",
         data=json.dumps(payload),
         content_type="application/json",
         secure=True,

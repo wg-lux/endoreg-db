@@ -29,10 +29,8 @@ from endoreg_db.models.medical.examination.examination_indication import (
 from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
 from endoreg_db.models.other.information_source import InformationSource
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
-NullValue: TypeAlias = None
-TextOrNull: TypeAlias = str | NullValue
 StringListSource: TypeAlias = str | Sequence[str]
 LoadExaminationIndicationSource: TypeAlias = Literal["yaml", "dtypes", "hybrid"]
 
@@ -65,7 +63,7 @@ class NamedRecord(Protocol):
 
 
 class DescriptionRecord(Protocol):
-    description: TextOrNull
+    description: str | None
 
     def save(self, *, update_fields: list[str]) -> None: ...
 
@@ -257,7 +255,7 @@ class Command(BaseCommand):
         indications_by_name = kb.indication
 
         for indication_name, indication in indications_by_name.items():
-            description: TextOrNull = indication.description.strip() or None
+            description: str | None = indication.description.strip() or None
             db_indication = self._upsert_indication_record(
                 indication_name=indication_name,
                 description=description,
@@ -291,7 +289,7 @@ class Command(BaseCommand):
     def _upsert_indication_record(
         *,
         indication_name: str,
-        description: TextOrNull,
+        description: str | None,
     ) -> ExaminationIndication:
         db_indication, _created = ExaminationIndication.objects.get_or_create(
             name=indication_name,
@@ -352,7 +350,7 @@ class Command(BaseCommand):
     @staticmethod
     def _update_description(
         record: DescriptionRecord,
-        description: TextOrNull,
+        description: str | None,
     ) -> None:
         if record.description == description:
             return

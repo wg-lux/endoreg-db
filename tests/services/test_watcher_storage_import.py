@@ -24,7 +24,7 @@ from endoreg_db.services.hub.watcher_handoff import (
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.utils.storage import save_local_file
 
@@ -88,11 +88,11 @@ def _create_completed_video_upload(
     )
     assert created is True
 
-    file_hash = sha256_file(watched_file)
+    file_hash = get_file_hash(watched_file)
     video = VideoFile.objects.create(
         center=watcher_center,
         original_file_name=filename,
-        video_hash=file_hash,
+        raw_video_hash=file_hash,
         suffix=".mp4",
     )
     update_fields: list[str] = []
@@ -110,7 +110,7 @@ def _create_completed_video_upload(
             tmp_path / f"processed-{filename}",
             b"processed:" + content,
         )
-        processed_hash = sha256_file(processed_source)
+        processed_hash = get_file_hash(processed_source)
         save_local_file(
             video.processed_file,
             processed_source,
@@ -380,7 +380,7 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
 
     assert writer_errors == []
     assert not watched_file.exists()
-    assert upload_job.content_hash == sha256_file(upload_job.file)
+    assert upload_job.content_hash == get_file_hash(upload_job.file)
     with upload_job.file.open("rb") as handle:
         assert handle.read() == expected_content
     settle_events = [
@@ -922,7 +922,7 @@ def test_create_or_reuse_watcher_upload_job_uses_file_stat_in_idempotency_key(
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
     os.utime(watched_file, ns=(123_000_000_000, 456_000_000_000))
 
-    with patch("endoreg_db.services.hub.ingest.sha256_file", return_value="hash-123"):
+    with patch("endoreg_db.services.hub.ingest.get_file_hash", return_value="hash-123"):
         upload_job, _created = ingest.create_or_reuse_watcher_upload_job(
             file_path=watched_file,
             content_type="application/pdf",
@@ -950,7 +950,7 @@ def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
         os.utime(path, None)
         return "hash-before-change"
 
-    monkeypatch.setattr(ingest, "sha256_file", mutate_during_hash)
+    monkeypatch.setattr(ingest, "get_file_hash", mutate_during_hash)
 
     with (
         caplog.at_level("WARNING", logger=watcher_handoff.__name__),

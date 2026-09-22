@@ -7,10 +7,21 @@ import sys
 from pathlib import Path
 
 import pytest
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.no_db
+
+
+@pytest.fixture(autouse=True)
+def identity_salt_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = atomic_write_file(
+        destination=tmp_path / "identity-salt",
+        content=(b"production-probe-test-salt",),
+        file_mode=0o600,
+    )
+    monkeypatch.setenv("DJANGO_SALT_FILE", str(path))
 
 
 def _run_prod_settings_probe(
@@ -307,8 +318,6 @@ def test_prod_settings_accept_local_study_server_role() -> None:
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
             "ENDOREG_DEPLOYMENT_ROLE": "local_study_server",
-            "LX_ANNOTATE_ENCRYPTED_DATA_DIR": protected_root,
-            "STORAGE_DIR": f"{protected_root}/storage",
             "PROTECTED_MEDIA_ROOT": f"{protected_root}/storage",
         }
     )
@@ -452,8 +461,6 @@ def test_prod_settings_refuse_sqlite_when_local_study_server_role_is_enabled() -
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
             "ENDOREG_DEPLOYMENT_ROLE": "local_study_server",
-            "LX_ANNOTATE_ENCRYPTED_DATA_DIR": protected_root,
-            "STORAGE_DIR": f"{protected_root}/storage",
             "PROTECTED_MEDIA_ROOT": f"{protected_root}/storage",
         }
     )

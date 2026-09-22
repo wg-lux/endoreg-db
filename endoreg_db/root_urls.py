@@ -1,5 +1,4 @@
 # endoreg_db/root_urls.py
-from collections.abc import Callable
 from typing import cast
 
 from django.urls import include, path
@@ -18,35 +17,20 @@ from lx_dtypes.django.api.main import api as dtypes_api
 # Import raw API urlpatterns (no prefix) from your API urls package
 from endoreg_db.urls import urlpatterns as api_urlpatterns
 
-type _DtypesUrlPatterns = list[URLPattern | URLResolver]
-type _DtypesUrlGetter = Callable[[], _DtypesUrlPatterns]
-
-
-def _dtypes_api_urlpatterns() -> _DtypesUrlPatterns:
-    # lx_dtypes currently owns /base_api/ in its URLConf. Build a second host
-    # mount without re-registering the same NinjaAPI namespace.
-    get_urls: object = getattr(dtypes_api, "_get_urls", None)
-    if not callable(get_urls):
-        raise RuntimeError("lx_dtypes API does not expose URL patterns")
-    return cast(_DtypesUrlGetter, get_urls)()
-
-
-def _dtypes_api_urlconf() -> tuple[_DtypesUrlPatterns, str, str]:
-    return (_dtypes_api_urlpatterns(), "ninja", "lx_dtypes_dtypes_api")
-
 
 def public_home(_request: HttpRequest) -> HttpResponse:
     return HttpResponse("Public home – no login required.")
 
 
-urlpatterns = [
+urlpatterns: list[URLPattern | URLResolver] = [
     path("", public_home, name="public_home"),
     # ``lx_dtypes`` owns its own Django surface. Keep this outside the main
     # endoreg API mount so reverse proxies can route dtypes-api and endoreg-api
     # independently.
-    path(django_path_prefix(DTYPES_API_PREFIX), _dtypes_api_urlconf()),
-    # Compatibility alias retained by the upstream lx_dtypes URLConf.
-    path("", include("lx_dtypes.django.urls")),
+    path(
+        django_path_prefix(DTYPES_API_PREFIX),
+        cast(tuple[list[URLPattern | URLResolver], str, str], dtypes_api.urls),
+    ),
     # path("admin/", admin.site.urls),
     # Canonical main API mount.
     path(

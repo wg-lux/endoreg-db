@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import TypeAlias, Any
+from typing import Any
 
 from django.db import models
-
-NoLabelTypeDescriptionValue: TypeAlias = None
-LabelTypeDescription: TypeAlias = "str | NoLabelTypeDescriptionValue"
 
 
 class LabelTypeManager(models.Manager["LabelType"]):

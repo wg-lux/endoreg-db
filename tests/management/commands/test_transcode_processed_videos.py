@@ -1,4 +1,5 @@
 from __future__ import annotations
+from endoreg_db.utils.paths import get_runtime_paths
 
 import json
 from collections.abc import Generator
@@ -25,7 +26,7 @@ from endoreg_db.utils.paths import to_protected_media_relative
 from endoreg_db.services.hls_media import HlsMaterializationResult
 from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 
 pytestmark = pytest.mark.django_db
 
@@ -45,25 +46,25 @@ def _create_processed_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash="raw-video-hash-for-processed-transcode",
+        raw_video_hash="raw-video-hash-for-processed-transcode",
         fps=25.0,
         duration=10.0,
         frame_count=250,
     )
     cast(Any, video.processed_file).save(
-        f"{video.video_hash}.mp4",
+        f"{video.raw_video_hash}.mp4",
         ContentFile(payload),
         save=True,
     )
-    video.processed_video_hash = sha256_file(video.processed_file)
+    video.processed_video_hash = get_file_hash(video.processed_file)
     video.save(update_fields=["processed_video_hash", "date_modified"])
     return video
 
 
 def _old_streamable_path(video: VideoFile) -> Path:
     streamable_path = (
-        hls_media.streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
-        / f"{video.video_hash}.old.mp4"
+        get_runtime_paths().streamable_videos_processed_media
+        / f"{video.raw_video_hash}.old.mp4"
     )
     streamable_path.parent.mkdir(parents=True, exist_ok=True)
     streamable_path.write_bytes(b"\x00\x00\x00\x18ftypmp42old-streamable")

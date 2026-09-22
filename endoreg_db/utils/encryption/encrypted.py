@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from endoreg_db.helpers.typing import DjangoFile
 import io
 import os
 import tempfile
@@ -10,6 +11,8 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
 from django.utils.deconstruct import deconstructible
+from endoreg_db.config.secret_keyring import configured_master_keyring
+from endoreg_db.utils.encryption.rotation import storage_write_lock
 
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
@@ -30,6 +33,8 @@ from .encryption import (
     inspect_encrypted_file_layout,
     iter_decrypted_byte_range,
     load_master_key,
+    read_header,
+    select_file_master_key,
 )
 
 
@@ -43,7 +48,7 @@ class _HasFileLike(Protocol):
 
 
 class _EncryptedStorageLike(Protocol):
-    def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
+    def open(self, name: str, mode: str = "rb") -> DjangoFile: ...
 
 
 class _FileSystemStorageInit(Protocol):
@@ -87,6 +92,7 @@ class EncryptedStorage(FileSystemStorage):
             allow_overwrite=allow_overwrite,
         )
         self.chunk_size = chunk_size
+        self._explicit_master_key = master_key
         self._master_key = self._resolve_master_key(master_key)
         self._index_cache: dict[IndexCacheKey, IndexCacheValue] = {}
 
@@ -102,14 +108,33 @@ class EncryptedStorage(FileSystemStorage):
             raise ValueError("master_key must be 16, 24, or 32 bytes for AES-GCM.")
         return master_key
 
-    def _open(self, name: str, mode: str = "rb") -> File[bytes]:
+    def _open(self, name: str, mode: str = "rb") -> DjangoFile:
         if any(flag in mode for flag in ("w", "a", "+")):
             raise ValueError("EncryptedStorage only supports read-only open()")
         full_path = Path(self.path(name))
         stream = open(full_path, "rb")
-        decrypted = DecryptedStream(stream, master_key=self._master_key)
+        try:
+            key = self._explicit_master_key
+            if key is None:
+                header, _ = read_header(stream)
+                key = select_file_master_key(header)
+                stream.seek(0)
+            decrypted = DecryptedStream(stream, master_key=key)
+        except BaseException:
+            stream.close()
+            raise
         buffered = io.BufferedReader(decrypted)
         return File(cast(BinaryIO, buffered), name)
+
+    def open(self, name: str, mode: str = "rb") -> DjangoFile:
+        return self._open(name, mode)
+
+    def delete(self, name: str) -> None:
+        if not name:
+            raise ValueError("An encrypted artifact name is required")
+        path = Path(self.path(name))
+        with storage_write_lock(path):
+            safe_unlink_file(path, missing_ok=True)
 
     def open_encrypted(self, name: str) -> BinaryIO:
         full_path = Path(self.path(name))
@@ -155,6 +180,24 @@ class EncryptedStorage(FileSystemStorage):
         end: int,
         chunk_size: int = 64 * 1024,
     ) -> Iterator[bytes]:
+        if (
+            self._explicit_master_key is None
+            and configured_master_keyring() is not None
+        ):
+            # One open descriptor pins the generation across atomic replacement.
+            # The native path reopens by pathname and cannot supply this guarantee.
+            with self.open_encrypted(name) as source:
+                layout = inspect_encrypted_file_layout(source)
+                key = select_file_master_key(layout.header)
+                yield from iter_decrypted_byte_range(
+                    source,
+                    master_key=key,
+                    start=start,
+                    end=end,
+                    output_chunk_size=chunk_size,
+                    layout=layout,
+                )
+            return
         layout = self._get_cached_index(name)
         plaintext_size = layout.plaintext_size
         if start < 0 or end < start or end >= plaintext_size:
@@ -163,10 +206,11 @@ class EncryptedStorage(FileSystemStorage):
             )
 
         full_path = Path(self.path(name))
+        master_key = self._explicit_master_key or load_master_key()
         first_batch_end = min(end, start + NATIVE_DECRYPT_BATCH_BYTES - 1)
         native_payload = decrypt_encrypted_file_range(
             path=full_path,
-            master_key=self._master_key,
+            master_key=master_key,
             start=start,
             end=first_batch_end,
         )
@@ -188,7 +232,7 @@ class EncryptedStorage(FileSystemStorage):
                 batch_end = min(end, cursor + NATIVE_DECRYPT_BATCH_BYTES - 1)
                 native_payload = decrypt_encrypted_file_range(
                     path=full_path,
-                    master_key=self._master_key,
+                    master_key=master_key,
                     start=cursor,
                     end=batch_end,
                 )
@@ -201,7 +245,7 @@ class EncryptedStorage(FileSystemStorage):
         with self.open_encrypted(name) as source:
             yield from iter_decrypted_byte_range(
                 source,
-                master_key=self._master_key,
+                master_key=master_key,
                 start=start,
                 end=end,
                 output_chunk_size=chunk_size,
@@ -209,6 +253,10 @@ class EncryptedStorage(FileSystemStorage):
             )
 
     def _save(self, name: str, content: object) -> str:
+        with storage_write_lock(Path(self.path(name))):
+            return self._save_locked(name, content)
+
+    def _save_locked(self, name: str, content: object) -> str:
         clean_name = self.get_available_name(name)
         full_path = Path(self.path(clean_name))
         ensure_directory(full_path.parent)
@@ -229,7 +277,7 @@ class EncryptedStorage(FileSystemStorage):
                 encrypt_stream(
                     source,
                     tmp_handle,
-                    master_key=self._master_key,
+                    master_key=self._explicit_master_key or load_master_key(),
                     chunk_size=self.chunk_size,
                 )
                 tmp_handle.flush()
@@ -243,6 +291,10 @@ class EncryptedStorage(FileSystemStorage):
         return str(Path(clean_name).as_posix())
 
     def repair_plaintext_file(self, name: str) -> bool:
+        with storage_write_lock(Path(self.path(name))):
+            return self._repair_plaintext_file_locked(name)
+
+    def _repair_plaintext_file_locked(self, name: str) -> bool:
         """
         Re-encrypt a raw plaintext file in managed storage in place.
 
@@ -267,7 +319,7 @@ class EncryptedStorage(FileSystemStorage):
                 encrypt_stream(
                     source,
                     destination,
-                    master_key=self._master_key,
+                    master_key=self._explicit_master_key or load_master_key(),
                     chunk_size=self.chunk_size,
                 )
                 destination.flush()
@@ -315,7 +367,7 @@ class LazyEncryptedStorage(Storage):
             )
         return self._wrapped
 
-    def _open(self, name: str, mode: str = "rb") -> File[bytes]:
+    def _open(self, name: str, mode: str = "rb") -> DjangoFile:
         return cast(_EncryptedStorageLike, self.wrapped).open(name, mode)
 
     def _save(self, name: str, content: object) -> str:

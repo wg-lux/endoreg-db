@@ -19,5 +19,9 @@ class TestPackageImports(unittest.TestCase):
             [str(package_path)], prefix=endoreg_db.__name__ + "."
         ):
             module_name = module_info.name
+            if module_name == "endoreg_db.config.settings.prod":
+                # Production requires deployment secrets. Its import contract is
+                # exercised in isolated processes by test_prod_settings_contract.py.
+                continue
             with self.subTest(module=module_name):
                 importlib.import_module(module_name)

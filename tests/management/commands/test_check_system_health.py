@@ -5,8 +5,8 @@ from collections.abc import Mapping
 from contextlib import ExitStack
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
 from typing import Any, cast
+from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
@@ -14,17 +14,13 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 
 from endoreg_db.management.commands import check_system_health as health_command
+from endoreg_db.utils.paths import EndoregPathsModel
 
 
-def _prepare_health_paths(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    protected_root = tmp_path / "protected"
-    protected_media_root = protected_root / "media"
-    storage_root = protected_root / "storage"
-    quarantine_root = protected_root / "quarantine"
-    protected_media_root.mkdir(parents=True)
-    storage_root.mkdir()
-    quarantine_root.mkdir()
-    return protected_root, protected_media_root, storage_root, quarantine_root
+def _prepare_health_paths(tmp_path: Path) -> EndoregPathsModel:
+    paths = EndoregPathsModel.from_root(tmp_path)
+    paths.ensure_directories()
+    return paths
 
 
 def _health_command_patches(
@@ -32,22 +28,13 @@ def _health_command_patches(
     tmp_path: Path,
     audit_status: Mapping[str, object],
 ):
-    protected_root, protected_media_root, storage_root, quarantine_root = (
-        _prepare_health_paths(tmp_path)
-    )
+    paths = _prepare_health_paths(tmp_path)
     return [
-        patch.object(health_command, "PROTECTED_DATA_ROOT", protected_root),
-        patch.object(health_command, "STORAGE_DIR", storage_root),
-        patch.object(health_command, "QUARANTINE_DIR", quarantine_root),
-        patch.object(
-            health_command,
-            "SECRET_KEY_FINGERPRINT_FILE",
-            tmp_path / "logs" / ".secret_key_fingerprint",
-        ),
+        patch.object(health_command, "get_runtime_paths", return_value=paths),
         patch.object(
             health_command,
             "get_protected_media_root",
-            return_value=protected_media_root,
+            return_value=paths.storage,
         ),
         patch.object(
             health_command,
@@ -114,7 +101,7 @@ def _health_command_patches(
             health_command,
             "_storage_free_stats",
             return_value={
-                "path": str(storage_root),
+                "path": str(paths.storage),
                 "total_bytes": 4 * 1024 * 1024 * 1024,
                 "used_bytes": 1024,
                 "free_bytes": 3 * 1024 * 1024 * 1024,
@@ -126,7 +113,7 @@ def _health_command_patches(
             "get_audit_ledger_integrity_status",
             return_value=audit_status,
         ),
-        override_settings(MEDIA_ROOT=str(protected_media_root / "runtime")),
+        override_settings(MEDIA_ROOT=str(paths.storage)),
     ]
 
 

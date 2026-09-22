@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 if TYPE_CHECKING:
     pass
@@ -133,7 +132,7 @@ class VideoHlsArtifact(models.Model):
         ]
 
     def clean(self) -> None:
-        errors: dict[str, ValidationErrorMessageArg] = {}
+        errors: dict[str, str] = {}
         if self.status in {
             self.Status.QUEUED.value,
             self.Status.MATERIALIZING.value,

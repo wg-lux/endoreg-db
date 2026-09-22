@@ -275,7 +275,7 @@ def test_get_processor_roi_info_errors_without_processor_name(tmp_path: Path) ->
         name="roi-none-center",
         display_name="ROI None Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="roi-none-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="roi-none-hash")
     ctx = _unchecked_import_context(
         file_path=_create_source_file(tmp_path),
         center=center,
@@ -294,7 +294,7 @@ def test_get_processor_roi_info_errors_for_unknown_processor(tmp_path: Path) -> 
         name="roi-unknown-center",
         display_name="ROI Unknown Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="roi-unknown-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="roi-unknown-hash")
     ctx = _create_import_context(
         file_path=_create_source_file(tmp_path),
         center=center,
@@ -315,7 +315,7 @@ def test_get_processor_roi_info_errors_for_invalid_endoscope_roi(
         name="roi-invalid-center",
         display_name="ROI Invalid Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="roi-invalid-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="roi-invalid-hash")
     processor = EndoscopyProcessor.objects.create(name="roi_invalid_processor")
     processor.centers.add(center)
     ctx = _create_import_context(
@@ -338,7 +338,9 @@ def test_get_processor_roi_info_returns_canonical_mask_roi_with_source_dimension
         name="roi-dimensions-center",
         display_name="ROI Dimensions Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="roi-dimensions-hash")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="roi-dimensions-hash"
+    )
     processor = EndoscopyProcessor.objects.create(
         name="roi_dimensions_processor",
         image_width=1920,
@@ -418,7 +420,7 @@ def test_persist_phi_region_proposals_creates_frame_box_annotation() -> None:
         name="phi-proposal-center",
         display_name="PHI Proposal Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="phi-video-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-video-hash")
     frame = Frame.objects.create(
         video=video,
         frame_number=5,
@@ -460,7 +462,7 @@ def test_persist_phi_region_proposals_skips_when_frame_row_is_missing() -> None:
         name="phi-proposal-missing-frame-center",
         display_name="PHI Proposal Missing Frame Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="phi-video-no-frame")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-video-no-frame")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
     count = anonymizer._persist_phi_region_proposals(
@@ -478,7 +480,9 @@ def test_persist_phi_region_proposals_is_idempotent_by_external_annotation_id() 
         name="phi-proposal-idempotent-center",
         display_name="PHI Proposal Idempotent Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="phi-video-idempotent")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="phi-video-idempotent"
+    )
     Frame.objects.create(
         video=video,
         frame_number=5,
@@ -505,7 +509,7 @@ def test_persist_phi_region_proposals_failure_is_best_effort(
         name="phi-proposal-failure-center",
         display_name="PHI Proposal Failure Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="phi-video-failure")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-video-failure")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
     def fail(video: VideoFile, observations: list[JsonObject]) -> NoReturn:
@@ -558,7 +562,7 @@ def test_verify_anonymizer_source_aborts_on_validated_hash_mismatch(
             video_anonymization._verify_anonymizer_source(
                 ctx,
                 source_video,
-                video_hash="source-mismatch",
+                raw_video_hash="source-mismatch",
             )
 
     assert "video.anonymizer_source_integrity_mismatch" in caplog.text
@@ -579,7 +583,9 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         name="phi-anonymize-video-center",
         display_name="PHI Anonymize Video Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="phi-video-anonymize")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="phi-video-anonymize"
+    )
     processor = _create_processor_with_roi("phi_anonymize_video_processor", center)
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"source-video")
@@ -682,7 +688,7 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="staged-reanonymize-video",
+        raw_video_hash="staged-reanonymize-video",
     )
     processor = _create_processor_with_roi("staged_reanonymize_processor", center)
     source_video = tmp_path / "source.mp4"
@@ -757,7 +763,9 @@ def test_persist_paper_evaluation_metrics_rejects_non_json_payload(
         name="paper-metrics-center",
         display_name="Paper Metrics Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="paper-metrics-video")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="paper-metrics-video"
+    )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
     with caplog.at_level("WARNING"):
@@ -781,7 +789,7 @@ def test_anonymize_video_uses_local_source_path_override(
         name="local-source-path-center",
         display_name="Local Source Path Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="local-source-video")
+    video = VideoFile.objects.create(center=center, raw_video_hash="local-source-video")
     processor = _create_processor_with_roi("local_source_video_processor", center)
     video.ensure_local_raw_file = _raise_local_raw_file
     local_source = tmp_path / "local-source.mp4"
@@ -838,7 +846,7 @@ def test_anonymize_video_uses_local_source_path_override(
         validated_raw_source_path=local_source,
         validated_raw_source_size_bytes=local_source_stat.st_size,
         validated_raw_source_mtime_ns=local_source_stat.st_mtime_ns,
-        validated_raw_source_sha256=video_anonymization.sha256_file(local_source),
+        validated_raw_source_sha256=video_anonymization.get_file_hash(local_source),
         validated_raw_source_stream={"width": 640, "height": 480},
         processor_name=processor.name,
     )
@@ -871,7 +879,9 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
         name="reuse-frame-cleaner-center",
         display_name="Reuse FrameCleaner Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="reuse-frame-cleaner")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="reuse-frame-cleaner"
+    )
     processor = _create_processor_with_roi("reuse_frame_cleaner_processor", center)
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"source-video")
@@ -938,7 +948,7 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         name="scaled-roi-video-center",
         display_name="Scaled ROI Video Center",
     )
-    video = VideoFile.objects.create(center=center, video_hash="scaled-roi-video")
+    video = VideoFile.objects.create(center=center, raw_video_hash="scaled-roi-video")
     processor = _create_processor_with_roi("scaled_roi_video_processor", center)
     source_video = tmp_path / "source.mp4"
     source_video.write_bytes(b"source-video")

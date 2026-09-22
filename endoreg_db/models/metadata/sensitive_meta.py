@@ -7,10 +7,11 @@ import logging
 # Removed icecream import (was used in old save sensitive_meta_logic)
 from typing import TYPE_CHECKING, ClassVar, Protocol, Type, Unpack, cast, Any
 
-from django.db import models
+from django.db import models, transaction
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.anonymization import normalize_direct_identifier_tombstone
+from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
 
 # Import models needed for type hints and FKs
@@ -39,8 +40,6 @@ class _ExternalIdLike(Protocol):
 
 
 logger = logging.getLogger(__name__)  # Add logger instance
-
-# SECRET_SALT moved to sensitive_meta_logic
 
 
 class SensitiveMeta(models.Model):
@@ -149,6 +148,12 @@ class SensitiveMeta(models.Model):
     )
     examination_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64, blank=True, null=True, editable=False, db_index=True
+    )
+    identity_fingerprint: models.CharField[Any, Any] = models.CharField(
+        max_length=64, blank=True, default="", editable=False
+    )
+    identity_salt_fingerprint: models.CharField[Any, Any] = models.CharField(
+        max_length=64, blank=True, default="", editable=False
     )
 
     # --- Endoscope Info ---
@@ -370,18 +375,15 @@ class SensitiveMeta(models.Model):
     # --- Hashing methods delegate to sensitive_meta_logic ---
     def get_patient_hash(self, salt: str | None = None) -> str:
         """Calculates the patient hash using external sensitive_meta_logic."""
-        # Use default salt from sensitive_meta_logic if None is passed
-        salt_to_use = salt if salt is not None else sensitive_meta_logic.SECRET_SALT
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.calculate_patient_hash(self, salt=salt_to_use)
+        return sensitive_meta_logic.calculate_patient_hash(self, salt=salt)
 
     def get_patient_examination_hash(self, salt: str | None = None) -> str:
         """Calculates the examination hash using external sensitive_meta_logic."""
-        salt_to_use = salt if salt is not None else sensitive_meta_logic.SECRET_SALT
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.calculate_examination_hash(self, salt=salt_to_use)
+        return sensitive_meta_logic.calculate_examination_hash(self, salt=salt)
 
     # --- Save method orchestrates calls to sensitive_meta_logic ---
+    @transaction.atomic
+    @identity_rotation_transaction
     def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         """
         Saves the SensitiveMeta instance, ensuring data integrity, hash calculation, pseudo-entity linking, and related state management using external sensitive_meta_logic.

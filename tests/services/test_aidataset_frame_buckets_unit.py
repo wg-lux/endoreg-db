@@ -153,7 +153,7 @@ class AIDataSetFrameBucketDatabaseUnitTests(TestCase):
         self.center = Center.objects.create(name="bucket-unit-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="bucket-unit-video",
+            raw_video_hash="bucket-unit-video",
             original_file_name="bucket_unit.mp4",
             fps=25.0,
             frame_count=6,

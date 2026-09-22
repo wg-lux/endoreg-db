@@ -45,7 +45,7 @@ class AnonymizationMetricsEndpointTests(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             sensitive_meta=self.sensitive_meta,
-            video_hash=f"metrics-video-{uuid4().hex}",
+            raw_video_hash=f"metrics-video-{uuid4().hex}",
             original_file_name="metrics.mp4",
         )
         self.pdf = RawPdfFile.objects.create(

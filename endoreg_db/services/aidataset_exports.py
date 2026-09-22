@@ -145,7 +145,7 @@ def build_frame_annotation_export(
             "patient_video_file_uuid": str(_model_value(video, "uuid")),
             "video_id": _model_int(video, "pk"),
             "video_uuid": str(_model_value(video, "uuid")),
-            "video_hash": _model_text(video, "video_hash"),
+            "raw_video_hash": _model_text(video, "raw_video_hash"),
             "original_file_name": _model_optional_text(video, "original_file_name"),
             "label": {
                 "id": _model_int(annotation, "label_id"),

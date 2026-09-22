@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, List
 
-from endoreg_db.services.video_files._io import _get_frame_dir_path
+from endoreg_db.services.video_files.io import get_video_frame_dir_path
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 
 def _get_frame_paths(video: "VideoFile") -> List[Path]:
     """Returns a sorted list of Path objects for extracted frame image files."""
-    frame_dir = _get_frame_dir_path(video)
+    frame_dir = get_video_frame_dir_path(video)
     if not frame_dir or not frame_dir.exists():
         logger.warning(
             "Frame directory %s does not exist for video %s.",
             frame_dir,
-            video.video_hash,
+            video.raw_video_hash,
         )
         return []
 

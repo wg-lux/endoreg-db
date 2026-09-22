@@ -5,14 +5,15 @@ import tempfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from types import SimpleNamespace
-from typing import IO, Protocol, cast
-from rest_framework.response import Response
+from typing import IO, Any, Protocol, cast
+
 import pytest
 from django.test import TestCase
+from rest_framework.response import Response
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.utils.paths import ANONYM_REPORT_DIR, protected_media_root
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.paths import get_runtime_paths, protected_media_root
 
 
 class _ReportStorageReader(Protocol):
@@ -114,10 +115,6 @@ def _sync_streaming_body(response: object) -> bytes:
     return b"".join(cast(Iterable[bytes], streaming_response.streaming_content))
 
 
-def _resolve_local_path_stub(field_file: LocalStubFieldFile) -> Path:
-    return Path(field_file.path)
-
-
 def _patch_remote_report_manager(
     monkeypatch: pytest.MonkeyPatch,
     manager: TrackingPathManager,
@@ -206,19 +203,20 @@ class ReportStreamViewTests(TestCase):
     def test_pdf_stream_download_nginx_headers(self):
         from endoreg_db.views.report import report_stream as view_module
 
-        storage_dir = protected_media_root().resolve()
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        tmp_file_path = None
+        storage_root = protected_media_root().resolve()
+        storage_root.mkdir(parents=True, exist_ok=True)
+        tmp_file_path: Path | None = None
+        disk_path: Path | None = None
         monkeypatches = pytest.MonkeyPatch()
         try:
             with tempfile.NamedTemporaryFile(
-                suffix=".pdf", dir=storage_dir, delete=False
+                suffix=".pdf", dir=storage_root, delete=False
             ) as tmp:
                 tmp.write(b"%PDF-1.4\n%test\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n")
                 tmp.flush()
                 tmp_file_path = Path(tmp.name)
 
-            relative_name = tmp_file_path.relative_to(storage_dir).as_posix()
+            relative_name = tmp_file_path.relative_to(storage_root).as_posix()
             fake_file_field = LocalStubFieldFile(relative_name)
             fake_pdf_obj = SimpleNamespace(file=fake_file_field, processed_file=None)
 
@@ -228,14 +226,14 @@ class ReportStreamViewTests(TestCase):
                 "http://frontend.test",
             )
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
-            monkeypatches.setattr(
-                view_module,
-                "_resolve_local_path_for_nginx",
-                _resolve_local_path_stub,
-            )
+            anonym_dir = get_runtime_paths().anonym_report
+            disk_path = anonym_dir / relative_name
+            disk_path.parent.mkdir(parents=True, exist_ok=True)
+            disk_path.write_bytes(b"ciphertext-placeholder")
 
             resp = view_module._serve_with_nginx(
                 fake_pdf_obj.file,
+                disk_path,
                 "application/pdf",
                 disposition="attachment",
                 frontend_origin="http://frontend.test",
@@ -244,6 +242,8 @@ class ReportStreamViewTests(TestCase):
             monkeypatches.undo()
             if tmp_file_path and tmp_file_path.exists():
                 tmp_file_path.unlink(missing_ok=True)
+            if disk_path and disk_path.exists():
+                disk_path.unlink(missing_ok=True)
 
         assert resp is not None
         assert resp.status_code == 200
@@ -261,7 +261,7 @@ class ReportStreamViewTests(TestCase):
         fake_field = StubFieldFile(fake_storage, "reports/test.pdf")
 
         response = view_module.build_eager_content_response(
-            field_file=fake_field,
+            field_file=cast(Any, fake_field),
             content_type="application/pdf",
             file_size=len(payload),
             range_header="bytes=10-49",
@@ -278,14 +278,20 @@ class ReportStreamViewTests(TestCase):
 
         payload = (b"%PDF-1.4\n" * 32) + b"%%EOF\n"
         fake_storage = FakeStorage(payload)
-        fake_field = StubFieldFile(fake_storage, "reports/encrypted.pdf")
+        relative_name = "reports/encrypted.pdf"
+        fake_field = StubFieldFile(fake_storage, relative_name)
         fake_pdf_obj = SimpleNamespace(file=fake_field, processed_file=fake_field)
 
+        storage_dir = get_runtime_paths().anonym_report
+        disk_path = storage_dir / relative_name
+        disk_path.parent.mkdir(parents=True, exist_ok=True)
+        disk_path.write_bytes(b"ciphertext-placeholder")
         monkeypatches = pytest.MonkeyPatch()
         try:
             monkeypatches.setenv("SERVE_WITH_NGINX", "true")
             nginx_response = view_module._serve_with_nginx(
                 fake_pdf_obj.file,
+                disk_path,
                 "application/pdf",
                 disposition="inline",
                 frontend_origin=None,
@@ -300,6 +306,7 @@ class ReportStreamViewTests(TestCase):
             )
         finally:
             monkeypatches.undo()
+            disk_path.unlink(missing_ok=True)
 
         assert nginx_response is None
         assert response.status_code == 200
@@ -313,12 +320,12 @@ class ReportStreamViewTests(TestCase):
         fake_storage = FakeStorage(payload)
         relative_name = "reports/encrypted-present-on-disk.pdf"
         fake_field = StubFieldFile(fake_storage, relative_name)
-        fake_pdf_obj = SimpleNamespace(file=fake_field, processed_file=fake_field)
 
-        storage_dir = protected_media_root().resolve()
+        storage_dir = get_runtime_paths().anonym_report
         disk_path = storage_dir / relative_name
         disk_path.parent.mkdir(parents=True, exist_ok=True)
         disk_path.write_bytes(b"ciphertext-placeholder")
+        fake_pdf_obj = SimpleNamespace(file=fake_field, processed_file=fake_field)
 
         monkeypatches = pytest.MonkeyPatch()
         try:
@@ -326,6 +333,7 @@ class ReportStreamViewTests(TestCase):
             monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
             nginx_response = view_module._serve_with_nginx(
                 fake_pdf_obj.file,
+                disk_path,
                 "application/pdf",
                 disposition="inline",
                 frontend_origin=None,
@@ -359,12 +367,13 @@ class ReportStreamViewTests(TestCase):
         fake_field = LocalStubFieldFile(relative_name)
 
         try:
-            assert view_module._resolve_local_path_for_nginx(fake_field) is None
-            assert view_module.field_file_is_local_encrypted_without_reader(fake_field)
+            assert view_module.field_file_is_local_encrypted_without_reader(
+                cast(Any, fake_field)
+            )
         finally:
             disk_path.unlink(missing_ok=True)
 
-    def test_pdf_stream_recovers_raw_path_from_hash_lookup_when_field_name_is_stale(
+    def test_pdf_stream_keeps_stale_raw_reference_for_offline_reconciliation(
         self,
     ):
         from endoreg_db.views.report import report_stream as view_module
@@ -383,33 +392,25 @@ class ReportStreamViewTests(TestCase):
         )
 
         try:
-            recovered = view_module.recover_missing_report_field_path(
+            recovered = view_module._pick_report_field_file(
                 cast(RawPdfFile, fake_pdf_obj),
                 "raw",
             )
-            response = view_module.build_eager_content_response(
-                field_file=recovered,
-                content_type="application/pdf",
-                file_size=len(payload),
-                range_header=None,
-                disposition="inline",
-                filename="fallback-raw.pdf",
-            )
-            body = _sync_streaming_body(response)
+            with pytest.raises(FileNotFoundError):
+                view_module.field_file_size(cast(Any, recovered))
         finally:
             fallback_path.unlink(missing_ok=True)
 
         assert recovered is fake_pdf_obj.file
-        assert response.status_code == 200
-        assert body == payload
+        assert recovered.name == "sensitive_reports/missing.pdf"
 
-    def test_pdf_stream_recovers_processed_path_from_hash_lookup_when_field_name_is_stale(
+    def test_pdf_stream_keeps_stale_processed_reference_for_offline_reconciliation(
         self,
     ):
         from endoreg_db.views.report import report_stream as view_module
 
         payload = b"%PDF-1.4\nprocessed-fallback\n%%EOF\n"
-        fallback_path = ANONYM_REPORT_DIR / "processed-hash.pdf"
+        fallback_path = get_runtime_paths().anonym_report / "processed-hash.pdf"
         fallback_path.parent.mkdir(parents=True, exist_ok=True)
         fallback_path.write_bytes(payload)
 
@@ -421,24 +422,17 @@ class ReportStreamViewTests(TestCase):
         )
 
         try:
-            recovered = view_module.recover_missing_report_field_path(
+            recovered = view_module._pick_report_field_file(
                 cast(RawPdfFile, fake_pdf_obj),
                 "processed",
             )
-            response = view_module.build_eager_content_response(
-                field_file=recovered,
-                content_type="application/pdf",
-                file_size=len(payload),
-                range_header=None,
-                disposition="inline",
-                filename="processed-hash.pdf",
-            )
+            with pytest.raises(FileNotFoundError):
+                view_module.field_file_size(cast(Any, recovered))
         finally:
             fallback_path.unlink(missing_ok=True)
 
         assert recovered is fake_pdf_obj.processed_file
-        assert response.status_code == 200
-        assert _sync_streaming_body(response) == payload
+        assert recovered.name == "processed_reports_final/missing.pdf"
 
     def test_pdf_stream_invalid_range_returns_416_with_content_range(self):
         from django.http import HttpResponse

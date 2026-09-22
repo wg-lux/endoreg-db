@@ -174,7 +174,7 @@ def _create_processed_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"hls-video-{payload.hex()}",
+        raw_video_hash=hashlib.sha256(payload).hexdigest(),
     )
     cast(Any, video.processed_file).save(
         "hls-source.mp4",
@@ -191,7 +191,7 @@ def _create_raw_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"hls-raw-video-{payload.hex()}",
+        raw_video_hash=hashlib.sha256(payload).hexdigest(),
     )
     cast(Any, video.raw_file).save(
         "hls-raw-source.mp4",
@@ -1110,6 +1110,49 @@ def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
 
 
 @pytest.mark.ffmpeg
+def test_online_rotation_regenerates_real_hls_content_keys_after_playback(
+    hls_center: Center,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.services.secret_rotation.storage import (
+        StorageRotationReport,
+        _rotate_hls,
+    )
+    from endoreg_db.services.media_operation_gate import (
+        create_video_stream_lease,
+        release_media_operation_lease,
+    )
+    from endoreg_db.utils.encryption.encryption import load_master_key
+    from tests.services.test_secret_rotation import write_ring
+
+    monkeypatch.setattr(
+        hls_media.ffmpeg_wrapper, "get_stream_info", transcode_execution.get_stream_info
+    )
+    source_path = tmp_path / "rotation-source.mp4"
+    _write_tiny_ffmpeg_mp4(source_path, pixel_format="yuv420p")
+    video = _create_processed_video(center=hls_center, payload=source_path.read_bytes())
+    first = hls_media.materialize_video_hls(video.pk)
+    original = VideoHlsArtifact.objects.get(key_id=first.key_id)
+    old_content_key = hls_media.unwrap_hls_content_key(original)
+    ring = write_ring(tmp_path, b"n" * 32, (load_master_key(),))
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEYRING_FILE", str(ring))
+    lease = create_video_stream_lease(video, file_type="processed", ttl_seconds=60)
+    deferred = StorageRotationReport()
+    _rotate_hls(deferred, apply=True)
+    assert deferred.deferred == 1 and deferred.hls_regenerated == 0
+    release_media_operation_lease(lease)
+    completed = StorageRotationReport()
+    _rotate_hls(completed, apply=True)
+    assert completed.hls_regenerated == 1 and completed.failed == 0
+    current = hls_media.get_ready_hls_artifact(video=video)
+    assert current.key_id != original.key_id
+    assert hls_media.hls_uses_active_master_key(current)
+    assert hls_media.unwrap_hls_content_key(current) != old_content_key
+    assert hls_media.unwrap_hls_content_key(original) == old_content_key
+
+
+@pytest.mark.ffmpeg
 def test_hls_rejects_unsupported_source_before_encoding(
     hls_center: Center,
     tmp_path: Path,
@@ -1249,7 +1292,7 @@ def test_hls_reuses_verified_hash_and_rejects_same_name_replacement(
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
     with patch.object(
-        video_source_hash, "get_video_hash", wraps=video_source_hash.get_video_hash
+        video_source_hash, "get_file_hash", wraps=video_source_hash.get_file_hash
     ) as read:
         hls_media.materialize_video_hls(video.pk, artifact_kind="processed")
         hls_media.get_ready_hls_artifact(video=video, artifact_kind="processed")

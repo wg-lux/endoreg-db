@@ -16,7 +16,6 @@ import logging
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +93,7 @@ def validate_anonymization_request(
     Raises:
         ValidationError: Bei ungültigen Parametern
     """
-    errors: list[ValidationErrorMessageArg] = []
+    errors: list[str] = []
 
     # Anonymisierungsgrad validieren
     if anonymization_level not in ANONYMIZATION_LEVELS:

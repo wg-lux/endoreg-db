@@ -101,7 +101,7 @@ def test_sampled_video_metadata_uses_one_lx_anonymizer_ocr_instance(
     video = cast(
         VideoFile,
         SimpleNamespace(
-            video_hash="video-hash",
+            raw_video_hash="video-hash",
             processor=_Processor(),
             get_or_create_state=lambda: SimpleNamespace(frames_extracted=True),
             get_frame_paths=lambda: list(frame_paths),

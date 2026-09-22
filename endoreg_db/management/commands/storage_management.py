@@ -12,7 +12,7 @@ from django.db import DatabaseError
 from pydantic import ValidationError
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, data_paths
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_rmtree,
@@ -186,15 +186,15 @@ class Command(BaseCommand):
 
     def get_storage_root(self) -> Path:
         """Return the canonical storage root from centralized path helpers."""
-        return data_paths["storage"]
+        return get_runtime_paths().storage
 
     def get_protected_root(self) -> Path:
         """Return the canonical protected runtime root."""
-        return PROTECTED_DATA_ROOT
+        return get_runtime_paths().runtime_root
 
     def get_frames_dir(self) -> Path:
         """Return the canonical extracted-frames directory."""
-        return data_paths["frame"]
+        return get_runtime_paths().frame
 
     def get_uploads_dir(self) -> Path:
         """Return the upload cache directory under the canonical storage root."""

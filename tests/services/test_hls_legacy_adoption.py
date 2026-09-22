@@ -74,7 +74,7 @@ def test_adoption_preserves_output_and_fences_unnecessary_queue(
     queued = VideoHlsArtifact.objects.get(pk=reservation.artifact_id)
     assert queued.status == "failed"
     assert queued.error_code == "stale_attempt"
-    root = EndoregPathsModel.from_environment().protected_root / "hls-legacy-adoption"
+    root = EndoregPathsModel.from_environment().runtime_root / "hls-legacy-adoption"
     records = list(root.glob(f"{receipt.receipt_id}-*.json"))
     assert len(records) == 2
     assert all(path.stat().st_mode & 0o777 == 0o600 for path in records)

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from endoreg_db.utils.storage.files import canonical_media_name
+
 
 import json
 import logging
@@ -32,14 +34,15 @@ from endoreg_db.services.jobs.stale_recovery import (
 )
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils import ffmpeg_wrapper, paths as path_utils
+from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
-from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
 
@@ -84,14 +87,14 @@ def _coerce_frame_number(value: object) -> int:
 
 
 def _video_hash(video: VideoFile) -> str:
-    return str(cast(Any, video).video_hash)
+    return str(cast(Any, video).raw_video_hash)
 
 
 def _output_path(video: VideoFile, strategy: str) -> Path:
-    output_dir = ensure_directory(
-        path_utils.EndoregPathsModel.from_environment().anonym_video
+    output_dir = ensure_directory(get_runtime_paths().anonym_video)
+    return output_dir / canonical_media_name(
+        _video_hash(video), ".mp4", generation=strategy.replace("_", "-")
     )
-    return output_dir / f"{_video_hash(video)}_{strategy.replace('_', '-')}.mp4"
 
 
 def _part_output_path(output_path: Path) -> Path:
@@ -109,7 +112,7 @@ def _promote_output(temp_path: Path, final_path: Path) -> Path:
 
 
 def update_processed_file(video: VideoFile, output_path: Path) -> str:
-    content_hash = get_video_hash(output_path)
+    content_hash = get_file_hash(output_path)
     processed_file: FieldFile = video.processed_file
     if not hasattr(processed_file, "field"):
         processed_file.name = str(output_path)
@@ -117,13 +120,11 @@ def update_processed_file(video: VideoFile, output_path: Path) -> str:
         cast(Any, video).save(update_fields=["processed_file", "processed_video_hash"])
         return str(processed_file.name)
 
-    canonical_path = (
-        path_utils.EndoregPathsModel.from_environment().anonym_video / output_path.name
-    )
+    canonical_path = get_runtime_paths().anonym_video / output_path.name
     stored_name = save_local_file(
         processed_file,
         output_path,
-        name=path_utils.to_storage_relative(canonical_path),
+        name=to_storage_relative(canonical_path),
         save=False,
         overwrite=True,
     )

@@ -293,7 +293,7 @@ def test_report_anonymizer_rejects_untrusted_result_before_mutation(
                     replacement.replace(path)
                     return expected_hash
 
-                monkeypatch.setattr(module, "sha256_file", changed_hash)
+                monkeypatch.setattr(module, "get_file_hash", changed_hash)
             else:
                 raise AssertionError("Unknown defect")
             return result.model_copy(update=updates)

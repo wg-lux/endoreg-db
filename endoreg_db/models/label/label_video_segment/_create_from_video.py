@@ -10,10 +10,8 @@ if TYPE_CHECKING:
 
 __all__ = ["_create_from_video"]
 
-NoPredictionMetaValue: TypeAlias = None
-NoSegmentLabelValue: TypeAlias = None
-SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
-SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
+SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | None"
+SegmentLabel: TypeAlias = "Label | None"
 LabelVideoSegmentT = TypeVar("LabelVideoSegmentT", bound="LabelVideoSegment")
 
 

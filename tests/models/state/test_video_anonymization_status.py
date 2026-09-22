@@ -36,7 +36,7 @@ class VideoStateAnonymizationStatusTests(TestCase):
         center = Center.objects.create(name=f"status-center-{uuid4().hex[:8]}")
         video = VideoFile.objects.create(
             center=center,
-            video_hash=f"status-video-{uuid4().hex}",
+            raw_video_hash=f"status-video-{uuid4().hex}",
         )
 
         sql_status = (

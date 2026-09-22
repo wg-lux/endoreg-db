@@ -14,17 +14,24 @@ from typing import Any, Protocol, cast
 import numpy as np
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from lx_dtypes.models.contracts.video_file import FrameSourceMode
+from lx_dtypes.models.contracts.video_segments import (
+    validate_video_segments_payload,
+)
+from lx_dtypes.models.contracts.video_temporal_inference import (
+    TemporalInferenceDispatchResult,
+    TemporalInferenceHistoryConfigPayload,
+    TemporalInferenceHistoryResultPayload,
+    parse_temporal_inference_history_config_payload,
+    parse_temporal_inference_history_result_payload,
+)
 from pydantic import ValidationError
 
 from endoreg_db.config.env import (
     get_celery_inference_queue,
-    get_video_temporal_inference_job_mode,
     get_video_temporal_inference_frame_source_mode,
-)
-from endoreg_db.schemas.temporal_inference import CanonicalTemporalOptions
-from endoreg_db.services.jobs.heavy_jobs import (
-    HeavyJobKind,
-    ensure_secure_transport_for_job_kind,
+    get_video_temporal_inference_job_mode,
 )
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
@@ -33,40 +40,30 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
-from endoreg_db.services.video_files._ai import (
-    FrameSourceMode,
-    VideoFrameScoreResult,
-)
-from endoreg_db.services.video_files._segments import (
-    convert_sequences_to_db_segments,
-)
+from endoreg_db.schemas.temporal_inference import CanonicalTemporalOptions
 from endoreg_db.services.frame_annotation_workflow import (
     mark_frame_prediction_completed,
     mark_frame_prediction_reset,
     mark_prediction_segments_created,
 )
+from endoreg_db.services.jobs.heavy_jobs import (
+    HeavyJobKind,
+    ensure_secure_transport_for_job_kind,
+)
+from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
 from endoreg_db.services.video_files import (
     delete_video_frames,
-    extract_video_frames,
-    get_video_frame_dir_path,
     predict_video,
     update_video_meta,
-    update_video_text_metadata,
+)
+from endoreg_db.services.video_files._ai import (
+    VideoFrameScoreResult,
+)
+from endoreg_db.services.video_files._segments import (
+    convert_sequences_to_db_segments,
 )
 from endoreg_db.services.video_segment_validation_workflow import (
     is_outside_frame_blackening_history,
-)
-from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
-from lx_dtypes.models.contracts.video_temporal_inference import (
-    TemporalInferenceDispatchResult,
-    TemporalInferenceHistoryConfigPayload,
-    TemporalInferenceHistoryResultPayload,
-    parse_temporal_inference_history_config_payload,
-    parse_temporal_inference_history_result_payload,
-)
-from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
-from lx_dtypes.models.contracts.video_segments import (
-    validate_video_segments_payload,
 )
 
 logger = logging.getLogger(__name__)
@@ -234,11 +231,6 @@ def _prediction_segments_for_meta(
     )
 
 
-def _has_extracted_frame_files(video: VideoFile) -> bool:
-    frame_dir = get_video_frame_dir_path(video)
-    return bool(frame_dir and frame_dir.exists() and any(frame_dir.glob("frame_*.jpg")))
-
-
 def _normalize_temporal_frame_source_mode(
     value: str | None = None,
 ) -> FrameSourceMode:
@@ -258,6 +250,10 @@ def _resolve_temporal_frame_source_mode(
     video: VideoFile,
     requested_frame_source_mode: FrameSourceMode,
 ) -> FrameSourceMode:
+    if requested_frame_source_mode == "cache":
+        raise TemporalInferenceConfigError(
+            "Frame file caches are retired; use frame_source_mode=stream."
+        )
     if requested_frame_source_mode == "auto":
         return "stream"
     return requested_frame_source_mode
@@ -1660,31 +1656,6 @@ def _record_resolved_frame_source_mode(
     history.save(update_fields=["config"])
 
 
-def _prepare_temporal_frame_cache(
-    video: VideoFile,
-    *,
-    frame_source_mode: FrameSourceMode,
-    ocr_frame_fraction: float,
-    ocr_cap: int,
-) -> bool:
-    if frame_source_mode != "cache":
-        return False
-    extract_video_frames(video, overwrite=False)
-    update_video_text_metadata(
-        video,
-        ocr_frame_fraction=ocr_frame_fraction,
-        cap=ocr_cap,
-        overwrite=False,
-    )
-    if not _has_extracted_frame_files(video):
-        extract_video_frames(video, overwrite=True)
-    if not _has_extracted_frame_files(video):
-        raise RuntimeError(
-            f"Frame cache for video {video.pk} is empty after extraction."
-        )
-    return True
-
-
 def _prepare_temporal_run(
     *,
     video_id: int,
@@ -1711,19 +1682,13 @@ def _prepare_temporal_run(
         requested=requested_frame_source_mode,
         resolved=resolved_mode,
     )
-    frames_touched = _prepare_temporal_frame_cache(
-        video,
-        frame_source_mode=resolved_mode,
-        ocr_frame_fraction=ocr_frame_fraction,
-        ocr_cap=ocr_cap,
-    )
     return _PreparedTemporalRun(
         video=video,
         model_meta=model_meta,
         temporal_options=temporal_options,
         requested_frame_source_mode=requested_frame_source_mode,
         resolved_frame_source_mode=resolved_mode,
-        frames_touched=frames_touched,
+        frames_touched=False,
     )
 
 

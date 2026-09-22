@@ -465,12 +465,12 @@ class Command(BaseCommand):
         *,
         copied_indent: str,
     ) -> str:
-        from endoreg_db.utils.paths import STORAGE_DIR
+        from endoreg_db.utils.paths import get_runtime_paths
 
         try:
-            return str(weights_file.relative_to(STORAGE_DIR))
+            return str(weights_file.relative_to(get_runtime_paths().storage))
         except ValueError:
-            weights_dir = STORAGE_DIR / "model_weights"
+            weights_dir = get_runtime_paths().storage / "model_weights"
             ensure_directory(weights_dir)
             dest_path = weights_dir / weights_file.name
             atomic_copy_file(
@@ -478,7 +478,7 @@ class Command(BaseCommand):
                 destination=dest_path,
             )
             self.stdout.write(f"{copied_indent}Copied weights to: {dest_path}")
-            return str(dest_path.relative_to(STORAGE_DIR))
+            return str(dest_path.relative_to(get_runtime_paths().storage))
 
     def _activate_existing_metadata(
         self,

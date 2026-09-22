@@ -149,7 +149,7 @@ def _initialize_video_specs(
     if source_context is None:
         logger.error(
             "No suitable video file found for hash %s",
-            getattr(video, "video_hash", "<unknown>"),
+            getattr(video, "raw_video_hash", "<unknown>"),
         )
         return False
 
@@ -175,10 +175,10 @@ def _initialize_video_specs(
         )
         logger.error(
             "Failed to initialize specs for %s: %s",
-            getattr(video, "video_hash", None),
+            getattr(video, "raw_video_hash", None),
             error,
             exc_info=True,
         )
         raise RuntimeError(
-            f"Failed to initialize specs for {getattr(video, 'video_hash', '<unknown>')}"
+            f"Failed to initialize specs for {getattr(video, 'raw_video_hash', '<unknown>')}"
         ) from error

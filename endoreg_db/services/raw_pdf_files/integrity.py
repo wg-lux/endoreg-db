@@ -4,10 +4,7 @@ import string
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from django.db.models.fields.files import FieldFile
-
-from endoreg_db.utils.file_operations import sha256_file
-from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.file_operations import get_file_hash
 
 from .state import get_or_create_raw_pdf_state
 
@@ -59,22 +56,16 @@ def verify_processed_report_artifact(
     expected_sha256: str | None = None,
 ) -> str:
     """Return the plaintext SHA-256 after verifying the stored processed PDF."""
-    field_file = getattr(report, "processed_file", None)
-    field_name = getattr(field_file, "name", None)
-    if (
-        not isinstance(field_file, FieldFile)
-        or not isinstance(field_name, str)
-        or not field_name
-    ):
+    field_file = report.processed_file
+    if not field_file:
         raise ProcessedReportIntegrityError(
             "Report has no stored anonymized processed PDF."
         )
 
     try:
-        with ensure_local_file(field_file, suffix=".pdf") as local_path:
-            local_path = Path(local_path)
+        with field_file.ensure_local() as local_path:
             _verify_pdf_path(local_path)
-            actual_sha256 = sha256_file(local_path)
+            actual_sha256 = get_file_hash(local_path)
     except ProcessedReportIntegrityError:
         raise
     except Exception as exc:

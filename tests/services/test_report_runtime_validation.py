@@ -72,7 +72,7 @@ def test_final_report_runtime_validation_returns_typed_snapshot(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_runtime_validation.load_knowledge_base",
+        "endoreg_db.services.report_runtime_validation.load_module_kb",
         load_successful_kb,
     )
 
@@ -102,7 +102,7 @@ def test_final_report_runtime_validation_rejects_failed_requirements(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_runtime_validation.load_knowledge_base",
+        "endoreg_db.services.report_runtime_validation.load_module_kb",
         load_failing_kb,
     )
 

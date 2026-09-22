@@ -417,7 +417,7 @@ def test_phi_retraining_worker_marks_lx_anonymizer_failure_failed(
 
 
 @pytest.mark.django_db
-def test_prepare_model_training_inputs_materializes_missing_frames_from_processed_video(
+def test_prepare_model_training_inputs_streams_missing_frames_from_processed_video(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -427,7 +427,7 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -436,12 +436,22 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
     state.anonymized = True
     state.anonymization_validated = True
     state.outside_segments_removed = True
+    state.segment_annotations_validated = True
+    state.ready_for_export_at = timezone.now()
+    state.ready_for_export_by = "test-reviewer"
+    state.processed_file_sha256 = "a" * 64
+    state.ready_for_export = True
     state.save(
         update_fields=[
             "sensitive_meta_processed",
             "anonymized",
             "anonymization_validated",
             "outside_segments_removed",
+            "segment_annotations_validated",
+            "ready_for_export",
+            "ready_for_export_at",
+            "ready_for_export_by",
+            "processed_file_sha256",
         ]
     )
     frame = Frame.objects.create(
@@ -481,6 +491,7 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
         model_training_jobs,
         "extract_frame_range_to_directory",
         fake_extract_frame_range_to_directory,
+        raising=False,
     )
 
     result = model_training_jobs.prepare_model_training_inputs(
@@ -490,86 +501,10 @@ def test_prepare_model_training_inputs_materializes_missing_frames_from_processe
     frame.refresh_from_db()
     assert result["prepared"] is True
     assert result["annotation_source_scope"] == "all"
-    assert result["materialized_frame_count"] == 1
-    assert frame.is_extracted is True
-    assert frame.file_path.read_bytes() == b"frame"
-    assert calls[0]["from_processed"] is True
-    assert calls[0]["start_frame"] == 7
-    assert calls[0]["end_frame"] == 8
-
-
-@pytest.mark.django_db
-def test_failed_training_frame_extraction_does_not_publish_database_state(
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    # Arrange
-    center = Center.objects.create(
-        name=f"training-atomic-center-{uuid.uuid4().hex[:8]}",
-        display_name="Training Atomic Center",
-    )
-    video = VideoFile.objects.create(
-        center=center,
-        video_hash=f"training-atomic-video-{uuid.uuid4().hex}",
-        frame_dir=str(tmp_path / "frames"),
-        processed_file="anonymized_videos/processed.mp4",
-    )
-    state = video.get_or_create_state()
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.outside_segments_removed = True
-    state.save(
-        update_fields=[
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-        ]
-    )
-    frame = Frame.objects.create(
-        video=video,
-        frame_number=13,
-        relative_path="legacy-frame.jpg",
-        is_extracted=False,
-    )
-    label = Label.objects.create(name=f"atomic-label-{uuid.uuid4().hex[:8]}")
-    annotation = ImageClassificationAnnotation.objects.create(
-        information_source=InformationSource.objects.get_or_create(
-            name="manual_annotation"
-        )[0],
-        frame=frame,
-        label=label,
-        value=True,
-    )
-    dataset = AIDataSet.objects.create(
-        name=f"atomic-dataset-{uuid.uuid4().hex[:8]}",
-        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
-        ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
-    )
-    dataset.image_annotations.add(annotation)
-
-    def omit_extracted_frame(
-        _video: VideoFile,
-        **_kwargs: object,
-    ) -> list[Path]:
-        return []
-
-    monkeypatch.setattr(
-        model_training_jobs,
-        "extract_frame_range_to_directory",
-        omit_extracted_frame,
-    )
-
-    # Act
-    with pytest.raises(RuntimeError, match="did not create required training frame"):
-        model_training_jobs.prepare_model_training_inputs({"dataset_id": dataset.pk})
-
-    # Assert
-    frame.refresh_from_db()
-    assert frame.relative_path == "legacy-frame.jpg"
+    assert result["frame_count"] == 1
     assert frame.is_extracted is False
-    assert not (tmp_path / "frames" / "frame_0000013.jpg").exists()
+    assert not frame.file_path.exists()
+    assert calls == []
 
 
 @pytest.mark.django_db
@@ -583,7 +518,7 @@ def test_prepare_model_training_inputs_rejects_unready_processed_video(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-unready-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-unready-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -616,14 +551,15 @@ def test_prepare_model_training_inputs_rejects_unready_processed_video(
         model_training_jobs,
         "extract_frame_range_to_directory",
         fail_extract_frame_range_to_directory,
+        raising=False,
     )
 
-    with pytest.raises(RuntimeError, match="missing readiness flags"):
+    with pytest.raises(ValueError, match="validated, export-ready"):
         model_training_jobs.prepare_model_training_inputs({"dataset_id": dataset.pk})
 
 
 @pytest.mark.django_db
-def test_prepare_model_training_inputs_materializes_dataset_video_annotation_frames(
+def test_prepare_model_training_inputs_streams_dataset_video_annotation_frames(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -633,7 +569,7 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-segment-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-segment-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -663,12 +599,22 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
     state.anonymized = True
     state.anonymization_validated = True
     state.outside_segments_removed = True
+    state.segment_annotations_validated = True
+    state.ready_for_export_at = timezone.now()
+    state.ready_for_export_by = "test-reviewer"
+    state.processed_file_sha256 = "a" * 64
+    state.ready_for_export = True
     state.save(
         update_fields=[
             "sensitive_meta_processed",
             "anonymized",
             "anonymization_validated",
             "outside_segments_removed",
+            "segment_annotations_validated",
+            "ready_for_export",
+            "ready_for_export_at",
+            "ready_for_export_by",
+            "processed_file_sha256",
         ]
     )
 
@@ -687,6 +633,7 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
         model_training_jobs,
         "extract_frame_range_to_directory",
         fake_extract_frame_range_to_directory,
+        raising=False,
     )
 
     result = model_training_jobs.prepare_model_training_inputs(
@@ -696,12 +643,10 @@ def test_prepare_model_training_inputs_materializes_dataset_video_annotation_fra
     frame.refresh_from_db()
     assert result["prepared"] is True
     assert result["annotation_source_scope"] == "all"
-    assert result["materialized_frame_count"] == 1
-    assert frame.is_extracted is True
-    assert frame.file_path.read_bytes() == b"frame"
-    assert calls[0]["from_processed"] is True
-    assert calls[0]["start_frame"] == 7
-    assert calls[0]["end_frame"] == 8
+    assert result["frame_count"] == 1
+    assert frame.is_extracted is False
+    assert not frame.file_path.exists()
+    assert calls == []
 
 
 @pytest.mark.django_db
@@ -715,7 +660,7 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-frame-only-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-frame-only-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -749,6 +694,7 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
         model_training_jobs,
         "extract_frame_range_to_directory",
         fail_extract_frame_range_to_directory,
+        raising=False,
     )
 
     result = model_training_jobs.prepare_model_training_inputs(
@@ -758,7 +704,7 @@ def test_prepare_model_training_inputs_skips_segments_for_frame_only_scope(
     frame.refresh_from_db()
     assert result["prepared"] is True
     assert result["annotation_source_scope"] == "frame_only"
-    assert result["materialized_frame_count"] == 0
+    assert result["frame_count"] == 0
     assert frame.is_extracted is False
 
 
@@ -773,7 +719,7 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-segment-only-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-segment-only-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -810,6 +756,7 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
         model_training_jobs,
         "extract_frame_range_to_directory",
         fail_extract_frame_range_to_directory,
+        raising=False,
     )
 
     result = model_training_jobs.prepare_model_training_inputs(
@@ -819,12 +766,12 @@ def test_prepare_model_training_inputs_skips_frame_annotations_for_segment_only_
     frame.refresh_from_db()
     assert result["prepared"] is True
     assert result["annotation_source_scope"] == "segment_only"
-    assert result["materialized_frame_count"] == 0
+    assert result["frame_count"] == 0
     assert frame.is_extracted is False
 
 
 @pytest.mark.django_db
-def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
+def test_prepare_model_training_inputs_only_selects_sparse_segment_frames(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -834,7 +781,7 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"training-sparse-segment-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"training-sparse-segment-video-{uuid.uuid4().hex}",
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
@@ -878,12 +825,22 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
     state.anonymized = True
     state.anonymization_validated = True
     state.outside_segments_removed = True
+    state.segment_annotations_validated = True
+    state.ready_for_export_at = timezone.now()
+    state.ready_for_export_by = "test-reviewer"
+    state.processed_file_sha256 = "a" * 64
+    state.ready_for_export = True
     state.save(
         update_fields=[
             "sensitive_meta_processed",
             "anonymized",
             "anonymization_validated",
             "outside_segments_removed",
+            "segment_annotations_validated",
+            "ready_for_export",
+            "ready_for_export_at",
+            "ready_for_export_by",
+            "processed_file_sha256",
         ]
     )
 
@@ -904,6 +861,7 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
         model_training_jobs,
         "extract_frame_range_to_directory",
         fake_extract_frame_range_to_directory,
+        raising=False,
     )
 
     result = model_training_jobs.prepare_model_training_inputs(
@@ -913,7 +871,7 @@ def test_prepare_model_training_inputs_only_materializes_sparse_segment_frames(
     non_segment_frame.refresh_from_db()
     assert result["prepared"] is True
     assert result["annotation_source_scope"] == "segment_only"
-    assert result["materialized_frame_count"] == len(segment_frames)
+    assert result["frame_count"] == len(segment_frames)
     assert non_segment_frame.is_extracted is False
     assert not non_segment_frame.file_path.exists()
-    assert all(call["from_processed"] is True for call in calls)
+    assert calls == []

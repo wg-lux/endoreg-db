@@ -101,7 +101,7 @@ class StudyCohortPreviewViewTests(TestCase):
         )
         return VideoFile.objects.create(
             center=self.center,
-            video_hash=hashlib.sha256(f"video-{uuid4().hex}".encode()).hexdigest(),
+            raw_video_hash=hashlib.sha256(f"video-{uuid4().hex}".encode()).hexdigest(),
             processed_video_hash=hashlib.sha256(VIDEO_BYTES).hexdigest(),
             processed_file=SimpleUploadedFile(
                 f"processed-{uuid4().hex}.mp4",
@@ -277,7 +277,9 @@ class StudyCohortPreviewViewTests(TestCase):
         )
         VideoFile.objects.create(
             center=self.center,
-            video_hash=hashlib.sha256(f"no-hash-{uuid4().hex}".encode()).hexdigest(),
+            raw_video_hash=hashlib.sha256(
+                f"no-hash-{uuid4().hex}".encode()
+            ).hexdigest(),
             processed_file=SimpleUploadedFile(
                 f"no-hash-{uuid4().hex}.mp4",
                 VIDEO_BYTES,
@@ -307,7 +309,9 @@ class StudyCohortPreviewViewTests(TestCase):
         )
         VideoFile.objects.create(
             center=self.center,
-            video_hash=hashlib.sha256(f"real-video-{uuid4().hex}".encode()).hexdigest(),
+            raw_video_hash=hashlib.sha256(
+                f"real-video-{uuid4().hex}".encode()
+            ).hexdigest(),
             processed_file=SimpleUploadedFile(
                 f"real-{uuid4().hex}.mp4",
                 VIDEO_BYTES,

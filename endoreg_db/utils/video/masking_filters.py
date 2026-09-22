@@ -18,7 +18,9 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
-
+from endoreg_db.services.video_storage.contracts import (
+    configured_video_storage_profile,
+)
 from .command_construction import (
     _build_filter_transcode_command,
     _update_or_append_ffmpeg_arg,
@@ -355,6 +357,27 @@ def mask_video_to_roi_and_blacken_intervals(
         encoder_args,
         "-pix_fmt",
         STANDARD_VIDEO_ENCODING.pixel_format,
+    )
+
+    profile = configured_video_storage_profile()
+
+    # Match VideoStorageProfile.ffmpeg_output_args():
+    # bitrate in bits/second; buffer size in bits.
+    extra_args.extend(
+        [
+            "-maxrate",
+            str(profile.max_bit_rate_bps),
+            "-bufsize",
+            str(profile.max_bit_rate_bps * 2),
+        ]
+    )
+
+    command = _build_filter_transcode_command(
+        ffmpeg_executable=ffmpeg_executable,
+        input_path=input_path,
+        output_path=output_path,
+        encoder_args=encoder_args,
+        extra_args=extra_args,
     )
 
     command = _build_filter_transcode_command(

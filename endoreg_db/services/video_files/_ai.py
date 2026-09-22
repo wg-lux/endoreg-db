@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import gc
-import logging
 import json
+import logging
 import re
 import time
 from collections import Counter
@@ -18,27 +18,27 @@ from typing import (
     Dict,
     Generator,
     List,
-    Literal,
     Optional,
+    Protocol,
     Tuple,
     TypeAlias,
-    Protocol,
     cast,
 )
 
-import numpy as np
 import cv2
+import numpy as np
+from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
+from lx_dtypes.models.contracts.video_file import FrameSourceMode
 from numpy.typing import NDArray
 from safetensors import safe_open
-from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
+from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
-from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 
 GLOBAL_TEST_RUN: bool = _GLOBAL_TEST_RUN
 
@@ -46,11 +46,12 @@ GLOBAL_N_TEST_FRAMES = 100
 
 if TYPE_CHECKING:
     import torch
+    from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
+
+    from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.medical.hardware.endoscopy_processor import (
         EndoscopyProcessor,
     )
-    from endoreg_db.models.media.video.video_file import VideoFile
-    from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 
 
 class _TensorPredictionLike(Protocol):
@@ -109,7 +110,6 @@ class VideoFrameScoreResult:
     timestamps: List[float] | None = None
 
 
-FrameSourceMode = Literal["cache", "stream", "auto"]
 empty_scores: NDArray[np.float64] = np.empty((0, 0), dtype=np.float64)
 
 
@@ -168,6 +168,8 @@ def _resolve_frame_source_mode(
         raise ValueError(
             "frame_source_mode must be one of: 'cache', 'stream', or 'auto'."
         )
+    if normalized == "cache":
+        raise ValueError("Frame file caches are retired; use frame_source_mode=stream.")
     if normalized == "auto":
         return "stream"
     return cast(FrameSourceMode, normalized)
@@ -431,13 +433,13 @@ def _extract_text_from_video_frames(
     state: Any = video.get_or_create_state()
     if not state.frames_extracted:
         raise ValueError(
-            f"Frames not extracted for video {video.video_hash}. Cannot extract text."
+            f"Frames not extracted for video {video.raw_video_hash}. Cannot extract text."
         )
 
     processor: Optional[EndoscopyProcessor] = video.processor
     if not processor:
         raise ValueError(
-            f"Processor not set for video {video.video_hash}. Cannot extract text."
+            f"Processor not set for video {video.raw_video_hash}. Cannot extract text."
         )
 
     try:
@@ -445,19 +447,19 @@ def _extract_text_from_video_frames(
     except Exception as e:
         logger.error(
             "Error getting frame paths for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )
         raise RuntimeError(
-            f"Could not get frame paths for video {video.video_hash}"
+            f"Could not get frame paths for video {video.raw_video_hash}"
         ) from e
 
     n_frames = len(frame_paths)
     if n_frames == 0:
         logger.warning(
             "No frame paths found for video %s during text extraction.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return None
 
@@ -468,7 +470,7 @@ def _extract_text_from_video_frames(
         "Processing %d frames (out of %d) for text extraction from video %s.",
         n_frames_to_process,
         n_frames,
-        video.video_hash,
+        video.raw_video_hash,
     )
 
     step = max(1, n_frames // n_frames_to_process)
@@ -499,7 +501,7 @@ def _extract_text_from_video_frames(
             logger.error(
                 "Error extracting text from frame %s for video %s: %s",
                 frame_path,
-                video.video_hash,
+                video.raw_video_hash,
                 e,
                 exc_info=True,
             )
@@ -526,15 +528,15 @@ def _extract_text_from_video_frames(
     if errors_encountered:
         logger.warning(
             "Errors occurred during text extraction for some frames of video %s. Results may be incomplete.",
-            video.video_hash,
+            video.raw_video_hash,
         )
 
     if not most_frequent_texts:
-        logger.info("No text extracted for any ROI for video %s.", video.video_hash)
+        logger.info("No text extracted for any ROI for video %s.", video.raw_video_hash)
         return None
 
     logger.info(
-        "Extracted text for video %s: %s", video.video_hash, most_frequent_texts
+        "Extracted text for video %s: %s", video.raw_video_hash, most_frequent_texts
     )
     return most_frequent_texts
 
@@ -550,9 +552,9 @@ def _stream_predictions_from_video(
     n_test_frames: int,
     frame_source_file_type: str,
 ) -> Tuple[List[List[float]], List[int], List[float]]:
+    import torch
     from PIL import Image
     from torchvision import transforms
-    import torch
 
     from endoreg_db.utils.ai.preprocess import Cropper
     from endoreg_db.utils.frame_stream import iter_video_file_frame_samples
@@ -610,7 +612,7 @@ def _stream_predictions_from_video(
 
     if not predictions:
         raise RuntimeError(
-            f"Streaming inference produced no predictions for video {video.video_hash}."
+            f"Streaming inference produced no predictions for video {video.raw_video_hash}."
         )
     return predictions, frame_numbers, timestamps
 
@@ -728,12 +730,12 @@ def _normalized_frame_source_file_type(frame_source_file_type: str) -> str:
 def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
     if not frames_extracted:
         raise ValueError(
-            f"Frames not extracted for video {video.video_hash}. Prediction aborted."
+            f"Frames not extracted for video {video.raw_video_hash}. Prediction aborted."
         )
     frame_dir = video.get_frame_dir_path()
     if not frame_dir or not frame_dir.exists() or not any(frame_dir.iterdir()):
         raise FileNotFoundError(
-            f"Frame directory {frame_dir} is empty or does not exist for video {video.video_hash}. Prediction aborted."
+            f"Frame directory {frame_dir} is empty or does not exist for video {video.raw_video_hash}. Prediction aborted."
         )
     return frame_dir
 
@@ -747,7 +749,7 @@ def _materialized_prediction_weights(
     if not weights or not weights.name:
         raise FileNotFoundError(
             f"Model weights are not configured for {model_meta.name} "
-            f"(Video: {video.video_hash}). Prediction aborted."
+            f"(Video: {video.raw_video_hash}). Prediction aborted."
         )
 
     suffix = Path(weights.name).suffix
@@ -759,7 +761,7 @@ def _validate_prediction_model(video: VideoFile, model_meta: ModelMeta) -> None:
     if model_meta.model:
         return
     raise ValueError(
-        f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.video_hash}. Prediction aborted."
+        f"Model not found in ModelMeta {model_meta.name} (Version: {model_meta.version}) for video {video.raw_video_hash}. Prediction aborted."
     )
 
 
@@ -773,7 +775,7 @@ def _ensure_video_prediction_meta(video: VideoFile, model_meta: ModelMeta) -> No
     except Exception as error:
         logger.error(
             "Failed to get or create VideoPredictionMeta for video %s, model %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             model_meta.name,
             error,
             exc_info=True,
@@ -782,7 +784,7 @@ def _ensure_video_prediction_meta(video: VideoFile, model_meta: ModelMeta) -> No
     logger.info(
         "%s VideoPredictionMeta for video %s, model %s.",
         "Created new" if created else "Found existing",
-        video.video_hash,
+        video.raw_video_hash,
         model_meta.name,
     )
 
@@ -841,14 +843,14 @@ def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> List[Path]:
         paths = video.get_frame_paths()
         if not paths:
             raise FileNotFoundError(
-                f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.video_hash})"
+                f"No frame paths returned by get_frame_paths for {frame_dir} (Video: {video.raw_video_hash})"
             )
         return paths
     except Exception as error:
         logger.error(
             "Error listing or getting frame files from %s for video %s: %s",
             frame_dir,
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -869,12 +871,12 @@ def _limit_cached_test_inputs(
     logger.info(
         "TEST RUN: Using first %d frames for video %s.",
         n_test_frames,
-        video.video_hash,
+        video.raw_video_hash,
     )
     limited_paths = string_paths[:n_test_frames]
     if not limited_paths:
         raise ValueError(
-            f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.video_hash}."
+            f"Not enough frames ({len(paths)}) for test run (required {n_test_frames}) for video {video.raw_video_hash}."
         )
     return limited_paths, crops[:n_test_frames]
 
@@ -894,7 +896,7 @@ def _cache_inference_inputs(
         "Found %d frame files in %s for video %s.",
         len(paths),
         source.frame_dir,
-        video.video_hash,
+        video.raw_video_hash,
     )
     string_paths = [path.as_posix() for path in paths]
     crops = [crop_template] * len(paths)
@@ -956,7 +958,7 @@ def _classifier_config(
 ) -> AiPredictionConfigPayload:
     if dataset_name != "inference_dataset":
         raise ValueError(
-            f"Dataset class '{dataset_name}' not found for video {video.video_hash}. Prediction aborted."
+            f"Dataset class '{dataset_name}' not found for video {video.raw_video_hash}. Prediction aborted."
         )
     try:
         return _build_classifier_config(
@@ -971,7 +973,7 @@ def _classifier_config(
     except Exception as error:
         logger.error(
             "Failed to create parsed configuration or dataset layer for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -1001,7 +1003,7 @@ def _build_classifier_config(
             "Created dataset '%s' with %d items for video %s.",
             dataset_name,
             len(dataset),
-            video.video_hash,
+            video.raw_video_hash,
         )
         _log_dataset_sample(dataset)
     return AiPredictionConfigPayload.model_validate(
@@ -1051,11 +1053,11 @@ def _load_inference_model(
                     device=device,
                     load_kwargs=load_kwargs,
                 )
-                logger.info("Loaded model on GPU for video %s.", video.video_hash)
+                logger.info("Loaded model on GPU for video %s.", video.raw_video_hash)
             except RuntimeError as cuda_error:
                 logger.warning(
                     "GPU loading failed for video %s: %s. Falling back to CPU.",
-                    video.video_hash,
+                    video.raw_video_hash,
                     cuda_error,
                 )
                 device = torch.device("cpu")
@@ -1065,11 +1067,11 @@ def _load_inference_model(
                     device=device,
                     load_kwargs=load_kwargs,
                 )
-                logger.info("Loaded model on CPU for video %s.", video.video_hash)
+                logger.info("Loaded model on CPU for video %s.", video.raw_video_hash)
         else:
             logger.info(
                 "CUDA not available. Loading model on CPU for video %s.",
-                video.video_hash,
+                video.raw_video_hash,
             )
             model_instance = _load_model_on_device(
                 components=components,
@@ -1085,14 +1087,14 @@ def _load_inference_model(
         )
         logger.info(
             "AI model loaded successfully for video %s from %s.",
-            video.video_hash,
+            video.raw_video_hash,
             weights_path,
         )
         return _LoadedInferenceModel(model_instance, classifier, device)
     except Exception as error:
         logger.error(
             "Failed to construct AI model for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -1113,7 +1115,7 @@ def _stream_inference_log(
     payload: dict[str, object] = {
         "event": event,
         "video_id": video.pk,
-        "video_hash": str(video.video_hash),
+        "raw_video_hash": str(video.raw_video_hash),
         "model_meta_id": model_meta.pk,
         "source_kind": source.file_type,
         "device": str(device),
@@ -1180,7 +1182,7 @@ def _perform_inference(
     logger.info(
         "Starting inference on %d frames for video %s...",
         len(cache_inputs.string_paths),
-        video.video_hash,
+        video.raw_video_hash,
     )
     predictions = cast(
         List[Any],
@@ -1266,13 +1268,13 @@ def _cpu_inference_fallback(
         )
         logger.info(
             "Inference completed on CPU after CUDA OOM for video %s.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return result
     except Exception as error:
         logger.error(
             "CPU fallback inference failed for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -1303,7 +1305,7 @@ def _run_inference_with_fallback(
             test_run=test_run,
             n_test_frames=n_test_frames,
         )
-        logger.info("Inference completed for video %s.", video.video_hash)
+        logger.info("Inference completed for video %s.", video.raw_video_hash)
         return result
     except Exception as error:
         if source.mode == "stream":
@@ -1318,7 +1320,7 @@ def _run_inference_with_fallback(
             )
         logger.error(
             "Inference failed for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -1361,7 +1363,7 @@ def _sequence_fps(video: VideoFile) -> int:
     if not frames_per_second:
         logger.warning(
             "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
-            video.video_hash,
+            video.raw_video_hash,
             DEFAULT_VIDEO_FPS,
         )
         frames_per_second = DEFAULT_VIDEO_FPS
@@ -1402,7 +1404,7 @@ def _postprocess_predictions(
     components: _AiPipelineComponents,
 ) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
     try:
-        logger.info("Post-processing predictions for video %s...", video.video_hash)
+        logger.info("Post-processing predictions for video %s...", video.raw_video_hash)
         readable_predictions = _readable_prediction_rows(
             predictions=inference_output.predictions,
             classifier=inference_output.classifier,
@@ -1423,7 +1425,7 @@ def _postprocess_predictions(
             logger.info(
                 "Returning %d frame-score rows for temporal inference on video %s.",
                 frame_scores.frame_count,
-                video.video_hash,
+                video.raw_video_hash,
             )
             return frame_scores
         sequences = _prediction_sequences(
@@ -1435,14 +1437,14 @@ def _postprocess_predictions(
         )
         logger.info(
             "Post-processing completed for video %s. Found sequences for labels: %s",
-            video.video_hash,
+            video.raw_video_hash,
             list(sequences),
         )
         return sequences
     except Exception as error:
         logger.error(
             "Post-processing failed for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             error,
             exc_info=True,
         )
@@ -1485,7 +1487,7 @@ def _predict_video_pipeline(
                 "Detected stub model weights for model %s and video %s; "
                 "skipping model inference.",
                 model_meta.name,
-                video.video_hash,
+                video.raw_video_hash,
             )
             return _stub_prediction_result(
                 label_names=label_names,
@@ -1609,17 +1611,17 @@ def _extract_text_information(
     video: VideoFile, frame_fraction: float = 0.001, cap: int = 15
 ) -> Optional[Dict[str, str | None]]:
     """Facade function to call the text extraction logic."""
-    logger.info("Attempting text extraction for video %s.", video.video_hash)
+    logger.info("Attempting text extraction for video %s.", video.raw_video_hash)
 
     extracted_data = _extract_text_from_video_frames(
         video=video, frame_fraction=frame_fraction, cap=cap
     )
 
     if extracted_data is not None:
-        logger.info("Text extraction successful for video %s.", video.video_hash)
+        logger.info("Text extraction successful for video %s.", video.raw_video_hash)
     else:
         logger.warning(
-            "Text extraction returned no data for video %s.", video.video_hash
+            "Text extraction returned no data for video %s.", video.raw_video_hash
         )
 
     return extracted_data

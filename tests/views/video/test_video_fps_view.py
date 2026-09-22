@@ -15,7 +15,7 @@ class VideoFpsViewTest(TestCase):
         self.center = Center.objects.create(name="fps-view-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="fps-view-video-hash",
+            raw_video_hash="fps-view-video-hash",
             original_file_name="fps_view.mp4",
             fps=25.0,
             frame_count=100,

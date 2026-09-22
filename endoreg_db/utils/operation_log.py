@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 
 from django.http import HttpRequest
+from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.operation_log import OperationLog
-from endoreg_db.utils.structured_logging import StructuredLogPayload
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def record_operation(
     resource_id: int | None = None,
     status_before: str | None = None,
     status_after: str | None = None,
-    meta: StructuredLogPayload | None = None,
+    meta: JsonObject | None = None,
 ) -> None:
     """
     Create an OperationLog entry from a view.

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from typing import TypeAlias, Any
+from typing import Any
 
 from django.db import models
-
-NoCenterWasteValue: TypeAlias = None
 
 
 class CenterWaste(models.Model):

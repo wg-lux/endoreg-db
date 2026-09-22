@@ -9,7 +9,8 @@ from lx_dtypes.models.contracts.report import ReportMetaJsonObject
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_report_file_meta_payload
 
-from ...utils import DOCUMENT_DIR, STORAGE_DIR
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.storage.report_fields import ReportArtifactFieldFile
 
 if TYPE_CHECKING:
     from ...administration import Examiner
@@ -58,11 +59,17 @@ class AbstractDocument(models.Model):
     text: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     date: models.DateField[Any, Any] = models.DateField(blank=True, null=True)
     time: models.TimeField[Any, Any] = models.TimeField(blank=True, null=True)
-    file: models.FileField = models.FileField(
-        upload_to=DOCUMENT_DIR.relative_to(STORAGE_DIR).as_posix(),
-        blank=True,
-        null=True,
-    )
+    if TYPE_CHECKING:
+        file: ReportArtifactFieldFile
+    else:
+        file: models.FileField = models.FileField(
+            upload_to=get_runtime_paths()
+            .documents.relative_to(get_runtime_paths().storage)
+            .as_posix(),
+            blank=True,
+            null=True,
+        )
+        file.attr_class = ReportArtifactFieldFile
 
     center: models.ForeignKey[Any] = models.ForeignKey(
         "endoreg_db.Center",

@@ -89,7 +89,7 @@ class VideoSegmentValidationStatusViewTest(TestCase):
         center = Center.objects.create(name="Validation status center")
         self.video = VideoFile.objects.create(
             center=center,
-            video_hash="validation-status-video",
+            raw_video_hash="validation-status-video",
             original_file_name="validation_status.mp4",
             fps=25.0,
             frame_count=500,
@@ -248,7 +248,7 @@ class VideoSegmentFpsNormalizationStatusViewTest(TestCase):
         center = Center.objects.create(name="Normalization status center")
         self.video = VideoFile.objects.create(
             center=center,
-            video_hash="normalization-status-video",
+            raw_video_hash="normalization-status-video",
             original_file_name="normalization_status.mp4",
             fps=60.0,
             frame_count=600,

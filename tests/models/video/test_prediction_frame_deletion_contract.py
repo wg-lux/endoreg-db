@@ -18,7 +18,7 @@ from endoreg_db.models import (
     Label,
     VideoFile,
 )
-from endoreg_db.services.video_files._io import _get_temp_anonymized_frame_dir
+from endoreg_db.services.video_files.io import get_temp_anonymized_video_frame_dir
 
 
 class _CenterRelation(Protocol):
@@ -94,7 +94,7 @@ def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"prediction-frame-contract-{uuid.uuid4().hex}",
+        raw_video_hash=f"prediction-frame-contract-{uuid.uuid4().hex}",
         frame_count=expected_final_frame_count,
         frame_dir=str(frame_dir),
     )
@@ -186,13 +186,14 @@ def test_delete_frames_preserves_dataset_backed_frame_files(
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"frame-preserve-{uuid.uuid4().hex}",
+        raw_video_hash=f"frame-preserve-{uuid.uuid4().hex}",
         frame_count=3,
         frame_dir=str(frame_dir),
     )
     video.initialize_frames()
     frames = list(Frame.objects.filter(video=video).order_by("frame_number"))
     for frame in frames:
+        frame.file_path.parent.mkdir(parents=True, exist_ok=True)
         frame.file_path.write_bytes(f"frame-{frame.frame_number}".encode("utf-8"))
     Frame.objects.filter(video=video).update(is_extracted=True)
 
@@ -282,7 +283,7 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"pipe1-frame-restore-{uuid.uuid4().hex}",
+        raw_video_hash=f"pipe1-frame-restore-{uuid.uuid4().hex}",
         frame_count=1,
         frame_dir=str(frame_dir),
     )
@@ -293,7 +294,7 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
     frame_path.parent.mkdir(parents=True, exist_ok=True)
     frame_path.write_bytes(b"dummy-frame-content")
 
-    temp_anonym_dir = _get_temp_anonymized_frame_dir(video)
+    temp_anonym_dir = get_temp_anonymized_video_frame_dir(video)
     temp_anonym_dir.mkdir(parents=True, exist_ok=True)
     temp_frame_path = temp_anonym_dir / "temp.jpg"
     temp_frame_path.write_bytes(b"temp-frame-content")

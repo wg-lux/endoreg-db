@@ -4,6 +4,42 @@ This document describes the repository's executable quality controls. Current
 scope and readiness evidence remain in
 [`feature-tracking/CodeQuality.yml`](../feature-tracking/CodeQuality.yml).
 
+## Verbindliche Abnahme: zentrale Medien-Hashes und Laufzeitpfade
+
+Diese Grenzen gelten für jede zukünftige Änderung an Import, Speicherung,
+Streaming, Integritätsprüfung, Bereinigung und Export. Abweichende lokale
+Implementierungen sind ein Abnahmehindernis.
+
+- Gespeicherte Video- und Reportartefakte verwenden
+  `VideoArtifactFieldFile.get_hash()` beziehungsweise
+  `ReportArtifactFieldFile.get_hash()`. Beide delegieren an
+  `endoreg_db.utils.hashs.get_file_hash`; Re-Exports dürfen keine eigene
+  Implementierung enthalten. Lokale Eingangsdateien verwenden denselben Helper.
+  Eine Prüfung von Größe, Änderungszeit und Hash derselben Quellgeneration darf
+  weiterhin den zentralen nativen `stable_file_identity`-Vertrag verwenden.
+- Der Artefakt-Hash beschreibt den Klartext. Verschlüsselte FieldFiles werden
+  über ihren authentifizierten Storage-Stream gelesen, nicht über ihren
+  Ciphertext-Pfad. Fehlende Dateien, Authentifizierungsfehler und nicht verfügbare
+  Hash-Backends müssen fehlschlagen; ein Ersatzwert ist unzulässig.
+- Die zentrale Pfadverwaltung (auch als „EndoregPathsModule“ bezeichnet) ist
+  `endoreg_db.utils.paths`. Ihr typisierter Vertrag heißt `EndoregPathsModel`;
+  Verbraucher verwenden `get_runtime_paths()` und die vorhandenen
+  StorageTier- und Boundary-Helper. `LX_RUNTIME_ROOT` ist die einzige
+  Konfigurationsquelle dieser Laufzeittopologie. Private Pfadmodelle,
+  importzeitlich aufgelöste Medienpfade, wiederbelebte Pfadkonstanten und
+  alternative Root-Umgebungsvariablen sind unzulässig.
+- Tests ändern den Root über `LX_RUNTIME_ROOT` und leeren anschließend den
+  Pfadcache; lokale Test-Seams ersetzen `get_runtime_paths()` durch ein
+  typisiertes Modell. Das Auflösen eines Pfades erzeugt keine Verzeichnisse.
+  Pfade außerhalb der jeweils erlaubten Grenze werden abgewiesen.
+
+Die ausführbare Abnahme besteht aus `tests/contracts/test_media_centralization.py`,
+`tests/utils/test_paths.py`, `tests/utils/test_file_operations.py` und
+`tests/services/test_video_source_hash.py`. Nach Pyright müssen diese Tests sowie
+die betroffenen Import-/Streamingtests bestehen. Zusätzlich prüft das Review
+neue Aufrufstellen auf Umgehungen dieser zentralen APIs. Hashes für Patienten,
+Signaturen oder andere Nicht-Medieninhalte fallen nicht unter den Artefaktvertrag.
+
 ## Dead-code process
 
 `devenv tasks run quality:dead-code` runs Vulture with at least 90 percent

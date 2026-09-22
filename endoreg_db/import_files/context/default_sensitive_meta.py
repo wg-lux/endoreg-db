@@ -77,10 +77,6 @@ def default_sensitive_meta(
     )
 
     default_data: DefaultSensitiveMetaData = {
-        "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
-        "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
-        "patient_dob": DEFAULT_PATIENT_DOB,
-        "examination_date": date.today(),
         "center_name": center_name,
     }
 

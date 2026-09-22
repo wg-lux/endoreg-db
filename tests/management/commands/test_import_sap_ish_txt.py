@@ -21,7 +21,7 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     RawPdfFile,
 )
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:
@@ -51,14 +51,14 @@ class ImportSapIshTxtCommandTests(TestCase):
         with (
             tempfile.TemporaryDirectory() as source_dir_name,
             tempfile.TemporaryDirectory(
-                dir=WATCHER_PREANONYMIZED_DROP_DIR
+                dir=get_runtime_paths().watcher_preanonymized_drop
             ) as managed_dir_name,
         ):
             source_dir = Path(source_dir_name)
             managed_dir = Path(managed_dir_name)
             output_dir = managed_dir / "drop"
             output_dir.mkdir()
-            persisted_report_dir = managed_dir / "reports"
+            persisted_report_dir = get_runtime_paths().anonym_report / managed_dir.name
             persisted_report_dir.mkdir()
 
             _write_tsv(
@@ -214,12 +214,12 @@ class ImportSapIshTxtCommandTests(TestCase):
         with (
             tempfile.TemporaryDirectory() as source_dir_name,
             tempfile.TemporaryDirectory(
-                dir=WATCHER_PREANONYMIZED_DROP_DIR
+                dir=get_runtime_paths().watcher_preanonymized_drop
             ) as managed_dir_name,
         ):
             source_dir = Path(source_dir_name)
             output_dir = Path(managed_dir_name) / "drop"
-            output_dir.mkdir()
+            output_dir.mkdir(exist_ok=True)
             _write_tsv(
                 source_dir / "Briefe.txt",
                 header=["PatientNr", "FallNr", "dateErstellzeit", "strText"],

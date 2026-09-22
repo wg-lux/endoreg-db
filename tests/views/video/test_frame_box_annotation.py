@@ -42,14 +42,14 @@ class FrameBoxAnnotationViewTest(TestCase):
         self.center = Center.objects.create(name="box-annotation-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="box-annotation-video-hash",
+            raw_video_hash="box-annotation-video-hash",
             original_file_name="box_annotation.mp4",
             fps=25.0,
             frame_count=100,
         )
         self.other_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="box-annotation-video-hash-2",
+            raw_video_hash="box-annotation-video-hash-2",
             original_file_name="box_annotation_2.mp4",
             fps=25.0,
             frame_count=100,

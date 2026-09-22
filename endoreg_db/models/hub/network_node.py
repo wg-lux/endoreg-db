@@ -23,8 +23,7 @@ _password_hashers = cast(
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
 
-NoNetworkNodeCenterValue: TypeAlias = None
-NetworkNodeCenter: TypeAlias = "Center | NoNetworkNodeCenterValue"
+NetworkNodeCenter: TypeAlias = "Center | None"
 
 
 class NetworkNodeManager(models.Manager["NetworkNode"]):

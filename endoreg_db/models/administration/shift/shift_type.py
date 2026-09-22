@@ -9,10 +9,7 @@ from django.db import models
 if TYPE_CHECKING:
     from .shift import Shift
 
-NoShiftTypeDescriptionValue: TypeAlias = None
-NoShiftTypeValue: TypeAlias = None
-ShiftTypeDescription: TypeAlias = "str | NoShiftTypeDescriptionValue"
-ShiftTypeLookupResult: TypeAlias = "ShiftType | NoShiftTypeValue"
+ShiftTypeLookupResult: TypeAlias = "ShiftType | None"
 
 # Those are defined in our base data
 NAME_REGULAR = "regular"

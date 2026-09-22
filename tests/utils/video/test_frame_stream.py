@@ -174,7 +174,7 @@ def test_read_video_file_frame_jpeg_uses_authoritative_pts_and_seekable_ranges(
     field_file = SimpleNamespace(name="processed/video.mp4", storage=object())
 
     class FakeVideo:
-        video_hash = "abc123"
+        raw_video_hash = "abc123"
         raw_file = SimpleNamespace(name="raw/video.mp4", storage=object())
         processed_file = field_file
 
@@ -279,7 +279,7 @@ def test_read_video_file_frame_jpeg_decodes_from_encrypted_ranges(
     field_file = SimpleNamespace(name=stored_name, storage=storage)
 
     class FakeVideo:
-        video_hash = "encrypted-range-video"
+        raw_video_hash = "encrypted-range-video"
         raw_file = field_file
         processed_file = field_file
 

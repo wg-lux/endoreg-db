@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import errno
 import fcntl
-import hashlib
 import logging
 import os
 import shutil
@@ -16,18 +15,14 @@ from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
-from endoreg_db.utils.rust_backend import (
-    native_capability_version,
-    sha256_file_hex as rust_sha256_file_hex,
-    stable_snapshot_to_path as rust_stable_snapshot_to_path,
-)
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     path_reference,
 )
 
 if TYPE_CHECKING:
-    from endoreg_db.schemas.report_import import ReportSourceSnapshot
+    from endoreg_db.schemas.import_file import SourceSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -42,57 +37,9 @@ def get_content_hash_filename(file: Path) -> tuple[str, str]:
     # Get the file extension
     file_extension = file.suffix
     # Generate a new file name
-    uuid = sha256_file(file)
+    uuid = get_file_hash(file)
     new_file_name = f"{uuid}{file_extension}"
     return new_file_name, uuid
-
-
-def sha256_file(path: Path | FieldFile, chunk_size: int = 1024 * 1024) -> str:
-    """
-    Compute SHA-256 for either a real filesystem Path or a Django FieldFile.
-
-    For FieldFile, this hashes the plaintext/decrypted content, not the
-    encrypted storage blob. FieldFile-like test doubles are supported through
-    the same decrypted range reader used by streaming.
-    """
-    if hasattr(path, "storage") and getattr(path, "name", None):
-        from endoreg_db.utils.storage_streaming import (
-            field_file_size,
-            iter_field_file_bytes,
-        )
-
-        h = hashlib.sha256()
-        file_size = field_file_size(path)
-        if file_size <= 0:
-            return h.hexdigest()
-        for chunk in iter_field_file_bytes(
-            path,
-            start=0,
-            end=file_size - 1,
-            chunk_size=chunk_size,
-        ):
-            h.update(chunk)
-        return h.hexdigest()
-
-    if isinstance(path, FieldFile):
-        from endoreg_db.utils.storage import ensure_local_file
-
-        with ensure_local_file(path) as local_path:
-            return sha256_file(Path(local_path), chunk_size)
-
-    path_obj = Path(path)
-
-    rust_digest = rust_sha256_file_hex(path_obj, chunk_size)
-    if isinstance(rust_digest, str):
-        return rust_digest
-
-    h = hashlib.sha256()
-
-    with path_obj.open("rb") as f:
-        for chunk in iter(lambda: f.read(chunk_size), b""):
-            h.update(chunk)
-
-    return h.hexdigest()
 
 
 def copy_with_progress(src: str, dst: str, buffer_size: int = 1024 * 1024):
@@ -239,61 +186,15 @@ def _source_metadata_identity(stat_result: os.stat_result) -> tuple[int, int, in
     )
 
 
-def _python_stable_snapshot_to_path(
-    *,
-    source: Path,
-    temporary_destination: Path,
-    chunk_size: int,
-) -> tuple[int, int, str]:
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    source_fd = os.open(source, flags)
-    try:
-        before = os.fstat(source_fd)
-        if not stat.S_ISREG(before.st_mode):
-            raise ValueError(f"Report snapshot source is not a regular file: {source}")
-
-        digest = hashlib.sha256()
-        bytes_written = 0
-        with (
-            os.fdopen(os.dup(source_fd), "rb", closefd=True) as source_handle,
-            temporary_destination.open("xb") as target_handle,
-        ):
-            while chunk := source_handle.read(chunk_size):
-                target_handle.write(chunk)
-                digest.update(chunk)
-                bytes_written += len(chunk)
-            target_handle.flush()
-            os.fsync(target_handle.fileno())
-
-        after = os.fstat(source_fd)
-        current = source.stat(follow_symlinks=False)
-        if _source_metadata_identity(before) != _source_metadata_identity(
-            after
-        ) or _source_metadata_identity(after) != _source_metadata_identity(current):
-            raise RuntimeError(
-                f"Report source changed while creating stable snapshot: {source}"
-            )
-        if bytes_written != int(after.st_size):
-            raise RuntimeError(
-                "Report snapshot byte count differs from source size: "
-                f"copied={bytes_written} expected={after.st_size}"
-            )
-        return int(after.st_size), int(after.st_mtime_ns), digest.hexdigest()
-    finally:
-        os.close(source_fd)
-
-
 def atomic_report_source_snapshot(
     *,
     source: Path,
     destination: Path,
     chunk_size: int = 1024 * 1024,
     file_mode: int | None = None,
-) -> ReportSourceSnapshot:
+) -> SourceSnapshot:
     """Atomically copy and hash one stable view of a local report source."""
-    from endoreg_db.schemas.report_import import ReportSourceSnapshot
+    from endoreg_db.schemas.import_file import SourceSnapshot
 
     source = Path(source)
     destination = Path(destination)
@@ -312,29 +213,27 @@ def atomic_report_source_snapshot(
     temporary_destination = destination.with_name(
         f"{destination.name}.snapshot.{os.getpid()}.{uuid4().hex}"
     )
-    backend = "rust"
-    implementation_version = (
-        native_capability_version(
-            "report_source_snapshot",
-            "report_source_snapshot_v1",
-        )
-        or "unadvertised"
-    )
+    backend = "atomic_copy_rust_hash"
     try:
-        native_result = rust_stable_snapshot_to_path(
-            source,
-            temporary_destination,
-            chunk_size,
-        )
-        if native_result is None:
-            backend = "python"
-            implementation_version = "python-fallback-v1"
-            native_result = _python_stable_snapshot_to_path(
-                source=source,
-                temporary_destination=temporary_destination,
-                chunk_size=chunk_size,
+        before = source.stat(follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("Report snapshot source must be a regular file.")
+        sha256 = get_file_hash(source)
+        with source.open("rb") as handle:
+            atomic_create_file(
+                destination=temporary_destination,
+                content=iter(lambda: handle.read(chunk_size), b""),
+                required_bytes=before.st_size,
+                file_mode=file_mode if file_mode is not None else 0o600,
             )
-        size_bytes, modified_time_ns, sha256 = native_result
+        after = source.stat(follow_symlinks=False)
+        if (
+            _source_metadata_identity(before) != _source_metadata_identity(after)
+            or before.st_ctime_ns != after.st_ctime_ns
+            or get_file_hash(temporary_destination) != sha256
+        ):
+            raise RuntimeError("Report source changed during snapshot creation.")
+        size_bytes, modified_time_ns = before.st_size, before.st_mtime_ns
         if temporary_destination.stat().st_size != size_bytes:
             raise RuntimeError(
                 "Report snapshot target size differs from snapshot identity: "
@@ -354,11 +253,10 @@ def atomic_report_source_snapshot(
             destination=destination,
             detail=str(exc),
             backend=backend,
-            implementation_version=implementation_version,
         )
         raise
 
-    snapshot = ReportSourceSnapshot(
+    snapshot = SourceSnapshot(
         path=destination,
         size_bytes=size_bytes,
         modified_time_ns=modified_time_ns,
@@ -373,7 +271,6 @@ def atomic_report_source_snapshot(
         sha256_prefix=snapshot.sha256[:12],
         contract_version=snapshot.contract_version,
         backend=backend,
-        implementation_version=implementation_version,
     )
     return snapshot
 

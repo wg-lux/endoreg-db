@@ -103,7 +103,7 @@ class TransferJobContractTests(TestCase):
             processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
             cleanup_policy=cleanup_policy,
             payload_schema_version="1.0",
-            resource_rows={"video_file": {"video_hash": resource_hash}},
+            resource_rows={"video_file": {"raw_video_hash": resource_hash}},
             processing_snapshot={},
             provenance={"custom_marker": transfer_key},
         )
@@ -221,7 +221,7 @@ class TransferJobContractTests(TestCase):
 
         video = VideoFile(
             pk=99,  # type: ignore[call-arg]
-            video_hash="raw-hash",
+            raw_video_hash="raw-hash",
             raw_file=SimpleNamespace(
                 name="sensitive_videos/raw.mp4",
                 storage=storage,
@@ -264,7 +264,7 @@ class TransferJobContractTests(TestCase):
     def test_apply_video_state_payload_preserves_outside_segments_removed(self) -> None:
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="transfer-outside-segments-state",
+            raw_video_hash="transfer-outside-segments-state",
         )
         state = video.get_or_create_state()
 
@@ -538,12 +538,12 @@ class TransferJobContractTests(TestCase):
     def test_transfer_norms_build_expected_suffix_and_payload(self) -> None:
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="video-for-hash",
+            raw_video_hash="video-for-hash",
         )
         transfer_job = self._create_video_transfer(
             transfer_key="suffix-and-hash",
             cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-            resource_hash=video.video_hash,
+            resource_hash=video.raw_video_hash,
         )
         resource_rows = transfer_job.resource_rows
         video_file_rows = transfers._json_object(
@@ -565,7 +565,7 @@ class TransferJobContractTests(TestCase):
             == "payload-processed-hash"
         )
 
-        resource_rows["video_file"] = {"video_hash": video.video_hash}
+        resource_rows["video_file"] = {"raw_video_hash": video.raw_video_hash}
         transfer_job.resource_rows = resource_rows
         transfer_job.save(update_fields=["resource_rows"])
         assert (
@@ -1081,12 +1081,12 @@ class TransferJobContractTests(TestCase):
         # Arrange
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="transfer-missing-processed-hash",
+            raw_video_hash="transfer-missing-processed-hash",
         )
         transfer_job = self._create_video_transfer(
             transfer_key="transfer-pre-envelope-failure",
             cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-            resource_hash=video.video_hash,
+            resource_hash=video.raw_video_hash,
         )
         transfer_job.transfer_mode = (
             TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA
@@ -1119,12 +1119,12 @@ class TransferJobContractTests(TestCase):
         processed_hash = "c" * 64
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash="transfer-invalid-envelope",
+            raw_video_hash="transfer-invalid-envelope",
         )
         transfer_job = self._create_video_transfer(
             transfer_key="transfer-envelope-failure",
             cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-            resource_hash=video.video_hash,
+            resource_hash=video.raw_video_hash,
         )
         resource_rows = cast(dict[str, object], transfer_job.resource_rows)
         video_rows = cast(dict[str, object], resource_rows["video_file"])

@@ -271,7 +271,7 @@ def test_simultaneous_state_creation_preserves_one_state(
 ) -> None:
     video = VideoFile.objects.create(
         center=Center.objects.create(name="Concurrent State Center"),
-        video_hash="concurrent-state",
+        raw_video_hash="concurrent-state",
     )
     connections.close_all()
     context = multiprocessing.get_context("fork")

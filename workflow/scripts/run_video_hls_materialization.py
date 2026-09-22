@@ -91,9 +91,9 @@ with stage_lifecycle(
         Literal["materialized", "already_ready"],
         result.status,
     )
-    video.refresh_from_db(fields=["video_hash", "processed_video_hash"])
+    video.refresh_from_db(fields=["raw_video_hash", "processed_video_hash"])
     source_generation_sha256 = str(
-        video.video_hash
+        video.raw_video_hash
         if result.artifact_kind == "raw"
         else video.processed_video_hash or ""
     )

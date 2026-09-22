@@ -9,10 +9,7 @@ if TYPE_CHECKING:
     from .product import Product
     from .product_group import ProductGroup
 
-NoReferenceProductEmissionFactorValue: TypeAlias = None
-ReferenceProductEmissionFactor: TypeAlias = (
-    "EmissionFactor | NoReferenceProductEmissionFactorValue"
-)
+ReferenceProductEmissionFactor: TypeAlias = "EmissionFactor | None"
 
 
 class ReferenceProductManager(models.Manager["ReferenceProduct"]):

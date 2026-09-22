@@ -25,7 +25,7 @@ For shared multi-center deployments, set
 authenticated API uploads with declared `center_key` and refuses
 default-center fallback on the API path.
 
-AI and automation consumers should use the API read surfaces for reports, videos, frames, and patient timelines rather than reading `STORAGE_DIR` directly. Those media endpoints are the package-level contract for center-scoped access.
+AI and automation consumers should use the API read surfaces for reports, videos, frames, and patient timelines rather than reading directories directly. Those media endpoints are the package-level contract for center-scoped access.
 
 The node-to-node transfer API under `/api/media/hub/transfers/` is supported
 for `central_hub` deployments. In `standalone` and `site_node` deployments

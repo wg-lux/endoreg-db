@@ -47,7 +47,7 @@ def video_center() -> Center:
 def video(video_center: Center) -> VideoFile:
     return VideoFile.objects.create(
         center=video_center,
-        video_hash="video-file-services-hash",
+        raw_video_hash="video-file-services-hash",
     )
 
 
@@ -76,10 +76,10 @@ class _CustomVideoModel:
 def test_video_query_and_state_services(
     video: VideoFile,
 ) -> None:
-    assert video_hash_exists(video.video_hash) is True
+    assert video_hash_exists(video.raw_video_hash) is True
     assert video_hash_exists("") is False
     assert get_video_by_pk(video.pk) == video
-    assert get_video_by_content_hash(video.video_hash) == video
+    assert get_video_by_content_hash(video.raw_video_hash) == video
     with pytest.raises(VideoFile.DoesNotExist):
         get_video_by_pk(video.pk + 1)
     with pytest.raises(VideoFile.DoesNotExist):
@@ -101,7 +101,7 @@ def test_video_hash_exists_uses_explicit_model_manager() -> None:
     assert video_hash_exists("", model_cls=model_cls) is False
     assert manager.filters == []
     assert video_hash_exists("custom-video-hash", model_cls=model_cls) is True
-    assert manager.filters == [{"video_hash": "custom-video-hash"}]
+    assert manager.filters == [{"raw_video_hash": "custom-video-hash"}]
 
 
 def test_video_file_query_facades_are_retired() -> None:
@@ -151,12 +151,14 @@ def test_video_active_file_and_stream_services_preserve_wrapper_behavior(
 
     stream_path = tmp_path / "streamable-processed.mp4"
     stream_path.write_bytes(b"processed")
-    video.processed_file.name = "processed/service-active.mp4"
+
+    def processed_stream_path(video: VideoFile) -> Path:
+        return stream_path
+
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(
-            video,
-            "get_processed_stream_path",
-            lambda *, materialize_if_missing=False: stream_path,  # pyright: ignore[reportUnknownLambdaType]  # pyright: ignore[reportUnknownLambdaType],
+            "endoreg_db.services.video_files.streaming.get_processed_video_stream_path",
+            processed_stream_path,
         )
         assert resolve_video_stream_source(
             video,

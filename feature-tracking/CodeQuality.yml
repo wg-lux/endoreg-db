@@ -17,6 +17,43 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: media_hash_and_path_centralization
+  category: testing
+  title: Zentrale Medien-Hashes und Laufzeitpfade sind verbindliche Abnahmegrenzen
+  acceptance:
+  - Zukünftige Medienänderungen verwenden die get_hash-Methoden der Artefaktfelder und den gemeinsamen
+    get_file_hash-Helper; private Hashimplementierungen und Ciphertext-Hashes ersetzen diese nicht.
+  - EndoregPathsModel aus endoreg_db.utils.paths und get_runtime_paths sind der alleinige Vertrag für
+    Laufzeitpfade; LX_RUNTIME_ROOT ist dessen einzige Root-Konfiguration. Retirierte Aliase und importzeitlich
+    aufgelöste Medienpfade dürfen nicht wieder eingeführt werden.
+  - Vertragstests prüfen Hashdelegation, Klartextparität bei verschlüsseltem Storage, Fehlerweitergabe,
+    Root-Konfiguration, Cache-Neuauflösung und Pfadgrenzen; neue Aufrufstellen werden auf Umgehungen geprüft.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/contracts/test_media_centralization.py
+    - tests/utils/test_paths.py
+    - tests/utils/test_file_operations.py
+    - tests/services/test_video_source_hash.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/code_quality.md
+    - kind: test
+      reference: 'pytest tests/contracts/test_media_centralization.py tests/utils/test_paths.py tests/utils/test_file_operations.py
+        tests/services/test_video_source_hash.py -q --tb=short: 81 passed, 2 warnings (2026-09-21)'
+    - kind: command
+      reference: 'pyright: 0 errors, 5 existing warnings; pytest --lf -vv --tb=short: 8 passed, 2 skipped,
+        580 deselected (2026-09-21)'
+    note: Zentrale Hash- und Pfadgrenzen sind dokumentiert und durch parametrisierte Vertragstests abgesichert.
+      PostgreSQL-spezifische Tests im --lf-Lauf wurden übersprungen.
+    assessed_by: codex-pytest-lf-20260921
+    assessed_at: '2026-09-21T12:03:01.551853Z'
 - id: dead_code_baseline
   category: requirements
   title: Toter Code ist repositoryweit belastbar inventarisiert und klassifiziert
@@ -304,6 +341,12 @@ definition_of_done:
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
   acceptance:
+  - Der Paketbuild entfernt den devenv-Linker-Override für das explizite Zig-Ziel und isoliert portable
+    Cargo-Artefakte von nativen Entwicklungsbuilds. Maturins manylinux2014-Prüfung bleibt verpflichtend;
+    Wheel und Quelldistribution werden erfolgreich erzeugt und ihre Paketmetadaten geprüft.
+  - Der eigenständige Startupcheck initialisiert die Verzeichnisstruktur seines Testprofils vor Django-Startup
+    über die vorhandenen typisierten Dateisystemhelfer; relative oder anderweitig ungültige Runtime-Konfigurationen
+    scheitern weiterhin laut.
   - Pyright, Import-Boundary-Tests und fokussierte Runtime-Tests bestehen nach jeder Refactoring-Kohorte.
   - Ein versionierter Dead-Code-Check meldet neue hochkonfidente Funde und verwendet nur begründete, reviewbare
     Ausnahmen.
@@ -320,7 +363,7 @@ definition_of_done:
     - quality:code-regression
     timeout_seconds: 1800
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: test
       reference: '2026-09-10; assessor codex-fhir-django-20260910; lx-data-models: env -u LX_DTYPES_HOST_MODELS_MODULE
@@ -372,11 +415,17 @@ definition_of_done:
       reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/environment/test_env.py tests/test_app_startup.py
         tests/test_celery_config_checks.py tests/services/test_environment_readiness_unit.py tests/utils/test_storage_profile.py
         tests/services/test_video_storage_normalization.py -q (102 passed)
-    note: Der offizielle Qualitätslauf bleibt verifiziert. Die Environment-Parser-Kohorte reduziert den
-      Bestand auf 406 breite Handler bei unverändert 140 Typunterdrückungen; parametrische Normal-, Invalid-
-      und Non-Finite-Tests sowie Startup- und Storage-Regressionen schützen die fail-loud Semantik.
-    assessed_by: Codex
-    assessed_at: '2026-08-04T17:10:25.032805Z'
+    - kind: test
+      reference: tests/scripts/test_check_django_startup_imports.py
+    - kind: command
+      reference: 'make package im devenv: Exit 0; endoreg_db-1.3.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+        und endoreg_db-1.3.0.tar.gz erzeugt. Maturin-Kompatibilitätsprüfung erfolgreich; twine check dist/*:
+        beide PASSED. Paketidentität und Django-, Rust- und Workflow-Inhalte geprüft. CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER
+        aus devenv überschrieb zuvor den Zig-Linker; separater Cargo-Build ohne Entfernung reproduzierte
+        den Fehler. Bestehende Rust-Warnungen und nicht fataler Cargo.toml-Suchhinweis bei sdist bleiben
+        sichtbar.'
+    assessed_by: codex-final-tests-20260921
+    assessed_at: '2026-09-21T14:38:10.265432Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
@@ -414,8 +463,6 @@ definition_of_done:
     - kind: review
       reference: Tracked LuxNix and lx-annotate manifests use supported boolean spellings; lx-data-models
         has no matching declarations
-    - kind: code
-      reference: endoreg_db/config/env.py::_dotenv_loading_allowed; snapshot
     - kind: test
       reference: tests/environment/test_env.py (subprocess-isolierte Dotenv-Quellpräzedenz und Snapshot-Redaktion)
     - kind: test

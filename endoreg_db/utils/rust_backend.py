@@ -28,9 +28,7 @@ _parse_extracted_frame_numbers: Callable[[list[str]], list[int]] | None
 _build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | None
 _build_frame_records: Callable[..., list[tuple[int, str]]] | None
 _render_single_page_pdf: Callable[[str], bytes] | None
-_sha256_file_hex: Callable[[Path, int], str] | None
 _stable_file_identity: Callable[[Path, int], tuple[int, int, str]] | None
-_stable_snapshot_to_path: Callable[[Path, Path, int], tuple[int, int, str]] | None
 _native_capabilities: Callable[[], list[tuple[str, str, str]]] | None
 _encryption_status: Callable[[Path], str] | None
 _is_lx_encrypted_file: Callable[[Path], bool] | None
@@ -101,9 +99,7 @@ try:
     _normalize_frame_sampling_strategy_token = getattr(
         rust_backend, "normalize_frame_sampling_strategy_token", None
     )
-    _sha256_file_hex = getattr(rust_backend, "sha256_file_hex", None)
     _stable_file_identity = getattr(rust_backend, "stable_file_identity", None)
-    _stable_snapshot_to_path = getattr(rust_backend, "stable_snapshot_to_path", None)
     _native_capabilities = getattr(rust_backend, "native_capabilities", None)
     _encryption_status = getattr(rust_backend, "encryption_status", None)
     _is_lx_encrypted_file = getattr(rust_backend, "is_lx_encrypted_file", None)
@@ -127,9 +123,7 @@ except Exception as exc:
     _build_frame_records = None
     _parse_extracted_frame_numbers = None
     _render_single_page_pdf = None
-    _sha256_file_hex = None
     _stable_file_identity = None
-    _stable_snapshot_to_path = None
     _native_capabilities = None
     _encryption_status = None
     _is_lx_encrypted_file = None
@@ -187,16 +181,6 @@ def native_capability_version(name: str, contract_version: str) -> str | None:
     return None
 
 
-def sha256_file_hex(path: Path, chunk_size: int) -> str | None:
-    if _sha256_file_hex is None:
-        return None
-    try:
-        return _sha256_file_hex(Path(path), chunk_size)
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning("Rust sha256_file_hex failed, falling back to Python: %s", exc)
-        return None
-
-
 def stable_file_identity(
     path: Path, chunk_size: int = 1024 * 1024
 ) -> tuple[int, int, str] | None:
@@ -248,28 +232,6 @@ def stable_file_identities(
         (int(size_bytes), int(modified_time_ns), str(sha256))
         for size_bytes, modified_time_ns, sha256 in rows
     )
-
-
-def stable_snapshot_to_path(
-    source_path: Path,
-    target_path: Path,
-    chunk_size: int = 1024 * 1024,
-) -> tuple[int, int, str] | None:
-    """Copy and hash one stable source view with the native backend."""
-    if _stable_snapshot_to_path is None:
-        return None
-    try:
-        size_bytes, modified_time_ns, sha256 = _stable_snapshot_to_path(
-            Path(source_path),
-            Path(target_path),
-            chunk_size,
-        )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        raise RuntimeError(
-            "Rust stable_snapshot_to_path failed for "
-            f"{Path(source_path)} -> {Path(target_path)}: {exc}"
-        ) from exc
-    return int(size_bytes), int(modified_time_ns), str(sha256)
 
 
 def encryption_status(path: Path) -> str | None:

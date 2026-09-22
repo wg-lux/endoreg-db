@@ -61,11 +61,11 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
     video = VideoFile.objects.create(
         center=center,
         state=state,
-        video_hash="anonymization-operational-recovery",
+        raw_video_hash="anonymization-operational-recovery",
         meta={"integrity_status": "ok"},
     )
     upload_job = UploadJob.objects.create(
-        content_hash=video.video_hash,
+        content_hash=video.raw_video_hash,
         content_type="video/mp4",
         source_center=center,
         source_system="test",

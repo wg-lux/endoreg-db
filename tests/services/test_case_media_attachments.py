@@ -70,7 +70,7 @@ def test_case_examination_keeps_multiple_text_pdf_and_video_documents(
         video = VideoFile.objects.create(
             center=center,
             patient=patient,
-            video_hash=f"case-media-video-{uuid4().hex}",
+            raw_video_hash=f"case-media-video-{uuid4().hex}",
             original_file_name=f"recording-{index}.mp4",
         )
         attach_response = api_client.post(
@@ -227,7 +227,7 @@ def test_case_document_attachment_rejects_foreign_and_conflicting_resources(
     unlinked_video = VideoFile.objects.create(
         center=center,
         patient=patient,
-        video_hash=f"case-conflict-unlinked-{uuid4().hex}",
+        raw_video_hash=f"case-conflict-unlinked-{uuid4().hex}",
     )
     outside_response = api_client.post(
         endpoint,
@@ -246,7 +246,7 @@ def test_case_document_attachment_rejects_foreign_and_conflicting_resources(
         center=center,
         patient=other_patient,
         examination=foreign_examination,
-        video_hash=f"case-conflict-foreign-video-{uuid4().hex}",
+        raw_video_hash=f"case-conflict-foreign-video-{uuid4().hex}",
     )
     foreign_response = api_client.post(
         endpoint,
@@ -265,7 +265,7 @@ def test_case_document_attachment_rejects_foreign_and_conflicting_resources(
         center=center,
         patient=patient,
         examination=outside_examination,
-        video_hash=f"case-conflict-linked-video-{uuid4().hex}",
+        raw_video_hash=f"case-conflict-linked-video-{uuid4().hex}",
     )
     conflict_response = api_client.post(
         endpoint,
@@ -286,7 +286,7 @@ def test_case_document_attachment_rejects_foreign_and_conflicting_resources(
     closed_video = VideoFile.objects.create(
         center=center,
         patient=patient,
-        video_hash=f"case-conflict-closed-video-{uuid4().hex}",
+        raw_video_hash=f"case-conflict-closed-video-{uuid4().hex}",
     )
     closed_response = api_client.post(
         endpoint,

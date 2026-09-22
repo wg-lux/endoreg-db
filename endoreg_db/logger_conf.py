@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Literal, TypedDict
 
-from endoreg_db.utils.paths import LOG_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 DEFAULT_FILE_LOG_LEVEL = "INFO"
 DEFAULT_CONSOLE_LOG_LEVEL = "WARNING"
@@ -90,7 +90,7 @@ def clear_log_files(
         logger_names (list): A list of strings, each being a logger name.
         log_dir (Path, optional): The directory containing log files. Defaults to LOG_DIR.
     """
-    log_dir = log_dir or LOG_DIR
+    log_dir = log_dir or get_runtime_paths().logs
 
     # Ensure log directory exists (though clearing implies it might)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ def get_logging_config(
     console_log_level = console_log_level or os.environ.get(
         "CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL
     )
-    log_dir = log_dir or LOG_DIR
+    log_dir = log_dir or get_runtime_paths().logs
 
     # Ensure log directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -198,7 +198,7 @@ def get_logging_config(
 # Example usage (optional, for testing the function itself)
 if __name__ == "__main__":
     test_loggers = ["app1", "app2", "database"]
-    log_directory = LOG_DIR.parent / "logs_test"
+    log_directory = get_runtime_paths().logs.parent / "logs_test"
 
     # Optionally clear logs before configuring logging
     print("Clearing logs...")

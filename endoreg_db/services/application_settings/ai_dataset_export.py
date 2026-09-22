@@ -23,10 +23,10 @@ from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
 )
 from endoreg_db.services.center_access import resolve_allowed_center_ids
-from endoreg_db.utils import paths as path_settings
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.set_default_center import get_application_settings
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,7 +331,7 @@ def _mark_artifact_failed(
 def _resolve_export_root(export_root: Path | None) -> Path:
     if export_root is not None:
         return Path(export_root)
-    return Path(path_settings.EXPORT_DIR)
+    return get_runtime_paths().export_dir
 
 
 def create_ai_dataset_export(
@@ -404,7 +404,7 @@ def create_ai_dataset_export(
         artifact.status = AIDataSetExportArtifact.STATUS_COMPLETED
         artifact.output_path = str(output_path)
         artifact.download_filename = file_name
-        artifact.sha256 = sha256_file(output_path)
+        artifact.sha256 = get_file_hash(output_path)
         artifact.byte_size = len(json_bytes)
         artifact.summary = export_payload.get("summary", {})
         artifact.error = ""

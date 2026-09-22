@@ -7,61 +7,19 @@ backward compatibility with existing imports.
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, NotRequired, Protocol, TypeAlias, TypedDict, cast
-
-from django.core.management.base import BaseCommand
-from django.db import models
-
-from endoreg_db.utils.dataloader import (
+from endoreg_db.helpers.typing import (
+    LoadModelDataDirectory,
+    LoadModelDataMetadata,
+    LoadModelDataModel,
+    LoadModelDataValidator,
     YamlEntry,
-    YamlNull,
     YamlScalar,
     YamlValue,
-    load_data_with_foreign_keys,
-    load_model_data_from_yaml as _load_model_data_from_yaml,
 )
-
-if TYPE_CHECKING:
-    from endoreg_db.utils.dataloader import (
-        LoadModelDataMetadata as DataLoaderLoadModelDataMetadata,
-    )
-
-LoadModelDataModel: TypeAlias = type[models.Model]
-LoadModelDataDirectory: TypeAlias = str | Path
-
-
-class LoadModelDataValidator(Protocol):
-    def __call__(
-        self,
-        fields: dict[str, YamlValue],
-        *,
-        entry: YamlEntry,
-        model: LoadModelDataModel,
-    ) -> None: ...
-
-
-class LoadModelDataMetadata(TypedDict):
-    dir: LoadModelDataDirectory
-    model: LoadModelDataModel
-    foreign_keys: list[str]
-    foreign_key_models: list[LoadModelDataModel]
-    validators: NotRequired[list[LoadModelDataValidator]]
-
-
-def load_model_data_from_yaml(
-    command: BaseCommand,
-    model_name: str,
-    metadata: LoadModelDataMetadata,
-    verbose: bool = False,
-) -> None:
-    _load_model_data_from_yaml(
-        command,
-        model_name,
-        cast("DataLoaderLoadModelDataMetadata", metadata),
-        verbose,
-    )
-
+from endoreg_db.utils.dataloader import (
+    load_data_with_foreign_keys,
+    load_model_data_from_yaml,
+)
 
 __all__ = [
     "LoadModelDataDirectory",
@@ -69,7 +27,6 @@ __all__ = [
     "LoadModelDataModel",
     "LoadModelDataValidator",
     "YamlEntry",
-    "YamlNull",
     "YamlScalar",
     "YamlValue",
     "load_data_with_foreign_keys",

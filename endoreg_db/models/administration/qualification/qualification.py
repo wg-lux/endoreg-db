@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from typing import TypeAlias, Any
+from typing import Any
 
 from django.db import models
 
 from .qualification_type import QualificationType
-
-NoQualificationDescriptionValue: TypeAlias = None
-QualificationDescription: TypeAlias = "str | NoQualificationDescriptionValue"
 
 
 class QualificationManager(models.Manager["Qualification"]):

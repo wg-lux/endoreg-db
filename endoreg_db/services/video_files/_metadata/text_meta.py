@@ -51,14 +51,14 @@ def _update_text_metadata(
     State Transitions:
         - Post-condition: Sets state.text_meta_extracted=True (even if no text found).
     """
-    logger.debug(f"Updating text metadata for video {video.video_hash}")
+    logger.debug(f"Updating text metadata for video {video.raw_video_hash}")
     state = cast(_VideoTextMetaState, video.get_or_create_state())
     state.refresh_from_db()
 
     if state.text_meta_extracted and not overwrite:
         logger.info(
             "Text already extracted for video %s and overwrite=False. Skipping.",
-            video.video_hash,
+            video.raw_video_hash,
         )  # Changed to info
         return video.sensitive_meta  # Return existing meta if available
     # --- End Pre-condition Checks ---
@@ -78,12 +78,12 @@ def _update_text_metadata(
     except Exception as text_extract_e:
         logger.error(
             "Failed during text extraction step for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             text_extract_e,
             exc_info=True,
         )
         raise RuntimeError(
-            f"Text extraction failed for video {video.video_hash}"
+            f"Text extraction failed for video {video.raw_video_hash}"
         ) from text_extract_e
 
     # --- Atomic Update Block ---
@@ -96,7 +96,7 @@ def _update_text_metadata(
             if not extracted_data_dict:
                 logger.warning(
                     "No text extracted for video %s; skipping SensitiveMeta update.",
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
                 # Mark state as retrieved even if no data found, to avoid re-running unless overwrite=True
                 if not state.text_meta_extracted:
@@ -114,7 +114,7 @@ def _update_text_metadata(
             )
             logger.debug(
                 "Data for SensitiveMeta update for video %s: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 extracted_data_dict.model_dump(mode="python"),
             )
 
@@ -160,24 +160,24 @@ def _update_text_metadata(
             if sensitive_meta:
                 state.mark_sensitive_meta_processed(save=True)
                 logger.info(
-                    f"Marked sensitive_meta_processed=True for video {video.video_hash} after text metadata update"
+                    f"Marked sensitive_meta_processed=True for video {video.raw_video_hash} after text metadata update"
                 )
 
             logger.info(
                 "Successfully updated/created SensitiveMeta and state for video %s.",
-                video.video_hash,
+                video.raw_video_hash,
             )  # Changed to info
             return sensitive_meta
 
     except Exception as e:
         logger.error(
             "Failed to update/create SensitiveMeta or state for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )
         # Re-raise exception for the pipeline to catch
         raise RuntimeError(
-            f"Failed to update/create SensitiveMeta or state for video {video.video_hash}"
+            f"Failed to update/create SensitiveMeta or state for video {video.raw_video_hash}"
         ) from e
     # --- End Atomic Update Block ---

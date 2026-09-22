@@ -81,12 +81,16 @@ class _FieldFile:
         self.storage.delete(self.name)
         self.name = ""
 
+    @contextmanager
+    def ensure_local(self) -> Generator[Path]:
+        yield Path(self.path)
+
 
 class _Video:
     pk: int = 123
     id: int = 123
     processor: _Processor = _Processor()
-    video_hash: str = "dimension-backfill-video"
+    raw_video_hash: str = "dimension-backfill-video"
     original_file_name: str = "dimension-backfill-video.mp4"
     processed_video_hash: str = ""
     fps: float | None = None
@@ -109,7 +113,7 @@ class _Video:
         self.contract = VideoFilePayload(
             pk=self.pk,
             id=self.id,
-            video_hash=self.video_hash,
+            raw_video_hash=self.raw_video_hash,
             original_file_name=self.original_file_name,
             fps=self.fps,
             duration=self.duration,
@@ -147,6 +151,16 @@ class _Video:
 
     def save(self, *, update_fields: list[str]) -> None:
         self.saved_update_fields = update_fields
+
+
+@contextmanager
+def mock_local_processed_context(video: _Video) -> Generator[Path]:
+    yield video.get_processed_file_path()
+
+
+@contextmanager
+def mock_local_raw_context(video: _Video) -> Generator[Path]:
+    yield video.get_raw_file_path()
 
 
 class _MaskApplication:
@@ -202,6 +216,11 @@ def test_backfill_fixes_cropped_processed_video(
     video = _Video(raw_path, processed_path)
     mask_application = _MaskApplication()
 
+    monkeypatch.setattr(service, "_local_raw_context", mock_local_raw_context)
+    monkeypatch.setattr(
+        service, "_local_processed_context", mock_local_processed_context
+    )
+
     def fake_detect(path: Path) -> EndoscopeImageRoiCore:
         if path == raw_path:
             return _image_roi(
@@ -217,7 +236,7 @@ def test_backfill_fixes_cropped_processed_video(
         return "new-hash"
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
-    monkeypatch.setattr(service, "sha256_file", fake_sha256_file)
+    monkeypatch.setattr(service, "get_file_hash", fake_sha256_file)
 
     result = service.backfill_video_anonymized_dimensions(
         cast(VideoFile, video), mask_application=mask_application
@@ -252,7 +271,10 @@ def test_backfill_dry_run_reports_without_mutation(
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
-
+    monkeypatch.setattr(service, "_local_raw_context", mock_local_raw_context)
+    monkeypatch.setattr(
+        service, "_local_processed_context", mock_local_processed_context
+    )
     result = service.backfill_video_anonymized_dimensions(
         cast(VideoFile, video),
         dry_run=True,
@@ -288,7 +310,10 @@ def test_backfill_refuses_bad_output_dimensions(
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
-
+    monkeypatch.setattr(service, "_local_raw_context", mock_local_raw_context)
+    monkeypatch.setattr(
+        service, "_local_processed_context", mock_local_processed_context
+    )
     result = service.backfill_video_anonymized_dimensions(
         cast(VideoFile, video), mask_application=mask_application
     )
@@ -316,6 +341,10 @@ def test_backfill_reports_unsupported_lx_anonymizer(
         return _image_roi(width=1350, height=1080, image_width=1350, image_height=1080)
 
     monkeypatch.setattr(service.video_utils, "detect_video_format", fake_detect)
+    monkeypatch.setattr(service, "_local_raw_context", mock_local_raw_context)
+    monkeypatch.setattr(
+        service, "_local_processed_context", mock_local_processed_context
+    )
 
     result = service.backfill_video_anonymized_dimensions(
         cast(VideoFile, _Video(raw_path, processed_path)),

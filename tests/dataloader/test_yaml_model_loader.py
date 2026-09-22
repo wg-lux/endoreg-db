@@ -1,48 +1,33 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
 
-from django.core.management.base import BaseCommand
-from django.db import models
-from pytest import MonkeyPatch
-
-import endoreg_db.utils.yaml_model_loader as yaml_model_loader
+from endoreg_db.helpers import typing as model_data
+from endoreg_db.utils import dataloader, yaml_model_loader
 
 
-def test_load_model_data_from_yaml_delegates_typed_metadata_unchanged(
-    monkeypatch: MonkeyPatch,
-) -> None:
-    # Arrange
-    command = BaseCommand()
-    metadata: yaml_model_loader.LoadModelDataMetadata = {
-        "dir": Path("fixtures/genders"),
-        "model": models.Model,
-        "foreign_keys": [],
-        "foreign_key_models": [],
-    }
-    calls: list[tuple[BaseCommand, str, object, bool]] = []
+@pytest.mark.parametrize(
+    "name",
+    [
+        "LoadModelDataMetadata",
+        "LoadModelDataValidator",
+        "YamlEntry",
+        "YamlScalar",
+        "YamlValue",
+    ],
+)
+def test_loader_facades_share_canonical_contracts(name: str) -> None:
+    canonical = getattr(model_data, name)
+    assert getattr(dataloader, name) is canonical
+    assert getattr(yaml_model_loader, name) is canonical
 
-    def record_delegate(
-        command_arg: BaseCommand,
-        model_name_arg: str,
-        metadata_arg: object,
-        verbose_arg: bool = False,
-    ) -> None:
-        calls.append((command_arg, model_name_arg, metadata_arg, verbose_arg))
 
-    monkeypatch.setattr(
-        yaml_model_loader,
-        "_load_model_data_from_yaml",
-        record_delegate,
+def test_yaml_loader_facade_exports_original_workflow() -> None:
+    assert (
+        yaml_model_loader.load_model_data_from_yaml
+        is dataloader.load_model_data_from_yaml
     )
-
-    # Act
-    yaml_model_loader.load_model_data_from_yaml(
-        command,
-        "gender",
-        metadata,
-        verbose=True,
+    assert (
+        yaml_model_loader.load_data_with_foreign_keys
+        is dataloader.load_data_with_foreign_keys
     )
-
-    # Assert
-    assert calls == [(command, "gender", metadata, True)]

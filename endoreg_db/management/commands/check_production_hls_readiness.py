@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from endoreg_db.helpers.typing import DjangoFile
 import json
 import math
 import sys
@@ -8,11 +9,9 @@ from pathlib import Path
 from typing import Any, Protocol, TypeGuard, cast
 from urllib.parse import urlsplit
 
-from django.core.files.base import File
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db.models import Q, QuerySet
-from django.db.models.fields.files import FieldFile
-
+from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from endoreg_db.config.env import (
     get_protected_media_root,
     get_protected_media_url,
@@ -37,7 +36,7 @@ _HLS_PLAYLIST_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 
 
 class _EncryptedStorageLike(Protocol):
-    def open(self, name: str, mode: str = "rb") -> File[bytes]: ...
+    def open(self, name: str, mode: str = "rb") -> DjangoFile: ...
 
     def is_encrypted(self, name: str) -> bool: ...
 
@@ -272,7 +271,7 @@ class Command(BaseCommand):
             total = candidates.count()
             limit = _sample_limit(total, fast=fast, sample_size=sample_size)
             for video in candidates[:limit]:
-                field_file = cast(FieldFile, getattr(video, field_name))
+                field_file = cast(VideoArtifactFieldFile, getattr(video, field_name))
                 self._check_encrypted_field_file(
                     issues,
                     field_file=field_file,
@@ -290,7 +289,7 @@ class Command(BaseCommand):
         self,
         issues: list[_ReadinessIssue],
         *,
-        field_file: FieldFile,
+        field_file: VideoArtifactFieldFile,
         video_id: int,
         field_name: str,
     ) -> None:

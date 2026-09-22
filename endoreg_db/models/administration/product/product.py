@@ -11,9 +11,8 @@ from ...other.unit import Unit
 from .product_material import ProductMaterial
 from .reference_product import ReferenceProduct
 
-NoProductValue: TypeAlias = None
-ProductMetric: TypeAlias = tuple[float, Unit | NoProductValue]
-ProductMetricResult: TypeAlias = ProductMetric | NoProductValue
+ProductMetric: TypeAlias = tuple[float, Unit | None]
+ProductMetricResult: TypeAlias = ProductMetric | None
 ProductMaterialMetricCalculator: TypeAlias = Callable[
     [Iterable[ProductMaterial]],
     ProductMetric,

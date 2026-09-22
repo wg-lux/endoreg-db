@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from urllib.error import HTTPError
+from http.client import IncompleteRead
+import threading
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import pytest
@@ -64,3 +66,57 @@ def test_seekable_media_input_rejects_unknown_token() -> None:
 
     assert exc_info.value.code == 404
     assert storage.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("decoder_fails", [False, True])
+def test_seekable_media_input_propagates_storage_error_after_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    decoder_fails: bool,
+) -> None:
+    storage = _RangeStorage(b"0123456789abcdef")
+    failure = RuntimeError("AES-GCM authentication failed")
+
+    def fail_read(
+        name: str,
+        *,
+        start: int,
+        end: int,
+        chunk_size: int,
+    ) -> Iterable[bytes]:
+        raise failure
+
+    monkeypatch.setattr(storage, "iter_decrypted_range", fail_read)
+    threads_before = set(threading.enumerate())
+    source_url: str | None = None
+    with pytest.raises(RuntimeError, match="authentication failed") as exc_info:
+        with serve_seekable_media_input(_FieldFile(storage)) as source:
+            source_url = source.url
+            with urlopen(source.url, timeout=2) as response:
+                with pytest.raises(IncompleteRead):
+                    response.read()
+            if decoder_fails:
+                raise RuntimeError("ffmpeg decode failed")
+
+    assert exc_info.value is failure
+    assert set(threading.enumerate()) <= threads_before
+    assert source_url is not None
+    with pytest.raises(URLError):
+        urlopen(source_url, timeout=2)
+
+
+@pytest.mark.unit
+def test_seekable_media_input_preserves_decoder_error_after_cleanup() -> None:
+    threads_before = set(threading.enumerate())
+    source_url: str | None = None
+    with pytest.raises(RuntimeError, match="decoder failure"):
+        with serve_seekable_media_input(_FieldFile(_RangeStorage(b"video"))) as source:
+            source_url = source.url
+            with urlopen(source.url, timeout=2) as response:
+                assert response.read() == b"video"
+            raise RuntimeError("decoder failure")
+
+    assert set(threading.enumerate()) <= threads_before
+    assert source_url is not None
+    with pytest.raises(URLError):
+        urlopen(source_url, timeout=2)

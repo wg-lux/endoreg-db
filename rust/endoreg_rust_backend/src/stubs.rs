@@ -112,19 +112,7 @@ inventory::submit! {
     }
 }
 
-inventory::submit! {
-    PyFunctionInfo {
-        name: "sha256_file_hex",
-        args: &[
-            ArgInfo { name: "path", r#type: stub_type_path },
-            ArgInfo { name: "chunk_size", r#type: stub_type_int },
-        ],
-        r#return: stub_type_str,
-        doc: "",
-        signature: Some("path: pathlib.Path, chunk_size: int = ..."),
-        module: None,
-    }
-}
+
 
 inventory::submit! {
     PyFunctionInfo {
@@ -140,22 +128,6 @@ inventory::submit! {
     }
 }
 
-inventory::submit! {
-    PyFunctionInfo {
-        name: "stable_snapshot_to_path",
-        args: &[
-            ArgInfo { name: "source_path", r#type: stub_type_path },
-            ArgInfo { name: "target_path", r#type: stub_type_path },
-            ArgInfo { name: "chunk_size", r#type: stub_type_int },
-        ],
-        r#return: stub_type_file_identity,
-        doc: "",
-        signature: Some(
-            "source_path: pathlib.Path, target_path: pathlib.Path, chunk_size: int = ..."
-        ),
-        module: None,
-    }
-}
 
 inventory::submit! {
     PyFunctionInfo {

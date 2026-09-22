@@ -55,7 +55,7 @@ def test_async_reimport_uses_in_place_reanonymization(
 
     class _FakeVideo:
         pk = 1
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
         raw_file = SimpleNamespace(name="raw.mp4")
         center = SimpleNamespace(name="university_hospital_wuerzburg")
         processor = SimpleNamespace(name="olympus_cv_1500")
@@ -163,7 +163,7 @@ def test_async_reimport_fails_if_hls_regeneration_fails(
 
     class _FakeVideo:
         pk = 1
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
         raw_file = SimpleNamespace(name="raw.mp4")
         center = SimpleNamespace(name="university_hospital_wuerzburg")
         processor = SimpleNamespace(name="olympus_cv_1500")

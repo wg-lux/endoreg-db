@@ -10,15 +10,12 @@ from django.db import models
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_quarantine_item_metadata
-from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 if TYPE_CHECKING:
     from .upload_job import UploadJob
 
-NoQuarantineRelationValue: TypeAlias = None
-QuarantineUploadJob: TypeAlias = "UploadJob | NoQuarantineRelationValue"
-QuarantineUser: TypeAlias = "User | NoQuarantineRelationValue"
-QuarantineDateTime: TypeAlias = "datetime | NoQuarantineRelationValue"
+QuarantineUploadJob: TypeAlias = "UploadJob | None"
+QuarantineUser: TypeAlias = "User | None"
 
 
 class QuarantineItem(models.Model):
@@ -70,13 +67,13 @@ class QuarantineItem(models.Model):
         on_delete=models.SET_NULL,
         related_name="reviewed_quarantine_items",
     )
-    reviewed_at: models.DateTimeField[QuarantineDateTime, Any] = models.DateTimeField(
+    reviewed_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         null=True, blank=True
     )
-    delete_eligible_at: models.DateTimeField[QuarantineDateTime, Any] = (
+    delete_eligible_at: models.DateTimeField[datetime | None, Any] = (
         models.DateTimeField(null=True, blank=True)
     )
-    deleted_at: models.DateTimeField[QuarantineDateTime, Any] = models.DateTimeField(
+    deleted_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         null=True, blank=True
     )
     error_detail: models.TextField[str, Any] = models.TextField(blank=True)
@@ -105,7 +102,7 @@ class QuarantineItem(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        errors: dict[str, ValidationErrorMessageArg] = {}
+        errors: dict[str, str] = {}
         if not self.path.strip():
             errors["path"] = "path is required"
         if not self.relative_path.strip():

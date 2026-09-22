@@ -2,15 +2,20 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
-import os
 import random
 import re  # Neu hinzugefügt für Regex-Pattern
 from datetime import date, datetime, timedelta
 from hashlib import sha256
 from typing import TYPE_CHECKING, Mapping, Optional, Protocol, Type, cast
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
+from endoreg_db.config.identity_hashing import current_identity_keyring
+from endoreg_db.services.secret_rotation.identity import (
+    migrate_identity_group,
+    salt_fingerprint as rotation_salt_fingerprint,
+    legacy_source_matches_ring,
+)
 
 from endoreg_db.utils import guess_name_gender
 
@@ -18,6 +23,8 @@ from endoreg_db.utils import guess_name_gender
 from endoreg_db.utils.hashs import (
     get_patient_examination_hash,
     get_patient_hash,
+    get_patient_identity_fingerprint,
+    get_identity_salt_fingerprint,
 )
 
 # Import models needed for logic, use local imports inside functions if needed to break cycles
@@ -37,14 +44,126 @@ class _GenderManager(Protocol):
     ) -> tuple[Gender, bool]: ...
 
 
-class _SensitiveMetaIdentityLike(Protocol):
-    pseudo_patient_id: int | None
-    pseudo_examination_id: int | None
-
-
 logger = logging.getLogger(__name__)
-SECRET_SALT = os.getenv("DJANGO_SALT", "default_salt")
 DEFAULT_UNKNOWN = "unknown"
+
+_UNKNOWN_IDENTIFIERS = frozenset({"", "unknown", "none", "null", "n/a", "-"})
+
+
+def _identity_date(value: date) -> date:
+    """Recover the clinical calendar date after DateTimeField UTC persistence."""
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            return timezone.localdate(value, timezone.get_default_timezone())
+        return value.date()
+    return value
+
+
+def _has_patient_identity(instance: "SensitiveMeta") -> bool:
+    dob = instance.patient_dob
+    if isinstance(dob, date):
+        dob = _identity_date(dob)
+    return (
+        all(
+            isinstance(value, str)
+            and value.strip().casefold() not in _UNKNOWN_IDENTIFIERS
+            for value in (instance.patient_first_name, instance.patient_last_name)
+        )
+        and isinstance(dob, date)
+        and dob != date(1900, 1, 1)
+    )
+
+
+def _guard_patient_hash_identity(instance: "SensitiveMeta") -> None:
+    """Reject ambiguous legacy encodings before creating or reusing patient links."""
+    if connection.vendor == "postgresql":
+        lock_key = int(str(instance.patient_hash)[:16], 16)
+        if lock_key >= 2**63:
+            lock_key -= 2**64
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [lock_key])
+    salt_fingerprint = get_identity_salt_fingerprint()
+    stamped = instance.__class__.objects.exclude(identity_salt_fingerprint="")
+    if connection.vendor == "postgresql" and not stamped.exists():
+        # Serialize first enrollment even when workers resolve different patients.
+        # Recheck evidence below after a waiter observes the first writer's commit.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [20260921, 1])
+    ring = current_identity_keyring()
+    accepted_fingerprints = (
+        [rotation_salt_fingerprint(value) for value in ring.readers]
+        if ring is not None
+        else [salt_fingerprint]
+    )
+    if stamped.exclude(identity_salt_fingerprint__in=accepted_fingerprints).exists():
+        raise ValueError(
+            "Configured identity salt differs from persisted identity evidence; migration review required"
+        )
+    if not stamped.exists():
+        # Source-scoped external mappings have their own identity encoding and
+        # cannot establish whether a legacy demographic hash used this salt.
+        legacy = (
+            instance.__class__.objects.filter(external_id__isnull=True)
+            .exclude(patient_hash__isnull=True)
+            .exclude(patient_hash="")
+        )
+        reference = next(
+            (row for row in legacy.iterator() if _has_patient_identity(row)), None
+        )
+        if reference is not None:
+            if calculate_patient_hash(
+                reference
+            ) != reference.patient_hash and not legacy_source_matches_ring(reference):
+                raise ValueError(
+                    "Configured identity salt does not match legacy patient hashes"
+                )
+        elif legacy.exists():
+            raise ValueError(
+                "Legacy identities lack source evidence for salt enrollment; explicit review required"
+            )
+    instance.identity_salt_fingerprint = salt_fingerprint
+    dob = instance.patient_dob
+    dob = _identity_date(dob) if isinstance(dob, date) else dob
+    for existing in (
+        instance.__class__.objects.filter(patient_hash=instance.patient_hash)
+        .exclude(pk=instance.pk)
+        .only(
+            "patient_first_name",
+            "patient_last_name",
+            "patient_dob",
+            "center_id",
+            "direct_identifiers_cleared_at",
+            "identity_fingerprint",
+        )
+    ):
+        existing_dob = existing.patient_dob
+        existing_dob = (
+            _identity_date(existing_dob)
+            if isinstance(existing_dob, date)
+            else existing_dob
+        )
+        if existing.identity_fingerprint:
+            if existing.identity_fingerprint == instance.identity_fingerprint:
+                continue
+            raise ValueError(
+                "Ambiguous legacy patient identity requires explicit review"
+            )
+        if existing.direct_identifiers_cleared_at is not None:
+            raise ValueError("Erased legacy patient identity requires explicit review")
+        if (
+            existing.patient_first_name,
+            existing.patient_last_name,
+            existing_dob,
+            existing.center_id,
+        ) != (
+            instance.patient_first_name,
+            instance.patient_last_name,
+            dob,
+            instance.center_id,
+        ):
+            raise ValueError(
+                "Ambiguous legacy patient identity requires explicit review"
+            )
 
 
 # Regex-Pattern für verschiedene Datumsformate
@@ -166,7 +285,7 @@ def update_name_db(first_name: Optional[str], last_name: Optional[str]):
         LastName.objects.get_or_create(name=last_name)
 
 
-def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -> str:
+def calculate_patient_hash(instance: "SensitiveMeta", salt: str | None = None) -> str:
     """Calculates the patient hash for the instance."""
     dob = instance.patient_dob
     first_name = instance.patient_first_name
@@ -177,6 +296,7 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
         raise ValueError("Patient DOB is required to calculate patient hash.")
     if not center:
         raise ValueError("Center is required to calculate patient hash.")
+    dob = _identity_date(dob)
 
     assert first_name is not None, "First name is required to calculate patient hash."
     assert last_name is not None, "Last name is required to calculate patient hash."
@@ -192,7 +312,7 @@ def calculate_patient_hash(instance: "SensitiveMeta", salt: str = SECRET_SALT) -
 
 
 def calculate_examination_hash(
-    instance: "SensitiveMeta", salt: str = SECRET_SALT
+    instance: "SensitiveMeta", salt: str | None = None
 ) -> str:
     """Calculates the examination hash for the instance."""
     dob = instance.patient_dob
@@ -207,6 +327,7 @@ def calculate_examination_hash(
         raise ValueError("Examination date is required to calculate examination hash.")
     if not center:
         raise ValueError("Center is required to calculate examination hash.")
+    dob = _identity_date(dob)
 
     if not first_name:
         raise ValueError("First name is required to calculate examination hash.")
@@ -303,113 +424,49 @@ def get_or_create_pseudo_patient_examination_logic(
 @transaction.atomic  # Ensure all operations within save succeed or fail together
 def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
     """
-    Contains the core logic for preparing a SensitiveMeta instance for saving.
-    Handles data generation (dates), hash calculation, and linking pseudo-entities.
+    Resolve complete identities without manufacturing missing clinical data.
 
-    This function is called on every save() operation and implements a two-phase approach:
-
-    **Phase 1: Initial Creation (with defaults)**
-    - When a SensitiveMeta is first created (e.g., via create_from_dict),
-      it may have missing patient data (names, DOB, etc.)
-    - Default values are set to prevent hash calculation errors:
-      * patient_first_name: "unknown"
-      * patient_last_name: "unknown"
-      * patient_dob: random date (1920-2000)
-    - A temporary hash is calculated using these defaults
-    - Temporary pseudo-entities (Patient, Examination) are created
-
-    **Phase 2: Update (with extracted data)**
-    - When real patient data is extracted (e.g., from video OCR via lx_anonymizer),
-      update_from_dict() is called with actual values
-    - The instance fields are updated with real data (names, DOB, etc.)
-    - save() is called again, triggering this function
-    - Default-setting logic is skipped (fields are no longer empty)
-    - Hash is RECALCULATED with real data
-    - New pseudo-entities are created/retrieved based on new hash
-
-    **Example Flow:**
-    ```
-    # Initial creation
-    sm = SensitiveMeta.create_from_dict({"center": center})
-    # → patient_first_name = "unknown", patient_last_name = "unknown"
-    # → hash = sha256("unknown unknown 1990-01-01 ...")
-    # → pseudo_patient_temp created
-
-    # Later update with extracted data
-    sm.update_from_dict({"patient_first_name": "Max", "patient_last_name": "Mustermann"})
-    # → patient_first_name = "Max", patient_last_name = "Mustermann" (overwrites)
-    # → save() triggered → perform_save_logic() called again
-    # → Default-setting skipped (names already exist)
-    # → hash = sha256("Max Mustermann 1985-03-15 ...") (RECALCULATED)
-    # → pseudo_patient_real created/retrieved with new hash
-    ```
-
-    Args:
-        instance: The SensitiveMeta instance being saved
-
-    Returns:
-        Examiner: The pseudo examiner instance to be linked via M2M after save
-
-    Raises:
-        ValueError: If required fields (center, gender) cannot be determined
+    Incomplete extraction remains available for review without patient or
+    examination links. Complete identity input retains the legacy hash encoding,
+    rejects conflicting source identities, and serializes PostgreSQL creation.
+    The outer model save keeps these checks and persistence in one transaction.
     """
 
     # --- Pre-Save Checks and Data Generation ---
 
-    # 1. Ensure DOB and Examination Date exist
-    if not instance.patient_dob:
-        logger.debug(
-            f"SensitiveMeta (pk={instance.pk or 'new'}): Patient DOB missing, generating random."
-        )
-        instance.patient_dob = generate_random_dob()
-    if not instance.examination_date:
-        logger.debug(
-            f"SensitiveMeta (pk={instance.pk or 'new'}): Examination date missing, generating random."
-        )
-        instance.examination_date = generate_random_examination_date()
-
-    # 2. Ensure Center exists (should be set before calling save)
     if not instance.center:
         raise ValueError("Center must be set before saving SensitiveMeta.")
-
-    # 2.5 CRITICAL: Set default patient names BEFORE hash calculation
-    #
-    # **Why this is necessary:**
-    # Hash calculation (step 4) requires first_name and last_name to be non-None.
-    # However, on initial creation (e.g., via get_or_create_sensitive_meta()), these
-    # fields may be empty because real patient data hasn't been extracted yet.
-    #
-    # **Two-phase approach:**
-    # - Phase 1 (Initial): Set defaults if names are missing
-    #   → Allows hash calculation to succeed without errors
-    #   → Creates temporary pseudo-entities with default hash
-    #
-    # - Phase 2 (Update): Real data extraction (OCR, manual input)
-    #   → update_from_dict() sets real names ("Max", "Mustermann")
-    #   → save() is called again
-    #   → This block is SKIPPED (names already exist)
-    #   → Hash is recalculated with real data (step 4)
-    #   → New pseudo-entities created with correct hash
-    #
-    # **Example:**
-    # Initial:  patient_first_name = "unknown" → hash = sha256("unknown unknown...")
-    # Updated:  patient_first_name = "Max"     → hash = sha256("Max Mustermann...")
-    #
-    if not instance.patient_first_name:
-        instance.patient_first_name = DEFAULT_UNKNOWN
-        logger.debug(
-            "SensitiveMeta (pk=%s): Patient first name missing, set to default '%s'.",
-            instance.pk or "new",
-            DEFAULT_UNKNOWN,
-        )
-
-    if not instance.patient_last_name:
-        instance.patient_last_name = DEFAULT_UNKNOWN
-        logger.debug(
-            "SensitiveMeta (pk=%s): Patient last name missing, set to default '%s'.",
-            instance.pk or "new",
-            DEFAULT_UNKNOWN,
-        )
+    if instance.direct_identifiers_cleared_at is not None:
+        # The audited tombstone preserves the committed identity after erasure.
+        return create_pseudo_examiner_logic(instance)
+    if not _has_patient_identity(instance):
+        if instance.external_id is not None:
+            patient = instance.external_id.patient
+            examination = instance.pseudo_examination
+            if (
+                instance.pseudo_patient_id != patient.pk
+                or instance.center_id != patient.center_id
+                or instance.patient_hash != patient.patient_hash
+                or not instance.patient_hash
+                or (
+                    examination is not None
+                    and (
+                        examination.patient_id != patient.pk
+                        or examination.hash != instance.examination_hash
+                    )
+                )
+            ):
+                raise ValueError("External patient identity links are inconsistent")
+            return create_pseudo_examiner_logic(instance)
+        if instance.pk and instance.patient_hash:
+            raise ValueError(
+                "Incomplete patient metadata cannot replace a committed identity"
+            )
+        instance.patient_hash = None
+        instance.examination_hash = None
+        instance.pseudo_patient = None
+        instance.pseudo_examination = None
+        return create_pseudo_examiner_logic(instance)
 
     # 3. Ensure Gender exists (should be set before calling save, e.g., during creation/update)
     if not instance.patient_gender:
@@ -448,17 +505,21 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
                 # If it's a specific gender (e.g., 'male') that is missing,
                 # that is a configuration error we should raise.
                 raise ValueError(f"Gender '{gender_str}' not found in database.")
-    # 4. Calculate Hashes (depends on DOB, Exam Date, Center, Names)
-    #
-    # **IMPORTANT: Hashes are RECALCULATED on every save!**
-    # This enables the two-phase update pattern:
-    # - Initial save: Hash based on default "unknown unknown" names
-    # - Updated save: Hash based on real extracted names ("Max Mustermann")
-    #
-    # The new hash will link to different pseudo-entities, ensuring proper
-    # anonymization while maintaining referential integrity.
+    # Preserve the historical hash encoding for complete, reviewed source data.
     instance.patient_hash = calculate_patient_hash(instance)
-    instance.examination_hash = calculate_examination_hash(instance)
+    if instance.center_id is None:
+        raise ValueError("Persisted center is required for patient identity")
+    instance.identity_fingerprint = get_patient_identity_fingerprint(
+        instance.patient_first_name,
+        instance.patient_last_name,
+        _identity_date(instance.patient_dob),
+        instance.center_id,
+    )
+    instance.examination_hash = (
+        calculate_examination_hash(instance) if instance.examination_date else None
+    )
+    migrate_identity_group(instance)
+    _guard_patient_hash_identity(instance)
 
     # 5. Get or Create Pseudo Patient (depends on hash, center, gender, dob)
     # Assign directly to the FK field to avoid premature saving issues
@@ -467,10 +528,13 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
 
     # 6. Get or Create Pseudo Examination (depends on hashes)
     # Assign directly to the FK field
-    pseudo_examination, _created = get_or_create_pseudo_patient_examination_logic(
-        instance
-    )
-    instance.pseudo_examination = pseudo_examination
+    if instance.examination_hash:
+        pseudo_examination, _created = get_or_create_pseudo_patient_examination_logic(
+            instance
+        )
+        instance.pseudo_examination = pseudo_examination
+    else:
+        instance.pseudo_examination = None
 
     # 7. Get or Create Pseudo Examiner (depends on names, center)
     # This needs to happen *after* the main instance has a PK for M2M linking.
@@ -1254,6 +1318,7 @@ def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
     return None
 
 
+@transaction.atomic
 def _create_anonymized_record(
     instance: "SensitiveMeta",
     DEFAULT_ANONYMIZED: str = "None",
@@ -1271,19 +1336,9 @@ def _create_anonymized_record(
         DEFAULT_ANONYMIZED: Usually None, The default string to use for anonymized fields (e.g., "anonymized,")
     """
 
-    instance.refresh_from_db()
-    committed_identity: dict[str, str | int | None] = {
-        "patient_hash": instance.patient_hash,
-        "examination_hash": instance.examination_hash,
-        "pseudo_patient_id": cast(
-            _SensitiveMetaIdentityLike, instance
-        ).pseudo_patient_id,
-        "pseudo_examination_id": cast(
-            _SensitiveMetaIdentityLike, instance
-        ).pseudo_examination_id,
-    }
-    patient_hash = instance.get_patient_hash()
-    instance.get_patient_examination_hash()
+    caller = instance
+    instance = instance.__class__.objects.select_for_update().get(pk=instance.pk)
+    patient_hash = instance.patient_hash
 
     pseudo_patient = None
     dob_value = instance.patient_dob
@@ -1328,21 +1383,10 @@ def _create_anonymized_record(
         else instance.patient_gender,
         "center": pseudo_patient.center if pseudo_patient else instance.center,
     }
-    sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
-
     if preserve_identity:
-        # The anonymized fields must not become the new case identity. Restore the
-        # validated hash/FK identity directly so SensitiveMeta.save() cannot
-        # recalculate it from anonymized placeholders.
-        update_fields: dict[str, str | int] = {
-            key: value for key, value in committed_identity.items() if value is not None
-        }
-        if update_fields:
-            sensitive_meta.__class__.objects.filter(pk=sensitive_meta.pk).update(
-                **update_fields
-            )
-            for key, value in update_fields.items():
-                setattr(sensitive_meta, key, value)
+        # Explicit identity erasure must never recalculate hashes from redacted values.
+        instance.__class__.objects.filter(pk=instance.pk).update(**anonymized_data)
+        caller.refresh_from_db()
         return
-
+    sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
     sensitive_meta.save()

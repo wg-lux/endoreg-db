@@ -39,7 +39,14 @@ def test_encrypted_fallback_verifies_plaintext_and_cleans_staging(
     )
     lease = acquire_upload_job_import_lease(upload_job_id=str(job.pk), owner="test")
     staging = tmp_path / "staging"
-    monkeypatch.setattr(ingest.path_utils, "TRANSCODING_DIR", staging)
+    runtime_paths = ingest.get_runtime_paths()
+    monkeypatch.setattr(
+        ingest,
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={"transcoding": staging, "storage": tmp_path}
+        ),
+    )
     monkeypatch.setattr(ingest, "ensure_local_file", _unavailable)
     with override_settings(MEDIA_ROOT=tmp_path):
         if failure is None:

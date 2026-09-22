@@ -17,13 +17,13 @@ def _calc_duration_vf(obj: "VideoFile") -> float:
         int, obj.frame_count
     )  # TODO similar implementation as in get_fps
     if fps <= 0:
-        raise ValueError(f"Invalid FPS for video {obj.video_hash}: {fps}")
+        raise ValueError(f"Invalid FPS for video {obj.raw_video_hash}: {fps}")
 
     duration = frame_count / fps
     if duration > 0:
         return duration
     else:
         raise ValueError(
-            f"Invalid duration calculated for video {obj.video_hash}: {duration}. "
+            f"Invalid duration calculated for video {obj.raw_video_hash}: {duration}. "
             "Ensure the video file is valid and accessible."
         )

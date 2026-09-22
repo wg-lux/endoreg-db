@@ -1,7 +1,9 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
+
+from lx_dtypes.models.contracts.video_file import FrameSourceMode
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -10,7 +12,6 @@ if TYPE_CHECKING:
 
 
 type VideoPredictionSequenceMap = dict[str, list[tuple[int, int]]]
-type FrameSourceMode = Literal["cache", "stream", "auto"]
 
 
 def predict_video(

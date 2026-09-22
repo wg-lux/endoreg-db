@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
 from unittest.mock import patch
+from endoreg_db.utils.paths import get_runtime_paths
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -300,7 +301,7 @@ class HubTransferEndpointTests(TestCase):
         self,
         *,
         transfer_key: str,
-        video_hash: str,
+        raw_video_hash: str,
         transfer_mode: str = "metadata_only",
         processing_policy: str = "reprocess_if_missing_outputs",
         sender_processing_success: bool = False,
@@ -308,10 +309,10 @@ class HubTransferEndpointTests(TestCase):
         examination_date: str = "2026-03-20",
     ) -> dict[str, Any]:
         effective_processed_video_hash = processed_video_hash or self._sha256(
-            f"processed:{video_hash}".encode()
+            f"processed:{raw_video_hash}".encode()
         )
         video_file_payload: dict[str, object] = {
-            "video_hash": video_hash,
+            "raw_video_hash": raw_video_hash,
             "processed_video_hash": effective_processed_video_hash,
             "suffix": ".mp4",
             "fps": 25.0,
@@ -330,7 +331,7 @@ class HubTransferEndpointTests(TestCase):
             "target_node_key": self.target_node.node_key,
             "source_center_key": self.center.center_key,
             "resource_kind": "video",
-            "resource_hash": video_hash,
+            "resource_hash": raw_video_hash,
             "transfer_mode": transfer_mode,
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
@@ -351,7 +352,7 @@ class HubTransferEndpointTests(TestCase):
                     "processed_file_sha256": effective_processed_video_hash,
                 },
                 "processing_history": {
-                    "file_hash": video_hash,
+                    "file_hash": raw_video_hash,
                     "success": True,
                 },
             },
@@ -421,7 +422,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_endpoints_return_404_when_feature_flag_is_disabled(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__disabled",
-            video_hash="hash-disabled",
+            raw_video_hash="hash-disabled",
         )
 
         response = self._secure_post(
@@ -440,7 +441,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_endpoints_return_404_in_local_study_server(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__local-study-disabled",
-            video_hash="hash-local-disabled",
+            raw_video_hash="hash-local-disabled",
         )
 
         response = self._secure_post(
@@ -459,7 +460,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_creates_placeholder_video_and_waits_for_media(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-1",
-            video_hash="hash-1",
+            raw_video_hash="hash-1",
         )
 
         response = self._secure_post(
@@ -478,7 +479,7 @@ class HubTransferEndpointTests(TestCase):
             == payload["resource_rows"]["video_file"]["processed_video_hash"]
         )
 
-        video = VideoFile.objects.get(video_hash="hash-1")
+        video = VideoFile.objects.get(raw_video_hash="hash-1")
         assert video.center == self.center
         assert video.original_file_name is None
         assert video.sensitive_meta is not None
@@ -509,14 +510,14 @@ class HubTransferEndpointTests(TestCase):
         if connection.vendor != "postgresql":
             self.skipTest("nullable joined-row locking is PostgreSQL-specific")
         existing_video = VideoFile.objects.create(
-            video_hash="hash-existing-nullable-video",
+            raw_video_hash="hash-existing-nullable-video",
             center=self.center,
         )
         assert existing_video.state_id is None
         assert existing_video.sensitive_meta_id is None
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__existing-nullable-video",
-            video_hash=existing_video.video_hash,
+            raw_video_hash=existing_video.raw_video_hash,
         )
 
         response = self._secure_post(
@@ -568,7 +569,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_returns_typed_model_validation_details(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__model-validation",
-            video_hash="hash-model-validation",
+            raw_video_hash="hash-model-validation",
         )
 
         with patch(
@@ -597,7 +598,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_metadata_validation_rolls_back_registration(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__metadata-validation",
-            video_hash="hash-metadata-validation",
+            raw_video_hash="hash-metadata-validation",
         )
 
         with patch(
@@ -626,7 +627,7 @@ class HubTransferEndpointTests(TestCase):
             transfer_key=payload["transfer_key"]
         ).exists()
         assert not VideoFile.objects.filter(
-            video_hash=payload["resource_hash"]
+            raw_video_hash=payload["resource_hash"]
         ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
@@ -638,7 +639,7 @@ class HubTransferEndpointTests(TestCase):
         self.client.force_login(session_user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__node-scope",
-            video_hash="hash-node-scope",
+            raw_video_hash="hash-node-scope",
         )
 
         response = self._secure_post(
@@ -659,7 +660,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_rejects_direct_identity_fields(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__pii-rejected",
-            video_hash="hash-pii-rejected",
+            raw_video_hash="hash-pii-rejected",
         )
         payload["resource_rows"]["sensitive_meta"]["patient_first_name"] = "Max"
 
@@ -701,7 +702,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_rejects_legacy_privacy_schema(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__legacy-schema-rejected",
-            video_hash="hash-legacy-schema-rejected",
+            raw_video_hash="hash-legacy-schema-rejected",
         )
         payload["payload_schema_version"] = "1.0"
 
@@ -719,12 +720,12 @@ class HubTransferEndpointTests(TestCase):
     def test_video_transfer_imports_frame_annotations_and_related_reports(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__annotations",
-            video_hash="hash-annotations",
+            raw_video_hash="hash-annotations",
         )
         payload["resource_rows"]["frame_annotations"] = [
             {
                 "annotation_id": 42,
-                "video_hash": "hash-annotations",
+                "raw_video_hash": "hash-annotations",
                 "frame_number": 5,
                 "frame_relative_path": "frames/frame_000005.jpg",
                 "frame_timestamp": 0.2,
@@ -738,7 +739,7 @@ class HubTransferEndpointTests(TestCase):
             {
                 "source_node_key": self.source_node.node_key,
                 "source_segment_id": 17,
-                "video_hash": "hash-annotations",
+                "raw_video_hash": "hash-annotations",
                 "start_frame_number": 4,
                 "end_frame_number_exclusive": 8,
                 "label_name": "lesion_visible",
@@ -771,7 +772,7 @@ class HubTransferEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
 
-        video = VideoFile.objects.get(video_hash="hash-annotations")
+        video = VideoFile.objects.get(raw_video_hash="hash-annotations")
         frame = Frame.objects.get(video=video, frame_number=5)
         assert frame.relative_path == "frames/frame_000005.jpg"
         assert frame.timestamp == 0.2
@@ -812,7 +813,7 @@ class HubTransferEndpointTests(TestCase):
 
         replay_payload = self._video_transfer_payload(
             transfer_key="site-a__video__annotations-replay",
-            video_hash="hash-annotations",
+            raw_video_hash="hash-annotations",
         )
         replay_payload["resource_rows"]["video_segments"] = [
             {
@@ -863,13 +864,13 @@ class HubTransferEndpointTests(TestCase):
     def test_video_transfer_rejects_segment_beyond_transferred_frame_count(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__segment-out-of-bounds",
-            video_hash="hash-segment-out-of-bounds",
+            raw_video_hash="hash-segment-out-of-bounds",
         )
         payload["resource_rows"]["video_segments"] = [
             {
                 "source_node_key": self.source_node.node_key,
                 "source_segment_id": "outside",
-                "video_hash": "hash-segment-out-of-bounds",
+                "raw_video_hash": "hash-segment-out-of-bounds",
                 "start_frame_number": 299,
                 "end_frame_number_exclusive": 301,
                 "label_name": "lesion_visible",
@@ -892,7 +893,7 @@ class HubTransferEndpointTests(TestCase):
         assert response.status_code == 400, response.content
         assert "exceeds video frame_count" in str(response.json())
         assert not VideoFile.objects.filter(
-            video_hash="hash-segment-out-of-bounds"
+            raw_video_hash="hash-segment-out-of-bounds"
         ).exists()
         assert not LabelVideoSegment.objects.filter(
             source_node_key=self.source_node.node_key,
@@ -905,7 +906,7 @@ class HubTransferEndpointTests(TestCase):
     ):
         video_state = VideoState.objects.create()
         video = VideoFile.objects.create(
-            video_hash="hash-segment-rollback",
+            raw_video_hash="hash-segment-rollback",
             center=self.center,
             state=video_state,
         )
@@ -913,13 +914,13 @@ class HubTransferEndpointTests(TestCase):
         assert video.state.segment_annotations_validated is False
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__segment-rollback",
-            video_hash=video.video_hash,
+            raw_video_hash=video.raw_video_hash,
         )
         payload["resource_rows"]["video_segments"] = [
             {
                 "source_node_key": self.source_node.node_key,
                 "source_segment_id": "rollback",
-                "video_hash": video.video_hash,
+                "raw_video_hash": video.raw_video_hash,
                 "start_frame_number": 4,
                 "end_frame_number_exclusive": 8,
                 "label_name": "lesion_visible",
@@ -960,7 +961,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_requires_matching_node_credentials(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__auth-fail",
-            video_hash="hash-auth-fail",
+            raw_video_hash="hash-auth-fail",
         )
 
         response = self._secure_post(
@@ -985,7 +986,7 @@ class HubTransferEndpointTests(TestCase):
         self.source_node.save(update_fields=["shared_secret_hash"])
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__missing-secret-hash",
-            video_hash="hash-missing-secret-hash",
+            raw_video_hash="hash-missing-secret-hash",
         )
 
         with self.assertLogs("endoreg_db.hub.audit", level="INFO") as audit_logs:
@@ -1020,7 +1021,7 @@ class HubTransferEndpointTests(TestCase):
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__user-bypass-denied",
-            video_hash="hash-user-bypass-denied",
+            raw_video_hash="hash-user-bypass-denied",
         )
 
         response = self._secure_post(
@@ -1048,7 +1049,7 @@ class HubTransferEndpointTests(TestCase):
         self.client.force_login(user)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__unscoped-user",
-            video_hash="hash-unscoped-user",
+            raw_video_hash="hash-unscoped-user",
         )
 
         response = self._secure_post(
@@ -1068,7 +1069,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_requires_secure_transport(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__insecure-transport",
-            video_hash="hash-insecure-transport",
+            raw_video_hash="hash-insecure-transport",
         )
 
         with self.assertLogs(
@@ -1098,7 +1099,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_accepts_proxy_https_header(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__proxy-https",
-            video_hash="hash-proxy-https",
+            raw_video_hash="hash-proxy-https",
         )
 
         response = self.client.post(
@@ -1120,7 +1121,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_requires_proxy_verified_mtls(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__mtls-required",
-            video_hash="hash-mtls-required",
+            raw_video_hash="hash-mtls-required",
         )
 
         with self.assertLogs(
@@ -1151,7 +1152,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_is_idempotent_for_same_transfer_key(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-2",
-            video_hash="hash-2",
+            raw_video_hash="hash-2",
         )
 
         first = self._secure_post(
@@ -1179,7 +1180,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_rejects_changed_canonical_replay_payload(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__changed-replay",
-            video_hash="hash-changed-replay",
+            raw_video_hash="hash-changed-replay",
         )
 
         first = self._secure_post(
@@ -1199,7 +1200,7 @@ class HubTransferEndpointTests(TestCase):
         assert first.status_code == 201, first.content
         assert second.status_code == 409, second.content
         assert "different transfer payload" in str(second.json())
-        video = VideoFile.objects.get(video_hash="hash-changed-replay")
+        video = VideoFile.objects.get(raw_video_hash="hash-changed-replay")
         assert video.fps == 25.0
         assert (
             TransferJob.objects.filter(transfer_key=payload["transfer_key"]).count()
@@ -1216,7 +1217,7 @@ class HubTransferEndpointTests(TestCase):
         )
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__foreign-center",
-            video_hash="hash-foreign-center",
+            raw_video_hash="hash-foreign-center",
         )
         payload["source_center_key"] = other_center.center_key
 
@@ -1247,7 +1248,7 @@ class HubTransferEndpointTests(TestCase):
         unowned_node.save(update_fields=["shared_secret_hash"])
         payload = self._video_transfer_payload(
             transfer_key="unowned__video__center-claim",
-            video_hash="hash-unowned-center-claim",
+            raw_video_hash="hash-unowned-center-claim",
         )
         payload["source_node_key"] = unowned_node.node_key
 
@@ -1274,7 +1275,7 @@ class HubTransferEndpointTests(TestCase):
     ):
         first_payload = self._video_transfer_payload(
             transfer_key="site-a__video__owned-hash",
-            video_hash="owned-hash",
+            raw_video_hash="owned-hash",
         )
         first_response = self._secure_post(
             "/api/media/hub/transfers/",
@@ -1284,7 +1285,7 @@ class HubTransferEndpointTests(TestCase):
         )
         assert first_response.status_code == 201, first_response.content
 
-        video = VideoFile.objects.get(video_hash="owned-hash")
+        video = VideoFile.objects.get(raw_video_hash="owned-hash")
         video.fps = 12.0
         video.save(update_fields=["fps"])
 
@@ -1301,7 +1302,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_content)
         second_payload = self._video_transfer_payload(
             transfer_key="site-a-secondary__video__owned-hash",
-            video_hash="owned-hash",
+            raw_video_hash="owned-hash",
             transfer_mode="metadata_and_processed_media",
             processed_video_hash=processed_hash,
         )
@@ -1399,7 +1400,7 @@ class HubTransferEndpointTests(TestCase):
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_skips_reprocessing_when_local_success_exists(self):
         video = VideoFile.objects.create(
-            video_hash="hash-3",
+            raw_video_hash="hash-3",
             center=self.center,
             processed_file=SimpleUploadedFile(
                 "hash-3-processed.mp4",
@@ -1407,11 +1408,11 @@ class HubTransferEndpointTests(TestCase):
                 content_type="video/mp4",
             ),
         )
-        ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
+        ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
 
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-3",
-            video_hash="hash-3",
+            raw_video_hash="hash-3",
         )
 
         response = self._secure_post(
@@ -1440,11 +1441,11 @@ class HubTransferEndpointTests(TestCase):
     def test_transfers_for_same_patient_join_by_sensitive_meta_hash_inputs(self):
         first_payload = self._video_transfer_payload(
             transfer_key="site-a__video__join-1",
-            video_hash="join-hash-1",
+            raw_video_hash="join-hash-1",
         )
         second_payload = self._video_transfer_payload(
             transfer_key="site-a__video__join-2",
-            video_hash="join-hash-2",
+            raw_video_hash="join-hash-2",
             examination_date="2026-03-21",
         )
 
@@ -1483,7 +1484,7 @@ class HubTransferEndpointTests(TestCase):
     def test_transfer_registration_rejects_raw_media_transfer_modes(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__raw-mode-rejected",
-            video_hash="hash-raw-mode-rejected",
+            raw_video_hash="hash-raw-mode-rejected",
             transfer_mode="metadata_and_raw_media",
         )
 
@@ -1559,10 +1560,10 @@ class HubTransferEndpointTests(TestCase):
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_raw_video_upload_is_rejected(self):
         raw_bytes = b"raw-video-bytes"
-        video_hash = self._sha256(raw_bytes)
+        raw_video_hash = self._sha256(raw_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__raw-upload",
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
         )
 
         create_response = self._secure_post(
@@ -1606,7 +1607,7 @@ class HubTransferEndpointTests(TestCase):
         processed_bytes = b"processed-video"
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__oversized-upload",
-            video_hash="oversized-video-hash",
+            raw_video_hash="oversized-video-hash",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=self._sha256(processed_bytes),
@@ -1637,7 +1638,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(b"processed-video")
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__missing-media-file",
-            video_hash="hash-missing-media-file",
+            raw_video_hash="hash-missing-media-file",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=processed_hash,
@@ -1665,7 +1666,7 @@ class HubTransferEndpointTests(TestCase):
         processed_bytes = b"processed-video"
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__oversized-envelope-header",
-            video_hash="hash-oversized-envelope-header",
+            raw_video_hash="hash-oversized-envelope-header",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=self._sha256(processed_bytes),
@@ -1698,7 +1699,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__media-model-validation",
-            video_hash="hash-media-model-validation",
+            raw_video_hash="hash-media-model-validation",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=processed_hash,
@@ -1742,7 +1743,7 @@ class HubTransferEndpointTests(TestCase):
         processed_bytes = b"processed-video"
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__live-transfer-lease",
-            video_hash="hash-live-transfer-lease",
+            raw_video_hash="hash-live-transfer-lease",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=self._sha256(processed_bytes),
@@ -1781,7 +1782,7 @@ class HubTransferEndpointTests(TestCase):
         processed_bytes = b"processed-video"
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__envelope-rejection",
-            video_hash="hash-envelope-rejection",
+            raw_video_hash="hash-envelope-rejection",
             transfer_mode="metadata_and_processed_media",
             sender_processing_success=True,
             processed_video_hash=self._sha256(processed_bytes),
@@ -1838,7 +1839,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__processed-upload",
-            video_hash=raw_hash,
+            raw_video_hash=raw_hash,
             transfer_mode="metadata_and_processed_media",
             processing_policy="preserve_processing_state",
             sender_processing_success=True,
@@ -1875,7 +1876,7 @@ class HubTransferEndpointTests(TestCase):
         assert receipt["plaintext_sha256"] == processed_hash
         assert receipt["target_node_key"] == self.target_node.node_key
 
-        video = VideoFile.objects.get(video_hash=raw_hash)
+        video = VideoFile.objects.get(raw_video_hash=raw_hash)
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
 
@@ -1885,7 +1886,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__plaintext-rejected",
-            video_hash=self._sha256(b"raw-plaintext-rejected"),
+            raw_video_hash=self._sha256(b"raw-plaintext-rejected"),
             transfer_mode="metadata_and_processed_media",
             processing_policy="preserve_processing_state",
             sender_processing_success=True,
@@ -1920,7 +1921,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__envelope-replay",
-            video_hash=self._sha256(b"raw-replay-video"),
+            raw_video_hash=self._sha256(b"raw-replay-video"),
             transfer_mode="metadata_and_processed_media",
             processing_policy="preserve_processing_state",
             sender_processing_success=True,
@@ -1943,8 +1944,10 @@ class HubTransferEndpointTests(TestCase):
         staging_directory = Path(self._key_directory.name) / "replay-staging"
 
         with patch(
-            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-            staging_directory,
+            "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+            return_value=get_runtime_paths().model_copy(
+                update={"transcoding": staging_directory}
+            ),
         ):
             first_response = self._secure_post(
                 f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
@@ -1956,7 +1959,7 @@ class HubTransferEndpointTests(TestCase):
                 headers=self._auth_headers(),
             )
             assert first_response.status_code == 200, first_response.content
-            video = VideoFile.objects.get(video_hash=payload["resource_hash"])
+            video = VideoFile.objects.get(raw_video_hash=payload["resource_hash"])
             canonical_name = str(video.processed_file.name)
             receipt = first_response.json()["envelope_receipt"]
 
@@ -2000,7 +2003,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__failed-replacement",
-            video_hash=self._sha256(b"raw-failed-replacement"),
+            raw_video_hash=self._sha256(b"raw-failed-replacement"),
             transfer_mode="metadata_and_processed_media",
             processing_policy="preserve_processing_state",
             sender_processing_success=True,
@@ -2013,7 +2016,7 @@ class HubTransferEndpointTests(TestCase):
             headers=self._auth_headers(),
         )
         assert create_response.status_code == 201, create_response.content
-        video = VideoFile.objects.get(video_hash=payload["resource_hash"])
+        video = VideoFile.objects.get(raw_video_hash=payload["resource_hash"])
         video.processed_file.save(
             "previous-generation.mp4",
             SimpleUploadedFile("previous-generation.mp4", b"previous-generation"),
@@ -2099,7 +2102,7 @@ class HubTransferEndpointTests(TestCase):
         processed_hash = self._sha256(processed_bytes)
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__center-scoped-media",
-            video_hash=self._sha256(b"raw-video"),
+            raw_video_hash=self._sha256(b"raw-video"),
             transfer_mode="metadata_and_processed_media",
             processing_policy="preserve_processing_state",
             sender_processing_success=True,

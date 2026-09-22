@@ -16,7 +16,7 @@ def test_video_metadata_view_returns_pydantic_validated_payload() -> None:
     video = VideoFile.objects.create(
         center=center,
         state=state,
-        video_hash="metadata-view-video-hash",
+        raw_video_hash="metadata-view-video-hash",
         original_file_name="metadata_view.mp4",
         duration=12.5,
         fps=25.0,

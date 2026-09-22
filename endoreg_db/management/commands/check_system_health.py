@@ -37,17 +37,10 @@ from endoreg_db.services.hub.deployment import (
 from endoreg_db.services.jobs.stale_recovery import VIDEO_PROCESSING_STALE_TIMEOUT
 from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 from endoreg_db.utils.file_operations import atomic_write_file
-from endoreg_db.utils.paths import (
-    LOG_DIR,
-    PROTECTED_DATA_ROOT,
-    QUARANTINE_DIR,
-    STORAGE_DIR,
-)
+from endoreg_db.utils.paths import get_runtime_paths
 
-SECRET_KEY_FINGERPRINT_FILE = LOG_DIR / ".secret_key_fingerprint"
 DEFAULT_MIN_FREE_BYTES = 1024 * 1024 * 1024
 DEFAULT_QUARANTINE_MAX_AGE_DAYS = 30
-type _CommandOption = bool
 
 
 class _AuditLedgerIntegrityStatus(TypedDict):
@@ -97,9 +90,9 @@ def _path_within(root: Path, candidate: Path) -> bool:
 
 
 def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
-    if not QUARANTINE_DIR.exists():
+    if not get_runtime_paths().quarantine.exists():
         return {
-            "path": str(QUARANTINE_DIR),
+            "path": str(get_runtime_paths().quarantine),
             "count": 0,
             "bytes": 0,
             "oldest_age_seconds": None,
@@ -108,7 +101,7 @@ def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
     file_count = 0
     total_bytes = 0
     oldest_mtime: float | None = None
-    for path in QUARANTINE_DIR.rglob("*"):
+    for path in get_runtime_paths().quarantine.rglob("*"):
         if not path.is_file():
             continue
         stat_result = path.stat()
@@ -118,7 +111,7 @@ def _quarantine_stats(now: float) -> dict[str, int | float | None | str]:
             oldest_mtime = stat_result.st_mtime
 
     return {
-        "path": str(QUARANTINE_DIR),
+        "path": str(get_runtime_paths().quarantine),
         "count": file_count,
         "bytes": total_bytes,
         "oldest_age_seconds": None if oldest_mtime is None else now - oldest_mtime,
@@ -321,10 +314,10 @@ def _audit_ledger_integrity_status() -> _AuditLedgerIntegrityStatus:
 
 def _storage_free_stats() -> dict[str, int | float | str | None]:
     try:
-        usage = shutil.disk_usage(STORAGE_DIR)
+        usage = shutil.disk_usage(get_runtime_paths().storage)
     except OSError as exc:
         return {
-            "path": str(STORAGE_DIR.resolve()),
+            "path": str(get_runtime_paths().storage.resolve()),
             "total_bytes": None,
             "used_bytes": None,
             "free_bytes": None,
@@ -332,7 +325,7 @@ def _storage_free_stats() -> dict[str, int | float | str | None]:
             "error": str(exc),
         }
     return {
-        "path": str(STORAGE_DIR.resolve()),
+        "path": str(get_runtime_paths().storage.resolve()),
         "total_bytes": usage.total,
         "used_bytes": usage.used,
         "free_bytes": usage.free,
@@ -343,14 +336,16 @@ def _storage_free_stats() -> dict[str, int | float | str | None]:
 
 def _initialize_secret_key_fingerprint() -> tuple[str, str]:
     secret_fingerprint = _secret_key_fingerprint()
-    if SECRET_KEY_FINGERPRINT_FILE.exists():
-        previous_fingerprint = SECRET_KEY_FINGERPRINT_FILE.read_text(
-            encoding="utf-8"
-        ).strip()
+    if (get_runtime_paths().logs / ".secret_key_fingerprint").exists():
+        previous_fingerprint = (
+            (get_runtime_paths().logs / ".secret_key_fingerprint")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
         return secret_fingerprint, previous_fingerprint
 
     atomic_write_file(
-        destination=SECRET_KEY_FINGERPRINT_FILE,
+        destination=(get_runtime_paths().logs / ".secret_key_fingerprint"),
         content=[secret_fingerprint.encode("utf-8")],
         file_mode=0o640,
         dir_mode=0o750,
@@ -375,7 +370,7 @@ def _base_health_checks(
         "protected_media_url_reachable": protected_media_url == "/protected_media/",
         "protected_media_root_exists": protected_media_root_exists,
         "protected_media_root_within_protected_data": _path_within(
-            PROTECTED_DATA_ROOT, protected_media_root
+            get_runtime_paths().runtime_root, protected_media_root
         ),
         "app_user_has_media_gid": (
             protected_media_root_exists
@@ -525,7 +520,7 @@ class Command(BaseCommand):
             help="Emit the health report as JSON.",
         )
 
-    def handle(self, *args: str, **options: _CommandOption) -> None:
+    def handle(self, *args: str, **options: bool) -> None:
         protected_media_url = get_protected_media_url()
         protected_media_root = get_protected_media_root().resolve()
         secret_fingerprint, previous_fingerprint = _initialize_secret_key_fingerprint()
@@ -586,7 +581,7 @@ class Command(BaseCommand):
             ],
             "protected_media_root": str(protected_media_root),
             "protected_media_url": protected_media_url,
-            "storage_root": str(STORAGE_DIR.resolve()),
+            "storage_root": str(get_runtime_paths().storage.resolve()),
             "secret_key_fingerprint": secret_fingerprint,
             "deployment_role": deployment_role,
             "local_study_server": {

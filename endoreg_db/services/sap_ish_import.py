@@ -23,7 +23,7 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.paths import ensure_within_data_root
+from endoreg_db.utils.paths import ensure_within_runtime_root
 from lx_dtypes.models.contracts.sap_ish_import import (
     SapIshImportPayload,
     SapIshImportPayloadValue,
@@ -525,7 +525,9 @@ def _convert_sap_ish_directory_to_preanonymized_drop(
     center_key: str | None,
     sidecar_format: SidecarFormat,
 ) -> SapIshImportResult:
-    destination_dir = ensure_within_data_root(Path(output_dir).expanduser().resolve())
+    destination_dir = ensure_within_runtime_root(
+        Path(output_dir).expanduser().resolve()
+    )
     normalized_rows, matched_files, skipped_files = _normalize_supported_rows(
         source_dir
     )

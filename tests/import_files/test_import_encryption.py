@@ -23,7 +23,7 @@ from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.services.video_files import _imports as video_create_module
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 
 
 pytestmark = pytest.mark.django_db
@@ -82,7 +82,7 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(
     assert stored_path.read_bytes().startswith(MAGIC)
     with report.file.open("rb") as stored:
         assert stored.read() == plaintext
-    assert sha256_file(source) == sha256_file(report.file)
+    assert get_file_hash(source) == get_file_hash(report.file)
 
 
 def test_video_import_persists_raw_video_as_encrypted_bytes(
@@ -154,7 +154,7 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     assert stored_path.read_bytes().startswith(MAGIC)
     with video.raw_file.open("rb") as stored:
         assert stored.read() == plaintext
-    assert sha256_file(source) == sha256_file(video.raw_file)
+    assert get_file_hash(source) == get_file_hash(video.raw_file)
     assert not list(stored_path.parent.glob("*.part.*"))
 
     cast(_BytesFieldFile, video.processed_file).save(
@@ -200,7 +200,7 @@ def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
     with report.processed_file.open("rb") as stored:
         assert stored.read() == processed_plaintext
     assert report.state is not None
-    assert report.state.processed_file_sha256 == sha256_file(report.processed_file)
+    assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
 
 
 def test_staging_cleanup_rejects_paths_outside_known_roots(tmp_path: Path) -> None:

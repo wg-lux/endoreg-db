@@ -15,7 +15,7 @@ from torch import nn
 # Adjust imports based on your project structure if necessary
 from ..administration.ai.ai_model import AiModel
 from ..label.label_set import LabelSet
-from ..utils import STORAGE_DIR, WEIGHTS_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
@@ -73,7 +73,7 @@ def hf_hub_download(
 @contextmanager
 def _download_hf_weights(*, model_id: str) -> Generator[Path, None, None]:
     """Download one model artifact into an isolated protected staging directory."""
-    staging_root = WEIGHTS_DIR / ".downloads" / uuid4().hex
+    staging_root = get_runtime_paths().weights / ".downloads" / uuid4().hex
     ensure_directory(staging_root)
 
     try:
@@ -221,11 +221,11 @@ def create_from_file_logic(
     if not source_weights_path.exists():
         raise FileNotFoundError(f"Weights file not found: {source_weights_path}")
 
-    # Construct destination path within MEDIA_ROOT/WEIGHTS_DIR
+    # Construct destination path within MEDIA_ROOT/get_runtime_paths().weights
     weights_filename = source_weights_path.name
     # Relative path for the FileField upload_to
     relative_dest_path = (
-        Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
+        Path(get_runtime_paths().weights.relative_to(get_runtime_paths().storage))
         / f"{meta_name}_v{target_version}_{weights_filename}"
     )
     # --- Create/Update ModelMeta Instance ---
@@ -457,7 +457,7 @@ def _copy_weights_to_existing_model_meta(
         relative_dest_path = Path(current_name)
     else:
         relative_dest_path = (
-            Path(WEIGHTS_DIR.relative_to(STORAGE_DIR))
+            Path(get_runtime_paths().weights.relative_to(get_runtime_paths().storage))
             / f"{model_meta.name}_v{model_meta.version}_{source_weights_path.name}"
         )
 

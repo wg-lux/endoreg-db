@@ -21,7 +21,7 @@ class AIDataSetFrameBucketDistributionTests(TestCase):
         self.center = Center.objects.create(name="dataset-bucket-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="dataset-bucket-video",
+            raw_video_hash="dataset-bucket-video",
             original_file_name="dataset_bucket.mp4",
             fps=25.0,
             frame_count=4,

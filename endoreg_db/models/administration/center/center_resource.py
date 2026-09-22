@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...other.emission import EmissionFactor
-
-NoCenterResourceValue: TypeAlias = None
-CenterResourceName: TypeAlias = str | NoCenterResourceValue
 
 
 class CenterResource(models.Model):
@@ -26,21 +23,21 @@ class CenterResource(models.Model):
         "Resource",
         on_delete=models.CASCADE,
     )
-    transport_emission_factor: models.ForeignKey[
-        EmissionFactor | NoCenterResourceValue | None
-    ] = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="center_resource_transport_emission_factor",
+    transport_emission_factor: models.ForeignKey[EmissionFactor | None | None] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="center_resource_transport_emission_factor",
+        )
     )
-    use_emission_factor: models.ForeignKey[
-        EmissionFactor | NoCenterResourceValue | None
-    ] = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="center_resource_use_emission_factor",
+    use_emission_factor: models.ForeignKey[EmissionFactor | None | None] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="center_resource_use_emission_factor",
+        )
     )
     year: models.IntegerField[Any, Any] = models.IntegerField()
     unit: models.ForeignKey[Any] = models.ForeignKey(

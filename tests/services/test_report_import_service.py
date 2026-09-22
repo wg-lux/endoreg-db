@@ -8,6 +8,7 @@ with text/anonymization pipeline.
 import logging
 import os
 import tempfile
+from datetime import date
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -24,7 +25,14 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
 )
-from tests.helpers.default_objects import get_default_center, get_default_processor
+from tests.helpers.default_objects import (
+    DEFAULT_PATIENT_BIRTH_DATE,
+    DEFAULT_PATIENT_FIRST_NAME,
+    DEFAULT_PATIENT_GENDER_NAME,
+    DEFAULT_PATIENT_LAST_NAME,
+    get_default_center,
+    get_default_processor,
+)
 
 # Environment-based test control (mirror video tests)
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -158,6 +166,20 @@ class TestReportImportService(TransactionTestCase):
             self.assertIsNotNone(raw_pdf.sensitive_meta_id)
             sensitive_meta = raw_pdf.sensitive_meta
             assert sensitive_meta is not None
+            # This document contains no identity; resolve reviewed metadata before
+            # promoting the imported artifact into a patient-linked report.
+            self.assertIsNone(sensitive_meta.pseudo_patient_id)
+            self.assertIsNone(sensitive_meta.pseudo_examination_id)
+            sensitive_meta.update_from_dict(
+                {
+                    "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
+                    "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
+                    "patient_dob": DEFAULT_PATIENT_BIRTH_DATE,
+                    "patient_gender": DEFAULT_PATIENT_GENDER_NAME,
+                    "examination_date": date(2024, 2, 15),
+                }
+            )
+            sensitive_meta.refresh_from_db()
             self.assertIsNotNone(sensitive_meta.pseudo_patient_id)
 
             raw_pdf.examination = PatientExamination.objects.create(

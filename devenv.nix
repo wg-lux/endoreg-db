@@ -129,7 +129,7 @@ in
     uv = {
       enable = true;
       package = uvPackage;
-      sync.enable = false;
+      sync.enable = true;
     };
   };
 
@@ -172,7 +172,7 @@ in
         pythonApp = pythonSet.mkVirtualEnv "endoreg_db-env" workspace.deps.default;
         nativeDrv = pkgs.rustPlatform.buildRustPackage {
           pname = "rust_endoreg_rust_backend";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./rust/endoreg_rust_backend;
           cargoLock.lockFile = ./rust/endoreg_rust_backend/Cargo.lock;
           cargoBuildFlags = [ "--lib" ];
@@ -182,7 +182,7 @@ in
         };
         nativeLibDrv = lib.getLib nativeDrv;
 
-        nativeApp = pkgs.runCommand "endoreg-rust-backend-0.1.0" { } ''
+        nativeApp = pkgs.runCommand "endoreg-rust-backend-0.1.1" { } ''
           mkdir -p "$out/${python.sitePackages}"
           native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'libendoreg_rust_backend*.so' | head -n 1)"
           test -n "$native_lib"
@@ -204,7 +204,6 @@ in
     );
 
   scripts = {
-
     export-nix-vars.exec = ''
       cat > .devenv-vars.json << EOF
       {
@@ -251,7 +250,7 @@ in
   tasks = {
     "env:build" = {
       description = "Generate/update .env file with secrets and config";
-      exec = "export-nix-vars && uv run env_setup.py";
+      exec = "export-nix-vars";
     };
     "env:clean" = {
       description = "Remove the uv virtual environment and lock file for a clean sync";

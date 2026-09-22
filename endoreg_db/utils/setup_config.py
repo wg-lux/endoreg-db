@@ -19,6 +19,7 @@ from lx_dtypes.models.contracts.setup_config import (
     SetupConfigModelSpecificEntryPayload,
     SetupConfigModelSpecificDataPayload,
 )
+from endoreg_db.utils.paths import get_runtime_paths
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class SetupConfig:
                 "tests/assets",
                 "assets",
                 "model_weights",
-                "${STORAGE_DIR}/model_weights",
+                str(get_runtime_paths().weights),
             ],
             auto_generation_defaults=SetupConfigAutoGenerationDefaultsPayload(
                 activation="sigmoid",

@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypeAlias, TypedDict, Unpack
+from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from endoreg_db.models.administration.center.center import Center
@@ -23,13 +23,10 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
 )
 from endoreg_db.utils.paths import (
-    SAP_IMPORT_DROP_DIR,
-    WATCHER_PREANONYMIZED_DROP_DIR,
     build_manifest_path,
-    ensure_within_data_root,
+    ensure_within_runtime_root,
+    get_runtime_paths,
 )
-
-JsonNull: TypeAlias = None
 
 
 class ImportSapIshZipOptions(TypedDict):
@@ -54,8 +51,8 @@ class ImportSapIshManifest(TypedDict):
     zip_path: str
     output_dir: str
     source_system: str
-    center_name: str | JsonNull
-    center_key: str | JsonNull
+    center_name: str | None
+    center_key: str | None
     process: bool
     generated_files: list[ImportSapIshGeneratedFileManifest]
     matched_source_files: list[str]
@@ -67,31 +64,31 @@ class ImportSapIshZipRequest:
     zip_path: Path
     output_dir: Path
     source_system: str
-    center_name: str | JsonNull
-    center_key: str | JsonNull
+    center_name: str | None
+    center_key: str | None
     should_process: bool
     manifest_path_raw: str
 
 
 def _resolve_declared_upload_center(
     *,
-    center_key: str | JsonNull,
-    center_name: str | JsonNull,
-) -> tuple[Center | JsonNull, str | JsonNull]:
+    center_key: str | None,
+    center_name: str | None,
+) -> tuple[Center | None, str | None]:
     return resolve_declared_upload_center(
         center_key=center_key,
         center_name=center_name,
     )
 
 
-def _resolve_default_center() -> Center | JsonNull:
+def _resolve_default_center() -> Center | None:
     return resolve_default_center()
 
 
 def _process_preanonymized_watcher_file(
     *,
     file_path: Path,
-    center: Center | JsonNull,
+    center: Center | None,
     source_system: str,
 ) -> None:
     process_preanonymized_watcher_file(
@@ -104,7 +101,7 @@ def _process_preanonymized_watcher_file(
 def _resolve_request(options: ImportSapIshZipOptions) -> ImportSapIshZipRequest:
     return ImportSapIshZipRequest(
         zip_path=Path(options["zip_path"]).expanduser().resolve(),
-        output_dir=ensure_within_data_root(
+        output_dir=ensure_within_runtime_root(
             Path(options["output_dir"]).expanduser().resolve()
         ),
         source_system=options["source_system"].strip() or "sap_ish",
@@ -118,7 +115,7 @@ def _resolve_request(options: ImportSapIshZipOptions) -> ImportSapIshZipRequest:
 def _validate_archive(command: BaseCommand, request: ImportSapIshZipRequest) -> None:
     if not request.zip_path.exists():
         raise CommandError(f"Zip archive does not exist: {request.zip_path}")
-    if not request.zip_path.is_relative_to(SAP_IMPORT_DROP_DIR):
+    if not request.zip_path.is_relative_to(get_runtime_paths().sap_import_drop):
         command.stdout.write(
             command.style.WARNING(
                 f"SAP archive is outside managed sap drop tier: {request.zip_path}"
@@ -128,7 +125,7 @@ def _validate_archive(command: BaseCommand, request: ImportSapIshZipRequest) -> 
 
 def _resolve_processing_center(
     request: ImportSapIshZipRequest,
-) -> Center | JsonNull:
+) -> Center | None:
     if request.center_name or request.center_key:
         center, center_resolution_error = _resolve_declared_upload_center(
             center_key=request.center_key,
@@ -171,7 +168,7 @@ def _process_generated_files(
     *,
     request: ImportSapIshZipRequest,
     result: SapIshImportResult,
-    center: Center | JsonNull,
+    center: Center | None,
 ) -> None:
     if not request.should_process:
         return
@@ -192,7 +189,7 @@ def _process_generated_files(
 
 def _resolve_manifest_path(request: ImportSapIshZipRequest) -> Path:
     if request.manifest_path_raw:
-        return ensure_within_data_root(
+        return ensure_within_runtime_root(
             Path(request.manifest_path_raw).expanduser().resolve()
         )
     return build_manifest_path(
@@ -262,10 +259,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--output_dir",
             type=str,
-            default=str(WATCHER_PREANONYMIZED_DROP_DIR),
+            default=str(get_runtime_paths().watcher_preanonymized_drop),
             help=(
                 "Directory for generated watcher-ready .txt/.json pairs. "
-                f"Default: {WATCHER_PREANONYMIZED_DROP_DIR}"
+                f"Default: {get_runtime_paths().watcher_preanonymized_drop}"
             ),
         )
         parser.add_argument(

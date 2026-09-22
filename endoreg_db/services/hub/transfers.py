@@ -72,10 +72,9 @@ from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
     ensure_directory,
     safe_delete_field_file,
-    sha256_file,
 )
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.paths import TRANSCODING_DIR
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
 from endoreg_db.utils.structured_logging import hash_identifier
 from .ingest import _default_processor_name
@@ -1092,13 +1091,13 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         video = (
             VideoFile.objects.select_for_update(of=("self",))
             .select_related("state", "sensitive_meta")
-            .filter(video_hash=transfer_job.resource_hash)
+            .filter(raw_video_hash=transfer_job.resource_hash)
             .first()
         )
 
         if video is None:
             video = VideoFile(
-                video_hash=transfer_job.resource_hash,
+                raw_video_hash=transfer_job.resource_hash,
                 center=source_center,
             )
         else:
@@ -1333,7 +1332,7 @@ def _attach_video_transfer_media(
     suffix = _normalized_suffix(upload_name, video.suffix or ".mp4")
 
     if media_role == "raw":
-        actual_hash = sha256_file(temp_path)
+        actual_hash = get_file_hash(temp_path)
         if actual_hash != transfer_job.resource_hash:
             raise ValueError(
                 "Uploaded raw video hash does not match transfer resource_hash"
@@ -1380,7 +1379,7 @@ def _attach_video_transfer_media(
             "Processed video upload requires video_file.processed_video_hash in transfer metadata"
         )
 
-    actual_hash = sha256_file(temp_path)
+    actual_hash = get_file_hash(temp_path)
     if actual_hash != expected_hash:
         raise ValueError(
             "Uploaded processed video hash does not match the expected processed_video_hash"
@@ -1430,7 +1429,7 @@ def _attach_report_transfer_media(
     report = _get_transfer_report(transfer_job)
 
     if media_role == "raw":
-        actual_hash = get_pdf_hash(temp_path)
+        actual_hash = get_file_hash(temp_path)
         if actual_hash != transfer_job.resource_hash:
             raise ValueError(
                 "Uploaded raw report hash does not match transfer resource_hash"
@@ -1469,7 +1468,7 @@ def _attach_report_transfer_media(
             "Processed report upload requires "
             "raw_pdf_state.processed_file_sha256 in transfer metadata"
         )
-    actual_hash = get_pdf_hash(temp_path)
+    actual_hash = get_file_hash(temp_path)
     if actual_hash != expected_hash:
         raise ValueError(
             "Uploaded processed report hash does not match the expected "
@@ -1659,7 +1658,7 @@ def _handle_report_processing_after_raw_upload(
     import_path: Path,
 ) -> TransferJob:
     sender_success = _sender_processing_success(transfer_job)
-    local_processed_present = report.anonymized_file_path is not None
+    local_processed_present = report.processed_file.exists()
 
     if (
         transfer_job.processing_policy
@@ -1930,10 +1929,12 @@ def _stored_field_name(field_file: object) -> str:
 def _write_uploaded_file_to_temp(
     *, uploaded_file: UploadedFile, default_suffix: str
 ) -> Path:
-    ensure_directory(TRANSCODING_DIR)
+    ensure_directory(get_runtime_paths().transcoding)
     upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
     suffix = _normalized_suffix(upload_name, default_suffix)
-    destination = TRANSCODING_DIR / f"hub-upload-{uuid.uuid4().hex}{suffix}"
+    destination = (
+        get_runtime_paths().transcoding / f"hub-upload-{uuid.uuid4().hex}{suffix}"
+    )
     content = (
         cast(Iterable[bytes], uploaded_file.chunks())
         if hasattr(uploaded_file, "chunks")
@@ -1998,7 +1999,7 @@ def _get_transfer_video(transfer_job: TransferJob) -> VideoFile:
     if transfer_job.target_object_id is not None:
         video = queryset.filter(pk=transfer_job.target_object_id).first()
     if video is None:
-        video = queryset.filter(video_hash=transfer_job.resource_hash).first()
+        video = queryset.filter(raw_video_hash=transfer_job.resource_hash).first()
     if video is None:
         raise ValueError("Transfer target video could not be resolved")
     return video
@@ -2056,12 +2057,12 @@ def _mark_video_transfer_as_processed(video: VideoFile) -> None:
             "date_modified",
         ]
     )
-    ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
+    ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
 
 
 def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
     state = get_or_create_raw_pdf_state(report)
-    actual_hash = sha256_file(report.processed_file)
+    actual_hash = get_file_hash(report.processed_file)
     state.processing_started = True
     state.anonymized = True
     state.sensitive_meta_processed = True
@@ -2112,10 +2113,10 @@ def _apply_frame_annotation_rows(
         return
 
     for row in rows:
-        row_video_hash = str(row.get("video_hash") or "").strip()
-        if row_video_hash and row_video_hash != video.video_hash:
+        row_video_hash = str(row.get("raw_video_hash") or "").strip()
+        if row_video_hash and row_video_hash != video.raw_video_hash:
             raise ValueError(
-                "resource_rows.frame_annotations video_hash does not match transfer video"
+                "resource_rows.frame_annotations raw_video_hash does not match transfer video"
             )
 
         frame_number = _json_int(
@@ -2217,10 +2218,10 @@ def _upsert_video_segment_row(
         raise ValueError(
             "resource_rows.video_segments source_node_key does not match transfer"
         )
-    row_video_hash = str(row["video_hash"]).strip()
-    if row_video_hash != video.video_hash:
+    row_video_hash = str(row["raw_video_hash"]).strip()
+    if row_video_hash != video.raw_video_hash:
         raise ValueError(
-            "resource_rows.video_segments video_hash does not match transfer video"
+            "resource_rows.video_segments raw_video_hash does not match transfer video"
         )
 
     source_segment_id = str(row["source_segment_id"]).strip()

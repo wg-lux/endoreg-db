@@ -10,7 +10,7 @@ from .video_file import VideoFile
 
 
 class _VideoHashSource(Protocol):
-    video_hash: str
+    raw_video_hash: str
 
 
 class VideoMetadata(models.Model):
@@ -61,7 +61,7 @@ class VideoMetadata(models.Model):
         sensitive_frame_count = self.sensitive_frame_count or 0
         video = cast(_VideoHashSource, self.video)
         return (
-            f"Metadata for {video.video_hash} "
+            f"Metadata for {video.raw_video_hash} "
             f"({sensitive_frame_count} sensitive frames)"
         )
 

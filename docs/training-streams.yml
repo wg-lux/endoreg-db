@@ -21,10 +21,11 @@ security:
   - Each access queries current frame identity within the allowed IDs and rechecks processed-media clinical and integrity gates.
   - The persisted frame number and timestamp are passed to the existing decoder without deriving coordinates from frame rate.
   - Raw files and extracted cache paths are never read by the provider.
-  - The protected storage helper authenticates and decrypts the processed video within its existing restrictive temporary scope.
-  - Video materialization is cleaned before JPEG bytes are yielded; frames remain in memory and streams close on success and failure.
+  - Protected storage authenticates and decrypts requested processed-video byte ranges through the scoped loopback HTTP server; no plaintext video file is materialized.
+  - Request threads and the loopback server close before JPEG bytes are yielded or a consumer failure propagates; frames remain in memory.
   - Wrong-key, tamper, decoder and cleanup failures propagate without falling back to raw media or caches.
-  - No network client, credentials, master keys, or new transport policy are introduced.
+  - Storage failures cross the request-thread boundary and are re-raised to the consumer after cleanup, taking precedence over secondary decoder errors.
+  - The HTTP source binds only to loopback and requires its per-context token; master keys stay inside the storage backend.
 usage: |
   from lx_ai_core.training import TrainingDatasetManifest
   from endoreg_db.services.frames.training_images import streamed_training_dataset
@@ -41,6 +42,6 @@ usage: |
 limits:
   - Frames are fetched lazily on each indexed access, including subsequent epochs.
   - The core loader limits encoded bytes and decoded pixels per frame.
-  - The existing storage helper materializes one processed video for each read; this is not range-based encrypted-video decoding.
+  - Encrypted storage must support seekable decrypted byte ranges; unsupported storage fails without a materialization fallback.
   - Choose training transforms, groupwise splits, batch size and worker configuration in the training caller.
   - Installed lx-annotate wheels require their normal dependency refresh before these source changes affect that application.

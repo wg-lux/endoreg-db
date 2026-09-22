@@ -1,41 +1,33 @@
 """
-Centralized path management for the application.
+Canonical runtime path topology for EndoReg-DB.
 
-The module exposes the historical path constants plus a dict-like ``data_paths``
-mapping, but uses a Pydantic model as the single source of truth so path
-resolution and directory bootstrap stay consistent.
+All application-owned paths derive from exactly one external configuration
+value: ``LX_RUNTIME_ROOT``.
+
+This module does not read legacy path aliases, rewrite environment variables,
+or export generated module-level path constants. Callers should use
+``get_runtime_paths()`` and typed model attributes.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from enum import StrEnum
+from functools import lru_cache
 from logging import getLogger
 from pathlib import Path
-from typing import ClassVar
 
 from lx_dtypes.models.base.file.pydantic.FilesAndDirs import FilesAndDirsModel
 
 from endoreg_db.config.env import (
-    BASE_DIR,
-    DATA_DIR_ENV,
-    DJANGO_SETTINGS_MODULE,
-    PROTECTED_MEDIA_ROOT_ENV,
-    PROTECTED_ROOT_ENV,
-    STORAGE_DIR_ENV,
-    TEST_DATA_ROOT,
-    TEST_PROTECTED_ROOT,
-    env_path,
+    DEFAULT_DJANGO_SETTINGS_MODULE,
+    DJANGO_SETTINGS_MODULE_ENV,
+    RUNTIME_ROOT_ENV,
+    get_runtime_root,
 )
 
-# Directory topology is split between a protected storage root and a data root.
-# Watcher intake lives under data/import; managed media lives under storage.
-# It is possible to set up one directory inside the other.
-
 logger = getLogger(__name__)
-
-PREFIX_RAW = "raw_"
 
 IMPORT_DIR_NAME = "import"
 EXPORT_DIR_NAME = "export"
@@ -54,7 +46,7 @@ SENSITIVE_REPORT_DIR_NAME = "sensitive_reports"
 ANONYM_VIDEO_DIR_NAME = "processed_videos_final"
 ANONYM_REPORT_DIR_NAME = "processed_reports_final"
 
-RAW_FRAME_DIR_NAME = f"{PREFIX_RAW}frames"
+RAW_FRAME_DIR_NAME = "raw_frames"
 FRAME_DIR_NAME = "frames"
 WEIGHTS_DIR_NAME = "model_weights"
 LOG_DIR_NAME = "logs"
@@ -63,21 +55,39 @@ MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
 
 
-class EndoregPathsModel(FilesAndDirsModel):
-    """Pydantic-backed container for all application directories."""
+def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
+    deduped: list[Path] = []
+    for path in paths:
+        if path not in deduped:
+            deduped.append(path)
+    return deduped
 
-    protected_root: Path
+
+def _ensure_directory(path: Path) -> Path:
+    from endoreg_db.utils.file_operations import ensure_directory
+
+    return ensure_directory(path)
+
+
+class EndoregPathsModel(FilesAndDirsModel):
+    """Typed application path topology derived from one runtime root."""
+
+    runtime_root: Path
     storage: Path
-    data: Path
+    terminology: Path
+
     import_dir: Path
     export_dir: Path
+
     import_video: Path
     import_report: Path
     import_preanonymized: Path
     import_anonymized_video: Path
     import_anonymized_report: Path
+
     video_export: Path
     report_export: Path
+
     documents: Path
     transcoding: Path
     sensitive_video: Path
@@ -87,53 +97,74 @@ class EndoregPathsModel(FilesAndDirsModel):
     raw_frame: Path
     frame: Path
     weights: Path
+
     weights_import: Path
     weights_export: Path
     import_frame: Path
     frame_export: Path
+
     logs: Path
     quarantine: Path
     migration_staging: Path
     manifest_dir: Path
+
     upload_api: Path
     upload_watcher: Path
     upload_preanonymized: Path
+
     watcher_video_drop: Path
     watcher_report_drop: Path
     watcher_preanonymized_drop: Path
+
     sap_import_drop: Path
     sap_import_processed: Path
     sap_import_failed: Path
+
     ingest_uploads: Path
     ingest_preanonymized: Path
+
     managed_anonymized_videos: Path
     managed_anonymized_reports: Path
     managed_sensitive_sidecars: Path
+
     quarantine_failed: Path
     staging_migration: Path
     test: Path
 
-    legacy_key_map: ClassVar[dict[str, str]] = {}
+    lx_anonymizer_eval: Path
+    streamable_videos_root: Path
+    streamable_videos_raw_media: Path
+    streamable_videos_processed_media: Path
+
+    locks: Path
 
     @classmethod
-    def from_environment(cls) -> "EndoregPathsModel":
-        protected_root = _resolve_protected_root()
-        data_dir = _resolve_data_root()
-        storage_dir = _resolve_protected_subdir(
-            env_key=STORAGE_DIR_ENV,
-            default_path=protected_root / "storage",
-            protected_root=protected_root,
-        )
-        import_dir = data_dir / IMPORT_DIR_NAME
-        migration_staging_dir = data_dir / MIGRATION_STAGING_DIR_NAME
-        export_dir = data_dir / EXPORT_DIR_NAME
-        quarantine_dir = data_dir / QUARANTINE_DIR_NAME
-        upload_jobs_dir = storage_dir / "upload_jobs"
+    def from_root(cls, runtime_root: Path) -> "EndoregPathsModel":
+        root = runtime_root.expanduser()
+
+        if not root.is_absolute():
+            raise ValueError("runtime_root must be absolute")
+
+        root = root.resolve()
+
+        storage = root / "storage"
+        terminology = root / "terminology"
+
+        import_dir = root / IMPORT_DIR_NAME
+        export_dir = root / EXPORT_DIR_NAME
+        quarantine_dir = root / QUARANTINE_DIR_NAME
+        migration_staging_dir = root / MIGRATION_STAGING_DIR_NAME
+        upload_jobs_dir = storage / "upload_jobs"
+        test = storage / "test"
+        lx_anonymizer_eval = storage / "lx_anonymizer_eval"
+        streamable_videos_root = storage / "streamable_videos"
+
+        locks = storage / "locks"
 
         path_values = {
-            "protected_root": protected_root,
-            "storage": storage_dir,
-            "data": data_dir,
+            "runtime_root": root,
+            "storage": storage,
+            "terminology": terminology,
             "import_dir": import_dir,
             "export_dir": export_dir,
             "import_video": import_dir / IMPORT_VIDEO_DIR_NAME,
@@ -143,20 +174,20 @@ class EndoregPathsModel(FilesAndDirsModel):
             "import_anonymized_report": import_dir / ANONYMIZED_REPORT_IMPORT_DIR_NAME,
             "video_export": export_dir / VIDEO_EXPORT_DIR_NAME,
             "report_export": export_dir / REPORT_EXPORT_DIR_NAME,
-            "documents": storage_dir / "documents",
-            "transcoding": storage_dir / "temp",
-            "sensitive_video": storage_dir / SENSITIVE_VIDEO_DIR_NAME,
-            "sensitive_report": storage_dir / SENSITIVE_REPORT_DIR_NAME,
-            "anonym_video": storage_dir / ANONYM_VIDEO_DIR_NAME,
-            "anonym_report": storage_dir / ANONYM_REPORT_DIR_NAME,
-            "raw_frame": storage_dir / RAW_FRAME_DIR_NAME,
-            "frame": storage_dir / FRAME_DIR_NAME,
-            "weights": storage_dir / WEIGHTS_DIR_NAME,
+            "documents": storage / "documents",
+            "transcoding": storage / "temp",
+            "sensitive_video": storage / SENSITIVE_VIDEO_DIR_NAME,
+            "sensitive_report": storage / SENSITIVE_REPORT_DIR_NAME,
+            "anonym_video": storage / ANONYM_VIDEO_DIR_NAME,
+            "anonym_report": storage / ANONYM_REPORT_DIR_NAME,
+            "raw_frame": storage / RAW_FRAME_DIR_NAME,
+            "frame": storage / FRAME_DIR_NAME,
+            "weights": storage / WEIGHTS_DIR_NAME,
             "weights_import": import_dir / WEIGHTS_DIR_NAME,
             "weights_export": export_dir / WEIGHTS_DIR_NAME,
             "import_frame": import_dir / FRAME_DIR_NAME,
             "frame_export": export_dir / FRAME_DIR_NAME,
-            "logs": data_dir / LOG_DIR_NAME,
+            "logs": root / LOG_DIR_NAME,
             "quarantine": quarantine_dir,
             "migration_staging": migration_staging_dir,
             "manifest_dir": migration_staging_dir / MANIFEST_DIR_NAME,
@@ -171,49 +202,51 @@ class EndoregPathsModel(FilesAndDirsModel):
             "sap_import_failed": import_dir / "sap_import_failed",
             "ingest_uploads": upload_jobs_dir,
             "ingest_preanonymized": import_dir / PREANONYMIZED_IMPORT_DIR_NAME,
-            "managed_anonymized_videos": storage_dir / ANONYM_VIDEO_DIR_NAME,
-            "managed_anonymized_reports": storage_dir / ANONYM_REPORT_DIR_NAME,
-            "managed_sensitive_sidecars": storage_dir / "sensitive_sidecars",
+            "managed_anonymized_videos": storage / ANONYM_VIDEO_DIR_NAME,
+            "managed_anonymized_reports": storage / ANONYM_REPORT_DIR_NAME,
+            "managed_sensitive_sidecars": storage / "sensitive_sidecars",
             "quarantine_failed": quarantine_dir / "failed",
             "staging_migration": migration_staging_dir,
-            "test": storage_dir / "test",
+            "test": test,
+            "lx_anonymizer_eval": lx_anonymizer_eval,
+            "streamable_videos_root": streamable_videos_root,
+            "streamable_videos_raw_media": streamable_videos_root / "raw",
+            "streamable_videos_processed_media": streamable_videos_root / "processed",
+            "locks": locks,
         }
 
-        instance = cls.model_validate(
+        return cls.model_validate(
             {
-                "dir": storage_dir,
+                "dir": root,
                 "dirs": _dedupe_paths(path_values.values()),
                 **path_values,
             }
         )
-        instance.ensure_directories()
-        return instance
+
+    @classmethod
+    def from_environment(cls) -> "EndoregPathsModel":
+        return cls.from_root(get_runtime_root())
 
     def ensure_directories(self) -> None:
+        """Create the resolved runtime topology explicitly."""
+
         for path in self.dirs:
             _ensure_directory(path)
 
-    def as_dict(self) -> dict[str, Path]:
-        return {key: self[key] for key in self.legacy_key_map}
 
-    def __getitem__(self, key: str) -> Path:
-        try:
-            field_name = self.legacy_key_map[key]
-        except KeyError as exc:
-            raise KeyError(f"Unknown data path key: {key}") from exc
-        return getattr(self, field_name)
+EndoregPathsModel.model_rebuild()
 
-    def __len__(self) -> int:
-        return len(self.legacy_key_map)
 
-    def keys(self) -> Iterable[str]:
-        return self.legacy_key_map.keys()
+@lru_cache(maxsize=1)
+def get_runtime_paths() -> EndoregPathsModel:
+    """Return the process-wide immutable runtime topology."""
 
-    def items(self) -> Iterable[tuple[str, Path]]:
-        return ((key, self[key]) for key in self.legacy_key_map)
+    return EndoregPathsModel.from_environment()
 
-    def values(self) -> Iterable[Path]:
-        return (self[key] for key in self.legacy_key_map)
+
+# Bind the reset hook to the cache itself so test overrides of the public
+# resolver cannot break teardown or leave cached configuration behind.
+clear_runtime_paths_cache: Callable[[], None] = get_runtime_paths.cache_clear
 
 
 class StorageTier(StrEnum):
@@ -238,7 +271,7 @@ class StorageTier(StrEnum):
     QUARANTINE_FAILED = "quarantine_failed"
 
 
-PROTECTED_STORAGE_TIERS: frozenset[StorageTier] = frozenset(
+STORAGE_TIERS: frozenset[StorageTier] = frozenset(
     {
         StorageTier.UPLOAD_API,
         StorageTier.UPLOAD_WATCHER,
@@ -249,229 +282,122 @@ PROTECTED_STORAGE_TIERS: frozenset[StorageTier] = frozenset(
         StorageTier.MANAGED_SENSITIVE_SIDECARS,
     }
 )
+
 STORAGE_TIER_FIELDS: dict[StorageTier, str] = {
     tier: "manifest_dir" if tier == StorageTier.MANIFEST else tier.value
     for tier in StorageTier
 }
 
 
-def _resolve_env_path(raw_value: str) -> Path:
-    candidate = Path(raw_value)
-    if candidate.is_absolute():
-        return candidate.resolve()
-    return (BASE_DIR / candidate).resolve()
-
-
-def _is_relative_to(path: Path, root: Path) -> bool:
-    return path.is_relative_to(root)
-
-
-def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
-    deduped: list[Path] = []
-    for path in paths:
-        if path not in deduped:
-            deduped.append(path)
-    return deduped
-
-
-def _ensure_directory(path: Path) -> Path:
-    from endoreg_db.utils.file_operations import ensure_directory
-
-    return ensure_directory(path)
-
-
-def _legacy_test_roots(*roots: Path) -> list[Path]:
-    if not TEST_PATH_COMPAT_ENABLED:
-        return []
-    return [root.resolve() for root in roots]
-
-
-def _ensure_within_roots(
+def _ensure_within(
     path: str | Path,
     *,
-    roots: Iterable[Path],
+    root: Path,
     label: str,
 ) -> Path:
-    resolved_path = Path(path).resolve()
-    root_list = _dedupe_paths(root.resolve() for root in roots)
-    for root in root_list:
-        if resolved_path.is_relative_to(root):
-            return resolved_path
-    raise ValueError(f"Path {resolved_path} is outside {label} {root_list[0]}")
+    resolved_path = Path(path).expanduser().resolve()
+    resolved_root = root.resolve()
+
+    if not resolved_path.is_relative_to(resolved_root):
+        raise ValueError(f"Path {resolved_path} is outside {label} {resolved_root}")
+
+    return resolved_path
 
 
-def _relative_to_any(path: Path, roots: Iterable[Path]) -> str | None:
-    for root in _dedupe_paths(root.resolve() for root in roots):
-        if path.is_relative_to(root):
-            return path.relative_to(root).as_posix()
-    return None
-
-
-def _test_path_compat_enabled() -> bool:
-    """Allow legacy test roots only for explicit test settings inside data/tests."""
-    if os.environ.get("DJANGO_ENV", "").strip().lower() == "production":
-        return False
-
-    settings_module = os.environ.get("DJANGO_SETTINGS_MODULE", DJANGO_SETTINGS_MODULE)
-    is_test_settings = settings_module in {
-        "endoreg_db.config.settings.test",
-        "tests.settings_test",
-    } or settings_module.endswith(".settings.test")
-    if not is_test_settings:
-        return False
-
-    test_root = (BASE_DIR / "data" / "tests").resolve()
-    protected_root = _resolve_env_path(
-        os.environ.get(PROTECTED_ROOT_ENV, str(TEST_PROTECTED_ROOT))
-    )
-    data_root = _resolve_env_path(os.environ.get(DATA_DIR_ENV, str(TEST_DATA_ROOT)))
-    return _is_relative_to(protected_root, test_root) and _is_relative_to(
-        data_root,
-        test_root,
-    )
-
-
-TEST_PATH_COMPAT_ENABLED = _test_path_compat_enabled()
-
-
-def _resolve_protected_root() -> Path:
-    return env_path(PROTECTED_ROOT_ENV, "data").resolve()
-
-
-def _resolve_data_root() -> Path:
-    return env_path(DATA_DIR_ENV, "data").resolve()
-
-
-def _protected_root_candidates() -> list[Path]:
-    return [
-        _resolve_protected_root(),
-        *_legacy_test_roots(
-            TEST_PROTECTED_ROOT,
-            BASE_DIR / "data" / "tests" / "storage",
-        ),
-    ]
-
-
-def _data_root_candidates() -> list[Path]:
-    return [
-        _resolve_data_root(),
-        *_legacy_test_roots(
-            TEST_DATA_ROOT,
-            BASE_DIR / "data" / "tests" / "storage",
-        ),
-    ]
-
-
-def _resolve_storage_root() -> Path:
-    protected_root = _resolve_protected_root()
-    return _resolve_protected_subdir(
-        env_key=STORAGE_DIR_ENV,
-        default_path=protected_root / "storage",
-        protected_root=protected_root,
-    ).resolve()
-
-
-def _resolve_protected_subdir(
-    *,
-    env_key: str,
-    default_path: Path,
-    protected_root: Path,
-) -> Path:
-    raw_value = os.environ.get(env_key, "").strip()
-    if not raw_value:
-        return default_path
-
-    candidate = _resolve_env_path(raw_value)
-    try:
-        candidate.relative_to(protected_root)
-    except ValueError as exc:
-        raise RuntimeError(
-            f"{env_key} must resolve inside {PROTECTED_ROOT_ENV}: "
-            f"{candidate} is outside {protected_root}"
-        ) from exc
-    return candidate
-
-
-def ensure_within_protected_root(path: str | Path) -> Path:
-    return _ensure_within_roots(
+def ensure_within_runtime_root(path: str | Path) -> Path:
+    return _ensure_within(
         path,
-        roots=_protected_root_candidates(),
-        label="protected data root",
+        root=get_runtime_paths().runtime_root,
+        label="runtime root",
     )
 
 
-def ensure_within_data_root(path: str | Path) -> Path:
-    return _ensure_within_roots(
+def ensure_within_storage_root(path: str | Path) -> Path:
+    return _ensure_within(
         path,
-        roots=_data_root_candidates(),
-        label="data root",
-    )
-
-
-def _resolve_protected_media_root() -> Path:
-    raw_value = os.environ.get(PROTECTED_MEDIA_ROOT_ENV, "").strip()
-    if not raw_value:
-        return _resolve_storage_root()
-    return _ensure_within_roots(
-        _resolve_env_path(raw_value),
-        roots=_protected_root_candidates(),
-        label="protected data root",
+        root=get_runtime_paths().storage,
+        label="storage root",
     )
 
 
 def protected_media_root() -> Path:
-    return _resolve_protected_media_root()
+    """Return the canonical protected-media root."""
+
+    return get_runtime_paths().storage
 
 
 def normalize_protected_media_relative_path(relative_path: str | Path) -> str:
     candidate = Path(str(relative_path or "").strip())
+
     if str(candidate) == "":
         raise ValueError("Protected media path must not be empty")
     if candidate.is_absolute():
         raise ValueError("Protected media path must be relative")
     if any(part in {"", ".", ".."} for part in candidate.parts):
         raise ValueError(f"Protected media path is not safe: {relative_path}")
-    normalized = Path(*candidate.parts).as_posix()
+
+    normalized = candidate.as_posix()
     if normalized in {"", "."}:
         raise ValueError("Protected media path must not be empty")
+
     return normalized
 
 
 def ensure_within_protected_media_root(path: str | Path) -> Path:
-    return _ensure_within_roots(
-        path,
-        roots=[_resolve_protected_media_root()],
-        label="protected media root",
-    )
+    """Semantic alias for the storage security boundary."""
+
+    return ensure_within_storage_root(path)
 
 
 def to_protected_media_relative(path: str | Path) -> str:
-    resolved_path = ensure_within_protected_media_root(path)
-    protected_media_root = _resolve_protected_media_root()
-    return resolved_path.relative_to(protected_media_root).as_posix()
+    resolved_path = ensure_within_storage_root(path)
+    return resolved_path.relative_to(get_runtime_paths().storage).as_posix()
 
 
 def resolve_protected_media_path(relative_path: str | Path) -> Path:
     normalized = normalize_protected_media_relative_path(relative_path)
-    return ensure_within_protected_media_root(
-        _resolve_protected_media_root() / normalized
-    )
+    return ensure_within_storage_root(get_runtime_paths().storage / normalized)
 
 
 def resolve_existing_protected_media_path(path_value: str | Path) -> Path | None:
     candidate = Path(path_value)
 
-    if candidate.is_absolute():
-        try:
-            resolved_absolute = candidate.resolve(strict=True)
-            return ensure_within_protected_media_root(resolved_absolute)
-        except (FileNotFoundError, ValueError):
-            return None
-
     try:
+        if candidate.is_absolute():
+            return ensure_within_storage_root(candidate.resolve(strict=True))
+
         return resolve_protected_media_path(candidate).resolve(strict=True)
     except (FileNotFoundError, ValueError):
         return None
+
+
+def to_storage_relative(path: str | Path) -> str:
+    """Return a Django FileField name relative to the canonical storage root."""
+
+    resolved = ensure_within_storage_root(path)
+    return resolved.relative_to(get_runtime_paths().storage).as_posix()
+
+
+def to_runtime_relative(path: str | Path) -> str:
+    """Return a path relative to the canonical application runtime root."""
+
+    resolved = ensure_within_runtime_root(path)
+    return resolved.relative_to(get_runtime_paths().runtime_root).as_posix()
+
+
+def resolve_runtime_path(relative_path: str | Path) -> Path:
+    """Resolve a safe relative path beneath the canonical runtime root."""
+
+    raw_value = str(relative_path).strip()
+    if not raw_value:
+        raise ValueError("Runtime-relative path must not be empty")
+    candidate = Path(raw_value)
+    if candidate.is_absolute():
+        raise ValueError("Runtime-relative path must be relative")
+    if any(part in {"", ".", ".."} for part in candidate.parts):
+        raise ValueError(f"Runtime-relative path is not safe: {relative_path}")
+
+    return ensure_within_runtime_root(get_runtime_paths().runtime_root / candidate)
 
 
 def _sanitize_path_token(value: str) -> str:
@@ -483,157 +409,9 @@ def _sanitize_path_token(value: str) -> str:
             allowed.append(char)
         else:
             allowed.append("_")
+
     collapsed = "".join(allowed).strip("_")
     return collapsed or "artifact"
-
-
-LEGACY_KEY_EXCLUDE_FIELDS = {"protected_root"}
-LEGACY_KEY_OVERRIDES = {"import_dir": "import", "export_dir": "export"}
-PATH_EXPORT_EXCLUDE_FIELDS = {"test"}
-PATH_EXPORT_OVERRIDES = {
-    "protected_root": "PROTECTED_DATA_ROOT",
-    "documents": "DOCUMENT_DIR",
-    "import_frame": "FRAME_IMPORT_DIR",
-    "logs": "LOG_DIR",
-}
-
-
-def _path_model_field_names() -> tuple[str, ...]:
-    return tuple(
-        field_name
-        for field_name in EndoregPathsModel.__annotations__
-        if field_name != "legacy_key_map"
-    )
-
-
-def _build_legacy_key_map(field_names: Iterable[str]) -> dict[str, str]:
-    return {
-        LEGACY_KEY_OVERRIDES.get(field_name, field_name): field_name
-        for field_name in field_names
-        if field_name not in LEGACY_KEY_EXCLUDE_FIELDS
-    }
-
-
-def _default_export_name(field_name: str) -> str:
-    base_name = field_name.removesuffix("_dir")
-    return f"{base_name.upper()}_DIR"
-
-
-def _build_path_exports(field_names: Iterable[str]) -> dict[str, str]:
-    return {
-        PATH_EXPORT_OVERRIDES.get(
-            field_name, _default_export_name(field_name)
-        ): field_name
-        for field_name in field_names
-        if field_name not in PATH_EXPORT_EXCLUDE_FIELDS
-    }
-
-
-EndoregPathsModel.model_rebuild()
-PATH_MODEL_FIELDS = _path_model_field_names()
-LEGACY_KEY_MAP = _build_legacy_key_map(PATH_MODEL_FIELDS)
-PATH_EXPORTS = _build_path_exports(PATH_MODEL_FIELDS)
-EndoregPathsModel.legacy_key_map = LEGACY_KEY_MAP
-
-# Static declarations for path constants assigned by rebind_path_exports().
-PROTECTED_DATA_ROOT: Path
-STORAGE_DIR: Path
-DATA_DIR: Path
-IMPORT_DIR: Path
-EXPORT_DIR: Path
-IMPORT_VIDEO_DIR: Path
-IMPORT_REPORT_DIR: Path
-IMPORT_PREANONYMIZED_DIR: Path
-IMPORT_ANONYMIZED_VIDEO_DIR: Path
-IMPORT_ANONYMIZED_REPORT_DIR: Path
-VIDEO_EXPORT_DIR: Path
-REPORT_EXPORT_DIR: Path
-DOCUMENT_DIR: Path
-TRANSCODING_DIR: Path
-SENSITIVE_VIDEO_DIR: Path
-SENSITIVE_REPORT_DIR: Path
-ANONYM_VIDEO_DIR: Path
-ANONYM_REPORT_DIR: Path
-RAW_FRAME_DIR: Path
-FRAME_DIR: Path
-WEIGHTS_DIR: Path
-WEIGHTS_IMPORT_DIR: Path
-WEIGHTS_EXPORT_DIR: Path
-FRAME_IMPORT_DIR: Path
-FRAME_EXPORT_DIR: Path
-LOG_DIR: Path
-QUARANTINE_DIR: Path
-MIGRATION_STAGING_DIR: Path
-MANIFEST_DIR: Path
-UPLOAD_API_DIR: Path
-UPLOAD_WATCHER_DIR: Path
-UPLOAD_PREANONYMIZED_DIR: Path
-WATCHER_VIDEO_DROP_DIR: Path
-WATCHER_REPORT_DROP_DIR: Path
-WATCHER_PREANONYMIZED_DROP_DIR: Path
-SAP_IMPORT_DROP_DIR: Path
-SAP_IMPORT_PROCESSED_DIR: Path
-SAP_IMPORT_FAILED_DIR: Path
-INGEST_UPLOADS_DIR: Path
-INGEST_PREANONYMIZED_DIR: Path
-MANAGED_ANONYMIZED_VIDEOS_DIR: Path
-MANAGED_ANONYMIZED_REPORTS_DIR: Path
-MANAGED_SENSITIVE_SIDECARS_DIR: Path
-QUARANTINE_FAILED_DIR: Path
-STAGING_MIGRATION_DIR: Path
-
-
-def rebind_path_exports(model: EndoregPathsModel) -> None:
-    for export_name, field_name in PATH_EXPORTS.items():
-        globals()[export_name] = getattr(model, field_name)
-
-
-data_paths_model = EndoregPathsModel.from_environment()
-data_paths = data_paths_model
-rebind_path_exports(data_paths_model)
-
-logger.debug("Protected data root: %s", data_paths_model.protected_root.resolve())
-logger.debug("Data directory: %s", data_paths_model.data.resolve())
-logger.debug("Encrypted storage directory: %s", data_paths_model.storage.resolve())
-logger.debug("Export directory: %s", data_paths_model.export_dir.resolve())
-
-
-def to_storage_relative(path: str | Path) -> str:
-    """
-    Return a path string relative to STORAGE_DIR, suitable for Django FileField.name.
-
-    Local DATA_DIR paths are returned relative to DATA_DIR. If ``path`` is
-    outside STORAGE_DIR and DATA_DIR, protected-root paths are returned
-    unchanged after validation.
-    """
-    original_path = str(path)
-    resolved_path = Path(path).resolve()
-    current_paths = EndoregPathsModel.from_environment()
-    legacy_storage = BASE_DIR / "data" / "tests" / "storage"
-    relative_path = _relative_to_any(
-        resolved_path,
-        [current_paths.storage, *_legacy_test_roots(legacy_storage)],
-    )
-    if relative_path is not None:
-        return relative_path
-
-    relative_path = _relative_to_any(
-        resolved_path,
-        [current_paths.data, *_legacy_test_roots(TEST_DATA_ROOT, legacy_storage)],
-    )
-    if relative_path is not None:
-        return relative_path
-
-    ensure_within_protected_root(resolved_path)
-    return original_path
-
-
-def to_protected_relative(path: str | Path) -> str:
-    return (
-        ensure_within_protected_root(path)
-        .relative_to(EndoregPathsModel.from_environment().protected_root.resolve())
-        .as_posix()
-    )
 
 
 def _coerce_storage_tier(tier: str | StorageTier) -> StorageTier:
@@ -646,86 +424,21 @@ def _coerce_storage_tier(tier: str | StorageTier) -> StorageTier:
 
 def get_storage_tier_root(tier: str | StorageTier) -> Path:
     tier_key = _coerce_storage_tier(tier)
-    current_paths = EndoregPathsModel.from_environment()
-    return getattr(current_paths, STORAGE_TIER_FIELDS[tier_key])
+    return getattr(get_runtime_paths(), STORAGE_TIER_FIELDS[tier_key])
 
 
-def validate_runtime_storage_contract() -> None:
-    protected_root_env = os.environ.get(PROTECTED_ROOT_ENV, "").strip()
-    django_env = os.environ.get("DJANGO_ENV", "").strip().lower()
-    is_production = django_env == "production"
-    current_paths = EndoregPathsModel.from_environment()
-
-    if not protected_root_env:
-        raise RuntimeError(
-            f"{PROTECTED_ROOT_ENV} must be set for the protected runtime contract."
-        )
-
-    protected_paths_to_validate = {
-        "protected_root": current_paths.protected_root,
-        "storage": current_paths.storage,
-        "upload_api": current_paths.upload_api,
-        "upload_watcher": current_paths.upload_watcher,
-        "upload_preanonymized": current_paths.upload_preanonymized,
-    }
-    public_paths_to_validate = {
-        "data_root": current_paths.data,
-        "import": current_paths.import_dir,
-        "export": current_paths.export_dir,
-        "logs": current_paths.logs,
-        "quarantine": current_paths.quarantine,
-        "migration_staging": current_paths.migration_staging,
-        "manifest": current_paths.manifest_dir,
-        "watcher_video_drop": current_paths.watcher_video_drop,
-        "watcher_report_drop": current_paths.watcher_report_drop,
-        "watcher_preanonymized_drop": current_paths.watcher_preanonymized_drop,
-        "sap_import_drop": current_paths.sap_import_drop,
-        "sap_import_processed": current_paths.sap_import_processed,
-        "sap_import_failed": current_paths.sap_import_failed,
-    }
-    for label, path in protected_paths_to_validate.items():
-        try:
-            ensure_within_protected_root(path)
-        except ValueError as exc:
-            raise RuntimeError(
-                f"Runtime storage contract invalid for {label}: {exc}"
-            ) from exc
-    for label, path in public_paths_to_validate.items():
-        try:
-            ensure_within_data_root(path)
-        except ValueError as exc:
-            raise RuntimeError(
-                f"Runtime data contract invalid for {label}: {exc}"
-            ) from exc
-
-    for label, path in {
-        **protected_paths_to_validate,
-        **public_paths_to_validate,
-    }.items():
-        if not path.exists():
-            if TEST_PATH_COMPAT_ENABLED:
-                _ensure_directory(path)
-                continue
-            raise RuntimeError(
-                f"Runtime storage path does not exist for {label}: {path}"
-            )
-        if not os.access(path, os.W_OK):
-            raise RuntimeError(
-                f"Runtime storage path is not writable for {label}: {path}"
-            )
-        if is_production and BASE_DIR.resolve() in path.resolve().parents:
-            raise RuntimeError(
-                f"Production storage path for {label} must not resolve inside repo root: {path}"
-            )
-
-
-def resolve_storage_tier_path(tier: str | StorageTier, *parts: str | Path) -> Path:
+def resolve_storage_tier_path(
+    tier: str | StorageTier,
+    *parts: str | Path,
+) -> Path:
     tier_key = _coerce_storage_tier(tier)
     root = get_storage_tier_root(tier_key)
-    candidate = root.joinpath(*[str(part) for part in parts]).resolve()
-    if tier_key in PROTECTED_STORAGE_TIERS:
-        return ensure_within_protected_root(candidate)
-    return ensure_within_data_root(candidate)
+    candidate = root.joinpath(*(str(part) for part in parts)).resolve()
+
+    if tier_key in STORAGE_TIERS:
+        return ensure_within_storage_root(candidate)
+
+    return ensure_within_runtime_root(candidate)
 
 
 def build_upload_job_relative_path(
@@ -734,22 +447,28 @@ def build_upload_job_relative_path(
     filename: str,
     key: str,
 ) -> str:
+    tier_key = _coerce_storage_tier(tier)
+    if tier_key not in STORAGE_TIERS:
+        raise ValueError(
+            f"Upload job tier must be storage-backed, got {tier_key.value!r}"
+        )
+
     sanitized_name = Path(filename).name or "upload.bin"
-    current_storage_root = EndoregPathsModel.from_environment().storage.resolve()
-    relative_path = resolve_storage_tier_path(
-        tier,
+    candidate = resolve_storage_tier_path(
+        tier_key,
         key[:2] or "00",
         key,
         sanitized_name,
-    ).relative_to(current_storage_root)
-    return relative_path.as_posix()
+    )
+    return candidate.relative_to(get_runtime_paths().storage).as_posix()
 
 
 def build_manifest_path(*, command_name: str, stem: str) -> Path:
     command_token = _sanitize_path_token(command_name)
     stem_token = _sanitize_path_token(stem)
+
     return resolve_storage_tier_path(
-        "manifest",
+        StorageTier.MANIFEST,
         command_token,
         f"{stem_token}.json",
     )
@@ -760,6 +479,107 @@ def resolve_protected_runtime_path(
     *,
     fallback: Path,
 ) -> Path:
+    """Resolve an optional runtime path under the canonical runtime root.
+
+    ``fallback`` must itself be inside the runtime root. Explicit values may be
+    absolute or runtime-relative, but they may never escape the runtime root.
+    """
+
+    fallback_path = ensure_within_runtime_root(fallback)
+
     if raw_path in (None, ""):
-        return Path(fallback).expanduser().resolve()
-    return ensure_within_protected_root(_resolve_env_path(str(raw_path)))
+        return fallback_path
+
+    candidate = Path(str(raw_path)).expanduser()
+    if not candidate.is_absolute():
+        candidate = get_runtime_paths().runtime_root / candidate
+
+    return ensure_within_runtime_root(candidate)
+
+
+def _is_production_runtime() -> bool:
+    settings_module = os.environ.get(
+        DJANGO_SETTINGS_MODULE_ENV,
+        DEFAULT_DJANGO_SETTINGS_MODULE,
+    ).strip()
+
+    return (
+        os.environ.get("DJANGO_ENV", "").strip().lower() == "production"
+        or settings_module.endswith(".prod")
+        or settings_module.endswith(".settings_prod")
+    )
+
+
+def validate_runtime_storage_contract() -> None:
+    """Validate the one-root runtime topology without repairing it implicitly."""
+
+    paths = get_runtime_paths()
+
+    if _is_production_runtime() and not os.environ.get(RUNTIME_ROOT_ENV, "").strip():
+        raise RuntimeError(
+            f"{RUNTIME_ROOT_ENV} must be explicitly configured in production."
+        )
+
+    storage_paths = {
+        "storage": paths.storage,
+        "upload_api": paths.upload_api,
+        "upload_watcher": paths.upload_watcher,
+        "upload_preanonymized": paths.upload_preanonymized,
+        "managed_anonymized_videos": paths.managed_anonymized_videos,
+        "managed_anonymized_reports": paths.managed_anonymized_reports,
+        "managed_sensitive_sidecars": paths.managed_sensitive_sidecars,
+        "transcoding": paths.transcoding,
+        "streamable_videos_root": paths.streamable_videos_root,
+        "streamable_videos_raw_media": paths.streamable_videos_raw_media,
+        "streamable_videos_processed_media": paths.streamable_videos_processed_media,
+        "lx_anonymizer_eval": paths.lx_anonymizer_eval,
+    }
+
+    for path in paths.dirs:
+        try:
+            ensure_within_runtime_root(path)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Runtime path contract invalid for {path}: {exc}"
+            ) from exc
+        if not path.is_dir():
+            raise RuntimeError(
+                f"Runtime path does not exist or is not a directory: {path}"
+            )
+        if not os.access(path, os.W_OK):
+            raise RuntimeError(f"Runtime path is not writable: {path}")
+
+    for label, path in storage_paths.items():
+        try:
+            ensure_within_storage_root(path)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Storage path contract invalid for {label}: {exc}"
+            ) from exc
+
+
+__all__ = [
+    "EndoregPathsModel",
+    "StorageTier",
+    "STORAGE_TIERS",
+    "STORAGE_TIER_FIELDS",
+    "get_runtime_paths",
+    "clear_runtime_paths_cache",
+    "ensure_within_runtime_root",
+    "ensure_within_storage_root",
+    "protected_media_root",
+    "normalize_protected_media_relative_path",
+    "ensure_within_protected_media_root",
+    "to_protected_media_relative",
+    "resolve_protected_media_path",
+    "resolve_existing_protected_media_path",
+    "to_storage_relative",
+    "to_runtime_relative",
+    "resolve_runtime_path",
+    "get_storage_tier_root",
+    "resolve_storage_tier_path",
+    "build_upload_job_relative_path",
+    "build_manifest_path",
+    "resolve_protected_runtime_path",
+    "validate_runtime_storage_contract",
+]

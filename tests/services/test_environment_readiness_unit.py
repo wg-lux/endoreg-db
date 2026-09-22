@@ -50,8 +50,12 @@ def test_native_report_snapshot_requirement_accepts_matching_capability(
 
 
 def test_path_within_rejects_external_candidate() -> None:
-    assert not readiness._path_within(Path("/tmp/root"), Path("/tmp/other/file"))
-    assert readiness._path_within(Path("/tmp/root"), Path("/tmp/root/sub/file"))
+    root = readiness.get_runtime_paths().runtime_root
+    with pytest.raises(ValueError, match="outside runtime root"):
+        readiness.ensure_within_runtime_root(root.parent / "outside" / "file")
+    assert readiness.ensure_within_runtime_root(root / "sub" / "file") == (
+        root / "sub" / "file"
+    )
 
 
 def test_check_directory_access_reports_missing_and_not_dir() -> None:
@@ -123,4 +127,4 @@ def test_check_protected_media_contract_collects_all_critical_codes(
     assert "protected_media_url_invalid" in codes
     assert "media_url_public_mount" in codes
     assert "media_url_mismatch" in codes
-    assert "protected_media_root_outside_protected_root" in codes
+    assert "protected_media_root_outside_storage_root" in codes

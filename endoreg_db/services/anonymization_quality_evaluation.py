@@ -35,7 +35,7 @@ from endoreg_db.services.anonymization_metrics import (
     annotation_box_rows,
     matched_phi_region_count,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
@@ -684,7 +684,7 @@ def _processed_artifact_sha256(media_obj: VideoFile | RawPdfFile) -> str:
     if not file_exists(processed_file):
         return ""
     try:
-        return sha256_file(processed_file)
+        return get_file_hash(processed_file)
     except Exception:
         logger.warning(
             "Failed to hash processed artifact for %s:%s",
@@ -707,7 +707,9 @@ def _raw_artifact_residual_count(media_obj: VideoFile | RawPdfFile) -> int:
     if isinstance(raw_stream_path, Path) and raw_stream_path.exists():
         count += 1
     content_hash = str(
-        getattr(media_obj, "video_hash", "") or getattr(media_obj, "pdf_hash", "") or ""
+        getattr(media_obj, "raw_video_hash", "")
+        or getattr(media_obj, "pdf_hash", "")
+        or ""
     )
     if content_hash:
         count += _staging_residual_count(content_hash)

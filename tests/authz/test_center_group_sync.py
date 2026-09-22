@@ -173,8 +173,8 @@ def test_oidc_session_overview_tracks_center_and_role_revocation(
 ) -> None:
     north = Center.objects.create(name="North", center_key="north")
     south = Center.objects.create(name="South", center_key="south")
-    north_video = VideoFile.objects.create(center=north, video_hash="oidc-north")
-    south_video = VideoFile.objects.create(center=south, video_hash="oidc-south")
+    north_video = VideoFile.objects.create(center=north, raw_video_hash="oidc-north")
+    south_video = VideoFile.objects.create(center=south, raw_video_hash="oidc-south")
     backend = object.__new__(KeycloakOIDCBackend)
     claims = _claims("oidc-overview-user", ["/centers/north"])
     claims["realm_access"] = {"roles": ["endoregdb_user", "video:read"]}

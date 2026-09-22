@@ -22,6 +22,7 @@ from endoreg_db.models import (
     SensitiveMeta,
     UploadJob,
 )
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.services.hub import process_preanonymized_watcher_file
 from endoreg_db.services.hub.watcher_handoff import WatcherFileNotReadyError
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -43,7 +44,7 @@ def test_preanonymized_video_streamable_sync_failure_is_not_suppressed() -> None
         def mark_anonymization_validated(self) -> None:
             return None
 
-    video = cast(VideoFile, SimpleNamespace(video_hash="video-hash"))
+    video = cast(VideoFile, SimpleNamespace(raw_video_hash="video-hash"))
     mark_preanonymized_video_ready = cast(
         Callable[..., None],
         getattr(ingest_module, "_mark_preanonymized_video_ready"),
@@ -88,8 +89,8 @@ class PreanonymizedWatcherIngestTests(TestCase):
             video_path = temp_dir / "incoming.mp4"
             video_bytes = b"preanonymized-video"
             video_path.write_bytes(video_bytes)
-            video_hash = hashlib.sha256(video_bytes).hexdigest()
-            final_path = processed_dir / f"{video_hash}.mp4"
+            raw_video_hash = hashlib.sha256(video_bytes).hexdigest()
+            final_path = processed_dir / f"{raw_video_hash}.mp4"
 
             with (
                 patch(
@@ -216,8 +217,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
 
             with (
                 patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
+                    "endoreg_db.services.hub.ingest.get_runtime_paths",
+                    return_value=get_runtime_paths().model_copy(
+                        update={"watcher_preanonymized_drop": drop_dir}
+                    ),
                 ),
                 patch(
                     "endoreg_db.services.hub.ingest._quarantine_dir",
@@ -273,8 +276,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
 
             with (
                 patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
+                    "endoreg_db.services.hub.ingest.get_runtime_paths",
+                    return_value=get_runtime_paths().model_copy(
+                        update={"watcher_preanonymized_drop": drop_dir}
+                    ),
                 ),
                 patch(
                     "endoreg_db.services.hub.ingest._quarantine_dir",
@@ -375,8 +380,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
 
             with (
                 patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
+                    "endoreg_db.services.hub.ingest.get_runtime_paths",
+                    return_value=get_runtime_paths().model_copy(
+                        update={"watcher_preanonymized_drop": drop_dir}
+                    ),
                 ),
                 patch(
                     "endoreg_db.services.hub.ingest._quarantine_dir",
@@ -421,8 +428,10 @@ class PreanonymizedWatcherIngestTests(TestCase):
 
             with (
                 patch(
-                    "endoreg_db.services.hub.ingest.path_utils.WATCHER_PREANONYMIZED_DROP_DIR",
-                    drop_dir,
+                    "endoreg_db.services.hub.ingest.get_runtime_paths",
+                    return_value=get_runtime_paths().model_copy(
+                        update={"watcher_preanonymized_drop": drop_dir}
+                    ),
                 ),
                 patch(
                     "endoreg_db.services.hub.ingest._quarantine_dir",
@@ -433,7 +442,7 @@ class PreanonymizedWatcherIngestTests(TestCase):
                     side_effect=WatcherFileNotReadyError("not stable"),
                 ),
                 patch(
-                    "endoreg_db.services.hub.ingest.sha256_file",
+                    "endoreg_db.services.hub.ingest.get_file_hash",
                     side_effect=AssertionError("must not hash before settle"),
                 ),
                 pytest.raises(WatcherFileNotReadyError, match="not stable"),

@@ -58,7 +58,7 @@ def _vfr_video() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="segment-pts-video",
+        raw_video_hash="segment-pts-video",
         fps=25.0,
         duration=0.3,
         frame_count=5,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 
@@ -22,6 +23,143 @@ from lx_dtypes.models.contracts.migrate_media_storage import (
 )
 
 pytestmark = pytest.mark.django_db
+
+
+def test_reconciliation_accepts_legacy_absolute_pdf_reference(
+    media_center: Center,
+) -> None:
+    paths = EndoregPathsModel.from_environment()
+    payload = b"legacy absolute report"
+    identity = sha256(payload).hexdigest()
+    source = paths.import_report / "absolute-reference.PDF"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(payload)
+    report = RawPdfFile.objects.create(center=media_center, pdf_hash=identity)
+    # Reproduce a persisted legacy reference without invoking today's write policy.
+    RawPdfFile.objects.filter(pk=report.pk).update(file=str(source))
+
+    summary = _json_command("--apply", "--include-reports", "--hash", identity)
+
+    report.refresh_from_db()
+    assert report.file.name == f"sensitive_reports/{identity}.pdf"
+    assert summary.migrated == 1
+    assert source.read_bytes() == payload
+
+
+@pytest.mark.parametrize("kind", ["video", "report"])
+def test_reconciliation_finds_lost_original_filename_by_content_hash(
+    media_center: Center, kind: str
+) -> None:
+    paths = EndoregPathsModel.from_environment()
+    payload = f"lost original filename for {kind}".encode()
+    identity = sha256(payload).hexdigest()
+    if kind == "video":
+        instance = VideoFile.objects.create(
+            center=media_center, raw_video_hash=identity
+        )
+        source = paths.import_video / "original-camera-name.mp4"
+        flags = ("--include-raw", "--video-id", str(instance.pk))
+    else:
+        instance = RawPdfFile.objects.create(center=media_center, pdf_hash=identity)
+        source = paths.import_report / "original-scanner-name.pdf"
+        flags = ("--include-reports", "--hash", identity)
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(payload)
+
+    summary = _json_command("--apply", *flags)
+
+    instance.refresh_from_db()
+    field = instance.raw_file if isinstance(instance, VideoFile) else instance.file
+    assert field.name is not None
+    assert Path(field.name).stem == identity
+    assert summary.migrated == 1
+    assert source.read_bytes() == payload
+
+
+@pytest.mark.parametrize("kind", ["video", "report"])
+def test_reconcile_legacy_filename_into_canonical_storage(
+    media_center: Center, kind: str
+) -> None:
+    paths = EndoregPathsModel.from_environment()
+    identity = f"legacy-filename-{kind}"
+    if kind == "video":
+        instance = VideoFile.objects.create(
+            center=media_center, raw_video_hash=identity
+        )
+        field = instance.raw_file
+        directory = paths.sensitive_video
+        suffix = ".mp4"
+        flags = ("--include-raw", "--video-id", str(instance.pk))
+    else:
+        instance = RawPdfFile.objects.create(center=media_center, pdf_hash=identity)
+        field = instance.file
+        directory = paths.sensitive_report
+        suffix = ".pdf"
+        flags = ("--include-reports", "--hash", identity)
+    source = _write_plaintext_field_file(
+        field, f"{directory.name}/old-{identity}{suffix}", b"legacy artifact"
+    )
+
+    result = _json_command("--apply", *flags)
+    instance.refresh_from_db()
+    current = instance.raw_file if isinstance(instance, VideoFile) else instance.file
+    assert current.name == f"{directory.name}/{identity}{suffix}"
+    assert result.failed == 0
+    assert source.read_bytes() == b"legacy artifact"
+    assert _starts_with_magic(Path(current.path))
+    assert _json_command("--apply", *flags).migrated == 0
+
+
+def test_reconciliation_rejects_competing_legacy_pdf_candidates(
+    media_center: Center,
+) -> None:
+    paths = EndoregPathsModel.from_environment()
+    identity = "ambiguous-legacy-report"
+    RawPdfFile.objects.create(
+        center=media_center, pdf_hash=identity, processed_file="missing.pdf"
+    )
+    first = paths.anonym_report / f"{identity}_first.pdf"
+    second = paths.import_anonymized_report / f"{identity}_second.pdf"
+    for path, payload in ((first, b"first"), (second, b"second")):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    summary = _json_command("--include-reports", "--hash", identity)
+    assert summary.failed == 1
+    assert any(record.reason == "ambiguous_source" for record in summary.records)
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"second"
+
+
+@pytest.mark.parametrize("same_content", [True, False])
+def test_reconciliation_preserves_occupied_canonical_destination(
+    media_center: Center, tmp_path: Path, same_content: bool
+) -> None:
+    paths = EndoregPathsModel.from_environment()
+    identity = f"occupied-canonical-{same_content}"
+    report = RawPdfFile.objects.create(center=media_center, pdf_hash=identity)
+    source = _write_plaintext_field_file(
+        report.file, f"sensitive_reports/legacy-{identity}.pdf", b"original"
+    )
+    destination_name = f"{paths.sensitive_report.name}/{identity}.pdf"
+    payload = b"original" if same_content else b"other content"
+    staged = tmp_path / "candidate.pdf"
+    staged.write_bytes(payload)
+    target_field = FieldFile(report, report.file.field, "")
+    save_local_file(target_field, staged, name=destination_name, save=False)
+    destination = Path(target_field.path)
+    ciphertext_before = destination.read_bytes()
+
+    summary = _json_command("--apply", "--include-reports", "--hash", identity)
+
+    report.refresh_from_db()
+    assert destination.read_bytes() == ciphertext_before
+    assert source.read_bytes() == b"original"
+    if same_content:
+        assert report.file.name == destination_name
+        assert summary.failed == 0
+    else:
+        assert report.file.name == f"sensitive_reports/legacy-{identity}.pdf"
+        assert summary.failed == 1
 
 
 @pytest.fixture(autouse=True)
@@ -47,8 +185,8 @@ def media_center() -> Center:
     )
 
 
-def _create_video(center: Center, video_hash: str) -> VideoFile:
-    return VideoFile.objects.create(center=center, video_hash=video_hash)
+def _create_video(center: Center, raw_video_hash: str) -> VideoFile:
+    return VideoFile.objects.create(center=center, raw_video_hash=raw_video_hash)
 
 
 def _write_plaintext_field_file(
@@ -289,21 +427,24 @@ def test_migrate_media_storage_removes_bad_streamable_object(
     tmp_path: Path,
 ) -> None:
     worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
-    video_hash = f"streamable-video-{worker}"
-    video = _create_video(media_center, video_hash)
-    source = tmp_path / f"{video_hash}.mp4"
+    raw_video_hash = f"streamable-video-{worker}"
+    video = _create_video(media_center, raw_video_hash)
+    source = tmp_path / f"{raw_video_hash}.mp4"
     source.write_bytes(Path("tests/assets/test.mp4").read_bytes())
     save_local_file(
         video.processed_file,
         source,
-        name=f"{video_hash}.mp4",
+        name=f"{raw_video_hash}.mp4",
         save=False,
     )
     video.save(update_fields=["processed_file"])
 
     paths = EndoregPathsModel.from_environment()
     streamable_path = (
-        paths.storage / "streamable_videos" / "processed" / (f"{video.video_hash}.mp4")
+        paths.storage
+        / "streamable_videos"
+        / "processed"
+        / (f"{video.raw_video_hash}.mp4")
     )
     streamable_path.parent.mkdir(parents=True, exist_ok=True)
     streamable_path.write_bytes(MAGIC + b"bad-streamable")

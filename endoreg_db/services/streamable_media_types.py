@@ -87,7 +87,7 @@ STREAMABLE_ARTIFACT_SPECS: tuple[StreamableArtifactSpec, ...] = (
         kind=StreamableArtifactKind.RAW,
         payload_kind=PayloadKind.VIDEO_RAW,
         file_attr="raw_file",
-        hash_attr="video_hash",
+        hash_attr="raw_video_hash",
         relative_path_attr="raw_streamable_relative_path",
     ),
     StreamableArtifactSpec(

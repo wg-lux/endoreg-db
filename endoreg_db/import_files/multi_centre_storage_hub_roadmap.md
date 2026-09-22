@@ -62,7 +62,6 @@ Current production settings enforce several fail-closed checks:
 - `ENDOREG_ENABLE_HUB_TRANSFERS=true` is allowed only with
   `ENDOREG_DEPLOYMENT_ROLE=central_hub`
 - `local_study_server` requires explicit protected runtime storage roots
-  inside `LX_ANNOTATE_ENCRYPTED_DATA_DIR`
 
 Relevant files:
 
@@ -288,7 +287,6 @@ Implemented today:
 
 Remaining storage work is still significant:
 
-- many workflows still assume local protected path access under `STORAGE_DIR`
 - not every Django storage mutation is routed through the typed filesystem
   wrappers yet
 - object-storage-style access is not implemented as the primary abstraction
@@ -460,8 +458,7 @@ Required outcomes:
   protected media backup
 - make storage routing exhaustive and enum-driven
 - continue using typed filesystem wrappers for every filesystem mutation
-- reduce direct dependence on `STORAGE_DIR` absolute paths for integration
-  behavior
+
 
 ### Operations
 

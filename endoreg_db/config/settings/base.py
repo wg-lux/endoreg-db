@@ -1,4 +1,5 @@
 from pathlib import Path
+from endoreg_db.config.identity_hashing import load_identity_salt
 
 import django_stubs_ext
 from kombu import Exchange, Queue
@@ -59,6 +60,8 @@ from lx_dtypes.models.contracts.django_settings import (
     DjangoTemplateConfigPayload,
     DjangoTemplateOptionsPayload,
 )
+
+DJANGO_SALT = load_identity_salt()
 
 django_stubs_ext.monkeypatch()
 

@@ -1,25 +1,78 @@
 import hashlib
-import os
+import hmac
+import json
 from datetime import date, datetime
 from pathlib import Path
 import logging
+from endoreg_db.utils.rust_backend import stable_file_identity
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.file_operations import sha256_file
+from django.conf import settings
+from endoreg_db.config.identity_hashing import (
+    validate_identity_salt,
+    current_identity_keyring,
+)
 
 logger = logging.getLogger(__name__)
 
-SALT = os.getenv("DJANGO_SALT", "default_salt")
-DJANGO_NAME_SALT = os.environ.get("DJANGO_SALT", "default_salt")
+
+def get_identity_salt() -> str:
+    ring = current_identity_keyring()
+    if ring is not None:
+        return validate_identity_salt(ring.active.decode("utf-8"))
+    return validate_identity_salt(getattr(settings, "DJANGO_SALT", None))
 
 
-def get_video_hash(video_file: Path | FieldFile) -> str:
-    """Semantic alias for sha256_file() used by video import workflows."""
-    return sha256_file(video_file)
+def get_identity_salt_fingerprint() -> str:
+    return hmac.new(
+        get_identity_salt().encode("utf-8"), b"endoreg-identity-salt-v1", hashlib.sha256
+    ).hexdigest()
 
 
-def get_pdf_hash(pdf_file: Path | FieldFile) -> str:
-    """Semantic alias for sha256_file() used by report import workflows."""
-    return sha256_file(pdf_file)
+def get_patient_identity_fingerprint(
+    first_name: str, last_name: str, dob: date, center_id: int
+) -> str:
+    """Disambiguate legacy hashes without changing their persisted identity keys."""
+    birthday = dob.date() if isinstance(dob, datetime) else dob
+    payload = json.dumps(
+        ["patient-identity-v1", first_name, last_name, birthday.isoformat(), center_id],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hmac.new(
+        get_identity_salt().encode("utf-8"), payload, hashlib.sha256
+    ).hexdigest()
+
+
+def get_file_hash(file: str | Path | FieldFile | None) -> str:
+    """Hash local sources or stream authenticated plaintext from stored files."""
+    if file is None:
+        raise ValueError("HASH COULD NOT BE CREATED")
+    if getattr(file, "storage", None) is not None:
+        from endoreg_db.utils.storage_streaming import (
+            field_file_size,
+            iter_field_file_bytes,
+        )
+
+        digest = hashlib.sha256()
+        size = field_file_size(file)
+        if size > 0:
+            for chunk in iter_field_file_bytes(
+                file, start=0, end=size - 1, chunk_size=1024 * 1024
+            ):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    path = file if isinstance(file, (str, Path)) else getattr(file, "path", None)
+    if not isinstance(path, (str, Path)):
+        raise TypeError("Hash source must be a local path or stored file")
+    hash_tuple = stable_file_identity(Path(path))
+    if hash_tuple is not None:
+        size = hash_tuple[0]
+        hash_canonical = hash_tuple[2]
+        logger.debug("Hash created for %s bytes", size)
+        return hash_canonical
+    else:
+        raise ValueError("HASH COULD NOT BE CREATED")
 
 
 def _get_date_hash_string(date_obj: date) -> str:
@@ -48,13 +101,12 @@ def get_hash_string(
     center_name: str = "",
     examination_date: date = date(1900, 1, 1),
     endoscope_sn: str = "",
-    salt: str = "",
-):
+    salt: str | None = None,
+) -> str:
     """
     Get the string to be hashed for a patient's first name, last name, date of birth, examination date, and endoscope serial number.
     """
-    if not salt:
-        salt = SALT
+    salt = get_identity_salt() if salt is None else validate_identity_salt(salt)
 
     examination_date_str = _get_date_hash_string(examination_date)
     dob_str = _get_date_hash_string(dob)
@@ -65,8 +117,8 @@ def get_hash_string(
 
 
 def get_patient_hash(
-    first_name: str, last_name: str, dob: date, center: str, salt: str = ""
-):
+    first_name: str, last_name: str, dob: date, center: str, salt: str | None = None
+) -> str:
     """
     Get the hash of a patient's first name, last name, and date of birth.
     """
@@ -92,8 +144,8 @@ def get_patient_examination_hash(
     dob: date,
     center: str,
     examination_date: date,
-    salt: str = "",
-):
+    salt: str | None = None,
+) -> str:
     """
     Get the hash of a patient's first name, last name, date of birth, and examination date.
     """
@@ -118,7 +170,7 @@ def get_examiner_hash(
     first_name: str,
     last_name: str,
     center_name: str,
-    salt: str,
+    salt: str | None = None,
 ) -> str:
     """
     Get the hash of an examiner's first name, last name, and center name.

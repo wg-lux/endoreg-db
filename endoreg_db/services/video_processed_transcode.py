@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from endoreg_db.utils.storage.files import canonical_media_name
+
 import logging
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -46,13 +48,17 @@ from endoreg_db.services.video_storage_normalization import (
     validate_annotation_fps_resample,
     validate_normalized_output,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import (
+    get_runtime_paths,
+    resolve_protected_media_path,
+    to_storage_relative,
+)
 from endoreg_db.utils.file_operations import (
     ensure_directory,
     atomic_create_file,
     ensure_disk_capacity,
     safe_delete_field_file,
-    sha256_file,
+    get_file_hash,
     safe_rmtree,
     set_path_mode,
 )
@@ -60,7 +66,6 @@ from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
-from endoreg_db.utils.hashs import get_video_hash
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.transcode_execution import transcode_video
 
@@ -174,8 +179,10 @@ class _TerminalTranscodeResult(Exception):
 
 
 def _processed_storage_name(*, video: VideoFile, content_hash: str) -> str:
-    target_path = path_utils.ANONYM_VIDEO_DIR / f"{video.video_hash}.{content_hash}.mp4"
-    return path_utils.to_storage_relative(target_path)
+    target_path = get_runtime_paths().anonym_video / canonical_media_name(
+        video.raw_video_hash, ".mp4", generation=content_hash
+    )
+    return to_storage_relative(target_path)
 
 
 def _cleanup_committed_processed_assets(*, video_id: int) -> None:
@@ -409,7 +416,7 @@ def _validate_candidate_policy(
             new_size=new_size,
             detail="transcoded output is not smaller",
         )
-    new_hash = get_video_hash(candidate_path)
+    new_hash = get_file_hash(candidate_path)
     if new_hash == original.content_hash:
         _stop_transcode(
             video,
@@ -574,16 +581,16 @@ def _stage_encrypted_candidate(
     candidate: _TranscodeCandidate,
 ) -> _TranscodeCandidate:
     target = video.processed_file
-    name = path_utils.to_storage_relative(
-        path_utils.EndoregPathsModel.from_environment().anonym_video
+    name = to_storage_relative(
+        get_runtime_paths().anonym_video
         / ".generations"
-        / f"{video.video_hash}-{uuid4().hex}.mp4"
+        / canonical_media_name(video.raw_video_hash, ".mp4", generation=uuid4().hex)
     )
     staged = FieldFile(video, target.field, "")
     stored_name = save_local_file(staged, candidate.path, name=name, save=False)
     # Confirm authenticated round-trip identity before database publication.
     try:
-        if get_video_hash(staged) != candidate.content_hash:
+        if get_file_hash(staged) != candidate.content_hash:
             raise RuntimeError("Encrypted candidate identity verification failed.")
     except Exception:
         try:
@@ -624,13 +631,13 @@ def _prepare_existing_generations(video: VideoFile) -> None:
 
 def _record_legacy_playback_retirement(video: VideoFile) -> None:
     if video.processed_streamable_relative_path:
-        legacy_path = path_utils.resolve_protected_media_path(
+        legacy_path = resolve_protected_media_path(
             video.processed_streamable_relative_path
         )
         record_processed_replacement(
             video,
             previous_name=video.processed_streamable_relative_path,
-            previous_hash=sha256_file(legacy_path),
+            previous_hash=get_file_hash(legacy_path),
             source_kind="legacy_streamable",
             strict=True,
         )
@@ -751,8 +758,9 @@ def _transcode_under_lease(
             status="skipped_missing_processed_file",
             detail="processed_file is empty",
         )
-    paths = path_utils.EndoregPathsModel.from_environment()
-    attempt_root = paths.transcoding / "processed_storage_pressure" / str(video.uuid)
+    attempt_root = (
+        get_runtime_paths().transcoding / "processed_storage_pressure" / str(video.uuid)
+    )
     if attempt_root.exists():
         raise RuntimeError(
             "Previous transcode staging requires cleanup reconciliation."
@@ -785,7 +793,7 @@ def _transcode_under_lease(
         with ensure_local_processed_video_file(
             video, directory=work_dir
         ) as source_path:
-            if get_video_hash(source_path) != original.content_hash:
+            if get_file_hash(source_path) != original.content_hash:
                 raise RuntimeError(
                     "Processed source content identity does not match its generation."
                 )

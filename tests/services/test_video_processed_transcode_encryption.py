@@ -21,8 +21,12 @@ from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
 )
 from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.video_files.queries import (
+    get_video_by_content_hash,
+    video_hash_exists,
+)
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage, MAGIC
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 
@@ -36,18 +40,18 @@ def video() -> VideoFile:
     )
     current = VideoFile.objects.create(
         center=center,
-        video_hash=uuid4().hex,
+        raw_video_hash=uuid4().hex,
         fps=25.0,
         duration=10.0,
         frame_count=250,
     )
     assert isinstance(current.processed_file, VideoArtifactFieldFile)
     current.processed_file.save(
-        f"{current.video_hash}.mp4",
+        f"{current.raw_video_hash}.mp4",
         ContentFile(b"original processed payload" * 30),
         save=True,
     )
-    current.processed_video_hash = sha256_file(current.processed_file)
+    current.processed_video_hash = get_file_hash(current.processed_file)
     current.save(update_fields=["processed_video_hash"])
     return current
 
@@ -263,6 +267,7 @@ def test_repeated_replacements_keep_one_encrypted_master_and_preserve_raw(
     raw_name = str(video.raw_file.name)
     raw_path = Path(video.raw_file.path)
     original_path = Path(video.processed_file.path)
+    original_identity = (video.pk, video.uuid, video.raw_video_hash)
     payloads = iter([b"a" * 100, b"b" * 60, b"c" * 20])
     retired: list[Path] = [original_path]
 
@@ -283,10 +288,15 @@ def test_repeated_replacements_keep_one_encrypted_master_and_preserve_raw(
             )
             assert result.status == "changed"
             video.refresh_from_db()
+            assert (video.pk, video.uuid, video.raw_video_hash) == original_identity
+            assert video_hash_exists(original_identity[2])
+            assert get_video_by_content_hash(original_identity[2]).pk == video.pk
+            assert video.processed_video_hash == get_file_hash(video.processed_file)
+            assert video.processed_video_hash == result.new_hash != result.old_hash
             assert not cleanup_receipts(video.meta)
             assert all(not path.exists() for path in retired)
             current_path = Path(video.processed_file.path)
-            assert list(current_path.parent.glob(f"{video.video_hash}-*.mp4")) == [
+            assert list(current_path.parent.glob(f"{video.raw_video_hash}.*.mp4")) == [
                 current_path
             ]
             assert current_path.read_bytes().startswith(MAGIC)

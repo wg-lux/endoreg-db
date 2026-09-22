@@ -20,7 +20,7 @@ from tests.helpers.optimized_video_fixtures import (
 
 
 class _OptimizedVideoLike(Protocol):
-    video_hash: str | None
+    raw_video_hash: str | None
     center: object
     processor: object
     video_meta: object
@@ -60,7 +60,7 @@ class ExampleOptimizedVideoTest(TestCase, OptimizedVideoTestCase):
         )
 
         self.assertIsNotNone(video_file)
-        self.assertIsNotNone(video_file.video_hash)
+        self.assertIsNotNone(video_file.raw_video_hash)
         self.assertIsNotNone(video_file.center)
         self.assertIsNotNone(video_file.processor)
 

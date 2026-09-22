@@ -37,7 +37,7 @@ def _video(**kwargs: object) -> VideoFile:
     center = Center.objects.create(name=f"video-specs-{uuid4().hex[:8]}")
     return VideoFile.objects.create(
         center=center,
-        video_hash=f"video-specs-{uuid4().hex}",
+        raw_video_hash=f"video-specs-{uuid4().hex}",
         **kwargs,
     )
 

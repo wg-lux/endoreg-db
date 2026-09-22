@@ -68,7 +68,7 @@ class PatientMediaTimelineViewTests(TestCase):
     def _create_video(self) -> VideoFile:
         return VideoFile.objects.create(
             center=self.center,
-            video_hash=f"timeline-video-{uuid4().hex}",
+            raw_video_hash=f"timeline-video-{uuid4().hex}",
             examination=self.patient_examination,
             patient=self.patient,
             fps=25.0,

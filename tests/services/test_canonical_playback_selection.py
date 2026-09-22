@@ -1,6 +1,7 @@
 """Processed delivery always selects the sole canonical master."""
 
 import pytest
+from django.core.files.base import ContentFile
 
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hls_media import (
@@ -16,16 +17,24 @@ def _video() -> VideoFile:
     return VideoFile(
         processed_file="processed_videos_final/master.mp4",
         processed_video_hash="a" * 64,
-        video_hash="c" * 64,
+        raw_video_hash="c" * 64,
     )
 
 
 def test_processed_stream_uses_canonical_encrypted_field() -> None:
     video = _video()
-    field, local_path = resolve_video_stream_source(video, VideoArtifactKind.PROCESSED)
-    assert field is video.processed_file
-    assert isinstance(field.storage, LazyEncryptedStorage)
-    assert local_path is None
+    storage = video.processed_file.storage
+    name = storage.save(str(video.processed_file.name), ContentFile(b"processed media"))
+    video.processed_file.name = name
+    try:
+        field, local_path = resolve_video_stream_source(
+            video, VideoArtifactKind.PROCESSED
+        )
+        assert field is video.processed_file
+        assert isinstance(field.storage, LazyEncryptedStorage)
+        assert local_path is None
+    finally:
+        storage.delete(name)
 
 
 def test_hls_source_and_generation_follow_canonical_master() -> None:
@@ -42,14 +51,14 @@ def test_hls_source_and_generation_follow_canonical_master() -> None:
 
 def test_missing_canonical_source_rejects_hls() -> None:
     video = _video()
-    video.processed_file = ""
+    video.processed_file.name = ""
     with pytest.raises(FileNotFoundError):
         resolve_hls_source(video, VideoArtifactKind.PROCESSED)
 
 
 def test_raw_hls_uses_raw_source() -> None:
     video = _video()
-    video.raw_file = "sensitive_videos/raw.mp4"
+    video.raw_file.name = "sensitive_videos/raw.mp4"
     assert resolve_hls_source(video, VideoArtifactKind.RAW).field_file is video.raw_file
 
 

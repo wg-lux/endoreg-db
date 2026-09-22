@@ -124,7 +124,7 @@ def _create_processed_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"hls-command-video-{payload.hex()}",
+        raw_video_hash=f"hls-command-video-{payload.hex()}",
     )
     cast(Any, video.processed_file).save(
         "hls-command-source.mp4",
@@ -141,7 +141,7 @@ def _create_raw_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"raw-hls-command-video-{payload.hex()}",
+        raw_video_hash=f"raw-hls-command-video-{payload.hex()}",
     )
     cast(Any, video.raw_file).save(
         "raw-hls-command-source.mp4",
@@ -154,7 +154,7 @@ def _create_raw_video(
 def _create_raw_and_processed_video(*, center: Center) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash="raw-and-processed-hls-command-video",
+        raw_video_hash="raw-and-processed-hls-command-video",
     )
     cast(Any, video.raw_file).save(
         "raw-and-processed-source-raw.mp4",
@@ -538,7 +538,7 @@ def test_materialize_video_hls_command_dry_run_reports_bulk_audit(
     _patch_command_preflight(monkeypatch)
     VideoFile.objects.create(
         center=hls_command_center,
-        video_hash="hls-command-without-processed-file",
+        raw_video_hash="hls-command-without-processed-file",
     )
     ready_video = _create_processed_video(
         center=hls_command_center,

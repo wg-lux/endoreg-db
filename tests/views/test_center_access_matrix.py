@@ -64,7 +64,7 @@ def test_hub_video_reader_does_not_gain_upload_export_admin_or_write_access(
     client: Client,
 ) -> None:
     center = Center.objects.create(name="hub-video-reader-center")
-    video = VideoFile.objects.create(center=center, video_hash="hub-write-denial")
+    video = VideoFile.objects.create(center=center, raw_video_hash="hub-write-denial")
     user = _user_with_centers("hub-video-reader", "video:read", center)
     client.force_login(user)
 
@@ -95,7 +95,7 @@ def test_video_writer_cannot_mutate_foreign_center_video(client: Client) -> None
     foreign_center = Center.objects.create(name="writer-foreign-center")
     foreign_video = VideoFile.objects.create(
         center=foreign_center,
-        video_hash="foreign-center-write-denial",
+        raw_video_hash="foreign-center-write-denial",
     )
     user = _user_with_centers("hub-video-writer", "video:write", own_center)
     client.force_login(user)

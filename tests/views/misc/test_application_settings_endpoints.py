@@ -170,7 +170,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"attachment-video-{uuid4().hex[:8]}",
+            raw_video_hash=f"attachment-video-{uuid4().hex[:8]}",
             original_file_name="attachment.mp4",
             fps=25.0,
             frame_count=10,
@@ -238,7 +238,7 @@ class ApplicationSettingsEndpointTests(TestCase):
         )
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"attachment-all-video-{uuid4().hex[:8]}",
+            raw_video_hash=f"attachment-all-video-{uuid4().hex[:8]}",
             original_file_name="attachment-all.mp4",
             fps=25.0,
             frame_count=10,

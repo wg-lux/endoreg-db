@@ -271,7 +271,7 @@ def test_upstream_receipt_rejects_wrong_job_identity(tmp_path: Path) -> None:
 
 def test_upstream_receipt_rejects_stale_database_generation() -> None:
     class PersistedVideo:
-        video_hash: str = "current"
+        raw_video_hash: str = "current"
         processed_video_hash: str | None = "processed"
 
     with pytest.raises(RuntimeError, match="current source generation"):

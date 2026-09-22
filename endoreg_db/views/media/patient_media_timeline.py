@@ -50,7 +50,6 @@ class _PatientFindingInterventionsSource(Protocol):
 
 logger = logging.getLogger(__name__)
 
-QueryValue: TypeAlias = str | None
 TimelineScalar: TypeAlias = str | int | float | bool | dt_date | datetime
 TimelineValue: TypeAlias = (
     TimelineScalar | None | list["TimelineValue"] | dict[str, "TimelineValue"]
@@ -131,11 +130,11 @@ def _pdf_stream_options(
     return options
 
 
-def _query_params(request: Request) -> Mapping[str, QueryValue]:
-    return cast(Mapping[str, QueryValue], request.query_params)
+def _query_params(request: Request) -> Mapping[str, str | None]:
+    return cast(Mapping[str, str | None], request.query_params)
 
 
-def _query_int_param(params: Mapping[str, QueryValue], key: str) -> int | None:
+def _query_int_param(params: Mapping[str, str | None], key: str) -> int | None:
     raw = params.get(key)
     if raw in ("", None):
         return None
@@ -900,7 +899,7 @@ def _video_timeline_item(
             str | None,
             getattr(getattr(video, "center", None), "name", None),
         ),
-        "video_hash": cast(str | None, getattr(video, "video_hash", None)),
+        "raw_video_hash": cast(str | None, getattr(video, "raw_video_hash", None)),
         "file_name": _active_video_file_name(video),
         "original_file_name": cast(
             str | None,
@@ -997,7 +996,7 @@ def _patient_or_404(patient_id: int) -> Patient:
 
 
 def _invalid_patient_examination_response(
-    params: Mapping[str, QueryValue],
+    params: Mapping[str, str | None],
     patient_examination_id: int | None,
 ) -> Response | None:
     if (

@@ -1,3 +1,4 @@
+from endoreg_db.utils.storage.files import canonical_media_name
 import hashlib
 import json
 import logging
@@ -49,12 +50,12 @@ from endoreg_db.services.video_files import (
     ensure_local_raw_video_file,
     get_or_create_video_state,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ if TYPE_CHECKING:
 
 
 class _VideoAnonymizationVideo(Protocol):
-    video_hash: str
+    raw_video_hash: str
     meta: JsonObject | None
 
 
@@ -124,14 +125,11 @@ class _EndoscopyProcessorClass(Protocol):
 
 
 def _processed_video_dir() -> Path:
-    return (
-        path_utils.EndoregPathsModel.from_environment().transcoding
-        / "anonymized_videos"
-    )
+    return get_runtime_paths().anonym_video
 
 
 def _quarantine_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().quarantine
+    return get_runtime_paths().quarantine
 
 
 def _ensure_ffmpeg_tools_on_path() -> None:
@@ -476,7 +474,7 @@ def _source_frame_rate(stream: FfmpegStreamProbeEntry) -> Fraction:
 
 def _critical_source_mismatch(
     *,
-    video_hash: str,
+    raw_video_hash: str,
     source_path: Path,
     reason: str,
     expected: object,
@@ -484,14 +482,14 @@ def _critical_source_mismatch(
 ) -> None:
     quarantine_path = _quarantine_anonymizer_source(
         source_path=source_path,
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         reason=reason,
     )
     logger.critical(
         json.dumps(
             {
                 "event": "video.anonymizer_source_integrity_mismatch",
-                "video_hash": video_hash,
+                "raw_video_hash": raw_video_hash,
                 "path": str(source_path),
                 "quarantined_path": str(quarantine_path),
                 "reason": reason,
@@ -506,7 +504,7 @@ def _critical_source_mismatch(
 def _quarantine_anonymizer_source(
     *,
     source_path: Path,
-    video_hash: str,
+    raw_video_hash: str,
     reason: str,
 ) -> Path:
     quarantine_dir = ensure_directory(_quarantine_dir())
@@ -514,20 +512,20 @@ def _quarantine_anonymizer_source(
         char if char.isalnum() or char in {"-", "_"} else "_" for char in reason
     )
     destination = quarantine_dir / (
-        f"{video_hash}.anonymizer-input.{safe_reason}.{uuid.uuid4().hex}"
+        f"{raw_video_hash}.anonymizer-input.{safe_reason}.{uuid.uuid4().hex}"
         f"{source_path.suffix or '.bin'}"
     )
     return atomic_copy_file(source=source_path, destination=destination)
 
 
 def _log_anonymizer_source_verified(
-    *, video_hash: str, snapshot: AnonymizerSourceSnapshot
+    *, raw_video_hash: str, snapshot: AnonymizerSourceSnapshot
 ) -> None:
     logger.info(
         json.dumps(
             {
                 "event": "video.anonymizer_source_verified",
-                "video_hash": video_hash,
+                "raw_video_hash": raw_video_hash,
                 **snapshot,
             },
             sort_keys=True,
@@ -539,18 +537,18 @@ def _verify_anonymizer_source(
     ctx: ImportContext,
     source_path: Path,
     *,
-    video_hash: str,
+    raw_video_hash: str,
 ) -> AnonymizerSourceSnapshot:
     source_path, stat_result = _verified_source_file(source_path)
     source_sha256 = _verify_validated_source_identity(
         ctx,
         source_path=source_path,
         stat_result=stat_result,
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
     )
     video_stream = _verified_anonymizer_video_stream(
         source_path,
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
     )
     width = cast(int, video_stream.width)
     height = cast(int, video_stream.height)
@@ -558,7 +556,7 @@ def _verify_anonymizer_source(
     _verify_validated_source_dimensions(
         ctx,
         source_path=source_path,
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         width=width,
         height=height,
     )
@@ -573,7 +571,7 @@ def _verify_anonymizer_source(
         "fps_den": source_frame_rate.denominator,
         "codec_name": video_stream.codec_name or None,
     }
-    _log_anonymizer_source_verified(video_hash=video_hash, snapshot=snapshot)
+    _log_anonymizer_source_verified(raw_video_hash=raw_video_hash, snapshot=snapshot)
     ctx.anonymizer_source_snapshot = snapshot
     return snapshot
 
@@ -598,14 +596,14 @@ def _verify_validated_source_identity(
     *,
     source_path: Path,
     stat_result: os.stat_result,
-    video_hash: str,
+    raw_video_hash: str,
 ) -> str:
     expected_path = getattr(ctx, "validated_raw_source_path", None)
     if expected_path is not None:
         expected_path = Path(expected_path).resolve()
         if expected_path != source_path:
             _abort_source_mismatch(
-                video_hash=video_hash,
+                raw_video_hash=raw_video_hash,
                 source_path=source_path,
                 reason="path",
                 expected=str(expected_path),
@@ -618,7 +616,7 @@ def _verify_validated_source_identity(
     expected_size = getattr(ctx, "validated_raw_source_size_bytes", None)
     if expected_size is not None and int(expected_size) != int(stat_result.st_size):
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="size_bytes",
             expected=int(expected_size),
@@ -633,7 +631,7 @@ def _verify_validated_source_identity(
         stat_result.st_mtime_ns
     ):
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="mtime_ns",
             expected=int(expected_mtime_ns),
@@ -644,10 +642,10 @@ def _verify_validated_source_identity(
         )
 
     expected_sha256 = getattr(ctx, "validated_raw_source_sha256", None)
-    source_sha256 = sha256_file(source_path)
+    source_sha256 = get_file_hash(source_path)
     if expected_sha256 and str(expected_sha256) != source_sha256:
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="sha256",
             expected=str(expected_sha256),
@@ -662,13 +660,13 @@ def _verify_validated_source_identity(
 def _verified_anonymizer_video_stream(
     source_path: Path,
     *,
-    video_hash: str,
+    raw_video_hash: str,
 ) -> FfmpegStreamProbeEntry:
     stream_info = get_stream_info(source_path)
     video_stream = _first_video_stream(stream_info)
     if video_stream is None:
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="video_stream",
             expected="readable video stream",
@@ -680,7 +678,7 @@ def _verified_anonymizer_video_stream(
     height = video_stream.height
     if width is None or height is None:
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="dimensions",
             expected="positive width and height",
@@ -700,7 +698,7 @@ def _verify_validated_source_dimensions(
     ctx: ImportContext,
     *,
     source_path: Path,
-    video_hash: str,
+    raw_video_hash: str,
     width: int,
     height: int,
 ) -> None:
@@ -714,7 +712,7 @@ def _verify_validated_source_dimensions(
     expected_height = _positive_int(expected_stream.get("height"))
     if expected_width is not None and width != expected_width:
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="width",
             expected=expected_width,
@@ -723,7 +721,7 @@ def _verify_validated_source_dimensions(
         )
     if expected_height is not None and height != expected_height:
         _abort_source_mismatch(
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             source_path=source_path,
             reason="height",
             expected=expected_height,
@@ -734,7 +732,7 @@ def _verify_validated_source_dimensions(
 
 def _abort_source_mismatch(
     *,
-    video_hash: str,
+    raw_video_hash: str,
     source_path: Path,
     reason: str,
     expected: object,
@@ -742,7 +740,7 @@ def _abort_source_mismatch(
     message: str,
 ) -> NoReturn:
     _critical_source_mismatch(
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         source_path=source_path,
         reason=reason,
         expected=expected,
@@ -792,7 +790,7 @@ class VideoAnonymizer:
         temp_result_path, extracted_metadata = self._run_frame_cleaner(
             ctx,
             frame_cleaner=frame_cleaner,
-            video_hash=video.video_hash,
+            raw_video_hash=video.raw_video_hash,
             temp_output_path=temp_output_path,
             endoscope_roi=endoscope_roi,
             endoscope_roi_nested=endoscope_roi_nested,
@@ -805,7 +803,7 @@ class VideoAnonymizer:
         logger.info(
             "Retained anonymized video in attempt-local staging pending validation: "
             "video=%s attempt=%s path=%s",
-            video.video_hash,
+            video.raw_video_hash,
             ctx.attempt_id,
             temp_result_path,
         )
@@ -828,10 +826,12 @@ class VideoAnonymizer:
             meta.get("integrity_status") == "lost"
         ):
             raise RuntimeError(
-                f"Video {video.video_hash} is marked failed/lost and cannot be anonymized."
+                f"Video {video.raw_video_hash} is marked failed/lost and cannot be anonymized."
             )
 
-        anonymized_output_path = anonymized_dir / f"{video.video_hash}.mp4"
+        anonymized_output_path = anonymized_dir / canonical_media_name(
+            video.raw_video_hash, ".mp4"
+        )
         temp_output_path = _temp_media_path(
             anonymized_output_path,
             marker=f"attempt-{ctx.attempt_id}",
@@ -845,7 +845,7 @@ class VideoAnonymizer:
         ctx: ImportContext,
         *,
         frame_cleaner: _FrameCleaner,
-        video_hash: str,
+        raw_video_hash: str,
         temp_output_path: Path,
         endoscope_roi: dict[str, int],
         endoscope_roi_nested: dict[str, dict[str, int | None]],
@@ -862,7 +862,7 @@ class VideoAnonymizer:
         with source_context as source_path:
             verified_source = Path(source_path).resolve()
             source_snapshot = _verify_anonymizer_source(
-                ctx, verified_source, video_hash=video_hash
+                ctx, verified_source, raw_video_hash=raw_video_hash
             )
             source_width = _positive_int(source_snapshot.get("width"))
             source_height = _positive_int(source_snapshot.get("height"))
@@ -907,14 +907,9 @@ class VideoAnonymizer:
         extracted_metadata: JsonObject,
     ) -> None:
         assert ctx.current_video is not None
-        lx_sensitive_payload = {
-            key: value
-            for key, value in extracted_metadata.items()
-            if key in SensitiveMeta.model_fields
-        }
         persist_sensitive_meta_candidate(
             instance=ctx.current_video,
-            candidate=SensitiveMeta.model_validate(lx_sensitive_payload),
+            candidate=SensitiveMeta.from_mixed_mapping(extracted_metadata),
         )
         self._persist_paper_evaluation_metrics(ctx.current_video, extracted_metadata)
         self._persist_phi_region_proposals(ctx.current_video, extracted_metadata)
@@ -929,7 +924,7 @@ class VideoAnonymizer:
         except ValueError as exc:
             logger.warning(
                 "Failed to persist lx-anonymizer paper evaluation metrics for video %s: %s",
-                getattr(video, "video_hash", None),
+                getattr(video, "raw_video_hash", None),
                 exc,
             )
             return False
@@ -945,7 +940,7 @@ class VideoAnonymizer:
         except ValueError as exc:
             logger.warning(
                 "Failed to merge lx-anonymizer paper evaluation metrics for video %s: %s",
-                getattr(video, "video_hash", None),
+                getattr(video, "raw_video_hash", None),
                 exc,
             )
             return False
@@ -969,7 +964,7 @@ class VideoAnonymizer:
         except Exception as exc:
             logger.warning(
                 "Failed to persist lx-anonymizer PHI region proposals for video %s: %s",
-                getattr(video, "video_hash", None),
+                getattr(video, "raw_video_hash", None),
                 exc,
                 exc_info=True,
             )
@@ -989,7 +984,7 @@ class VideoAnonymizer:
             PHI_REGION_INFORMATION_SOURCE_NAME,
             description="PHI region proposals generated by lx-anonymizer.",
         )[0]
-        video_hash = str(getattr(video, "video_hash", "") or "")
+        raw_video_hash = str(getattr(video, "raw_video_hash", "") or "")
         persisted_count = 0
 
         for observation in observations:
@@ -1004,7 +999,7 @@ class VideoAnonymizer:
             if frame is None:
                 logger.debug(
                     "Skipping PHI proposals for video=%s frame=%s because no Frame row exists.",
-                    video_hash,
+                    raw_video_hash,
                     frame_number,
                 )
                 continue
@@ -1019,7 +1014,7 @@ class VideoAnonymizer:
                 x, y, width, height = box
                 source = region.source
                 external_annotation_id = self._phi_external_annotation_id(
-                    video_hash=video_hash,
+                    raw_video_hash=raw_video_hash,
                     frame_number=frame_number,
                     source=source,
                     x=x,
@@ -1069,7 +1064,7 @@ class VideoAnonymizer:
             logger.info(
                 "Persisted %d lx-anonymizer PHI region proposals for video %s.",
                 persisted_count,
-                video_hash,
+                raw_video_hash,
             )
         return persisted_count
 
@@ -1100,7 +1095,7 @@ class VideoAnonymizer:
     @staticmethod
     def _phi_external_annotation_id(
         *,
-        video_hash: str,
+        raw_video_hash: str,
         frame_number: int,
         source: str,
         x: float,
@@ -1110,7 +1105,7 @@ class VideoAnonymizer:
     ) -> str:
         box_payload = f"{x:.3f}:{y:.3f}:{width:.3f}:{height:.3f}"
         box_hash = hashlib.sha256(box_payload.encode("utf-8")).hexdigest()[:16]
-        return f"{video_hash}:{frame_number}:{source}:{box_hash}"
+        return f"{raw_video_hash}:{frame_number}:{source}:{box_hash}"
 
     def _ensure_frame_cleaning_available(self):
         """
@@ -1129,12 +1124,12 @@ class VideoAnonymizer:
         """Get processor ROI information for masking and data extraction."""
         video = ctx.current_video
         assert isinstance(video, VideoFile)
-        video_hash = str(cast(_VideoAnonymizationVideo, video).video_hash)
+        raw_video_hash = str(cast(_VideoAnonymizationVideo, video).raw_video_hash)
 
         processor_name = str(getattr(ctx, "processor_name", "") or "").strip()
         if not processor_name:
             raise RuntimeError(
-                f"Video {video_hash} requires a processor_name for anonymization ROI masking."
+                f"Video {raw_video_hash} requires a processor_name for anonymization ROI masking."
             )
 
         processor_class = cast(_EndoscopyProcessorClass, EndoscopyProcessor)
@@ -1142,7 +1137,7 @@ class VideoAnonymizer:
             processor = processor_class.get_by_name(processor_name)
         except processor_class.DoesNotExist as exc:
             raise RuntimeError(
-                f"Endoscopy processor {processor_name!r} not found for video {video_hash}."
+                f"Endoscopy processor {processor_name!r} not found for video {raw_video_hash}."
             ) from exc
 
         try:

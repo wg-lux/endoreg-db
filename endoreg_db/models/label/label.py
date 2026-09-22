@@ -8,10 +8,7 @@ if TYPE_CHECKING:
     from .label_set import LabelSet
     from .label_type import LabelType
 
-NoLabelValue: TypeAlias = None
-NoLabelDescriptionValue: TypeAlias = None
-LabelTypeRelation: TypeAlias = "LabelType | NoLabelValue"
-LabelDescription: TypeAlias = "str | NoLabelDescriptionValue"
+LabelTypeRelation: TypeAlias = "LabelType | None"
 
 
 class LabelManager(models.Manager["Label"]):
@@ -26,7 +23,7 @@ class LabelManager(models.Manager["Label"]):
 
     def resolve_by_name(
         self, name: str, *, case_insensitive: bool = False
-    ) -> "Label | NoLabelValue":
+    ) -> "Label | None":
         """Return the deterministic first label for a natural name."""
         normalized_name = str(name).strip()
         lookup = (

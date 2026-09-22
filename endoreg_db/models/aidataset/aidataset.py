@@ -32,7 +32,6 @@ from endoreg_db.schemas import (
     validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
 )
-from endoreg_db.utils.validation_types import ValidationErrorMessageArg
 
 __all__ = [
     "AIDataSet",
@@ -62,12 +61,7 @@ if TYPE_CHECKING:
     )
 
 
-NoAIDataSetTextValue: TypeAlias = None
-NoAIDataSetValue: TypeAlias = None
-NoAIDataSetDateTimeValue: TypeAlias = None
-AIDataSetText: TypeAlias = "str | NoAIDataSetTextValue"
-AIDataSetRelation: TypeAlias = "AIDataSet | NoAIDataSetValue"
-AIDataSetDateTime: TypeAlias = "datetime | NoAIDataSetDateTimeValue"
+AIDataSetRelation: TypeAlias = "AIDataSet | None"
 _ModelT = TypeVar("_ModelT", bound=models.Model)
 
 
@@ -103,13 +97,13 @@ class AIDataSet(models.Model):
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
     AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION = "video_segment_classification"
 
-    name: models.CharField[AIDataSetText | None, Any] = models.CharField(
+    name: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         help_text='Human-readable identifier, e.g. "Legacy multilabel dataset v1".',
     )
-    description: models.TextField[AIDataSetText | None, Any] = models.TextField(
+    description: models.TextField[str | None, Any] = models.TextField(
         blank=True,
         null=True,
         help_text="Optional notes / explanation about this dataset.",
@@ -339,7 +333,7 @@ class AIModelTrainingRun(models.Model):
         on_delete=models.SET_NULL,
         related_name="model_training_runs",
     )
-    dataset_name: models.CharField[AIDataSetText | None, Any] = models.CharField(
+    dataset_name: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
     dataset_type: models.CharField[str, Any] = models.CharField(
@@ -363,7 +357,7 @@ class AIModelTrainingRun(models.Model):
     treat_unlabeled_as_negative: models.BooleanField[bool, Any] = models.BooleanField(
         default=True
     )
-    backbone_checkpoint: models.TextField[AIDataSetText, Any] = models.TextField(
+    backbone_checkpoint: models.TextField[str | None, Any] = models.TextField(
         blank=True, null=True
     )
     request_payload: models.JSONField[Any, Any] = models.JSONField(
@@ -390,11 +384,11 @@ class AIModelTrainingRun(models.Model):
     fencing_token: models.PositiveBigIntegerField[int, Any] = (
         models.PositiveBigIntegerField(default=0, editable=False)
     )
-    heartbeat_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+    heartbeat_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         blank=True, null=True, editable=False
     )
-    lease_expires_at: models.DateTimeField[AIDataSetDateTime, Any] = (
-        models.DateTimeField(blank=True, null=True, db_index=True, editable=False)
+    lease_expires_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True, db_index=True, editable=False
     )
     retry_count: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
         default=0
@@ -402,7 +396,7 @@ class AIModelTrainingRun(models.Model):
     max_retries: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
         default=3
     )
-    next_retry_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+    next_retry_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         blank=True, null=True, db_index=True
     )
     dispatch_error: models.TextField[str, Any] = models.TextField(blank=True)
@@ -419,10 +413,10 @@ class AIModelTrainingRun(models.Model):
     updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now=True
     )
-    started_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+    started_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         blank=True, null=True
     )
-    finished_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+    finished_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         blank=True, null=True
     )
 
@@ -469,7 +463,7 @@ class AIModelTrainingRun(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        errors: dict[str, ValidationErrorMessageArg] = {}
+        errors: dict[str, str] = {}
         try:
             self.request_payload = validate_ai_model_training_request_payload(
                 self.request_payload
@@ -523,7 +517,7 @@ class AIDataSetExportArtifact(models.Model):
         on_delete=models.SET_NULL,
         related_name="export_artifacts",
     )
-    dataset_name: models.CharField[AIDataSetText | None, Any] = models.CharField(
+    dataset_name: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
     dataset_type: models.CharField[str, Any] = models.CharField(
@@ -535,7 +529,7 @@ class AIDataSetExportArtifact(models.Model):
     request_payload: models.JSONField[Any, Any] = models.JSONField(
         default=dict, blank=True
     )
-    center_key: models.CharField[AIDataSetText | None, Any] = models.CharField(
+    center_key: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
     all_centers: models.BooleanField[bool, Any] = models.BooleanField(default=False)
@@ -562,7 +556,7 @@ class AIDataSetExportArtifact(models.Model):
     updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now=True
     )
-    finished_at: models.DateTimeField[AIDataSetDateTime, Any] = models.DateTimeField(
+    finished_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
         blank=True, null=True
     )
 
@@ -583,7 +577,7 @@ class AIDataSetExportArtifact(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        errors: dict[str, ValidationErrorMessageArg] = {}
+        errors: dict[str, str] = {}
         try:
             self.request_payload = dump_ai_dataset_export_request_payload(
                 self.request_payload

@@ -88,7 +88,7 @@ def _convert_sequences_to_db_segments(
 
     logger.info(
         "Converting sequences to LabelVideoSegments for video %s, prediction meta %s",
-        video.video_hash,
+        video.raw_video_hash,
         video_prediction_meta.pk,
     )
     created_count = 0
@@ -197,7 +197,7 @@ def _convert_sequences_to_db_segments(
 
     logger.info(
         "LabelVideoSegment conversion finished for video %s. Segments Created: %d, Skipped: %d. States Created: %d",
-        video.video_hash,
+        video.raw_video_hash,
         created_count,
         skipped_count,
         state_created_count,
@@ -257,7 +257,7 @@ def _get_outside_segments(
         logger.error(
             "Error getting '%s' segments for video %s: %s",
             outside_label_name,
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )
@@ -287,13 +287,13 @@ def _get_outside_frame_numbers(
             "Found %d frame numbers marked as '%s' for video %s.",
             len(frame_numbers),
             outside_label_name,
-            video.video_hash,
+            video.raw_video_hash,
         )
     else:
         logger.info(
             "No frame numbers marked as '%s' found for video %s.",
             outside_label_name,
-            video.video_hash,
+            video.raw_video_hash,
         )
     return frame_numbers
 
@@ -343,7 +343,7 @@ def _get_outside_frames(
     except Exception as e:
         logger.error(
             "Error filtering outside frames for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )
@@ -378,7 +378,7 @@ def _get_outside_frame_paths(
         "Found %d frame paths within '%s' segments for video %s",
         len(frame_paths),
         outside_label_name,
-        video.video_hash,
+        video.raw_video_hash,
     )
     return frame_paths
 
@@ -386,7 +386,7 @@ def _get_outside_frame_paths(
 def _label_segments_to_frame_annotations(video: "VideoFile") -> None:
     """Generates frame annotations based on existing LabelVideoSegments."""
     logger.info(
-        "Generating frame annotations from segments for video %s", video.video_hash
+        "Generating frame annotations from segments for video %s", video.raw_video_hash
     )
     processed_count = 0
     try:
@@ -406,24 +406,24 @@ def _label_segments_to_frame_annotations(video: "VideoFile") -> None:
                         logger.error(
                             "Error generating annotations for segment %s (Video %s): %s",
                             lvs.pk,
-                            video.video_hash,
+                            video.raw_video_hash,
                             e,
                         )
         else:
             logger.error(
                 "Could not generate frame annotations for video %s. Neither 'label_video_segments' nor 'labelvideosegment_set' related manager found.",
-                video.video_hash,
+                video.raw_video_hash,
             )
 
         logger.info(
             "Processed %d segments for frame annotations for video %s",
             processed_count,
-            video.video_hash,
+            video.raw_video_hash,
         )
     except Exception as e:
         logger.error(
             "Unexpected error generating frame annotations for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )

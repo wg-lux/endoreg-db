@@ -22,10 +22,14 @@ SMOKE_SETTINGS_MODULE = "endoreg_db.config.settings.test"
 def main() -> int:
     os.environ["DJANGO_SETTINGS_MODULE"] = SMOKE_SETTINGS_MODULE
     os.environ.setdefault("DJANGO_DEBUG", "1")
-    os.environ.setdefault("LX_ANNOTATE_ENCRYPTED_DATA_DIR", "data")
-    os.environ.setdefault("STORAGE_DIR", "data/storage")
 
     try:
+        from endoreg_db.utils.paths import get_runtime_paths
+
+        # This command always uses the test profile. Like the pytest bootstrap,
+        # initialize its declared directories before AppConfig validates them.
+        get_runtime_paths().ensure_directories()
+
         import django
 
         django.setup()

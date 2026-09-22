@@ -28,9 +28,9 @@ from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils.paths import EndoregPathsModel
+from endoreg_db.utils.paths import get_runtime_paths
 
 _CHUNK_SIZE = 1024 * 1024
 
@@ -114,7 +114,7 @@ def _prepare_import_request(options: dict[str, object]) -> _ImportRequest:
         if apply_changes or processor_name_option is not None
         else None
     )
-    drop_dir = EndoregPathsModel.from_environment().watcher_video_drop
+    drop_dir = get_runtime_paths().watcher_video_drop
     drop_name = _resolve_drop_name(
         source_path=source_path,
         requested_drop_name=_optional_str(options.get("drop_name")),
@@ -130,7 +130,7 @@ def _prepare_import_request(options: dict[str, object]) -> _ImportRequest:
         prediction_model_name=_optional_str(options.get("prediction_model_name")),
         watched_path=drop_dir / drop_name,
         source_size=source_path.stat().st_size,
-        source_sha256=sha256_file(source_path),
+        source_sha256=get_file_hash(source_path),
         json_output=bool(options.get("json_output")),
     )
 
@@ -496,7 +496,7 @@ def _video_payload_for_upload_job(upload_job: UploadJob) -> dict[str, object] | 
     content_hash = _required_model_str(upload_job, "content_hash")
     video = (
         VideoFile.objects.select_related("state")
-        .filter(video_hash=content_hash)
+        .filter(raw_video_hash=content_hash)
         .first()
     )
     if video is None:
@@ -506,7 +506,7 @@ def _video_payload_for_upload_job(upload_job: UploadJob) -> dict[str, object] | 
     processed_video_hash = _ensure_processed_video_hash(video)
     return {
         "id": int(video.pk),
-        "video_hash": _required_model_str(video, "video_hash"),
+        "raw_video_hash": _required_model_str(video, "raw_video_hash"),
         "processed_video_hash": processed_video_hash,
         "raw_file": _field_file_name(getattr(video, "raw_file", None)),
         "processed_file": _field_file_name(getattr(video, "processed_file", None)),
@@ -534,7 +534,7 @@ def _ensure_processed_video_hash(video: VideoFile) -> str | None:
     if not isinstance(processed_file, FieldFile):
         raise CommandError("Video processed_file is not a Django FieldFile.")
 
-    processed_video_hash = sha256_file(processed_file)
+    processed_video_hash = get_file_hash(processed_file)
     setattr(video, "processed_video_hash", processed_video_hash)
     video.save(update_fields=["processed_video_hash", "date_modified"])
     return processed_video_hash

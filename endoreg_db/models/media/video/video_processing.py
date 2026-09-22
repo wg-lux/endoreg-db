@@ -145,7 +145,7 @@ class VideoProcessingHistory(models.Model):
             operation_display() if callable(operation_display) else self.operation
         )
         status = status_display() if callable(status_display) else self.status
-        return f"{operation} on {self.video.video_hash} - {status}"
+        return f"{operation} on {self.video.raw_video_hash} - {status}"
 
     def clean(self) -> None:
         super().clean()

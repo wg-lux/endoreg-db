@@ -23,7 +23,7 @@ class VideoMediaViewTests(TestCase):
         m2m_add_relation(self.user.groups).add(video_read_group)  # type: ignore
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"video-media-{uuid4().hex}",
+            raw_video_hash=f"video-media-{uuid4().hex}",
             original_file_name="video-media.mp4",
         )
         portal_info = PortalUserInfo.objects.create(user=self.user)
@@ -44,12 +44,12 @@ class VideoMediaViewTests(TestCase):
     def test_centerless_hub_list_only_returns_anonymized_processed_videos(self) -> None:
         incomplete = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"incomplete-{uuid4().hex}",
+            raw_video_hash=f"incomplete-{uuid4().hex}",
             original_file_name="patient-name-incomplete.mp4",
         )
         processed = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"processed-{uuid4().hex}",
+            raw_video_hash=f"processed-{uuid4().hex}",
             original_file_name="patient-name-processed.mp4",
             duration=12.5,
         )

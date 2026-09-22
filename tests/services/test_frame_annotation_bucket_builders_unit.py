@@ -27,7 +27,7 @@ class FrameAnnotationBucketBuilderUnitTests(TestCase):
         self.center = Center.objects.create(name="queue-bucket-unit-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="queue-bucket-unit-video",
+            raw_video_hash="queue-bucket-unit-video",
             original_file_name="queue_bucket_unit.mp4",
             fps=25.0,
             frame_count=5,

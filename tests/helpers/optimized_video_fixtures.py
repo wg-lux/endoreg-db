@@ -105,7 +105,7 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
 
     return {
         "pk": video.pk,
-        "video_hash": video.video_hash,
+        "raw_video_hash": video.raw_video_hash,
         "original_file_name": video.original_file_name or "segment_stub.mp4",
         "raw_file_name": os.path.basename(raw_file_name),
         "fps": float(video.fps or DEFAULT_VIDEO_FPS),
@@ -144,12 +144,14 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
             load_endoscope_data()
             processor = get_default_processor()
 
-    existing = VideoFile.objects.filter(video_hash=payload["video_hash"]).first()
+    existing = VideoFile.objects.filter(
+        raw_video_hash=payload["raw_video_hash"]
+    ).first()
     if existing is not None:
         if not existing.has_raw:
             raw_name = (
                 payload.get("raw_file_name")
-                or f"segment_stub_{str(existing.video_hash).replace('/', '_')}.mp4"
+                or f"segment_stub_{str(existing.raw_video_hash).replace('/', '_')}.mp4"
             )
             cast(_BytesFieldFile, existing.raw_file).save(
                 raw_name, cast(File[bytes], ContentFile(b"")), save=True
@@ -161,7 +163,7 @@ def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
     )
 
     return VideoFile.objects.create(
-        video_hash=payload["video_hash"],
+        raw_video_hash=payload["raw_video_hash"],
         center=center,
         processor=processor,
         original_file_name=payload["original_file_name"],
@@ -194,14 +196,14 @@ def _create_segment_stub_video() -> VideoFile:
         load_endoscope_data()
         processor = get_default_processor()
 
-    from endoreg_db.utils.paths import data_paths
+    from endoreg_db.utils.paths import get_runtime_paths
 
     suffix = uuid.uuid4().hex
-    frame_dir = (data_paths["frame"] / f"segment_stub_{suffix}").as_posix()
+    frame_dir = (get_runtime_paths().frame / f"segment_stub_{suffix}").as_posix()
     raw_file_name = f"segment_stub_{suffix}.mp4"
 
     return VideoFile.objects.create(
-        video_hash=f"segment-stub-{suffix}",
+        raw_video_hash=f"segment-stub-{suffix}",
         center=center,
         processor=processor,
         original_file_name=f"segment_stub_{suffix}.mp4",
@@ -348,7 +350,7 @@ class MockVideoFile:
             self.processor.name = processor_name
 
         self.raw_file = f"mock_video_{mock_uuid}.mp4"
-        self.video_hash = f"mock_hash_{str(mock_uuid)[:8]}"
+        self.raw_video_hash = f"mock_hash_{str(mock_uuid)[:8]}"
         self._video_meta = None
         self._sensitive_meta = None
         self.is_processed = False

@@ -28,7 +28,7 @@ class FrameSegmentReconciliationServiceTest(TestCase):
         self.center = Center.objects.create(name="frame-segment-reconcile-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="frame-segment-reconcile-video",
+            raw_video_hash="frame-segment-reconcile-video",
             original_file_name="frame_segment_reconcile.mp4",
             fps=25.0,
             frame_count=5,

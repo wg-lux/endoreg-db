@@ -14,14 +14,12 @@ if TYPE_CHECKING:
     )
 
     class FrameVideoCarrier(Protocol):
-        video_hash: str
+        raw_video_hash: str
 
         def get_frame_dir_path(self) -> Path | None: ...
 
 
-NoFrameTimestampValue: TypeAlias = None
-FrameTimestamp: TypeAlias = "float | NoFrameTimestampValue"
-FrameImage: TypeAlias = "np.ndarray | NoFrameTimestampValue"
+FrameImage: TypeAlias = "np.ndarray | None"
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +134,7 @@ class Frame(models.Model):
                 "Frame file not found at %s for Frame %s (Video %s)",
                 frame_path,
                 self.pk,
-                video.video_hash,
+                video.raw_video_hash,
             )
             return None
         try:
@@ -146,7 +144,7 @@ class Frame(models.Model):
                     "cv2.imread returned None for frame file %s (Frame %s, Video %s)",
                     frame_path,
                     self.pk,
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
             return image
         except Exception as e:
@@ -154,7 +152,7 @@ class Frame(models.Model):
                 "Error reading frame file %s (Frame %s, Video %s): %s",
                 frame_path,
                 self.pk,
-                video.video_hash,
+                video.raw_video_hash,
                 e,
                 exc_info=True,
             )
@@ -162,7 +160,7 @@ class Frame(models.Model):
 
     def __str__(self) -> str:
         video = cast("FrameVideoCarrier", self.video)
-        return f"Frame {self.frame_number} of Video {video.video_hash}"
+        return f"Frame {self.frame_number} of Video {video.raw_video_hash}"
 
     def get_classification_annotations(
         self,

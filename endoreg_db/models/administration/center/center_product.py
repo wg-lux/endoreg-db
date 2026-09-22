@@ -9,9 +9,8 @@ if TYPE_CHECKING:
     from ..product.product_group import ProductGroup
     from ..product.reference_product import ReferenceProduct
 
-NoCenterProductValue: TypeAlias = None
-CenterProductWeight: TypeAlias = tuple[float, "Unit | NoCenterProductValue"]
-CenterProductReferenceProduct: TypeAlias = "ReferenceProduct | NoCenterProductValue"
+CenterProductWeight: TypeAlias = tuple[float, "Unit | None"]
+CenterProductReferenceProduct: TypeAlias = "ReferenceProduct | None"
 
 
 class _CenterProductGroupSource(Protocol):
@@ -20,11 +19,11 @@ class _CenterProductGroupSource(Protocol):
 
 class _CenterProductSource(Protocol):
     name: str
-    product_group: "ProductGroup | NoCenterProductValue"
+    product_group: "ProductGroup | None"
 
-    def get_product_weight(self) -> CenterProductWeight | NoCenterProductValue: ...
+    def get_product_weight(self) -> CenterProductWeight | None: ...
 
-    def get_package_weight(self) -> CenterProductWeight | NoCenterProductValue: ...
+    def get_package_weight(self) -> CenterProductWeight | None: ...
 
 
 class CenterProduct(models.Model):
@@ -62,7 +61,7 @@ class CenterProduct(models.Model):
         product = cast(_CenterProductSource, self.product)
         return product.name
 
-    def get_product_group(self) -> "ProductGroup | NoCenterProductValue":
+    def get_product_group(self) -> "ProductGroup | None":
         """Returns the ProductGroup associated with this product."""
         product = cast(_CenterProductSource, self.product)
         return product.product_group
@@ -75,12 +74,12 @@ class CenterProduct(models.Model):
             return product_group_source.reference_product
         return None
 
-    def get_product_weight(self) -> CenterProductWeight | NoCenterProductValue:
+    def get_product_weight(self) -> CenterProductWeight | None:
         product = cast(_CenterProductSource, self.product)
 
         return product.get_product_weight()
 
-    def get_package_weight(self) -> CenterProductWeight | NoCenterProductValue:
+    def get_package_weight(self) -> CenterProductWeight | None:
         product = cast(_CenterProductSource, self.product)
 
         return product.get_package_weight()

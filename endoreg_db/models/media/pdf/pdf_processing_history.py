@@ -18,8 +18,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-NoPdfHistoryActorValue: TypeAlias = None
-PdfHistoryActor: TypeAlias = "AbstractBaseUser | NoPdfHistoryActorValue"
+PdfHistoryActor: TypeAlias = "AbstractBaseUser | None"
 
 
 class PdfProcessingHistory(models.Model):

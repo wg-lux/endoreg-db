@@ -76,7 +76,7 @@ def test_multiple_document_migration_preserves_legacy_video_link() -> None:
         video = video_model.objects.create(
             center_id=center.pk,
             patient_id=patient.pk,
-            video_hash="multiple-document-migration-video",
+            raw_video_hash="multiple-document-migration-video",
         )
         patient_examination.video_id = video.pk
         patient_examination.save(update_fields=["video"])

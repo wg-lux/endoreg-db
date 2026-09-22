@@ -1,5 +1,6 @@
 from datetime import timedelta
 from typing import Any, cast
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from django.contrib.auth.models import User
@@ -28,6 +29,112 @@ from endoreg_db.views.anonymization.overview import (
     AnonymizationOverviewView,
     UploadJobRetryView,
 )
+from endoreg_db.serializers.misc.file_overview import current_overview_hls_artifacts
+from endoreg_db.services import hls_media
+
+
+@pytest.mark.parametrize("replacement_status", ["failed", "queued", "materializing"])
+@pytest.mark.parametrize("reverse_order", [False, True])
+def test_overview_prefers_current_publication_over_replacement(
+    replacement_status: str, reverse_order: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Overview must not hash, decode, scan or dispatch media")
+
+    monkeypatch.setattr(hls_media, "_source_content_hash", forbidden)
+    monkeypatch.setattr(hls_media, "_persisted_hls_boundaries", forbidden)
+    monkeypatch.setattr(hls_media, "_ready_artifact_paths_exist", forbidden)
+    monkeypatch.setattr(hls_media, "dispatch_video_hls_materialization", forbidden)
+    video = VideoFile(
+        processed_file="processed/current.mp4", processed_video_hash="a" * 64
+    )
+    published = VideoHlsArtifact(
+        id=1,
+        video=video,
+        artifact_kind="processed",
+        status="ready",
+        source_content_hash="a" * 64,
+        source_file_name=video.processed_file.name,
+        source_generation_id=uuid5(
+            NAMESPACE_URL, f"endoreg-db:hls:processed:{'a' * 64}"
+        ),
+        updated_at=timezone.now() - timedelta(days=1),
+    )
+    replacement = VideoHlsArtifact(
+        id=2,
+        video=video,
+        artifact_kind="processed",
+        status=replacement_status,
+        updated_at=timezone.now(),
+    )
+    artifacts = [published, replacement]
+    if reverse_order:
+        artifacts.reverse()
+    assert current_overview_hls_artifacts(artifacts, video=video) == [published]
+
+
+@pytest.mark.parametrize(
+    "changed", ["hash", "filename", "generation", "profile", "missing_hash"]
+)
+def test_overview_rejects_stale_or_unknown_publication(changed: str) -> None:
+    video = VideoFile(
+        processed_file="processed/current.mp4", processed_video_hash="a" * 64
+    )
+    published = VideoHlsArtifact(
+        id=1,
+        video=video,
+        artifact_kind="processed",
+        status="ready",
+        source_content_hash="a" * 64,
+        source_file_name=video.processed_file.name,
+        source_generation_id=uuid5(
+            NAMESPACE_URL, f"endoreg-db:hls:processed:{'a' * 64}"
+        ),
+        updated_at=timezone.now(),
+    )
+    if changed == "hash":
+        video.processed_video_hash = "b" * 64
+    elif changed == "filename":
+        video.processed_file.name = "processed/replacement.mp4"
+    elif changed == "generation":
+        published.source_generation_id = uuid5(NAMESPACE_URL, "another-generation")
+    elif changed == "profile":
+        published.encoding_profile_name = "unknown-profile"
+    else:
+        video.processed_video_hash = ""
+    assert current_overview_hls_artifacts([published], video=video) == []
+    failed = VideoHlsArtifact(
+        id=2,
+        video=video,
+        artifact_kind="processed",
+        status="failed",
+        updated_at=timezone.now() - timedelta(days=1),
+        error_code="validation_failed",
+    )
+    assert current_overview_hls_artifacts([failed, published], video=video) == [failed]
+
+
+def test_overview_does_not_substitute_ready_raw_for_failed_processed() -> None:
+    video = VideoFile(raw_file="raw/current.mp4", raw_video_hash="a" * 64)
+    raw = VideoHlsArtifact(
+        id=1,
+        video=video,
+        artifact_kind="raw",
+        status="ready",
+        source_content_hash="a" * 64,
+        source_file_name=video.raw_file.name,
+        source_generation_id=uuid5(NAMESPACE_URL, f"endoreg-db:hls:raw:{'a' * 64}"),
+        updated_at=timezone.now(),
+    )
+    failed = VideoHlsArtifact(
+        id=2,
+        video=video,
+        artifact_kind="processed",
+        status="failed",
+        updated_at=timezone.now(),
+        error_code="validation_failed",
+    )
+    assert current_overview_hls_artifacts([raw, failed], video=video) == [failed, raw]
 
 
 @pytest.mark.django_db
@@ -68,7 +175,7 @@ def test_anonymization_overview_mixed_content():
 
     video = VideoFile.objects.create(
         center=center,
-        video_hash="hash123",
+        raw_video_hash="hash123",
         original_file_name="tmpabc123.mp4",
         raw_file=dummy_video,  # <--- Pass the file object, not a string
         state=video_state,
@@ -127,6 +234,11 @@ def test_anonymization_overview_mixed_content():
         artifact_kind=VideoHlsArtifact.ArtifactKind.RAW,
         status=VideoHlsArtifact.Status.READY,
         segment_count=2,
+        source_content_hash=video.raw_video_hash,
+        source_file_name=video.raw_file.name,
+        source_generation_id=uuid5(
+            NAMESPACE_URL, f"endoreg-db:hls:raw:{video.raw_video_hash}"
+        ),
     )
     VideoHlsArtifact.objects.create(
         video=video,
@@ -308,12 +420,14 @@ def test_overview_never_attaches_foreign_center_upload_with_same_hash() -> None:
     foreign = Center.objects.create(name="Attachment Foreign")
     user = User.objects.create_user(username="attachment-reader")
     PortalUserInfo.objects.create(user=user).centers.add(own)
-    video = VideoFile.objects.create(center=own, video_hash="shared-content")
+    video = VideoFile.objects.create(center=own, raw_video_hash="shared-content")
     own_job = UploadJob.objects.create(
-        source_center=own, content_hash=video.video_hash, content_type="video/mp4"
+        source_center=own, content_hash=video.raw_video_hash, content_type="video/mp4"
     )
     foreign_job = UploadJob.objects.create(
-        source_center=foreign, content_hash=video.video_hash, content_type="video/mp4"
+        source_center=foreign,
+        content_hash=video.raw_video_hash,
+        content_type="video/mp4",
     )
     request = APIRequestFactory().get("/api/anonymization/items/overview/")
     force_authenticate(request, user=user)
@@ -370,10 +484,10 @@ def test_retry_view_recovers_legacy_terminal_storage_failure() -> None:
 def test_central_hub_overview_unscopes_videos_but_not_reports() -> None:
     local = Center.objects.create(name="Local", center_key="local")
     foreign = Center.objects.create(name="Foreign", center_key="foreign")
-    local_video = VideoFile.objects.create(center=local, video_hash="local-video")
+    local_video = VideoFile.objects.create(center=local, raw_video_hash="local-video")
     foreign_video = VideoFile.objects.create(
         center=foreign,
-        video_hash="foreign-video",
+        raw_video_hash="foreign-video",
         original_file_name="patient-name-foreign.mp4",
     )
     cast(Any, foreign_video.processed_file).save(
@@ -417,7 +531,9 @@ def test_central_hub_overview_unscopes_videos_but_not_reports() -> None:
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
 def test_central_hub_centerless_user_discovers_processed_videos_only() -> None:
     center = Center.objects.create(name="Foreign", center_key="foreign")
-    video = VideoFile.objects.create(center=center, video_hash="centerless-hub-video")
+    video = VideoFile.objects.create(
+        center=center, raw_video_hash="centerless-hub-video"
+    )
     cast(Any, video.processed_file).save(
         "centerless-hub-anonymized.mp4", ContentFile(b"processed"), save=True
     )

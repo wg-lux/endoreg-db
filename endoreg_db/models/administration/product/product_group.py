@@ -8,8 +8,7 @@ if TYPE_CHECKING:
     from .product import Product
     from .reference_product import ReferenceProduct
 
-NoProductGroupValue: TypeAlias = None
-ProductGroupReference: TypeAlias = "ReferenceProduct | NoProductGroupValue"
+ProductGroupReference: TypeAlias = "ReferenceProduct | None"
 
 
 class ProductGroupManager(models.Manager["ProductGroup"]):

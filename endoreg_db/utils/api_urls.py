@@ -3,7 +3,6 @@ from __future__ import annotations
 ENDOREG_API_PREFIX = "/endoreg-api/"
 ENDOREG_API_COMPATIBILITY_PREFIX = "/api/"
 DTYPES_API_PREFIX = "/dtypes-api/"
-DTYPES_API_COMPATIBILITY_PREFIX = "/base_api/"
 
 
 def normalize_public_prefix(prefix: str) -> str:

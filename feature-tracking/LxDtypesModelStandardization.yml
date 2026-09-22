@@ -328,8 +328,7 @@ definition_of_done:
       reference: uv run pytest -q lx_dtypes/models/contracts/tests/test_ai_dataset.py lx_dtypes/models/contracts/tests/test_application_settings.py
         (working directory /lx-data-models; 34 passed)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
-        tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_includes_existing_datasets
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_includes_existing_datasets
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_preserves_phi_detector_contract
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_post_returns_current_duplicate_name_count
         tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_ai_dataset_dropdown_post_derives_video_model_type
@@ -338,8 +337,7 @@ definition_of_done:
         -q (6 passed)
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/aiDatasetApi.test.ts && devenv
-        shell -- npm run type-check (working directory /dev/lx-annotate/frontend; 12 passed;
-        exit 0)
+        shell -- npm run type-check (working directory /dev/lx-annotate/frontend; 12 passed; exit 0)
     - kind: document
       reference: /lx-data-models/docs/guides/cross-layer-validation.md
     - kind: document
@@ -351,8 +349,7 @@ definition_of_done:
     - kind: test
       reference: /lx-data-models/tests/test_data_model_concept_map.py
     - kind: command
-      reference: devenv shell -- pytest -q (working directory /lx-data-models; 636 passed,
-        2 skipped)
+      reference: devenv shell -- pytest -q (working directory /lx-data-models; 636 passed, 2 skipped)
     - kind: command
       reference: devenv shell -- pyright (working directory /lx-data-models; 0 errors)
     - kind: command
@@ -366,16 +363,15 @@ definition_of_done:
     - kind: test
       reference: /lx-data-models/lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py
     - kind: command
-      reference: devenv shell -- pytest -q (working directory /lx-data-models; 658 passed,
-        1 skipped)
+      reference: devenv shell -- pytest -q (working directory /lx-data-models; 658 passed, 1 skipped)
     - kind: command
       reference: devenv shell -- ruff check lx_dtypes/models/contracts/adapters.py lx_dtypes/models/contracts/core_concepts.py
         lx_dtypes/models/contracts/tests/test_core_concepts_adapters.py (working directory /lx-data-models;
         all checks passed)
     - kind: command
       reference: devenv shell -- npm exec -- vitest run src/api/__tests__/coreConcepts.test.ts src/api/__tests__/reportTemplatesApi.test.ts
-        && devenv shell -- npm run type-check (working directory /dev/lx-annotate/frontend;
-        20 passed; type-check exit 0)
+        && devenv shell -- npm run type-check (working directory /dev/lx-annotate/frontend; 20 passed;
+        type-check exit 0)
     assessed_by: codex-dtypes-consistency-20260813
     assessed_at: '2026-08-13T11:47:01.588500Z'
 - id: persisted_model_validation
@@ -598,10 +594,15 @@ definition_of_done:
   category: testing
   title: Automatisierte Guards verhindern neue lokale oder unvalidierte Modellverträge
   acceptance:
+  - Reine Aliase für skalare Builtins und deren optionale Formen werden durch direkte Annotationen ersetzt;
+    der YAML-gesteuerte Guard verhindert ihre erneute Einführung ohne zusätzliche lokale Helfertypen.
   - Repositoryweites Pyright läuft ohne neue Fehler, Any-Ausweitungen, Ignore-Regeln oder sachlich unbegründete
     Optional-/Union-Typen.
   - Ein Registry-basierter Test verlangt für jedes Modell und jede relevante Boundary eine aktuelle Klassifikation
     und den zugeordneten Validierungsnachweis.
+  - Der YAML-gesteuerte Typguard verhindert lokale Neudefinitionen kanonischer JSON-, YAML-, Framequellen-,
+    Reportoperations-, Exportprofil-, Exportformat- und zusammengesetzter Berechtigungstypen, auch unter
+    anderem Namen und mit umgeordneten Union- oder Literalwerten in Python-Dateien und Stubs.
   - Architekturtests verhindern neue konkurrierende lokale Contracts, breite Modell-Barrel-Imports, Model-zu-Service-Zyklen
     und unvalidierte persistierte JSON-Payloads.
   - Jede Kohorte besitzt parametrisierte Tests für gültige Varianten, ungültige Eingaben, Serialisierungs-Round-Trips
@@ -613,7 +614,7 @@ definition_of_done:
       und Round-Trip-Tests aller abgeschlossenen Kohorten in einem auditable foreground test run ausführen.
     timeout_seconds: 1800
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: scripts/check_lx_dtypes_model_inventory.py
@@ -646,18 +647,53 @@ definition_of_done:
         tests/services/test_report_import_fencing.py tests/services/test_watcher_storage_import.py -q
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
-    note: Repositoryweites Pyright ist fehlerfrei. Der Registry-/Boundary-Guard blockiert neue oder veränderte
-      Modelle, JSONFields, Consumer und dynamische Referenzen sowie unclassified oder abgelaufene Ausnahmen;
-      JSONField-Modelle benötigen shared/local/temporary Klassifikation und Ownership-Evidenz. Architekturtests
-      blockieren neue Model-Barrel-Imports, Model-zu-Service-Abweichungen, Implementierungsimporte und
-      neue lokale Pydantic-Verträge außerhalb endoreg_db.schemas; 22 bestehende Service-/View-Verträge
-      sind einzeln eingefroren. CommonLabValues wurde ohne API-Bruch vom konkurrierenden Pydantic-Modell
-      zur typisierten frozen dataclass reduziert. Die abgeschlossene Receipt-Kohorte deckt gültige, ungültige,
-      kanonische, Legacy-, Backfill-, Rollback-, Replay- und Parallelvarianten ab; Report- und Watcher-Importtests
-      belegen Locking, Parallelität und idempotente Duplikatbehandlung. Der auditable foreground Lauf
-      bestand mit 84 Tests.
-    assessed_by: Codex
-    assessed_at: '2026-07-30T07:10:33.888989Z'
+    - kind: code
+      reference: endoreg_db/helpers/typing.py
+    - kind: code
+      reference: scripts/check_lx_dtypes_contract_boundaries.py
+    - kind: document
+      reference: quality/lx_dtypes_contract_policy.yml
+    - kind: test
+      reference: tests/scripts/test_check_lx_dtypes_contract_boundaries.py
+    - kind: test
+      reference: tests/dataloader/test_yaml_model_loader.py
+    note: '2026-09-21: 69 reine None-Aliase und 28 redundante Verbose-Command-TypedDicts entfernt. DjangoFile,
+      BinaryFieldFileSaver und sämtliche YAML-Loader-Verträge liegen kanonisch in helpers/typing.py; Implementation,
+      Stub und Legacy-Fassade verwenden dieselben Definitionen. Lokale Aliasdeklarationen 288 auf 211
+      reduziert; Guard prüft .py/.pyi, kanonische Owner, redundante Formen und das abgesenkte Budget und
+      ist in pre-commit eingebunden. Fokussiertes Pyright, Ruff und Patch-Whitespace-Prüfung bestanden.
+      Kombinierte Suite: 115 Tests und 853 Subtests bestanden; ein fehlender YamlValue-Reexport wurde
+      korrigiert, danach 17 Tests bestanden (alle 116 unterschiedlichen Tests insgesamt erfolgreich).
+      Repositoryweites Pyright: 103 Fehler/3 Warnungen gegenüber 106/3 zu Beginn, keine neuen Diagnoseköpfe.
+      Vollständiger Contract-Guard meldet ausschließlich den bestehenden Versionskonflikt: Policy verlangt
+      exakten lx-dtypes-Pin, pyproject.toml verwendet >=0.3.4. Keine globale Produktionsverifikation.
+
+      Weitere Konsolidierung 2026-09-21: Aliasanzahl und YAML-Budget von 211 auf 192 gesenkt. Kanonische
+      lx_dtypes-Typen für JSON, YAML-Skalare, Framequellen, Exportprofile und Exportformate; Reportoperationen
+      im vorhandenen Schema und alle drei zusammengesetzten Berechtigungstypen in helpers/typing.py konsolidiert.
+      Guard erkennt umbenannte, umgeordnete und rekursive Duplikate in Python und Stubs. Aktueller Guard
+      bestanden: 192/192 Aliase, sieben paketgelieferte Terminologieversionen, keine Paket-Pin-Prüfung.
+      Haupttestlauf 108 bestanden, Uploadtests 22 bestanden; Exporttests 26 bestanden und ein bestehender
+      Dateinamenskonflikt (video_7_raw-hash.mp4 erwartet, raw-hash.mp4 erzeugt). Vollständiges Pyright
+      62 Fehler/5 Warnungen; bearbeiteter Kernumfang nur zwei bestehende _dotenv_loaded-Fehler in config/env.py.
+      Upload/Guard und Export jeweils Pyright 0 Fehler/0 Warnungen. Ruff bis auf bestehenden _dotenv_loaded-Befund
+      sauber; Format und Diff-Whitespace sauber. Standalone-Startupcheck durch fehlendes data/tests/runtime/terminology
+      blockiert. Erster Testlauf durch parallele Neuerstellung der virtuellen Umgebung gestört; Wiederholung
+      erfolgreich. Kein vollständiger Produktionsreife-Nachweis.
+
+      2026-09-21, skalare Typkonsolidierung: Weitere 45 lokale Aliase entfernt (192 auf 147); primitive
+      und optionale Builtins stehen direkt an ihrer Verwendungsstelle. Keine neuen Helfertypen; utils/validation_types.py
+      nach Migration aller vier Consumer entfernt. YAML-Guard verhindert triviale Aliase einschließlich
+      umgeordneter und zitierter Unionformen in Python und Stubs. Fokussiertes Pyright 0 Fehler/0 Warnungen,
+      Ruff/Format/Diff-Whitespace sauber, Typguard 147/147 mit sieben Terminologieversionen. Repository-Pyright
+      vor/nach jeweils 57 Fehler (Warnungen 5/6 im parallelen Arbeitsbaum). Fokussierte Tests: 151 bestanden,
+      sechs Subtests bestanden; fünf bestehende Healthtests scheitern beim Patchen des entfernten PROTECTED_DATA_ROOT,
+      an pytest-lf-Agent übergeben. Dead-Code-Guard meldet vier fremde stale-Einträge (aidataset_training_manifests,
+      annotation_access, storage/files, yaml_model_loader); Quality-Boundary-Guard meldet bestehenden
+      Inventardrift. Radon: Patient LOC 657 auf 653, ProductWeight 51 auf 48; ProductWeight-Komplexitäten
+      unverändert A. Keine vollständige Produktionsverifikation.'
+    assessed_by: codex-type-consolidation-20260921
+    assessed_at: '2026-09-21T10:52:55.971703Z'
 - id: security_and_privacy_boundaries
   category: security
   title: Zentrale Modellvalidierung schützt Identität, Mandantengrenzen und Medieninvarianten
@@ -726,8 +762,8 @@ definition_of_done:
   category: operations
   title: Contract-Versionen, Datenmigration, Rollback und Mischbetrieb sind beherrscht
   acceptance:
-  - Jede veröffentlichte oder persistierte Contract-Änderung besitzt eine explizite lx-dtypes-Version,
-    Kompatibilitätsmatrix und zulässige Mischbetriebsdauer.
+  - Jede veröffentlichte oder persistierte Contract-Änderung besitzt eine explizite Terminologie- beziehungsweise
+    Contract-Version, Kompatibilitätsmatrix und zulässige Mischbetriebsdauer.
   - Vor Deployment sind Backfill, Validierungsreport, Quarantäne, Abbruchkriterien und atomarer Rollback
     mit repräsentativen Daten nachgewiesen.
   - Ungültige Bestandsdaten werden nicht still korrigiert oder verworfen, sondern fail-closed mit Modell,
@@ -737,8 +773,8 @@ definition_of_done:
   required: true
   verification:
     kind: manual
-    instructions: Eine repräsentative Kohorte mit gepinnter lx-dtypes-Version, Backfill, Mischbetrieb,
-      Fehlerfall, Rollback und Import-/Streaming- Concurrency-Probe durchführen.
+    instructions: Eine repräsentative Kohorte mit im Standardpaket verfügbarer Terminologieversion, Backfill,
+      Mischbetrieb, Fehlerfall, Rollback und Import-/Streaming- Concurrency-Probe durchführen.
     timeout_seconds: 1800
   assessment:
     status: verified

@@ -59,7 +59,7 @@ def _validated_video(
     video = VideoFile.objects.create(
         center=center,
         sensitive_meta=sensitive_meta,
-        video_hash=f"quality-video-{uuid4().hex}",
+        raw_video_hash=f"quality-video-{uuid4().hex}",
     )
     if processed_file:
         video.processed_file.save("processed.mp4", ContentFile(b"processed"), save=True)

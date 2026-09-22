@@ -250,7 +250,7 @@ def test_hls_lease_contention_does_not_publish_success_receipt(
 ) -> None:
     video = VideoFile.objects.create(
         center=workflow_center,
-        video_hash="lease-contention-source",
+        raw_video_hash="lease-contention-source",
         processed_video_hash="lease-contention-processed",
     )
     receipt = tmp_path / "receipts/video_hls/contended.json"
@@ -369,7 +369,7 @@ def test_hls_rejects_stale_generation_before_service_invocation(
 ) -> None:
     video = VideoFile.objects.create(
         center=workflow_center,
-        video_hash=_SOURCE_GENERATION_V1,
+        raw_video_hash=_SOURCE_GENERATION_V1,
         processed_video_hash=_PROCESSED_GENERATION_V1,
     )
     upstream = tmp_path / f"{upstream_kind}.json"
@@ -444,7 +444,7 @@ def test_stage_scripts_handoff_authoritative_generations_end_to_end(
     _write_bytes(source, b"immutable integration source")
     video = VideoFile.objects.create(
         center=workflow_center,
-        video_hash=_SOURCE_GENERATION_V1,
+        raw_video_hash=_SOURCE_GENERATION_V1,
         processed_video_hash=_PROCESSED_GENERATION_V1,
     )
 

@@ -7,9 +7,7 @@ from django.db import models
 if TYPE_CHECKING:
     from .label import Label
 
-NoLabelSetValue: TypeAlias = None
-LabelSetDescription: TypeAlias = "str | NoLabelSetValue"
-LabelSetVersionLookup: TypeAlias = "int | str | NoLabelSetValue"
+LabelSetVersionLookup: TypeAlias = "int | str | None"
 
 
 class LabelSetManager(models.Manager["LabelSet"]):

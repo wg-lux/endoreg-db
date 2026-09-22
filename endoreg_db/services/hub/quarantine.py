@@ -14,7 +14,7 @@ from endoreg_db.models.hub.quarantine_item import QuarantineItem
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
-from endoreg_db.utils.paths import EndoregPathsModel
+from endoreg_db.utils.paths import get_runtime_paths
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -49,7 +49,7 @@ class QuarantineReapResult:
 
 
 def quarantine_dir() -> Path:
-    return EndoregPathsModel.from_environment().quarantine
+    return get_runtime_paths().quarantine
 
 
 def _now() -> datetime:

@@ -10,12 +10,11 @@ if TYPE_CHECKING:
     from ...other.emission.emission_factor import EmissionFactor
     from ...other.unit import Unit
 
-NoProductMaterialValue: TypeAlias = None
 ProductMaterialEmission: TypeAlias = tuple[float, "Unit"]
 
 
 class _ProductMaterialEmissionFactorSource(Protocol):
-    unit: "Unit | NoProductMaterialValue"
+    unit: "Unit | None"
     value: float
 
 
@@ -25,7 +24,7 @@ class _ProductMaterialUnitSource(Protocol):
 
 class _ProductMaterialSource(Protocol):
     name: str
-    emission_factor: "EmissionFactor | NoProductMaterialValue"
+    emission_factor: "EmissionFactor | None"
 
 
 class _ProductMaterialProductSource(Protocol):
@@ -68,7 +67,7 @@ class ProductMaterial(models.Model):
 
         unit = cast(_ProductMaterialUnitSource, self.unit)
         emission_unit_source = cast(
-            _ProductMaterialUnitSource | NoProductMaterialValue,
+            _ProductMaterialUnitSource | None,
             emission_factor_source.unit,
         )
         if emission_unit_source is not None:

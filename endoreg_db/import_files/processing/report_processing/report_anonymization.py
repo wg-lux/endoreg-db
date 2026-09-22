@@ -26,10 +26,9 @@ from endoreg_db.models.administration.person.patient.patient import (
     Patient,
     canonical_pseudo_patient_name,
 )
-from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.utils.hashs import get_patient_hash
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import ensure_directory, sha256_file
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.file_operations import ensure_directory, get_file_hash
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
@@ -109,10 +108,7 @@ def persist_report_anonymization_result(
 
 
 def _processed_report_dir() -> Path:
-    return (
-        path_utils.EndoregPathsModel.from_environment().transcoding
-        / "anonymized_reports"
-    )
+    return get_runtime_paths().anonym_report
 
 
 def _validate_report_result(
@@ -150,7 +146,7 @@ def _validate_report_result(
         raise ValueError("Report anonymization artifact must be a regular file")
     if before.st_size != result.artifact_size_bytes:
         raise ValueError("Report anonymization artifact size does not match")
-    if sha256_file(artifact) != result.artifact_sha256:
+    if get_file_hash(artifact) != result.artifact_sha256:
         raise ValueError("Report anonymization artifact hash does not match")
     after = artifact.lstat()
     if (
@@ -289,7 +285,6 @@ class ReportAnonymizer:
                     last_name=candidate.last_name,
                     dob=candidate.dob,
                     center=center_name,
-                    salt=sensitive_meta_logic.SECRET_SALT,
                 )
                 seed = hashlib.sha256(hash_material.encode()).hexdigest()
 

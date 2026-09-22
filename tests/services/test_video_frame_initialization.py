@@ -10,7 +10,7 @@ def _video(*, frame_count: int | None) -> VideoFile:
     center = Center.objects.create(name=f"frame-init-{uuid4().hex[:8]}")
     return VideoFile.objects.create(
         center=center,
-        video_hash=f"frame-init-{uuid4().hex}",
+        raw_video_hash=f"frame-init-{uuid4().hex}",
         frame_count=frame_count,
     )
 

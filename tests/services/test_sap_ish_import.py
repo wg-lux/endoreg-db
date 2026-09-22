@@ -12,7 +12,7 @@ from endoreg_db.services.sap_ish_import import (
     convert_sap_ish_zip_to_preanonymized_drop,
 )
 from endoreg_db.services.tabular_import_formats import build_preanonymized_payload
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:
@@ -50,7 +50,10 @@ def test_convert_sap_ish_zip_prefers_text_bearing_case_rows() -> None:
         source_dir = temp_dir / "source"
         source_dir.mkdir()
         archive_path = temp_dir / "sap_export.zip"
-        output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"service-test-{temp_dir.name}"
+        output_dir = (
+            get_runtime_paths().watcher_preanonymized_drop
+            / f"service-test-{temp_dir.name}"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         _write_tsv(
@@ -101,7 +104,10 @@ def test_convert_sap_ish_zip_builds_case_summary_when_no_text_rows_exist() -> No
         source_dir = temp_dir / "source"
         source_dir.mkdir()
         archive_path = temp_dir / "sap_export.zip"
-        output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"service-test-{temp_dir.name}"
+        output_dir = (
+            get_runtime_paths().watcher_preanonymized_drop
+            / f"service-test-{temp_dir.name}"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         _write_tsv(
@@ -173,7 +179,10 @@ def test_convert_sap_ish_txt_directory_writes_yaml_sidecars() -> None:
         temp_dir = Path(temp_dir_name)
         source_dir = temp_dir / "source"
         source_dir.mkdir()
-        output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"service-test-{temp_dir.name}"
+        output_dir = (
+            get_runtime_paths().watcher_preanonymized_drop
+            / f"service-test-{temp_dir.name}"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         _write_tsv(

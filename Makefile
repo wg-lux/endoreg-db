@@ -12,6 +12,7 @@ PYTHON_BIN ?= python
 MATURIN_BIN ?= maturin
 TWINE_BIN ?= twine
 PYPI_DIST_DIR ?= dist
+PYPI_TARGET_DIR ?= target/package-manylinux2014
 PYPI_MANIFEST_PATH ?= rust/endoreg_rust_backend/Cargo.toml
 PYPI_INTERPRETER ?=
 PYPI_COMPATIBILITY ?= linux
@@ -50,6 +51,7 @@ help:
 	@echo "  MATURIN_BIN=$(MATURIN_BIN)"
 	@echo "  TWINE_BIN=$(TWINE_BIN)"
 	@echo "  PYPI_DIST_DIR=$(PYPI_DIST_DIR)"
+	@echo "  PYPI_TARGET_DIR=$(PYPI_TARGET_DIR)"
 	@echo "  PYPI_MANIFEST_PATH=$(PYPI_MANIFEST_PATH)"
 	@echo "  PYPI_INTERPRETER=$(PYPI_INTERPRETER)"
 	@echo "  PYPI_COMPATIBILITY=$(PYPI_COMPATIBILITY)  # set to manylinux2014, manylinux_2_28, musllinux_1_2, etc. when needed"
@@ -105,11 +107,14 @@ ZIG_PLATFORM := x86_64-unknown-linux-gnu
 pypi-wheel:
 	@echo "Building Rust Backend Extension and Main Django Wheel with Zig/Manylinux..."
 	@mkdir -p $(PYPI_DIST_DIR)
-	# Unset the Nix-specific platform override to let Maturin/Zig do their job
-	unset _PYTHON_HOST_PLATFORM; \
+	# The devenv Cargo linker override takes precedence over Zig's manylinux linker.
+	# Keep portable release artifacts separate from native development builds.
+	unset _PYTHON_HOST_PLATFORM CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER; \
 	$(MATURIN_BIN) build --release \
 		--zig \
 		--compatibility manylinux2014 \
+		--target $(ZIG_PLATFORM) \
+		--target-dir "$(PYPI_TARGET_DIR)" \
 		--out $(PYPI_DIST_DIR)
 		
 pypi-sdist:

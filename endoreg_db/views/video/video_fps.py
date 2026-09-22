@@ -1,30 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TypeAlias
 
 from django.shortcuts import get_object_or_404
-from rest_framework import status
-from rest_framework.permissions import (
-    BasePermission,
-    OperandHolder,
-    SingleOperandHolder,
-)
-from rest_framework.request import Request
-from rest_framework.response import Response
-from endoreg_db.openapi import OpenApiAPIView as APIView
 from lx_dtypes.models.meta.VideoMeta import (
     VideoFpsDetailsPayload,
     VideoFpsErrorPayload,
     VideoFpsPayload,
     VideoFpsStatsPayload,
 )
+from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
 
+from endoreg_db.helpers.typing import CompositePermissionClass
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.openapi import OpenApiAPIView as APIView
 from endoreg_db.services.video_files import require_persisted_video_fps
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-
-PermissionClass: TypeAlias = type[BasePermission] | OperandHolder | SingleOperandHolder
 
 
 class VideoFpsView(APIView):
@@ -32,7 +25,9 @@ class VideoFpsView(APIView):
     GET media/videos/{pk}/fps/ - Return fps for a single video.
     """
 
-    permission_classes: Sequence[PermissionClass] = (EnvironmentAwarePermission,)
+    permission_classes: Sequence[CompositePermissionClass] = (
+        EnvironmentAwarePermission,
+    )
 
     def get(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(VideoFile, pk=pk)

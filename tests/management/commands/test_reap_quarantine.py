@@ -18,7 +18,8 @@ from lx_dtypes.models.contracts.management_command import (
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from endoreg_db.config.env import DATA_DIR_ENV
+from endoreg_db.config.env import RUNTIME_ROOT_ENV
+from endoreg_db.utils.paths import clear_runtime_paths_cache
 from endoreg_db.management.commands import reap_quarantine as reap_command
 from endoreg_db.models.hub.quarantine_item import QuarantineItem
 
@@ -65,7 +66,8 @@ def test_reap_quarantine_defaults_to_dry_run(
     stale_file.write_bytes(b"stale")
     old_timestamp = time.time() - (31 * 24 * 60 * 60)
     os.utime(stale_file, (old_timestamp, old_timestamp))
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
 
     output = StringIO()
     call_command(
@@ -97,7 +99,8 @@ def test_reap_quarantine_confirm_does_not_delete_without_approval(
     fresh_file.write_bytes(b"fresh")
     old_timestamp = time.time() - (31 * 24 * 60 * 60)
     os.utime(stale_file, (old_timestamp, old_timestamp))
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
 
     output = StringIO()
     call_command(
@@ -128,7 +131,8 @@ def test_reap_quarantine_approve_stale_then_confirm_deletes_only_approved_files(
     fresh_file.write_bytes(b"fresh")
     old_timestamp = time.time() - (31 * 24 * 60 * 60)
     os.utime(stale_file, (old_timestamp, old_timestamp))
-    monkeypatch.setenv(DATA_DIR_ENV, str(data_dir))
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(data_dir))
+    clear_runtime_paths_cache()
 
     output = StringIO()
     call_command(

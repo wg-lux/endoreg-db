@@ -16,7 +16,7 @@ from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
+from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.utils.paths import protected_media_root
 
 
@@ -44,7 +44,7 @@ class FrameStreamViewTests(TestCase):
         )
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"frame-stream-video-{uuid.uuid4().hex}",
+            raw_video_hash=f"frame-stream-video-{uuid.uuid4().hex}",
             frame_count=100,
             original_file_name="frame_stream_test.mp4",
         )
@@ -65,131 +65,6 @@ class FrameStreamViewTests(TestCase):
 
     def tearDown(self) -> None:
         shutil.rmtree(self.frame_dir, ignore_errors=True)
-
-    def test_frame_stream_serves_existing_frame_and_nginx_offload(self) -> None:
-        frame_media_module = _load_frame_media_module("test_frame_media_module")
-
-        target_path = self.frame.file_path
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(b"\xff\xd8\xff\xdbfakejpg")
-        Frame.objects.filter(pk=self.frame.pk).update(is_extracted=True)
-
-        monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setenv("SERVE_WITH_NGINX", "true")
-        monkeypatches.setenv(
-            "DJANGO_CORS_ALLOWED_ORIGINS",
-            "http://frontend.test",
-        )
-        monkeypatches.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
-
-        try:
-            factory = APIRequestFactory()
-            req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/"
-                f"{self.frame.frame_number}/stream/",
-            )
-            view = frame_media_module.FrameStreamView.as_view()
-            resp = view(
-                req,
-                video_id=self.video.pk,
-                frame_number=self.frame.frame_number,
-            )
-        finally:
-            monkeypatches.undo()
-
-        if resp.status_code != 200:
-            body = getattr(resp, "data", None) or getattr(resp, "content", b"")
-            raise AssertionError(f"Expected 200, got {resp.status_code}. body={body!r}")
-
-        assert resp.status_code == 200
-        self.frame.refresh_from_db()
-        assert self.frame.is_extracted is True
-        assert target_path.exists()
-
-        assert resp["Content-Type"] == "image/jpeg"
-        assert resp["X-Accel-Redirect"].startswith("/protected_media/")
-        assert "frame_0000007.jpg" in resp["Content-Disposition"]
-        assert resp["X-Accel-Buffering"] == "no"
-        assert resp["Access-Control-Allow-Origin"] == "http://frontend.test"
-
-    def test_frame_stream_queues_async_extraction_when_frame_missing(self) -> None:
-        frame_media_module = _load_frame_media_module("test_frame_media_pending_module")
-
-        def fake_request_frame_extraction(**kwargs: object) -> object:
-            return frame_media_module.FrameExtractionDispatchResult(
-                request_id=17,
-                task_id="task-17",
-                status="queued",
-                video_id=self.video.pk,
-                frame_number=self.frame.frame_number,
-            )
-
-        monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setattr(
-            frame_media_module,
-            "request_frame_extraction",
-            fake_request_frame_extraction,
-        )
-
-        try:
-            factory = APIRequestFactory()
-            req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/"
-                f"{self.frame.frame_number}/stream/",
-            )
-            view = frame_media_module.FrameStreamView.as_view()
-            resp = view(
-                req,
-                video_id=self.video.pk,
-                frame_number=self.frame.frame_number,
-            )
-        finally:
-            monkeypatches.undo()
-        data = json.loads(resp.content)
-
-        assert resp.status_code == 202
-        assert data["status"] == "frame_extraction_pending"
-        assert data["request_id"] == 17
-        assert data["task_id"] == "task-17"
-
-    def test_frame_stream_reports_failed_extraction_request(self) -> None:
-        frame_media_module = _load_frame_media_module("test_frame_media_failed_module")
-
-        def fake_failed_request_frame_extraction(**kwargs: object) -> object:
-            return frame_media_module.FrameExtractionDispatchResult(
-                request_id=18,
-                task_id="task-18",
-                status="failed",
-                video_id=self.video.pk,
-                frame_number=self.frame.frame_number,
-            )
-
-        monkeypatches = pytest.MonkeyPatch()
-        monkeypatches.setattr(
-            frame_media_module,
-            "request_frame_extraction",
-            fake_failed_request_frame_extraction,
-        )
-
-        try:
-            factory = APIRequestFactory()
-            req = factory.get(
-                f"/api/media/videos/{self.video.pk}/frames/"
-                f"{self.frame.frame_number}/stream/",
-            )
-            view = frame_media_module.FrameStreamView.as_view()
-            resp = view(
-                req,
-                video_id=self.video.pk,
-                frame_number=self.frame.frame_number,
-            )
-        finally:
-            monkeypatches.undo()
-
-        data = json.loads(resp.content)
-        assert resp.status_code == 409
-        assert data["status"] == "frame_extraction_failed"
-        assert data["request_id"] == 18
 
     def test_frame_stream_rejects_out_of_range_frame_number(self) -> None:
         factory = APIRequestFactory()
@@ -277,35 +152,6 @@ class FrameStreamViewTests(TestCase):
             monkeypatches.undo()
 
         assert resp.status_code in {401, 403}
-
-    def test_frame_stream_does_not_create_duplicate_request_rows_for_same_frame(
-        self,
-    ) -> None:
-        request = FrameExtractionRequest.objects.create(
-            video=self.video,
-            frame_number=self.frame.frame_number,
-            status=FrameExtractionRequest.STATUS_PENDING,
-            task_id="existing-task",
-        )
-        factory = APIRequestFactory()
-        req = factory.get(
-            f"/api/media/videos/{self.video.pk}/frames/"
-            f"{self.frame.frame_number}/stream/",
-        )
-
-        from endoreg_db.views.media.frame_media import FrameStreamView
-
-        view = FrameStreamView.as_view()
-        resp = view(
-            req,
-            video_id=self.video.pk,
-            frame_number=self.frame.frame_number,
-        )
-
-        assert resp.status_code == 202
-        assert FrameExtractionRequest.objects.count() == 1
-        request.refresh_from_db()
-        assert request.task_id == "existing-task"
 
     def test_decoded_frame_stream_serves_single_decoded_frame(self) -> None:
         from endoreg_db.views.media import frame_media as frame_media_module

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Unpack, cast, Any
+from typing import TYPE_CHECKING, Unpack, cast, Any
 
 from django.db import models
 
@@ -10,8 +10,6 @@ if TYPE_CHECKING:
     from ..aidataset.aidataset import AIDataSet
     from ..medical.hardware.endoscopy_processor import EndoscopyProcessor
     from .center.center import Center
-
-NoApplicationSettingsSaveValue: TypeAlias = None
 
 
 class ApplicationSettingsManager(models.Manager["ApplicationSettings"]):
@@ -27,18 +25,14 @@ class ApplicationSettings(models.Model):
     Stores central defaults used by imports/annotation/report workflows.
     """
 
-    center: models.ForeignKey["Center | NoApplicationSettingsSaveValue"] = (
-        models.ForeignKey(
-            "Center",
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="+",
-        )
+    center: models.ForeignKey["Center | None"] = models.ForeignKey(
+        "Center",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
     )
-    processor: models.ForeignKey[
-        "EndoscopyProcessor | NoApplicationSettingsSaveValue"
-    ] = models.ForeignKey(
+    processor: models.ForeignKey["EndoscopyProcessor | None"] = models.ForeignKey(
         "EndoscopyProcessor",
         on_delete=models.SET_NULL,
         null=True,
@@ -70,14 +64,12 @@ class ApplicationSettings(models.Model):
             ("video", "Video"),
         ],
     )
-    ai_dataset: models.ForeignKey["AIDataSet | NoApplicationSettingsSaveValue"] = (
-        models.ForeignKey(
-            "AIDataSet",
-            on_delete=models.SET_NULL,
-            null=True,
-            blank=True,
-            related_name="+",
-        )
+    ai_dataset: models.ForeignKey["AIDataSet | None"] = models.ForeignKey(
+        "AIDataSet",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
     )
     created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
     updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)

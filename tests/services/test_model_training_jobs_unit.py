@@ -122,20 +122,6 @@ def test_direct_training_run_update_canonicalizes_all_json_fields() -> None:
     )
 
 
-def test_expected_frame_relative_path_zero_padded() -> None:
-    assert training._expected_frame_relative_path(5, "png") == "frame_0000005.png"
-    assert training._expected_frame_relative_path(123) == "frame_0000123.jpg"
-
-
-def test_consecutive_ranges_compresses_runs() -> None:
-    assert training._consecutive_ranges([1, 2, 3, 7, 8, 10]) == [
-        (1, 4),
-        (7, 9),
-        (10, 11),
-    ]
-    assert training._consecutive_ranges([]) == []
-
-
 def test_merge_frame_intervals_merges_overlapping_and_adjacent() -> None:
     assert training._merge_frame_intervals([(1, 3), (5, 8), (2, 6), (8, 10)]) == [
         (1, 10),

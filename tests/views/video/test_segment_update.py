@@ -59,7 +59,7 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             processor=self.processor,
-            video_hash="test_hash_segment_update",
+            raw_video_hash="test_hash_segment_update",
             original_file_name="test_video.mp4",
         )
 

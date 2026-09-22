@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ..shift.scheduled_days import ScheduledDays
-
-NoCenterShiftValue: TypeAlias = None
-CenterShiftDescription: TypeAlias = str | NoCenterShiftValue
 
 
 class CenterShiftManager(models.Manager["CenterShift"]):

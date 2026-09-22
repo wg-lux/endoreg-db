@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 @pytest.fixture
 def video() -> VideoFile:
     center = Center.objects.create(name=f"writer-{uuid4().hex}")
-    return VideoFile.objects.create(center=center, video_hash=uuid4().hex)
+    return VideoFile.objects.create(center=center, raw_video_hash=uuid4().hex)
 
 
 @pytest.mark.parametrize("operation", ["anonymize", "finalize"])
@@ -106,3 +106,35 @@ def test_direct_file_mutation_is_rejected_before_storage(
         storage.delete.assert_not_called()
     finally:
         release_video_transcode_lease(claim)
+
+
+@pytest.mark.parametrize("field_name", ["raw_file", "processed_file"])
+def test_video_artifact_storage_access(video: VideoFile, field_name: str) -> None:
+    from endoreg_db.utils.paths import get_runtime_paths
+    from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
+    from endoreg_db.utils.file_operations import get_file_hash
+
+    field = getattr(video, field_name)
+    assert isinstance(field, VideoArtifactFieldFile)
+    assert not field.exists()
+    field.save("artifact.mp4", ContentFile(b"video payload"), save=False)
+    assert field.exists()
+    assert field.local_plaintext_path() is None
+    assert field.get_hash() == get_file_hash(field)
+    with field.ensure_local() as path:
+        assert path.parent == get_runtime_paths().transcoding
+        assert path.read_bytes() == b"video payload"
+    assert not path.exists()
+
+
+def test_video_stream_source_never_returns_ciphertext(video: VideoFile) -> None:
+    video.processed_file.save("artifact.mp4", ContentFile(b"video payload"), save=False)
+    field, path = video.resolve_video_stream_source("processed")
+    assert field is video.processed_file
+    assert path is None
+
+
+def test_missing_storage_object_is_not_streamable(video: VideoFile) -> None:
+    video.processed_file.name = "missing.mp4"
+    with pytest.raises(FileNotFoundError):
+        video.resolve_video_stream_source("processed")

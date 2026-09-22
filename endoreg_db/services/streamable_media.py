@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from endoreg_db.utils.storage.files import canonical_media_name
+
 import hashlib
 import logging
 import os
@@ -30,16 +32,17 @@ from endoreg_db.services.streamable_media_types import (
     StreamableTranscodeProfile,
 )
 from endoreg_db.utils import ffmpeg_wrapper
-from endoreg_db.utils import paths as path_utils
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_write_file,
     ensure_directory,
     secure_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.utils.paths import (
-    protected_media_root,
+    ensure_within_storage_root,
+    get_runtime_paths,
+    resolve_existing_protected_media_path,
     to_storage_relative,
 )
 from endoreg_db.utils.storage_profile import resolve_storage_policy
@@ -63,9 +66,6 @@ __all__ = (
     "STREAMABLE_ARTIFACT_SPECS",
     "STREAMABLE_DIRECTORY_MODE",
     "STREAMABLE_FILE_MODE",
-    "STREAMABLE_PROCESSED_VIDEO_ROOT",
-    "STREAMABLE_RAW_VIDEO_ROOT",
-    "STREAMABLE_VIDEO_ROOT",
     "StreamableArtifactDecision",
     "StreamableArtifactDisposition",
     "StreamableArtifactKind",
@@ -83,39 +83,22 @@ if TYPE_CHECKING:
 
 
 def _streamable_video_root() -> Path:
-    return Path(
-        os.environ.get(
-            "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT",
-            str(protected_media_root() / "streamable_videos"),
-        )
-    ).resolve()
+    """Return the streamable-artifact root inside canonical storage.
+
+    Streamable MP4 copies are no longer independently configurable. This path
+    exists only so older persisted relative-path references can be reconciled
+    and securely removed.
+    """
+
+    return get_runtime_paths().streamable_videos_root
 
 
 def _streamable_raw_video_root() -> Path:
-    return Path(
-        os.environ.get(
-            "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT",
-            str(_streamable_video_root() / "raw"),
-        )
-    ).resolve()
+    return get_runtime_paths().streamable_videos_raw_media
 
 
 def _streamable_processed_video_root() -> Path:
-    return Path(
-        os.environ.get(
-            "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
-            str(_streamable_video_root() / "processed"),
-        )
-    ).resolve()
-
-
-STREAMABLE_VIDEO_ROOT = _streamable_video_root()
-STREAMABLE_RAW_VIDEO_ROOT = _streamable_raw_video_root()
-STREAMABLE_PROCESSED_VIDEO_ROOT = _streamable_processed_video_root()
-_DEFAULT_STREAMABLE_RAW_VIDEO_ROOT = STREAMABLE_RAW_VIDEO_ROOT
-_DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT = STREAMABLE_PROCESSED_VIDEO_ROOT
-_DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN = _streamable_raw_video_root
-_DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN = _streamable_processed_video_root
+    return get_runtime_paths().streamable_videos_processed_media
 
 
 def _is_sha256_hex(value: str) -> bool:
@@ -143,7 +126,7 @@ def _source_bytes(
 
 def _source_hash(video_field_file: FieldFile | Any, source_path: Path | None) -> str:
     if source_path is not None:
-        return sha256_file(source_path)
+        return get_file_hash(source_path)
     file_size = _source_size(video_field_file, source_path)
     digest = hashlib.sha256()
     if file_size <= 0:
@@ -202,24 +185,35 @@ def _materialize_processed_hls(video: "VideoFile", *, force: bool) -> None:
 
 
 def _streamable_path_from_relative(relative_path: str) -> Path | None:
+    """Resolve an existing legacy streamable artifact inside canonical storage.
+
+    Persisted streamable paths are storage-relative. No external or separately
+    configured streamable root is accepted.
+    """
+
     normalized = str(relative_path or "").strip()
     if not normalized:
         return None
-    resolved = path_utils.resolve_existing_protected_media_path(normalized)
+
+    resolved = resolve_existing_protected_media_path(normalized)
     if resolved is not None:
         return resolved
 
+    # Very old records may have stored a path relative to ``streamable_videos``
+    # rather than to the storage root. Keep this read-only reconciliation path
+    # bounded by the canonical storage root.
     relative = Path(normalized)
-    candidate_roots = (
-        Path(path_utils.STORAGE_DIR).resolve(),
-        _streamable_root_for_kind(StreamableArtifactKind.RAW).parent.parent,
-        _streamable_root_for_kind(StreamableArtifactKind.PROCESSED).parent.parent,
-    )
-    for root in dict.fromkeys(path.resolve() for path in candidate_roots):
-        candidate = root / relative
-        if candidate.exists():
-            return candidate.resolve()
-    return None
+    if relative.is_absolute() or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
+        return None
+
+    candidate = (_streamable_video_root() / relative).resolve()
+    try:
+        candidate = ensure_within_storage_root(candidate)
+    except ValueError:
+        return None
+    return candidate if candidate.exists() else None
 
 
 def _canonical_storage_name_for_legacy_streamable(
@@ -230,13 +224,18 @@ def _canonical_storage_name_for_legacy_streamable(
     expected_hash = (
         decision.expected_hash if _is_sha256_hex(decision.expected_hash) else ""
     )
-    content_hash = expected_hash or sha256_file(source_path)
+    content_hash = expected_hash or get_file_hash(source_path)
+    raw_hash = str(getattr(video, "raw_video_hash", "") or "").strip()
     if decision.spec.kind == StreamableArtifactKind.RAW:
-        target_path = path_utils.SENSITIVE_VIDEO_DIR / f"{content_hash}{MP4_SUFFIX}"
+        target_path = get_runtime_paths().sensitive_video / canonical_media_name(
+            raw_hash or content_hash, MP4_SUFFIX
+        )
     else:
-        raw_hash = str(getattr(video, "video_hash", "") or "").strip()
-        stem = f"{raw_hash}.{content_hash}" if raw_hash else content_hash
-        target_path = path_utils.ANONYM_VIDEO_DIR / f"{stem}{MP4_SUFFIX}"
+        target_path = get_runtime_paths().anonym_video / canonical_media_name(
+            raw_hash or content_hash,
+            MP4_SUFFIX,
+            generation=content_hash if raw_hash else None,
+        )
     return to_storage_relative(target_path)
 
 
@@ -375,31 +374,14 @@ def _materialize_streamable_target(  # pyright: ignore[reportUnusedFunction]
         secure_unlink_file(temp_source, missing_ok=True)
 
 
-def _configured_streamable_raw_video_root() -> Path:
-    if _streamable_raw_video_root is not _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT_FN:
-        return Path(_streamable_raw_video_root()).resolve()
-    if STREAMABLE_RAW_VIDEO_ROOT != _DEFAULT_STREAMABLE_RAW_VIDEO_ROOT:
-        return Path(STREAMABLE_RAW_VIDEO_ROOT).resolve()
-    return Path(_streamable_raw_video_root()).resolve()
-
-
-def _configured_streamable_processed_video_root() -> Path:
-    if (
-        _streamable_processed_video_root
-        is not _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT_FN
-    ):
-        return Path(_streamable_processed_video_root()).resolve()
-    if STREAMABLE_PROCESSED_VIDEO_ROOT != _DEFAULT_STREAMABLE_PROCESSED_VIDEO_ROOT:
-        return Path(STREAMABLE_PROCESSED_VIDEO_ROOT).resolve()
-    return Path(_streamable_processed_video_root()).resolve()
-
-
 def _streamable_root_for_kind(kind: StreamableArtifactKind) -> Path:
+    """Resolve the legacy streamable directory for one artifact kind."""
+
     match kind:
         case StreamableArtifactKind.RAW:
-            return _configured_streamable_raw_video_root()
+            return _streamable_raw_video_root()
         case StreamableArtifactKind.PROCESSED:
-            return _configured_streamable_processed_video_root()
+            return _streamable_processed_video_root()
 
 
 def _video_streamable_target(
@@ -409,12 +391,12 @@ def _video_streamable_target(
 ) -> Path:
     stem_value: object = getattr(video, spec.hash_attr, None) or getattr(
         video,
-        "video_hash",
+        "raw_video_hash",
         "",
     )
     stem = str(stem_value)
     root = _streamable_root_for_kind(spec.kind)
-    return root / f"{stem}{MP4_SUFFIX}"
+    return ensure_within_storage_root(root / canonical_media_name(stem, MP4_SUFFIX))
 
 
 def resolve_streamable_media_state(

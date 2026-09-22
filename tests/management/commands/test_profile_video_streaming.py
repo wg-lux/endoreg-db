@@ -58,7 +58,7 @@ def streaming_profile_center() -> Center:
 def _create_processed_video(center: Center) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash="streaming-profile-video",
+        raw_video_hash="streaming-profile-video",
         width=1920,
         height=1080,
     )

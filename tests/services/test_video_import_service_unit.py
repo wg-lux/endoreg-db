@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from contextlib import nullcontext
 from pathlib import Path
@@ -15,11 +14,10 @@ from unittest.mock import Mock, call
 import pytest
 from pydantic import ValidationError
 
-from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files import video_import_service as sut
+from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
-
 
 CONTENT_HASH = "a" * 64
 
@@ -42,14 +40,13 @@ def _patch_import_boundaries(
     existing_video: object | None = None,
 ) -> None:
     """Replace every external import boundary with an in-process unit seam."""
-    monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
-    monkeypatch.setattr(sut, "content_hash_lock", lambda _hash, _root: nullcontext())
     monkeypatch.setattr(
-        sut,
-        "_raw_source_identity",
-        lambda _path: sut._RawSourceIdentity(5, 1, CONTENT_HASH),
+        sut.VideoImportService,
+        "_verified_local_raw_source",
+        lambda _service, _ctx: nullcontext(),
     )
-    monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+    monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
+    monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
     monkeypatch.setattr(sut, "_sensitive_video_dir", lambda: tmp_path / "sensitive")
     monkeypatch.setattr(
         sut.VideoImportService,
@@ -174,7 +171,7 @@ class TestLocalRawSourceResolution:
         )
 
         # Act
-        with sut._local_raw_source_context(video) as result:
+        with sut.local_raw_source_context(video) as result:
             resolved = result
 
         # Assert
@@ -189,7 +186,7 @@ class TestLocalRawSourceResolution:
                 return nullcontext(raw_path)
 
         # Act
-        with sut._local_raw_source_context(VideoLike()) as result:
+        with sut.local_raw_source_context(VideoLike()) as result:
             resolved = result
 
         # Assert
@@ -200,7 +197,7 @@ class TestLocalRawSourceResolution:
     ) -> None:
         # Arrange
         raw_path = tmp_path / "managed.mp4"
-        video = VideoFile(video_hash="managed-video")
+        video = VideoFile(raw_video_hash="managed-video")
         monkeypatch.setattr(
             sut,
             "ensure_local_raw_video_file",
@@ -208,7 +205,7 @@ class TestLocalRawSourceResolution:
         )
 
         # Act
-        with sut._local_raw_source_context(video) as result:
+        with sut.local_raw_source_context(video) as result:
             resolved = result
 
         # Assert
@@ -223,9 +220,7 @@ class TestLocalRawSourceResolution:
         video = SimpleNamespace(get_raw_file_path=lambda: missing_path)
 
         # Act
-        with sut._local_raw_source_context(
-            video, fallback_path=fallback_path
-        ) as result:
+        with sut.local_raw_source_context(video, fallback_path=fallback_path) as result:
             resolved = result
 
         # Assert
@@ -233,152 +228,11 @@ class TestLocalRawSourceResolution:
 
     def test_raises_when_no_raw_source_or_fallback_exists(self) -> None:
         # Arrange
-        video = SimpleNamespace(video_hash="abc123")
+        video = SimpleNamespace(raw_video_hash="abc123")
 
         # Act / Assert
         with pytest.raises(ValueError, match="Video abc123 has no local raw source"):
-            sut._local_raw_source_context(video)
-
-
-class TestRawSourceValidation:
-    @pytest.mark.parametrize(
-        ("values", "expected"),
-        [
-            ({"video_meta_id": 1}, True),
-            ({"center_id": 1, "processor_id": 2}, True),
-            ({"center_id": 1, "processor_id": None}, False),
-        ],
-    )
-    def test_detects_reanonymization_metadata_readiness(
-        self, values: dict[str, int | None], expected: bool
-    ) -> None:
-        # Arrange
-        video = VideoFile(**values)
-
-        # Act
-        result = sut._supports_reanonymization_metadata_initialization(video)
-
-        # Assert
-        assert result is expected
-
-    @pytest.mark.parametrize(
-        ("video", "expected"),
-        [
-            (None, {}),
-            (
-                SimpleNamespace(
-                    width=1920,
-                    height=1080,
-                    fps=25,
-                    duration=12.5,
-                    frame_count=313,
-                ),
-                {
-                    "width": 1920,
-                    "height": 1080,
-                    "fps": 25.0,
-                    "duration": 12.5,
-                    "frame_count": 313,
-                },
-            ),
-            (
-                SimpleNamespace(
-                    width=True,
-                    height="1080",
-                    fps=False,
-                    duration=None,
-                    frame_count=2.5,
-                ),
-                {},
-            ),
-        ],
-    )
-    def test_builds_only_a_typed_stream_contract(
-        self, video: object | None, expected: dict[str, int | float]
-    ) -> None:
-        # Arrange is supplied by the parameter set.
-
-        # Act
-        result = sut._video_meta_stream_contract(cast(VideoFile | None, video))
-
-        # Assert
-        assert result == expected
-
-    @pytest.mark.parametrize("source_kind", ["missing", "directory", "empty"])
-    def test_rejects_an_unusable_source(self, source_kind: str, tmp_path: Path) -> None:
-        # Arrange
-        source_path = tmp_path / f"{source_kind}.mp4"
-        if source_kind == "directory":
-            source_path.mkdir()
-        elif source_kind == "empty":
-            source_path.touch()
-        ctx = _context(tmp_path / "input.mp4")
-        identity = sut._RawSourceIdentity(0, 1, "0" * 64)
-
-        # Act / Assert
-        expected_error = FileNotFoundError if source_kind == "missing" else RuntimeError
-        with pytest.raises(expected_error):
-            sut._record_validated_raw_source(ctx, source_path, identity)
-
-    def test_records_identity_and_stream_metadata(self, tmp_path: Path) -> None:
-        # Arrange
-        source_path = tmp_path / "raw.mp4"
-        source_path.write_bytes(b"raw-video")
-        ctx = _context(tmp_path / "input.mp4")
-        ctx.current_video = cast(
-            VideoFile,
-            SimpleNamespace(width=1280, height=720, fps=50, duration=1.0),
-        )
-        identity = sut._RawSourceIdentity(9, 123, "a" * 64)
-
-        # Act
-        sut._record_validated_raw_source(ctx, source_path, identity)
-
-        # Assert
-        assert ctx.validated_raw_source_sha256 == "a" * 64
-        assert ctx.validated_raw_source_stream == {
-            "width": 1280,
-            "height": 720,
-            "fps": 50.0,
-            "duration": 1.0,
-        }
-
-    def test_uses_native_file_identity_when_available(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        source_path = tmp_path / "raw.mp4"
-        native_identity = (7, 123, "b" * 64)
-
-        def stable_identity(_path: Path) -> tuple[int, int, str]:
-            return native_identity
-
-        monkeypatch.setattr(sut, "stable_file_identity", stable_identity)
-
-        # Act
-        result = sut._raw_source_identity(source_path)
-
-        # Assert
-        assert result == sut._RawSourceIdentity(*native_identity)
-
-    def test_hashes_a_stable_source_with_the_real_hash_helper(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        source_path = tmp_path / "raw.mp4"
-        source_path.write_bytes(b"stable-video")
-
-        def no_native_identity(_path: Path) -> None:
-            return None
-
-        monkeypatch.setattr(sut, "stable_file_identity", no_native_identity)
-
-        # Act
-        result = sut._raw_source_identity(source_path)
-
-        # Assert
-        assert result.size_bytes == len(b"stable-video")
-        assert result.sha256 == hashlib.sha256(b"stable-video").hexdigest()
+            sut.local_raw_source_context(video)
 
 
 class TestQualityModeConfiguration:
@@ -475,9 +329,7 @@ class TestFailureOwnership:
         )
 
         # Assert
-        expected_kwargs = (
-            {"preserve_existing_video_artifacts": True} if preserve_existing else {}
-        )
+        expected_kwargs = {"preserve_existing_video_artifacts": preserve_existing}
         assert events == ["guard", expected_kwargs]
 
     def test_does_not_finalize_after_execution_guard_fails(
@@ -569,7 +421,9 @@ class TestImportInputBoundaries:
         attempt_id = "a" * 32
         observed_attempts: list[str] = []
         guard_calls: list[str] = []
-        existing_video = VideoFile(id=1, video_hash="hash", raw_file="raw/source.mp4")
+        existing_video = VideoFile(
+            id=1, raw_video_hash="hash", raw_file="raw/source.mp4"
+        )
 
         def existing_completed(
             _service: sut.VideoImportService, ctx: ImportContext
@@ -577,15 +431,8 @@ class TestImportInputBoundaries:
             observed_attempts.append(ctx.attempt_id)
             return existing_video
 
-        monkeypatch.setattr(
-            sut,
-            "_raw_source_identity",
-            lambda _path: sut._RawSourceIdentity(5, 1, "hash"),
-        )
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
-        monkeypatch.setattr(
-            sut, "content_hash_lock", lambda _hash, _root: nullcontext()
-        )
+        monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
         monkeypatch.setattr(
             sut.VideoImportService,
             "_get_existing_completed_video",
@@ -705,7 +552,7 @@ class TestExistingCompletedVideoLookup:
     ) -> None:
         # Arrange
         ctx = _context(tmp_path / "input.mp4", file_hash="content-hash")
-        existing_video = VideoFile(id=7, video_hash="content-hash")
+        existing_video = VideoFile(id=7, raw_video_hash="content-hash")
         service = sut.VideoImportService()
 
         def has_history_for_hash(*, file_hash: str, success: bool) -> bool:
@@ -740,40 +587,10 @@ class TestExistingCompletedVideoLookup:
         assert ctx.current_video is existing_video
 
 
-class TestVerifiedLocalRawSource:
-    def test_rejects_source_changes_during_metadata_extraction(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        raw_path = tmp_path / "raw.mp4"
-        raw_path.write_bytes(b"video")
-        video = cast(VideoFile, SimpleNamespace(video_hash="changing-video"))
-        ctx = _context(tmp_path / "input.mp4")
-        ctx.current_video = video
-        identities = iter(
-            [
-                sut._RawSourceIdentity(5, 1, "a" * 64),
-                sut._RawSourceIdentity(6, 2, "b" * 64),
-            ]
-        )
-        monkeypatch.setattr(
-            sut,
-            "_local_raw_source_context",
-            lambda _video, **_kwargs: nullcontext(raw_path),
-        )
-        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: next(identities))
-        service = sut.VideoImportService()
-
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="changed during VideoMeta extraction"):
-            with service._verified_local_raw_source(ctx):
-                pass
-
-
 class TestReanonymizationInputBoundaries:
     def test_rejects_an_explicit_missing_source(self, tmp_path: Path) -> None:
         # Arrange
-        video = VideoFile(video_hash="known-video")
+        video = VideoFile(raw_video_hash="known-video")
         missing_path = tmp_path / "missing.mp4"
         service = sut.VideoImportService()
 
@@ -785,11 +602,11 @@ class TestReanonymizationInputBoundaries:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # Arrange
-        video = VideoFile(video_hash="known-video")
+        video = VideoFile(raw_video_hash="known-video")
         missing_path = tmp_path / "missing-managed.mp4"
         monkeypatch.setattr(
             sut,
-            "_local_raw_source_context",
+            "local_raw_source_context",
             lambda _video: nullcontext(missing_path),
         )
         service = sut.VideoImportService()
@@ -825,13 +642,15 @@ class TestRemainingDependencyBoundaries:
         # Arrange
         paths = SimpleNamespace(
             storage=tmp_path / "storage",
+            sensitive_video=tmp_path / "storage" / "sensitive_videos",
             transcoding=tmp_path / "transcoding",
             import_video=tmp_path / "import-video",
+            locks=tmp_path / "locks",
         )
         from_environment = Mock(return_value=paths)
         monkeypatch.setattr(
-            sut.path_utils.EndoregPathsModel,
-            "from_environment",
+            sut,
+            "get_runtime_paths",
             from_environment,
         )
 
@@ -840,15 +659,15 @@ class TestRemainingDependencyBoundaries:
             sut._storage_dir(),
             sut._sensitive_video_dir(),
             sut._video_import_dir(),
-            sut._hash_lock_dir(),
+            sut.get_runtime_paths().locks,
         )
 
         # Assert
         assert results == (
             paths.storage,
-            paths.transcoding / "sensitive_videos",
+            paths.sensitive_video,
             paths.import_video,
-            paths.storage / "locks" / "video_content",
+            paths.locks,
         )
         assert from_environment.call_count == 4
 
@@ -859,7 +678,7 @@ class TestRemainingDependencyBoundaries:
         video = SimpleNamespace(get_raw_file_path=lambda: raw_path)
 
         # Act
-        with sut._local_raw_source_context(video) as result:
+        with sut.local_raw_source_context(video) as result:
             resolved = result
 
         # Assert
@@ -873,44 +692,11 @@ class TestRemainingDependencyBoundaries:
         video = SimpleNamespace(get_raw_file_path=lambda: None)
 
         # Act
-        with sut._local_raw_source_context(video, fallback_path=fallback) as result:
+        with sut.local_raw_source_context(video, fallback_path=fallback) as result:
             resolved = result
 
         # Assert
         assert resolved == fallback
-
-    def test_detects_supported_video_file_initialization(self) -> None:
-        # Arrange
-        video = VideoFile(video_hash="video")
-
-        # Act
-        results = (
-            sut._supports_video_file_initialization(video),
-            sut._supports_video_file_initialization(SimpleNamespace()),
-        )
-
-        # Assert
-        assert results == (True, False)
-
-    def test_rejects_source_changed_while_hashing(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        source_path = tmp_path / "changing.mp4"
-        source_path.write_bytes(b"video")
-        monkeypatch.setattr(sut, "stable_file_identity", lambda _path: None)
-
-        def mutate_during_hash(path: Path) -> str:
-            path.write_bytes(b"changed-video")
-            return CONTENT_HASH
-
-        monkeypatch.setattr(sut, "sha256_file", mutate_during_hash)
-
-        # Act / Assert
-        with pytest.raises(
-            RuntimeError, match="changed while deriving stable identity"
-        ):
-            sut._raw_source_identity(source_path)
 
     def test_execution_ownership_is_optional_for_legacy_context(
         self, tmp_path: Path
@@ -958,7 +744,7 @@ class TestNormalizationExecution:
         reference_path.write_bytes(b"reference")
         video = VideoFile(
             id=7 if persisted_video else None,
-            video_hash="video",
+            raw_video_hash="video",
         )
         if persisted_video:
             monkeypatch.setattr(
@@ -1020,7 +806,7 @@ class TestImportOrchestration:
         second_source = tmp_path / "renamed.mp4" if renamed_source else source
         if renamed_source:
             second_source.write_bytes(source.read_bytes())
-        video = VideoFile(id=7, video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
+        video = VideoFile(id=7, raw_video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
         _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(
@@ -1066,7 +852,7 @@ class TestImportOrchestration:
         # Arrange
         source = tmp_path / "input.mp4"
         source.write_bytes(b"video")
-        video = VideoFile(id=7, video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
+        video = VideoFile(id=7, raw_video_hash=CONTENT_HASH, raw_file="raw/source.mp4")
         _patch_import_boundaries(monkeypatch, tmp_path, existing_video=video)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         ensure_hls = Mock(side_effect=[error, None])
@@ -1116,7 +902,7 @@ class TestImportOrchestration:
         sensitive_path = tmp_path / "sensitive.mp4"
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
-            video_hash=CONTENT_HASH,
+            raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
             state=SimpleNamespace(anonymization_validated=False),
         )
@@ -1145,11 +931,6 @@ class TestImportOrchestration:
             sut,
             "mark_instance_processing_started",
             lambda _video, _ctx: events.append("started"),
-        )
-        monkeypatch.setattr(
-            sut.VideoImportService,
-            "_verified_local_raw_source",
-            lambda _service, _ctx: nullcontext(),
         )
         monkeypatch.setattr(
             sut,
@@ -1188,7 +969,7 @@ class TestImportOrchestration:
         source_path = tmp_path / "input.mp4"
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
-            video_hash=CONTENT_HASH,
+            raw_video_hash=CONTENT_HASH,
             raw_file="raw/source.mp4",
             original_file_name="input.mp4",
             state=SimpleNamespace(anonymization_validated=True),
@@ -1234,7 +1015,7 @@ class TestImportOrchestration:
         source_path = tmp_path / "input.mp4"
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
-            video_hash=CONTENT_HASH,
+            raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
             state=SimpleNamespace(anonymization_validated=False),
         )
@@ -1251,14 +1032,11 @@ class TestImportOrchestration:
         create_video = Mock(side_effect=[(video, None, True), (video, None, True)])
         reset_failure = Mock()
         monkeypatch.setattr(sut, "create_or_retrieve_video_file", create_video)
-        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        monkeypatch.setattr(
+            sut, "get_or_create_video_state", lambda _video: video.state
+        )
         monkeypatch.setattr(sut, "_finalize_video_failure_if_owned", reset_failure)
         monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
-        monkeypatch.setattr(
-            sut.VideoImportService,
-            "_verified_local_raw_source",
-            lambda _service, _ctx: nullcontext(),
-        )
         monkeypatch.setattr(sut, "_normalize_reimport_video_quality", Mock())
         monkeypatch.setattr(sut, "finalize_video_success", Mock())
         anonymizer = Mock()
@@ -1275,14 +1053,14 @@ class TestImportOrchestration:
         assert create_video.call_count == 2
         reset_failure.assert_called_once()
 
-    def test_rejects_video_without_state_after_initialization(
+    def test_state_initialization_failure_prevents_anonymization(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         # Arrange
         source_path = tmp_path / "input.mp4"
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
-            video_hash=CONTENT_HASH,
+            raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
             state=None,
         )
@@ -1301,7 +1079,11 @@ class TestImportOrchestration:
             "create_or_retrieve_video_file",
             lambda _ctx: (video, None, True),
         )
-        monkeypatch.setattr(sut, "get_or_create_video_state", lambda _video: None)
+        monkeypatch.setattr(
+            sut,
+            "get_or_create_video_state",
+            Mock(side_effect=ValueError("has no video state")),
+        )
         service = sut.VideoImportService(anonymizer=Mock())
 
         # Act / Assert
@@ -1319,7 +1101,7 @@ class TestImportOrchestration:
         source_path = tmp_path / "input.mp4"
         source_path.write_bytes(b"video")
         video = SimpleNamespace(
-            video_hash=CONTENT_HASH,
+            raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
             state=SimpleNamespace(anonymization_validated=False),
         )
@@ -1360,40 +1142,6 @@ class TestImportOrchestration:
             assert str(exc_info.value.__cause__) == "processing failed"
 
 
-class TestVerifiedLocalRawSourceLifecycle:
-    def test_initializes_metadata_and_restores_previous_local_path(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        raw_path = tmp_path / "raw.mp4"
-        previous_path = tmp_path / "previous.mp4"
-        raw_path.write_bytes(b"video")
-        video = VideoFile(video_hash="video")
-        ctx = _context(tmp_path / "input.mp4", local_source_path=previous_path)
-        ctx.current_video = video
-        identity = sut._RawSourceIdentity(5, 1, CONTENT_HASH)
-        initialize = Mock(return_value=video)
-        monkeypatch.setattr(
-            sut,
-            "_local_raw_source_context",
-            lambda _video, **_kwargs: nullcontext(raw_path),
-        )
-        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: identity)
-        monkeypatch.setattr(sut, "initialize_video_file", initialize)
-        monkeypatch.setattr(sut, "validate_directories", Mock())
-        service = sut.VideoImportService(anonymizer=Mock())
-
-        # Act
-        with service._verified_local_raw_source(ctx):
-            observed_path = ctx.local_source_path
-
-        # Assert
-        assert observed_path == raw_path
-        assert ctx.local_source_path == previous_path
-        assert ctx.validated_raw_source_sha256 == CONTENT_HASH
-        initialize.assert_called_once_with(video, local_raw_path=raw_path)
-
-
 class TestReanonymizationOrchestration:
     @pytest.mark.parametrize("anonymization_fails", [False, True])
     def test_reanonymizes_or_preserves_existing_artifacts_on_failure(
@@ -1405,20 +1153,15 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(video_hash="video")
-        identity = sut._RawSourceIdentity(5, 1, CONTENT_HASH)
+        video = VideoFile(raw_video_hash="video")
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
-        monkeypatch.setattr(
-            sut, "content_hash_lock", lambda _hash, _root: nullcontext()
-        )
-        monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+        monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
         monkeypatch.setattr(
             sut,
             "get_video_import_context_names",
             lambda _video: ("test-center", "test-processor"),
         )
-        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: identity)
         monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
         normalize = Mock()
         success = Mock()
@@ -1458,27 +1201,22 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(video_hash="video", video_meta_id=1)
-        identities = iter(
-            [
-                sut._RawSourceIdentity(5, 1, CONTENT_HASH),
-                sut._RawSourceIdentity(5, 1, CONTENT_HASH),
-                sut._RawSourceIdentity(6, 2, "b" * 64),
-            ]
-        )
+        video = VideoFile(raw_video_hash="video", video_meta_id=1)
+
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
-        monkeypatch.setattr(
-            sut, "content_hash_lock", lambda _hash, _root: nullcontext()
-        )
-        monkeypatch.setattr(sut, "_hash_lock_dir", lambda: tmp_path / "locks")
+        monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
         monkeypatch.setattr(
             sut,
             "get_video_import_context_names",
             lambda _video: ("test-center", "test-processor"),
         )
-        monkeypatch.setattr(sut, "_raw_source_identity", lambda _path: next(identities))
-        initialize = Mock(return_value=video)
+
+        def mutate_source(video: VideoFile, *, local_raw_path: Path) -> VideoFile:
+            local_raw_path.write_bytes(b"changed source")
+            return video
+
+        initialize = Mock(side_effect=mutate_source)
         monkeypatch.setattr(sut, "initialize_video_file", initialize)
         service = sut.VideoImportService(anonymizer=Mock())
 
@@ -1511,7 +1249,7 @@ class TestCompletedLookupAndDuplicateCleanup:
     ) -> None:
         # Arrange
         ctx = _context(tmp_path / "input.mp4", file_hash=CONTENT_HASH)
-        video = VideoFile(id=7, video_hash=CONTENT_HASH)
+        video = VideoFile(id=7, raw_video_hash=CONTENT_HASH)
         monkeypatch.setattr(
             sut.ProcessingHistory, "has_history_for_hash", Mock(return_value=True)
         )

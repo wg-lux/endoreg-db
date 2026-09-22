@@ -37,7 +37,7 @@ from endoreg_db.services.lx_video_contracts import (
 def _create_video(
     *,
     center: Center,
-    video_hash: str,
+    raw_video_hash: str,
     patient: Patient | None = None,
     patient_examination: PatientExamination | None = None,
     sensitive_meta: SensitiveMeta | None = None,
@@ -45,15 +45,15 @@ def _create_video(
 ) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         patient=patient,
         examination=patient_examination,
         sensitive_meta=sensitive_meta,
         state=state,
-        original_file_name=f"{video_hash}.mp4",
+        original_file_name=f"{raw_video_hash}.mp4",
     )
     video.processed_file.save(
-        f"{video_hash}_processed.mp4",
+        f"{raw_video_hash}_processed.mp4",
         ContentFile(b"processed-video-bytes"),
         save=True,
     )
@@ -143,7 +143,7 @@ def test_build_lx_p_video_segment_prefers_prediction_meta_labelset(
         model=unique_ai_model,
         labelset=base_labelset,
     )
-    video = _create_video(center=center, video_hash="pred-hash")
+    video = _create_video(center=center, raw_video_hash="pred-hash")
     prediction_meta = VideoPredictionMeta.objects.create(
         model_meta=model_meta,
         video_file=video,
@@ -194,7 +194,7 @@ def test_build_lx_patient_video_file_rejects_invalid_segments_without_omission(
     state = VideoState.objects.create(anonymization_validated=True)
     video = _create_video(
         center=center,
-        video_hash="video-contract",
+        raw_video_hash="video-contract",
         patient=patient,
         patient_examination=patient_examination,
         sensitive_meta=sensitive_meta,
@@ -245,7 +245,7 @@ def test_build_lx_patient_video_file_invalid_segment_raises_by_default(
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
-    video = _create_video(center=center, video_hash="strict-hash")
+    video = _create_video(center=center, raw_video_hash="strict-hash")
     video.label_video_segments.create(
         label=None,
         start_frame_number=4,
@@ -307,7 +307,7 @@ def test_ai_dataset_json_export_omits_sensitive_meta(
     )
     video = _create_video(
         center=center,
-        video_hash="safe-serialization-video",
+        raw_video_hash="safe-serialization-video",
         sensitive_meta=sensitive_meta,
     )
     label = Label.objects.create(name="safe-export-label")
@@ -351,7 +351,7 @@ def test_resolve_segment_labelset_name_falls_back_to_label_membership(
     from tests.helpers.default_objects import get_default_center
 
     center = get_default_center()
-    video = _create_video(center=center, video_hash="fallback-labelset")
+    video = _create_video(center=center, raw_video_hash="fallback-labelset")
     label = Label.objects.create(name="fallback")
     labelset = LabelSet.objects.create(name="fallback_set", version=2)
     labelset.labels.add(label)
@@ -380,7 +380,7 @@ def test_segment_resolve_labelset_name_falls_back_to_video_model_meta(
         model=unique_ai_model,
         labelset=labelset,
     )
-    video = _create_video(center=center, video_hash="video-level-labelset")
+    video = _create_video(center=center, raw_video_hash="video-level-labelset")
     video.ai_model_meta = model_meta
     video.save(update_fields=["ai_model_meta"])
     segment = video.label_video_segments.create(

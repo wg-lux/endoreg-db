@@ -11,6 +11,7 @@ from pytest_django.fixtures import SettingsWrapper
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from endoreg_db.models.metadata import model_meta_logic
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
+from endoreg_db.utils.paths import EndoregPathsModel
 from lx_dtypes.models.contracts.model_meta_logic import (
     ModelMetaCreateFromFileKwargsData,
     ModelMetaInferredDefaultsPayload,
@@ -315,7 +316,7 @@ def test_huggingface_download_rejects_artifact_outside_protected_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    weights_dir = tmp_path / "protected" / "model_weights"
+    paths = EndoregPathsModel.from_root(tmp_path / "protected")
     outside_artifact = tmp_path / "outside.safetensors"
     outside_artifact.write_bytes(b"untrusted-location")
     download_staging_dirs: list[Path] = []
@@ -329,7 +330,7 @@ def test_huggingface_download_rejects_artifact_outside_protected_staging(
         download_staging_dirs.append(Path(local_dir))
         return outside_artifact.as_posix()
 
-    monkeypatch.setattr(model_meta_logic, "WEIGHTS_DIR", weights_dir)
+    monkeypatch.setattr(model_meta_logic, "get_runtime_paths", lambda: paths)
     monkeypatch.setattr(
         model_meta_logic,
         "hf_hub_download",

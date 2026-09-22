@@ -36,7 +36,7 @@ class _VideoRecord(Protocol):
     id: int
     original_file_name: str | None
     uploaded_at: datetime
-    video_hash: str
+    raw_video_hash: str
 
     def delete(self) -> None: ...
 
@@ -352,7 +352,7 @@ def force_remove_media(request: Request, file_id: int) -> Response:
             video = cast(_VideoRecord, VideoFile.objects.get(id=file_id))
             filename = video.original_file_name
             video.delete()
-            job = UploadJob.objects.get(content_hash=video.video_hash)
+            job = UploadJob.objects.get(content_hash=video.raw_video_hash)
             job.delete()
             payload = MediaManagementForceRemoveResponsePayload(
                 detail=f"Video file '{filename}' (ID: {file_id}) removed successfully",

@@ -28,7 +28,7 @@ def test_normalization_status_uses_persisted_fps_without_probing_media(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="fps-status-video",
+        raw_video_hash="fps-status-video",
         fps=25.0,
         duration=10.0,
         frame_count=250,
@@ -53,7 +53,7 @@ def test_normalization_status_rejects_invalid_persisted_fps() -> None:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="fps-invalid-status-video",
+        raw_video_hash="fps-invalid-status-video",
         fps=None,
         duration=10.0,
         frame_count=250,
@@ -73,7 +73,7 @@ def test_fps_normalization_job_requests_explicit_pre_annotation_downsampling(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="fps-job-video",
+        raw_video_hash="fps-job-video",
         fps=60.0,
         duration=10.0,
         frame_count=600,

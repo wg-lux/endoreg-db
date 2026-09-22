@@ -1,15 +1,15 @@
 from __future__ import annotations
+from endoreg_db.utils.storage.files import canonical_media_name
 
-import hashlib
+
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
 
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
-from django.db.models.fields.files import FieldFile
 from django.http import HttpRequest
 from lx_dtypes.models.contracts import (
     PdfRedactionRequest,
@@ -34,7 +34,7 @@ from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,
 )
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.storage.report_fields import ReportArtifactFieldFile
 from endoreg_db.utils.media_urls import build_pdf_stream_path
 from endoreg_db.utils.operation_log import record_operation
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
@@ -76,19 +76,6 @@ def _pdf_pk(pdf: RawPdfFile) -> int:
     return int(value)
 
 
-def _pdf_hash(pdf: RawPdfFile) -> str:
-    pdf_obj = cast(Any, pdf)
-    return str(pdf_obj.pdf_hash)
-
-
-def _pdf_file(pdf: RawPdfFile) -> FieldFile:
-    return pdf.file
-
-
-def _pdf_processed_file(pdf: RawPdfFile) -> FieldFile:
-    return pdf.processed_file
-
-
 def _pdf_state(pdf: RawPdfFile) -> RawPdfState | None:
     return pdf.state
 
@@ -123,19 +110,6 @@ def _save_pdf_state(state: RawPdfState, *, update_fields: list[str]) -> None:
     state_obj.save(update_fields=update_fields)
 
 
-def _save_processed_file(
-    pdf: RawPdfFile,
-    *,
-    filename: str,
-    uploaded_pdf: UploadedFile,
-) -> None:
-    save_file = cast(
-        Callable[[str, UploadedFile, bool], None],
-        cast(Any, _pdf_processed_file(pdf)).save,
-    )
-    save_file(filename, uploaded_pdf, False)
-
-
 def _serializer_data(serializer: PdfProcessingHistorySerializer) -> object:
     return cast(object, cast(Any, serializer).data)
 
@@ -147,18 +121,6 @@ def _is_pdf_file(uploaded_file: UploadedFile) -> bool:
     finally:
         uploaded_file.seek(0)
     return header == PDF_MAGIC_HEADER
-
-
-def _sha256_uploaded_file(uploaded_file: UploadedFile) -> str:
-    digest = hashlib.sha256()
-    try:
-        uploaded_file.seek(0)
-        chunks = cast(Callable[[], Iterable[bytes]], cast(Any, uploaded_file).chunks)
-        for chunk in chunks():
-            digest.update(chunk)
-    finally:
-        uploaded_file.seek(0)
-    return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -235,9 +197,9 @@ def _prepare_redaction(
     payload: PdfRedactionRequest,
 ) -> _PreparedRedaction | Response:
     source_field = (
-        _pdf_file(pdf)
+        pdf.file
         if payload.source_type == PdfProcessingHistory.SOURCE_TYPE_RAW
-        else _pdf_processed_file(pdf)
+        else pdf.processed_file
     )
     if not source_field or not getattr(source_field, "name", None):
         return Response(
@@ -245,7 +207,7 @@ def _prepare_redaction(
             status=status.HTTP_409_CONFLICT,
         )
 
-    source_sha256 = sha256_file(source_field)
+    source_sha256 = source_field.get_hash()
     if payload.client_source_sha256 and payload.client_source_sha256 != source_sha256:
         return Response(
             {
@@ -255,7 +217,7 @@ def _prepare_redaction(
             status=status.HTTP_409_CONFLICT,
         )
 
-    uploaded_sha256 = _sha256_uploaded_file(uploaded_pdf)
+    uploaded_sha256 = ReportArtifactFieldFile.hash_content(uploaded_pdf)
     return _PreparedRedaction(
         uploaded_pdf=uploaded_pdf,
         payload=payload,
@@ -264,7 +226,7 @@ def _prepare_redaction(
             payload.redaction_manifest.model_dump(mode="python"),
         ),
         source_sha256=source_sha256,
-        processed_filename=(f"{_pdf_hash(pdf)}_redaction_{uploaded_sha256[:12]}.pdf"),
+        processed_filename=(canonical_media_name(uploaded_sha256, ".pdf")),
     )
 
 
@@ -289,10 +251,10 @@ def _persist_redaction(
         state = get_or_create_raw_pdf_state(pdf)
         status_before = _state_status_value(state) or "not_started"
 
-        _save_processed_file(
-            pdf,
-            filename=prepared.processed_filename,
-            uploaded_pdf=prepared.uploaded_pdf,
+        pdf.processed_file.save(
+            prepared.processed_filename,
+            prepared.uploaded_pdf,
+            save=False,
         )
         _save_pdf_after_processed_file(pdf)
 
@@ -322,7 +284,7 @@ def _persist_redaction(
             note=prepared.payload.note,
             client_source_sha256=prepared.payload.client_source_sha256,
             source_sha256=prepared.source_sha256,
-            processed_file_name=str(getattr(_pdf_processed_file(pdf), "name", "")),
+            processed_file_name=str(getattr(pdf.processed_file, "name", "")),
             actor_user=actor_user,
             actor_username=getattr(user, "username", "") if user else "",
             actor_email=getattr(user, "email", "") if user else "",

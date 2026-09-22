@@ -1,4 +1,5 @@
 import logging
+from endoreg_db.utils.storage.files import canonical_media_name
 import os
 import time
 import uuid
@@ -38,7 +39,11 @@ from endoreg_db.services.processed_video_cleanup import (
     record_processed_replacement,
     schedule_processed_generation_cleanup,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import (
+    resolve_existing_protected_media_path,
+    get_runtime_paths,
+    to_storage_relative,
+)
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
@@ -46,7 +51,7 @@ from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
     safe_rmtree,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.utils.storage import save_local_file
 from endoreg_db.utils.storage_profile import PayloadKind, requires_app_encrypted_storage
@@ -80,11 +85,11 @@ class _StatefulImportInstance(Protocol):
 
 
 def _processed_report_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().anonym_report
+    return get_runtime_paths().anonym_report
 
 
 def _processed_video_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().anonym_video
+    return get_runtime_paths().anonym_video
 
 
 def _verify_final_video_output(path: Path) -> None:
@@ -110,7 +115,7 @@ def _record_successful_video_processing_history(ctx: ImportContext) -> None:
     _require_execution_ownership(ctx)
     with transaction.atomic():
         if not isinstance(ctx.file_hash, str):
-            ctx.file_hash = sha256_file(ctx.file_path)
+            ctx.file_hash = get_file_hash(ctx.file_path)
         ProcessingHistory.get_or_create_for_hash(
             file_hash=ctx.file_hash,
             success=True,
@@ -129,7 +134,7 @@ def _store_existing_final_file(
     When the field storage is encrypted and the file already occupies its target
     storage path, encrypt it in place to preserve the canonical filename.
     """
-    relative_name = relative_name or path_utils.to_storage_relative(final_path)
+    relative_name = relative_name or to_storage_relative(final_path)
     field_file.name = relative_name
     storage = getattr(field_file, "storage", None)
     repair_plaintext_file = getattr(storage, "repair_plaintext_file", None)
@@ -306,7 +311,9 @@ def finalize_report_success(
         )
 
     pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-    expected_final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
+    expected_final_path = _processed_report_dir() / canonical_media_name(
+        str(pdf_hash), ".pdf"
+    )
     src = Path(ctx.anonymized_path)
 
     logger.debug(
@@ -323,7 +330,7 @@ def finalize_report_success(
         )
 
     if requires_app_encrypted_storage(PayloadKind.REPORT_PDF):
-        relative_name = path_utils.to_storage_relative(expected_final_path)
+        relative_name = to_storage_relative(expected_final_path)
         saved_name = _store_existing_final_file(
             instance.processed_file,
             src,
@@ -350,7 +357,7 @@ def finalize_report_success(
             final_path = expected_final_path
             logger.info("Moved anonymized report to %s", final_path)
 
-        relative_name = path_utils.to_storage_relative(final_path)
+        relative_name = to_storage_relative(final_path)
         current_name = getattr(instance.processed_file, "name", None)
         if current_name != relative_name:
             instance.processed_file.name = relative_name
@@ -382,7 +389,7 @@ def finalize_report_success(
         cast(_StatefulImportInstance, instance).save()
 
     if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = sha256_file(ctx.file_path)
+        ctx.file_hash = get_file_hash(ctx.file_path)
     with transaction.atomic():
         ProcessingHistory.get_or_create_for_hash(
             obj=instance,
@@ -422,7 +429,7 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
     if ctx.anonymized_path is None:
         raise RuntimeError(
             "Cannot finalize video import without anonymized output "
-            f"(instance={instance.pk}, hash={getattr(instance, 'video_hash', None)})."
+            f"(instance={instance.pk}, hash={getattr(instance, 'raw_video_hash', None)})."
         )
     src = Path(ctx.anonymized_path)
     if not src.exists():
@@ -438,15 +445,16 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
     previous_name = str(getattr(instance.processed_file, "name", "") or "")
     previous_hash = instance.processed_video_hash
     previous_meta = dict(instance.meta or {})
-    video_hash = getattr(instance, "video_hash", None) or instance.pk
-    candidate_path = (
-        _processed_video_dir() / f"{video_hash}.mp4"
-        if not previous_name
-        else _processed_video_dir()
-        / ".generations"
-        / f"{video_hash}-{uuid.uuid4().hex}.mp4"
+    if not ctx.file_hash:
+        raise RuntimeError(
+            "Cannot finalize video import without raw hash output "
+            f"(instance={instance.pk}, hash={getattr(instance, 'raw_video_hash', None)})."
+        )
+    raw_video_hash = str(instance.raw_video_hash)
+    candidate_path = _processed_video_dir() / canonical_media_name(
+        raw_video_hash, ".mp4", generation=uuid.uuid4().hex
     )
-    candidate_name = path_utils.to_storage_relative(candidate_path)
+    candidate_name = to_storage_relative(candidate_path)
     cleanup_pending = False
 
     try:
@@ -456,7 +464,7 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
             src,
             relative_name=candidate_name,
         )
-        instance.processed_video_hash = sha256_file(src)
+        instance.processed_video_hash = get_file_hash(src)
         next_meta = dict(previous_meta)
         next_meta["storage_normalization"] = evidence_as_json(
             ctx.storage_normalization_evidence
@@ -544,7 +552,7 @@ def finalize_failure(
 
     # History entry with success=False
     if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = sha256_file(ctx.file_path)
+        ctx.file_hash = get_file_hash(ctx.file_path)
     ProcessingHistory.get_or_create_for_hash(
         file_hash=ctx.file_hash,
         success=False,
@@ -662,7 +670,7 @@ def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
         if not relative_path:
             continue
 
-        artifact_path = path_utils.resolve_existing_protected_media_path(relative_path)
+        artifact_path = resolve_existing_protected_media_path(relative_path)
         if artifact_path is not None:
             try:
                 safe_unlink_file(artifact_path, missing_ok=False)
@@ -692,7 +700,7 @@ def nuke_transcoding_dir(transcoding_dir: str | Path | None = None) -> bool:
     """
     try:
         if transcoding_dir is None:
-            transcoding_dir = path_utils.data_paths["transcoding"]
+            transcoding_dir = get_runtime_paths().transcoding
 
         transcoding_dir = Path(transcoding_dir)
 

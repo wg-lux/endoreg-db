@@ -34,14 +34,14 @@ class FrameAnnotationBulkUpsertViewTest(TestCase):
         self.center = Center.objects.create(name="bulk-upsert-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="bulk-upsert-video-hash",
+            raw_video_hash="bulk-upsert-video-hash",
             original_file_name="bulk_upsert.mp4",
             fps=25.0,
             frame_count=100,
         )
         self.other_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="bulk-upsert-video-hash-2",
+            raw_video_hash="bulk-upsert-video-hash-2",
             original_file_name="bulk_upsert_2.mp4",
             fps=25.0,
             frame_count=100,

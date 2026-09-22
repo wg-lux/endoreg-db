@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Literal, TypeAlias, TypedDict, Unpack
+from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from lx_dtypes.models.contracts import (
     VideoAnnotationExportRequestPayload,
     dump_video_annotation_export_update_payload,
+)
+from lx_dtypes.models.contracts.video_frame_export import (
+    VideoFrameAnnotationExportFormat,
 )
 from pydantic import ValidationError
 
@@ -25,34 +28,31 @@ from endoreg_db.export.frames.export_frames_with_labels import (
 #   --transcode-frames \
 #   --transcode-fps 50
 
-JsonNull: TypeAlias = None
-ExportFormat: TypeAlias = Literal["csv", "json"]
-
 
 class ExportFrameAnnotOptions(TypedDict):
-    config: str | JsonNull
-    output_path: str | JsonNull
-    output_dir: str | JsonNull
-    video_id: int | JsonNull
-    label_id: int | JsonNull
-    center_key: str | JsonNull
-    all_centers: bool | JsonNull
-    information_source_name: str | JsonNull
-    only_true: bool | JsonNull
-    limit: int | JsonNull
-    load_base_data: bool | JsonNull
-    export_videos: bool | JsonNull
-    export_frames: bool | JsonNull
-    use_export_flags: bool | JsonNull
-    segment_ids: list[int] | JsonNull
-    only_validated: bool | JsonNull
-    transcode_frames: bool | JsonNull
-    transcode_fps: float | JsonNull
-    transcode_quality: int | JsonNull
-    transcode_ext: str | JsonNull
-    transcode_overwrite: bool | JsonNull
-    use_frame_pk_paths: bool | JsonNull
-    format: ExportFormat | JsonNull
+    config: str | None
+    output_path: str | None
+    output_dir: str | None
+    video_id: int | None
+    label_id: int | None
+    center_key: str | None
+    all_centers: bool | None
+    information_source_name: str | None
+    only_true: bool | None
+    limit: int | None
+    load_base_data: bool | None
+    export_videos: bool | None
+    export_frames: bool | None
+    use_export_flags: bool | None
+    segment_ids: list[int] | None
+    only_validated: bool | None
+    transcode_frames: bool | None
+    transcode_fps: float | None
+    transcode_quality: int | None
+    transcode_ext: str | None
+    transcode_overwrite: bool | None
+    use_frame_pk_paths: bool | None
+    format: VideoFrameAnnotationExportFormat | None
 
 
 class Command(BaseCommand):

@@ -17,7 +17,7 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 
 
@@ -107,7 +107,7 @@ def test_create_from_file_happy_path(
     assert raw_path.is_file()
 
     # Stored hash should match content hash of stored file (adjust attribute name if needed)
-    assert report.pdf_hash == sha256_file(
+    assert report.pdf_hash == get_file_hash(
         Path(raw_path)
     )  # <-- maybe report.report_hash/pdf_hash
 
@@ -155,7 +155,7 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
     assert raw_path.exists()
     assert raw_path.is_file()
     assert raw_path != sensitive_copy
-    assert raw_path.parent == paths_module.SENSITIVE_REPORT_DIR
+    assert raw_path.parent == paths_module.get_runtime_paths().sensitive_report
     assert raw_path.name == f"{report.pdf_hash}.pdf"
     assert report.file.name == paths_module.to_storage_relative(raw_path)
 

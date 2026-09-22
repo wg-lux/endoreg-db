@@ -1,3 +1,5 @@
+from lx_dtypes.models.contracts.video_frame_export import YamlScalar
+
 """
 Management command for creating ModelMeta entries for multilabel classification models.
 
@@ -31,8 +33,7 @@ DEFAULT_MODEL_PATH = (
 )
 
 type CommandOptionValue = bool | int | str | None
-type TemplateScalar = bool | int | float | str | None
-type TemplateValue = TemplateScalar | list[TemplateScalar] | dict[str, TemplateValue]
+type TemplateValue = YamlScalar | list[YamlScalar] | dict[str, TemplateValue]
 type TemplateFields = dict[str, TemplateValue]
 
 

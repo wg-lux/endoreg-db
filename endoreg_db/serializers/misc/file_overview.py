@@ -19,6 +19,7 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.services.hls_media import hls_artifact_matches_current_source_metadata
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 from endoreg_db.services.hub.import_monitoring import (
@@ -169,15 +170,29 @@ class _HlsArtifactManager(Protocol):
     def all(self) -> Iterable[VideoHlsArtifact]: ...
 
 
-def _current_overview_hls_artifacts(
+def current_overview_hls_artifacts(
     artifacts: Iterable[VideoHlsArtifact],
+    *,
+    video: VideoFile,
 ) -> list[VideoHlsArtifact]:
-    """Select one current, non-superseded materialization per artifact kind."""
+    """Prefer a current published generation over replacement attempt history."""
     current_by_kind: dict[str, VideoHlsArtifact] = {}
     for artifact in artifacts:
         if artifact.status == VideoHlsArtifact.Status.SUPERSEDED.value:
             continue
+        if artifact.status == VideoHlsArtifact.Status.READY.value:
+            if not hls_artifact_matches_current_source_metadata(
+                video=video, artifact=artifact
+            ):
+                continue
+            current_by_kind[artifact.artifact_kind] = artifact
+            continue
         current = current_by_kind.get(artifact.artifact_kind)
+        if (
+            current is not None
+            and current.status == VideoHlsArtifact.Status.READY.value
+        ):
+            continue
         if current is None or (artifact.updated_at, artifact.pk) > (
             current.updated_at,
             current.pk,
@@ -252,7 +267,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         if not isinstance(instance, VideoFile):
             return []
         manager = cast(_HlsArtifactManager, getattr(instance, "hls_artifacts"))
-        artifacts = _current_overview_hls_artifacts(manager.all())
+        artifacts = current_overview_hls_artifacts(manager.all(), video=instance)
         upload_job = self._overview_upload_job(instance)
         return [
             OverviewHlsMaterializationPayload.model_validate(

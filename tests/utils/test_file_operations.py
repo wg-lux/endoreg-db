@@ -1,7 +1,9 @@
 from __future__ import annotations
-
-import errno
+import base64
 import hashlib
+import io
+import os
+import errno
 import logging
 from collections.abc import Iterable
 from pathlib import Path
@@ -21,8 +23,15 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
+from endoreg_db.config.env import BASE_DIR
+from django.core.files.base import ContentFile
+
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from django.db.models import FileField
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.utils.encryption.encryption import encrypt_stream
 
 
 class _StreamingStorage:
@@ -45,12 +54,13 @@ class _StreamingStorage:
         yield self.payload[start : end + 1]
 
     def open(self, *args: Any, **kwargs: Any) -> None:
-        raise AssertionError("sha256_file should stream FieldFile bytes")
+        raise AssertionError("get_file_hash should stream FieldFile bytes")
 
 
 class _StreamingFieldFile:
-    def __init__(self, payload: bytes, name: str = "processed/video.mp4") -> None:
+    def __init__(self, payload: bytes, name: str = "tests/assets/test.mp4") -> None:
         self.name = name
+        self.path: Path = Path(BASE_DIR / "tests/assets/test.mp4")
         self.storage = _StreamingStorage(payload)
 
 
@@ -68,17 +78,115 @@ def _file_operation_events(caplog: LogCaptureFixture) -> list[dict[str, object]]
     return events
 
 
+@pytest.fixture
+def master_key_env(monkeypatch: MonkeyPatch) -> bytes:
+    """Provide a valid urlsafe-base64 32-byte master key in the environment."""
+    raw_key = os.urandom(32)
+    b64_key = base64.urlsafe_b64encode(raw_key).decode("ascii")
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", b64_key)
+    return raw_key
+
+
+class _MockFieldFile:
+    """Lightweight mock simulating Django FieldFile interface for file paths."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.name = str(path)
+
+
 @pytest.mark.unit
-def test_sha256_file_hashes_field_file_through_streaming_storage() -> None:
-    payload = b"streamed plaintext payload"
-    field_file = _StreamingFieldFile(payload)
+@pytest.mark.parametrize("payload", [b"", b"authenticated plaintext" * 100])
+def test_get_file_hash_streams_plaintext_without_local_path(payload: bytes) -> None:
+    source = _StreamingFieldFile(payload)
 
-    digest = sha256_file(cast(FieldFile, field_file))
+    assert get_file_hash(cast(FieldFile, source)) == hashlib.sha256(payload).hexdigest()
+    assert len(source.storage.range_calls) == (1 if payload else 0)
 
-    assert digest == hashlib.sha256(payload).hexdigest()
-    assert field_file.storage.range_calls == [
-        ("processed/video.mp4", 0, len(payload) - 1, 1024 * 1024)
-    ]
+
+@pytest.mark.unit
+def test_get_file_hash_reads_encrypted_storage_plaintext(
+    tmp_path: Path, master_key_env: bytes
+) -> None:
+    storage = EncryptedStorage(location=tmp_path, master_key=master_key_env)
+    payload = b"stored encrypted artifact"
+    name = storage.save("source.mp4", ContentFile(payload))
+    source = FieldFile(VideoFile(), FileField(storage=storage), name)
+
+    assert get_file_hash(source) == hashlib.sha256(payload).hexdigest()
+
+
+@pytest.mark.unit
+def test_get_file_hash_plaintext_file(tmp_path: Path) -> None:
+    """Verify hashing a standard plaintext OS file yields correct SHA-256."""
+    payload = b"unencrypted video content stream"
+    file_path = tmp_path / "test.mp4"
+    file_path.write_bytes(payload)
+
+    expected_hash = hashlib.sha256(payload).hexdigest()
+    assert get_file_hash(file_path) == expected_hash
+
+
+@pytest.mark.unit
+def test_get_file_hash_encrypted_decryption_parity(
+    tmp_path: Path, master_key_env: bytes
+) -> None:
+    """
+    Verify hashing an encrypted (LXENC01) file yields the exact SHA-256 hash
+    of its underlying PLAINTEXT, maintaining parity with the raw file.
+    """
+    payload = b"encrypted video content stream payload"
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    # 1. Write an encrypted LXENC01 file
+    enc_file_path = tmp_path / "encrypted.mp4"
+    with open(enc_file_path, "wb") as dst:
+        encrypt_stream(
+            source=io.BytesIO(payload),
+            destination=dst,
+            master_key=master_key_env,
+        )
+
+    # 2. Assert Rust unwraps encryption and returns plaintext digest
+    digest = get_file_hash(enc_file_path)
+    assert digest == expected_hash
+
+
+@pytest.mark.unit
+def test_get_file_hash_accepts_field_file_instance(
+    tmp_path: Path, master_key_env: bytes
+) -> None:
+    """Verify FieldFile objects are resolved properly by get_file_hash."""
+    payload = b"fieldfile resolution test payload"
+    expected_hash = hashlib.sha256(payload).hexdigest()
+
+    file_path = tmp_path / "fieldfile.mp4"
+    file_path.write_bytes(payload)
+    field_file = _MockFieldFile(file_path)
+
+    digest = get_file_hash(cast(FieldFile, field_file))
+    assert digest == expected_hash
+
+
+@pytest.mark.unit
+def test_get_file_hash_idempotency_and_types(tmp_path: Path) -> None:
+    """Verify Path, string paths, and FieldFile objects return identical results."""
+    payload = b"idempotent payload test"
+    file_path = tmp_path / "test.bin"
+    file_path.write_bytes(payload)
+
+    hash_from_path = get_file_hash(file_path)
+    hash_from_str = get_file_hash(str(file_path))
+    hash_from_field = get_file_hash(cast(FieldFile, _MockFieldFile(file_path)))
+
+    assert hash_from_path == hash_from_str == hash_from_field
+
+
+@pytest.mark.unit
+def test_get_file_hash_raises_on_none_or_missing() -> None:
+    """Verify invalid inputs or None raise ValueError as expected."""
+    with pytest.raises(ValueError, match="HASH COULD NOT BE CREATED"):
+        get_file_hash(None)
 
 
 @pytest.mark.unit

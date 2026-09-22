@@ -49,7 +49,7 @@ class VideoSegmentFpsNormalizationViewTest(TestCase):
         center = Center.objects.create(name="FPS normalization center")
         self.video = VideoFile.objects.create(
             center=center,
-            video_hash="fps-normalization-video",
+            raw_video_hash="fps-normalization-video",
             original_file_name="fps-normalization.mp4",
             fps=60.0,
             frame_count=600,
@@ -106,7 +106,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
         # 2. Create a Video with known FPS (30.0 makes math easy)
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="test_hash_123",
+            raw_video_hash="test_hash_123",
             original_file_name="test_video.mp4",
             fps=30.0,
             frame_count=1000,
@@ -323,7 +323,7 @@ class PredictionSegmentAnnotationsRouteTest(TestCase):
         self.center = Center.objects.create(name="Prediction Route Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="pred-anno-route-hash",
+            raw_video_hash="pred-anno-route-hash",
             original_file_name="pred_route.mp4",
             fps=25.0,
             frame_count=100,
@@ -407,7 +407,7 @@ class VideoSegmentsByVideoPayloadModeTest(TestCase):
         self.center = Center.objects.create(name="Segments Payload Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="segments-payload-video",
+            raw_video_hash="segments-payload-video",
             original_file_name="segments_payload.mp4",
             fps=25.0,
             frame_count=200,
@@ -474,7 +474,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         self.center = Center.objects.create(name="Validation Async Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="validate-async-video",
+            raw_video_hash="validate-async-video",
             original_file_name="validate_async.mp4",
             fps=25.0,
             frame_count=100,
@@ -799,7 +799,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.center = Center.objects.create(name="Blacken Outside Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="blacken-outside-video",
+            raw_video_hash="blacken-outside-video",
             original_file_name="blacken_outside.mp4",
             fps=25.0,
             frame_count=100,
@@ -1147,7 +1147,7 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.center = Center.objects.create(name="Segment Source Filter Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="segment-source-filter-video",
+            raw_video_hash="segment-source-filter-video",
             original_file_name="segment_filter.mp4",
             fps=25.0,
             frame_count=100,
@@ -1228,7 +1228,7 @@ class VideoSegmentsBulkMutationTest(TestCase):
         self.center = Center.objects.create(name="Bulk Segment Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="bulk-segments-video",
+            raw_video_hash="bulk-segments-video",
             original_file_name="bulk_segments.mp4",
             fps=25.0,
             frame_count=200,
@@ -1456,7 +1456,7 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.center = Center.objects.create(name="Prediction Import Center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="prediction-import-video",
+            raw_video_hash="prediction-import-video",
             original_file_name="prediction_import.mp4",
             fps=25.0,
             frame_count=200,

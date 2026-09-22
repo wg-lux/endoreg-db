@@ -92,7 +92,7 @@ class TestSensitiveMetadataEndpoints:
         return VideoFile.objects.create(
             center=center,
             sensitive_meta=sensitive_meta,
-            video_hash=f"video-sm-{uuid4().hex}",
+            raw_video_hash=f"video-sm-{uuid4().hex}",
             original_file_name="sm-video.mp4",
         )
 
@@ -645,7 +645,7 @@ class TestSensitiveMetadataEndpoints:
         )
         other_video = VideoFile.objects.create(
             center=video.center,
-            video_hash=f"video-sm-{uuid4().hex}",
+            raw_video_hash=f"video-sm-{uuid4().hex}",
             original_file_name="other-video.mp4",
             patient=self._require_sensitive_meta(sensitive_meta).pseudo_patient,
             examination=occupied_patient_examination,

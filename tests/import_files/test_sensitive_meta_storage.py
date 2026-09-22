@@ -52,7 +52,7 @@ def test_locked_carrier_locks_only_the_media_row(
     # Assert
     assert result is carrier
     manager.select_for_update.assert_called_once_with(of=("self",))
-    locking_queryset.select_related.assert_called_once_with("center", "sensitive_meta")
+    locking_queryset.select_related.assert_called_once_with("center")
     related_queryset.get.assert_called_once_with(pk=carrier.pk)
 
 
@@ -155,7 +155,7 @@ def test_mismatched_existing_center_fails_closed(base_db_data: bool) -> None:
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"sensitive-meta-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"sensitive-meta-video-{uuid.uuid4().hex}",
     )
     existing_meta = SensitiveMeta.objects.create(
         center=other_center,

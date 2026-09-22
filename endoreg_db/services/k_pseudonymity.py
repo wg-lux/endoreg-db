@@ -8,23 +8,30 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Literal, TypeAlias
 
+from lx_dtypes.models.contracts.json_types import JsonScalar
+
 from endoreg_db.schemas.k_pseudonymity import (
     KPseudonymityAuditManifest,
     KPseudonymityReleaseConfig,
     ReleasePredicateAudit,
 )
 from endoreg_db.services.k_pseudonymity_predicate import (
-    CellValue,
     ClassKey,
     KPseudonymityInputError,
     ReleaseRow,
-    canonical_value as _canonical_value,
-    categorical_distribution as _categorical_distribution,
-    equivalence_classes as _equivalence_classes,
     evaluate_release_predicate,
     jensen_shannon_divergence,
     total_variation_distance,
     wasserstein_1_distance,
+)
+from endoreg_db.services.k_pseudonymity_predicate import (
+    canonical_value as _canonical_value,
+)
+from endoreg_db.services.k_pseudonymity_predicate import (
+    categorical_distribution as _categorical_distribution,
+)
+from endoreg_db.services.k_pseudonymity_predicate import (
+    equivalence_classes as _equivalence_classes,
 )
 
 
@@ -328,7 +335,7 @@ def _normalize_cell(
     column: str,
     row_index: int,
     config: KPseudonymityReleaseConfig,
-) -> CellValue:
+) -> JsonScalar | None:
     if value is None or value == "":
         return config.missing_value_token
     if isinstance(value, bool | int | str):
@@ -379,7 +386,7 @@ def _candidate_synthetic_rows(
 ) -> tuple[ReleaseRow, ...]:
     class_rows = _equivalence_classes(rows, config.quasi_identifiers)[target_key]
     template = class_rows[0]
-    supports: list[tuple[CellValue, ...]] = [
+    supports: list[tuple[(JsonScalar | None), ...]] = [
         tuple(sensitive.allowed_values) for sensitive in config.sensitive_attributes
     ]
 
@@ -517,7 +524,7 @@ def _result(
     )
 
 
-def _copy_row(row: Mapping[str, CellValue]) -> ReleaseRow:
+def _copy_row(row: Mapping[str, (JsonScalar | None)]) -> ReleaseRow:
     return dict(row)
 
 
@@ -545,7 +552,6 @@ def _ordered_table_sha256(rows: Sequence[ReleaseRow], columns: Sequence[str]) ->
 
 
 __all__ = [
-    "CellValue",
     "KPseudonymityInputError",
     "KPseudonymityReleaseResult",
     "ReleaseRow",

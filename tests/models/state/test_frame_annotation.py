@@ -107,7 +107,7 @@ class FrameAnnotationStateTest(TestCase):
         self.center = Center.objects.create(name="frame-state-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="frame-state-video",
+            raw_video_hash="frame-state-video",
             original_file_name="frame_state.mp4",
             fps=25.0,
             frame_count=4,
@@ -451,7 +451,7 @@ class FrameAnnotationStateTest(TestCase):
         )
         raw_video = VideoFile.objects.create(
             center=self.center,
-            video_hash="frame-state-video-raw",
+            raw_video_hash="frame-state-video-raw",
             original_file_name="frame_state_raw.mp4",
             fps=25.0,
             frame_count=2,

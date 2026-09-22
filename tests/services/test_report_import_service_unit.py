@@ -2,10 +2,8 @@ from __future__ import annotations
 
 # Direct private-method coverage is intentional in this focused unit suite.
 # pyright: reportPrivateUsage=false, reportMissingTypeStubs=false
-from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Protocol, cast
 from unittest.mock import Mock, call
 from uuid import uuid4
@@ -26,6 +24,7 @@ from endoreg_db.services.report_import_fencing import (
     ReportImportFence,
     StaleReportImportAttemptError,
 )
+from endoreg_db.utils.paths import get_runtime_paths
 
 CONTENT_HASH = "a" * 64
 CENTER_NAME = "test-center"
@@ -92,25 +91,6 @@ class TestInitialization:
         # Assert
         validate_directories.assert_called_once_with()
         assert result.anonymizer is anonymizer and result.current_report is None
-
-    def test_resolves_import_directory_from_environment_paths(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        expected = tmp_path / "report-import"
-        from_environment = Mock(return_value=SimpleNamespace(import_report=expected))
-        monkeypatch.setattr(
-            report_import_module.path_utils.EndoregPathsModel,
-            "from_environment",
-            from_environment,
-        )
-
-        # Act
-        result = report_import_module._import_report_dir()
-
-        # Assert
-        assert result == expected
-        from_environment.assert_called_once_with()
 
 
 class TestTextAndPdfHelpers:
@@ -239,13 +219,10 @@ class TestTextAndPdfHelpers:
         tmp_path: Path,
     ) -> None:
         # Arrange
-        sensitive_dir = tmp_path / "sensitive"
-        sensitive_dir.mkdir()
+        sensitive_dir = get_runtime_paths().sensitive_report
+        sensitive_dir.mkdir(parents=True, exist_ok=True)
         source = tmp_path / "report.txt"
         source.write_text("hello", encoding="utf-8")
-        monkeypatch.setattr(
-            report_import_module, "_sensitive_report_dir", lambda: sensitive_dir
-        )
 
         # Act
         result = service._create_temp_pdf_from_txt(source)
@@ -337,30 +314,6 @@ class TestImportContextValidation:
         source.touch()
 
         # Act / Assert
-        with pytest.raises(ValidationError, match="requires a PDF or text"):
-            service._create_import_context(source, CENTER_NAME)
-
-    def test_service_guard_rejects_unsupported_extension_after_context_creation(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        source = tmp_path / "report.docx"
-        source.touch()
-        monkeypatch.setattr(
-            report_import_module,
-            "ImportContext",
-            Mock(
-                return_value=SimpleNamespace(
-                    file_path=source,
-                    center_name=CENTER_NAME,
-                )
-            ),
-        )
-
-        # Act / Assert
         with pytest.raises(ValueError, match="only accepts PDF or TXT"):
             service._create_import_context(source, CENTER_NAME)
 
@@ -377,7 +330,7 @@ class TestImportContextValidation:
 
 
 class TestPublicImportEntryPoint:
-    def test_pdf_is_validated_before_locked_import(
+    def test_pdf_is_validated_before_pipeline(
         self,
         service: ReportImportService,
         monkeypatch: pytest.MonkeyPatch,
@@ -385,9 +338,9 @@ class TestPublicImportEntryPoint:
     ) -> None:
         # Arrange
         validate = Mock()
-        locked_import = Mock(return_value=None)
+        pipeline = Mock(return_value=None)
         monkeypatch.setattr(service, "_validate_pdf_document", validate)
-        monkeypatch.setattr(service, "_import_with_source_lock", locked_import)
+        monkeypatch.setattr(service, "_process_import_pipeline", pipeline)
 
         # Act
         result = service.import_and_anonymize(pdf_path, CENTER_NAME, retry=True)
@@ -396,7 +349,7 @@ class TestPublicImportEntryPoint:
         assert result is None
         validate.assert_called_once_with(pdf_path)
 
-    def test_txt_conversion_uses_original_lock_and_always_cleans_up(
+    def test_txt_conversion_is_cleaned_when_pipeline_fails(
         self,
         service: ReportImportService,
         monkeypatch: pytest.MonkeyPatch,
@@ -405,501 +358,22 @@ class TestPublicImportEntryPoint:
         # Arrange
         source = tmp_path / "report.txt"
         source.write_text("report", encoding="utf-8")
-        protected_root = tmp_path / "protected"
-        storage_dir = protected_root / "storage"
-        converted = storage_dir / "temp" / "sensitive_reports" / "converted.pdf"
-        converted.parent.mkdir(parents=True)
+        converted = get_runtime_paths().sensitive_report / "converted.pdf"
+        converted.parent.mkdir(parents=True, exist_ok=True)
         converted.touch()
-        monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(protected_root))
-        monkeypatch.setenv("STORAGE_DIR", str(storage_dir))
-        monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-        locked_import = Mock(side_effect=RuntimeError("import failed"))
+        pipeline = Mock(side_effect=RuntimeError("import failed"))
         monkeypatch.setattr(
             service, "_create_temp_pdf_from_txt", Mock(return_value=converted)
         )
-        monkeypatch.setattr(service, "_import_with_source_lock", locked_import)
+        monkeypatch.setattr(service, "_process_import_pipeline", pipeline)
 
         # Act / Assert
         with pytest.raises(RuntimeError, match="import failed"):
             service.import_and_anonymize(source, CENTER_NAME)
-        locked_import.assert_called_once()
-        assert locked_import.call_args.args[1] == source
+        pipeline.assert_called_once()
+        assert pipeline.call_args.args[0].original_path == source
+        assert pipeline.call_args.args[0].file_path == converted
         assert not converted.exists()
-
-    def test_source_lock_path_requires_original_txt_path(self, tmp_path: Path) -> None:
-        # Arrange
-        context = _context(tmp_path / "converted.pdf")
-        context.original_path = None
-
-        # Act / Assert
-        with pytest.raises(ValueError, match="requires an original source path"):
-            ReportImportService._report_source_lock_path(
-                context, tmp_path / "converted.pdf"
-            )
-
-
-class TestSourceAndContentLockOrchestration:
-    @pytest.mark.parametrize("renamed_source", [False, True])
-    def test_repeated_completed_import_skips_ownership_and_processing(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-        renamed_source: bool,
-    ) -> None:
-        # Arrange
-        contexts = [
-            _context(tmp_path / "report.pdf"),
-            _context(tmp_path / ("renamed.pdf" if renamed_source else "report.pdf")),
-        ]
-        existing = Mock(spec=RawPdfFile)
-        acquire = Mock()
-        process = Mock()
-        cleanup = Mock()
-        self._patch_content_lock(monkeypatch)
-        monkeypatch.setattr(
-            service, "_get_existing_completed_report", Mock(return_value=existing)
-        )
-        monkeypatch.setattr(
-            report_import_module, "acquire_report_import_fence", acquire
-        )
-        monkeypatch.setattr(service, "_process_owned_import", process)
-        monkeypatch.setattr(service, "_cleanup_duplicate_staging", cleanup)
-
-        # Act
-        results = [
-            service._import_with_content_hash_lock(
-                ctx, retry=False, file_hash=CONTENT_HASH
-            )
-            for ctx in contexts
-        ]
-
-        # Assert
-        assert all(result is existing for result in results)
-        assert all(ctx.current_report is existing for ctx in contexts)
-        acquire.assert_not_called()
-        process.assert_not_called()
-        assert cleanup.call_args_list == [call(ctx) for ctx in contexts]
-
-    def test_snapshot_metadata_is_propagated_inside_source_lock(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        source = tmp_path / "report.pdf"
-        snapshot_path = tmp_path / "sensitive" / "snapshot.pdf"
-        context = _context(source)
-        events: list[str] = []
-
-        @contextmanager
-        def source_lock(path: Path) -> Generator[None]:
-            events.append(f"lock:{path.name}")
-            yield
-
-        monkeypatch.setattr(report_import_module, "report_source_lock", source_lock)
-        monkeypatch.setattr(
-            report_import_module,
-            "create_sensitive_report_snapshot",
-            Mock(return_value=SimpleNamespace(path=snapshot_path, sha256=CONTENT_HASH)),
-        )
-        monkeypatch.setattr(
-            service, "_import_with_content_hash_lock", Mock(return_value=None)
-        )
-
-        # Act
-        service._import_with_source_lock(context, source, retry=False)
-
-        # Assert
-        assert events == ["lock:report.pdf"]
-        assert context.file_path == snapshot_path and context.file_hash == CONTENT_HASH
-
-    def test_failed_locked_import_cleans_sensitive_snapshot(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        source = tmp_path / "report.pdf"
-        sensitive_dir = tmp_path / "sensitive"
-        snapshot_path = sensitive_dir / "snapshot.pdf"
-        sensitive_dir.mkdir()
-        snapshot_path.touch()
-        context = _context(source)
-
-        @contextmanager
-        def source_lock(_path: Path) -> Generator[None]:
-            yield
-
-        monkeypatch.setattr(report_import_module, "report_source_lock", source_lock)
-        monkeypatch.setattr(
-            report_import_module,
-            "create_sensitive_report_snapshot",
-            Mock(return_value=SimpleNamespace(path=snapshot_path, sha256=CONTENT_HASH)),
-        )
-        monkeypatch.setattr(
-            report_import_module, "_sensitive_report_dir", lambda: sensitive_dir
-        )
-        monkeypatch.setattr(
-            service,
-            "_import_with_content_hash_lock",
-            Mock(side_effect=RuntimeError("failed")),
-        )
-
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="failed"):
-            service._import_with_source_lock(context, source, retry=False)
-        assert not snapshot_path.exists()
-
-    def test_completed_duplicate_short_circuits_and_cleans_staging(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        existing = Mock(spec=RawPdfFile)
-        cleanup = Mock()
-        self._patch_content_lock(monkeypatch)
-        monkeypatch.setattr(
-            service, "_get_existing_completed_report", Mock(return_value=existing)
-        )
-        monkeypatch.setattr(service, "_cleanup_duplicate_staging", cleanup)
-
-        # Act
-        result = service._import_with_content_hash_lock(
-            context, retry=False, file_hash=CONTENT_HASH
-        )
-
-        # Assert
-        assert result is existing
-        cleanup.assert_called_once_with(context)
-
-    def test_retry_does_not_short_circuit_completed_duplicate(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        fence = _fence()
-        process = Mock(return_value=None)
-        self._patch_content_lock(monkeypatch)
-        monkeypatch.setattr(
-            service, "_get_existing_completed_report", Mock(return_value=object())
-        )
-        monkeypatch.setattr(
-            report_import_module,
-            "acquire_report_import_fence",
-            Mock(return_value=fence),
-        )
-        monkeypatch.setattr(service, "_process_owned_import", process)
-
-        # Act
-        service._import_with_content_hash_lock(
-            context, retry=True, file_hash=CONTENT_HASH
-        )
-
-        # Assert
-        process.assert_called_once_with(context, fence, True)
-
-    @pytest.mark.parametrize(
-        ("error", "should_finalize"),
-        [
-            (RuntimeError("failed"), True),
-            (OSError("storage unavailable"), True),
-            (StaleReportImportAttemptError("stale"), False),
-        ],
-    )
-    def test_owned_import_error_handling(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        pdf_path: Path,
-        error: Exception,
-        should_finalize: bool,
-    ) -> None:
-        # Arrange
-        context = _context(pdf_path)
-        original_bytes = pdf_path.read_bytes()
-        finalize = Mock()
-        self._patch_content_lock(monkeypatch)
-        monkeypatch.setattr(
-            service, "_get_existing_completed_report", Mock(return_value=None)
-        )
-        monkeypatch.setattr(
-            report_import_module,
-            "acquire_report_import_fence",
-            Mock(return_value=_fence()),
-        )
-        monkeypatch.setattr(service, "_process_owned_import", Mock(side_effect=error))
-        monkeypatch.setattr(service, "_finalize_owned_failure", finalize)
-
-        # Act
-        with pytest.raises(type(error), match=str(error)) as raised:
-            service._import_with_content_hash_lock(
-                context, retry=False, file_hash=CONTENT_HASH
-            )
-
-        # Assert
-        assert raised.value is error
-        assert finalize.called is should_finalize
-        assert context.execution_guard is None
-        assert context.mutation_guard is None
-        assert pdf_path.read_bytes() == original_bytes
-
-    @staticmethod
-    def _patch_content_lock(monkeypatch: pytest.MonkeyPatch) -> None:
-        @contextmanager
-        def content_lock(_digest: str) -> Generator[None]:
-            yield
-
-        monkeypatch.setattr(
-            report_import_module, "report_content_hash_lock", content_lock
-        )
-
-
-class TestOwnedImportProcessing:
-    def test_success_runs_processing_and_finalization_in_order(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        report = Mock(spec=RawPdfFile)
-        report.state = object()
-        events: list[str] = []
-
-        def renew(_owned_fence: ReportImportFence) -> None:
-            events.append("renew")
-
-        def mark_started(
-            _report: RawPdfFile,
-            _context: ImportContext,
-        ) -> None:
-            events.append("started")
-
-        def anonymize(value: ImportContext) -> ImportContext:
-            events.append("anonymized")
-            return value
-
-        def finalize(_context: ImportContext) -> None:
-            events.append("finalized")
-
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(report, False, True)),
-        )
-        monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
-        monkeypatch.setattr(
-            report_import_module,
-            "renew_report_import_fence",
-            renew,
-        )
-        monkeypatch.setattr(
-            report_import_module,
-            "mark_instance_processing_started",
-            mark_started,
-        )
-        monkeypatch.setattr(service, "_anonymize_with_retry", anonymize)
-
-        @contextmanager
-        def guard(_fence: ReportImportFence) -> Generator[None]:
-            events.append("guard")
-            yield
-
-        monkeypatch.setattr(
-            report_import_module, "report_import_finalization_guard", guard
-        )
-        monkeypatch.setattr(
-            report_import_module,
-            "finalize_report_success",
-            finalize,
-        )
-
-        # Act
-        result = service._process_owned_import(context, _fence(), retry=False)
-
-        # Assert
-        assert result is report
-        assert events == [
-            "renew",
-            "started",
-            "anonymized",
-            "renew",
-            "guard",
-            "finalized",
-        ]
-
-    def test_missing_report_state_fails_loudly(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        report = Mock(spec=RawPdfFile)
-        report.state = None
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(report, False, True)),
-        )
-        monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
-
-        # Act / Assert
-        with pytest.raises(ValueError, match="Could not create state"):
-            service._process_owned_import(context, _fence(), retry=False)
-
-    def test_unneeded_processing_releases_fence_and_returns_report(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        report = Mock(spec=RawPdfFile)
-        report.state = object()
-        cleanup = Mock()
-        release = Mock()
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(report, False, False)),
-        )
-        monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
-        monkeypatch.setattr(service, "_cleanup_duplicate_staging", cleanup)
-        monkeypatch.setattr(
-            report_import_module, "mark_report_import_fence_failed", release
-        )
-
-        # Act
-        result = service._process_owned_import(context, _fence(), retry=False)
-
-        # Assert
-        assert result is report
-        cleanup.assert_called_once_with(context)
-        release.assert_called_once()
-
-    @pytest.mark.parametrize(("processed", "retry"), [(True, False), (False, True)])
-    def test_processed_or_explicit_retry_prepares_retry(
-        self,
-        service: ReportImportService,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-        processed: bool,
-        retry: bool,
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        report = Mock(spec=RawPdfFile)
-        report.state = object()
-        prepare_retry = Mock(side_effect=RuntimeError("stop after retry"))
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(report, processed, True)),
-        )
-        monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
-        monkeypatch.setattr(service, "_prepare_retry", prepare_retry)
-
-        # Act / Assert
-        with pytest.raises(RuntimeError, match="stop after retry"):
-            service._process_owned_import(context, _fence(), retry=retry)
-        assert context.retry is True
-
-    def test_prepare_retry_preserves_snapshot_and_reloads_report(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        replacement = Mock(spec=RawPdfFile)
-        finalize = Mock()
-        monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
-        monkeypatch.setattr(report_import_module, "finalize_failure", finalize)
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(replacement, False, True)),
-        )
-
-        # Act
-        ReportImportService._prepare_retry(context, _fence())
-
-        # Assert
-        assert context.current_report is replacement
-        finalize.assert_called_once_with(context, preserve_sensitive_staging=True)
-
-    def test_prepare_retry_rejects_already_processed_reload(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
-        monkeypatch.setattr(report_import_module, "finalize_failure", Mock())
-        monkeypatch.setattr(
-            report_import_module,
-            "create_or_retrieve_report_file",
-            Mock(return_value=(Mock(spec=RawPdfFile), True, False)),
-        )
-
-        # Act / Assert
-        with pytest.raises(ValueError, match="File already processed"):
-            ReportImportService._prepare_retry(context, _fence())
-
-
-class TestAnonymizationRetry:
-    def test_primary_success_returns_context(
-        self, service: ReportImportService, tmp_path: Path
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        anonymize = Mock(return_value=context)
-        service.anonymizer.anonymize_report = anonymize
-
-        # Act
-        result = service._anonymize_with_retry(context)
-
-        # Assert
-        assert result is context
-        anonymize.assert_called_once_with(context)
-
-    def test_primary_failure_retries_once(
-        self, service: ReportImportService, tmp_path: Path
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        anonymize = Mock(side_effect=[RuntimeError("primary"), context])
-        service.anonymizer.anonymize_report = anonymize
-
-        # Act
-        result = service._anonymize_with_retry(context)
-
-        # Assert
-        assert result is context
-        assert anonymize.call_count == 2
-
-    def test_second_failure_is_propagated(
-        self, service: ReportImportService, tmp_path: Path
-    ) -> None:
-        # Arrange
-        context = _context(tmp_path / "report.pdf")
-        service.anonymizer.anonymize_report = Mock(
-            side_effect=[RuntimeError("primary"), ValueError("fallback")]
-        )
-
-        # Act / Assert
-        with pytest.raises(ValueError, match="fallback"):
-            service._anonymize_with_retry(context)
 
 
 class TestFailureFinalization:
@@ -1112,11 +586,11 @@ class TestDuplicateCleanup:
         managed_source: bool,
     ) -> None:
         # Arrange
-        import_dir = tmp_path / "import"
-        sensitive_dir = tmp_path / "sensitive"
+        import_dir = get_runtime_paths().import_report
+        sensitive_dir = get_runtime_paths().sensitive_report
         source_dir = import_dir if managed_source else tmp_path / "external"
-        import_dir.mkdir()
-        sensitive_dir.mkdir()
+        import_dir.mkdir(parents=True, exist_ok=True)
+        sensitive_dir.mkdir(parents=True, exist_ok=True)
         source_dir.mkdir(exist_ok=True)
         source = source_dir / "report.pdf"
         snapshot = sensitive_dir / "snapshot.pdf"
@@ -1124,12 +598,6 @@ class TestDuplicateCleanup:
         snapshot.touch()
         context = _context(source)
         context.sensitive_path = snapshot
-        monkeypatch.setattr(
-            report_import_module, "_import_report_dir", lambda: import_dir
-        )
-        monkeypatch.setattr(
-            report_import_module, "_sensitive_report_dir", lambda: sensitive_dir
-        )
 
         # Act
         service._cleanup_duplicate_staging(context)
@@ -1137,3 +605,132 @@ class TestDuplicateCleanup:
         # Assert
         assert source.exists() is (not managed_source)
         assert not snapshot.exists()
+
+
+@pytest.mark.parametrize(
+    ("processed", "retry", "needs_processing", "existing", "failure"),
+    [
+        (False, False, True, False, None),
+        (True, False, True, False, None),
+        (False, True, True, False, None),
+        (False, False, False, False, None),
+        (False, False, True, True, None),
+        (False, False, True, False, RuntimeError("anonymization failed")),
+        (False, False, True, False, StaleReportImportAttemptError("stale attempt")),
+    ],
+)
+def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
+    service: ReportImportService,
+    monkeypatch: pytest.MonkeyPatch,
+    pdf_path: Path,
+    processed: bool,
+    retry: bool,
+    needs_processing: bool,
+    existing: bool,
+    failure: Exception | None,
+) -> None:
+    from endoreg_db.schemas.import_file import SourceSnapshot
+
+    original_bytes = pdf_path.read_bytes()
+    snapshot_path = get_runtime_paths().sensitive_report / "pipeline-snapshot.pdf"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_bytes(original_bytes)
+    snapshot = SourceSnapshot(
+        path=snapshot_path,
+        size_bytes=len(original_bytes),
+        modified_time_ns=pdf_path.stat().st_mtime_ns,
+        sha256=CONTENT_HASH,
+    )
+    context = _context(pdf_path)
+    report = Mock(spec=RawPdfFile)
+    fence = _fence()
+    calls = Mock()
+    create = Mock(
+        side_effect=[(report, processed, needs_processing), (report, False, True)]
+    )
+    anonymize = Mock(side_effect=failure) if failure else Mock(return_value=context)
+    finalize = Mock()
+    failed = Mock()
+    acquire = Mock(return_value=fence)
+    heartbeat = Mock()
+    calls.attach_mock(anonymize, "anonymize")
+    calls.attach_mock(finalize, "finalize")
+    monkeypatch.setattr(
+        report_import_module, "file_lock", Mock(return_value=nullcontext())
+    )
+    monkeypatch.setattr(
+        report_import_module, "content_hash_lock", Mock(return_value=nullcontext())
+    )
+    monkeypatch.setattr(
+        report_import_module, "create_snapshot", Mock(return_value=snapshot)
+    )
+    monkeypatch.setattr(report_import_module, "acquire_report_import_fence", acquire)
+    monkeypatch.setattr(
+        report_import_module,
+        "ReportImportFenceHeartbeat",
+        Mock(return_value=nullcontext(heartbeat)),
+    )
+    monkeypatch.setattr(
+        report_import_module,
+        "report_import_mutation_guard",
+        Mock(return_value=nullcontext()),
+    )
+    monkeypatch.setattr(
+        report_import_module,
+        "report_import_finalization_guard",
+        Mock(return_value=nullcontext()),
+    )
+    monkeypatch.setattr(report_import_module, "create_or_retrieve_report_file", create)
+    monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
+    monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
+    monkeypatch.setattr(
+        report_import_module, "mark_instance_processing_started", Mock()
+    )
+    retry_cleanup = Mock()
+    release = Mock()
+    monkeypatch.setattr(report_import_module, "finalize_failure", retry_cleanup)
+    monkeypatch.setattr(
+        report_import_module, "mark_report_import_fence_failed", release
+    )
+    monkeypatch.setattr(report_import_module, "finalize_report_success", finalize)
+    monkeypatch.setattr(
+        service,
+        "_get_existing_completed_report",
+        Mock(return_value=report if existing else None),
+    )
+    monkeypatch.setattr(service, "_cleanup_duplicate_staging", Mock())
+    monkeypatch.setattr(service, "_finalize_owned_failure", failed)
+    service.anonymizer.anonymize_report = anonymize
+
+    if failure is not None:
+        with pytest.raises(type(failure), match=str(failure)):
+            service._process_import_pipeline(context, retry)
+        anonymize.assert_called_once_with(context)
+        finalize.assert_not_called()
+        if isinstance(failure, StaleReportImportAttemptError):
+            failed.assert_not_called()
+        else:
+            failed.assert_called_once_with(context, fence)
+        assert not snapshot_path.exists()
+    else:
+        assert service._process_import_pipeline(context, retry) is report
+        if existing or not needs_processing:
+            anonymize.assert_not_called()
+            finalize.assert_not_called()
+            if existing:
+                acquire.assert_not_called()
+            else:
+                release.assert_called_once_with(fence)
+        else:
+            assert calls.mock_calls == [call.anonymize(context), call.finalize(context)]
+            if processed or retry:
+                assert context.retry is True
+                assert create.call_count == 2
+                retry_cleanup.assert_called_once_with(
+                    context, preserve_sensitive_staging=True
+                )
+    assert context.file_hash == CONTENT_HASH
+    assert context.file_path == snapshot_path
+    assert context.execution_guard is None
+    assert context.mutation_guard is None
+    assert pdf_path.read_bytes() == original_bytes

@@ -43,7 +43,7 @@ class _FakeFieldFile:
 def _fake_video(
     *,
     pk: int,
-    video_hash: str,
+    raw_video_hash: str,
     raw_file_name: str | None,
     processed_file_name: str | None,
     state_validated: bool,
@@ -52,7 +52,7 @@ def _fake_video(
         VideoFile,
         SimpleNamespace(
             pk=pk,
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             raw_file=_FakeFieldFile(raw_file_name),
             processed_file=_FakeFieldFile(processed_file_name),
             state=SimpleNamespace(
@@ -135,7 +135,7 @@ def test_video_integrity_failure_disallows_reprocessing_when_not_recoverable() -
         status=MediaIntegrityStatus.HASH_MISMATCH,
         reason="hash mismatch",
         content_hash="abc",
-        missing_artifacts=("video_hash",),
+        missing_artifacts=("raw_video_hash",),
     )
     assert (
         media_integrity.video_integrity_failure_allows_existing_video_reprocessing(
@@ -153,7 +153,7 @@ def test_check_video_media_integrity_reports_state_not_validated() -> None:
         result = check_video_media_integrity(
             _fake_video(
                 pk=1,
-                video_hash="hash-001",
+                raw_video_hash="hash-001",
                 raw_file_name="raw.bin",
                 processed_file_name="processed.bin",
                 state_validated=False,
@@ -168,7 +168,7 @@ def test_check_video_media_integrity_reports_state_not_validated() -> None:
 def test_processing_replay_does_not_require_or_grant_human_review() -> None:
     video = _fake_video(
         pk=1,
-        video_hash="unapproved",
+        raw_video_hash="unapproved",
         raw_file_name="raw.bin",
         processed_file_name="processed.bin",
         state_validated=False,
@@ -191,7 +191,7 @@ def test_processing_replay_reports_missing_metadata_even_with_raw_media(
 ) -> None:
     video = _fake_video(
         pk=1,
-        video_hash="missing-meta",
+        raw_video_hash="missing-meta",
         raw_file_name="raw.bin",
         processed_file_name="processed.bin",
         state_validated=False,
@@ -217,7 +217,7 @@ def test_check_video_media_integrity_preanonymized_does_not_require_raw_file(
     result = check_video_media_integrity(
         _fake_video(
             pk=2,
-            video_hash="hash-002",
+            raw_video_hash="hash-002",
             raw_file_name=None,
             processed_file_name="processed.bin",
             state_validated=True,
@@ -369,7 +369,7 @@ def test_check_upload_job_media_integrity_dispatches_video(
             objects=_FakeQuery(
                 _fake_video(
                     pk=11,
-                    video_hash="video-1",
+                    raw_video_hash="video-1",
                     raw_file_name="raw.mp4",
                     processed_file_name="processed.mp4",
                     state_validated=True,
@@ -401,7 +401,7 @@ def test_upload_integrity_never_uses_another_centers_media(content_type: str) ->
     own = Center.objects.create(name="Integrity Own")
     foreign = Center.objects.create(name="Integrity Foreign")
     if content_type == "video/mp4":
-        VideoFile.objects.create(center=foreign, video_hash="foreign-integrity")
+        VideoFile.objects.create(center=foreign, raw_video_hash="foreign-integrity")
     else:
         RawPdfFile.objects.create(center=foreign, pdf_hash="foreign-integrity")
     job = UploadJob.objects.create(

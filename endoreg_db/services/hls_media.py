@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 from pathlib import Path
 from typing import BinaryIO, Literal, Protocol, cast
 from urllib.parse import urlsplit
@@ -37,9 +38,9 @@ from endoreg_db.schemas.video_storage import (
     PresentationTimestampTimeline,
     FramePresentationTimestamp,
     HlsSegmentBoundary,
+    MeasuredAverageFrameRate,
     VideoArtifactProbe,
 )
-from endoreg_db.services import streamable_media
 from endoreg_db.services.video_source_hash import verified_video_source_hash
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
@@ -48,6 +49,7 @@ from endoreg_db.services.video_files import (
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,
 )
@@ -68,7 +70,7 @@ from endoreg_db.services.video_storage_normalization import (
     validate_normalized_output,
     validate_proven_resampled_hls_equivalence,
 )
-from endoreg_db.utils.encryption.encryption import load_master_key
+from endoreg_db.utils.encryption.encryption import load_master_key, decrypt_wrapped_key
 from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
@@ -83,11 +85,10 @@ from endoreg_db.utils.media_urls import (
     build_video_hls_key_path,
     build_video_hls_segment_base_path,
 )
-from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.paths import (
-    EndoregPathsModel,
     ensure_within_protected_media_root,
-    ensure_within_protected_root,
+    ensure_within_runtime_root,
     resolve_existing_protected_media_path,
     resolve_protected_media_path,
     to_protected_media_relative,
@@ -426,16 +427,16 @@ def _persisted_hls_boundaries(
     return tuple(boundaries)
 
 
-def resolve_hls_timeline_validation(
+def _hls_source_identity(
     video: VideoFile,
     artifact_kind: VideoArtifactKind,
-) -> _HlsTimelineValidation:
+) -> tuple[str, UUID]:
     expected_content_hash = (
         str(video.processed_video_hash or "").strip()
         if artifact_kind == VideoArtifactKind.PROCESSED
-        else str(video.video_hash or "").strip()
+        else str(video.raw_video_hash or "").strip()
     )
-    generation_basis = expected_content_hash or str(video.video_hash or "").strip()
+    generation_basis = expected_content_hash or str(video.raw_video_hash or "").strip()
     source_generation_id = (
         uuid5(
             NAMESPACE_URL,
@@ -443,6 +444,16 @@ def resolve_hls_timeline_validation(
         )
         if generation_basis
         else uuid4()
+    )
+    return expected_content_hash, source_generation_id
+
+
+def resolve_hls_timeline_validation(
+    video: VideoFile,
+    artifact_kind: VideoArtifactKind,
+) -> _HlsTimelineValidation:
+    expected_content_hash, source_generation_id = _hls_source_identity(
+        video, artifact_kind
     )
     if artifact_kind != VideoArtifactKind.PROCESSED:
         return _HlsTimelineValidation(
@@ -515,7 +526,7 @@ def unwrap_hls_content_key(artifact: VideoHlsArtifact) -> bytes:
         raise ValueError("HLS artifact has no stored content key")
 
     artifact_kind = _coerce_hls_artifact_kind(artifact.artifact_kind)
-    plaintext = AESGCM(load_master_key()).decrypt(
+    plaintext = decrypt_wrapped_key(
         bytes(artifact.key_nonce),
         bytes(artifact.key_ciphertext),
         _key_wrap_aad(
@@ -527,6 +538,34 @@ def unwrap_hls_content_key(artifact: VideoHlsArtifact) -> bytes:
     if len(plaintext) != HLS_CONTENT_KEY_BYTES:
         raise ValueError("Stored HLS content key has invalid length")
     return plaintext
+
+
+def hls_uses_active_master_key(artifact: VideoHlsArtifact) -> bool:
+    """Authenticate key ownership without returning or logging content key bytes."""
+    from cryptography.exceptions import InvalidTag
+
+    if artifact.key_wrap_algorithm != HLS_KEY_WRAP_ALGORITHM:
+        raise ValueError("Unsupported HLS key wrap algorithm")
+    if artifact.key_ciphertext is None or artifact.key_nonce is None:
+        raise ValueError("HLS artifact has no stored content key")
+    aad = _key_wrap_aad(
+        video_id=int(artifact.video_id),
+        artifact_kind=_coerce_hls_artifact_kind(artifact.artifact_kind),
+        key_id=artifact.key_id,
+    )
+    try:
+        plaintext = AESGCM(load_master_key()).decrypt(
+            bytes(artifact.key_nonce), bytes(artifact.key_ciphertext), aad
+        )
+    except InvalidTag:
+        # Unknown or corrupt keys must fail, not be classified as retiring.
+        decrypt_wrapped_key(
+            bytes(artifact.key_nonce), bytes(artifact.key_ciphertext), aad
+        )
+        return False
+    if len(plaintext) != HLS_CONTENT_KEY_BYTES:
+        raise ValueError("Stored HLS content key has invalid length")
+    return True
 
 
 def _artifact_snapshot(
@@ -1296,9 +1335,9 @@ def _publish_validated_artifact(
 
 def _hls_root_for_kind(artifact_kind: VideoArtifactKind) -> Path:
     root = (
-        streamable_media.STREAMABLE_RAW_VIDEO_ROOT
+        get_runtime_paths().streamable_videos_raw_media
         if artifact_kind == VideoArtifactKind.RAW
-        else streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
+        else get_runtime_paths().streamable_videos_processed_media
     )
     return ensure_within_protected_media_root(Path(root).resolve() / "hls")
 
@@ -1315,8 +1354,8 @@ def _artifact_target_dir(
 
 
 def _temporary_key_dir(*, video_id: int, key_id: UUID) -> Path:
-    return ensure_within_protected_root(
-        EndoregPathsModel.from_environment().transcoding
+    return ensure_within_runtime_root(
+        get_runtime_paths().transcoding
         / "hls_key_material"
         / str(video_id)
         / str(key_id)
@@ -1324,17 +1363,14 @@ def _temporary_key_dir(*, video_id: int, key_id: UUID) -> Path:
 
 
 def _temporary_output_dir(*, video_id: int, key_id: UUID) -> Path:
-    return ensure_within_protected_root(
-        EndoregPathsModel.from_environment().transcoding
-        / "hls_output"
-        / str(video_id)
-        / str(key_id)
+    return ensure_within_runtime_root(
+        get_runtime_paths().transcoding / "hls_output" / str(video_id) / str(key_id)
     )
 
 
 def _temporary_plaintext_source_dir(*, video_id: int, key_id: UUID) -> Path:
-    return ensure_within_protected_root(
-        EndoregPathsModel.from_environment().transcoding
+    return ensure_within_runtime_root(
+        get_runtime_paths().transcoding
         / "hls_plaintext_source"
         / str(video_id)
         / str(key_id)
@@ -1673,7 +1709,7 @@ def _local_hls_validation_playlist(
     key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
     if len(key_info_lines) != 3:
         raise RuntimeError("HLS key info must contain URI, key path, and IV")
-    key_path = ensure_within_protected_root(Path(key_info_lines[1]))
+    key_path = ensure_within_runtime_root(Path(key_info_lines[1]))
     if not key_path.is_file() or key_path.stat().st_size != HLS_CONTENT_KEY_BYTES:
         raise RuntimeError("HLS profile validation key is missing or invalid")
     validation_key_path = playlist_path.with_name(".profile-validation.key")
@@ -1705,7 +1741,7 @@ def _local_hls_validation_playlist(
             continue
 
         segment_name = Path(urlsplit(line).path).name
-        segment_path = ensure_within_protected_root(playlist_path.parent / segment_name)
+        segment_path = ensure_within_runtime_root(playlist_path.parent / segment_name)
         if not segment_path.is_file() or segment_path.stat().st_size <= 0:
             raise RuntimeError(
                 f"HLS profile validation segment is missing: {segment_name}"
@@ -1724,6 +1760,30 @@ def _local_hls_validation_playlist(
         dir_mode=HLS_TEMP_DIRECTORY_MODE,
     )
     return validation_path
+
+
+def _hls_probe_with_decoded_frame_count(
+    probe: VideoArtifactProbe,
+    timestamps: list[FramePresentationTimestamp],
+) -> VideoArtifactProbe:
+    """Replace MPEG-TS frame/rate estimates with the decoded frame count.
+
+    HLS commonly omits nb_frames and reports the nominal rate as avg_frame_rate.
+    Neither duration times that rate nor that rate itself measures VFR frames.
+    The caller must still validate every decoded PTS against the source.
+    """
+    if not timestamps:
+        raise VideoStorageNormalizationError("HLS output has no decoded frames")
+    rate = Fraction(len(timestamps)) / Fraction(str(probe.timeline.duration_seconds))
+    timeline = probe.timeline.model_copy(
+        update={
+            "frame_count": len(timestamps),
+            "measured_average_frame_rate": MeasuredAverageFrameRate(
+                numerator=rate.numerator, denominator=rate.denominator
+            ),
+        }
+    )
+    return probe.model_copy(update={"timeline": timeline})
 
 
 def _validate_generated_hls_profile(
@@ -1751,6 +1811,9 @@ def _validate_generated_hls_profile(
             update={"size_bytes": total_size_bytes},
         )
         output_frame_timestamps = probe_video_frame_timestamps(validation_path)
+        output_probe = _hls_probe_with_decoded_frame_count(
+            output_probe, output_frame_timestamps
+        )
         segment_boundaries = _parse_hls_segment_boundaries(playlist_path)
         if len(segment_boundaries) != len(tuple(playlist_path.parent.glob("seg_*.ts"))):
             raise VideoStorageNormalizationError(
@@ -1764,11 +1827,11 @@ def _validate_generated_hls_profile(
                 profile=profile,
                 segments=None,
             )
-        except MeasuredAverageFrameRateDriftError:
+        except MeasuredAverageFrameRateDriftError as exc:
             if validation.proof is None or source_pts is None:
                 raise VideoStorageNormalizationError(
-                    "HLS measured-rate drift has no proven resampling timeline"
-                ) from None
+                    f"HLS measured-rate drift has no proven resampling timeline: {exc}"
+                ) from exc
             output_pts = probe_video_presentation_timeline(
                 validation_path,
                 boundaries=list(validation.proof.boundaries),
@@ -1839,7 +1902,7 @@ def _run_ffmpeg_hls(
             if timeline_validation.proof is not None:
                 source_generation_verified = (
                     timeline_validation.expected_content_hash is not None
-                    and get_video_hash(source_path)
+                    and get_file_hash(source_path)
                     == timeline_validation.expected_content_hash
                 )
                 timeline_validation = _HlsTimelineValidation(
@@ -2707,6 +2770,28 @@ def _has_supported_encoding_profile(artifact: VideoHlsArtifact) -> bool:
     return True
 
 
+def hls_artifact_matches_current_source_metadata(
+    *, video: VideoFile, artifact: VideoHlsArtifact
+) -> bool:
+    """Match published identity without decoding or hashing media in overview GETs."""
+    if not artifact.source_content_hash:
+        return False
+
+    try:
+        kind = coerce_hls_artifact_kind(artifact.artifact_kind)
+        source = resolve_hls_source(video, kind)
+        expected_hash, generation_id = _hls_source_identity(video, kind)
+
+        return bool(
+            artifact.source_content_hash == expected_hash
+            and artifact.source_file_name == source.source_file_name
+            and artifact.source_generation_id == generation_id
+            and _has_supported_encoding_profile(artifact)
+        )
+    except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
+        return False
+
+
 def _ready_artifact_matches_current_source(
     *,
     video: VideoFile,
@@ -2718,13 +2803,13 @@ def _ready_artifact_matches_current_source(
     try:
         artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
         source = resolve_hls_source(video, artifact_kind)
-        timeline = resolve_hls_timeline_validation(video, artifact_kind)
+        _, generation_id = _hls_source_identity(video, artifact_kind)
         expected_hash = _source_content_hash(source)
         return bool(
             artifact.source_content_hash
             and artifact.source_content_hash == expected_hash
             and artifact.source_file_name == source.source_file_name
-            and artifact.source_generation_id == timeline.source_generation_id
+            and artifact.source_generation_id == generation_id
             and _has_supported_encoding_profile(artifact)
         )
     except (FileNotFoundError, ValueError, VideoStorageNormalizationError):

@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, List
 
 from django.db import transaction
 
-from endoreg_db.services.video_files._io import (
-    _get_frame_dir_path,
-    _get_temp_anonymized_frame_dir,
+from endoreg_db.services.video_files.io import (
+    get_video_frame_dir_path,
+    get_temp_anonymized_video_frame_dir,
 )
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
@@ -85,7 +85,7 @@ def _delete_frames(video: "VideoFile") -> str:
     cleanup_directories: list[Path] = []
     dataset_frame_ids, dataset_frame_paths = _dataset_backed_frame_ids_with_files(video)
 
-    frame_dir = _get_frame_dir_path(video)
+    frame_dir = get_video_frame_dir_path(video)
     if frame_dir and frame_dir.exists():
         if dataset_frame_paths:
             msg = (
@@ -101,12 +101,12 @@ def _delete_frames(video: "VideoFile") -> str:
         msg = f"Frame directory not found, skipping deletion: {frame_dir}"
         logger.debug(msg)
     else:
-        msg = f"Frame directory path not set for video {video.video_hash}, cannot delete standard frames."
+        msg = f"Frame directory path not set for video {video.raw_video_hash}, cannot delete standard frames."
         logger.warning(msg)
 
     temp_anonym_frame_dir = None
     try:
-        temp_anonym_frame_dir = _get_temp_anonymized_frame_dir(video)
+        temp_anonym_frame_dir = get_temp_anonymized_video_frame_dir(video)
         if temp_anonym_frame_dir and temp_anonym_frame_dir.exists():
             cleanup_directories.append(temp_anonym_frame_dir)
             msg = (
@@ -132,12 +132,12 @@ def _delete_frames(video: "VideoFile") -> str:
             logger.info(
                 "Reset frame state flags (%s) for video %s.",
                 ", ".join(update_fields_state),
-                video.video_hash,
+                video.raw_video_hash,
             )
             state_updated = True
         else:
             logger.info(
-                "Frame state flags already False for video %s.", video.video_hash
+                "Frame state flags already False for video %s.", video.raw_video_hash
             )
             state_updated = True
 
@@ -153,7 +153,7 @@ def _delete_frames(video: "VideoFile") -> str:
                 logger.info(
                     "Preserved %d dataset-backed extracted Frame objects for video %s.",
                     preserved_count,
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
             else:
                 update_count = extracted_frames.update(is_extracted=False)
@@ -161,7 +161,7 @@ def _delete_frames(video: "VideoFile") -> str:
                 logger.info(
                     "Marked %d Frame objects as is_extracted=False for video %s.",
                     update_count,
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
             db_updated = True
         except Exception as db_err:
@@ -170,7 +170,7 @@ def _delete_frames(video: "VideoFile") -> str:
             error_messages.append(msg)
             raise RuntimeError(
                 "Failed to update extracted frame flags during frame deletion "
-                f"for video {video.video_hash}"
+                f"for video {video.raw_video_hash}"
             ) from db_err
 
     except Exception as state_e:
@@ -180,7 +180,7 @@ def _delete_frames(video: "VideoFile") -> str:
         logger.error(msg, exc_info=True)
         error_messages.append(msg)
         raise RuntimeError(
-            f"Failed to update state during frame file deletion for video {video.video_hash}"
+            f"Failed to update state during frame file deletion for video {video.raw_video_hash}"
         ) from state_e
     else:
 
@@ -194,7 +194,7 @@ def _delete_frames(video: "VideoFile") -> str:
                     logger.info(
                         "Deleted %d non-dataset frame files for video %s while preserving dataset-backed frames.",
                         deleted_count,
-                        video.video_hash,
+                        video.raw_video_hash,
                     )
                 except Exception as cleanup_exc:
                     logger.error(

@@ -10,19 +10,8 @@ if TYPE_CHECKING:
     from ...metadata import ModelMeta
     from ...other.information_source import InformationSource
 
-NoImageClassificationAnnotationValue: TypeAlias = None
-ImageClassificationAnnotationFloat: TypeAlias = (
-    "float | NoImageClassificationAnnotationValue"
-)
-ImageClassificationAnnotationText: TypeAlias = (
-    "str | NoImageClassificationAnnotationValue"
-)
-ImageClassificationAnnotationModelMeta: TypeAlias = (
-    "ModelMeta | NoImageClassificationAnnotationValue"
-)
-ImageClassificationAnnotationInformationSource: TypeAlias = (
-    "InformationSource | NoImageClassificationAnnotationValue"
-)
+ImageClassificationAnnotationModelMeta: TypeAlias = "ModelMeta | None"
+ImageClassificationAnnotationInformationSource: TypeAlias = "InformationSource | None"
 
 
 class ImageClassificationAnnotation(models.Model):
@@ -63,9 +52,7 @@ class ImageClassificationAnnotation(models.Model):
     annotator: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True
     )
-    external_annotation_id: models.CharField[
-        ImageClassificationAnnotationText | None, Any
-    ] = models.CharField(
+    external_annotation_id: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,

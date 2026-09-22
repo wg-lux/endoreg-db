@@ -65,7 +65,7 @@ class TestVideoMetadataModel:
             center=center,
             processor=processor,
             raw_file=raw_file,
-            video_hash=f"hash-{uuid.uuid4()}",
+            raw_video_hash=f"hash-{uuid.uuid4()}",
         )
 
     def test_create_video_metadata_basic(self, video_file: VideoFile) -> None:
@@ -155,7 +155,7 @@ class TestVideoMetadataModel:
             video=video_file, sensitive_frame_count=42
         )
 
-        expected = f"Metadata for {video_file.video_hash} (42 sensitive frames)"
+        expected = f"Metadata for {video_file.raw_video_hash} (42 sensitive frames)"
         assert str(metadata) == expected
 
     def test_string_representation_without_count(self, video_file: VideoFile) -> None:
@@ -164,7 +164,7 @@ class TestVideoMetadataModel:
             video=video_file, sensitive_frame_count=None
         )
 
-        expected = f"Metadata for {video_file.video_hash} (0 sensitive frames)"
+        expected = f"Metadata for {video_file.raw_video_hash} (0 sensitive frames)"
         assert str(metadata) == expected
 
     def test_nullable_fields(self, video_file: VideoFile) -> None:
@@ -252,7 +252,7 @@ class TestVideoMetadataModel:
             center=center,
             processor=processor,
             raw_file=new_raw_file,
-            video_hash=f"hash-{uuid.uuid4()}",
+            raw_video_hash=f"hash-{uuid.uuid4()}",
         )
         metadata_full = VideoMetadata.objects.create(
             video=video_file, sensitive_frame_count=100, sensitive_ratio=1.0

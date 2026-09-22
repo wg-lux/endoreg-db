@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import tempfile
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,6 +16,7 @@ from endoreg_db.utils.file_operations import (
     safe_rmtree,
 )
 from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 @contextmanager
@@ -47,7 +47,7 @@ def materialized_report_frame(frame: Frame) -> Generator[Path]:
     )
     if sample.timestamp != timestamp:
         raise ValueError("Decoded frame timestamp does not match the selected frame")
-    directory = Path(tempfile.gettempdir()) / f"endoreg-report-frame-{uuid4().hex}"
+    directory = get_runtime_paths().transcoding / f"endoreg-report-frame-{uuid4().hex}"
     try:
         ensure_directory(directory, dir_mode=0o700)
         path = atomic_write_file(

@@ -20,12 +20,9 @@ if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
     from .upload_job import UploadJob
 
-NoTransferJobRelationValue: TypeAlias = None
-NoTransferJobIntegerValue: TypeAlias = None
-TransferJobCenter: TypeAlias = "Center | NoTransferJobRelationValue"
-TransferJobUploadJob: TypeAlias = "UploadJob | NoTransferJobRelationValue"
-TransferJobUser: TypeAlias = "User | NoTransferJobRelationValue"
-TransferJobInteger: TypeAlias = "int | NoTransferJobIntegerValue"
+TransferJobCenter: TypeAlias = "Center | None"
+TransferJobUploadJob: TypeAlias = "UploadJob | None"
+TransferJobUser: TypeAlias = "User | None"
 
 
 class TransferJob(models.Model):
@@ -216,17 +213,17 @@ class TransferJob(models.Model):
     )
     status_detail: models.TextField[str, Any] = models.TextField(blank=True, default="")
     provenance: models.JSONField[Any, Any] = models.JSONField(default=dict, blank=True)
-    target_object_id: models.PositiveBigIntegerField[TransferJobInteger | None, Any] = (
+    target_object_id: models.PositiveBigIntegerField[int | None, Any] = (
         models.PositiveBigIntegerField(null=True, blank=True)
     )
-    linked_patient_id: models.PositiveBigIntegerField[
-        TransferJobInteger | None, Any
-    ] = models.PositiveBigIntegerField(null=True, blank=True)
-    linked_patient_examination_id: models.PositiveBigIntegerField[
-        TransferJobInteger | None, Any
-    ] = models.PositiveBigIntegerField(
-        null=True,
-        blank=True,
+    linked_patient_id: models.PositiveBigIntegerField[int | None, Any] = (
+        models.PositiveBigIntegerField(null=True, blank=True)
+    )
+    linked_patient_examination_id: models.PositiveBigIntegerField[int | None, Any] = (
+        models.PositiveBigIntegerField(
+            null=True,
+            blank=True,
+        )
     )
     case_resolution_status: models.CharField[str, Any] = models.CharField(
         max_length=24,

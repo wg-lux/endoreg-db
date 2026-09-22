@@ -209,7 +209,7 @@ def test_failed_video_finalization_preserves_previous_generation(
 
     class DummyVideo:
         pk = 1
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
         processed_video_hash: str | None = "a" * 64
         processed_file = SimpleNamespace(name="anonymized_videos/previous.mp4")
         meta: dict[str, object] = {"generation": "previous"}
@@ -273,7 +273,7 @@ def test_failed_video_finalization_preserves_previous_generation(
         raising=True,
     )
     monkeypatch.setattr(
-        state_management_module.path_utils,
+        state_management_module,
         "to_storage_relative",
         storage_relative,
         raising=True,
@@ -337,7 +337,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     sensitive_dir.mkdir(parents=True, exist_ok=True)
     anonym_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_path = sensitive_dir / "video_hash.mp4"
+    raw_path = sensitive_dir / "raw_video_hash.mp4"
     raw_path.write_bytes(b"canonical-raw")
     sensitive_working_copy = sensitive_dir / "exam.mp4"
     sensitive_working_copy.write_bytes(b"temporary-working-copy")
@@ -367,7 +367,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     class DummyVideo:
         def __init__(self) -> None:
             self.pk = 1
-            self.video_hash = "video_hash"
+            self.raw_video_hash = "raw_video_hash"
             self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
@@ -507,12 +507,14 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
 
     finalize_video_success(ctx)
 
-    final_anonymized = anonym_dir / "video_hash.mp4"
+    final_anonymized = _runtime_storage_root() / video.processed_file.name
+    assert final_anonymized.parent == anonym_dir
+    assert final_anonymized.name.startswith("raw_video_hash.")
+    assert final_anonymized.suffix == ".mp4"
     assert raw_path.exists()
     assert final_anonymized.exists()
     assert not sensitive_working_copy.exists()
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
-    assert video.processed_file.name.endswith("anonymized_videos/video_hash.mp4")
     assert store_calls == [(final_anonymized, video.processed_file.name)]
     assert ownership_checks >= 5
     assert hls_calls == [1]
@@ -531,7 +533,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
     sensitive_dir.mkdir(parents=True, exist_ok=True)
     anonym_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_path = sensitive_dir / "video_hash.mp4"
+    raw_path = sensitive_dir / "raw_video_hash.mp4"
     raw_path.write_bytes(b"canonical-raw")
     sensitive_working_copy = sensitive_dir / "exam.mp4"
     sensitive_working_copy.write_bytes(b"temporary-working-copy")
@@ -563,7 +565,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
     class DummyVideo:
         def __init__(self) -> None:
             self.pk = 1
-            self.video_hash = "video_hash"
+            self.raw_video_hash = "raw_video_hash"
             self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
@@ -646,8 +648,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
     with pytest.raises(RuntimeError, match="ffprobe validation"):
         finalize_video_success(ctx)
 
-    final_anonymized = anonym_dir / "video_hash.mp4"
-    assert not final_anonymized.exists()
+    assert not list(anonym_dir.glob("raw_video_hash*.mp4"))
     assert video.processed_video_hash is None
     assert video.processed_file.name is None
     assert sensitive_working_copy.exists()
@@ -697,14 +698,14 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
     class DummyVideo:
         def __init__(self) -> None:
             self.pk = 1
-            self.video_hash = "video_hash"
+            self.raw_video_hash = "raw_video_hash"
             self.processed_video_hash = None
             self.processed_file = SimpleNamespace(name=None)
             self.state = DummyState()
             self.saved = False
 
         def get_raw_file_path(self) -> Path:
-            return tmp_path / "sensitive" / "video_hash.mp4"
+            return tmp_path / "sensitive" / "raw_video_hash.mp4"
 
         def save(self) -> None:
             self.saved = True

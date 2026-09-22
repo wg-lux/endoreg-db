@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -23,11 +22,7 @@ from endoreg_db.models.label.video_segmentation_labelset import (
 )
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
-
-
-class LoadAiModelCommandOptions(TypedDict):
-    verbose: bool
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 
 IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
@@ -92,7 +87,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadAiModelCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
@@ -10,9 +10,6 @@ if TYPE_CHECKING:
         Qualification,
     )
     from .shift_type import ShiftType
-
-NoShiftDescriptionValue: TypeAlias = None
-ShiftDescription: TypeAlias = "str | NoShiftDescriptionValue"
 
 
 class ShiftManager(models.Manager["Shift"]):

@@ -1,13 +1,13 @@
 from __future__ import annotations
+from endoreg_db.utils.paths import get_runtime_paths
 
 # pyright: reportPrivateUsage=false
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace, TracebackType
 from typing import NoReturn, Protocol
-import cv2
-import numpy as np
+from unittest.mock import Mock
 import pytest
 from pytest import MonkeyPatch
 from lx_dtypes.models.contracts.endoscopy_processor import (
@@ -18,7 +18,6 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 import endoreg_db.models.media.video.video_file as video_file_module
 from endoreg_db.models import (
     Center,
-    Frame,
     Label,
     LabelVideoSegment,
     SensitiveMeta,
@@ -29,64 +28,6 @@ from endoreg_db.services.video_files import _anonymization as anonymize_module
 
 class _NameWritableField(Protocol):
     name: str
-
-
-@pytest.mark.django_db
-def test_create_anonymized_frame_files_masks_outside_frames(
-    tmp_path: Path, monkeypatch: MonkeyPatch
-) -> None:
-    center = Center.objects.create(name="mask-center", display_name="Mask Center")
-    video = VideoFile.objects.create(center=center, video_hash="hash-mask")
-
-    frame_dir = tmp_path / "frames"
-    frame_dir.mkdir(parents=True, exist_ok=True)
-    video.frame_dir = str(frame_dir)
-    video.save(update_fields=["frame_dir"])
-
-    frame_specs = [
-        (0, 80),
-        (1, 160),
-    ]
-    for frame_number, intensity in frame_specs:
-        relative_name = f"frame_{frame_number:07d}.jpg"
-        path = frame_dir / relative_name
-        image = np.full((4, 4, 3), intensity, dtype=np.uint8)
-        cv2.imwrite(path.as_posix(), image)
-        Frame.objects.create(
-            video=video,
-            frame_number=frame_number,
-            relative_path=relative_name,
-            is_extracted=True,
-        )
-
-    anonymized_dir = tmp_path / "anonymized"
-    anonymized_dir.mkdir(parents=True, exist_ok=True)
-
-    def fake_tqdm(iterable: Iterable[Frame], **kwargs: object) -> Iterable[Frame]:
-        return iterable
-
-    monkeypatch.setattr(anonymize_module, "tqdm", fake_tqdm)
-
-    endo_roi = RoiBoxCore(x=0, y=0, width=4, height=4)
-    outside_numbers = {1}
-
-    generated = anonymize_module._create_anonymized_frame_files(
-        video=video,
-        anonymized_frame_dir=anonymized_dir,
-        endo_roi=endo_roi,
-        frames=video.frames.all(),
-        outside_frame_numbers=outside_numbers,
-        censor_color=(5, 5, 5),
-    )
-
-    assert len(generated) == len(frame_specs)
-    assert all(path.parent == anonymized_dir for path in generated)
-
-    inside_image = cv2.imread((anonymized_dir / "frame_0000000.jpg").as_posix())
-    outside_image = cv2.imread((anonymized_dir / "frame_0000001.jpg").as_posix())
-
-    assert inside_image is not None and inside_image.mean() > 0
-    assert outside_image is not None and np.all(outside_image == 5)
 
 
 @pytest.mark.django_db
@@ -102,7 +43,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     sensitive_state.save(update_fields=["dob_verified", "names_verified"])
     video = VideoFile.objects.create(
         center=center,
-        video_hash="stream-anonym-hash",
+        raw_video_hash="stream-anonym-hash",
         raw_file="sensitive_videos/raw.mp4",
         sensitive_meta=sensitive_meta,
         frame_count=250,
@@ -122,7 +63,6 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
 
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw-video")
-    transcoding_dir = tmp_path / "transcoding"
     captured: dict[str, object] = {}
 
     class _RawContext:
@@ -183,30 +123,24 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         fake_get_endo_roi,
     )
     monkeypatch.setattr(
-        anonymize_module.path_utils.EndoregPathsModel,
-        "from_environment",
-        lambda: SimpleNamespace(
-            anonym_video=tmp_path / "anonymized",
-            storage=tmp_path,
-            transcoding=transcoding_dir,
-        ),
-    )
-    monkeypatch.setattr(
         anonymize_module,
         "mask_video_to_roi_and_blacken_intervals",
         fake_mask,
     )
 
-    def fake_get_video_hash(path: Path) -> str:
+    def fake_get_file_hash(path: Path) -> str:
         _ = path
         return "processed-hash"
 
     monkeypatch.setattr(
         anonymize_module,
-        "get_video_hash",
-        fake_get_video_hash,
+        "get_file_hash",
+        fake_get_file_hash,
     )
     monkeypatch.setattr(anonymize_module, "save_local_file", fake_save_local_file)
+    monkeypatch.setattr(
+        type(video.processed_file), "get_hash", Mock(return_value="processed-hash")
+    )
     from tests.services.test_video_processed_transcode_encryption import probe
 
     def fake_probe(path: Path):
@@ -230,9 +164,11 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     assert anonymize_module._anonymize(video, delete_original_raw=False) is True
 
     assert captured["input_path"] == raw_path
-    assert captured["output_path"] == (
-        transcoding_dir / "legacy_anonymized_videos" / "stream-anonym-hash.mp4"
-    )
+    output_path = captured["output_path"]
+    assert isinstance(output_path, Path)
+    assert output_path.parent == get_runtime_paths().transcoding
+    assert output_path.name.startswith("stream-anonym-hash.")
+    assert not output_path.exists()
     endo_roi = captured["endo_roi"]
     assert isinstance(endo_roi, RoiBoxCore)
     assert roi_box_to_legacy_dict(endo_roi) == {
@@ -244,7 +180,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     assert captured["intervals"] == [(10, 20)]
     saved_name = captured["saved_name"]
     assert isinstance(saved_name, str)
-    assert saved_name.endswith("stream-anonym-hash.mp4")
+    assert saved_name == f"processed_videos_final/{output_path.name}"
     video.refresh_from_db()
     state.refresh_from_db()
     assert video.processed_video_hash == "processed-hash"
@@ -316,7 +252,7 @@ def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(
     monkeypatch.setattr(video_file_module, "VideoFile", fake_video_model)
 
     anonymize_module._cleanup_raw_assets(
-        video_hash="hash-cleanup",
+        raw_video_hash="hash-cleanup",
         raw_file_name="sensitive_videos/raw.mp4",
         raw_frame_dir=raw_frame_dir,
     )
@@ -324,6 +260,6 @@ def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(
     assert deleted_storage_names == ["sensitive_videos/raw.mp4"]
     assert not raw_file_path.exists()
     assert not raw_frame_dir.exists()
-    assert fake_queryset.filter_kwargs == {"video_hash": "hash-cleanup"}
+    assert fake_queryset.filter_kwargs == {"raw_video_hash": "hash-cleanup"}
     assert fake_state.frames_extracted is False
     assert fake_state.saved_update_fields == ["frames_extracted"]

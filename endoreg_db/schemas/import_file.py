@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ReportSourceSnapshot(BaseModel):
+class SourceSnapshot(BaseModel):
     """Immutable identity and local path of one report-source snapshot."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)

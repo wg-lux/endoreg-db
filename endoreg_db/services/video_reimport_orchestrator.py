@@ -40,7 +40,7 @@ VideoReimportResponse = tuple[dict[str, Any], int]
 
 
 def _video_hash(video: VideoFile) -> str:
-    return str(cast(object, getattr(video, "video_hash", "")))
+    return str(cast(object, getattr(video, "raw_video_hash", "")))
 
 
 def _video_raw_file(video: VideoFile) -> FieldFile | None:
@@ -78,7 +78,7 @@ class VideoReimportOrchestrator:
         self.video_id = video_id
         self.payload = payload
         self.video_service = video_service or VideoImportService()
-        self.video_hash = _video_hash(video)
+        self.raw_video_hash = _video_hash(video)
 
     def run(self) -> VideoReimportResponse:
         if _video_has_integrity_loss(self.video):
@@ -87,13 +87,13 @@ class VideoReimportOrchestrator:
                     "error": "Video is marked failed/lost by media integrity.",
                     "error_type": "integrity_lost",
                     "video_id": self.video_id,
-                    "uuid": self.video_hash,
+                    "uuid": self.raw_video_hash,
                 },
                 status.HTTP_409_CONFLICT,
             )
 
         if not _video_raw_file(self.video):
-            logger.warning("Video %s has no raw file", self.video_hash)
+            logger.warning("Video %s has no raw file", self.raw_video_hash)
             return (
                 {
                     "error": (
@@ -102,13 +102,13 @@ class VideoReimportOrchestrator:
                     ),
                     "error_type": "missing_source",
                     "video_id": self.video_id,
-                    "uuid": self.video_hash,
+                    "uuid": self.raw_video_hash,
                 },
                 status.HTTP_404_NOT_FOUND,
             )
 
         if _video_center(self.video) is None:
-            logger.warning("Video %s has no associated center", self.video_hash)
+            logger.warning("Video %s has no associated center", self.raw_video_hash)
             return (
                 {"error": "Video has no associated center."},
                 status.HTTP_400_BAD_REQUEST,
@@ -125,7 +125,9 @@ class VideoReimportOrchestrator:
                 payload=self.payload,
             )
         except Exception as exc:
-            logger.exception("Video re-import dispatch failed for %s.", self.video_hash)
+            logger.exception(
+                "Video re-import dispatch failed for %s.", self.raw_video_hash
+            )
             return (
                 {
                     "status": "failed",
@@ -134,7 +136,7 @@ class VideoReimportOrchestrator:
                     "error": "Video re-import dispatch failed.",
                     "error_type": "dispatch_error",
                     "video_id": self.video_id,
-                    "uuid": self.video_hash,
+                    "uuid": self.raw_video_hash,
                     "updated_in_place": True,
                 },
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -143,7 +145,7 @@ class VideoReimportOrchestrator:
         response_payload: dict[str, Any] = {
             **dispatch_result.to_dict(),
             "video_id": self.video_id,
-            "uuid": self.video_hash,
+            "uuid": self.raw_video_hash,
             "updated_in_place": True,
         }
 
@@ -211,7 +213,7 @@ class VideoReimportOrchestrator:
         try:
             logger.info(
                 "Starting in-place re-import for video %s (ID: %s)",
-                self.video_hash,
+                self.raw_video_hash,
                 self.video_id,
             )
             try:
@@ -222,7 +224,7 @@ class VideoReimportOrchestrator:
                 )
                 logger.warning(
                     "Raw source missing during video re-import for %s: %s",
-                    self.video_hash,
+                    self.raw_video_hash,
                     exc,
                 )
                 _mark_upload_jobs_lost(self.video, error_detail)
@@ -234,14 +236,14 @@ class VideoReimportOrchestrator:
                         ),
                         "error_type": "missing_source",
                         "video_id": self.video_id,
-                        "uuid": self.video_hash,
+                        "uuid": self.raw_video_hash,
                     },
                     status.HTTP_404_NOT_FOUND,
                 )
             except Exception as exc:
                 logger.exception(
                     "VideoImportService reprocessing failed for video %s: %s",
-                    self.video_hash,
+                    self.raw_video_hash,
                     exc,
                 )
                 _mark_upload_jobs_error(self.video, str(exc))
@@ -250,7 +252,7 @@ class VideoReimportOrchestrator:
                         "error": f"Video re-import processing failed: {str(exc)}",
                         "error_type": "processing_error",
                         "video_id": self.video_id,
-                        "uuid": self.video_hash,
+                        "uuid": self.raw_video_hash,
                     },
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
@@ -262,7 +264,7 @@ class VideoReimportOrchestrator:
                 logger.exception(
                     "Processed HLS regeneration failed during video re-import "
                     "for %s: %s",
-                    self.video_hash,
+                    self.raw_video_hash,
                     exc,
                 )
                 _mark_upload_jobs_error(self.video, str(exc))
@@ -273,7 +275,7 @@ class VideoReimportOrchestrator:
                         ),
                         "error_type": "processing_error",
                         "video_id": self.video_id,
-                        "uuid": self.video_hash,
+                        "uuid": self.raw_video_hash,
                     },
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
@@ -283,7 +285,7 @@ class VideoReimportOrchestrator:
 
             logger.info(
                 "Video re-import completed successfully for %s",
-                self.video_hash,
+                self.raw_video_hash,
             )
             sensitive_meta = _video_sensitive_meta(self.video)
             return (
@@ -293,7 +295,7 @@ class VideoReimportOrchestrator:
                         "successfully."
                     ),
                     "video_id": self.video_id,
-                    "uuid": self.video_hash,
+                    "uuid": self.raw_video_hash,
                     "frame_cleaning_applied": True,
                     "sensitive_meta_created": sensitive_meta is not None,
                     "sensitive_meta_id": _video_sensitive_meta_id(self.video),
@@ -308,7 +310,7 @@ class VideoReimportOrchestrator:
         except Exception as exc:
             logger.error(
                 "Failed to re-import video %s: %s",
-                self.video_hash,
+                self.raw_video_hash,
                 exc,
                 exc_info=True,
             )
@@ -323,7 +325,7 @@ class VideoReimportOrchestrator:
                         "error": f"Storage error during re-import: {error_msg}",
                         "error_type": "storage_error",
                         "video_id": self.video_id,
-                        "uuid": self.video_hash,
+                        "uuid": self.raw_video_hash,
                     },
                     status.HTTP_507_INSUFFICIENT_STORAGE,
                 )
@@ -333,7 +335,7 @@ class VideoReimportOrchestrator:
                     "error": f"Re-import failed: {error_msg}",
                     "error_type": "processing_error",
                     "video_id": self.video_id,
-                    "uuid": self.video_hash,
+                    "uuid": self.raw_video_hash,
                 },
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
@@ -349,7 +351,7 @@ class VideoReimportOrchestrator:
 
             logger.info(
                 "Starting VideoImportService re-anonymization for %s",
-                self.video_hash,
+                self.raw_video_hash,
             )
             self.video_service.reanonymize_existing_video(
                 self.video,
@@ -378,7 +380,7 @@ class VideoReimportOrchestrator:
             logger.warning(
                 "Video re-import completed but prediction refresh was not queued "
                 "for video %s: %s",
-                self.video_hash,
+                self.raw_video_hash,
                 exc,
             )
             return {
@@ -390,7 +392,7 @@ class VideoReimportOrchestrator:
             logger.exception(
                 "Video re-import completed but prediction refresh dispatch failed "
                 "for video %s.",
-                self.video_hash,
+                self.raw_video_hash,
             )
             return {
                 "status": "failed",

@@ -1,10 +1,13 @@
 # pyright: reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
+
+from endoreg_db.utils.storage.files import canonical_media_name
 import os
 import uuid
 import json
 import logging
 import hashlib
+import hmac
 import time
 from collections.abc import Callable, Iterable
 from contextlib import ExitStack, contextmanager
@@ -27,6 +30,7 @@ from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.administration.person.patient.patient_external_id import (
     PatientExternalID,
 )
@@ -35,6 +39,7 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.utils.hashs import get_identity_salt
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.center_access import resolve_allowed_center_ids
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
@@ -96,10 +101,9 @@ from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.paths import to_storage_relative
+from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.encryption.encryption import MAGIC
@@ -154,15 +158,15 @@ def _is_celery_broker_connection_error(exc: BaseException) -> bool:
 
 
 def _processed_report_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().anonym_report
+    return get_runtime_paths().anonym_report
 
 
 def _processed_video_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().anonym_video
+    return get_runtime_paths().anonym_video
 
 
 def _quarantine_dir() -> Path:
-    return path_utils.EndoregPathsModel.from_environment().quarantine
+    return get_runtime_paths().quarantine
 
 
 def _opportunistic_reap_watcher_sources(
@@ -737,7 +741,7 @@ def _upload_job_has_usable_media(upload_job: UploadJob) -> bool:
 def _safe_existing_media_root_path(storage_name: str | None) -> Path | None:
     if not storage_name:
         return None
-    media_root = Path(getattr(settings, "MEDIA_ROOT", "") or "")
+    media_root = get_runtime_paths().storage
     if not media_root:
         return None
     media_root = media_root.resolve()
@@ -771,7 +775,7 @@ def _ensure_upload_job_local_file(
         if encrypted:
             storage = EncryptedStorage(location=fallback_path.parent)
             plaintext_size = storage.get_plaintext_size(fallback_path.name)
-            plaintext_path = path_utils.TRANSCODING_DIR / (
+            plaintext_path = get_runtime_paths().transcoding / (
                 f"upload-source-{uuid.uuid4().hex}{fallback_path.suffix}"
             )
             stack.callback(safe_unlink_file, plaintext_path, missing_ok=True)
@@ -785,7 +789,7 @@ def _ensure_upload_job_local_file(
             )
         else:
             plaintext_path = fallback_path
-        fallback_hash = sha256_file(plaintext_path)
+        fallback_hash = get_file_hash(plaintext_path)
         with locked_upload_job_import_lease(lease) as owned_job:
             if owned_job.content_hash and fallback_hash != owned_job.content_hash:
                 raise IOError("Fallback upload source failed content-hash verification")
@@ -1371,7 +1375,7 @@ def create_or_reuse_watcher_upload_job(
             current_stat=settled_stat,
             stage="pre_hash_recheck",
         )
-    file_hash = sha256_file(file_path)
+    file_hash = get_file_hash(file_path)
     stat_result = file_path.stat()
     _assert_watcher_file_unchanged(
         file_path=file_path,
@@ -1514,7 +1518,7 @@ def _quarantine_preanonymized_drop(
 
 
 def _validate_local_preanonymized_drop_path(watched_path: Path) -> None:
-    drop_root = path_utils.WATCHER_PREANONYMIZED_DROP_DIR.resolve()
+    drop_root = get_runtime_paths().watcher_preanonymized_drop.resolve()
     try:
         watched_path.resolve().relative_to(drop_root)
     except ValueError as exc:
@@ -1542,6 +1546,7 @@ def _persist_preanonymized_file(
         atomic_copy_file(source=source_path, destination=target_path)
 
 
+@transaction.atomic
 def _attach_external_id_to_sensitive_meta(
     *,
     sensitive_meta: SensitiveMeta,
@@ -1553,6 +1558,9 @@ def _attach_external_id_to_sensitive_meta(
     if not normalized_external_id or not normalized_origin:
         return
 
+    # Serialize first creation within the center, including the patient and its
+    # unique external mapping, so concurrent imports cannot leave orphan patients.
+    center = Center.objects.select_for_update().get(pk=sensitive_meta.center_id)
     existing = PatientExternalID.objects.filter(
         origin=normalized_origin,
         external_id=normalized_external_id,
@@ -1561,16 +1569,39 @@ def _attach_external_id_to_sensitive_meta(
     if existing is None:
         pseudo_patient = sensitive_meta.pseudo_patient
         if pseudo_patient is None:
-            logger.warning(
-                "Skipping external_id link for SensitiveMeta %s because no pseudo patient is available yet",
-                sensitive_meta.pk,
+            identity = json.dumps(
+                [
+                    "preanonymized_external_patient_v1",
+                    center.pk,
+                    normalized_origin,
+                    normalized_external_id,
+                ],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            patient_hash = hmac.new(
+                get_identity_salt().encode("utf-8"), identity, hashlib.sha256
+            ).hexdigest()
+            pseudo_patient = Patient.get_pseudo_patient_by_hash(patient_hash, center)
+            if pseudo_patient is None:
+                pseudo_patient = Patient.objects.create(
+                    patient_hash=patient_hash,
+                    center=center,
+                    gender=sensitive_meta.patient_gender,
+                    is_real_person=False,
+                )
+        if pseudo_patient.center_id != center.pk:
+            raise ValueError(
+                "External patient identifier belongs to a different center"
             )
-            return
         existing = PatientExternalID.objects.create(
             patient=pseudo_patient,
             origin=normalized_origin,
             external_id=normalized_external_id,
         )
+
+    if existing.patient.center_id != center.pk:
+        raise ValueError("External patient identifier belongs to a different center")
 
     update_fields: list[str] = []
     external_id_id = cast(int | None, getattr(sensitive_meta, "external_id_id", None))
@@ -1786,8 +1817,8 @@ def _finalize_preanonymized_video(
     payload: PreanonymizedIngestPayload | None,
     delete_source: bool,
 ) -> VideoFile:
-    video_hash = sha256_file(source_path)
-    final_path = _processed_video_dir() / f"{video_hash}.mp4"
+    raw_video_hash = get_file_hash(source_path)
+    final_path = _processed_video_dir() / canonical_media_name(raw_video_hash, ".mp4")
     target_already_existed = final_path.exists()
     _persist_preanonymized_file(
         source_path=source_path,
@@ -1803,7 +1834,7 @@ def _finalize_preanonymized_video(
                 source_path=source_path,
                 center=center,
                 processor=processor,
-                video_hash=video_hash,
+                raw_video_hash=raw_video_hash,
                 relative_name=relative_name,
             )
             sensitive_meta = _apply_preanonymized_metadata(
@@ -1843,17 +1874,17 @@ def _get_or_update_preanonymized_video(
     source_path: Path,
     center: Center,
     processor: EndoscopyProcessor | None,
-    video_hash: str,
+    raw_video_hash: str,
     relative_name: str,
 ) -> VideoFile:
-    video = VideoFile.objects.filter(video_hash=video_hash).first()
+    video = VideoFile.objects.filter(raw_video_hash=raw_video_hash).first()
     if video is None:
         return VideoFile.objects.create(
             center=center,
             processor=processor,
             original_file_name=source_path.name,
-            video_hash=video_hash,
-            processed_video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
+            processed_video_hash=raw_video_hash,
             suffix=".mp4",
             processed_file=relative_name,
         )
@@ -1868,8 +1899,8 @@ def _get_or_update_preanonymized_video(
     if video.original_file_name != source_path.name:
         video.original_file_name = source_path.name
         update_fields.append("original_file_name")
-    if video.processed_video_hash != video_hash:
-        video.processed_video_hash = video_hash
+    if video.processed_video_hash != raw_video_hash:
+        video.processed_video_hash = raw_video_hash
         update_fields.append("processed_video_hash")
     if getattr(video.processed_file, "name", None) != relative_name:
         video.processed_file.name = relative_name
@@ -1924,7 +1955,7 @@ def _mark_preanonymized_video_ready(
         except Exception as exc:
             logger.warning(
                 "Preanonymized video case resolution failed for %s: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 exc,
             )
     sync_video_streamable_artifacts(
@@ -1942,8 +1973,8 @@ def _finalize_preanonymized_report(
     payload: PreanonymizedIngestPayload | None,
     delete_source: bool,
 ) -> RawPdfFile:
-    pdf_hash = sha256_file(source_path)
-    final_path = _processed_report_dir() / f"{pdf_hash}.pdf"
+    pdf_hash = get_file_hash(source_path)
+    final_path = _processed_report_dir() / canonical_media_name(pdf_hash, ".pdf")
     _persist_preanonymized_file(
         source_path=source_path,
         target_path=final_path,
@@ -3000,7 +3031,7 @@ def _verify_strict_preanonymized_source(
 ) -> None:
     _validate_local_preanonymized_drop_path(watched_path)
     declared_hash = (payload.file_sha256 or "").strip().lower()
-    actual_hash = sha256_file(watched_path)
+    actual_hash = get_file_hash(watched_path)
     _assert_watcher_file_unchanged(
         file_path=watched_path,
         expected_stat=settled_stat,

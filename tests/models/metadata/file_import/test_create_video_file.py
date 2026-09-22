@@ -30,7 +30,7 @@ from endoreg_db.services.hub.media_integrity import (
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
-    sha256_file,
+    get_file_hash,
 )
 from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.utils.storage import save_local_file
@@ -135,11 +135,11 @@ def test_create_from_file_happy_path(
         mock_storage, "happy"
     )
 
-    # Patch TRANSCODING_DIR in the module that actually uses it
+    # Patch the runtime resolver in the module that actually uses it
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -180,7 +180,7 @@ def test_create_from_file_happy_path(
     assert raw_path is not None
     assert raw_path.exists()
     assert raw_path.is_file()
-    assert video.video_hash == sha256_file(raw_path)
+    assert video.raw_video_hash == get_file_hash(raw_path)
 
 
 @pytest.mark.django_db
@@ -201,8 +201,8 @@ def test_create_from_file_duplicate_with_existing_file(
 
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -241,7 +241,7 @@ def test_create_from_file_duplicate_with_existing_file(
 
     processed_src = import_dir / "processed_test_dup.mp4"
     processed_src.write_bytes(b"processed-duplicate-video")
-    processed_hash = sha256_file(processed_src)
+    processed_hash = get_file_hash(processed_src)
     save_local_file(
         v1.processed_file,
         processed_src,
@@ -297,10 +297,10 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
         processor_name="olympus_cv_1500",
     )
     ctx.sensitive_path = sensitive_path
-    ctx.file_hash = sha256_file(source_path)
+    ctx.file_hash = get_file_hash(source_path)
 
     assert isinstance(ctx.file_hash, str)
-    video = video_file_module.VideoFile(video_hash=ctx.file_hash)
+    video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
     video.pk = 1
     video.raw_file.storage = FileSystemStorage(location=tmp_path)
     video.raw_file.name = "import/stale-success.mp4"
@@ -387,13 +387,13 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
         processor_name="olympus_cv_1500",
     )
     ctx.sensitive_path = sensitive_path
-    ctx.file_hash = sha256_file(source_path)
+    ctx.file_hash = get_file_hash(source_path)
 
     assert isinstance(ctx.file_hash, str)
     captured_file_paths: list[Path] = []
     captured_video_hashes: list[str] = []
     captured_history: list[dict[str, str | bool]] = []
-    created_video = video_file_module.VideoFile(video_hash=ctx.file_hash)
+    created_video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
     created_video.pk = 2
 
     def fake_has_history_for_hash(*, file_hash: str, success: bool) -> bool:
@@ -408,7 +408,7 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
         file_path: str | Path,
         center_name: str,
         processor_name: str,
-        video_hash: str,
+        raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
     ) -> VideoFile:
@@ -417,7 +417,7 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
         assert save_video_file is True
         assert initialize is True
         captured_file_paths.append(Path(file_path))
-        captured_video_hashes.append(video_hash)
+        captured_video_hashes.append(raw_video_hash)
         return created_video
 
     def fake_get_or_create_for_hash(
@@ -501,8 +501,8 @@ def test_create_from_file_duplicate_with_missing_file_requires_reconciliation_wi
 
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -572,12 +572,12 @@ def test_duplicate_with_unusable_raw_source_preserves_human_work(
     source = mock_storage.sensitive_video / "renamed-incoming.mp4"
     source_bytes = b"synthetic incoming source for duplicate reconciliation"
     atomic_write_file(destination=source, content=(source_bytes,))
-    source_hash = sha256_file(source)
+    source_hash = get_file_hash(source)
     center_name, processor_name = _center_and_processor_names()
     center = Center.objects.get(name=center_name)
     video = VideoFile.objects.create(
         center=center,
-        video_hash=source_hash,
+        raw_video_hash=source_hash,
         original_file_name="original-recording.mp4",
         raw_file="" if raw_source == "blank" else "raw_videos/unavailable.mp4",
     )
@@ -653,7 +653,7 @@ def test_duplicate_with_unusable_raw_source_preserves_human_work(
             list(ProcessingHistory.objects.filter(file_hash=source_hash).values())
             == history_before
         )
-        assert VideoFile.objects.filter(video_hash=source_hash).count() == 1
+        assert VideoFile.objects.filter(raw_video_hash=source_hash).count() == 1
         assert source.read_bytes() == source_bytes
         assert master_path.read_bytes() == master_bytes
 
@@ -706,8 +706,8 @@ def test_create_from_file_uses_unique_standardization_temp_paths(
     )
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -733,7 +733,7 @@ def test_create_from_file_uses_unique_standardization_temp_paths(
 
     src_file = tmp_path / "same-hash.mp4"
     src_file.write_bytes(b"same video bytes")
-    expected_hash = sha256_file(src_file)
+    expected_hash = get_file_hash(src_file)
     center_name, processor_name = _center_and_processor_names()
 
     for _attempt in range(2):
@@ -800,7 +800,7 @@ def test_create_or_retrieve_prefers_sensitive_path(
     ctx.file_hash = "hash-from-sensitive-copy"
 
     captured_file_paths: list[Path] = []
-    created_video = video_file_module.VideoFile(video_hash=ctx.file_hash)
+    created_video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
     created_video.pk = 1
 
     def fake_has_history_for_hash(*, file_hash: str, success: bool) -> bool:
@@ -819,13 +819,13 @@ def test_create_or_retrieve_prefers_sensitive_path(
         file_path: str | Path,
         center_name: str,
         processor_name: str,
-        video_hash: str,
+        raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
     ) -> VideoFile:
         assert center_name == ctx.center_name
         assert processor_name == ctx.processor_name
-        assert video_hash == ctx.file_hash
+        assert raw_video_hash == ctx.file_hash
         assert save_video_file is True
         assert initialize is True
         captured_file_paths.append(Path(file_path))
@@ -887,8 +887,8 @@ def test_create_from_file_transcoding_failure_fails_closed(
 
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -925,14 +925,14 @@ def test_create_from_file_transcoding_failure_fails_closed(
         original_path=Path(src_file),
     )
 
-    expected_hash = sha256_file(src_file)
+    expected_hash = get_file_hash(src_file)
     expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
 
     with pytest.raises(RuntimeError, match="Video standardization failed"):
         create_video_file.create_or_retrieve_video_file(ctx)
 
     assert not video_file_module.VideoFile.objects.filter(
-        video_hash=expected_hash
+        raw_video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
     assert not list(transcoding_dir.glob(f"{expected_hash}.*.part{src_file.suffix}"))
@@ -955,8 +955,8 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
 
     monkeypatch.setattr(
         create_from_file_module,
-        "TRANSCODING_DIR",
-        transcoding_dir,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding_dir}),
         raising=True,
     )
 
@@ -993,7 +993,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     )
 
     center_name, processor_name = _center_and_processor_names()
-    expected_hash = sha256_file(src_file)
+    expected_hash = get_file_hash(src_file)
     expected_final_path = sensitive_dir / f"{expected_hash}{src_file.suffix}"
 
     first_ctx = ImportContext(
@@ -1007,7 +1007,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
         create_video_file.create_or_retrieve_video_file(first_ctx)
 
     assert not video_file_module.VideoFile.objects.filter(
-        video_hash=expected_hash
+        raw_video_hash=expected_hash
     ).exists()
     assert not expected_final_path.exists()
     assert not list(transcoding_dir.glob(f"{expected_hash}.*.part{src_file.suffix}"))
@@ -1023,7 +1023,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     )
 
     raw_path = video.get_raw_file_path()
-    assert video.video_hash == expected_hash
+    assert video.raw_video_hash == expected_hash
     assert raw_path is not None
     assert raw_path.exists()
     assert processed is False

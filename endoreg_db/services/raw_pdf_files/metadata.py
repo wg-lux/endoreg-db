@@ -12,8 +12,6 @@ from lx_dtypes.models.contracts.pdf_file import (
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from endoreg_db.utils.hashs import get_pdf_hash
-from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -98,36 +96,10 @@ def _json_compatible_mapping(value: dict[object, object]) -> PdfFileMetaJsonObje
 
 
 def prepare_raw_pdf_before_save(report: "RawPdfFile") -> None:
-    if not report.pk and not report.pdf_hash and report.file:
-        try:
-            with ensure_local_file(report.file) as local_path:
-                report.pdf_hash = get_pdf_hash(local_path)
-                logger.info("Calculated hash during pre-save for %s", report.file.name)
-        except Exception as exc:
-            logger.warning(
-                "Could not calculate hash before initial save for %s: %s",
-                report.file.name,
-                exc,
-            )
-
-    file_name = report.file.name if report.file else None
-    if file_name and not file_name.endswith(".pdf"):
+    if report.file and report.file.name and not report.file.name.endswith(".pdf"):
         raise ValidationError("Only report files are allowed")
-
-    if not report.pdf_hash and report.pk and report.file and file_exists(report.file):
-        try:
-            with ensure_local_file(report.file) as local_path:
-                logger.warning(
-                    "Hash missing for saved file %s. Recalculating.",
-                    report.file.name,
-                )
-                report.pdf_hash = get_pdf_hash(local_path)
-        except Exception as exc:
-            logger.error(
-                "Could not calculate hash during save for existing file %s: %s",
-                report.file.name,
-                exc,
-            )
+    if not report.pdf_hash and report.file:
+        report.pdf_hash = report.file.get_hash()
 
     if not report.patient and report.sensitive_meta:
         sensitive_meta = cast(_ReportSensitiveMeta, report.sensitive_meta)

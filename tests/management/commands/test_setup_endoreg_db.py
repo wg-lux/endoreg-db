@@ -269,9 +269,9 @@ def test_existing_metadata_repair_preserves_copy_and_save_order(
     metadata = _FakeMetadata(events)
     model = _FakeAiModel(metadata, events)
     external_weights = tmp_path / "external" / "weights.safetensors"
-    storage_dir = tmp_path / "storage"
-
-    monkeypatch.setattr(setup_paths, "STORAGE_DIR", storage_dir)
+    paths = setup_paths.EndoregPathsModel.from_root(tmp_path)
+    storage_dir = paths.storage
+    monkeypatch.setattr(setup_paths, "get_runtime_paths", lambda: paths)
 
     def fake_find_weights(_command: setup_command.Command) -> Path:
         return external_weights

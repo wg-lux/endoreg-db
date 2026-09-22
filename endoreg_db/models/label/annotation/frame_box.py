@@ -9,13 +9,8 @@ if TYPE_CHECKING:
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.other.information_source import InformationSource
 
-NoFrameBoxAnnotationValue: TypeAlias = None
-FrameBoxAnnotationFloat: TypeAlias = "float | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationText: TypeAlias = "str | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationModelMeta: TypeAlias = "ModelMeta | NoFrameBoxAnnotationValue"
-FrameBoxAnnotationInformationSource: TypeAlias = (
-    "InformationSource | NoFrameBoxAnnotationValue"
-)
+FrameBoxAnnotationModelMeta: TypeAlias = "ModelMeta | None"
+FrameBoxAnnotationInformationSource: TypeAlias = "InformationSource | None"
 
 
 class FrameBoxAnnotation(models.Model):

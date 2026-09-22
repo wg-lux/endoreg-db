@@ -42,8 +42,8 @@ if TYPE_CHECKING:
         pk: int
 
     class VideoModelMetaCarrier(Protocol):
-        ai_model_meta: "ModelMeta | NoModelMetaValue"
-        video_hash: str
+        ai_model_meta: "ModelMeta | None"
+        raw_video_hash: str
 
     class VideoPredictionMetaCarrier(Protocol):
         model_meta: SegmentModelMeta
@@ -52,28 +52,17 @@ if TYPE_CHECKING:
         pk: int
 
 
-NoInformationSourceValue: TypeAlias = None
-NoSegmentLabelValue: TypeAlias = None
-NoPredictionMetaValue: TypeAlias = None
-NoModelMetaValue: TypeAlias = None
-NoLabelSetValue: TypeAlias = None
-NoAnnotatorValue: TypeAlias = None
-NoVideoFileValue: TypeAlias = None
-NoStringValue: TypeAlias = None
-NoIterableStringValue: TypeAlias = None
-SegmentInformationSource: TypeAlias = "InformationSource | NoInformationSourceValue"
-SegmentLabel: TypeAlias = "Label | NoSegmentLabelValue"
-SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | NoPredictionMetaValue"
-SegmentModelMeta: TypeAlias = "ModelMeta | NoModelMetaValue"
-ResolvedLabelSet: TypeAlias = "LabelSet | NoLabelSetValue"
-AnnotationAnnotator: TypeAlias = "str | NoAnnotatorValue"
+SegmentInformationSource: TypeAlias = "InformationSource | None"
+SegmentLabel: TypeAlias = "Label | None"
+SegmentPredictionMeta: TypeAlias = "VideoPredictionMeta | None"
+SegmentModelMeta: TypeAlias = "ModelMeta | None"
+ResolvedLabelSet: TypeAlias = "LabelSet | None"
 FrameRangeOption: TypeAlias = "bool | int | str"
 SegmentCreateValue: TypeAlias = (
     "bool | int | str | SegmentInformationSource | SegmentPredictionMeta"
 )
 SaveForceInsert: TypeAlias = "bool | tuple[ModelBase, ...]"
-SaveUsing: TypeAlias = "str | NoStringValue"
-SaveUpdateFields: TypeAlias = "Iterable[str] | NoIterableStringValue"
+SaveUpdateFields: TypeAlias = "Iterable[str] | None"
 DeleteResult: TypeAlias = "tuple[int, dict[str, int]]"
 
 _SEGMENT_STATE_SIDE_EFFECTS_SUPPRESSED: ContextVar[bool] = ContextVar(
@@ -105,10 +94,10 @@ class LabelVideoSegment(models.Model):
 
     start_frame_number: models.IntegerField[Any, Any] = models.IntegerField()
     end_frame_number: models.IntegerField[Any, Any] = models.IntegerField()
-    source: models.ForeignKey[SegmentInformationSource | NoInformationSourceValue] = (
-        models.ForeignKey("InformationSource", on_delete=models.SET_NULL, null=True)
+    source: models.ForeignKey[SegmentInformationSource | None] = models.ForeignKey(
+        "InformationSource", on_delete=models.SET_NULL, null=True
     )
-    label: models.ForeignKey[SegmentLabel | NoSegmentLabelValue] = models.ForeignKey(
+    label: models.ForeignKey[SegmentLabel | None] = models.ForeignKey(
         "Label", on_delete=models.SET_NULL, null=True, blank=True
     )
 
@@ -122,14 +111,14 @@ class LabelVideoSegment(models.Model):
     )
 
     # Single ForeignKey to the unified VideoPredictionMeta model
-    prediction_meta: models.ForeignKey[
-        SegmentPredictionMeta | NoPredictionMetaValue
-    ] = models.ForeignKey(
-        "VideoPredictionMeta",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="label_video_segments",
+    prediction_meta: models.ForeignKey[SegmentPredictionMeta | None] = (
+        models.ForeignKey(
+            "VideoPredictionMeta",
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name="label_video_segments",
+        )
     )
 
     # M2M relationship with patient finding
@@ -207,14 +196,14 @@ class LabelVideoSegment(models.Model):
 
     def resolve_labelset(self) -> ResolvedLabelSet:
         prediction_meta = self.prediction_meta
-        prediction_model_meta: ModelMetaLabelSetCarrier | NoModelMetaValue | None = None
+        prediction_model_meta: ModelMetaLabelSetCarrier | None = None
         if prediction_meta is not None:
             prediction_meta_model = cast(
                 "VideoPredictionMetaCarrier",
                 prediction_meta,
             )
             prediction_model_meta = cast(
-                "ModelMetaLabelSetCarrier | NoModelMetaValue",
+                "ModelMetaLabelSetCarrier | None",
                 prediction_meta_model.model_meta,
             )
         if prediction_model_meta is not None:
@@ -229,14 +218,14 @@ class LabelVideoSegment(models.Model):
         video = self.video_file
         video_carrier = cast("VideoModelMetaCarrier", video)
         video_model_meta = cast(
-            "ModelMetaLabelSetCarrier | NoModelMetaValue", video_carrier.ai_model_meta
+            "ModelMetaLabelSetCarrier | None", video_carrier.ai_model_meta
         )
         if video_model_meta is not None:
             return video_model_meta.labelset
 
         return None
 
-    def resolve_labelset_name(self) -> str | NoLabelSetValue:
+    def resolve_labelset_name(self) -> str | None:
         labelset = self.resolve_labelset()
         if labelset is None:
             return None
@@ -368,7 +357,7 @@ class LabelVideoSegment(models.Model):
                 mark_segment_annotations_stale(video)
 
     def delete(
-        self, using: SaveUsing = None, keep_parents: bool = False
+        self, using: str | None = None, keep_parents: bool = False
     ) -> DeleteResult:
         video = getattr(self, "video_file", None)
         result = super().delete(using=using, keep_parents=keep_parents)
@@ -439,7 +428,7 @@ class LabelVideoSegment(models.Model):
             video_identifier = (
                 Path(active_name).name
                 if active_name
-                else f"UUID {video_carrier.video_hash}"
+                else f"UUID {video_carrier.raw_video_hash}"
             )
 
             str_repr = f"{video_identifier} Label - {label_name} - {self.start_frame_number} - {self.end_frame_number}"
@@ -640,7 +629,7 @@ class LabelVideoSegment(models.Model):
         )
         return frames_without_annotation
 
-    def generate_annotations(self, annotator: AnnotationAnnotator = None) -> int:
+    def generate_annotations(self, annotator: str | None = None) -> int:
         """
         Creates image classification annotations for all frames in the segment, avoiding duplicates.
 
@@ -801,7 +790,7 @@ class LabelVideoSegment(models.Model):
     def validate_frame_range(
         start_frame_number: int,
         end_frame_number: int,
-        video_file: "VideoFile | NoVideoFileValue" = None,
+        video_file: "VideoFile | None" = None,
     ) -> None:
         """
         Validate that the provided frame numbers define a valid segment range, optionally checking against a video's frame count.

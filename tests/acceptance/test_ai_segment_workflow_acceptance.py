@@ -38,7 +38,7 @@ pytestmark = pytest.mark.django_db
 def _video(*, suffix: str, frame_count: int = 20, fps: float = 25.0) -> VideoFile:
     return VideoFile.objects.create(
         center=Center.objects.create(name=f"ai-segment-acceptance-center-{suffix}"),
-        video_hash=f"ai-segment-acceptance-video-{suffix}",
+        raw_video_hash=f"ai-segment-acceptance-video-{suffix}",
         original_file_name=f"ai-segment-acceptance-{suffix}.mp4",
         frame_count=frame_count,
         fps=fps,
@@ -172,7 +172,7 @@ def _vfr_video() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=Center.objects.create(name="ai-segment-acceptance-vfr-center"),
-        video_hash="ai-segment-acceptance-vfr-video",
+        raw_video_hash="ai-segment-acceptance-vfr-video",
         fps=25.0,
         duration=0.3,
         frame_count=5,

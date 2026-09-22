@@ -72,7 +72,7 @@ def test_predict_video_stream_returns_frame_scores_without_extracted_state(
     center = Center.objects.create(name=f"stream-predict-center-{uuid.uuid4().hex[:8]}")
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"stream-predict-video-{uuid.uuid4().hex}",
+        raw_video_hash=f"stream-predict-video-{uuid.uuid4().hex}",
         fps=25.0,
         width=2,
         height=1,

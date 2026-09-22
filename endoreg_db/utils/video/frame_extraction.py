@@ -268,8 +268,15 @@ def extract_frame_range(
                         potential_file,
                         unlink_err,
                     )
+        stderr = e.stderr or ""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+
         raise RuntimeError(
-            f"FFmpeg frame range extraction failed for {video_path}"
+            f"FFmpeg frame range extraction failed for {video_path}; "
+            f"frames=[{start_frame}, {end_frame}), "
+            f"exit_code={e.returncode}.\n"
+            f"FFmpeg stderr:\n{stderr.strip()[-8000:] or '<empty>'}"
         ) from e
     except Exception as e:
         logger.error(

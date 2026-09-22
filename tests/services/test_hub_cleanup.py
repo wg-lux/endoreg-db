@@ -95,7 +95,7 @@ def _target_video(upload_job: UploadJob) -> VideoFile:
     return VideoFile.objects.create(
         raw_file=SimpleUploadedFile("raw.mp4", b"raw"),
         processed_file=SimpleUploadedFile("processed.mp4", b"processed"),
-        video_hash=upload_job.content_hash,
+        raw_video_hash=upload_job.content_hash,
         processed_video_hash=f"processed-{upload_job.content_hash}",
         center=center,
     )

@@ -17,11 +17,10 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.paths import (
+    get_runtime_paths,
     ANONYM_VIDEO_DIR_NAME,
-    EndoregPathsModel,
     SENSITIVE_VIDEO_DIR_NAME,
-    ensure_within_data_root,
-    ensure_within_protected_root,
+    ensure_within_runtime_root,
 )
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
@@ -158,23 +157,23 @@ class VideoFormatSummary:
 
 
 def default_managed_video_roots() -> tuple[Path, ...]:
-    paths = EndoregPathsModel.from_environment()
+    paths = get_runtime_paths()
     return _dedupe_paths(
         (
             paths.sensitive_video,
             paths.anonym_video,
-            paths.storage / "streamable_videos",
+            paths.streamable_videos_root,
         )
     )
 
 
 def legacy_compatibility_video_roots() -> tuple[Path, ...]:
-    paths = EndoregPathsModel.from_environment()
+    paths = get_runtime_paths()
     return _dedupe_paths(
         (
-            paths.data / SENSITIVE_VIDEO_DIR_NAME,
-            paths.data / ANONYM_VIDEO_DIR_NAME,
-            paths.data / "streamable_videos",
+            paths.runtime_root / SENSITIVE_VIDEO_DIR_NAME,
+            paths.runtime_root / ANONYM_VIDEO_DIR_NAME,
+            paths.runtime_root / "streamable_videos",
         )
     )
 
@@ -565,12 +564,12 @@ def _validate_root(root: str | Path, *, allow_unmanaged_roots: bool) -> Path:
     if allow_unmanaged_roots:
         return resolved
     try:
-        ensure_within_protected_root(resolved)
+        ensure_within_runtime_root(resolved)
         return resolved
     except ValueError:
         pass
     try:
-        ensure_within_data_root(resolved)
+        ensure_within_runtime_root(resolved)
         return resolved
     except ValueError as exc:
         raise ValueError(

@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterator
 from collections.abc import Buffer
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from endoreg_db.config.secret_keyring import configured_master_keyring
 
 MAGIC = b"LXENC01\n"
 HEADER_LENGTH_STRUCT = struct.Struct(">I")
@@ -19,6 +23,8 @@ NONCE_PREFIX_SIZE = 8
 WRAP_NONCE_SIZE = 12
 CHUNK_COUNTER_SIZE = 4
 WRAP_AAD = b"lx-annotate:dek-wrap:v1"
+MAX_HEADER_SIZE = 64 * 1024
+MAX_CHUNK_SIZE = 64 * 1024 * 1024
 
 
 def _require_cryptography():
@@ -44,6 +50,9 @@ def _read_key_from_file(path: str) -> str:
 
 
 def load_master_key() -> bytes:
+    ring = configured_master_keyring()
+    if ring is not None:
+        return ring.active
     key_text = os.getenv("LX_ANNOTATE_MASTER_KEY", "").strip()
     key_file = os.getenv("LX_ANNOTATE_MASTER_KEY_FILE", "").strip()
     if not key_text and key_file:
@@ -68,6 +77,31 @@ def load_master_key() -> bytes:
     return key_bytes
 
 
+def load_master_read_keys() -> tuple[bytes, ...]:
+    ring = configured_master_keyring()
+    return ring.readers if ring is not None else (load_master_key(),)
+
+
+def decrypt_wrapped_key(nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
+    """Only explicitly enrolled retiring keys may authenticate existing material."""
+    for key in load_master_read_keys():
+        try:
+            return AESGCM(key).decrypt(nonce, ciphertext, aad)
+        except InvalidTag:
+            continue
+    raise InvalidTag("No configured generation authenticated the wrapped key")
+
+
+def select_file_master_key(header: EncryptedFileHeader) -> bytes:
+    for key in load_master_read_keys():
+        try:
+            unwrap_file_dek(header, key)
+            return key
+        except InvalidTag:
+            continue
+    raise InvalidTag("No configured generation authenticated the file")
+
+
 @dataclass(frozen=True)
 class EncryptedFileHeader:
     version: int
@@ -76,6 +110,20 @@ class EncryptedFileHeader:
     wrapped_dek: bytes
     wrap_nonce: bytes
     nonce_prefix: bytes
+
+    def __post_init__(self) -> None:
+        if self.version != 1 or self.algorithm != "AESGCM-chunked-v1":
+            raise ValueError("Unsupported encrypted file header version or algorithm")
+        if not 0 < self.chunk_size <= MAX_CHUNK_SIZE:
+            raise ValueError(
+                "Encrypted chunk size exceeds the bounded streaming contract"
+            )
+        if (
+            len(self.wrapped_dek) != DEK_SIZE + 16
+            or len(self.wrap_nonce) != WRAP_NONCE_SIZE
+            or len(self.nonce_prefix) != NONCE_PREFIX_SIZE
+        ):
+            raise ValueError("Malformed encrypted file key material")
 
     def to_bytes(self) -> bytes:
         payload = {
@@ -163,6 +211,8 @@ def read_header(stream: BinaryIO) -> tuple[EncryptedFileHeader, bytes]:
     if len(header_length_bytes) != HEADER_LENGTH_STRUCT.size:
         raise ValueError("Encrypted file header length is truncated")
     (header_length,) = HEADER_LENGTH_STRUCT.unpack(header_length_bytes)
+    if not 0 < header_length <= MAX_HEADER_SIZE:
+        raise ValueError("Encrypted file header exceeds its size limit")
     encoded = stream.read(header_length)
     if len(encoded) != header_length:
         raise ValueError("Encrypted file header is truncated")
@@ -214,6 +264,8 @@ def iter_decrypted_chunks(
         if len(chunk_length_bytes) != CHUNK_LENGTH_STRUCT.size:
             raise ValueError("Encrypted chunk length is truncated")
         (chunk_length,) = CHUNK_LENGTH_STRUCT.unpack(chunk_length_bytes)
+        if not 16 < chunk_length <= header.chunk_size + 16:
+            raise ValueError("Encrypted chunk length exceeds its declared size")
         ciphertext = source.read(chunk_length)
         if len(ciphertext) != chunk_length:
             raise ValueError("Encrypted chunk payload is truncated")

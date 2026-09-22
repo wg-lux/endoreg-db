@@ -49,7 +49,7 @@ def _video_with_vfr_pts() -> VideoFile:
     )
     video = VideoFile.objects.create(
         center=Center.objects.create(name="timeline-view-center"),
-        video_hash="timeline-view-video",
+        raw_video_hash="timeline-view-video",
         fps=25.0,
         duration=0.3,
         frame_count=5,

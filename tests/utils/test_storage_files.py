@@ -10,6 +10,7 @@ import pytest
 from django.core.files import File
 from django.db.models.fields.files import FieldFile
 
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage import files as storage_files
 
@@ -57,7 +58,7 @@ def test_ensure_local_file_materializes_non_seekable_stream() -> None:
     with ensure_local_file(cast(FieldFile, field_file)) as local_path:
         materialized_path = local_path
         assert local_path.read_bytes() == b"video-payload"
-        assert oct(local_path.stat().st_mode & 0o777) == "0o644"
+        assert oct(local_path.stat().st_mode & 0o777) == "0o600"
 
     assert not materialized_path.exists()
 
@@ -101,39 +102,30 @@ def test_ensure_local_file_secure_unlinks_materialized_temp(
 
 
 @pytest.mark.unit
-def test_ensure_local_file_prefers_rust_fd_copy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("chunk_size", [1, 1024 * 1024])
+def test_materialization_uses_protected_staging_and_cleans_up_on_error(
+    chunk_size: int,
 ) -> None:
-    source_path = tmp_path / "source.mp4"
-    source_path.write_bytes(b"video-payload")
-    source = source_path.open("rb")
+    source = io.BytesIO(b"video-payload")
     field_file = _PathlessFieldFile(source)
-    calls: list[tuple[int, Path, int]] = []
-
-    def fake_copy_file_descriptor_to_path(
-        *,
-        source_fd: int,
-        target_path: Path,
-        chunk_size: int,
-    ) -> int:
-        calls.append((source_fd, target_path, chunk_size))
-        assert not source.closed
-        with open(source_fd, "rb", closefd=False) as source_handle:
-            target_path.write_bytes(source_handle.read())
-        return target_path.stat().st_size
-
-    monkeypatch.setattr(
-        storage_files,
-        "copy_file_descriptor_to_path",
-        fake_copy_file_descriptor_to_path,
-    )
-
-    with ensure_local_file(cast(FieldFile, field_file)) as local_path:
-        materialized_path = local_path
-        assert local_path.read_bytes() == b"video-payload"
-
-    assert len(calls) == 1
-    assert calls[0][2] == 1024 * 1024
+    path: Path | None = None
+    with pytest.raises(RuntimeError, match="consumer failed"):
+        with ensure_local_file(
+            cast(FieldFile, field_file), chunk_size=chunk_size
+        ) as path:
+            assert path.parent == get_runtime_paths().transcoding
+            assert path.read_bytes() == b"video-payload"
+            raise RuntimeError("consumer failed")
     assert source.closed
-    assert not materialized_path.exists()
+    assert path is not None
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("chunk_size,suffix", [(0, ".mp4"), (1024, "../escape.mp4")])
+def test_materialization_rejects_invalid_options(chunk_size: int, suffix: str) -> None:
+    field_file = _PathlessFieldFile(io.BytesIO(b"video-payload"))
+    with pytest.raises(ValueError):
+        with ensure_local_file(
+            cast(FieldFile, field_file), chunk_size=chunk_size, suffix=suffix
+        ):
+            pytest.fail("invalid materialization options were accepted")

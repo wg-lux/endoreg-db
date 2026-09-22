@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false
 
 """
@@ -7,32 +9,38 @@ Tests the import_and_anonymize service function that combines VideoFile creation
 with frame-level anonymization.
 """
 
+import logging
 import os
-import threading
 import shutil
-import pytest
-from pathlib import Path
-from contextlib import contextmanager, nullcontext
-from types import SimpleNamespace
+import threading
 from collections.abc import Callable, Generator
-from typing import NoReturn, Protocol
+from contextlib import contextmanager, nullcontext
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, NoReturn, Protocol
+
+import pytest
 from django.test import TestCase
 from django.test.utils import override_settings
-from endoreg_db.models import VideoFile
-from endoreg_db.import_files.context import ImportContext
-from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.exceptions import InsufficientStorageError
-from endoreg_db.utils.file_operations import sha256_file
-from ..helpers.default_objects import get_default_center, get_default_processor
-from ..media.video.helper import get_random_video_path_by_examination_alias
-import logging
-from datetime import UTC, datetime
 
+from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.import_files.context import ImportContext
+from endoreg_db.models import VideoFile
 from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
+from endoreg_db.services.video_import import (
+    VideoImportService,
+)
+from endoreg_db.import_files.video_import_service import local_raw_source_context
+
+from endoreg_db.utils.file_operations import get_file_hash
+
+from ..helpers.default_objects import get_default_center, get_default_processor
+from ..media.video.helper import get_random_video_path_by_examination_alias
 
 # Environment-based test control
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -51,7 +59,7 @@ class _VideoImportStateLike(Protocol):
 
 
 class _VideoImportVideoLike(_VideoImportResultLike, Protocol):
-    video_hash: str
+    raw_video_hash: str
     state: _VideoImportStateLike
 
 
@@ -111,7 +119,7 @@ def _completed_video_file(
 ) -> VideoFile:
     return VideoFile(
         id=1,
-        video_hash=file_hash,
+        raw_video_hash=file_hash,
         original_file_name=original_file_name,
         raw_file="raw/completed-source.mp4",
     )
@@ -155,8 +163,81 @@ def _allow_staging_cleanup_roots(
     )
 
 
+# --- Centralized Lock Helpers ---
+
+
+@contextmanager
+def noop_file_lock(
+    name: Path | str, lock_root: Path | None = None
+) -> Generator[None, None, None]:
+    yield
+
+
+@contextmanager
+def noop_hash_lock(
+    file_hash: str, lock_root: Path | None = None
+) -> Generator[None, None, None]:
+    yield
+
+
+def make_fake_file_lock(
+    events: list[tuple[object, ...]] | None = None,
+    enter_event: str = "file_lock",
+    exit_event: str | None = None,
+):
+    @contextmanager
+    def _lock(
+        name: Path | str, lock_root: Path | None = None
+    ) -> Generator[None, None, None]:
+        if events is not None:
+            events.append((enter_event, Path(name)))
+        yield
+        if events is not None and exit_event is not None:
+            events.append((exit_event, Path(name)))
+
+    return _lock
+
+
+def make_fake_hash_lock(
+    events: list[tuple[object, ...]] | None = None,
+    enter_event: str = "hash_lock",
+    exit_event: str | None = None,
+    include_lock_root: bool = False,
+    thread_lock: Any = None,
+):
+    @contextmanager
+    def _lock(
+        file_hash: str, lock_root: Path | None = None
+    ) -> Generator[None, None, None]:
+        def _record_enter():
+            if events is not None:
+                if include_lock_root and lock_root is not None:
+                    events.append((enter_event, file_hash, Path(lock_root)))
+                else:
+                    events.append((enter_event, file_hash))
+
+        def _record_exit():
+            if events is not None and exit_event is not None:
+                if include_lock_root and lock_root is not None:
+                    events.append((exit_event, file_hash, Path(lock_root)))
+                else:
+                    events.append((exit_event, file_hash))
+
+        if thread_lock is not None:
+            with thread_lock:
+                _record_enter()
+                yield
+                _record_exit()
+        else:
+            _record_enter()
+            yield
+            _record_exit()
+
+    return _lock
+
+
 @pytest.fixture(autouse=True)
-def _isolate_duplicate_hls_readiness(  # pyright: ignore[reportUnusedFunction]
+def _isolate_duplicate_hls_readiness(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep import-service units from invoking the real HLS/database boundary."""
@@ -189,7 +270,6 @@ class TestVideoImportService(TestCase):
     def setUpClass(cls):
         """Set up session-scoped fixtures."""
         super().setUpClass()
-        # Use session-scoped database loading from conftest.py
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
@@ -197,58 +277,38 @@ class TestVideoImportService(TestCase):
     def setUp(self):
         """Set up test fixtures."""
         super().setUp()
-        # Use cached objects instead of creating each time
         self.center = get_default_center()
         self.processor = get_default_processor()
 
     @pytest.mark.integration
     def test_import_and_anonymize_success(self):
-        """
-        Test successful import and anonymization of a video file.
-
-        Creates a temporary video file, calls import_and_anonymize,
-        and verifies a VideoFile was created with proper anonymization.
-
-        This test is marked as expensive due to video processing operations.
-        """
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive video import test (SKIP_EXPENSIVE_TESTS=true)"
             )
 
-        # Create a temporary video file
         filepath = get_random_video_path_by_examination_alias()
 
-        vis = VideoImportService()
-        # Call import_and_anonymize service
-        video_file = vis.import_and_anonymize(
+        vis_instance = VideoImportService()
+        video_file = vis_instance.import_and_anonymize(
             file_path=filepath,
             center_name=self.center.name,
             processor_name=self.processor.name,
         )
 
-        # Verify the import was successful
         assert isinstance(video_file, VideoFile)
         self.assertIsNotNone(video_file, "VideoFile should be created")
         self.assertIsInstance(video_file, VideoFile)
         self.assertEqual(video_file.center, self.center)
         self.assertEqual(video_file.processor, self.processor)
 
-        # Check if state indicates processing occurred
         if hasattr(video_file, "state") and video_file.state:
-            # Note: anonymized state might be set by a later anonymization job.
             self.assertIsNotNone(video_file.state)
 
     @pytest.mark.unit
     def test_import_and_anonymize_nonexistent_file(self):
-        """
-        Test import_and_anonymize handles nonexistent files gracefully.
-
-        This is a fast unit test that doesn't require actual video processing.
-        """
         nonexistent_path = Path("/tmp/nonexistent_video.mp4")
 
-        # Should raise FileNotFoundError
         with self.assertRaises(FileNotFoundError):
             import_and_anonymize(
                 file_path=nonexistent_path,
@@ -262,9 +322,6 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """
-    The watched import path is the lock key. The sensitive copy is created only after the lock is held.
-    """
     import endoreg_db.import_files.video_import_service as vis_module
 
     monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
@@ -280,11 +337,9 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("lock_enter", Path(path)))
-        yield
-        events.append(("lock_exit", Path(path)))
+    fake_file_lock = make_fake_file_lock(
+        events, enter_event="lock_enter", exit_event="lock_exit"
+    )
 
     def fake_create_sensitive_copy(
         src: Path,
@@ -300,7 +355,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
-            self.video_hash = "video-hash"
+            self.raw_video_hash = "video-hash"
             self.sensitive_meta = object()
 
         def get_or_create_state(self) -> SimpleNamespace:
@@ -347,6 +402,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
             return ctx
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
@@ -413,16 +469,6 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
         raising=True,
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock", file_hash, Path(lock_root)))
-        yield
-
     def fake_create_sensitive_copy(
         src: Path,
         sensitive_root: Path,
@@ -437,7 +483,7 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
-            self.video_hash = "video-hash"
+            self.raw_video_hash = "video-hash"
             self.sensitive_meta = object()
             self.original_file_name = source_path.name
 
@@ -462,8 +508,10 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
             events.append(("anonymize_video", Path(ctx.file_path)))
             raise ValueError("anonymizer failed")
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module, "file_lock", make_fake_file_lock(events), raising=True
+    )
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
@@ -486,7 +534,7 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
     ) -> None:
         events.append(("mark_processing_started", instance.pk))
 
-    def fake_finalize_failure(ctx: ImportContext) -> None:
+    def fake_finalize_failure(ctx: ImportContext, **kwargs: Any) -> None:
         assert ctx.current_video is not None
         events.append(("finalize_failure", ctx.current_video.pk))
 
@@ -553,16 +601,6 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
         raising=True,
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock", file_hash, Path(lock_root)))
-        yield
-
     def fake_create_sensitive_copy(
         src: Path,
         sensitive_root: Path,
@@ -577,7 +615,7 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
-            self.video_hash = "video-hash"
+            self.raw_video_hash = "video-hash"
             self.sensitive_meta = object()
             self.original_file_name = source_path.name
 
@@ -602,8 +640,10 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
             events.append(("anonymize_video", Path(ctx.file_path)))
             raise RuntimeError("failed to persist extracted sensitive metadata")
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module, "file_lock", make_fake_file_lock(events), raising=True
+    )
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module,
         "create_sensitive_copy",
@@ -629,7 +669,7 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
     ) -> None:
         events.append(("mark_processing_started", instance.pk))
 
-    def fake_finalize_failure(ctx: ImportContext) -> None:
+    def fake_finalize_failure(ctx: ImportContext, **kwargs: Any) -> None:
         assert ctx.current_video is not None
         events.append(("finalize_failure", ctx.current_video.pk))
 
@@ -730,7 +770,7 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(
 
     service = VideoImportService()
 
-    assert service._anonymizer is None  # pyright: ignore[reportPrivateUsage]
+    assert service._anonymizer is None
 
 
 @pytest.mark.unit
@@ -749,7 +789,7 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     events: list[tuple[object, ...]] = []
 
     class DummyVideo:
-        video_hash = "dummy-video-hash"
+        raw_video_hash = "dummy-video-hash"
         width = 640
         height = 480
         fps = 25.0
@@ -779,21 +819,13 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
             ctx.anonymized_path.write_bytes(b"anonymized")
             return ctx
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock", file_hash))
-        yield
-
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(
+        vis_module, "file_lock", make_fake_file_lock(events), raising=True
+    )
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module.VideoImportService,
         "_get_existing_completed_video",
@@ -869,7 +901,7 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     assert result is dummy_video
     assert events.count(("ensure_enter", raw_materialized)) == 1
     assert ("anonymize_path", raw_materialized) in events
-    assert ("validated_hash", sha256_file(raw_materialized)) in events
+    assert ("validated_hash", get_file_hash(raw_materialized)) in events
     assert ("validated_width", 640) in events
     assert ("finalize_success", tmp_path / "anonymized.mp4") in events
 
@@ -880,7 +912,6 @@ def test_verified_local_raw_source_initializes_video_meta_on_same_file(
     tmp_path: Path,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
-    from endoreg_db.import_files.context import ImportContext
 
     source_path = tmp_path / "upload.mp4"
     source_path.write_bytes(b"uploaded-source")
@@ -888,19 +919,12 @@ def test_verified_local_raw_source_initializes_video_meta_on_same_file(
     raw_materialized.write_bytes(b"canonical-raw-source")
     events: list[tuple[object, ...]] = []
 
-    video = VideoFile(video_hash="same-source-video", width=None, height=None)
+    video = VideoFile(raw_video_hash="same-source-video", width=None, height=None)
 
     def ensure_local_raw_file() -> nullcontext[Path]:
         return nullcontext(raw_materialized)
 
     video.ensure_local_raw_file = ensure_local_raw_file
-    ctx = ImportContext(
-        file_path=source_path,
-        center_name="center",
-        processor_name="processor",
-        file_type="video",
-    )
-    ctx.current_video = video
 
     def fake_initialize_video_file(
         video_arg: VideoFile,
@@ -922,10 +946,12 @@ def test_verified_local_raw_source_initializes_video_meta_on_same_file(
         raising=True,
     )
 
-    service = VideoImportService(anonymizer=_NoopAnonymizer())
-    with service._verified_local_raw_source(ctx):  # pyright: ignore[reportPrivateUsage]
-        events.append(("local_source", _required_context_path(ctx.local_source_path)))
-        events.append(("validated_width", ctx.validated_raw_source_stream.get("width")))
+    with local_raw_source_context(video) as local_raw_path:
+        initialized_video = vis_module.initialize_video_file(
+            video, local_raw_path=local_raw_path
+        )
+        events.append(("local_source", local_raw_path))
+        events.append(("validated_width", initialized_video.width))
 
     assert events == [
         ("initialize", raw_materialized),
@@ -946,7 +972,7 @@ def test_normalize_reimport_video_quality_uses_configured_mode_and_replaces_outp
     source_path.write_bytes(b"fresh-anonymized-video")
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw-video")
-    video = VideoFile(id=73, video_hash="stable-video-hash")
+    video = VideoFile(id=73, raw_video_hash="stable-video-hash")
     ctx = ImportContext(
         file_path=tmp_path / "raw.mp4",
         center_name="center",
@@ -972,7 +998,7 @@ def test_normalize_reimport_video_quality_uses_configured_mode_and_replaces_outp
         raising=True,
     )
 
-    vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
+    vis_module._normalize_reimport_video_quality(ctx)
 
     assert source_path.read_bytes() == b"quality-normalized-video"
     assert captured["kwargs"] == {
@@ -1023,7 +1049,7 @@ def test_normalize_reimport_video_quality_keeps_fresh_output_on_ffmpeg_failure(
     )
 
     with pytest.raises(RuntimeError, match="failed to normalize"):
-        vis_module._normalize_reimport_video_quality(ctx)  # pyright: ignore[reportPrivateUsage]
+        vis_module._normalize_reimport_video_quality(ctx)
 
     assert source_path.read_bytes() == b"fresh-anonymized-video"
 
@@ -1058,7 +1084,7 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     canonical_path = tmp_path / "video-hash.mp4"
     canonical_path.write_bytes(b"previous-processed-video")
     staged_path = tmp_path / "video-hash.part.mp4"
-    video = VideoFile(id=73, video_hash="video-hash")
+    video = VideoFile(id=73, raw_video_hash="video-hash")
     failure_paths: list[Path] = []
 
     class DummyAnonymizer:
@@ -1066,14 +1092,6 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
             staged_path.write_bytes(b"fresh-anonymized-video")
             ctx.anonymized_path = staged_path
             return ctx
-
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        yield
 
     def fail_normalize_video_file(
         **kwargs: object,
@@ -1106,8 +1124,8 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module,
         "get_video_import_context_names",
@@ -1161,7 +1179,7 @@ def test_reanonymize_existing_video_skips_import_staging(
     source_path.write_bytes(b"raw-video")
     events: list[tuple[object, ...]] = []
 
-    video = VideoFile(video_hash="video-hash")
+    video = VideoFile(raw_video_hash="video-hash")
     monkeypatch.setattr(video, "resolved_import_context", False, raising=False)
 
     class DummyAnonymizer:
@@ -1203,15 +1221,8 @@ def test_reanonymize_existing_video_skips_import_staging(
     def fake_normalize_reimport_video_quality(ctx: ImportContext) -> None:
         events.append(("normalize_quality", ctx.current_video, ctx.anonymized_path))
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock", file_hash, Path(lock_root)))
-        yield
+    fake_file_lock = make_fake_file_lock(events, enter_event="file_lock")
+    fake_hash_lock = make_fake_hash_lock(events, enter_event="hash_lock")
 
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
@@ -1302,10 +1313,6 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     )
     _allow_staging_cleanup_roots(monkeypatch, import_dir, sensitive_dir)
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
     def fake_create_sensitive_copy(
         src: Path,
         sensitive_root: Path,
@@ -1319,7 +1326,7 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     class DummyVideo:
         pk = 1
         state = DummyState()
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
 
         def get_or_create_state(self) -> DummyState:
             return self.state
@@ -1336,7 +1343,8 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     ) -> tuple[DummyVideo, bool, bool]:
         return DummyVideo(), True, False
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
@@ -1382,25 +1390,15 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock_enter", Path(path)))
-        yield
-        events.append(("file_lock_exit", Path(path)))
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock_enter", file_hash, Path(lock_root)))
-        yield
-        events.append(("hash_lock_exit", file_hash, Path(lock_root)))
-
-    def fake_raw_source_identity(path: Path) -> SimpleNamespace:
-        events.append(("source_identity", Path(path)))
-        return SimpleNamespace(
-            size_bytes=5,
-            modified_time_ns=1,
-            sha256="a" * 64,
-        )
+    fake_file_lock = make_fake_file_lock(
+        events, enter_event="file_lock_enter", exit_event="file_lock_exit"
+    )
+    fake_hash_lock = make_fake_hash_lock(
+        events,
+        enter_event="hash_lock_enter",
+        exit_event="hash_lock_exit",
+        include_lock_root=True,
+    )
 
     def fake_create_sensitive_copy(
         src: Path,
@@ -1416,7 +1414,7 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         def __init__(self) -> None:
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
-            self.video_hash = "video-hash"
+            self.raw_video_hash = "video-hash"
             self.sensitive_meta = object()
 
         def get_or_create_state(self) -> SimpleNamespace:
@@ -1435,12 +1433,6 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
-    monkeypatch.setattr(
-        vis_module,
-        "_raw_source_identity",
-        fake_raw_source_identity,
-        raising=True,
-    )
     monkeypatch.setattr(
         vis_module, "create_sensitive_copy", fake_create_sensitive_copy, raising=True
     )
@@ -1462,46 +1454,13 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     assert result is not None
     assert result.pk == 1
     assert events[0] == ("file_lock_enter", source_path)
-    assert events[1] == ("source_identity", source_path)
-    assert events[2][0] == "hash_lock_enter"
-    assert events[3] == ("create_sensitive_copy", source_path)
-    assert events[4][0] == "create_or_retrieve"
+    assert events[1][0] == "hash_lock_enter"
+    assert events[2] == ("create_sensitive_copy", source_path)
+    assert events[3][0] == "create_or_retrieve"
 
 
 @pytest.mark.unit
-def test_raw_source_identity_fallback_rejects_concurrent_source_change(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    import endoreg_db.import_files.video_import_service as vis_module
-
-    source_path = tmp_path / "changing.mp4"
-    source_path.write_bytes(b"before")
-
-    def no_native_identity(path: Path) -> None:
-        return None
-
-    monkeypatch.setattr(
-        vis_module, "stable_file_identity", no_native_identity, raising=True
-    )
-
-    def mutate_while_hashing(path: Path) -> str:
-        path.write_bytes(b"after-is-longer")
-        return "a" * 64
-
-    monkeypatch.setattr(
-        vis_module,
-        "sha256_file",
-        mutate_while_hashing,
-        raising=True,
-    )
-
-    with pytest.raises(RuntimeError, match="changed while deriving stable identity"):
-        vis_module._raw_source_identity(source_path)
-
-
-@pytest.mark.unit
-def test_import_and_anonymize_checks_pipeline_storage_before_staging(
+def test_import_and_anonymize_checks_pipeline_storage_budget(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1517,18 +1476,11 @@ def test_import_and_anonymize_checks_pipeline_storage_before_staging(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock_enter", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock_enter", file_hash))
-        yield
+    fake_file_lock = make_fake_file_lock(events, enter_event="file_lock_enter")
+    fake_hash_lock = make_fake_hash_lock(events, enter_event="hash_lock_enter")
 
     def fake_disk_usage(path: Path) -> object:
-        return shutil._ntuple_diskusage(total=10_000, used=9_999, free=1)  # pyright: ignore[reportPrivateUsage]
+        return shutil._ntuple_diskusage(total=10_000, used=9_999, free=1)
 
     monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
@@ -1571,18 +1523,11 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     )
     _allow_staging_cleanup_roots(monkeypatch, source_path.parent)
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        events.append(("file_lock_enter", Path(path)))
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        events.append(("hash_lock_enter", file_hash))
-        yield
+    fake_file_lock = make_fake_file_lock(events, enter_event="file_lock_enter")
+    fake_hash_lock = make_fake_hash_lock(events, enter_event="hash_lock_enter")
 
     existing_video = _completed_video_file(
-        file_hash=sha256_file(source_path),
+        file_hash=get_file_hash(source_path),
         original_file_name=source_path.name,
     )
 
@@ -1692,16 +1637,8 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
     )
     _allow_staging_cleanup_roots(monkeypatch, import_dir)
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        yield
-
     existing_video = _completed_video_file(
-        file_hash=sha256_file(source_path),
+        file_hash=get_file_hash(source_path),
         original_file_name=source_path.name,
     )
 
@@ -1718,8 +1655,8 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
         assert args[0] is existing_video
         return SimpleNamespace(ok=True, reason="ok")
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module.ProcessingHistory,
         "has_history_for_hash",
@@ -1796,16 +1733,8 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         vis_module, "_video_import_dir", _path_provider(import_dir), raising=True
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        yield
-
     existing_video = _completed_video_file(
-        file_hash=sha256_file(source_path),
+        file_hash=get_file_hash(source_path),
         original_file_name=source_path.name,
     )
 
@@ -1822,8 +1751,8 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
         assert args[0] is existing_video
         return SimpleNamespace(ok=True, reason="ok")
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module.ProcessingHistory,
         "has_history_for_hash",
@@ -1904,21 +1833,13 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
         vis_module, "_video_import_dir", _path_provider(import_dir), raising=True
     )
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        yield
-
     class DummyState:
         anonymization_validated = False
 
     class DummyVideo:
         pk = 1
         state = DummyState()
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
         sensitive_meta = object()
         original_file_name = source_path.name
 
@@ -1933,7 +1854,7 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
         ok=False,
         status=MediaIntegrityStatus.ARTIFACT_MISSING,
         reason="Required video artifact(s) are not usable: processed_file.",
-        content_hash=sha256_file(source_path),
+        content_hash=get_file_hash(source_path),
         media_pk=1,
         missing_artifacts=("processed_file",),
     )
@@ -1993,8 +1914,8 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
             ("finalize_video_success", _required_context_path(ctx.anonymized_path))
         )
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
-    monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "content_hash_lock", noop_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module.ProcessingHistory,
         "has_history_for_hash",
@@ -2089,13 +2010,14 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     sensitive_root.mkdir(parents=True, exist_ok=True)
     anonym_root.mkdir(parents=True, exist_ok=True)
 
-    lock = threading.Lock()
+    thread_lock = threading.Lock()
     first_started = threading.Event()
     allow_first_finish = threading.Event()
     create_calls: list[str] = []
     anonymize_calls: list[str] = []
     results: dict[str, _VideoImportResultLike] = {}
     has_success_history = False
+
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
     )
@@ -2104,14 +2026,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     )
     _allow_staging_cleanup_roots(monkeypatch, import_dir, sensitive_root)
 
-    @contextmanager
-    def fake_file_lock(path: Path) -> Generator[None, None, None]:
-        yield
-
-    @contextmanager
-    def fake_hash_lock(file_hash: str, lock_root: Path) -> Generator[None, None, None]:
-        with lock:
-            yield
+    fake_hash_lock = make_fake_hash_lock(thread_lock=thread_lock)
 
     def fake_create_sensitive_copy(
         src: Path,
@@ -2128,7 +2043,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
 
     class DummyVideo:
         pk = 1
-        video_hash = "video-hash"
+        raw_video_hash = "video-hash"
         sensitive_meta = object()
         raw_file = canonical_raw
 
@@ -2184,12 +2099,12 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         def anonymize_video(self, ctx: ImportContext) -> ImportContext:
             anonymize_calls.append(Path(ctx.file_path).name)
             assert ctx.current_video is not None
-            video_hash = getattr(ctx.current_video, "video_hash")
-            ctx.anonymized_path = anonym_root / f"{video_hash}.mp4"
+            raw_video_hash = getattr(ctx.current_video, "raw_video_hash")
+            ctx.anonymized_path = anonym_root / f"{raw_video_hash}.mp4"
             ctx.anonymized_path.write_bytes(b"anon")
             return ctx
 
-    monkeypatch.setattr(vis_module, "file_lock", fake_file_lock, raising=True)
+    monkeypatch.setattr(vis_module, "file_lock", noop_file_lock, raising=True)
     monkeypatch.setattr(vis_module, "content_hash_lock", fake_hash_lock, raising=True)
     monkeypatch.setattr(
         vis_module.ProcessingHistory,

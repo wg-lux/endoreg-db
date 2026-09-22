@@ -71,7 +71,7 @@ class ExportAnnotatedContractTests(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             state=self.state,
-            video_hash=f"export-contract-video-{suffix}",
+            raw_video_hash=f"export-contract-video-{suffix}",
             original_file_name="export-contract.mp4",
             fps=25.0,
             frame_count=1,
@@ -187,7 +187,7 @@ class ExportAnnotatedContractTests(TestCase):
         foreign_video = VideoFile.objects.create(
             center=foreign_center,
             state=VideoState.objects.create(),
-            video_hash=f"foreign-video-{uuid4().hex[:8]}",
+            raw_video_hash=f"foreign-video-{uuid4().hex[:8]}",
         )
         captured: dict[str, export_config] = {}
 

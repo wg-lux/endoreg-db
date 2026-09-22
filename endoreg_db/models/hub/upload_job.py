@@ -14,12 +14,11 @@ from django.utils import timezone
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_upload_provenance_payload
 from endoreg_db.utils.paths import (
-    EndoregPathsModel,
+    get_runtime_paths,
     build_upload_job_relative_path,
 )
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
-    hash_identifier,
     safe_log_value,
 )
 
@@ -30,12 +29,9 @@ if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
-NoUploadJobRelationValue: TypeAlias = None
-NoUploadJobDateTimeValue: TypeAlias = None
-UploadJobCenter: TypeAlias = "Center | NoUploadJobRelationValue"
-UploadJobUser: TypeAlias = "User | NoUploadJobRelationValue"
-UploadJobSensitiveMeta: TypeAlias = "SensitiveMeta | NoUploadJobRelationValue"
-UploadJobDateTime: TypeAlias = "datetime | NoUploadJobDateTimeValue"
+UploadJobCenter: TypeAlias = "Center | None"
+UploadJobUser: TypeAlias = "User | None"
+UploadJobSensitiveMeta: TypeAlias = "SensitiveMeta | None"
 
 
 class _UploadJobFileField(Protocol):
@@ -57,7 +53,7 @@ def _set_storage_location(storage: object, target_location: str) -> None:
 def _sync_upload_job_storage_location(instance: "UploadJob") -> None:
     file_field = cast(_UploadJobFileField, instance._meta.get_field("file"))
     storage = file_field.storage
-    target_location = str(EndoregPathsModel.from_environment().storage.resolve())
+    target_location = str(get_runtime_paths().storage.resolve())
     if _storage_location(storage) == target_location:
         return
     _set_storage_location(storage, target_location)
@@ -253,12 +249,12 @@ class UploadJob(models.Model):
         help_text="Whether the source ingest artifact is currently expected to remain on disk.",
     )
 
-    source_file_delete_eligible_at: models.DateTimeField[
-        UploadJobDateTime | None, Any
-    ] = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
+    source_file_delete_eligible_at: models.DateTimeField[datetime | None, Any] = (
+        models.DateTimeField(
+            null=True,
+            blank=True,
+            help_text="When the persisted source ingest artifact becomes eligible for cleanup.",
+        )
     )
 
     cleanup_status: models.CharField[str, Any] = models.CharField(
@@ -275,7 +271,7 @@ class UploadJob(models.Model):
         help_text="Stable authorization receipt for a source cleanup attempt.",
     )
 
-    cleanup_started_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+    cleanup_started_at: models.DateTimeField[datetime | None, Any] = (
         models.DateTimeField(
             null=True,
             blank=True,
@@ -283,7 +279,7 @@ class UploadJob(models.Model):
         )
     )
 
-    cleanup_completed_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+    cleanup_completed_at: models.DateTimeField[datetime | None, Any] = (
         models.DateTimeField(
             null=True,
             blank=True,
@@ -383,20 +379,16 @@ class UploadJob(models.Model):
         help_text="Maximum number of automatic retries allowed for this job.",
     )
 
-    next_retry_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
-        models.DateTimeField(
-            null=True,
-            blank=True,
-            help_text="When the next automatic retry becomes due.",
-        )
+    next_retry_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the next automatic retry becomes due.",
     )
 
-    last_attempt_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
-        models.DateTimeField(
-            null=True,
-            blank=True,
-            help_text="When import processing was most recently attempted.",
-        )
+    last_attempt_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When import processing was most recently attempted.",
     )
 
     processing_lease_owner: models.CharField[str, Any] = models.CharField(
@@ -406,7 +398,7 @@ class UploadJob(models.Model):
         help_text="Opaque worker identity that currently owns import processing.",
     )
 
-    processing_lease_expires_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+    processing_lease_expires_at: models.DateTimeField[datetime | None, Any] = (
         models.DateTimeField(
             null=True,
             blank=True,
@@ -414,7 +406,7 @@ class UploadJob(models.Model):
         )
     )
 
-    processing_heartbeat_at: models.DateTimeField[UploadJobDateTime | None, Any] = (
+    processing_heartbeat_at: models.DateTimeField[datetime | None, Any] = (
         models.DateTimeField(
             null=True,
             blank=True,
@@ -699,9 +691,7 @@ class UploadJob(models.Model):
             level=logging.ERROR,
             media_type="upload_job",
             upload_job_id=str(self.pk),
-            content_hash_sha256=(
-                hash_identifier(self.content_hash) if self.content_hash else None
-            ),
+            content_hash_sha256=(self.content_hash if self.content_hash else None),
             detail=safe_log_value(error_detail),
         )
 

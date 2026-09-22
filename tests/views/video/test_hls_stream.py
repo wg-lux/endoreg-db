@@ -75,7 +75,7 @@ def test_hls_resource_lookup_rechecks_identity_and_root_paths(
         key_id = uuid4()
     else:
         video_pk = VideoFile.objects.create(
-            video_hash="other-hls-video", center=hls_artifact.video.center
+            raw_video_hash="other-hls-video", center=hls_artifact.video.center
         ).pk
     user = User.objects.create_user(username="invalid-hls-resource-reader")
     for view, extra in (
@@ -147,7 +147,7 @@ def hls_view_center() -> Center:
 def _create_processed_video(center: Center) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
-        video_hash="hls-view-video",
+        raw_video_hash="hls-view-video",
     )
     cast(Any, video.processed_file).save(
         "view-source.mp4",
@@ -466,6 +466,7 @@ def test_hls_playlist_dispatch_failure_is_private_and_retryable(
     assert artifact.error_code == VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value
 
 
+@pytest.mark.django_db(transaction=True)
 def test_hls_playlist_and_key_serve_same_origin_without_cors_headers(
     hls_artifact: VideoHlsArtifact,
     monkeypatch: pytest.MonkeyPatch,
@@ -529,6 +530,7 @@ def test_hls_segment_fails_closed_without_nginx_offload(
     _assert_no_cors_headers(segment_response)
 
 
+@pytest.mark.django_db(transaction=True)
 def test_hls_views_preserve_configured_cross_origin_cors(
     hls_artifact: VideoHlsArtifact,
     monkeypatch: pytest.MonkeyPatch,

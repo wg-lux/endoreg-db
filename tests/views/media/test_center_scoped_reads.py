@@ -74,7 +74,7 @@ class CenterScopedReadTests(TestCase):
             center=self.center_a,
             patient=self.patient,
             examination=None,
-            video_hash=f"scope-video-{uuid4().hex}",
+            raw_video_hash=f"scope-video-{uuid4().hex}",
             original_file_name="scope.mp4",
         )
         self.client.force_login(

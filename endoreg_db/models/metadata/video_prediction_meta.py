@@ -134,9 +134,7 @@ class VideoPredictionMeta(models.Model):
         model_meta_name = cast(_NamedModelMeta, self.model_meta).name
         try:
             video_obj = self.get_video()
-            return (
-                f"Prediction Meta for Video {video_obj.video_hash} - {model_meta_name}"
-            )
+            return f"Prediction Meta for Video {video_obj.raw_video_hash} - {model_meta_name}"
         except ValueError:
             return (
                 f"Prediction Meta {self.pk} (Error: No VideoFile) - {model_meta_name}"

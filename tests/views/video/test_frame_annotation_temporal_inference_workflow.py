@@ -1,7 +1,5 @@
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 
-import tempfile
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TypedDict, Unpack
 from unittest.mock import patch
@@ -53,22 +51,19 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         self.center = Center.objects.create(name="temporal-frame-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="temporal-frame-video",
+            raw_video_hash="temporal-frame-video",
             original_file_name="temporal_frame_video.mp4",
+            processed_file="temporal_frame_video.mp4",
             fps=25.0,
             frame_count=30,
         )
-        self.frame_dir_temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.frame_dir_temp.cleanup)
-        self.video.frame_dir = self.frame_dir_temp.name
-        self.video.save(update_fields=["frame_dir"])
         self.frames = [
             Frame.objects.create(
                 video=self.video,
                 frame_number=frame_number,
                 relative_path=f"frame_{frame_number:07d}.jpg",
                 timestamp=timestamp,
-                is_extracted=True,
+                is_extracted=False,
             )
             for frame_number, timestamp in ((10, 0.4), (11, 0.44), (12, 0.48))
         ]
@@ -79,10 +74,6 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             timestamp=0.52,
             is_extracted=False,
         )
-        frame_dir = Path(self.frame_dir_temp.name)
-        for frame in self.frames:
-            (frame_dir / frame.relative_path).write_bytes(b"frame")
-
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.predicted_label = Label.objects.create(name="temporal-polyp")
         self.other_label = Label.objects.create(name="temporal-outside")
@@ -249,6 +240,9 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
         )
 
         task = data["task"]
+        self.assertEqual(task["frame_file_type"], "processed")
+        self.assertIn("file_type=processed", task["decoded_frame_stream_path"])
+        self.assertFalse(self.video.frames.filter(is_extracted=True).exists())
         self.assertEqual(task["frame_id"], self.frames[0].pk)
         self.assertEqual(task["dataset_selection_label_id"], self.predicted_label.pk)
         self.assertEqual(task["suggested_label_ids"], [self.predicted_label.pk])

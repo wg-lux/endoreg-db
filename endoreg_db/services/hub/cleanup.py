@@ -30,8 +30,12 @@ from endoreg_db.services.raw_pdf_files.integrity import (
     ProcessedReportIntegrityError,
     verify_processed_report_artifact,
 )
-from endoreg_db.utils import paths as path_utils
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.paths import (
+    build_upload_job_relative_path,
+    get_runtime_paths,
+    ensure_within_storage_root,
+)
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.filesystem.file_operations import safe_delete_field_file
 
 logger = logging.getLogger(__name__)
@@ -216,7 +220,7 @@ def _source_snapshot(
 
     media_type = _media_type(upload_job)
     if upload_job.status == UploadJob.Status.ERROR.value:
-        expected_name = path_utils.build_upload_job_relative_path(
+        expected_name = build_upload_job_relative_path(
             tier=upload_job.storage_tier,
             filename=Path(storage_name).name,
             key=str(upload_job.pk),
@@ -228,9 +232,9 @@ def _source_snapshot(
 
     try:
         lexical_path = Path(field_file.path).absolute()
-        protected_root = path_utils.protected_media_root().resolve()
+        protected_root = get_runtime_paths().storage.resolve()
         lexical_path.relative_to(protected_root)
-        resolved_path = path_utils.ensure_within_protected_media_root(lexical_path)
+        resolved_path = ensure_within_storage_root(lexical_path)
     except (
         AttributeError,
         NotImplementedError,
@@ -250,7 +254,7 @@ def _source_snapshot(
         return None, UploadSourceCleanupBlocker.SOURCE_NOT_REGULAR
 
     try:
-        content_sha256 = sha256_file(field_file)
+        content_sha256 = get_file_hash(field_file)
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None, UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
     if content_sha256 != str(upload_job.content_hash or "").strip().lower():
@@ -273,7 +277,7 @@ def _video_target_blocker(
     *,
     database_now: datetime,
 ) -> UploadSourceCleanupBlocker:
-    video = VideoFile.objects.filter(video_hash=upload_job.content_hash).first()
+    video = VideoFile.objects.filter(raw_video_hash=upload_job.content_hash).first()
     if video is None:
         return UploadSourceCleanupBlocker.TARGET_INTEGRITY_FAILED
     if MediaOperationLease.objects.filter(

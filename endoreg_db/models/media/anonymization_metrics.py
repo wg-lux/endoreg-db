@@ -14,14 +14,11 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
-NoMetricRelationValue: TypeAlias = None
-NoMetricFloatValue: TypeAlias = None
-MetricVideo: TypeAlias = "VideoFile | NoMetricRelationValue"
-MetricPdf: TypeAlias = "RawPdfFile | NoMetricRelationValue"
-MetricSensitiveMeta: TypeAlias = "SensitiveMeta | NoMetricRelationValue"
-MetricCenter: TypeAlias = "Center | NoMetricRelationValue"
-MetricValidatorUser: TypeAlias = "AbstractBaseUser | NoMetricRelationValue"
-MetricFloat: TypeAlias = "float | NoMetricFloatValue"
+MetricVideo: TypeAlias = "VideoFile | None"
+MetricPdf: TypeAlias = "RawPdfFile | None"
+MetricSensitiveMeta: TypeAlias = "SensitiveMeta | None"
+MetricCenter: TypeAlias = "Center | None"
+MetricValidatorUser: TypeAlias = "AbstractBaseUser | None"
 
 
 class AnonymizationMetricMediaType(models.TextChoices):

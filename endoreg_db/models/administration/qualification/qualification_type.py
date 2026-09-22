@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeAlias, Any
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from .qualification import Qualification
-
-NoQualificationTypeDescriptionValue: TypeAlias = None
-QualificationTypeDescription: TypeAlias = "str | NoQualificationTypeDescriptionValue"
 
 
 class QualificationTypeManager(models.Manager["QualificationType"]):
@@ -27,7 +24,7 @@ class QualificationType(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
-    description: models.TextField[QualificationTypeDescription, Any] = models.TextField(
+    description: models.TextField[str | None, Any] = models.TextField(
         blank=True, null=True
     )
     is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)

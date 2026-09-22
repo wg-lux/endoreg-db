@@ -10,7 +10,8 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     ReportJsonObject,
     report_json_safe,
 )
-from lx_dtypes.models.interface.KnowledgeBaseResolver import load_knowledge_base
+from lx_dtypes.terminology.terminology_loader import load_module_kb
+from lx_dtypes.terminology.terminology_service import TerminologyError
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from pydantic import ValidationError as PydanticValidationError
 
@@ -96,7 +97,7 @@ def validate_final_report_submission(
     try:
         knowledge_base = cast(
             _KnowledgeBaseRuntime,
-            load_knowledge_base(module_name, version=version),
+            load_module_kb(module_name, version=version),
         )
         result_value = report_json_safe(
             knowledge_base.evaluate_report_template_validators(
@@ -107,7 +108,7 @@ def validate_final_report_submission(
         if not isinstance(result_value, dict):
             raise ValueError("Report template validators must return an object.")
         result = result_value
-    except (KeyError, ValueError) as exc:
+    except (TerminologyError, KeyError, ValueError) as exc:
         raise ReportRuntimeValidationError(
             {
                 "ok": False,

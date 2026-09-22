@@ -23,7 +23,7 @@ from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.utils.paths import STORAGE_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 logger = logging.getLogger(__name__)
@@ -128,7 +128,7 @@ class AnonymizationService:
         Args:
             project_root: Path to the project root. If None, uses settings.BASE_DIR
         """
-        self.project_root: Path = project_root or STORAGE_DIR
+        self.project_root: Path = project_root or get_runtime_paths().storage
         self.video_service = VideoImportService()
         self.pdf_service = ReportImportService()
 
@@ -167,7 +167,7 @@ class AnonymizationService:
                         integrity_status=integrity_status,
                         integrity_error=integrity_error,
                         file_exists=file_exists(vf.raw_file),
-                        uuid=_optional_text(getattr(vf, "video_hash", None)),
+                        uuid=_optional_text(getattr(vf, "raw_video_hash", None)),
                     )
                 )
 
@@ -251,7 +251,7 @@ class AnonymizationService:
                     "Refusing anonymization for failed/lost VideoFile %s "
                     "(hash=%s, integrity_status=%s, reason=%s)",
                     file_id,
-                    _optional_text(getattr(video, "video_hash", None)),
+                    _optional_text(getattr(video, "raw_video_hash", None)),
                     integrity_status,
                     integrity_error,
                 )

@@ -3,15 +3,19 @@ import sys
 from pathlib import Path
 
 from endoreg_db.config.env import env_bool, env_str
-
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.file_operations import ensure_directory
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
+from .base import INSTALLED_APPS as BASE_INSTALLED_APPS
 
 type DatabaseOptions = dict[str, int]
 type DatabaseConfigValue = str | DatabaseOptions
 
-TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
-TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
+TEST_DIR = get_runtime_paths().test
+
+TEST_DB_DIR = ensure_directory(get_runtime_paths().test / "data" / "tests" / "db")
+
+TERMINOLOGY_ROOT = ensure_directory(get_runtime_paths().test / "terminology")
 
 
 def _running_under_pytest() -> bool:
@@ -45,7 +49,7 @@ def _normalize_test_db_path(value: str | os.PathLike[str]) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
         return candidate
-    return BASE_DIR / candidate
+    return TEST_DIR / candidate
 
 
 if raw_test_db_file:
@@ -63,6 +67,7 @@ TEST_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
+DJANGO_SALT = "test-identity-salt-not-for-production"
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")

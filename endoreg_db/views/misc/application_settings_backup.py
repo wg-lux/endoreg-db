@@ -20,7 +20,7 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
-from endoreg_db.utils.paths import PROTECTED_DATA_ROOT, STORAGE_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 
@@ -30,7 +30,7 @@ def _request_payload(data: object) -> dict[str, Any]:
 
 def _required_backup_sources() -> list[Path]:
     sources: list[Path] = []
-    for path in (PROTECTED_DATA_ROOT, STORAGE_DIR):
+    for path in (get_runtime_paths().runtime_root, get_runtime_paths().storage):
         if path not in sources:
             sources.append(path)
     return sources
@@ -45,9 +45,9 @@ def _count_files(root: Path) -> int:
 
 
 def _backup_source_label(index: int, path: Path) -> str:
-    if path == PROTECTED_DATA_ROOT:
+    if path == get_runtime_paths().runtime_root:
         return "protected_root"
-    if path == STORAGE_DIR:
+    if path == get_runtime_paths().storage:
         return "storage"
     if index == 0:
         return "storage"

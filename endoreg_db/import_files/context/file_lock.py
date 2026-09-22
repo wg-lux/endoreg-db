@@ -1,26 +1,37 @@
 from contextlib import contextmanager
-from pathlib import Path
-import os
-import time
 from logging import getLogger
-from typing import Generator, Any
+import os
+from pathlib import Path
+import time
+from typing import Any, Generator
 
 from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.paths import get_runtime_paths
 
 logger = getLogger(__name__)
 
-STALE_LOCK_SECONDS = 6000
+STALE_LOCK_SECONDS = 10000
 MAX_LOCK_WAIT_SECONDS = 90
 
 
+lock_root = get_runtime_paths().locks
+
+
 @contextmanager
-def file_lock(path: Path) -> Generator[None, Any, None]:
+def file_lock(
+    name: Path | str,
+    lock_root: Path = lock_root,
+) -> Generator[None, Any, None]:
     """
     Create a file lock to prevent duplicate processing of the same file.
 
-    Lock is created *next to* the source file: "<path>.lock".
+    Lock is created in the lock folder from the source file name: "<filename>.lock".
     """
-    lock_path = Path(str(path) + ".lock")
+    ensure_directory(lock_root)
+
+    filename = Path(name).name
+    lock_path = lock_root / f"{filename}.lock"
+
     fd = None
     try:
         deadline = time.time() + MAX_LOCK_WAIT_SECONDS
@@ -40,7 +51,7 @@ def file_lock(path: Path) -> Generator[None, Any, None]:
                     try:
                         logger.warning(
                             "Stale lock detected for %s (age %.0fs). Reclaiming lock...",
-                            path,
+                            lock_path,
                             age,
                         )
                         lock_path.unlink()
@@ -51,7 +62,7 @@ def file_lock(path: Path) -> Generator[None, Any, None]:
                     continue
 
                 if time.time() >= deadline:
-                    raise ValueError(f"File already being processed: {path}")
+                    raise ValueError(f"File already being processed: {name}")
                 time.sleep(1.0)
 
         os.write(fd, b"lock")
@@ -71,7 +82,7 @@ def file_lock(path: Path) -> Generator[None, Any, None]:
 @contextmanager
 def content_hash_lock(
     file_hash: str,
-    lock_root: Path,
+    lock_root: Path = lock_root,
 ) -> Generator[None, Any, None]:
     """
     Create a lock keyed by content hash to serialize same-content processing.
@@ -79,6 +90,7 @@ def content_hash_lock(
     Lock path: "<lock_root>/<file_hash>.lock"
     """
     ensure_directory(lock_root)
+
     lock_path = lock_root / f"{file_hash}.lock"
     fd = None
     try:

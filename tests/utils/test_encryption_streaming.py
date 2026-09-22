@@ -8,6 +8,7 @@ import pytest
 
 from endoreg_db.services import streamable_media as sm
 from endoreg_db.utils.storage_profile import PayloadKind, StoragePolicy
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 class DummyStorageMode:
@@ -36,7 +37,7 @@ class DummyVideo:
         self.raw_streamable_payload = b"\x00\x00\x00\x20ftypmp42moovmdatraw"
         self.processed_streamable_payload = b"\x00\x00\x00\x20ftypmp42moovmdatprocessed"
         self.pk = 1
-        self.video_hash = hashlib.sha256(self.raw_payload).hexdigest()
+        self.raw_video_hash = hashlib.sha256(self.raw_payload).hexdigest()
         self.processed_video_hash = hashlib.sha256(self.processed_payload).hexdigest()
         self.raw_file = DummyFieldFile("raw/input.mp4")
         self.processed_file = DummyFieldFile("processed/input.mp4")
@@ -150,15 +151,8 @@ def streamable_roots(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> StreamableRoots:
-    raw_root = tmp_path / "streamable_videos" / "raw"
-    processed_root = tmp_path / "streamable_videos" / "processed"
-
-    monkeypatch.setattr(sm, "_streamable_raw_video_root", _root_provider(raw_root))
-    monkeypatch.setattr(
-        sm,
-        "_streamable_processed_video_root",
-        _root_provider(processed_root),
-    )
+    raw_root = get_runtime_paths().streamable_videos_raw_media
+    processed_root = get_runtime_paths().streamable_videos_processed_media
 
     return StreamableRoots(
         root=tmp_path,
@@ -277,7 +271,7 @@ def test_streamable_media_state_centralizes_artifact_decisions(
 
     assert raw_decision.disposition == sm.StreamableArtifactDisposition.SYNC
     assert raw_decision.target_path == streamable_roots.raw_root / (
-        f"{video.video_hash}.mp4"
+        f"{video.raw_video_hash}.mp4"
     )
     assert (
         processed_decision.disposition
@@ -315,7 +309,7 @@ def test_sync_does_not_materialize_plaintext_raw_or_set_streamable_mode(
         save=True,
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
 
     assert not target.exists()
     assert video.raw_streamable_relative_path == ""
@@ -345,10 +339,12 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
         _field_file_payload_reader(video.raw_payload),
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
-    target.parent.mkdir(parents=True)
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(video.raw_streamable_payload)
-    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.raw_streamable_relative_path = (
+        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
+    )
     video.storage_mode = DummyStorageMode.STREAMABLE
 
     monkeypatch.setattr(
@@ -396,11 +392,13 @@ def test_sync_force_removes_existing_plaintext(
         _fake_streamable_transcode(video.raw_streamable_payload),
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
-    target.parent.mkdir(parents=True)
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(video.raw_streamable_payload)
 
-    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.raw_streamable_relative_path = (
+        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
+    )
     video.storage_mode = DummyStorageMode.STREAMABLE
 
     update_fields = sm.sync_video_streamable_artifacts(
@@ -429,11 +427,13 @@ def test_sync_idempotent_path_does_not_rehash_source(
     )
     monkeypatch.setattr(sm, "_source_hash", _fail_source_hash)
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
-    target.parent.mkdir(parents=True)
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(video.raw_streamable_payload)
 
-    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.raw_streamable_relative_path = (
+        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
+    )
     video.storage_mode = DummyStorageMode.STREAMABLE
 
     monkeypatch.setattr(
@@ -474,8 +474,8 @@ def test_sync_does_not_adopt_untracked_existing_plaintext(
         _field_file_payload_reader(video.raw_payload),
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
-    target.parent.mkdir(parents=True)
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(video.raw_streamable_payload)
 
     video.raw_streamable_relative_path = ""
@@ -524,10 +524,12 @@ def test_sync_removes_existing_plaintext_with_wrong_hash(
         _fake_streamable_transcode(video.raw_streamable_payload),
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
-    target.parent.mkdir(parents=True)
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
+    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(b"\x00\x00\x00\x20ftypmp42mdatwrongmoov")
-    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.raw_streamable_relative_path = (
+        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
+    )
     video.storage_mode = DummyStorageMode.STREAMABLE
 
     update_fields = sm.sync_video_streamable_artifacts(
@@ -561,7 +563,7 @@ def test_dry_run_does_not_write_file_or_set_streamable_mode(
         save=False,
     )
 
-    target = streamable_roots.raw_root / f"{video.video_hash}.mp4"
+    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
 
     assert not target.exists()
     assert video.saved_update_fields == []
@@ -580,7 +582,9 @@ def test_skipped_policy_clears_stale_streamable_paths_and_app_encrypted_mode(
         _app_encrypted_policy,
     )
 
-    video.raw_streamable_relative_path = f"streamable_videos/raw/{video.video_hash}.mp4"
+    video.raw_streamable_relative_path = (
+        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
+    )
     video.processed_streamable_relative_path = (
         f"streamable_videos/processed/{video.processed_video_hash}.mp4"
     )

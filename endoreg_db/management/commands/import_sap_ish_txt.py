@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias, TypedDict, Unpack
+from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
@@ -20,12 +20,7 @@ from endoreg_db.services.sap_ish_clinical import (
     SapIshClinicalImportResult,
     persist_sap_ish_clinical_rows,
 )
-from endoreg_db.utils.paths import (
-    WATCHER_PREANONYMIZED_DROP_DIR,
-    ensure_within_data_root,
-)
-
-JsonNull: TypeAlias = None
+from endoreg_db.utils.paths import ensure_within_runtime_root, get_runtime_paths
 
 
 class ImportSapIshTxtOptions(TypedDict):
@@ -53,7 +48,7 @@ def _resolve_processing_center(
     center_key: str | None,
     center_name: str | None,
     should_process: bool,
-) -> Center | JsonNull:
+) -> Center | None:
     if center_name or center_key:
         center, center_resolution_error = resolve_declared_upload_center(
             center_key=center_key,
@@ -81,7 +76,7 @@ def _resolve_source_dir(raw_source_dir: str) -> Path:
 
 def _resolve_import_request(options: ImportSapIshTxtOptions) -> _TxtImportRequest:
     source_dir = _resolve_source_dir(options["source_dir"])
-    output_dir = ensure_within_data_root(
+    output_dir = ensure_within_runtime_root(
         Path(options["output_dir"]).expanduser().resolve()
     )
     source_system = options["source_system"].strip() or "sap_ish"
@@ -143,10 +138,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--output_dir",
             type=str,
-            default=str(WATCHER_PREANONYMIZED_DROP_DIR),
+            default=str(get_runtime_paths().watcher_preanonymized_drop),
             help=(
                 "Directory for generated watcher-ready .txt/.yaml pairs. "
-                f"Default: {WATCHER_PREANONYMIZED_DROP_DIR}"
+                f"Default: {get_runtime_paths().watcher_preanonymized_drop}"
             ),
         )
         parser.add_argument(

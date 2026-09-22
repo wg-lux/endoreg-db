@@ -187,9 +187,9 @@ def get_record_hash(record: ResourceRecord) -> str:
     cached = record.get("content_hash")
     if cached:
         return str(cached)
-    from endoreg_db.utils.file_operations import sha256_file
+    from endoreg_db.utils.file_operations import get_file_hash
 
-    digest = sha256_file(record["field_file"])
+    digest = get_file_hash(record["field_file"])
     record["content_hash"] = digest
     return digest
 
@@ -240,13 +240,13 @@ def copy_verify_delete(
         atomic_copy_file,
         atomic_move_file,
         safe_unlink_file,
-        sha256_file,
+        get_file_hash,
     )
 
     ensure_archive_path(destination, archive_root)
     ensure_archive_path(staging_root, archive_root)
     size_bytes = source.stat().st_size
-    source_hash = sha256_file(source)
+    source_hash = get_file_hash(source)
     if expected_hash is not None and source_hash != expected_hash:
         return {
             "status": "skipped",
@@ -275,7 +275,7 @@ def copy_verify_delete(
             file_mode=0o640,
             dir_mode=0o750,
         )
-        staged_hash = sha256_file(staged)
+        staged_hash = get_file_hash(staged)
         if staged_hash != source_hash:
             raise RuntimeError(
                 f"staging hash verification failed for {source}: "
@@ -292,7 +292,7 @@ def copy_verify_delete(
             safe_unlink_file(staged, missing_ok=True)
         raise
 
-    destination_hash = sha256_file(destination)
+    destination_hash = get_file_hash(destination)
     if destination_hash != source_hash:
         raise RuntimeError(
             f"archive hash verification failed for {source}: "

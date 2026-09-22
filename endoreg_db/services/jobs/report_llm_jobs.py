@@ -7,6 +7,7 @@ from typing import Any, Literal, Protocol, cast
 
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.config.env import env_choice, env_int
 from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
@@ -14,14 +15,13 @@ from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import (
     ReportLlmInferenceJob,
-    ReportLlmJobJsonObject,
-    ReportLlmJobJsonValue,
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.schemas.report_llm import (
     ReportLlmDispatchResult,
     ReportLlmJobConfig,
     ReportLlmJobMode,
+    ReportLlmOperation,
     ReportLlmReimportRequestPayload,
     build_report_llm_job_config,
     dump_report_llm_reimport_request_payload,
@@ -47,7 +47,6 @@ from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
 
-ReportLlmOperation = Literal["report_llm_reimport", "report_llm_import"]
 REPORT_LLM_REIMPORT_OPERATION = cast(
     ReportLlmOperation, ReportLlmInferenceJob.OPERATION_REIMPORT
 )
@@ -58,9 +57,6 @@ REPORT_LLM_JOB_MODE_DEFAULT: ReportLlmJobMode = "celery"
 REPORT_LLM_JOB_MODES: tuple[ReportLlmJobMode, ...] = ("celery", "inline")
 REPORT_LLM_DISPATCH_DELAY_SECONDS_DEFAULT = 0
 REPORT_LLM_STALE_TIMEOUT = timedelta(hours=7)
-
-
-JsonValue = ReportLlmJobJsonValue
 
 
 def _queue_for_report_job(kind: HeavyJobKind) -> str:
@@ -516,8 +512,8 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
             source_sha256=pdf.pdf_hash,
         )
         anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
-        result: ReportLlmJobJsonObject = cast(
-            ReportLlmJobJsonObject,
+        result: JsonObject = cast(
+            JsonObject,
             {
                 "pdf_id": int(pdf.pk),
                 "pdf_hash": str(pdf.pdf_hash),
@@ -612,8 +608,8 @@ def _run_report_llm_import_job(job_id: str) -> bool:
             sensitive_meta=sensitive_meta,
         )
         cleanup_upload_job_source(cast(UploadJob, upload_job))
-        result: ReportLlmJobJsonObject = cast(
-            ReportLlmJobJsonObject,
+        result: JsonObject = cast(
+            JsonObject,
             {
                 "upload_job_id": str(upload_job.pk),
                 "pdf_id": int(typed_report.pk),

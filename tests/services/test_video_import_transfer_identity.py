@@ -35,7 +35,7 @@ from endoreg_db.services.hub.transfers import (
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
-    sha256_file,
+    get_file_hash,
     safe_unlink_file,
 )
 from endoreg_db.utils.paths import EndoregPathsModel
@@ -69,11 +69,11 @@ def transferred_video(mock_storage: EndoregPathsModel) -> TransferredVideo:
     processed = mock_storage.sensitive_video / "processed.mp4"
     processed_bytes = b"anonymized generation bytes"
     atomic_write_file(destination=processed, content=(processed_bytes,))
-    processed_hash = sha256_file(processed)
+    processed_hash = get_file_hash(processed)
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=sha256_file(source),
+        raw_video_hash=get_file_hash(source),
         processed_video_hash=processed_hash,
         original_file_name="original-source.mp4",
     )
@@ -83,14 +83,14 @@ def transferred_video(mock_storage: EndoregPathsModel) -> TransferredVideo:
     state.anonymization_validated = True
     state.processed_file_sha256 = processed_hash
     state.save()
-    ProcessingHistory.mark_success(file_hash=video.video_hash, obj=video)
+    ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
     transfer = TransferJob.objects.create(
         transfer_key="received-video",
         source_node=source_node,
         target_node=target_node,
         source_center=center,
         resource_kind=TransferJob.ResourceKind.VIDEO,
-        resource_hash=video.video_hash,
+        resource_hash=video.raw_video_hash,
         target_object_id=video.pk,
         transfer_mode=TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA,
         transfer_status=TransferJob.TransferStatus.APPLIED,
@@ -102,7 +102,7 @@ def transferred_video(mock_storage: EndoregPathsModel) -> TransferredVideo:
         target_node_key=target_node.node_key,
         source_center_key=center.center_key,
         resource_kind="video",
-        resource_hash=video.video_hash,
+        resource_hash=video.raw_video_hash,
         processed_media_hash=processed_hash,
         plaintext_sha256=processed_hash,
         plaintext_size=len(processed_bytes),
@@ -164,7 +164,7 @@ def test_successful_hub_transfer_is_reused_without_raw_reimport(
         ctx = ImportContext(
             file_path=fixture.source,
             center_name=fixture.center_name,
-            file_hash=fixture.video.video_hash,
+            file_hash=fixture.video.raw_video_hash,
         )
         reused, processed, needs_processing = create_or_retrieve_video_file(ctx)
         assert reused.pk == fixture.video.pk
@@ -246,7 +246,7 @@ def test_unproven_or_stale_transfer_cannot_authorize_duplicate_success(
     ctx = ImportContext(
         file_path=fixture.source,
         center_name=fixture.center_name,
-        file_hash=fixture.video.video_hash,
+        file_hash=fixture.video.raw_video_hash,
     )
     with pytest.raises(MediaIntegrityError):
         VideoImportService()._get_existing_completed_video(ctx)

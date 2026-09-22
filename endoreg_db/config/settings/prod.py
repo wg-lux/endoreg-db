@@ -1,5 +1,7 @@
 import os
 from pathlib import Path
+from endoreg_db.config.identity_hashing import load_identity_salt
+from endoreg_db.config.secret_keyring import configured_signing_keys, read_private_file
 
 from .base import *  # noqa: F401,F403
 from .base import (
@@ -11,11 +13,9 @@ from .base import (
 )
 from endoreg_db.config.env import (
     BASE_DIR as ENV_BASE_DIR,
-    PROTECTED_MEDIA_ROOT_ENV,
-    PROTECTED_ROOT_ENV,
+    RUNTIME_ROOT_ENV,
     SECURE_PROXY_SSL_HEADER_NAME_ENV,
     SECURE_PROXY_SSL_HEADER_VALUE_ENV,
-    STORAGE_DIR_ENV,
     env_bool,
     env_str,
     get_secure_proxy_ssl_header,
@@ -26,6 +26,8 @@ from endoreg_db.utils.structured_logging import (
 from . import keycloak as KEYCLOAK
 
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
+
+DJANGO_SALT = load_identity_salt(required=True, allow_inline=False)
 
 DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
 REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT = env_bool(
@@ -43,7 +45,15 @@ if WATCHER_CELERY_INLINE_FALLBACK_ENABLED:
         "broker failures must fail closed instead of switching watcher processing inline"
     )
 
-_secret_key = env_str("DJANGO_SECRET_KEY")
+_signing_keys = configured_signing_keys()
+_secret_key_file = env_str("DJANGO_SECRET_KEY_FILE")
+_secret_key = (
+    _signing_keys[0]
+    if _signing_keys is not None
+    else read_private_file(Path(_secret_key_file), limit=4096).decode("utf-8").strip()
+    if _secret_key_file
+    else env_str("DJANGO_SECRET_KEY")
+)
 if not _secret_key:
     if pytest_active:
         _secret_key = "test-secret-key"
@@ -52,6 +62,7 @@ if not _secret_key:
             "DJANGO_SECRET_KEY environment variable must be set in production"
         )
 SECRET_KEY = _secret_key
+SECRET_KEY_FALLBACKS = _signing_keys[1] if _signing_keys is not None else []
 
 _allowed_hosts = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 if not _allowed_hosts:
@@ -185,14 +196,6 @@ OIDC_LOGOUT_REDIRECT_URL = KEYCLOAK.OIDC_LOGOUT_REDIRECT_URL
 OIDC_AUTH_REQUEST_EXTRA_PARAMS = {}
 
 
-def _path_within(root: Path, candidate: Path) -> bool:
-    try:
-        candidate.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True
-
-
 def _required_env_path(env_key: str) -> Path:
     value = os.environ.get(env_key, "").strip()
     if not value:
@@ -204,24 +207,12 @@ def _required_env_path(env_key: str) -> Path:
 
 if ENDOREG_DEPLOYMENT_ROLE == "local_study_server":
     default_runtime_root = (ENV_BASE_DIR / "data").resolve()
-    protected_runtime_root = _required_env_path(PROTECTED_ROOT_ENV)
-    storage_root = _required_env_path(STORAGE_DIR_ENV)
-    protected_media_root = _required_env_path(PROTECTED_MEDIA_ROOT_ENV)
+    protected_runtime_root = _required_env_path(RUNTIME_ROOT_ENV)
 
     if protected_runtime_root == default_runtime_root:
         raise ValueError(
             "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires an explicit "
-            f"{PROTECTED_ROOT_ENV} outside the repository data directory."
-        )
-    if not _path_within(protected_runtime_root, storage_root):
-        raise ValueError(
-            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires STORAGE_DIR "
-            f"inside {PROTECTED_ROOT_ENV}."
-        )
-    if not _path_within(protected_runtime_root, protected_media_root):
-        raise ValueError(
-            "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires "
-            f"{PROTECTED_MEDIA_ROOT_ENV} inside {PROTECTED_ROOT_ENV}."
+            f"{RUNTIME_ROOT_ENV} outside the repository data directory."
         )
     if "rest_framework.permissions.AllowAny" in REST_FRAMEWORK.get(
         "DEFAULT_PERMISSION_CLASSES",

@@ -17,7 +17,7 @@ from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.services import hls_media, processed_video_cleanup as cleanup
 from endoreg_db.services.video_files import _anonymization as service
-from endoreg_db.utils.file_operations import atomic_write_file, sha256_file
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from tests.services.test_video_processed_transcode_encryption import probe
@@ -36,21 +36,21 @@ def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
     video = VideoFile.objects.create(
         center=center,
         sensitive_meta=sensitive,
-        video_hash=uuid4().hex,
+        raw_video_hash=uuid4().hex,
         fps=25,
         duration=10,
         frame_count=250,
     )
     raw = video.raw_file
     assert isinstance(raw, VideoArtifactFieldFile)
-    raw.save(f"{video.video_hash}.mp4", ContentFile(b"raw input"))
+    raw.save(f"{video.raw_video_hash}.mp4", ContentFile(b"raw input"))
     # The existing canonical master has the name emitted by processed transcoding.
     payload = b"transcoded processed video"
     old_name = f"{sha256(payload).hexdigest()}.{uuid4().hex}.mp4"
     processed = video.processed_file
     assert isinstance(processed, VideoArtifactFieldFile)
     processed.save(old_name, ContentFile(payload))
-    video.processed_video_hash = sha256_file(video.processed_file)
+    video.processed_video_hash = get_file_hash(video.processed_file)
     video.save()
     video.get_or_create_state()
 
@@ -104,7 +104,9 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
         assert video.anonymize(delete_original_raw=False)
         video.refresh_from_db()
         assert video.processed_file.name != previous_name
-        assert "/.generations/" in str(video.processed_file.name)
+        assert Path(str(video.processed_file.name)).name.startswith(
+            f"{video.raw_video_hash}."
+        )
         assert not cast(Storage, getattr(video.processed_file, "storage")).exists(
             previous_name
         )

@@ -20,7 +20,7 @@ def validate_video_metadata_annotation(
     video: "VideoFile",
     extracted_data_dict: VideoTextMetaPayload | None = None,
 ) -> bool:
-    from ._io import _delete_raw_file_after_validation
+    from .io import delete_raw_file_after_validation
     from .metadata import update_video_text_metadata
     from .state import get_or_create_video_state
     from endoreg_db.services.video_storage_normalization import raw_cleanup_blockers
@@ -33,7 +33,7 @@ def validate_video_metadata_annotation(
         or meta.get("integrity_status") == "lost"
     ):
         raise ValueError(
-            f"Video {video.video_hash} is marked failed/lost and cannot be validated."
+            f"Video {video.raw_video_hash} is marked failed/lost and cannot be validated."
         )
 
     if extracted_data_dict is None and video.sensitive_meta is None:
@@ -50,7 +50,7 @@ def validate_video_metadata_annotation(
     except Exception as exc:
         logger.warning(
             "Falling back to direct SensitiveMeta update for %s after text metadata update failed: %s",
-            video.video_hash,
+            video.raw_video_hash,
             exc,
         )
         if video.sensitive_meta is not None and extracted_data_dict is not None:
@@ -68,7 +68,7 @@ def validate_video_metadata_annotation(
             except Exception as update_exc:
                 logger.error(
                     "Failed direct SensitiveMeta update for %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     update_exc,
                     exc_info=True,
                 )
@@ -82,16 +82,17 @@ def validate_video_metadata_annotation(
     if blockers:
         logger.warning(
             "Raw cleanup deferred for validated video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             ",".join(blockers),
         )
-    elif _delete_raw_file_after_validation(video):
+    elif delete_raw_file_after_validation(video):
         logger.info(
-            "Raw video deleted for %s. Anonymized video preserved.", video.video_hash
+            "Raw video deleted for %s. Anonymized video preserved.",
+            video.raw_video_hash,
         )
     else:
-        logger.info("No raw video artifacts remained for %s.", video.video_hash)
+        logger.info("No raw video artifacts remained for %s.", video.raw_video_hash)
     logger.info(
-        "Metadata annotation validated and saved for video %s.", video.video_hash
+        "Metadata annotation validated and saved for video %s.", video.raw_video_hash
     )
     return True

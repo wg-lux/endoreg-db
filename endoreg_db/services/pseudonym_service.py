@@ -52,9 +52,7 @@ def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
 
     try:
         # Calculate the hash using the existing sensitive_meta_logic
-        patient_hash = sensitive_meta_logic.calculate_patient_hash(
-            sensitive_meta, salt=sensitive_meta_logic.SECRET_SALT
-        )
+        patient_hash = sensitive_meta_logic.calculate_patient_hash(sensitive_meta)
 
         # Persist the hash to the Patient model
         with transaction.atomic():

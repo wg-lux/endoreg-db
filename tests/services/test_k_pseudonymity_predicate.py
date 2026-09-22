@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
+from lx_dtypes.models.contracts.json_types import JsonScalar
 
 from endoreg_db.schemas.k_pseudonymity import KPseudonymityReleaseConfig
 from endoreg_db.services import k_pseudonymity as facade
@@ -203,7 +204,7 @@ def test_predicate_preserves_utility_feature_and_projection_order() -> None:
     ],
 )
 def test_predicate_preserves_numeric_utility_errors_and_chaining(
-    value: predicate.CellValue,
+    value: JsonScalar | None,
     message: str,
     has_cause: bool,
 ) -> None:

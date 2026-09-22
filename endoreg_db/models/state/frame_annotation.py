@@ -284,21 +284,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
 PHI_REGION_DATASET_MODEL_TYPE = "phi_region_detector"
 
-NoPredictionMetaIdValue: TypeAlias = None
-NoFrameAnnotationSourceValue: TypeAlias = None
-PredictionMetaId: TypeAlias = "int | NoPredictionMetaIdValue"
-FrameAnnotationSource: TypeAlias = (
-    "FrameAnnotationSourceName | NoFrameAnnotationSourceValue"
-)
+FrameAnnotationSource: TypeAlias = "FrameAnnotationSourceName | None"
 
 
 class FrameAnnotationSourceName(Protocol):
     name: str
 
 
-FrameAnnotationSourceInput: TypeAlias = (
-    "str | FrameAnnotationSourceName | NoFrameAnnotationSourceValue"
-)
+FrameAnnotationSourceInput: TypeAlias = "str | FrameAnnotationSourceName | None"
 
 
 class PredictionSegmentLike(Protocol):
@@ -306,7 +299,7 @@ class PredictionSegmentLike(Protocol):
     def source(self) -> FrameAnnotationSource: ...
 
     @property
-    def prediction_meta_id(self) -> PredictionMetaId: ...
+    def prediction_meta_id(self) -> int | None: ...
 
 
 class FrameAnnotationStatus(str, Enum):

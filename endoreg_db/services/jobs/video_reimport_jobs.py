@@ -167,7 +167,7 @@ def _resolve_prediction_model_meta(payload: dict[str, Any]) -> ModelMeta:
 
 
 def _reimport_upload_job_queryset(video: VideoFile):
-    queryset = UploadJob.objects.filter(content_hash=video.video_hash).filter(
+    queryset = UploadJob.objects.filter(content_hash=video.raw_video_hash).filter(
         VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY
     )
     center_id = getattr(video, "center_id", None)
@@ -211,7 +211,7 @@ def _select_reimport_upload_jobs(video: VideoFile) -> list[UploadJob]:
             "Skipped %d duplicate inactive UploadJob row(s) for video %s "
             "during re-import state update",
             skipped_count,
-            video.video_hash,
+            video.raw_video_hash,
         )
     return selected_jobs
 
@@ -258,7 +258,7 @@ def _reset_reimport_state(video: VideoFile) -> int:
         logger.info(
             "Clearing existing SensitiveMeta %s for video %s",
             old_meta_id,
-            video.video_hash,
+            video.raw_video_hash,
         )
         video.sensitive_meta = None
         video.save(update_fields=["sensitive_meta"])
@@ -280,10 +280,10 @@ def _reset_reimport_state(video: VideoFile) -> int:
     logger.info(
         "Reset %d UploadJob row(s) to processing for video %s",
         reset_count,
-        video.video_hash,
+        video.raw_video_hash,
     )
 
-    logger.info("Re-initializing video specs for %s", video.video_hash)
+    logger.info("Re-initializing video specs for %s", video.raw_video_hash)
     initialize_video_file_specs(video)
     initialize_video_frames(video)
     return reset_count
@@ -515,7 +515,7 @@ def _regenerate_reimport_hls_artifacts(
     )
     logger.info(
         "Regenerated processed HLS after video re-import: video=%s status=%s key_id=%s",
-        getattr(video, "video_hash", video_id),
+        getattr(video, "raw_video_hash", video_id),
         payload.get("status"),
         payload.get("key_id"),
     )
@@ -553,7 +553,7 @@ def _run_video_reimport_job(
             video.refresh_from_db()
             logger.info(
                 "Starting asynchronous VideoImportService re-anonymization for %s",
-                video.video_hash,
+                video.raw_video_hash,
             )
             VideoImportService().reanonymize_existing_video(
                 video,
@@ -580,7 +580,7 @@ def _run_video_reimport_job(
             )
         logger.info(
             "Video re-import completed successfully for %s",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return True
     except FileNotFoundError as exc:

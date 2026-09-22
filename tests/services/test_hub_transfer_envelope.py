@@ -24,6 +24,7 @@ from django.test import SimpleTestCase, override_settings
 from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeMetadata
 
 from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.services.hub import transfers
 from endoreg_db.services.hub.transfer_envelope import (
     HubMediaEnvelopeError,
@@ -56,7 +57,10 @@ class HubTransferEnvelopeTests(SimpleTestCase):
     def setUp(self) -> None:
         self._temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self._temporary_directory.cleanup)
-        self.staging_directory = Path(self._temporary_directory.name) / "staging"
+        self.runtime_paths = EndoregPathsModel.from_root(
+            Path(self._temporary_directory.name)
+        )
+        self.staging_directory = self.runtime_paths.transcoding
         self.private_key = X25519PrivateKey.generate()
         self.private_key_path = Path(self._temporary_directory.name) / "recipient.pem"
         self.private_key_path.write_bytes(
@@ -172,8 +176,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
 
         with (
             patch(
-                "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-                self.staging_directory,
+                "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+                return_value=self.runtime_paths,
             ),
             patch("endoreg_db.services.hub.transfer_envelope._CHUNK_SIZE", 17),
             prepare_inbound_hub_envelope(
@@ -263,8 +267,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
         tampered = bytes([ciphertext[0] ^ 1]) + ciphertext[1:]
 
         with patch(
-            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-            self.staging_directory,
+            "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+            return_value=self.runtime_paths,
         ):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "authentication failed"):
                 with prepare_inbound_hub_envelope(
@@ -287,8 +291,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
         )
 
         with patch(
-            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-            self.staging_directory,
+            "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+            return_value=self.runtime_paths,
         ):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "not available"):
                 with prepare_inbound_hub_envelope(
@@ -310,8 +314,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
         tampered = HubMediaEnvelopeMetadata.model_validate(tampered_values)
 
         with patch(
-            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-            self.staging_directory,
+            "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+            return_value=self.runtime_paths,
         ):
             with self.assertRaisesRegex(
                 HubMediaEnvelopeError,
@@ -333,8 +337,8 @@ class HubTransferEnvelopeTests(SimpleTestCase):
         envelope, ciphertext = self._envelope(plaintext)
 
         with patch(
-            "endoreg_db.services.hub.transfer_envelope.TRANSCODING_DIR",
-            self.staging_directory,
+            "endoreg_db.services.hub.transfer_envelope.get_runtime_paths",
+            return_value=self.runtime_paths,
         ):
             with self.assertRaisesRegex(HubMediaEnvelopeError, "size does not match"):
                 with prepare_inbound_hub_envelope(

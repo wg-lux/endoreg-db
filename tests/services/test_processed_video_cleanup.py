@@ -1,3 +1,5 @@
+from endoreg_db.utils.paths import get_runtime_paths
+
 # pyright: reportPrivateUsage=false
 from dataclasses import dataclass
 from collections.abc import Callable
@@ -43,15 +45,15 @@ class Replacement:
 @pytest.fixture
 def replacement(monkeypatch: pytest.MonkeyPatch) -> Replacement:
     center = Center.objects.create(name=f"cleanup-{uuid4().hex}")
-    video = VideoFile.objects.create(center=center, video_hash=uuid4().hex)
+    video = VideoFile.objects.create(center=center, raw_video_hash=uuid4().hex)
     root = EndoregPathsModel.from_environment().anonym_video
     old_name = video.processed_file.storage.save(
-        to_storage_relative(root / f"{video.video_hash}.mp4"),
+        to_storage_relative(root / f"{video.raw_video_hash}.mp4"),
         ContentFile(b"old processed"),
     )
     new_name = video.processed_file.storage.save(
         to_storage_relative(
-            root / ".generations" / f"{video.video_hash}-{uuid4().hex}.mp4"
+            root / ".generations" / f"{video.raw_video_hash}-{uuid4().hex}.mp4"
         ),
         ContentFile(b"new processed"),
     )
@@ -69,7 +71,7 @@ def replacement(monkeypatch: pytest.MonkeyPatch) -> Replacement:
     video.save()
     key = uuid4()
     directory = (
-        hls_media.streamable_media.STREAMABLE_PROCESSED_VIDEO_ROOT
+        get_runtime_paths().streamable_videos_processed_media
         / "hls"
         / str(video.uuid)
         / str(key)
@@ -158,7 +160,7 @@ def test_blockers_preserve_previous_generation(
     elif blocker == "other_video":
         VideoFile.objects.create(
             center=video.center,
-            video_hash=uuid4().hex,
+            raw_video_hash=uuid4().hex,
             processed_file=replacement.old_name,
         )
     elif blocker == "hls_reference":
@@ -171,7 +173,7 @@ def test_blockers_preserve_previous_generation(
         video.processed_video_hash = "0" * 64
         video.save()
     with (
-        patch.object(cleanup, "sha256_file", wraps=cleanup.sha256_file) as digest,
+        patch.object(cleanup, "get_file_hash", wraps=cleanup.get_file_hash) as digest,
         patch.object(
             hls_media, "get_ready_hls_artifact", wraps=hls_media.get_ready_hls_artifact
         ) as ready,
@@ -195,7 +197,7 @@ def test_reference_added_during_validation_preserves_old(
     def ready_with_new_reference(**kwargs: object) -> VideoHlsArtifact:
         VideoFile.objects.create(
             center=video.center,
-            video_hash=uuid4().hex,
+            raw_video_hash=uuid4().hex,
             processed_file=replacement.old_name,
         )
         return replacement.ready
@@ -224,7 +226,7 @@ def test_missing_replacement_preserves_old(replacement: Replacement) -> None:
 def test_digest_mismatch_deletes_nothing(replacement: Replacement) -> None:
     with patch.object(
         cleanup,
-        "sha256_file",
+        "get_file_hash",
         side_effect=[replacement.video.processed_video_hash, "0" * 64],
     ):
         with pytest.raises(ValueError, match="digest differs"):
@@ -350,6 +352,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
         processor_name="olympus_cv_1500",
     )
     ctx.current_video = replacement.video
+    ctx.file_hash = str(replacement.video.raw_video_hash)
     ctx.anonymized_path = source
     ctx.storage_normalization_evidence = _normalization_evidence()
     scheduled: list[int] = []

@@ -9,19 +9,18 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, Protocol, TypedDict, cast
 
 from django.db.models import Q, QuerySet
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
-    extract_frames as ffmpeg_extract_frames,
-    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
-)
 from lx_dtypes.models.contracts import (
     VideoFrameAnnotationExportConfigPayload,
     export_config,
     export_result,
     load_video_frame_annotation_export_config,
+)
+from lx_dtypes.models.contracts.json_types import JsonScalar
+from lx_dtypes.models.contracts.video_frame_export import (
+    VideoFrameAnnotationExportProfile,
 )
 from pydantic import ValidationError
 
@@ -41,23 +40,32 @@ from endoreg_db.services.seekable_media_input import (
     serve_seekable_media_input,
 )
 from endoreg_db.services.video_files import get_video_frame_dir_path
+from endoreg_db.utils import ensure_local_file
+from endoreg_db.utils.encryption.storage_materialization import (
+    materialized_plaintext_field_file,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frame_range as ffmpeg_extract_frame_range,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames as ffmpeg_extract_frames,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
+)
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     atomic_write_file,
     ensure_directory,
+    get_file_hash,
     safe_rmtree,
     safe_unlink_file,
-    sha256_file,
 )
 from endoreg_db.utils.paths import (
     ensure_within_protected_media_root,
     normalize_protected_media_relative_path,
     resolve_existing_protected_media_path,
-)
-from endoreg_db.utils import ensure_local_file
-from endoreg_db.utils.encryption.storage_materialization import (
-    materialized_plaintext_field_file,
 )
 from endoreg_db.utils.storage_streaming import (
     field_file_has_decrypted_range_storage,
@@ -67,16 +75,10 @@ from endoreg_db.utils.storage_streaming import (
 
 logger = logging.getLogger(__name__)
 
-VideoFrameAnnotationExportProfile: TypeAlias = Literal[
-    "legacy_table_v1",
-    "pts_dataset_v1",
-]
-type ConfigScalar = str | int | float | bool | None
-type AnnotationCell = str | int | float | bool | None
 type AnnotationFieldName = Literal[
     "annotation_id",
     "video_id",
-    "video_hash",
+    "raw_video_hash",
     "frame_id",
     "frame_number",
     "frame_relative_path",
@@ -104,7 +106,7 @@ type AnnotationFieldName = Literal[
 DEFAULT_FIELDNAMES: tuple[AnnotationFieldName, ...] = (
     "annotation_id",
     "video_id",
-    "video_hash",
+    "raw_video_hash",
     "frame_id",
     "frame_number",
     "frame_relative_path",
@@ -133,7 +135,7 @@ DEFAULT_FIELDNAMES: tuple[AnnotationFieldName, ...] = (
 class AnnotationRow(TypedDict):
     annotation_id: int
     video_id: int | None
-    video_hash: str | None
+    raw_video_hash: str | None
     frame_id: int | None
     frame_number: int | None
     frame_relative_path: str | None
@@ -193,7 +195,7 @@ class _VideoFramesExportModel(Protocol):
 
 class _VideoHashExportModel(Protocol):
     pk: int
-    video_hash: str | None
+    raw_video_hash: str | None
     meta: dict[str, object] | None
     state: object | None
 
@@ -240,7 +242,7 @@ DEFAULT_TRANSCODE_QUALITY = 2
 DEFAULT_TRANSCODE_EXT = "jpg"
 
 
-def _config_bool(value: ConfigScalar, *, default: bool = False) -> bool:
+def _config_bool(value: (JsonScalar | None), *, default: bool = False) -> bool:
     if value is None:
         return default
     if isinstance(value, bool):
@@ -254,7 +256,7 @@ def _config_bool(value: ConfigScalar, *, default: bool = False) -> bool:
     return bool(value)
 
 
-def _config_optional_bool(value: ConfigScalar) -> bool | None:
+def _config_optional_bool(value: (JsonScalar | None)) -> bool | None:
     if value is None:
         return None
     return _config_bool(value)
@@ -301,7 +303,7 @@ def _assert_video_media_export_ready(video: VideoFile) -> None:
     processed_file = getattr(video, "processed_file", None)
     if not processed_file or not getattr(processed_file, "name", None):
         raise FileNotFoundError(f"processed video artifact missing for {video.pk}")
-    actual_sha = sha256_file(processed_file)
+    actual_sha = get_file_hash(processed_file)
     if actual_sha != expected_sha:
         raise ValueError(
             f"Video {video.pk} processed_file_sha256 does not match the current "
@@ -884,8 +886,8 @@ def _export_videos_from_annotations(
             if source_path is not None:
                 suffix = source_path.suffix or ".mp4"
                 video_export = cast(_VideoHashExportModel, video)
-                video_hash = video_export.video_hash or "unknown"
-                target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
+                raw_video_hash = video_export.raw_video_hash or "unknown"
+                target_path = output_dir / f"{raw_video_hash}{suffix}"
                 try:
                     atomic_copy_file(source=source_path, destination=target_path)
                     exported_count += 1
@@ -908,8 +910,8 @@ def _export_videos_from_annotations(
             with ensure_local_file(processed_file) as source_path_fallback:
                 suffix = source_path_fallback.suffix or ".mp4"
                 video_export = cast(_VideoHashExportModel, video)
-                video_hash = video_export.video_hash or "unknown"
-                target_path = output_dir / f"video_{video.pk}_{video_hash}{suffix}"
+                raw_video_hash = video_export.raw_video_hash or "unknown"
+                target_path = output_dir / f"{raw_video_hash}{suffix}"
                 try:
                     atomic_copy_file(
                         source=source_path_fallback,
@@ -1492,11 +1494,11 @@ def _frame_pk_filename(frame_pk: int, ext: str) -> str:
 
 def _annotation_row_to_csv_dict(
     row: AnnotationRow,
-) -> dict[AnnotationFieldName, AnnotationCell]:
+) -> dict[AnnotationFieldName, (JsonScalar | None)]:
     return {
         "annotation_id": row["annotation_id"],
         "video_id": row["video_id"],
-        "video_hash": row["video_hash"],
+        "raw_video_hash": row["raw_video_hash"],
         "frame_id": row["frame_id"],
         "frame_number": row["frame_number"],
         "frame_relative_path": row["frame_relative_path"],
@@ -1717,7 +1719,7 @@ def _annotation_to_row(
     return {
         "annotation_id": annotation_export.pk,
         "video_id": video.pk,
-        "video_hash": video.video_hash,
+        "raw_video_hash": video.raw_video_hash,
         "frame_id": frame.pk,
         "frame_number": frame.frame_number,
         "frame_relative_path": frame_relative_path,

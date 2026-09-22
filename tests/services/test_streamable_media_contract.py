@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol, cast
@@ -9,7 +8,6 @@ import pytest
 
 from endoreg_db.models import VideoFile
 from endoreg_db.services import streamable_media
-from endoreg_db.services import streamable_media_transcoding
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.storage_profile import StoragePolicy
 
@@ -28,50 +26,6 @@ def _copy_streamable_transcode(
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_bytes(source_path.read_bytes())
     return target_path
-
-
-def test_streamable_materialization_never_moves_canonical_source() -> None:
-    source_file = streamable_media.__file__
-    transcode_file = streamable_media_transcoding.__file__
-    assert source_file is not None
-    assert transcode_file is not None
-    materialization_source = Path(source_file).read_text(encoding="utf-8")
-    transcode_source = Path(transcode_file).read_text(encoding="utf-8")
-
-    assert "atomic_write_file(" in materialization_source
-    assert "atomic_move_file(" in transcode_source
-    assert "source=ffmpeg_source_path" not in materialization_source
-    assert "source=source_path" not in materialization_source
-    assert 'open(target_path, "wb")' not in materialization_source
-
-
-def test_streamable_processed_root_constant_uses_processed_helper(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    protected_root = tmp_path / "protected"
-    storage_root = protected_root / "storage"
-    data_root = tmp_path / "public"
-    processed_root = storage_root / "streamable_videos" / "processed-custom"
-    raw_root = storage_root / "streamable_videos" / "raw-custom"
-
-    monkeypatch.setenv("LX_ANNOTATE_ENCRYPTED_DATA_DIR", str(protected_root))
-    monkeypatch.setenv("STORAGE_DIR", str(storage_root))
-    monkeypatch.setenv("DATA_DIR", str(data_root))
-    monkeypatch.setenv("PROTECTED_MEDIA_ROOT", str(storage_root))
-    monkeypatch.setenv("LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT", str(raw_root))
-    monkeypatch.setenv(
-        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT",
-        str(processed_root),
-    )
-
-    reloaded = importlib.reload(streamable_media)
-
-    assert reloaded.STREAMABLE_RAW_VIDEO_ROOT == raw_root.resolve()
-    assert reloaded.STREAMABLE_PROCESSED_VIDEO_ROOT == processed_root.resolve()
-    assert (
-        reloaded.STREAMABLE_PROCESSED_VIDEO_ROOT != reloaded.STREAMABLE_RAW_VIDEO_ROOT
-    )
 
 
 class FakeEncryptedStorage:
@@ -172,7 +126,7 @@ class StubVideo:
         processed_file: StubFieldFile | None,
     ) -> None:
         self.pk = 123
-        self.video_hash = "rawhash"
+        self.raw_video_hash = "rawhash"
         self.processed_video_hash = "processedhash"
         self.raw_file = raw_file
         self.processed_file = processed_file
@@ -200,7 +154,7 @@ def test_sync_video_streamable_artifacts_removes_legacy_streamable_paths(
         ),
     )
 
-    base_root = paths_module.STORAGE_DIR / "test_streamable"
+    base_root = paths_module.get_runtime_paths().storage / "test_streamable"
     raw_root = base_root / "streamable_videos" / "raw"
     processed_root = base_root / "streamable_videos" / "processed"
 
@@ -211,22 +165,22 @@ def test_sync_video_streamable_artifacts_removes_legacy_streamable_paths(
     raw_legacy.write_bytes(raw_payload)
     processed_legacy.write_bytes(processed_payload)
     video.raw_streamable_relative_path = raw_legacy.relative_to(
-        paths_module.STORAGE_DIR
+        paths_module.get_runtime_paths().storage
     ).as_posix()
     video.processed_streamable_relative_path = processed_legacy.relative_to(
-        paths_module.STORAGE_DIR
+        paths_module.get_runtime_paths().storage
     ).as_posix()
     video.storage_mode = video.StorageMode.STREAMABLE
 
     monkeypatch.setattr(
         streamable_media,
-        "STREAMABLE_RAW_VIDEO_ROOT",
-        raw_root,
+        "_streamable_raw_video_root",
+        lambda: raw_root,
     )
     monkeypatch.setattr(
         streamable_media,
-        "STREAMABLE_PROCESSED_VIDEO_ROOT",
-        processed_root,
+        "_streamable_processed_video_root",
+        lambda: processed_root,
     )
 
     monkeypatch.setattr(
@@ -261,7 +215,7 @@ def test_sync_video_streamable_artifacts_does_not_materialize_from_local_plainte
 ) -> None:
     processed_payload = b"\x00\x00\x00\x18ftypisomprocessed"
     processed_legacy = (
-        paths_module.STORAGE_DIR
+        paths_module.get_runtime_paths().storage
         / "test_streamable_plaintext_source"
         / "streamable_videos"
         / "processed"
@@ -278,7 +232,7 @@ def test_sync_video_streamable_artifacts_does_not_materialize_from_local_plainte
         ),
     )
     video.processed_streamable_relative_path = processed_legacy.relative_to(
-        paths_module.STORAGE_DIR
+        paths_module.get_runtime_paths().storage
     ).as_posix()
     video.storage_mode = video.StorageMode.STREAMABLE
 
@@ -289,8 +243,8 @@ def test_sync_video_streamable_artifacts_does_not_materialize_from_local_plainte
 
     monkeypatch.setattr(
         streamable_media,
-        "STREAMABLE_PROCESSED_VIDEO_ROOT",
-        processed_legacy.parent,
+        "_streamable_processed_video_root",
+        lambda: processed_legacy.parent,
     )
     monkeypatch.setattr(streamable_media, "resolve_storage_policy", policy)
     monkeypatch.setattr(
@@ -316,7 +270,7 @@ def test_sync_rehomes_canonical_processed_file_from_legacy_streamable_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = b"\x00\x00\x00\x18ftypisomprocessed"
-    root = paths_module.STORAGE_DIR / "test_streamable_rehome"
+    root = paths_module.get_runtime_paths().storage / "test_streamable_rehome"
     legacy_relative = "streamable_videos/processed/shared.mp4"
     legacy_path = root / legacy_relative
     legacy_path.parent.mkdir(parents=True, exist_ok=True)
@@ -339,7 +293,7 @@ def test_sync_rehomes_canonical_processed_file_from_legacy_streamable_path(
         return root / relative_path
 
     monkeypatch.setattr(
-        streamable_media.path_utils,
+        streamable_media,
         "resolve_existing_protected_media_path",
         resolve_existing_protected_media_path,
     )
@@ -399,14 +353,14 @@ def test_sync_video_streamable_artifacts_is_idempotent(
         processed_file=None,
     )
 
-    base_root = paths_module.STORAGE_DIR / "test_streamable_idempotent"
+    base_root = paths_module.get_runtime_paths().storage / "test_streamable_idempotent"
     raw_root = base_root / "streamable_videos" / "raw"
     raw_root.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(
         streamable_media,
-        "STREAMABLE_RAW_VIDEO_ROOT",
-        raw_root,
+        "_streamable_raw_video_root",
+        lambda: raw_root,
     )
     monkeypatch.setattr(
         streamable_media,

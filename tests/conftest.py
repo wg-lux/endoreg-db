@@ -7,46 +7,36 @@ Includes session-scoped fixtures for video files and database optimization.
 
 from __future__ import annotations
 
+
 import json
 import logging
 import os
 import sys
 from collections.abc import Generator, Iterator, Mapping
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
+from unittest.mock import Mock
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.config.settings.test import TEST_DIR, TERMINOLOGY_ROOT
 
-# Establish the process-owned test root before Django or endoreg_db settings are
-# imported. Django's FileField storage snapshots MEDIA_ROOT during setup.
+# Establish the process-owned runtime root before Django or endoreg_db settings
+# are imported. Django FileField storage snapshots MEDIA_ROOT during setup.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 TEST_RUN_NAMESPACE = os.environ["ENDOREG_TEST_RUN_NAMESPACE"]
-TEST_RUN_ROOT = PROJECT_ROOT / "data" / "tests" / "workers" / TEST_RUN_NAMESPACE
-TEST_PROTECTED_ROOT = TEST_RUN_ROOT / "protected_runtime"
-TEST_DATA_DIR = TEST_RUN_ROOT / "runtime"
-TEST_STORAGE_DIR = TEST_PROTECTED_ROOT / "storage"
 TEST_ASSET_DIR = Path(__file__).parent / "assets"
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_BROKER_URL = "memory://"
 
 
-def _configure_test_path_env(protected_root: Path) -> None:
-    protected_root = protected_root.resolve()
-    storage_dir = (protected_root / "storage").resolve()
-    data_dir = TEST_DATA_DIR.resolve()
-    streamable_root = (storage_dir / "streamable_videos").resolve()
+def _configure_test_runtime_env(runtime_root: Path) -> None:
+    """Configure the one canonical test runtime root before Django imports."""
 
-    os.environ["LX_ANNOTATE_ENCRYPTED_DATA_DIR"] = str(protected_root)
-    os.environ["STORAGE_DIR"] = str(storage_dir)
-    os.environ["DATA_DIR"] = str(data_dir)
-    os.environ["PROTECTED_MEDIA_ROOT"] = str(storage_dir)
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_ROOT"] = str(streamable_root)
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT"] = str(streamable_root / "raw")
-    os.environ["LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT"] = str(
-        streamable_root / "processed"
-    )
+    runtime_root = runtime_root.expanduser().resolve()
+    os.environ["LX_RUNTIME_ROOT"] = str(runtime_root)
     os.environ.setdefault(
         "LX_ANNOTATE_MASTER_KEY",
         "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -56,7 +46,7 @@ def _configure_test_path_env(protected_root: Path) -> None:
 
 
 os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
-_configure_test_path_env(TEST_PROTECTED_ROOT)
+_configure_test_runtime_env(get_runtime_paths().runtime_root)
 
 import pytest
 from _pytest.reports import TestReport
@@ -66,13 +56,12 @@ from django.test import Client as DjangoClient
 from django.test import override_settings
 from pluggy import Result
 from pytest import FixtureRequest
-from pytest_django.fixtures import SettingsWrapper
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS, env_bool
+from endoreg_db.config.env import DEFAULT_VIDEO_FPS, RUNTIME_ROOT_ENV, env_bool
 from endoreg_db.import_files.context import ImportContext
 from endoreg_db.models import AiModel, Label, ModelMeta, ModelType
 from endoreg_db.models.label import LabelSet, LabelType
-from endoreg_db.utils import paths as paths_module
+import endoreg_db.utils.paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
@@ -83,10 +72,6 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
-from lx_dtypes.knowledge_bases import (
-    BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-    get_packaged_knowledge_base,
-)
 from lx_dtypes.models.interface.KnowledgeBaseResolver import (
     clear_knowledge_base_resolver_caches,
 )
@@ -103,44 +88,28 @@ LOGGER = logging.getLogger(__name__)
 
 
 @pytest.fixture
-def packaged_registry(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    settings: SettingsWrapper,
-) -> Iterator[Path]:
-    """Opt in to the packaged STAR upper gastrointestinal knowledge base."""
-    descriptor = get_packaged_knowledge_base("star_upper_gi", "0.1.2")
-    registry_path = tmp_path / "knowledge_base_registry.json"
-    registry_payload = {
-        "active": {
-            "module_name": descriptor.module_name,
-            "version": descriptor.version,
-        },
-        "modules": {
-            descriptor.module_name: {
-                descriptor.version: {
-                    "sources": [
-                        {
-                            "kind": "provider",
-                            "provider": BUILTIN_KNOWLEDGE_BASE_PROVIDER,
-                            "content_sha256": descriptor.content_sha256,
-                        }
-                    ]
-                }
-            }
-        },
-    }
-    encoded_registry = json.dumps(registry_payload, sort_keys=True).encode("utf-8")
-    atomic_write_file(
-        destination=registry_path,
-        content=(encoded_registry,),
-        required_bytes=len(encoded_registry),
-    )
-    settings.LX_DTYPES_KB_REGISTRY = str(registry_path)
-    monkeypatch.setenv("LX_DTYPES_KB_REGISTRY", str(registry_path))
+def packaged_registry() -> Iterator[Path]:
+    """Provision the shipped KB catalog through the canonical terminology service.
+
+    The service was bound to ``TEST_DIR / "terminology"`` before Django
+    imported the lx-dtypes routes, so direct loaders and HTTP routes share the
+    same registry.
+    """
+
+    from lx_dtypes.terminology.terminology_loader import get_terminology_service
+
+    service = get_terminology_service()
+    expected_registry = (TERMINOLOGY_ROOT / "registry.json").resolve()
+    if service.registry_path.resolve() != expected_registry:
+        raise AssertionError(
+            "Terminology service is bound to the wrong test runtime root: "
+            f"{service.registry_path} != {expected_registry}"
+        )
+
+    service.provision()
     clear_knowledge_base_resolver_caches()
     try:
-        yield registry_path
+        yield service.registry_path
     finally:
         clear_knowledge_base_resolver_caches()
 
@@ -233,15 +202,6 @@ def _request_node(request: pytest.FixtureRequest) -> pytest.Item:
     return cast(pytest.Item, getattr(request, "node"))
 
 
-def _test_paths_from_environment_factory(
-    fake_paths_model: _TestPathsModel,
-) -> Any:
-    def _from_environment(cls: type[object]) -> _TestPathsModel:
-        return fake_paths_model
-
-    return classmethod(_from_environment)
-
-
 def _json_payload_contains_none(data: dict[str, JsonValue | None]) -> bool:
     return any(value is None for value in data.values())
 
@@ -277,54 +237,6 @@ def _mock_flat_video_metadata() -> JsonObject:
     }
 
 
-class _TestPathsModel(Protocol):
-    protected_root: Path
-    data: Path
-    storage: Path
-    import_dir: Path
-    export_dir: Path
-    import_video: Path
-    import_report: Path
-    import_preanonymized: Path
-    import_anonymized_video: Path
-    import_anonymized_report: Path
-    video_export: Path
-    report_export: Path
-    documents: Path
-    transcoding: Path
-    anonym_video: Path
-    sensitive_video: Path
-    anonym_report: Path
-    sensitive_report: Path
-    frame: Path
-    weights: Path
-    raw_frame: Path
-    weights_import: Path
-    weights_export: Path
-    import_frame: Path
-    frame_export: Path
-    logs: Path
-    quarantine: Path
-    migration_staging: Path
-    manifest_dir: Path
-    upload_api: Path
-    upload_watcher: Path
-    upload_preanonymized: Path
-    watcher_video_drop: Path
-    watcher_report_drop: Path
-    watcher_preanonymized_drop: Path
-    sap_import_drop: Path
-    sap_import_processed: Path
-    sap_import_failed: Path
-    ingest_uploads: Path
-    ingest_preanonymized: Path
-    managed_anonymized_videos: Path
-    managed_anonymized_reports: Path
-    managed_sensitive_sidecars: Path
-    quarantine_failed: Path
-    staging_migration: Path
-
-
 pytest_plugins = [
     "tests.plugins.cache",
 ]
@@ -358,63 +270,8 @@ RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
 MAX_MOCK_VIDEO_FRAMES = 2
 USE_STUB_MODEL_META = env_bool("USE_STUB_MODEL_META", True)
 
-ensure_directory(TEST_STORAGE_DIR)
-ensure_directory(TEST_DATA_DIR)
-
-
-def _rebind_paths_module(fake_paths_model: _TestPathsModel) -> None:
-    paths_module.data_paths_model = fake_paths_model
-    paths_module.data_paths = fake_paths_model
-
-    path_constant_map: dict[str, Path] = {
-        "PROTECTED_DATA_ROOT": fake_paths_model.protected_root,
-        "DATA_DIR": fake_paths_model.data,
-        "STORAGE_DIR": fake_paths_model.storage,
-        "IMPORT_DIR": fake_paths_model.import_dir,
-        "EXPORT_DIR": fake_paths_model.export_dir,
-        "IMPORT_VIDEO_DIR": fake_paths_model.import_video,
-        "IMPORT_REPORT_DIR": fake_paths_model.import_report,
-        "IMPORT_PREANONYMIZED_DIR": fake_paths_model.import_preanonymized,
-        "IMPORT_ANONYMIZED_VIDEO_DIR": fake_paths_model.import_anonymized_video,
-        "IMPORT_ANONYMIZED_REPORT_DIR": fake_paths_model.import_anonymized_report,
-        "VIDEO_EXPORT_DIR": fake_paths_model.video_export,
-        "REPORT_EXPORT_DIR": fake_paths_model.report_export,
-        "DOCUMENT_DIR": fake_paths_model.documents,
-        "TRANSCODING_DIR": fake_paths_model.transcoding,
-        "ANONYM_VIDEO_DIR": fake_paths_model.anonym_video,
-        "SENSITIVE_VIDEO_DIR": fake_paths_model.sensitive_video,
-        "ANONYM_REPORT_DIR": fake_paths_model.anonym_report,
-        "SENSITIVE_REPORT_DIR": fake_paths_model.sensitive_report,
-        "FRAME_DIR": fake_paths_model.frame,
-        "WEIGHTS_DIR": fake_paths_model.weights,
-        "RAW_FRAME_DIR": fake_paths_model.raw_frame,
-        "WEIGHTS_IMPORT_DIR": fake_paths_model.weights_import,
-        "WEIGHTS_EXPORT_DIR": fake_paths_model.weights_export,
-        "FRAME_IMPORT_DIR": fake_paths_model.import_frame,
-        "FRAME_EXPORT_DIR": fake_paths_model.frame_export,
-        "LOG_DIR": fake_paths_model.logs,
-        "QUARANTINE_DIR": fake_paths_model.quarantine,
-        "MIGRATION_STAGING_DIR": fake_paths_model.migration_staging,
-        "MANIFEST_DIR": fake_paths_model.manifest_dir,
-        "UPLOAD_API_DIR": fake_paths_model.upload_api,
-        "UPLOAD_WATCHER_DIR": fake_paths_model.upload_watcher,
-        "UPLOAD_PREANONYMIZED_DIR": fake_paths_model.upload_preanonymized,
-        "WATCHER_VIDEO_DROP_DIR": fake_paths_model.watcher_video_drop,
-        "WATCHER_REPORT_DROP_DIR": fake_paths_model.watcher_report_drop,
-        "WATCHER_PREANONYMIZED_DROP_DIR": fake_paths_model.watcher_preanonymized_drop,
-        "SAP_IMPORT_DROP_DIR": fake_paths_model.sap_import_drop,
-        "SAP_IMPORT_PROCESSED_DIR": fake_paths_model.sap_import_processed,
-        "SAP_IMPORT_FAILED_DIR": fake_paths_model.sap_import_failed,
-        "INGEST_UPLOADS_DIR": fake_paths_model.ingest_uploads,
-        "INGEST_PREANONYMIZED_DIR": fake_paths_model.ingest_preanonymized,
-        "MANAGED_ANONYMIZED_VIDEOS_DIR": fake_paths_model.managed_anonymized_videos,
-        "MANAGED_ANONYMIZED_REPORTS_DIR": fake_paths_model.managed_anonymized_reports,
-        "MANAGED_SENSITIVE_SIDECARS_DIR": fake_paths_model.managed_sensitive_sidecars,
-        "QUARANTINE_FAILED_DIR": fake_paths_model.quarantine_failed,
-        "STAGING_MIGRATION_DIR": fake_paths_model.staging_migration,
-    }
-    for name, value in path_constant_map.items():
-        setattr(paths_module, name, value)
+paths_module.clear_runtime_paths_cache()
+paths_module.get_runtime_paths().ensure_directories()
 
 
 @pytest.fixture
@@ -563,7 +420,7 @@ def pytest_runtest_makereport(
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Remove only the filesystem tree owned by this pytest process."""
     del session, exitstatus
-    safe_rmtree(TEST_RUN_ROOT, missing_ok=True)
+    safe_rmtree(TEST_DIR, missing_ok=True)
 
 
 # ==========================================
@@ -888,7 +745,7 @@ def mock_video_file(base_db_data: bool) -> Iterator[VideoFile]:
         center=center,
         processor=processor,
         raw_file="test_video.mp4",
-        video_hash="mock_hash_" + str(uuid.uuid4())[:8],
+        raw_video_hash="mock_hash_" + str(uuid.uuid4())[:8],
         fps=DEFAULT_VIDEO_FPS,
         width=1920,
         height=1080,
@@ -969,7 +826,7 @@ def test_settings():
     Provide test-specific settings overrides.
     """
     return override_settings(
-        MEDIA_ROOT=TEST_STORAGE_DIR,
+        MEDIA_ROOT=TEST_DIR,
         CELERY_TASK_ALWAYS_EAGER=True,
         CELERY_TASK_EAGER_PROPAGATES=True,
     )
@@ -1049,17 +906,6 @@ def optimize_database_queries():
     sqlite_connection_created.disconnect(dispatch_uid=dispatch_uid)
 
 
-def _cleanup_test_lock_files() -> None:
-    for lock_root in (TEST_STORAGE_DIR / "locks", TEST_ASSET_DIR):
-        if not lock_root.exists():
-            continue
-        for lock_path in lock_root.rglob("*.lock"):
-            try:
-                safe_unlink_file(lock_path)
-            except OSError:
-                pass
-
-
 @pytest.fixture(scope="session")
 def session_mocker():
     """Session-scoped mock fixture."""
@@ -1080,20 +926,11 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
     # Ensure faker logging is disabled
     disable_faker_logging()
 
-    # Set environment variables for tests from one authoritative protected root,
-    # matching the runtime contract in endoreg_db.utils.paths.
-    _configure_test_path_env(TEST_PROTECTED_ROOT)
+    # Reassert the canonical root and resolve the process-wide typed topology.
+    _configure_test_runtime_env(get_runtime_paths().runtime_root)
     os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
-
-    test_paths_model = paths_module.EndoregPathsModel.from_environment()
-    _rebind_paths_module(test_paths_model)
-
-    # Ensure storage directories exist
-    ensure_directory(TEST_STORAGE_DIR)
-
-    # Remove stale lock files from interrupted runs so lock-based import tests
-    # start from a clean session state.
-    _cleanup_test_lock_files()
+    paths_module.clear_runtime_paths_cache()
+    paths_module.get_runtime_paths().ensure_directories()
 
     # Apply global video operation safety mocks
     _apply_global_video_mocks(cache)
@@ -1114,8 +951,6 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
                 safe_unlink_file(candidate, missing_ok=True)
             except OSError:
                 pass
-
-    _cleanup_test_lock_files()
 
 
 def _apply_global_video_mocks(cache: CacheManager) -> None:
@@ -1579,7 +1414,7 @@ def auto_mock_video_anonymizer_for_non_integration_video_tests(
             assert ctx.current_video is not None
             output_dir = tmp_path / "mock_anonymized_videos"
             ensure_directory(output_dir)
-            output_path = output_dir / f"{ctx.current_video.video_hash}.mp4"
+            output_path = output_dir / f"{ctx.current_video.raw_video_hash}.mp4"
             atomic_write_file(
                 destination=output_path, content=(b"mock-anonymized-video",)
             )
@@ -1594,6 +1429,43 @@ def auto_mock_video_anonymizer_for_non_integration_video_tests(
         "endoreg_db.import_files.processing.video_processing.video_anonymization.VideoAnonymizer",
         DummyVideoAnonymizer,
     )
+
+
+@contextmanager
+def temporarily_disable_global_video_mocks() -> Generator[None]:
+    """Delegate existing mocks to production functions, then restore their effects.
+
+    Keeping the same mock objects also covers consumers holding imported aliases.
+    No global patch is stopped, and no mock cache is read, cleared, or modified.
+    This does not disable separate mocks of subprocesses or other dependencies.
+    """
+    from endoreg_db.utils import ffmpeg_wrapper, transcode_execution
+
+    with ExitStack() as stack:
+        for name in ("get_stream_info", "transcode_videofile_if_required"):
+            current = getattr(ffmpeg_wrapper, name)
+            real = getattr(transcode_execution, name)
+
+            if isinstance(real, Mock) or not callable(real):
+                raise RuntimeError(
+                    f"transcode_execution.{name} is not an available real callable. "
+                    "Check for another fixture patching the implementation module."
+                )
+
+            if current is real:
+                continue  # This function is already unmocked.
+
+            if not isinstance(current, Mock):
+                raise RuntimeError(
+                    f"Unexpected override of ffmpeg_wrapper.{name}; "
+                    "expected the Mock installed by _apply_global_video_mocks()."
+                )
+
+            previous_effect = current.side_effect
+            stack.callback(setattr, current, "side_effect", previous_effect)
+            current.side_effect = real
+
+        yield
 
 
 @pytest.fixture
@@ -1751,101 +1623,40 @@ def smart_video_mocks(
     yield
 
 
+@pytest.fixture(autouse=True)
+def isolate_runtime_path_cache() -> Iterator[None]:
+    """Do not retain a test's environment overrides in the process path cache."""
+    paths_module.clear_runtime_paths_cache()
+    try:
+        yield
+    finally:
+        paths_module.clear_runtime_paths_cache()
+
+
 @pytest.fixture
 def mock_storage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[paths_module.EndoregPathsModel]:
-    # 1. Define the fake root
-    fake_root = tmp_path / "fake_protected_root"
-    ensure_directory(fake_root)
-    previous_paths_model = paths_module.data_paths_model
-    storage_root = fake_root / "storage"
-    streamable_root = storage_root / "streamable_videos"
-    streamable_raw_root = streamable_root / "raw"
-    streamable_processed_root = streamable_root / "processed"
+    """Provide an isolated one-root storage topology for filesystem tests.
 
-    env_map = {
-        "LX_ANNOTATE_ENCRYPTED_DATA_DIR": str(fake_root),
-        "STORAGE_DIR": str(storage_root),
-        "DATA_DIR": str(tmp_path / "fake_public_root"),
-        "PROTECTED_MEDIA_ROOT": str(storage_root),
-        "LX_ANNOTATE_STREAMABLE_VIDEO_ROOT": str(streamable_root),
-        "LX_ANNOTATE_STREAMABLE_VIDEO_RAW_ROOT": str(streamable_raw_root),
-        "LX_ANNOTATE_STREAMABLE_VIDEO_PROCESSED_ROOT": str(streamable_processed_root),
-    }
-    for env_key, env_value in env_map.items():
-        monkeypatch.setenv(env_key, env_value)
+    Runtime callers must resolve paths through ``get_runtime_paths()``. This
+    fixture intentionally does not patch removed module-level constants or
+    legacy environment aliases; any remaining dependency on those should fail.
+    """
 
-    # Force the model to re-initialize from the new env
-    fake_paths_model = paths_module.EndoregPathsModel.from_environment()
-
-    # 3. Patch the module-level singleton and the factory method.
-    # Register these with monkeypatch before rebinding constants so teardown
-    # restores the original paths even if setup fails before this fixture yields.
-    monkeypatch.setattr(paths_module, "data_paths_model", fake_paths_model)
-    monkeypatch.setattr(paths_module, "data_paths", fake_paths_model)
-    _rebind_paths_module(fake_paths_model)
-    monkeypatch.setattr(
-        paths_module.EndoregPathsModel,
-        "from_environment",
-        _test_paths_from_environment_factory(fake_paths_model),
-    )
-
-    # 4. Patch the historical constants (for legacy code support)
-    # Keep alias exports and import-time path constants in sync for modules that
-    # imported path constants by value before this fixture runs.
     from django.core.files.storage import FileSystemStorage
 
     import endoreg_db.models.media.pdf.raw_pdf as raw_pdf_module
     import endoreg_db.models.media.video.video_file as video_file_module
-    import endoreg_db.services.streamable_media as streamable_media_module
-    import endoreg_db.services.video_files._imports as video_create_module
-    import endoreg_db.utils as utils_module
-    import endoreg_db.views.report.report_stream as report_stream_module
-    import endoreg_db.views.video.video_stream as video_stream_module
 
-    monkeypatch.setattr(utils_module, "data_paths", fake_paths_model)
-    monkeypatch.setattr(
-        raw_pdf_module, "IMPORT_REPORT_DIR", fake_paths_model.import_report
-    )
-    monkeypatch.setattr(
-        raw_pdf_module, "SENSITIVE_REPORT_DIR", fake_paths_model.sensitive_report
-    )
-    monkeypatch.setattr(
-        report_stream_module,
-        "ANONYM_REPORT_DIR",
-        fake_paths_model.anonym_report,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        video_create_module, "IMPORT_VIDEO_DIR", fake_paths_model.import_video
-    )
-    monkeypatch.setattr(
-        video_create_module, "SENSITIVE_VIDEO_DIR", fake_paths_model.sensitive_video
-    )
-    monkeypatch.setattr(
-        video_create_module, "TRANSCODING_DIR", fake_paths_model.transcoding
-    )
-    monkeypatch.setattr(
-        streamable_media_module, "STREAMABLE_VIDEO_ROOT", streamable_root
-    )
-    monkeypatch.setattr(
-        streamable_media_module, "STREAMABLE_RAW_VIDEO_ROOT", streamable_raw_root
-    )
-    monkeypatch.setattr(
-        streamable_media_module,
-        "STREAMABLE_PROCESSED_VIDEO_ROOT",
-        streamable_processed_root,
-    )
-    monkeypatch.setattr(
-        video_stream_module,
-        "to_storage_relative",
-        paths_module.to_storage_relative,
-        raising=False,
-    )
+    fake_root = TEST_DIR
+    monkeypatch.setenv(RUNTIME_ROOT_ENV, str(fake_root))
 
-    # Ensure Django FileField storage roots also point to the mocked storage tree.
+    paths_module.clear_runtime_paths_cache()
+    fake_paths_model = paths_module.get_runtime_paths()
+    fake_paths_model.ensure_directories()
+
     raw_pdf_file_field = cast(
         _StorageField,
         raw_pdf_module.RawPdfFile._meta.get_field("file"),
@@ -1862,24 +1673,27 @@ def mock_storage(
         _StorageField,
         video_file_module.VideoFile._meta.get_field("processed_file"),
     )
+
     previous_report_storage: Storage = raw_pdf_file_field.storage
     previous_report_processed_storage: Storage = raw_pdf_processed_field.storage
     previous_video_storage: Storage = video_raw_field.storage
     previous_video_processed_storage: Storage = video_processed_field.storage
 
-    report_storage = FileSystemStorage(location=str(fake_paths_model.storage))
-    raw_pdf_file_field.storage = report_storage
-    raw_pdf_processed_field.storage = report_storage
-    video_storage = FileSystemStorage(location=str(fake_paths_model.storage))
-    video_raw_field.storage = video_storage
-    video_processed_field.storage = video_storage
+    storage = FileSystemStorage(location=str(fake_paths_model.storage))
+    raw_pdf_file_field.storage = storage
+    raw_pdf_processed_field.storage = storage
+    video_raw_field.storage = storage
+    video_processed_field.storage = storage
 
     try:
         yield fake_paths_model
     finally:
-        _rebind_paths_module(previous_paths_model)
         raw_pdf_file_field.storage = previous_report_storage
         raw_pdf_processed_field.storage = previous_report_processed_storage
         video_raw_field.storage = previous_video_storage
         video_processed_field.storage = previous_video_processed_storage
+
+        # Leave the cache empty. pytest's monkeypatch fixture restores
+        # LX_RUNTIME_ROOT after this fixture finishes.
+        paths_module.clear_runtime_paths_cache()
         safe_rmtree(fake_root, missing_ok=True)

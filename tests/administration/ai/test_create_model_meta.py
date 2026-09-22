@@ -41,7 +41,7 @@ class AiModelTest(TestCase):
 
 @pytest.mark.expensive
 @pytest.mark.django_db(transaction=True)
-def test_setup_default_model_meta_from_huggingface_downloads_safetensors():
+def test_setup_default_model_meta_from_huggingface_downloads_safetensors() -> None:
     """Ensure we can pull safetensor weights from Hugging Face and register metadata."""
     load_data()
 

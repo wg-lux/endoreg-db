@@ -13,7 +13,7 @@ from django.test import TestCase
 
 from endoreg_db.management.commands import import_sap_ish_zip as command_module
 from endoreg_db.models import Center
-from endoreg_db.utils.paths import WATCHER_PREANONYMIZED_DROP_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 def _write_tsv(path: Path, *, header: list[str], rows: list[list[str]]) -> None:
@@ -31,7 +31,9 @@ def _build_zip_from_directory(source_dir: Path, archive_path: Path) -> None:
 
 class ImportSapIshZipCommandTests(TestCase):
     def test_command_rejects_missing_zip_archive(self) -> None:
-        missing_archive = WATCHER_PREANONYMIZED_DROP_DIR / "missing-sap-export.zip"
+        missing_archive = (
+            get_runtime_paths().watcher_preanonymized_drop / "missing-sap-export.zip"
+        )
 
         with self.assertRaisesMessage(
             CommandError,
@@ -71,7 +73,10 @@ class ImportSapIshZipCommandTests(TestCase):
             source_dir = temp_dir / "source"
             source_dir.mkdir()
             archive_path = temp_dir / "sap_export.zip"
-            output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"cmd-test-{temp_dir.name}"
+            output_dir = (
+                get_runtime_paths().watcher_preanonymized_drop
+                / f"cmd-test-{temp_dir.name}"
+            )
             output_dir.mkdir(parents=True, exist_ok=True)
 
             _write_tsv(
@@ -130,7 +135,10 @@ class ImportSapIshZipCommandTests(TestCase):
             source_dir = temp_dir / "source"
             source_dir.mkdir()
             archive_path = temp_dir / "sap_export.zip"
-            output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"cmd-test-{temp_dir.name}"
+            output_dir = (
+                get_runtime_paths().watcher_preanonymized_drop
+                / f"cmd-test-{temp_dir.name}"
+            )
             output_dir.mkdir(parents=True, exist_ok=True)
             _write_tsv(
                 source_dir / "briefe.txt",
@@ -167,7 +175,10 @@ class ImportSapIshZipCommandTests(TestCase):
             source_dir = temp_dir / "source"
             source_dir.mkdir()
             archive_path = temp_dir / "sap_export.zip"
-            output_dir = WATCHER_PREANONYMIZED_DROP_DIR / f"cmd-test-{temp_dir.name}"
+            output_dir = (
+                get_runtime_paths().watcher_preanonymized_drop
+                / f"cmd-test-{temp_dir.name}"
+            )
             output_dir.mkdir(parents=True, exist_ok=True)
             manifest_path = output_dir / "custom-manifest.json"
 

@@ -60,9 +60,9 @@ with stage_lifecycle(
     configure_django(snakemake.params.django_settings_module)
 
     from endoreg_db.import_files.report_import_service import ReportImportService
-    from endoreg_db.utils.file_operations import sha256_file
+    from endoreg_db.utils.file_operations import get_file_hash
 
-    preflight_source_sha256 = sha256_file(source)
+    preflight_source_sha256 = get_file_hash(source)
     report = ReportImportService().import_and_anonymize(
         file_path=source,
         center_name=job.center_name,

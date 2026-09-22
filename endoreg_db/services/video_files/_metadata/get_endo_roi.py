@@ -21,11 +21,11 @@ def get_endo_roi(video: "VideoFile") -> RoiBoxCore | None:
     if not video.video_meta:
         logger.warning(
             "VideoMeta not linked for video %s. Cannot get endo ROI.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return None
 
     endo_roi_payload = video.video_meta.get_endo_roi()
     roi = roi_box_from_object(endo_roi_payload)
-    logger.debug("Retrieved endo ROI for video %s: %s", video.video_hash, roi)
+    logger.debug("Retrieved endo ROI for video %s: %s", video.raw_video_hash, roi)
     return roi

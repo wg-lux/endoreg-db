@@ -139,7 +139,7 @@ def test_validation_rechecks_center_scope_on_every_request(
     elif membership == "foreign":
         info.centers.add(Center.objects.create(name="Unrelated Center"))
     media = (
-        VideoFile.objects.create(center=center, video_hash="scope-review")
+        VideoFile.objects.create(center=center, raw_video_hash="scope-review")
         if media_type == "video"
         else RawPdfFile.objects.create(center=center, pdf_hash="scope-review")
     )
@@ -176,7 +176,7 @@ def test_validation_rejects_roleless_request(client: Client) -> None:
     center = Center.objects.create(name="Role Review Center")
     user = User.objects.create_user(username="roleless-reviewer")
     PortalUserInfo.objects.create(user=user).centers.add(center)
-    video = VideoFile.objects.create(center=center, video_hash="role-review")
+    video = VideoFile.objects.create(center=center, raw_video_hash="role-review")
     client.force_login(user)
     with patch("endoreg_db.authz.permissions.is_debug_mode", return_value=False):
         response = client.post(
@@ -232,6 +232,17 @@ class TestAnonymizationValidateView:
 
     def _validate_view(self) -> _ViewCallable:
         return cast(_ViewCallable, AnonymizationValidateView.as_view())
+
+    def _seed_validated_pdf_identity(
+        self, pdf: _MediaFileFixture, payload: Mapping[str, object]
+    ) -> None:
+        # A mocked successful validator must supply its real persistence contract.
+        # Missing clinical data no longer creates placeholder patient/exam links.
+        pdf.sensitive_meta = cast(
+            _SensitiveMetaFixture,
+            SensitiveMeta.create_from_dict({**payload, "center": pdf.center}),
+        )
+        pdf.save(update_fields=["sensitive_meta"])
 
     def _post_request(
         self, factory: APIRequestFactory, path: str, data: Mapping[str, object]
@@ -432,6 +443,7 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
+        self._seed_validated_pdf_identity(pdf_file, data)
         with patch(
             "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
             return_value=True,
@@ -499,6 +511,7 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
+        self._seed_validated_pdf_identity(pdf_file, data)
         with patch(
             "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
             return_value=True,
@@ -899,6 +912,7 @@ class TestAnonymizationValidateView:
             "document_type": "report_final",
         }
 
+        self._seed_validated_pdf_identity(pdf_file, data)
         with (
             patch(
                 "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",

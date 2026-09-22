@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from itertools import combinations
 from typing import TypeAlias
 
+from lx_dtypes.models.contracts.json_types import JsonScalar
+
 from endoreg_db.schemas.k_pseudonymity import (
     EquivalenceClassAudit,
     KPseudonymityReleaseConfig,
@@ -18,8 +20,7 @@ from endoreg_db.schemas.k_pseudonymity import (
     UtilityFeatureKind,
 )
 
-CellValue: TypeAlias = str | int | float | bool | None
-ReleaseRow: TypeAlias = dict[str, CellValue]
+ReleaseRow: TypeAlias = dict[str, (JsonScalar | None)]
 ClassKey: TypeAlias = tuple[str, ...]
 
 
@@ -334,7 +335,7 @@ def _parse_numeric_string(value: str, *, index: int, field: str) -> float:
     return parsed
 
 
-def _numeric_value(value: CellValue, *, index: int, field: str) -> float:
+def _numeric_value(value: (JsonScalar | None), *, index: int, field: str) -> float:
     if isinstance(value, bool):
         raise KPseudonymityInputError(
             f"row {index} utility feature {field} must be finite numeric data"
@@ -401,7 +402,7 @@ def _projection_audits(
     return tuple(audits)
 
 
-def canonical_value(value: CellValue) -> str:
+def canonical_value(value: (JsonScalar | None)) -> str:
     if value is None:
         return "none:"
     if isinstance(value, bool):
@@ -433,7 +434,6 @@ def _conservative_leq(value: float, threshold: float) -> bool:
 
 
 __all__ = [
-    "CellValue",
     "ClassKey",
     "KPseudonymityInputError",
     "ReleaseRow",

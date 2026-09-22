@@ -3,22 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
+from contextlib import AbstractContextManager, contextmanager
+from pathlib import Path
+from typing import cast
 
-from django.core.files import File
+from endoreg_db.helpers.typing import DjangoFile, BinaryFieldFileSaver
 from django.db.models.fields.files import FieldFile
-
-if TYPE_CHECKING:
-    DjangoFile: TypeAlias = File[bytes]
-else:
-    DjangoFile: TypeAlias = File
-
-
-class _BinaryFieldFileSaver(Protocol):
-    """Narrow Django stubs' unparameterized File at the binary storage boundary."""
-
-    def save(self, name: str, content: DjangoFile, save: bool = True) -> None: ...
 
 
 @contextmanager
@@ -42,12 +32,30 @@ def video_field_mutation(field_file: FieldFile) -> Generator[None]:
 
 
 class VideoArtifactFieldFile(FieldFile):
-    """Keep legacy direct FieldFile.save/delete behind the same durable writer lease."""
+    """Canonical video storage access, with durable ownership for mutations."""
+
+    def exists(self) -> bool:
+        return bool(self.name and self.storage.exists(self.name))
+
+    def local_plaintext_path(self) -> Path | None:
+        from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
+
+        return maybe_local_plaintext_path(self)
+
+    def ensure_local(self) -> AbstractContextManager[Path]:
+        from endoreg_db.utils.storage.files import ensure_local_file
+
+        return ensure_local_file(self)
 
     def save(self, name: str, content: DjangoFile, save: bool = True) -> None:
         with video_field_mutation(self):
-            cast(_BinaryFieldFileSaver, super()).save(name, content, save=save)
+            cast(BinaryFieldFileSaver, super()).save(name, content, save=save)
 
     def delete(self, save: bool = True) -> None:
         with video_field_mutation(self):
             super().delete(save=save)
+
+    def get_hash(self) -> str:
+        from endoreg_db.utils.file_operations import get_file_hash
+
+        return get_file_hash(self)

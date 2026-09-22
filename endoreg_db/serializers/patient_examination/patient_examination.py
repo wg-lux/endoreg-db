@@ -14,9 +14,8 @@ from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.patient_examination import (
     PatientExaminationPatientDataPayload,
 )
-from lx_dtypes.models.interface.KnowledgeBaseResolver import (
-    get_knowledge_base_identity,
-)
+from lx_dtypes.terminology.terminology_loader import load_module_kb
+from lx_dtypes.terminology.terminology_service import TerminologyError
 
 
 class _PatientExaminationOutputLike(Protocol):
@@ -161,26 +160,14 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
                     knowledge_base_module=attrs["knowledge_base_module"],
                     knowledge_base_version=attrs["knowledge_base_version"],
                 )
-                resolved = get_knowledge_base_identity(
+                load_module_kb(
                     identity.knowledge_base_module,
                     version=identity.knowledge_base_version,
                 )
-            except (LookupError, ValueError) as exc:
+            except (TerminologyError, LookupError, ValueError) as exc:
                 raise serializers.ValidationError(
                     {"knowledge_base_module": str(exc)}
                 ) from exc
-            if resolved != (
-                identity.knowledge_base_module,
-                identity.knowledge_base_version,
-            ):
-                raise serializers.ValidationError(
-                    {
-                        "knowledge_base_module": (
-                            "Resolved knowledge-base identity does not match the "
-                            "submitted identity."
-                        )
-                    }
-                )
         return attrs
 
     def create(

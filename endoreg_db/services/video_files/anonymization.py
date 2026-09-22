@@ -5,11 +5,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from django.db.models import QuerySet
-from lx_dtypes.models.contracts import RoiBoxCore
 
 if TYPE_CHECKING:
-    from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
@@ -19,30 +16,8 @@ def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = True) -
     return _anonymize(video, delete_original_raw=delete_original_raw)
 
 
-def create_anonymized_video_frame_files(
-    video: "VideoFile",
-    anonymized_frame_dir: Path,
-    endo_roi: dict[str, int],
-    frames: QuerySet["Frame"],
-    outside_frame_numbers: set[int],
-    censor_color: tuple[int, int, int] = (0, 0, 0),
-) -> list[Path]:
-    from ._anonymization import _create_anonymized_frame_files
-
-    validated_endo_roi = RoiBoxCore.model_validate(endo_roi)
-
-    return _create_anonymized_frame_files(
-        video,
-        anonymized_frame_dir=anonymized_frame_dir,
-        endo_roi=validated_endo_roi,
-        frames=frames,
-        outside_frame_numbers=outside_frame_numbers,
-        censor_color=censor_color,
-    )
-
-
 def cleanup_video_raw_assets(
-    video_hash: str,
+    raw_video_hash: str,
     *,
     raw_file_name: str = "",
     raw_file_path: Path | None = None,
@@ -51,25 +26,10 @@ def cleanup_video_raw_assets(
     from endoreg_db.services.video_files._anonymization import _cleanup_raw_assets
 
     _cleanup_raw_assets(
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         raw_file_name=raw_file_name,
         raw_file_path=raw_file_path,
         raw_frame_dir=raw_frame_dir,
-    )
-
-
-def censor_outside_video_frames(
-    video: "VideoFile",
-    *,
-    only_validated: bool = True,
-    censor_color: tuple[int, int, int] = (0, 0, 0),
-) -> bool:
-    from ._anonymization import censor_outside_video_frames as _censor
-
-    return _censor(
-        video,
-        only_validated=only_validated,
-        censor_color=censor_color,
     )
 
 

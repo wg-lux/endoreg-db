@@ -1204,7 +1204,7 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
     center = Center.objects.create(name="pts-center", display_name="PTS Center")
     video = VideoFile.objects.create(
         center=center,
-        video_hash="pts-video",
+        raw_video_hash="pts-video",
         fps=25.0,
         duration=0.2,
         frame_count=3,

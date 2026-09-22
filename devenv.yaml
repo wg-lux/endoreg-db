@@ -6,8 +6,6 @@ inputs:
         follows: nixpkgs
   lx-anonymizer:
     url: github:wg-lux/lx-anonymizer
-  lx-data-models:
-    url: github:wg-lux/lx-data-models/report_template
   mk-shell-bin:
     url: github:rrbutani/nix-mk-shell-bin
   nix2container:

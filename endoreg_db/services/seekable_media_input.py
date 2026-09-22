@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from queue import SimpleQueue
 from typing import Generator, Protocol, cast
 from urllib.parse import urlsplit
 
@@ -29,7 +30,9 @@ class SeekableMediaInput:
 
 
 class _SeekableRangeServer(ThreadingHTTPServer):
-    daemon_threads = True
+    # server_close must join requests before their failures are inspected.
+    daemon_threads = False
+    read_errors: SimpleQueue[Exception]
 
     def __init__(
         self,
@@ -41,6 +44,7 @@ class _SeekableRangeServer(ThreadingHTTPServer):
         self.field_file = field_file
         self.token_path = f"/{token}/video.mp4"
         self.plaintext_size = plaintext_size
+        self.read_errors = SimpleQueue()
         super().__init__(("127.0.0.1", 0), _SeekableRangeRequestHandler)
 
 
@@ -112,9 +116,18 @@ class _SeekableRangeRequestHandler(BaseHTTPRequestHandler):
                 start=start,
                 end=end,
             ):
-                self.wfile.write(chunk)
-        except (BrokenPipeError, ConnectionResetError):
-            logger.debug("FFmpeg closed the seekable media range connection early")
+                try:
+                    self.wfile.write(chunk)
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.debug(
+                        "FFmpeg closed the seekable media range connection early"
+                    )
+                    return
+        except Exception as exc:
+            # Bridge this request-thread boundary back to the owning consumer.
+            # Headers may already be sent; close rather than send error details.
+            server.read_errors.put(exc)
+            self.close_connection = True
 
 
 @contextmanager
@@ -148,3 +161,5 @@ def serve_seekable_media_input(
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+        if not server.read_errors.empty():
+            raise server.read_errors.get_nowait()

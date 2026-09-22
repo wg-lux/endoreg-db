@@ -7,7 +7,7 @@ from typing import Union, cast
 
 import pytest
 from django.conf import settings
-from django.test import TestCase
+from django.test import TransactionTestCase
 from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
@@ -17,6 +17,9 @@ from .test_temporal_prediction_materialization import (
     _test_temporal_prediction_materialization,
 )
 from .test_video_anonymization import _test_video_anonymization
+from tests.conftest import (
+    temporarily_disable_global_video_mocks,
+)
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"
@@ -35,7 +38,7 @@ FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 
 @pytest.mark.usefixtures("base_db_data")
-class VideoFileModelExtractedTest(TestCase):
+class VideoFileModelExtractedTest(TransactionTestCase):
     video_file: Union[VideoFile, MockVideoFile]
     video: "VideoFile"
     center: Center | object
@@ -119,6 +122,8 @@ class VideoFileModelExtractedTest(TestCase):
         """
         if not RUN_VIDEO_TESTS:
             self.skipTest("Video tests disabled (RUN_VIDEO_TESTS=False)")
+
+        self.enterContext(temporarily_disable_global_video_mocks())
 
         # Force use of real video file for integration testing
         from ...helpers.default_objects import get_default_video_file

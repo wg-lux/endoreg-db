@@ -137,17 +137,17 @@ class TestVideoValidationDeletionBehavior:
 
         # Create VideoFile instance
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-validation"
+            center=center, processor=processor, raw_video_hash="test-hash-validation"
         )
 
         # Mock the file paths and _update_text_metadata
         with (
             patch(
-                "endoreg_db.services.video_files._io._get_raw_file_path",
+                "endoreg_db.services.video_files.io.get_raw_video_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.services.video_files._io._get_processed_file_path",
+                "endoreg_db.services.video_files.io.get_processed_video_file_path",
                 return_value=processed_video_path,
             ),
             patch(
@@ -203,13 +203,13 @@ class TestVideoValidationDeletionBehavior:
         4. Verify processed file is still preserved
         """
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-no-raw"
+            center=center, processor=processor, raw_video_hash="test-hash-no-raw"
         )
 
         # Mock: raw_file doesn't exist, only processed
         with (
             patch(
-                "endoreg_db.services.video_files._io._get_raw_file_path",
+                "endoreg_db.services.video_files.io.get_raw_video_file_path",
                 return_value=None,
             ),
             patch(
@@ -249,16 +249,16 @@ class TestVideoValidationDeletionBehavior:
         raw_video_path.write_text("raw content")
 
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-only-raw"
+            center=center, processor=processor, raw_video_hash="test-hash-only-raw"
         )
 
         with (
             patch(
-                "endoreg_db.services.video_files._io._get_raw_file_path",
+                "endoreg_db.services.video_files.io.get_raw_video_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.services.video_files._io._get_processed_file_path",
+                "endoreg_db.services.video_files.io.get_processed_video_file_path",
                 return_value=None,
             ),
             patch(
@@ -335,7 +335,7 @@ class TestActiveFileLogicWithValidation:
         from django.core.files.base import ContentFile
 
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-active-file"
+            center=center, processor=processor, raw_video_hash="test-active-file"
         )
 
         # Simulate both files existing
@@ -366,16 +366,16 @@ class TestActiveFileLogicWithValidation:
         processed_path.write_text("processed")
 
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-explicit-raw"
+            center=center, processor=processor, raw_video_hash="test-explicit-raw"
         )
 
         with (
             patch(
-                "endoreg_db.services.video_files._io._get_raw_file_path",
+                "endoreg_db.services.video_files.io.get_raw_video_file_path",
                 return_value=raw_path,
             ),
             patch(
-                "endoreg_db.services.video_files._io._get_processed_file_path",
+                "endoreg_db.services.video_files.io.get_processed_video_file_path",
                 return_value=processed_path,
             ),
             patch(
@@ -485,7 +485,7 @@ class TestValidationDeletion:
 
         # Create VideoFile instance
         video = VideoFile.objects.create(
-            center=center, processor=processor, video_hash="test-hash-frame-order"
+            center=center, processor=processor, raw_video_hash="test-hash-frame-order"
         )
 
         # Create mock state that indicates frames not yet extracted
@@ -511,11 +511,11 @@ class TestValidationDeletion:
         # Mock the file paths and extract_frames only
         with (
             patch(
-                "endoreg_db.services.video_files._io._get_raw_file_path",
+                "endoreg_db.services.video_files.io.get_raw_video_file_path",
                 return_value=raw_video_path,
             ),
             patch(
-                "endoreg_db.services.video_files._io._get_processed_file_path",
+                "endoreg_db.services.video_files.io.get_processed_video_file_path",
                 return_value=processed_video_path,
             ),
             patch.object(video, "extract_frames", mock_extract_frames),

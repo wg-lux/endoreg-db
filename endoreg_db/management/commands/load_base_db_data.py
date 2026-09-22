@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandParser
@@ -9,10 +8,6 @@ from django.db.migrations.recorder import MigrationRecorder
 from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
-
-
-class LoadBaseDbCommandOptions(TypedDict):
-    verbose: bool
 
 
 class Command(BaseCommand):
@@ -36,7 +31,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadBaseDbCommandOptions],
+        **options: object,
     ) -> None:
         # verbose = options['verbose']
         """

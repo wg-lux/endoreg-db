@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from django.conf import settings
-from endoreg_db.config.env import get_data_dir
+from endoreg_db.config.env import get_runtime_root
 from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     AnnotationSourceScope,
@@ -24,7 +24,7 @@ BASE_DIR = Path(getattr(settings, "BASE_DIR", Path(__file__).resolve().parents[4
 
 # All training artifacts go under the runtime DATA_DIR, not the installed
 # package/wheel location.
-TRAINING_ROOT = (get_data_dir() / "model_training").resolve()
+TRAINING_ROOT = (get_runtime_root() / "model_training").resolve()
 CHECKPOINTS_DIR = TRAINING_ROOT / "checkpoints"
 RUNS_DIR = TRAINING_ROOT / "runs"
 

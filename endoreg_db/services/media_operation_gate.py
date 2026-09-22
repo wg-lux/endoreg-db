@@ -455,6 +455,19 @@ def video_artifact_mutation(
 
 
 @contextmanager
+def video_artifact_publication(*, video_id: int) -> Generator[None]:
+    """Fence a final file replacement against loss of its artifact writer lease."""
+    existing = _artifact_writer.get()
+    if existing is None or existing[0] != video_id:
+        raise MediaOperationDeferred("Artifact publication requires writer ownership.")
+    with transaction.atomic():
+        VideoFile.objects.select_for_update().get(pk=video_id)
+        _assert_artifact_writer(*existing)
+        yield
+        _assert_artifact_writer(*existing)
+
+
+@contextmanager
 def video_file_save_guard(
     video: VideoFile,
     *,
@@ -468,7 +481,7 @@ def video_file_save_guard(
         "raw_file",
         "processed_file",
         "processed_video_hash",
-        "video_hash",
+        "raw_video_hash",
         "fps",
         "duration",
         "frame_count",

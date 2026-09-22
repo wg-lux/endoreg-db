@@ -8,8 +8,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
+from lx_dtypes.models.contracts.json_types import JsonValue
+
 from endoreg_db.utils.structured_logging import (
-    StructuredLogValue,
     hash_identifier,
     path_reference,
     safe_log_value,
@@ -101,7 +102,7 @@ def _is_sensitive_key(key: object) -> bool:
     )
 
 
-def sanitize(value: object, *, key: str | None = None) -> StructuredLogValue:
+def sanitize(value: object, *, key: str | None = None) -> JsonValue:
     """Recursively narrow transfer diagnostics to privacy-safe JSON values."""
     if key is not None and _is_sensitive_key(key):
         return "<redacted:transfer_sensitive>"

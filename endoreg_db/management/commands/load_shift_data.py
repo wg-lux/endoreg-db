@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -11,11 +10,7 @@ from ...data import REPORT_READER_FLAG_DATA_DIR
 from endoreg_db.models.administration.shift.shift import Shift
 from endoreg_db.models.administration.shift.shift_type import ShiftType
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
-
-
-class LoadShiftCommandOptions(TypedDict):
-    verbose: bool
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 
 SOURCE_DIR = REPORT_READER_FLAG_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
@@ -60,7 +55,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadShiftCommandOptions],
+        **options: object,
     ) -> None:
         """
         Loads YAML data files into models defined in IMPORT_MODELS using provided metadata.

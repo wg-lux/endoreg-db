@@ -24,7 +24,7 @@ from endoreg_db.services.aidataset_active_learning import (
 )
 from endoreg_db.services.frames.training_images import validate_processed_training_frame
 from endoreg_db.utils.filesystem.file_operations import atomic_create_file
-from endoreg_db.utils.paths import ensure_within_protected_root
+from endoreg_db.utils.paths import ensure_within_runtime_root
 
 
 class ActiveLearningReviewShortlist(BaseModel):
@@ -119,7 +119,7 @@ def write_active_learning_review_shortlist(
     shortlist: ActiveLearningReviewShortlist,
     destination: Path,
 ) -> Path:
-    destination = ensure_within_protected_root(destination)
+    destination = ensure_within_runtime_root(destination)
     if destination.exists():
         raise ValueError(
             "Shortlist output must be a new file; existing evidence cannot be overwritten."

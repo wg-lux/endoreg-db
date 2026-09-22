@@ -1,6 +1,6 @@
 from __future__ import annotations
+from endoreg_db.utils.paths import EndoregPathsModel
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -34,35 +34,12 @@ def _stream_info(
     return cast(JsonObject, payload.model_dump(mode="json", exclude_none=True))
 
 
-@dataclass(frozen=True)
-class _RuntimePaths:
-    data: Path
-    storage: Path
-    sensitive_video: Path
-    anonym_video: Path
-
-
 def _patch_runtime_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-) -> _RuntimePaths:
-    data_root = tmp_path / "data"
-    storage_root = data_root / "storage"
-    fake_paths = _RuntimePaths(
-        data=data_root,
-        storage=storage_root,
-        sensitive_video=storage_root / "sensitive_videos",
-        anonym_video=storage_root / "processed_videos_final",
-    )
-
-    def from_environment(cls: type[object]) -> _RuntimePaths:
-        return fake_paths
-
-    monkeypatch.setattr(
-        reconciliation.EndoregPathsModel,
-        "from_environment",
-        classmethod(from_environment),
-    )
+) -> EndoregPathsModel:
+    fake_paths = EndoregPathsModel.from_root(tmp_path / "data")
+    monkeypatch.setattr(reconciliation, "get_runtime_paths", lambda: fake_paths)
     return fake_paths
 
 
@@ -220,7 +197,7 @@ def test_reconcile_video_formats_scans_legacy_roots_only_when_requested(
 ) -> None:
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
     canonical_video = paths.sensitive_video / "canonical.mp4"
-    legacy_video = paths.data / "sensitive_videos" / "legacy.mp4"
+    legacy_video = paths.runtime_root / "sensitive_videos" / "legacy.mp4"
     canonical_video.parent.mkdir(parents=True, exist_ok=True)
     legacy_video.parent.mkdir(parents=True, exist_ok=True)
     canonical_video.write_bytes(b"canonical")
@@ -287,7 +264,7 @@ def test_reconcile_video_formats_skips_legacy_root_repair(
     tmp_path: Path,
 ) -> None:
     paths = _patch_runtime_paths(monkeypatch, tmp_path)
-    legacy_video = paths.data / "sensitive_videos" / "legacy.mp4"
+    legacy_video = paths.runtime_root / "sensitive_videos" / "legacy.mp4"
     legacy_video.parent.mkdir(parents=True, exist_ok=True)
     legacy_video.write_bytes(b"legacy")
     transcode_called = False

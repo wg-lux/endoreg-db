@@ -226,7 +226,6 @@ def video_hls_materialization(
     )
     from endoreg_db.utils.structured_logging import (
         emit_structured_event,
-        hash_identifier,
     )
 
     if reserved_artifact_id is None or reservation_key_id is None:
@@ -261,7 +260,7 @@ def video_hls_materialization(
             "job.failed_terminal",
             level=logging.ERROR,
             job_name="video_hls_materialization",
-            subject_id_sha256=hash_identifier(video_id),
+            subject_id_sha256=video_id,
             error_code="video_storage_validation_failed",
             error_type=type(exc).__name__,
             retryable=False,

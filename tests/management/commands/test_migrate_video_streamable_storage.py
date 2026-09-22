@@ -23,7 +23,7 @@ def test_migrate_video_streamable_storage_regenerate_forces_hls_once(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="streamable-regenerate-video",
+        raw_video_hash="streamable-regenerate-video",
     )
     video.processed_file.name = "processed_videos_final/source.mp4"
     video.processed_streamable_relative_path = "streamable_videos/processed/source.mp4"
@@ -136,7 +136,7 @@ def test_migrate_video_streamable_storage_dry_run_does_not_materialize_hls(
     )
     video = VideoFile.objects.create(
         center=center,
-        video_hash="streamable-dry-run-video",
+        raw_video_hash="streamable-dry-run-video",
     )
     video.processed_file.name = "processed_videos_final/dry-run.mp4"
     video.processed_streamable_relative_path = "streamable_videos/processed/dry-run.mp4"

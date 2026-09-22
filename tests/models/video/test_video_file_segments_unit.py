@@ -23,7 +23,7 @@ def test_convert_sequences_creates_segments() -> None:
     center = Center.objects.create(
         name="segments-center", display_name="Segments Center"
     )
-    video = VideoFile.objects.create(center=center, video_hash="segments-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="segments-hash")
 
     label_type = LabelType.objects.create(name="video")
     label = Label.objects.create(name="lesion", label_type=label_type)
@@ -60,7 +60,7 @@ def test_convert_sequences_creates_segments() -> None:
 @pytest.mark.django_db
 def test_convert_sequences_rejects_unknown_label_atomically() -> None:
     center = Center.objects.create(name="unknown-center", display_name="Unknown Center")
-    video = VideoFile.objects.create(center=center, video_hash="unknown-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="unknown-hash")
 
     label_type = LabelType.objects.create(name="video")
     label = Label.objects.create(name="lesion", label_type=label_type)
@@ -97,7 +97,7 @@ def test_convert_sequences_rejects_single_frame_segments_atomically() -> None:
     center = Center.objects.create(
         name="singleton-center", display_name="Singleton Center"
     )
-    video = VideoFile.objects.create(center=center, video_hash="singleton-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="singleton-hash")
 
     label_type = LabelType.objects.create(name="video")
     label = Label.objects.create(name="appendix", label_type=label_type)
@@ -137,7 +137,7 @@ def test_convert_sequences_rejects_single_frame_segments_atomically() -> None:
 @pytest.mark.django_db
 def test_get_outside_helpers_return_expected_frames(tmp_path: Path) -> None:
     center = Center.objects.create(name="outside-center", display_name="Outside Center")
-    video = VideoFile.objects.create(center=center, video_hash="outside-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="outside-hash")
     frame_dir = tmp_path / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
     video.frame_dir = str(frame_dir)

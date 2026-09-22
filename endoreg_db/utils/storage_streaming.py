@@ -14,7 +14,7 @@ from lx_dtypes.models.contracts.media_streaming import (
 )
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import (
-    ensure_within_protected_root,
+    ensure_within_storage_root,
     resolve_existing_protected_media_path,
 )
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
@@ -206,7 +206,7 @@ def field_file_is_local_encrypted_without_reader(field_file: object) -> bool:
     if candidate is None or not candidate.exists():
         return False
     try:
-        ensure_within_protected_root(candidate)
+        ensure_within_storage_root(candidate)
     except ValueError:
         return False
     return _path_starts_with_encryption_magic(candidate)
@@ -225,7 +225,7 @@ def local_plaintext_path_from_name(
         return None
     if require_protected_root:
         try:
-            ensure_within_protected_root(candidate)
+            ensure_within_storage_root(candidate)
         except ValueError:
             return None
     if _path_starts_with_encryption_magic(candidate):
@@ -241,7 +241,7 @@ def maybe_local_plaintext_path(field_file: object) -> Path | None:
         path = Path(cast(str | Path, getattr(field_file, "path"))).resolve()
         if path.exists():
             try:
-                ensure_within_protected_root(path)
+                ensure_within_storage_root(path)
             except ValueError:
                 return None
             if _path_starts_with_encryption_magic(path):

@@ -25,7 +25,6 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -35,18 +34,12 @@ from endoreg_db.services.lifecycle_state_machine import (
     OperationLifecycleState,
     reduce_operation_lifecycle,
 )
-from endoreg_db.services.video_files._frames._manage_frame_range import (
-    extract_frame_range_to_directory,
-)
+from endoreg_db.services.frames.training_images import validate_processed_training_frame
 from endoreg_db.schemas import (
     validate_ai_model_training_artifact_paths,
     validate_ai_model_training_command_kwargs,
     validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
-)
-from endoreg_db.services.video_files import (
-    get_or_create_video_state,
-    get_video_frame_dir_path,
 )
 from endoreg_db.services.aidataset_training_selection import (
     training_annotation_querysets,
@@ -57,7 +50,6 @@ from endoreg_db.utils.ai.multilabel_dataset_builder import (
     normalize_annotation_source_scope,
 )
 from endoreg_db.utils.file_operations import (
-    atomic_move_file,
     ensure_directory,
     safe_rmtree,
 )
@@ -472,49 +464,6 @@ def _create_run_staging_dir(run_id: str) -> Path:
     return ensure_directory(staging_dir, dir_mode=0o750)
 
 
-def _consecutive_ranges(frame_numbers: list[int]) -> list[tuple[int, int]]:
-    if not frame_numbers:
-        return []
-    ranges: list[tuple[int, int]] = []
-    start = previous = frame_numbers[0]
-    for frame_number in frame_numbers[1:]:
-        if frame_number == previous + 1:
-            previous = frame_number
-            continue
-        ranges.append((start, previous + 1))
-        start = previous = frame_number
-    ranges.append((start, previous + 1))
-    return ranges
-
-
-def _assert_processed_video_training_ready(video: VideoFile) -> None:
-    state = get_or_create_video_state(video)
-    missing_flags = [
-        field_name
-        for field_name in (
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-        )
-        if not bool(getattr(state, field_name, False))
-    ]
-    if missing_flags:
-        raise RuntimeError(
-            "Cannot materialize training frames from processed video "
-            f"{video.video_hash}: missing readiness flags={missing_flags}."
-        )
-    if not bool(getattr(video, "is_processed", False)):
-        raise FileNotFoundError(
-            "Cannot materialize training frames from processed video "
-            f"{video.video_hash}: processed file is not available."
-        )
-
-
-def _expected_frame_relative_path(frame_number: int, ext: str = "jpg") -> str:
-    return f"frame_{frame_number:07d}.{ext}"
-
-
 def _merge_frame_intervals(
     intervals: list[tuple[int, int]],
 ) -> list[tuple[int, int]]:
@@ -583,21 +532,20 @@ def _add_segment_training_frames(
                 frame_by_number[frame_number] = frame
 
 
-def _materialize_missing_multilabel_frames(
+def _validate_multilabel_streaming_frames(
     dataset_id: int,
     *,
     annotation_source_scope: str | None = ANNOTATION_SOURCE_SCOPE_ALL,
-    attempt_staging_dir: Path | None = None,
 ) -> dict[str, Any]:
     dataset = AIDataSet.objects.get(id=dataset_id)
     source_scope: AnnotationSourceScope = normalize_annotation_source_scope(
         annotation_source_scope
     )
     if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
-        raise ValueError("Training frame materialization requires an image AIDataSet.")
+        raise ValueError("Training frame streaming requires an image AIDataSet.")
     if dataset.ai_model_type != AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL:
         raise ValueError(
-            "Training frame materialization requires an image_multilabel_classification AIDataSet."
+            "Training frame streaming requires an image_multilabel_classification AIDataSet."
         )
 
     frames_by_video: dict[int, dict[int, Frame]] = defaultdict(dict)
@@ -613,104 +561,21 @@ def _materialize_missing_multilabel_frames(
         segments=list(segments),
     )
 
-    materialized_count = 0
-    existing_count = 0
-    video_count = 0
     for frame_by_number in frames_by_video.values():
-        if not frame_by_number:
-            continue
-        missing_numbers: list[int] = []
-        sample_frame = next(iter(frame_by_number.values()))
-        video = sample_frame.video
-        for frame_number, frame in sorted(frame_by_number.items()):
-            if frame.file_path.is_file():
-                existing_count += 1
-                if not frame.is_extracted:
-                    frame.is_extracted = True
-                    frame.save(update_fields=["is_extracted"])
-                continue
-            missing_numbers.append(frame_number)
-
-        if not missing_numbers:
-            continue
-
-        video_count += 1
-        _assert_processed_video_training_ready(video)
-        frame_dir = get_video_frame_dir_path(video)
-        if frame_dir is None:
-            raise ValueError(
-                f"Cannot determine frame directory path for video {video.video_hash}."
-            )
-        ensure_directory(frame_dir, dir_mode=0o750)
-        extraction_dir = frame_dir
-        if attempt_staging_dir is not None:
-            extraction_dir = ensure_directory(
-                attempt_staging_dir / f"video-{video.pk}",
-                dir_mode=0o750,
-            )
-
-        for start_frame, end_frame in _consecutive_ranges(missing_numbers):
-            extract_frame_range_to_directory(
-                video,
-                output_dir=extraction_dir,
-                start_frame=start_frame,
-                end_frame=end_frame,
-                ext="jpg",
-                from_processed=True,
-            )
-
-        verified_candidates: list[tuple[Frame, str, Path, Path]] = []
-        for frame_number in missing_numbers:
-            frame = frame_by_number[frame_number]
-            expected_relative_path = _expected_frame_relative_path(frame_number)
-            extracted_path = extraction_dir / expected_relative_path
-            if not extracted_path.is_file():
-                raise RuntimeError(
-                    "Processed-video frame extraction did not create required "
-                    f"training frame {frame_number} for video {video.video_hash}."
-                )
-            expected_path = frame_dir / expected_relative_path
-            verified_candidates.append(
-                (frame, expected_relative_path, extracted_path, expected_path)
-            )
-
-        verified_frames: list[tuple[Frame, str]] = []
-        for (
-            frame,
-            expected_relative_path,
-            extracted_path,
-            expected_path,
-        ) in verified_candidates:
-            if extracted_path != expected_path:
-                atomic_move_file(source=extracted_path, destination=expected_path)
-            if not expected_path.is_file():
-                raise RuntimeError(
-                    "Verified training frame was not published to its canonical path: "
-                    f"{expected_relative_path}."
-                )
-            verified_frames.append((frame, expected_relative_path))
-
-        if verified_frames:
-            with transaction.atomic():
-                for frame, expected_relative_path in verified_frames:
-                    frame.relative_path = expected_relative_path
-                    frame.is_extracted = True
-                    frame.save(update_fields=["relative_path", "is_extracted"])
-            materialized_count += len(verified_frames)
+        if frame_by_number:
+            validate_processed_training_frame(next(iter(frame_by_number.values())))
 
     return {
         "dataset_id": dataset_id,
         "annotation_source_scope": source_scope,
-        "existing_frame_count": existing_count,
-        "materialized_frame_count": materialized_count,
-        "materialized_video_count": video_count,
+        "frame_source": "processed_video_stream",
+        "frame_count": sum(len(frames) for frames in frames_by_video.values()),
+        "video_count": len(frames_by_video),
     }
 
 
 def prepare_model_training_inputs(
     command_kwargs: dict[str, Any],
-    *,
-    attempt_staging_dir: Path | None = None,
 ) -> dict[str, Any]:
     command_name = str(
         command_kwargs.get("_command_name") or "train_image_multilabel_model"
@@ -726,10 +591,9 @@ def prepare_model_training_inputs(
     )
     return {
         "prepared": True,
-        **_materialize_missing_multilabel_frames(
+        **_validate_multilabel_streaming_frames(
             int(dataset_id),
             annotation_source_scope=annotation_source_scope,
-            attempt_staging_dir=attempt_staging_dir,
         ),
     }
 
@@ -888,7 +752,6 @@ def _execute_model_training_run(
             staging_dir = _create_run_staging_dir(run_id)
             preparation = prepare_model_training_inputs(
                 command_kwargs,
-                attempt_staging_dir=staging_dir,
             )
             stdout.write(
                 f"[TRAINING_JOB] input_preparation={json.dumps(preparation)}\n"

@@ -7,14 +7,17 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.7
     hooks:
-      - id: ruff
-        args: ["--fix", "endoreg_db", "tests"]
-        pass_filenames: false
       - id: ruff-format
         args: ["endoreg_db", "tests"]
         pass_filenames: false
   - repo: local
     hooks:
+      - id: canonical-type-contracts
+        name: canonical type ownership and contract boundaries
+        entry: python scripts/check_lx_dtypes_contract_boundaries.py
+        language: system
+        pass_filenames: false
+        files: '^(endoreg_db/.*\.pyi?|quality/lx_dtypes_contract_policy\.yml|scripts/check_lx_dtypes_contract_boundaries\.py)$'
       - id: route-matrix-contract
         name: route matrix contract (backend vs frontend)
         entry: python scripts/check_route_matrix.py --warn-on-missing-backend

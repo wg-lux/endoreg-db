@@ -51,8 +51,7 @@ def test_model_training_paths_use_runtime_data_dir_without_import_mkdir(
 ) -> None:
     data_root = tmp_path / "runtime-data"
     fake_base_dir = tmp_path / "site-packages"
-
-    monkeypatch.setenv("DATA_DIR", str(data_root))
+    monkeypatch.setenv("LX_RUNTIME_ROOT", str(data_root))
 
     with override_settings(BASE_DIR=fake_base_dir):
         config = load_model_training_config()
@@ -76,7 +75,7 @@ def test_model_training_config_regular_import_keeps_ai_exports_lazy(
     tmp_path: Path,
 ) -> None:
     data_root = tmp_path / "runtime-data"
-    monkeypatch.setenv("DATA_DIR", str(data_root))
+    monkeypatch.setenv("LX_RUNTIME_ROOT", str(data_root))
 
     ai_package = import_module("endoreg_db.utils.ai")
     for export_name in ai_package.__all__:

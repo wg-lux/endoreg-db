@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
     VerboseManagementCommandOptionsPayload,
 )
-
-
-class LoadUserGroupsCommandOptions(TypedDict):
-    verbose: bool
 
 
 class Command(BaseCommand):
@@ -26,7 +21,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadUserGroupsCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
 

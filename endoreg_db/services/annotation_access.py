@@ -21,7 +21,7 @@ ANNOTATION_OVERRIDE_ROLE = "center_scope:admin"
 
 
 class _GroupManager(Protocol):
-    def values_list(self, field_name: str, flat: bool) -> Iterable[str]: ...
+    def values_list(self, field_name: str) -> Iterable[str]: ...
 
 
 class _AnnotationUser(Protocol):

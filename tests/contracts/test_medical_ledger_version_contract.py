@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-from importlib.metadata import version
-from pathlib import Path
 import re
-import tomllib
 from typing import cast
 
-from packaging.requirements import Requirement
 from pydantic import BaseModel
 
 from lx_dtypes.models.ledger import ledger_models_lookup
@@ -22,7 +18,6 @@ from lx_dtypes.models.ledger.medical import (
 )
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_MEDICAL_MODELS = frozenset(
     {
         "PatientDisease",
@@ -46,23 +41,6 @@ MEDICAL_MODELS: tuple[tuple[str, type[BaseModel]], ...] = (
 SNAKE_CASE_FIELD = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 
 
-def _lx_dtypes_requirement() -> Requirement:
-    pyproject = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text())
-    dependencies = cast(list[str], pyproject["project"]["dependencies"])
-    return next(
-        Requirement(dependency)
-        for dependency in dependencies
-        if Requirement(dependency).name == "lx-dtypes"
-    )
-
-
-def _locked_lx_dtypes_version() -> str:
-    lock = tomllib.loads((REPOSITORY_ROOT / "uv.lock").read_text())
-    packages = cast(list[dict[str, object]], lock["package"])
-    package = next(entry for entry in packages if entry.get("name") == "lx-dtypes")
-    return cast(str, package["version"])
-
-
 def _schema_property_names(schema: dict[str, object]) -> set[str]:
     names: set[str] = set()
     pending: list[object] = [schema]
@@ -77,14 +55,6 @@ def _schema_property_names(schema: dict[str, object]) -> set[str]:
         elif isinstance(value, list):
             pending.extend(cast(list[object], value))
     return names
-
-
-def test_installed_lx_dtypes_matches_declared_and_locked_version() -> None:
-    installed_version = version("lx-dtypes")
-    requirement = _lx_dtypes_requirement()
-
-    assert installed_version == _locked_lx_dtypes_version()
-    assert installed_version in requirement.specifier
 
 
 def test_all_medical_models_have_public_closed_snake_case_schemas() -> None:

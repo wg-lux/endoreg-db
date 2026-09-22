@@ -12,7 +12,7 @@ from django.core.management.base import CommandError, CommandParser
 
 from endoreg_db.config.env import video_storage_destructive_migration_enabled
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files._io import _delete_raw_file_after_validation
+from endoreg_db.services.video_files.io import delete_raw_file_after_validation
 from endoreg_db.services.video_processed_transcode import (
     ProcessedVideoTranscodeResult,
     transcode_processed_video_for_storage_pressure,
@@ -26,7 +26,7 @@ from endoreg_db.services.video_storage_normalization import (
     raw_cleanup_blockers,
     video_storage_capacity,
 )
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import protected_media_root
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 from ._video_command_base import BaseVideoCommand
@@ -210,7 +210,7 @@ class Command(BaseVideoCommand):
             default=0,
         )
         return video_storage_capacity(
-            storage_root=path_utils.protected_media_root(),
+            storage_root=protected_media_root(),
             projected_temporary_bytes=projected_temporary_bytes,
         )
 
@@ -333,7 +333,7 @@ class Command(BaseVideoCommand):
         )
         if not cleanup_allowed:
             return False
-        raw_cleanup_performed = _delete_raw_file_after_validation(video)
+        raw_cleanup_performed = delete_raw_file_after_validation(video)
         video.refresh_from_db()
         return raw_cleanup_performed
 

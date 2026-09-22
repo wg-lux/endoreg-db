@@ -14,7 +14,7 @@ from django.db.models.fields.files import FieldFile
 
 from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage, LazyEncryptedStorage
-from endoreg_db.utils.hashs import get_video_hash
+from endoreg_db.utils.file_operations import get_file_hash
 
 _MAX_CACHED_GENERATIONS = 128
 
@@ -66,19 +66,13 @@ def _generation(storage: EncryptedStorage, name: str) -> _Generation:
 
 
 def _validated_hash(source: FieldFile) -> str:
-    digest = get_video_hash(source).strip().lower()
+    digest = get_file_hash(source).strip().lower()
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise VideoStorageNormalizationError("HLS source content identity is invalid")
     return digest
 
 
 def verified_video_source_hash(source: FieldFile) -> str:
-    """Hash once per unchanged local generation, never trusting persisted digests.
-
-    Reuse is limited to the encrypted filesystem backend and its key-owning
-    instance. Other backends retain full content verification. Filesystem
-    metadata is checked both before and after reads and cache lookups.
-    """
     storage = source.storage
     if isinstance(storage, LazyEncryptedStorage):
         storage = storage.wrapped

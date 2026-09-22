@@ -49,15 +49,15 @@ class _DummyRawFile:
 
 
 class _DummyVideo:
-    video_hash: str
+    raw_video_hash: str
     raw_file: _DummyRawFile
     suffix: str
     saved: list[tuple[str, ...]]
 
     def __init__(
-        self, video_hash: str, raw_file_name: str, suffix: str = ".mp4"
+        self, raw_video_hash: str, raw_file_name: str, suffix: str = ".mp4"
     ) -> None:
-        self.video_hash = video_hash
+        self.raw_video_hash = raw_video_hash
         self.raw_file = _DummyRawFile(raw_file_name)
         self.suffix = suffix
         self.saved = []
@@ -73,11 +73,11 @@ class _DummyVideo:
 
 
 class _VideoFileRef:
-    video_hash: str
+    raw_video_hash: str
     pk: int
 
-    def __init__(self, video_hash: str, pk: int = 11) -> None:
-        self.video_hash = video_hash
+    def __init__(self, raw_video_hash: str, pk: int = 11) -> None:
+        self.raw_video_hash = raw_video_hash
         self.pk = pk
 
 
@@ -93,8 +93,8 @@ class _PdfFileRef:
 class _DummyVideoState:
     video_file: _VideoFileRef
 
-    def __init__(self, video_hash: str) -> None:
-        self.video_file = _VideoFileRef(video_hash)
+    def __init__(self, raw_video_hash: str) -> None:
+        self.video_file = _VideoFileRef(raw_video_hash)
 
     def mark_processing_not_started(self) -> None:
         return None
@@ -142,14 +142,16 @@ def test_reconciliation_retains_local_lock_files_regardless_of_age(
     fresh_lock = import_report / "fresh.pdf.lock"
     fresh_lock.write_text("lock")
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "import_video": import_video,
-            "import_report": import_report,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "import_video": import_video,
+                "import_report": import_report,
+            }
+        ),
         raising=True,
     )
 
@@ -182,15 +184,17 @@ def test_reconciliation_retains_artifacts_without_attempt_ownership(
     for path in (orphan_part, orphan_uuid, completed_part):
         os.utime(path, (old, old))
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "sensitive_video": sensitive_dir,
-            "anonym_video": anonym_dir,
-            "transcoding": temp_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "sensitive_video": sensitive_dir,
+                "anonym_video": anonym_dir,
+                "transcoding": temp_dir,
+            }
+        ),
         raising=True,
     )
     removed = ReconciliationService().cleanup_orphaned_artifacts()
@@ -216,15 +220,17 @@ def test_cleanup_ignores_recent_part_files(
     recent_part = sensitive_dir / "recent.part.mp4"
     recent_part.write_bytes(b"fresh")
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "sensitive_video": sensitive_dir,
-            "anonym_video": anonym_dir,
-            "transcoding": temp_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "sensitive_video": sensitive_dir,
+                "anonym_video": anonym_dir,
+                "transcoding": temp_dir,
+            }
+        ),
         raising=True,
     )
 
@@ -251,15 +257,17 @@ def test_cleanup_retains_stale_part_files_without_attempt_ownership(
     old = time.time() - (STALE_LOCK_SECONDS + 10)
     os.utime(stale_part, (old, old))
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "sensitive_video": sensitive_dir,
-            "anonym_video": anonym_dir,
-            "transcoding": temp_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "sensitive_video": sensitive_dir,
+                "anonym_video": anonym_dir,
+                "transcoding": temp_dir,
+            }
+        ),
         raising=True,
     )
 
@@ -346,7 +354,7 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
     class DummyVideo(_DummyVideo):
         def __init__(self) -> None:
             super().__init__(
-                video_hash="abc123",
+                raw_video_hash="abc123",
                 raw_file_name="sensitive_videos/legacy_name.mp4",
             )
 
@@ -366,14 +374,16 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
     def fake_atomic() -> Generator[None, None, None]:
         yield
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -388,7 +398,7 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
 
     monkeypatch.setattr(
         reconciliation_module,
-        "sha256_file",
+        "get_file_hash",
         fake_sha256_file,
         raising=True,
     )
@@ -425,7 +435,7 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
     class DummyVideo(_DummyVideo):
         def __init__(self) -> None:
             super().__init__(
-                video_hash="expected-hash",
+                raw_video_hash="expected-hash",
                 raw_file_name="sensitive_videos/missing.mp4",
             )
 
@@ -445,14 +455,16 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
     def fake_atomic() -> Generator[None, None, None]:
         yield
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -467,7 +479,7 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
 
     monkeypatch.setattr(
         reconciliation_module,
-        "sha256_file",
+        "get_file_hash",
         fake_sha256_file,
         raising=True,
     )
@@ -505,7 +517,7 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
     class DummyVideo(_DummyVideo):
         def __init__(self) -> None:
             super().__init__(
-                video_hash="dupe-hash",
+                raw_video_hash="dupe-hash",
                 raw_file_name="sensitive_videos/missing.mp4",
             )
 
@@ -515,14 +527,16 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
         def __init__(self) -> None:
             super().__init__([video])
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -537,7 +551,7 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
 
     monkeypatch.setattr(
         reconciliation_module,
-        "sha256_file",
+        "get_file_hash",
         fake_sha256_file,
         raising=True,
     )
@@ -568,7 +582,7 @@ def test_relink_skips_if_canonical_taken(
     class DummyVideo(_DummyVideo):
         def __init__(self) -> None:
             super().__init__(
-                video_hash="abc", raw_file_name="sensitive_videos/missing.mp4"
+                raw_video_hash="abc", raw_file_name="sensitive_videos/missing.mp4"
             )
 
     video = DummyVideo()
@@ -577,14 +591,16 @@ def test_relink_skips_if_canonical_taken(
         def __init__(self) -> None:
             super().__init__([video])
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -599,7 +615,7 @@ def test_relink_skips_if_canonical_taken(
 
     monkeypatch.setattr(
         reconciliation_module,
-        "sha256_file",
+        "get_file_hash",
         fake_sha256_file,
         raising=True,
     )
@@ -628,7 +644,7 @@ def test_relink_first_winner_for_duplicate_hash(
     class DummyVideo(_DummyVideo):
         def __init__(self, label: str) -> None:
             super().__init__(
-                video_hash="xyz",
+                raw_video_hash="xyz",
                 raw_file_name=f"sensitive_videos/{label}.mp4",
             )
 
@@ -643,14 +659,16 @@ def test_relink_first_winner_for_duplicate_hash(
     def fake_atomic() -> Generator[None, None, None]:
         yield
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -665,7 +683,7 @@ def test_relink_first_winner_for_duplicate_hash(
 
     monkeypatch.setattr(
         reconciliation_module,
-        "sha256_file",
+        "get_file_hash",
         fake_sha256_file,
         raising=True,
     )
@@ -701,7 +719,7 @@ def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
     class DummyVideo(_DummyVideo):
         def __init__(self) -> None:
             super().__init__(
-                video_hash="crash-hash",
+                raw_video_hash="crash-hash",
                 raw_file_name="pending/old.mp4",
             )
 
@@ -715,14 +733,16 @@ def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
     def fake_atomic() -> Generator[None, None, None]:
         yield
 
+    runtime_paths = reconciliation_module.get_runtime_paths()
     monkeypatch.setattr(
         reconciliation_module,
-        "data_paths",
-        {
-            **reconciliation_module.data_paths,
-            "storage": storage_dir,
-            "sensitive_video": sensitive_dir,
-        },
+        "get_runtime_paths",
+        lambda: runtime_paths.model_copy(
+            update={
+                "storage": storage_dir,
+                "sensitive_video": sensitive_dir,
+            }
+        ),
         raising=True,
     )
     monkeypatch.setattr(
@@ -769,7 +789,7 @@ def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
             return "target"
         return "other"
 
-    monkeypatch.setattr(reconciliation_module, "sha256_file", fake_hash, raising=True)
+    monkeypatch.setattr(reconciliation_module, "get_file_hash", fake_hash, raising=True)
 
     matches = ReconciliationService()._build_content_hash_index(
         sensitive_dir=sensitive_dir,
@@ -789,7 +809,7 @@ def test_reconciliation_retains_incomplete_states_without_generation_link(
 
     class DummyVideoState(_DummyVideoState):
         def mark_processing_not_started(self) -> None:
-            events.append(("video_reset", self.video_file.video_hash))
+            events.append(("video_reset", self.video_file.raw_video_hash))
 
     class DummyPdfState(_DummyPdfState):
         def mark_processing_not_started(self) -> None:

@@ -46,20 +46,19 @@ from endoreg_db.services.evaluation_manifest import (
     write_performance_evaluation_manifest,
 )
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.utils import paths as path_utils
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
 
 logger = logging.getLogger(__name__)
 
-JsonNull: TypeAlias = None
 ForcedMediaType: TypeAlias = Literal["auto", "video", "report"]
-ProcessorRoi: TypeAlias = RoiBoxCore | dict[str, int | JsonNull]
+ProcessorRoi: TypeAlias = RoiBoxCore | dict[str, int | None]
 ImportedMedia: TypeAlias = VideoFile | RawPdfFile
 TimedParameters = ParamSpec("TimedParameters")
 TimedReturn = TypeVar("TimedReturn")
@@ -70,9 +69,9 @@ REPORT_BYPASS_EXTENSIONS = {".txt"}
 
 
 class _ProcessorWithRois(Protocol):
-    def get_roi_endoscope_image(self) -> ProcessorRoi | JsonNull: ...
+    def get_roi_endoscope_image(self) -> ProcessorRoi | None: ...
 
-    def get_sensitive_rois(self) -> dict[str, ProcessorRoi | JsonNull]: ...
+    def get_sensitive_rois(self) -> dict[str, ProcessorRoi | None]: ...
 
 
 class _ProcessorRegistry(Protocol):
@@ -96,7 +95,7 @@ class _TimedVideoImportService(Protocol):
         center_name: str,
         processor_name: str,
         retry: bool,
-    ) -> VideoFile | JsonNull: ...
+    ) -> VideoFile | None: ...
 
 
 class _TimedReportImportService(Protocol):
@@ -107,23 +106,23 @@ class _TimedReportImportService(Protocol):
         file_path: Path,
         center_name: str,
         retry: bool,
-    ) -> RawPdfFile | JsonNull: ...
+    ) -> RawPdfFile | None: ...
 
 
 class _NamedFieldFile(Protocol):
-    name: str | JsonNull
+    name: str | None
 
 
 class _VideoEvaluationMedia(Protocol):
-    pk: int | JsonNull
-    video_hash: str
-    processed_video_hash: str | JsonNull
+    pk: int | None
+    raw_video_hash: str
+    processed_video_hash: str | None
     raw_file: FieldFile
     processed_file: FieldFile
 
 
 class _ReportEvaluationMedia(Protocol):
-    pk: int | JsonNull
+    pk: int | None
     pdf_hash: str
     file: FieldFile
     processed_file: FieldFile
@@ -136,7 +135,7 @@ class _PerformanceDurationSeries:
     end_to_end: list[float]
 
 
-def _roi_is_configured(roi: ProcessorRoi | JsonNull) -> bool:
+def _roi_is_configured(roi: ProcessorRoi | None) -> bool:
     if roi is None:
         return False
     try:
@@ -599,7 +598,7 @@ class Command(BaseCommand):
     def _media_type_for_path(
         path: Path,
         forced_media_type: ForcedMediaType,
-    ) -> LxAnonymizerPerformanceMediaType | JsonNull:
+    ) -> LxAnonymizerPerformanceMediaType | None:
         suffix = path.suffix.lower()
         if suffix in REPORT_BYPASS_EXTENSIONS:
             if forced_media_type == "report":
@@ -630,11 +629,11 @@ class Command(BaseCommand):
         keep_staged_inputs: bool,
     ) -> LxAnonymizerPerformanceRunPayload:
         source_size = source_path.stat().st_size
-        source_hash = sha256_file(source_path)
-        staged_path: Path | JsonNull = None
+        source_hash = get_file_hash(source_path)
+        staged_path: Path | None = None
         staging_seconds = 0.0
         import_seconds = 0.0
-        anonymizer_seconds: float | JsonNull = None
+        anonymizer_seconds: float | None = None
         process_cpu_start = time.process_time()
         rss_start = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         total_start = time.perf_counter()
@@ -711,8 +710,8 @@ class Command(BaseCommand):
                 safe_unlink_file(staged_path, missing_ok=True)
 
     def _stage_input(self, source_path: Path, iteration: int) -> Path:
-        paths = path_utils.EndoregPathsModel.from_environment()
-        staging_dir = ensure_directory(paths.transcoding / "lx_anonymizer_eval")
+        eval_dir = get_runtime_paths().lx_anonymizer_eval
+        staging_dir = ensure_directory(eval_dir)
         staged_name = (
             f"eval_{os.getpid()}_{iteration}_{time.time_ns()}_{source_path.name}"
         )
@@ -768,7 +767,7 @@ class Command(BaseCommand):
         return str(typed_field_file.name or "")
 
     @staticmethod
-    def _media_pk(instance: ImportedMedia) -> int | JsonNull:
+    def _media_pk(instance: ImportedMedia) -> int | None:
         if isinstance(instance, VideoFile):
             return cast(_VideoEvaluationMedia, instance).pk
         return cast(_ReportEvaluationMedia, instance).pk
@@ -792,7 +791,7 @@ class Command(BaseCommand):
     @staticmethod
     def _content_hash(instance: ImportedMedia) -> str:
         if isinstance(instance, VideoFile):
-            return cast(_VideoEvaluationMedia, instance).video_hash
+            return cast(_VideoEvaluationMedia, instance).raw_video_hash
         return cast(_ReportEvaluationMedia, instance).pdf_hash
 
     @staticmethod

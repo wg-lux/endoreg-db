@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandParser
 from lx_dtypes.models.contracts.management_command import (
@@ -16,15 +15,11 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.medical.hardware.endoscope import Endoscope, EndoscopeType
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from ...utils import load_model_data_from_yaml
-from ...utils.yaml_model_loader import LoadModelDataMetadata
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 SOURCE_DIR = ENDOSCOPE_TYPE_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 
 MODEL_0 = EndoscopeType
-
-
-class LoadEndoscopeCommandOptions(TypedDict):
-    verbose: bool
 
 
 IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
@@ -69,7 +64,7 @@ class Command(BaseCommand):
     def handle(
         self,
         *args: str,
-        **options: Unpack[LoadEndoscopeCommandOptions],
+        **options: object,
     ) -> None:
         verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:

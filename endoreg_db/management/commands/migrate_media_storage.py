@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from endoreg_db.utils.storage.files import canonical_media_name
+
 import errno
 import json
 import logging
+from contextlib import ExitStack, nullcontext
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +23,8 @@ from typing import (
 )
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db import models
+from django.core.exceptions import SuspiciousFileOperation
+from django.db import models, transaction
 from django.db.models.fields.files import FieldFile
 from django.db.utils import OperationalError, ProgrammingError
 from lx_dtypes.models.contracts.json_types import JsonObject
@@ -38,13 +42,14 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
-from endoreg_db.utils.file_operations import sha256_file
+from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import (
-    EndoregPathsModel,
+    get_runtime_paths,
     protected_media_root,
     resolve_existing_protected_media_path,
 )
 from endoreg_db.utils.storage import (
+    ensure_local_file,
     field_file_is_readable,
     save_local_file,
 )
@@ -246,7 +251,13 @@ def _safe_field_storage_path(field_file: object) -> Path | None:
         return None
     try:
         return Path(named_file.storage.path(named_file.name)).resolve()
-    except (AttributeError, NotImplementedError, OSError, ValueError):
+    except (
+        AttributeError,
+        NotImplementedError,
+        OSError,
+        ValueError,
+        SuspiciousFileOperation,
+    ):
         return None
 
 
@@ -335,7 +346,7 @@ class Command(BaseCommand):
     video_raw_spec = MediaFieldSpec(
         object_kind="video",
         field_name="raw_file",
-        hash_attr="video_hash",
+        hash_attr="raw_video_hash",
         default_suffix=".mp4",
         legacy_root_attrs=(
             "sensitive_video",
@@ -357,7 +368,7 @@ class Command(BaseCommand):
             "import_preanonymized",
             "upload_preanonymized",
         ),
-        lookup_hash_attrs=("processed_video_hash", "video_hash"),
+        lookup_hash_attrs=("processed_video_hash", "raw_video_hash"),
         streamable_attr="processed_streamable_relative_path",
     )
     report_raw_spec = MediaFieldSpec(
@@ -420,7 +431,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--hash",
             dest="hash_value",
-            help="Restrict to matching video_hash, processed_video_hash, or pdf_hash.",
+            help="Restrict to matching raw_video_hash, processed_video_hash, or pdf_hash.",
         )
 
     def handle(
@@ -738,7 +749,7 @@ class Command(BaseCommand):
             video_qs = video_qs.filter(pk__in=video_ids)
         if hash_value:
             video_qs = video_qs.filter(
-                models.Q(video_hash=hash_value)
+                models.Q(raw_video_hash=hash_value)
                 | models.Q(processed_video_hash=hash_value)
             )
         for video in video_qs.iterator():
@@ -807,8 +818,8 @@ class Command(BaseCommand):
             )
         return self._plan_source_migration(instance, spec, source)
 
-    @staticmethod
     def _plan_existing_field_file(
+        self,
         instance: models.Model,
         spec: MediaFieldSpec,
         field_file: FieldFile | None,
@@ -817,6 +828,33 @@ class Command(BaseCommand):
         if named_file is None:
             return None
         readable_field_file = cast(FieldFile, field_file)
+        source_path = _safe_field_storage_path(readable_field_file)
+        if source_path is not None and (
+            _field_is_repairable_plaintext(readable_field_file)
+            or field_file_is_readable(readable_field_file)
+        ):
+            target = readable_field_file.field.generate_filename(
+                instance, self._target_filename(instance, spec, source_path)
+            )
+            # Published generations are intentionally immutable, distinct masters.
+            generation_root = get_runtime_paths().anonym_video / ".generations"
+            if named_file.name != target and not source_path.is_relative_to(
+                generation_root
+            ):
+                return FieldPlan(
+                    spec.object_kind,
+                    instance.pk,
+                    spec.field_name,
+                    "would_migrate",
+                    source=SourceCandidate(
+                        source_path,
+                        "legacy_path",
+                        "legacy_plaintext"
+                        if _field_is_repairable_plaintext(readable_field_file)
+                        else "stored_field",
+                    ),
+                    target_name=target,
+                )
         if _field_is_repairable_plaintext(readable_field_file):
             return FieldPlan(
                 spec.object_kind,
@@ -847,12 +885,12 @@ class Command(BaseCommand):
         *,
         rejected_reason: str,
     ) -> FieldPlan:
-        if not _field_file_has_name(field_file):
+        if not _field_file_has_name(field_file) and not rejected_reason:
             return FieldPlan(spec.object_kind, instance.pk, spec.field_name, "ok")
-        reason = (
+        reason = rejected_reason or (
             "missing_source"
             if not _field_storage_exists(field_file)
-            else rejected_reason or "unreadable_fieldfile"
+            else "unreadable_fieldfile"
         )
         return FieldPlan(
             spec.object_kind,
@@ -932,6 +970,7 @@ class Command(BaseCommand):
         self, instance: models.Model, spec: MediaFieldSpec
     ) -> tuple[SourceCandidate | None, str]:
         rejected_reason = ""
+        accepted: list[SourceCandidate] = []
         for candidate in self._source_candidates(instance, spec):
             file_status = _inspect_candidate_file(candidate.path)
             if file_status == "missing":
@@ -946,8 +985,43 @@ class Command(BaseCommand):
             if content_status != "accepted":
                 rejected_reason = content_status
                 continue
-            return candidate, ""
-        return None, rejected_reason
+            validation_error = self._validate_source(instance, spec, candidate)
+            if validation_error:
+                rejected_reason = validation_error
+                continue
+            accepted.append(candidate)
+        expected_hash = self._expected_hash(instance, spec)
+        if not accepted and _is_sha256_hex(expected_hash):
+            paths = get_runtime_paths()
+            suffixes = self._candidate_suffixes(instance, spec)
+            for root_attr in spec.legacy_root_attrs:
+                root = getattr(paths, root_attr)
+                for legacy_root in dict.fromkeys(
+                    (root, paths.runtime_root / root.name)
+                ):
+                    for path in legacy_root.rglob("*"):
+                        if path.suffix.lower() not in suffixes:
+                            continue
+                        if _inspect_candidate_file(path) != "candidate":
+                            continue
+                        candidate = SourceCandidate(
+                            path, "legacy_path", "content_hash_lookup"
+                        )
+                        if (
+                            _inspect_candidate_content(
+                                candidate,
+                                is_allowed_source_path=self._is_allowed_source_path,
+                            )
+                            != "accepted"
+                        ):
+                            continue
+                        if not self._validate_source(instance, spec, candidate):
+                            accepted.append(candidate)
+        if not accepted:
+            return None, rejected_reason
+        if len({get_file_hash(candidate.path) for candidate in accepted}) != 1:
+            return None, "ambiguous_source"
+        return accepted[0], ""
 
     def _source_candidates(
         self, instance: models.Model, spec: MediaFieldSpec
@@ -998,16 +1072,32 @@ class Command(BaseCommand):
         if not stems:
             return
 
-        paths = EndoregPathsModel.from_environment()
+        paths = get_runtime_paths()
         for root_attr in spec.legacy_root_attrs:
             root = getattr(paths, root_attr)
-            for stem in stems:
-                for suffix in self._candidate_suffixes(instance, spec):
+            roots = (root, paths.runtime_root / root.name)
+            for candidate_root in dict.fromkeys(roots):
+                if field_name:
                     yield from yield_once(
-                        root / f"{stem}{suffix}",
+                        candidate_root / Path(field_name).name,
                         kind="legacy_path",
-                        label=f"{root_attr}/{stem}{suffix}",
+                        label="legacy_field_basename",
                     )
+                for stem in stems:
+                    for suffix in self._candidate_suffixes(instance, spec):
+                        yield from yield_once(
+                            candidate_root / f"{stem}{suffix}",
+                            kind="legacy_path",
+                            label=f"{root_attr}/{stem}{suffix}",
+                        )
+                        for candidate in sorted(
+                            candidate_root.glob(f"{stem}_*{suffix}")
+                        ):
+                            yield from yield_once(
+                                candidate,
+                                kind="legacy_path",
+                                label="legacy_filename_suffix",
+                            )
 
     def _candidate_stems(
         self, instance: models.Model, spec: MediaFieldSpec
@@ -1037,13 +1127,15 @@ class Command(BaseCommand):
     ) -> tuple[str, ...]:
         if spec.object_kind != "video" or spec.field_name != "processed_file":
             return ()
-        video_hash = getattr(instance, "video_hash", "") or ""
-        if not video_hash:
+        raw_video_hash = getattr(instance, "raw_video_hash", "") or ""
+        if not raw_video_hash:
             return ()
         return (
-            f"{video_hash}_processed",
-            f"{video_hash}-processed",
-            f"processed_{video_hash}",
+            f"{raw_video_hash}_filtered",
+            f"{raw_video_hash}_anonymized",
+            f"{raw_video_hash}_processed",
+            f"{raw_video_hash}-processed",
+            f"processed_{raw_video_hash}",
         )
 
     def _candidate_suffixes(
@@ -1054,14 +1146,14 @@ class Command(BaseCommand):
             suffix = getattr(instance, "suffix", "") or ""
             if suffix and suffix not in suffixes:
                 suffixes.append(suffix)
-        return tuple(suffixes)
+        return tuple(dict.fromkeys(suffix.lower() for suffix in suffixes))
 
     def _is_allowed_source_path(self, path: Path) -> bool:
         if is_safe_staging_path(path):
             return True
         resolved = path.resolve()
-        paths = EndoregPathsModel.from_environment()
-        for root in (paths.storage, paths.protected_root, protected_media_root()):
+        paths = get_runtime_paths()
+        for root in (paths.storage, paths.runtime_root, protected_media_root()):
             try:
                 resolved.relative_to(Path(root).resolve())
                 return True
@@ -1089,7 +1181,7 @@ class Command(BaseCommand):
             if (
                 self._should_validate_source_hash(spec)
                 and _is_sha256_hex(expected_hash)
-                and sha256_file(source.path) != expected_hash
+                and get_file_hash(source.path) != expected_hash
             ):
                 return "validation_failed"
         except PermissionError:
@@ -1103,11 +1195,11 @@ class Command(BaseCommand):
     def _target_filename(
         self, instance: models.Model, spec: MediaFieldSpec, source_path: Path
     ) -> str:
-        expected_hash = self._expected_hash(instance, spec)
+        identity = getattr(
+            instance, "raw_video_hash" if spec.object_kind == "video" else "pdf_hash"
+        )
         suffix = source_path.suffix or spec.default_suffix
-        if expected_hash:
-            return f"{expected_hash}{suffix}"
-        return source_path.name
+        return canonical_media_name(str(identity), suffix)
 
     def _apply_record_plan(
         self,
@@ -1118,45 +1210,62 @@ class Command(BaseCommand):
         delete_verified_legacy: bool,
         fail_fast: bool,
     ) -> list[dict[str, Any]]:
-        instance = self._get_instance(record_plan.object_kind, record_plan.object_pk)
-        if instance is None:
-            return [
-                self._result_from_plan(
-                    FieldPlan(
-                        record_plan.object_kind,
-                        record_plan.object_pk,
-                        "record",
-                        "failed",
-                        reason="missing_source",
+        with ExitStack() as stack:
+            if apply:
+                if record_plan.object_kind == "video":
+                    from endoreg_db.services.media_operation_gate import (
+                        video_artifact_mutation,
                     )
-                )
-            ]
 
-        results: list[dict[str, Any]] = []
-        specs = self._specs_for_record(record_plan.object_kind, includes)
-        for spec in specs:
-            result = self._execute_field(instance, spec, apply=apply)
-            results.append(result)
-            if fail_fast and result["status"] == "failed":
-                return results
-
-        if record_plan.object_kind == "video" and includes["streamable"]:
-            video = cast(VideoFile, instance)
-            result = self._execute_streamable(
-                video,
-                include_raw=includes["raw"],
-                include_processed=includes["processed"],
-                apply=apply,
+                    stack.enter_context(
+                        video_artifact_mutation(video_id=record_plan.object_pk)
+                    )
+                stack.enter_context(transaction.atomic())
+            instance = self._get_instance(
+                record_plan.object_kind, record_plan.object_pk
             )
-            results.append(result)
-        return results
+            if instance is None:
+                return [
+                    self._result_from_plan(
+                        FieldPlan(
+                            record_plan.object_kind,
+                            record_plan.object_pk,
+                            "record",
+                            "failed",
+                            reason="missing_source",
+                        )
+                    )
+                ]
+
+            results: list[dict[str, Any]] = []
+            specs = self._specs_for_record(record_plan.object_kind, includes)
+            for spec in specs:
+                result = self._execute_field(instance, spec, apply=apply)
+                results.append(result)
+                if fail_fast and result["status"] == "failed":
+                    return results
+
+            if record_plan.object_kind == "video" and includes["streamable"]:
+                video = cast(VideoFile, instance)
+                result = self._execute_streamable(
+                    video,
+                    include_raw=includes["raw"],
+                    include_processed=includes["processed"],
+                    apply=apply,
+                )
+                results.append(result)
+            return results
 
     def _get_instance(
         self, object_kind: ObjectKind, pk: int
     ) -> VideoFile | RawPdfFile | None:
         model = VideoFile if object_kind == "video" else RawPdfFile
         try:
-            return model.objects.get(pk=pk)
+            return (
+                model.objects.select_for_update().get(pk=pk)
+                if transaction.get_connection().in_atomic_block
+                else model.objects.get(pk=pk)
+            )
         except model.DoesNotExist:
             return None
 
@@ -1256,12 +1365,35 @@ class Command(BaseCommand):
         if plan.source is None:
             raise RuntimeError("missing_source")
         field_file = getattr(instance, spec.field_name)
-        saved_name = save_local_file(
-            field_file,
-            plan.source.path,
-            name=plan.target_name,
-            save=False,
+        source_context = (
+            ensure_local_file(field_file)
+            if plan.source.label == "stored_field"
+            else nullcontext(plan.source.path)
         )
+        with source_context as local_source:
+            target_name = plan.target_name
+            if "/" not in target_name:
+                target_name = field_file.field.generate_filename(instance, target_name)
+            source_hash = get_file_hash(Path(local_source))
+            if field_file.storage.exists(target_name):
+                existing_target = FieldFile(instance, field_file.field, target_name)
+                with ensure_local_file(existing_target) as existing_path:
+                    if get_file_hash(Path(existing_path)) != source_hash:
+                        raise RuntimeError("canonical_target_conflict")
+                field_file.name = target_name
+                saved_name = target_name
+            else:
+                saved_name = save_local_file(
+                    field_file,
+                    Path(local_source),
+                    name=target_name,
+                    save=False,
+                )
+            if saved_name != target_name:
+                raise RuntimeError("canonical_target_conflict")
+            with ensure_local_file(field_file) as stored_path:
+                if get_file_hash(Path(stored_path)) != source_hash:
+                    raise RuntimeError("validation_failed")
         if not field_file_is_readable(field_file):
             raise RuntimeError("validation_failed")
         if not _field_is_encrypted_at_rest(field_file):

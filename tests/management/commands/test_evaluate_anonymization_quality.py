@@ -52,7 +52,7 @@ def test_quality_command_json_output_is_derived_only_and_snake_case(
     video = VideoFile.objects.create(
         center=center,
         sensitive_meta=sensitive_meta,
-        video_hash=f"quality-command-video-{uuid4().hex}",
+        raw_video_hash=f"quality-command-video-{uuid4().hex}",
     )
     _save_processed_video_file(video)
     video.get_or_create_state().mark_anonymization_validated()
@@ -124,7 +124,7 @@ def test_quality_command_apply_policy_clears_direct_identifiers(
     video = VideoFile.objects.create(
         center=center,
         sensitive_meta=sensitive_meta,
-        video_hash=f"quality-apply-video-{uuid4().hex}",
+        raw_video_hash=f"quality-apply-video-{uuid4().hex}",
     )
     _save_processed_video_file(video)
     video.get_or_create_state().mark_anonymization_validated()

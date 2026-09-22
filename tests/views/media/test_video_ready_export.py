@@ -40,7 +40,7 @@ class VideoReadyExportEndpointTests(TestCase):
         default_state = state is None
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"ready-video-{uuid4().hex[:8]}",
+            raw_video_hash=f"ready-video-{uuid4().hex[:8]}",
             state=state
             or VideoState.objects.create(
                 anonymization_validated=True,

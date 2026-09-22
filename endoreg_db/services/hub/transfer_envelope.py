@@ -30,9 +30,9 @@ from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.utils.file_operations import (
     atomic_handoff_file,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils.paths import TRANSCODING_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 _CHUNK_SIZE = 1024 * 1024
 _WRAP_INFO = b"lx-hub-media-envelope-wrap-v1"
@@ -436,7 +436,9 @@ def prepare_inbound_hub_envelope(
             rejection_phase="ciphertext_staging",
         )
 
-    destination = TRANSCODING_DIR / f"hub-envelope-{uuid.uuid4().hex}.ciphertext"
+    destination = (
+        get_runtime_paths().transcoding / f"hub-envelope-{uuid.uuid4().hex}.ciphertext"
+    )
     atomic_handoff_file(
         destination=destination,
         content=_ciphertext_chunks(ciphertext_stream),
@@ -445,7 +447,7 @@ def prepare_inbound_hub_envelope(
         dir_mode=0o700,
     )
     try:
-        ciphertext_sha256 = sha256_file(destination)
+        ciphertext_sha256 = get_file_hash(destination)
         data_encryption_key = _unwrap_data_encryption_key(metadata)
         reader = _AuthenticatedEnvelopeReader(
             ciphertext_path=destination,
