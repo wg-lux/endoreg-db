@@ -1,47 +1,87 @@
-from django.db import models
-from typing import TYPE_CHECKING, List, Optional
+from __future__ import annotations
+from typing import TYPE_CHECKING, Optional, Protocol, Any, Unpack, cast
 
-if TYPE_CHECKING: 
-    from ...administration.person.patient import Patient
+from django.core.exceptions import ValidationError
+from django.db import models
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.schemas import (
+    dump_patient_examination_report_draft,
+    validate_dtypes_p_examination_payload,
+)
+
+if TYPE_CHECKING:
+    from endoreg_db.models.administration.person.patient.patient import Patient  # pyright: ignore
+    from endoreg_db.models.medical.examination.examination import Examination
+    from endoreg_db.models.medical.examination.examination_indication import (
+        ExaminationIndication,
+    )
+    from endoreg_db.models.medical.examination.examination_indication import (
+        ExaminationIndicationClassificationChoice,
+    )
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.report.patient_examination_report import (
+        PatientExaminationReport,
+    )
+    from ...media import (
+        AnonymExaminationReport,
+        AnonymHistologyReport,
+        RawPdfFile,
+    )
     from ..finding import Finding
-    from .patient_finding import PatientFinding
-    from ..examination import Examination
-    from ...media import VideoFile, RawPdfFile, AnonymExaminationReport, AnonymHistologyReport
     from .patient_examination_indication import PatientExaminationIndication
-    from ..examination import ExaminationIndicationClassificationChoice, ExaminationIndication
-    from endoreg_db.utils.links.requirement_link import RequirementLinks
+    from .patient_finding import PatientFinding
+
+
+class _PatientExaminationIndicationLike(Protocol):
+    examination_indication: "ExaminationIndication | None"
+    indication_choice: "ExaminationIndicationClassificationChoice | None"
+
 
 class PatientExamination(models.Model):
-    patient = models.ForeignKey(
+    patient: models.ForeignKey["Patient"] = models.ForeignKey(
         "Patient", on_delete=models.CASCADE, related_name="patient_examinations"
     )
-    examination = models.ForeignKey( # type: ignore[assignment]
+    examination: models.ForeignKey["Examination | None"] = models.ForeignKey(
         "Examination", on_delete=models.CASCADE, null=True, blank=True
     )
-    video = models.OneToOneField( # type: ignore[assignment]
-        "VideoFile",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name="patient_examination",
+    date_start: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    date_end: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    knowledge_base_module: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, default=""
     )
-    
-    objects = models.Manager()
-    
-    date_start = models.DateField(null=True, blank=True)
-    date_end = models.DateField(null=True, blank=True)
-    hash = models.CharField(max_length=255, unique=True)
-    
+    knowledge_base_version: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, default=""
+    )
+    dtypes_record: models.JSONField[Any, Any] = models.JSONField(
+        default=dict, blank=True
+    )
+    dtypes_record_updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+        null=True, blank=True
+    )
+    report_draft: models.JSONField[Any, Any] = models.JSONField(
+        default=dict, blank=True
+    )
+    draft_updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+        null=True, blank=True
+    )
 
     if TYPE_CHECKING:
-        patient: "models.ForeignKey[Patient]"
-        examination: "models.ForeignKey[Examination]"
-        video: "models.OneToOneField[VideoFile]"
+        patient_id: int | None
+        examination_id: int | None
+        video_files: models.QuerySet["VideoFile"]
+        reports: models.QuerySet["PatientExaminationReport"]
         patient_findings: models.QuerySet["PatientFinding"]
         indications: models.QuerySet["PatientExaminationIndication"]
         raw_pdf_files: models.QuerySet["RawPdfFile"]
         anonymexaminationreport_set: models.QuerySet["AnonymExaminationReport"]
         anonymhistologyreport_set: models.QuerySet["AnonymHistologyReport"]
+
+    @property
+    def examination_safe(self):
+        if self.examination is None:
+            raise ValueError("Examination is not set for this PatientExamination.")
+        return self.examination
 
     # report_files
     class Meta:
@@ -55,7 +95,7 @@ class PatientExamination(models.Model):
         patient_hash: str,
         examination_hash: str,
         examination_name: Optional[str] = None,
-    ):
+    ) -> tuple["PatientExamination", bool]:
         from ...administration.person import Patient
         from ..examination import Examination
 
@@ -83,13 +123,13 @@ class PatientExamination(models.Model):
         created = True
         return patient_examination, created
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.patient} - {self.examination} - {self.date_start}"
 
     # override save method to make sure that the hash is always set,
     # if none is existing generate an unique string
 
-    def generate_default_hash(self):
+    def generate_default_hash(self) -> str:
         # create random hash
         import random
         import string
@@ -100,27 +140,55 @@ class PatientExamination(models.Model):
 
         return _hash
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if not self.hash:
             self.hash = self.generate_default_hash()
+        self.clean()
         super().save(*args, **kwargs)
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        module_name = self.knowledge_base_module.strip()
+        version = self.knowledge_base_version.strip()
+        if bool(module_name) != bool(version):
+            errors["knowledge_base_module"] = (
+                "knowledge_base_module and knowledge_base_version must be set together"
+            )
+        else:
+            self.knowledge_base_module = module_name
+            self.knowledge_base_version = version
+        try:
+            self.dtypes_record = validate_dtypes_p_examination_payload(
+                self.dtypes_record
+            )
+        except ValueError as exc:
+            errors["dtypes_record"] = str(exc)
+        try:
+            self.report_draft = dump_patient_examination_report_draft(self.report_draft)
+        except ValueError as exc:
+            errors["report_draft"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
 
     def get_patient_age_at_examination(self) -> int:
         """
         Returns the patient's age at the time of the examination.
         """
-        from ...administration.person.patient import Patient
 
-        patient: Patient = self.patient
+        patient = self.patient
         dob = patient.get_dob()
         date_start = self.date_start
+        assert dob is not None
+        assert date_start is not None
         return (date_start - dob).days // 365
 
-    def get_available_findings(self):
+    def get_available_findings(self) -> list["Finding"]:
         """
         Returns all findings that are associated with the examination of this patient examination.
         """
 
+        assert self.examination is not None
         return self.examination.get_available_findings()
 
     def get_findings(self) -> models.QuerySet["PatientFinding"]:
@@ -136,114 +204,44 @@ class PatientExamination(models.Model):
         """
         return self.indications.all()
 
-    def get_indication_choices(self) -> List["ExaminationIndicationClassificationChoice"]:
+    def get_indication_choices(
+        self,
+    ) -> list["ExaminationIndicationClassificationChoice"]:
         """
         Returns a list of indication choices associated with this patient examination.
-        
+
         Only includes indication choices that are not None.
         """
 
-        choices = [
-            _.indication_choice for _ in self.get_indications() if _.indication_choice is not None
-        ]
+        choices: list["ExaminationIndicationClassificationChoice"] = []
+        for indication in cast(
+            list[_PatientExaminationIndicationLike], list(self.get_indications())
+        ):
+            indication_choice = indication.indication_choice
+            if indication_choice is not None:
+                choices.append(indication_choice)
         return choices
 
-    def get_or_create_patient_examination_by_id(self, pk: int) -> Optional["PatientExamination"]:
+    def get_or_create_patient_examination_by_id(
+        self, pk: int
+    ) -> Optional["PatientExamination"]:
         """Hilfsmethode zum Abrufen oder Erstellen einer PatientExamination nach ID"""
         if not self.objects.filter(pk=pk).exists():
             return None
         else:
-            return self.objects.filter(pk=pk)
+            return self.objects.filter(pk=pk).first()
 
-    @property
-    def links(self) -> "RequirementLinks":
-        """
-        Aggregates and returns all related model instances relevant for requirement evaluation
-        as a RequirementLinks object.
-        
-        This includes:
-        - All findings associated with this examination
-        - All classifications and choices from those findings
-        - All interventions from those findings
-        - Examination indications and their choices
-        - Patient lab values
-        """
-        from endoreg_db.utils.links.requirement_link import RequirementLinks
-        from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
-        
-        # Get all PatientExaminationIndication instances linked to this PatientExamination
-        patient_exam_indications = self.indications.all() 
-        
-        examination_indications_list: List["ExaminationIndication"] = []
-        indication_choices_list: List["ExaminationIndicationClassificationChoice"] = []
-
-        for pei in patient_exam_indications:
-            if pei.examination_indication:
-                examination_indications_list.append(pei.examination_indication)
-            if pei.indication_choice:
-                indication_choices_list.append(pei.indication_choice)
-
-        # Fetch all patient lab values associated with this patient examination's patient
-        patient_lab_values = []
-        if self.patient:
-            patient_lab_values = list(PatientLabValue.objects.filter(patient=self.patient))
-
-        current_examination = [self.examination] if self.examination else []
-        
-        # Now aggregate findings data from all PatientFinding instances
-        findings_list = []
-        finding_classifications_list = []
-        finding_classification_choices_list = []
-        finding_interventions_list = []
-        patient_findings_list = []
-        
-        for patient_finding in self.patient_findings.all():
-            # Add the PatientFinding itself
-            patient_findings_list.append(patient_finding)
-            
-            # Add the base Finding
-            if patient_finding.finding:
-                findings_list.append(patient_finding.finding)
-                
-            # Add all active classifications and their choices from this PatientFinding
-            for pf_classification in patient_finding.active_classifications:
-                if pf_classification.classification:
-                    finding_classifications_list.append(pf_classification.classification)
-                if pf_classification.classification_choice:
-                    finding_classification_choices_list.append(pf_classification.classification_choice)
-            
-            # Add all active interventions from this PatientFinding  
-            for pf_intervention in patient_finding.active_interventions:
-                if pf_intervention.intervention:
-                    finding_interventions_list.append(pf_intervention.intervention)
-
-        return RequirementLinks(
-            patient_examinations=[self],  # Add the instance itself
-            examinations=current_examination, # Add the related Examination model
-            examination_indications=examination_indications_list,
-            examination_indication_classification_choices=indication_choices_list,
-            patient_lab_values=patient_lab_values,
-            # Add findings-related data
-            patient_findings=patient_findings_list,
-            findings=findings_list,
-            finding_classifications=finding_classifications_list,
-            finding_classification_choices=finding_classification_choices_list,
-            finding_interventions=finding_interventions_list,
-        )
-
-    def create_finding(self, finding:"Finding") -> "PatientFinding":
+    def create_finding(self, finding: "Finding") -> "PatientFinding":
         """
         Adds a finding to this patient examination.
         """
         from .patient_finding import PatientFinding
 
-        examination: Examination = self.examination
-        assert examination
+        examination = self.examination
+        assert examination is not None
 
         patient_finding = PatientFinding.objects.create(
             patient_examination=self, finding=finding
         )
-
-        patient_finding.save()
 
         return patient_finding

@@ -1,10 +1,10 @@
-from .disease import (Disease, DiseaseClassification, DiseaseClassificationChoice)
-from .event import (Event, EventClassification, EventClassificationChoice)
+from __future__ import annotations
+from .disease import Disease, DiseaseClassification, DiseaseClassificationChoice
+from .event import Event, EventClassification, EventClassificationChoice
 
 from .contraindication import Contraindication
 from .examination import (
     Examination,
-    ExaminationRequirementSet,
     ExaminationType,
     ExaminationIndication,
     ExaminationIndicationClassificationChoice,
@@ -23,6 +23,8 @@ from .finding import (
     FindingInterventionType,
 )
 
+FindingMorphologyClassification = FindingClassification
+
 from .patient import (
     PatientExamination,
     PatientFinding,
@@ -36,6 +38,7 @@ from .patient import (
     PatientLabValue,
     PatientMedication,
     PatientMedicationSchedule,
+    MedicalLedgerWriteReceipt,
 )
 
 from .risk import (
@@ -72,25 +75,20 @@ __all__ = [
     "Disease",
     "DiseaseClassification",
     "DiseaseClassificationChoice",
-
     # Event
     "Event",
     "EventClassification",
     "EventClassificationChoice",
-
     # Contraindication
     "Contraindication",
-
     # Examination
     "Examination",
-    "ExaminationRequirementSet",
     "ExaminationType",
     "ExaminationIndication",
     "ExaminationIndicationClassificationChoice",
     "ExaminationIndicationClassification",
     "ExaminationTime",
     "ExaminationTimeType",
-    
     # Finding
     "Finding",
     "FindingClassificationType",
@@ -100,7 +98,6 @@ __all__ = [
     "FindingMorphologyClassification",
     "FindingIntervention",
     "FindingInterventionType",
-
     # Patient
     ## Disease
     "PatientDisease",
@@ -120,14 +117,12 @@ __all__ = [
     ## Medication
     "PatientMedication",
     "PatientMedicationSchedule",
-
+    "MedicalLedgerWriteReceipt",
     # Organ
     "Organ",
-
     # Risk
     "Risk",
     "RiskType",
-
     # Medication
     "Medication",
     "MedicationManager",
@@ -135,12 +130,10 @@ __all__ = [
     "MedicationIntakeTime",
     "MedicationIndicationType",
     "MedicationIndication",
-
     # Hardware
     "Endoscope",
     "EndoscopeType",
     "EndoscopyProcessor",
-
     # Laboratory
     "LabValue",
 ]

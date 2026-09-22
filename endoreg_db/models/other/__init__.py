@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .material import Material
 from .resource import Resource
 from .transport_route import TransportRoute
@@ -22,15 +23,15 @@ from .unit import Unit
 from .tag import Tag
 
 __all__ = [
-    'Material',
-    'Resource',
-    'TransportRoute',
-    'Waste',
-    'BaseValueDistribution',
-    'NumericValueDistribution',
-    'SingleCategoricalValueDistribution',
-    'MultipleCategoricalValueDistribution',
-    'DateValueDistribution',
+    "Material",
+    "Resource",
+    "TransportRoute",
+    "Waste",
+    "BaseValueDistribution",
+    "NumericValueDistribution",
+    "SingleCategoricalValueDistribution",
+    "MultipleCategoricalValueDistribution",
+    "DateValueDistribution",
     "Gender",
     "InformationSource",
     "InformationSourceType",

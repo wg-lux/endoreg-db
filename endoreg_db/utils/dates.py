@@ -2,7 +2,6 @@ from datetime import datetime, date, timedelta
 from random import randint
 from calendar import monthrange
 from django.utils import timezone
-import datetime
 
 # TODO replace used random_day_by_year function implementation when
 # creating pseudo patients with new function "random date by age_at_date and examination_date"
@@ -32,7 +31,7 @@ def random_day_by_year(year: int) -> date:
     return date(year, month, day)
 
 
-def random_day_by_month_year(month: int, year) -> date:
+def random_day_by_month_year(month: int, year: int) -> date:
     """
     Return a random birth day within the specified month and year.
     """
@@ -41,20 +40,17 @@ def random_day_by_month_year(month: int, year) -> date:
     return date(year, month, day)
 
 
-def ensure_aware_datetime(dt):
+def ensure_aware_datetime(dt: datetime) -> datetime:
     """
-    Ensures a datetime object is timezone-aware.
+    Ensures a datetime value is timezone-aware.
     If the datetime is naive (has no timezone info), the current timezone is applied.
-    
+
     Args:
-        dt: A datetime object that may be naive
-        
+        dt: A datetime value that may be naive
+
     Returns:
-        A timezone-aware datetime object
+        A timezone-aware datetime value
     """
-    if dt is None:
-        return None
-        
-    if isinstance(dt, datetime.datetime) and timezone.is_naive(dt):
+    if timezone.is_naive(dt):
         return timezone.make_aware(dt)
     return dt

@@ -1,4 +1,4 @@
-from .segmentation import (
+from .video_file import (
     VideoFileSerializer,
 )
 

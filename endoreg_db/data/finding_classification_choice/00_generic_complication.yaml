@@ -1,0 +1,15 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "complication_generic_type_cardiorespiratory"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "complication_generic_type_bleeding"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "complication_generic_type_perforation"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "complication_generic_type_other"

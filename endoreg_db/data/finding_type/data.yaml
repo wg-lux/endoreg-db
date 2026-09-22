@@ -1,10 +1,10 @@
 - model: endoreg_db.finding_type
   fields:
-    name: "macroscopic"
+    name: "observation"
 
 - model: endoreg_db.finding_type
   fields:
-    name: "iatrogenic"
+    name: "baseline"
 
 - model: endoreg_db.finding_type
   fields:
@@ -16,23 +16,11 @@
 
 - model: endoreg_db.finding_type
   fields:
-    name: "bleeding"
-
-- model: endoreg_db.finding_type
-  fields:
-    name: "endoscopy_baseline"
-
-- model: endoreg_db.finding_type
-  fields:
-    name: "medication_related"
-    
-- model: endoreg_db.finding_type
-  fields:
     name: "anatomy"
 
 - model: endoreg_db.finding_type
   fields:
-    name: "anatomy_colon"
+    name: "hidden"
 
 - model: endoreg_db.finding_type
   fields:
@@ -41,3 +29,11 @@
 - model: endoreg_db.finding_type
   fields:
     name: "complication"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "iatrogenic"
+
+- model: endoreg_db.finding_type
+  fields:
+    name: "persisting"

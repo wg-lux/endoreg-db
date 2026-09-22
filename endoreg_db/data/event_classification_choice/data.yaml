@@ -1,0 +1,9 @@
+- model: endoreg_db.event_classification
+  fields:
+    name: "stroke_origin_ischemic"
+    event_classification: "stroke_origin_classification"
+
+- model: endoreg_db.event_classification
+  fields:
+    name: "stroke_origin_hemorrhagic"
+    event_classification: "stroke_origin_classification"

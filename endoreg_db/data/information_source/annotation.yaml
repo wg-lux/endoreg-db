@@ -4,3 +4,9 @@
     information_source_types: [
       "annotation"
     ]
+- model: endoreg_db.InformationSource
+  fields:
+    name: "lx_anonymizer_evaluation"
+    information_source_types: [
+      "annotation"
+    ]
