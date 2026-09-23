@@ -349,12 +349,12 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
         "media/pdfs/<int:pk>/apply-redactions/",
         "pdf-apply-redactions",
-        "endoreg_db.views.report.pdf_redaction.PdfApplyRedactionsView",
+        "endoreg_db.views.pdf.pdf_redaction.PdfApplyRedactionsView",
     ),
     (
         "media/pdfs/<int:pk>/processing-history/",
         "pdf-processing-history",
-        "endoreg_db.views.report.pdf_redaction.PdfProcessingHistoryView",
+        "endoreg_db.views.pdf.pdf_redaction.PdfProcessingHistoryView",
     ),
 ]
 

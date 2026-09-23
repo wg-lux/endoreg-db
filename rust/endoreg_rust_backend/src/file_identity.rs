@@ -23,9 +23,6 @@ const WRAP_AAD: &[u8] = b"lx-annotate:dek-wrap:v1";
 
 #[derive(serde::Deserialize)]
 struct EncryptedHeaderPayload {
-    version: u32,
-    algorithm: String,
-    chunk_size: usize,
     wrapped_dek: String,
     wrap_nonce: String,
     nonce_prefix: String,

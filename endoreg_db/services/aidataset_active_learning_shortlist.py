@@ -23,7 +23,7 @@ from endoreg_db.services.aidataset_active_learning import (
     select_active_learning_frame_indices_from_candidates,
 )
 from endoreg_db.services.frames.training_images import validate_processed_training_frame
-from endoreg_db.utils.filesystem.file_operations import atomic_create_file
+from endoreg_db.utils.file_operations import atomic_create_file
 from endoreg_db.utils.paths import ensure_within_runtime_root
 
 

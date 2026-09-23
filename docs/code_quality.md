@@ -85,6 +85,45 @@ are desirable. Update it only as part of a named cohort:
 
 ## Reproducible quality run
 
+Die aktuellen Metriken werden aus den bestehenden Guards abgeleitet; historische
+Testergebnisse im Feature-Tracker sind keine aktuellen Sollzähler. Nach einer
+geprüften Architekturänderung werden nur die zugehörigen YAML-Inventare angepasst:
+
+```bash
+devenv tasks run quality:dead-code quality:boundaries
+.devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+```
+
+Für die Berichtsauswahl liegt die Orchestrierung in
+`endoreg_db/services/report_frame_selection.py`. Der HTTP-Adapter liegt unter
+`endoreg_db/views/patient_report/patient_examination_report.py`, die PDF-Redaktion
+unter `endoreg_db/views/pdf/pdf_redaction.py`. Die bestehenden Testdateien bleiben
+in `tests/views/report/`; Mock-Ziele müssen die neuen Python-Modulpfade verwenden.
+Die Auswahl wird ausschließlich im validierten `PatientExaminationReport.editor_payload`
+gespeichert. Zusätzliche Berichtsvideo-/Frame-Container sind kein zweiter Vertrag.
+
+Die fokussierte Prüfung dieser Grenzen lautet:
+Fehlende Entwicklungswerkzeuge werden vorher mit
+`devenv tasks run agent:sync` installiert. Die folgenden Aufrufe verwenden die
+vorbereitete Umgebung direkt; ein zusätzliches `devenv shell` kann eine erneute
+Umgebungssynchronisierung auslösen und gehört nicht in diese Testaufrufe.
+
+```bash
+.devenv/state/venv/bin/pyright
+.devenv/state/venv/bin/pytest \
+  tests/views/report/test_patient_examination_report_ninja_api.py \
+  tests/views/report/test_reporting_shell_finalization_aaa.py \
+  tests/views/report/test_pdf_redaction.py \
+  tests/utils/test_media_urlpatterns_contract.py \
+  tests/app/test_clean_layer_cohorts.py \
+  tests/scripts/test_check_lx_dtypes_model_inventory.py -q
+```
+
+Für Modell- und Query-Verträge werden die vorhandenen
+`tests/app/test_clean_layer_cohorts.py` und
+`tests/scripts/test_check_lx_dtypes_model_inventory.py` verwendet; die entfernte
+Datei `tests/app/test_model_import_boundaries.py` ist kein ausführbarer Testaufruf.
+
 `devenv tasks run quality:code-regression` runs Pyright, the dead-code guard,
 the boundary guard, and the fast Pytest marker lane in the synchronized project
 environment. Refresh dependencies first with `devenv tasks run agent:sync` when

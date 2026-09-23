@@ -320,7 +320,7 @@ Apply these replacements when porting isolated ideas from an older branch:
 | Transmit patient data so the receiver can derive hashes | Transmit only locally derived `patient_hash` and `examination_hash` |
 | Report fields `text` and `anonymized_text` | Only `anonymized_text` |
 | Report upload without a separate processed digest | Require `raw_pdf_state.processed_file_sha256` |
-| Filesystem implementation under `endoreg_db.utils.file_operations` | Mutate through canonical `endoreg_db.utils.filesystem.file_operations`; do not make compatibility imports a new ownership boundary |
+| Filesystem implementation under `endoreg_db.utils.filesystem.file_operations` | Mutate through canonical `endoreg_db.utils.filesystem.file_operations`; do not make compatibility imports a new ownership boundary |
 | Django session as transfer scope | Authenticated `NetworkNode.owning_center` is the sole machine-to-machine scope |
 
 Do not merge the old branch wholesale. Port only isolated changes which retain

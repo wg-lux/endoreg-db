@@ -7,6 +7,9 @@ from typing import Any, TypedDict, cast
 
 from django.db.models import Exists, F, Max, OuterRef, Q, QuerySet, Subquery
 from django.utils.dateparse import parse_date
+from lx_dtypes.models.contracts.patient_examination_report import (
+    PatientFindingHistoryData,
+)
 
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -15,6 +18,7 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.services.report_history import get_patient_finding_summaries
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_pdf_stream_path,
@@ -28,6 +32,7 @@ DEFAULT_COHORT_PREVIEW_ROWS = 100
 
 class StudyMediaRow(TypedDict):
     id: int
+    patient_examination_id: int
     stream_url: str
     availability: str
 
@@ -41,6 +46,7 @@ class StudyExaminationRow(TypedDict):
     case_hash: str
     examination_name: str
     examination_date: str | None
+    findings: list[PatientFindingHistoryData]
 
 
 class StudyCaseRow(TypedDict):
@@ -487,6 +493,7 @@ def _collect_preview_reports(
         media.reports_by_case.setdefault(case_id, []).append(
             {
                 "id": report.pk,
+                "patient_examination_id": case_id,
                 "document_type": document_type,
                 "stream_url": build_absolute_media_url(
                     request,
@@ -513,6 +520,7 @@ def _collect_preview_videos(
         media.videos_by_case.setdefault(case_id, []).append(
             {
                 "id": video.pk,
+                "patient_examination_id": case_id,
                 "stream_url": build_absolute_media_url(
                     request,
                     build_video_hls_playlist_path(video.pk, file_type="processed"),
@@ -542,17 +550,6 @@ def _collect_preview_media(
         request=request,
     )
     return media
-
-
-def _findings_by_case(preview_case_ids: list[int]) -> dict[int, set[str]]:
-    findings_by_case: dict[int, set[str]] = {}
-    findings = PatientFinding.objects.filter(
-        patient_examination_id__in=preview_case_ids,
-        is_active=True,
-    ).values_list("patient_examination_id", "finding__name")
-    for case_id, finding_name in findings:
-        findings_by_case.setdefault(case_id, set()).add(str(finding_name))
-    return findings_by_case
 
 
 def _annotations_by_video(video_ids: list[int]) -> dict[int, set[str]]:
@@ -607,7 +604,7 @@ def _build_case_row(
     patient_examinations: list[PatientExamination],
     *,
     media: _PreviewMedia,
-    findings_by_case: dict[int, set[str]],
+    findings_by_case: dict[int, list[PatientFindingHistoryData]],
     annotations_by_video: dict[int, set[str]],
 ) -> StudyCaseRow | None:
     latest_examination = patient_examinations[0]
@@ -626,7 +623,12 @@ def _build_case_row(
         report_rows.extend(case_report_rows)
         video_rows.extend(case_video_rows)
         center_keys.update(media.center_keys_by_case.get(case_id, set()))
-        findings.update(findings_by_case.get(case_id, set()))
+        case_findings = findings_by_case.get(case_id, [])
+        findings.update(
+            finding["finding_name"]
+            for finding in case_findings
+            if finding["finding_name"] is not None
+        )
         examination_rows.append(
             {
                 "patient_examination_id": case_id,
@@ -635,6 +637,7 @@ def _build_case_row(
                     getattr(patient_examination.examination, "name", "") or ""
                 ).strip(),
                 "examination_date": _examination_date(patient_examination),
+                "findings": case_findings,
             }
         )
     if not report_rows and not video_rows:
@@ -670,7 +673,7 @@ def _build_case_rows(
     preview_cases: list[PatientExamination],
     *,
     media: _PreviewMedia,
-    findings_by_case: dict[int, set[str]],
+    findings_by_case: dict[int, list[PatientFindingHistoryData]],
     annotations_by_video: dict[int, set[str]],
 ) -> list[StudyCaseRow]:
     cases: list[StudyCaseRow] = []
@@ -781,7 +784,7 @@ def build_study_cohort_payload(
     scope = _build_cohort_scope(filters, case_scope=case_scope)
     preview_case_ids = [case.pk for case in scope.preview_cases]
     media = _collect_preview_media(preview_case_ids, request=request)
-    findings_by_case = _findings_by_case(preview_case_ids)
+    findings_by_case = get_patient_finding_summaries(preview_case_ids)
     annotations_by_video = _annotations_by_video(media.video_ids)
     cases = _build_case_rows(
         scope.preview_cases,
@@ -798,7 +801,7 @@ def build_study_cohort_payload(
     )
 
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "filters": _serialize_filters(filters),
         "summary": scope.summary,
         "cases": cases,

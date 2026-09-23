@@ -11,12 +11,14 @@ from endoreg_db.models import (
     Center,
     Examination,
     Finding,
+    FindingIntervention,
     Frame,
     ImageClassificationAnnotation,
     Label,
     Patient,
     PatientExamination,
     PatientFinding,
+    PatientFindingIntervention,
     RawPdfFile,
     RawPdfState,
     VideoFile,
@@ -120,7 +122,7 @@ class StudyCohortPreviewViewTests(TestCase):
         report = self._validated_report()
         video = self._validated_video()
         finding = Finding.objects.create(name=f"adenoma-{uuid4().hex[:8]}")
-        PatientFinding.objects.create(
+        patient_finding = PatientFinding.objects.create(
             patient_examination=self.patient_examination,
             finding=finding,
         )
@@ -154,7 +156,7 @@ class StudyCohortPreviewViewTests(TestCase):
 
         assert response.status_code == 200, response.content
         payload = response.json()
-        assert payload["schema_version"] == "1.0"
+        assert payload["schema_version"] == "1.1"
         assert payload["summary"] == {
             "case_count": 1,
             "patient_count": 1,
@@ -173,6 +175,16 @@ class StudyCohortPreviewViewTests(TestCase):
                 "case_hash": self.patient_examination.hash,
                 "examination_name": self.examination.name,
                 "examination_date": "2026-06-01",
+                "findings": [
+                    {
+                        "patient_finding_id": patient_finding.pk,
+                        "instance_id": str(patient_finding.instance_id),
+                        "finding_id": finding.pk,
+                        "finding_name": finding.name,
+                        "classifications": [],
+                        "interventions": [],
+                    }
+                ],
             }
         ]
         assert case["patient_hash"] == self.patient.patient_hash
@@ -182,6 +194,7 @@ class StudyCohortPreviewViewTests(TestCase):
         assert case["reports"] == [
             {
                 "id": report.pk,
+                "patient_examination_id": self.patient_examination.pk,
                 "document_type": "endoscopy-report",
                 "stream_url": (
                     "http://testserver/endoreg-api/media/pdfs/"
@@ -193,6 +206,7 @@ class StudyCohortPreviewViewTests(TestCase):
         assert case["videos"] == [
             {
                 "id": video.pk,
+                "patient_examination_id": self.patient_examination.pk,
                 "stream_url": (
                     "http://testserver/endoreg-api/media/videos/"
                     f"{video.pk}/hls/playlist.m3u8?type=processed"
@@ -226,6 +240,17 @@ class StudyCohortPreviewViewTests(TestCase):
             hash=f"follow-up-hash-{uuid4().hex}",
         )
         video = self._validated_video(patient_examination=follow_up)
+        finding = Finding.objects.create(name="study_polyp")
+        initial_finding = PatientFinding.objects.create(
+            patient_examination=self.patient_examination, finding=finding
+        )
+        follow_up_finding = PatientFinding.objects.create(
+            patient_examination=follow_up, finding=finding
+        )
+        intervention = FindingIntervention.objects.create(name="study_cold_snare")
+        initial_intervention = PatientFindingIntervention.objects.create(
+            finding=initial_finding, intervention=intervention, state="done"
+        )
 
         payload = build_study_cohort_payload(StudyCohortFilters())
         assert payload["summary"] == {
@@ -249,6 +274,28 @@ class StudyCohortPreviewViewTests(TestCase):
         ]
         assert [row["id"] for row in case["reports"]] == [report.pk]
         assert [row["id"] for row in case["videos"]] == [video.pk]
+        assert (
+            case["reports"][0]["patient_examination_id"] == self.patient_examination.pk
+        )
+        assert case["videos"][0]["patient_examination_id"] == follow_up.pk
+        assert case["findings"] == [finding.name]
+        assert case["examinations"][0]["findings"] == [
+            {
+                "patient_finding_id": follow_up_finding.pk,
+                "instance_id": str(follow_up_finding.instance_id),
+                "finding_id": finding.pk,
+                "finding_name": finding.name,
+                "classifications": [],
+                "interventions": [],
+            }
+        ]
+        initial_summary = case["examinations"][1]["findings"][0]
+        assert initial_summary["patient_finding_id"] == initial_finding.pk
+        assert initial_summary["interventions"][0]["id"] == initial_intervention.pk
+        assert (
+            initial_summary["interventions"][0]["intervention_name"]
+            == intervention.name
+        )
 
     def test_excludes_real_patients_unvalidated_media_and_missing_integrity_hashes(
         self,

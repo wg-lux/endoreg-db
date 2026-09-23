@@ -579,7 +579,10 @@ def manifest_payload(
 
 
 def write_manifest(config: StorageReliefConfig, items: list[ArchiveItem]) -> Path:
-    from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
+    from endoreg_db.utils.file_operations import (
+        atomic_write_file,
+        ensure_directory,
+    )
 
     ensure_directory(config.manifest_dir, dir_mode=0o750)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

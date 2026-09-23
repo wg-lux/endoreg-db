@@ -49,6 +49,9 @@ definition_of_done:
     Grafikprozessor-Gerät besitzt und ein realer Encoder-Preflight erfolgreich ist. Fehlende, mehrere
     oder unzugängliche Geräte sowie ein fehlender `h264_nvenc`-Encoder schlagen laut fehl; ein automatischer
     CPU-Fallback ist unzulässig.
+  - Im Encoderprozess läuft der Vorabtest für HTTP Live Streaming (HLS) vor dem Erstellen der temporären
+    Klartextkopie und dem vollständigen Frame-Scan. Ein nicht verfügbarer Encoder verhindert diese Arbeit;
+    der ursprüngliche Fehler bleibt erhalten. Die vorgelagerte Quellidentitätsprüfung bleibt bestehen.
   - Der Name des verwendeten HLS-Encoderprofils wird mit dem HLS-Artefakt persistiert. Ein deklarativer
     Profilwechsel invalidiert nur das reproduzierbare HLS-Derivat und erzwingt eine neue atomare Generation,
     ohne das kanonische Mastervideo zu verändern.
@@ -96,14 +99,52 @@ definition_of_done:
         in 41.02s
     - kind: command
       reference: Focused Ruff passed; focused Pyright 0 errors; git diff --check passed
-    note: 'Import-time eager HLS readiness is restored for time-critical playback: successful import,
-      reimport, reanonymization, and completed-duplicate return paths use the existing typed idempotent
-      materializer and require both raw and processed HLS before returning. Failure remains loud and retryable.
-      The authenticated playlist keeps its bounded on-demand fallback for legacy, evicted, or reconciled
-      derivatives. Ruff, focused Pyright, diff checks, and the non-expensive database-backed focused lane
-      pass; expensive media and formal production acceptance remain outstanding.'
-    assessed_by: codex-storage-optimization-20260824
-    assessed_at: '2026-08-25T08:10:36.939740Z'
+    - kind: command
+      reference: '2026-09-23: HLS-Encoder-Vorabtest vor temporärer Quellmaterialisierung und Frame-Scan.
+        Fokussierter Pyright: 0 Fehler; Ruff/Format/diff-check bestanden. pytest tests/services/test_hls_encoder_preflight.py
+        tests/services/test_hls_workload_timing.py tests/services/test_hls_media.py -q mit LD_LIBRARY_PATH
+        aus der erzeugten devenv-Shell: 58 passed, 2 warnings. Gesamt-Pyright: 50 Fehler, 5 Warnungen
+        in anderweitig veränderten Report-Dateien; keine vollständige Freigabe.'
+    - kind: review
+      reference: '2026-09-23 gc-10, Profil site-client: read-only systemctl, journalctl --namespace=+lx-annotate,
+        nvidia-smi, /proc/driver/nvidia/version und PostgreSQL-SELECT. Aktuelle Fehler für Video 44/50/53
+        processed und 58 raw: NVENC encoder preflight, OpenEncodeSessionEx unsupported device (2). Kernelmodul
+        580.119.02 versus NVML 595.45, booted/current NixOS verschieden. Vorab-Quellprüfung bei Video
+        44: 1872.96 Sekunden vor gescheitertem 0.527-Sekunden-Encodercheck. Importprozess aktiv mit frischem
+        Heartbeat; weiterer processing-Datensatz mit abgelaufener Lease. Keine Remote-Mutation oder Bereitstellung
+        durchgeführt.'
+    - kind: review
+      reference: '2026-09-23: gc-10/site-client, ausschließlich lesend: systemctl show/list-units, journalctl
+        --namespace=+lx-annotate (6 Stunden, redigierte Musterzählung), nvidia-smi, /proc/driver/nvidia/version,
+        readlink booted/current-system, df/findmnt/lsblk, PostgreSQL SELECT in READ ONLY auf Port 5432,
+        installierter Overview-Quelltext und nicht geheime Runtime-Pfadwerte. Web/Pipeline/FFmpeg aktiv.
+        NVIDIA-Kernel 580.119.02 versus NVML 595.45; vier unsupported-device-Logtreffer. Aktuelle entsprechende
+        HLS-Fehler: processed 44/50/53 und raw 58. Sichtbare Videoimporte: 25 anonymized, 4 processing_failed,
+        2 processing (eine abgelaufene Lease). Runtime-Root auf Root-Dateisystem: 867 GiB gesamt, 50.8
+        GiB frei. Installierte Übersicht bevorzugt bereits aktuelle identitätsgebundene READY-Generationen.
+        Keine Medienvollprüfung, Zustandsreparatur, Löschung, Dienstneustarts oder Bereitstellung. gc-02/site-client:
+        SSH mit konfiguriertem Schlüssel abgewiesen; Server akzeptiert ausschließlich publickey, daher
+        ist die bereitgestellte Passwortdatei kein SSH-Zugang. Treiberabgleich, Storage-Prüfung und eingezäunte
+        Wiederaufnahme bleiben Betriebsblocker.'
+    - kind: review
+      reference: '2026-09-23 Korrektur gc-02-Zugriff: lokales Terminal ist gc-02, Profil site-client;
+        SSH nicht erforderlich. Ausschließlich lesend: hostname, systemctl show/list-timers, journalctl
+        --namespace=+lx-annotate, NVIDIA-Version, df, Prozess-/Cgroup-Metadaten, Redis PING/LLEN/HLEN,
+        PostgreSQL READ ONLY SELECT und installierter Startbedingungs-/Overview-Quelltext. Web/Pipeline/FFmpeg
+        aktiv, Master-Key-Check erfolgreich; NVIDIA-Kernel und NVML 595.45.04 konsistent. Runtime-Dateisystem
+        /dev/mapper/cryptroot: 94 Prozent belegt, ca. 32 GiB frei. Sichtbare Videoimporte: 2 anonymized,
+        1 processing mit abgelaufener Lease und mehr als 8 Tage altem Heartbeat. HLS materializing: Video
+        3 raw seit ca. 23 Tagen, Video 5 processed seit ca. 2 Tagen, Video 6 processed seit ca. 13 Tagen.
+        Keine FFmpeg-/FFprobe-Prozesse; konfigurierte Redis-Queues pipeline/ffmpeg_media/maintenance/default
+        leer, unacked=0. Backfill Result=exec-condition: installierte Startbedingung überspringt bei jedem
+        pending/processing/retrying-Import ohne Lease-Prüfung; der verwaiste Processing-Datensatz blockiert
+        deshalb den automatischen Backfill. Vorhandene READY-Zeilen: 6 processed, 5 raw; keine vollständige
+        Medien-/Playback-Integritätsprüfung. Installierte Übersicht bevorzugt aktuelle identitätsgebundene
+        Publikationen. Keine Produktionsmutation. Nächster Betriebsschritt: verwaisten Import anhand Quelle
+        und Eigentumsvertrag gezielt reconciliieren, danach Backfill und Wiedergabe prüfen; Speicherreserve
+        separat klären.'
+    assessed_by: codex-video-import-20260923-a
+    assessed_at: '2026-09-23T07:38:26.987893Z'
 - id: temporal_frame_contract
   category: data_integrity
   title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
@@ -362,8 +403,15 @@ definition_of_done:
         0 errors, 1 existing warning. Full-frame OCR uses exact image/text caches and bounded ONNX threads;
         auxiliary PHI proposals retain their independent sample budget. Paired caller and compute package
         deployment is required; no controlled throughput or clinical recall claim.'
-    assessed_by: codex-metadata-boundaries-20260910
-    assessed_at: '2026-09-10T09:04:41.728863Z'
+    - kind: command
+      reference: '2026-09-23: Duplikatimport reicht Execution-Guard an HTTP Live Streaming (HLS) weiter
+        und prüft Eigentum vor beiden Cleanup-Grenzen. Fokussierter Pyright: 0 Fehler/0 Warnungen; Ruff
+        und Format bestanden. Sechs Import-/Storage-/Encoder-Testdateien: zunächst 151 passed, 2 Testfixture-Fehler;
+        nach Fixture-Korrektur vollständige test_video_import_service_unit.py: 62 passed, 2 Warnungen.
+        Damit 153 unterschiedliche Tests bestanden. Gesamt-Pyright zuvor: 50 Fehler, 6 Warnungen in überwiegend
+        anderweitig geändertem Report-Code; keine Produktionsfreigabe.'
+    assessed_by: codex-video-import-20260923-a
+    assessed_at: '2026-09-23T07:29:17.898087Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar

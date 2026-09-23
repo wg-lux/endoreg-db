@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import string
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from endoreg_db.utils.file_operations import get_file_hash
+import pymupdf
+
+from endoreg_db.utils.hashs import get_file_hash
 
 from .state import get_or_create_raw_pdf_state
+from .types import PdfDocument
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -29,7 +32,8 @@ def _normalized_sha256(value: object) -> str:
     return normalized
 
 
-def _verify_pdf_path(path: Path) -> None:
+def verify_processed_report_path(path: Path) -> None:
+    """Validate a local processed PDF before publication or after materialization."""
     if not path.is_file():
         raise ProcessedReportIntegrityError(
             "Processed report artifact is not a regular file."
@@ -48,6 +52,21 @@ def _verify_pdf_path(path: Path) -> None:
             raise ProcessedReportIntegrityError(
                 "Processed report artifact does not contain a PDF end marker."
             )
+    try:
+        document = cast(PdfDocument, pymupdf.open(filename=str(path)))
+        try:
+            if document.needs_pass or document.page_count < 1 or document.is_repaired:
+                raise ProcessedReportIntegrityError(
+                    "Processed report PDF is encrypted, empty, or requires repair."
+                )
+            for index in range(document.page_count):
+                document[index].get_displaylist()
+        finally:
+            document.close()
+    except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
+        raise ProcessedReportIntegrityError(
+            "Processed report PDF cannot be parsed completely."
+        ) from exc
 
 
 def verify_processed_report_artifact(
@@ -64,7 +83,7 @@ def verify_processed_report_artifact(
 
     try:
         with field_file.ensure_local() as local_path:
-            _verify_pdf_path(local_path)
+            verify_processed_report_path(local_path)
             actual_sha256 = get_file_hash(local_path)
     except ProcessedReportIntegrityError:
         raise
@@ -138,4 +157,5 @@ __all__ = [
     "require_usable_completed_report",
     "verify_and_persist_processed_report_sha256",
     "verify_processed_report_artifact",
+    "verify_processed_report_path",
 ]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -27,6 +28,153 @@ from endoreg_db.services.report_finding_sync import sync_report_findings
 from endoreg_db.services.report_persistence import save_report_submission
 
 pytestmark = pytest.mark.django_db
+
+
+def test_repeated_polyp_instances_keep_children_and_identity_on_replay() -> None:
+    examination, finding, classification, choice, intervention = _create_graph()
+    second_intervention = FindingIntervention.objects.create(name="second_resection")
+    finding.finding_interventions.add(second_intervention)
+    first_id, second_id = uuid4(), uuid4()
+    payload: list[dict[str, object]] = [
+        {
+            "finding_id": finding.pk,
+            "instance_id": str(first_id),
+            "classifications": [
+                {
+                    "classification_id": classification.pk,
+                    "classification_choice_id": choice.pk,
+                }
+            ],
+            "interventions": [{"intervention_id": intervention.pk}],
+        },
+        {
+            "finding_id": finding.pk,
+            "instance_id": str(second_id),
+            "interventions": [{"intervention_id": second_intervention.pk}],
+        },
+    ]
+    sync_report_findings(examination, payload, user=None)
+    first = PatientFinding.objects.get(instance_id=first_id)
+    second = PatientFinding.objects.get(instance_id=second_id)
+    first_pk, second_pk = first.pk, second.pk
+    sync_report_findings(examination, list(reversed(payload)), user=None)
+    assert PatientFinding.objects.count() == 2
+    assert PatientFinding.objects.get(instance_id=first_id).pk == first_pk
+    assert PatientFinding.objects.get(instance_id=second_id).pk == second_pk
+    assert (
+        PatientFindingClassification.objects.get(is_active=True).finding.pk == first_pk
+    )
+    assert (
+        PatientFindingIntervention.objects.get(intervention=intervention).finding.pk
+        == first_pk
+    )
+    assert (
+        PatientFindingIntervention.objects.get(
+            intervention=second_intervention
+        ).finding.pk
+        == second_pk
+    )
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "missing",
+        "duplicate_uuid",
+        "duplicate_pk",
+        "foreign",
+        "inactive",
+        "wrong_type",
+        "disagree",
+    ],
+)
+def test_ambiguous_or_conflicting_instance_identity_rolls_back(identity: str) -> None:
+    examination, finding, _classification, _choice, intervention = _create_graph()
+    first = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    second = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    payload: list[dict[str, object]] = [{"finding_id": finding.pk}]
+    if identity == "duplicate_uuid":
+        entry: dict[str, object] = {
+            "finding_id": finding.pk,
+            "instance_id": str(uuid4()),
+        }
+        payload = [entry, entry]
+    elif identity == "duplicate_pk":
+        entry = {"finding_id": finding.pk, "patient_finding_id": first.pk}
+        payload = [entry, entry]
+    elif identity in {"foreign", "inactive", "wrong_type", "disagree"}:
+        if identity == "foreign":
+            other = PatientExamination.objects.create(patient=examination.patient)
+            second.patient_examination = other
+            second.save(update_fields=["patient_examination"])
+        elif identity == "inactive":
+            second.is_active = False
+            second.save(update_fields=["is_active"])
+        elif identity == "wrong_type":
+            second.finding = Finding.objects.create(name="another_finding")
+            second.save(update_fields=["finding"])
+        payload = [
+            {
+                "finding_id": finding.pk,
+                "patient_finding_id": first.pk,
+                "interventions": [{"intervention_id": intervention.pk}],
+            },
+            {"finding_id": finding.pk, "patient_finding_id": second.pk},
+        ]
+        if identity == "disagree":
+            payload[1]["instance_id"] = str(first.instance_id)
+    with pytest.raises(ValidationError):
+        sync_report_findings(examination, payload, user=None)
+    assert PatientFinding.objects.count() == 2
+    assert PatientFindingIntervention.objects.count() == 0
+
+
+def test_legacy_singleton_submission_reuses_original_primary_key() -> None:
+    examination, finding, _classification, _choice, _intervention = _create_graph()
+    original = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    sync_report_findings(examination, [{"finding_id": finding.pk}], user=None)
+    assert PatientFinding.objects.get().pk == original.pk
+
+
+def test_unkeyed_repeated_creation_is_rejected_before_writes() -> None:
+    examination, finding, _classification, _choice, _intervention = _create_graph()
+    with pytest.raises(ValidationError, match="explicit instance identities"):
+        sync_report_findings(
+            examination,
+            [{"finding_id": finding.pk}, {"finding_id": finding.pk}],
+            user=None,
+        )
+    assert not PatientFinding.objects.exists()
+
+
+def test_explicit_instance_update_does_not_modify_other_polyp() -> None:
+    examination, finding, _classification, _choice, intervention = _create_graph()
+    first = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    second = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    sync_report_findings(
+        examination,
+        [
+            {
+                "finding_id": finding.pk,
+                "patient_finding_id": first.pk,
+                "interventions": [{"intervention_id": intervention.pk}],
+            },
+            {"finding_id": finding.pk, "patient_finding_id": second.pk},
+        ],
+        user=None,
+    )
+    assert PatientFindingIntervention.objects.get().finding.pk == first.pk
+    assert not second.interventions.exists()
 
 
 def _create_graph() -> tuple[

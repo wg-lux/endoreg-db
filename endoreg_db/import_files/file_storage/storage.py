@@ -6,7 +6,11 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.schemas.import_file import SourceSnapshot
 from endoreg_db.services.video_files._imports import atomic_copy_with_fallback
 from endoreg_db.utils.file_operations import ensure_directory
-from endoreg_db.utils.filesystem.file_operations import atomic_report_source_snapshot
+from endoreg_db.utils.file_operations import (
+    atomic_report_source_snapshot,
+    safe_unlink_file,
+)
+from endoreg_db.utils.hashs import get_file_hash
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +26,22 @@ def create_sensitive_copy(src: Path, sensitive_root: Path, ctx: ImportContext) -
     Returns:
         Path to the sensitive copy.
     """
+    expected_hash = ctx.file_hash or get_file_hash(src)
     ensure_dir(sensitive_root)
-    hash_prefix = str(getattr(ctx, "file_hash", None) or "unhashed")[:16]
+    hash_prefix = expected_hash[:16]
     staging_dir = ensure_directory(sensitive_root / f"{hash_prefix}-{uuid4().hex}")
     dest = staging_dir / src.name
     logger.info("Creating sensitive copy: %s -> %s", src, dest)
     atomic_copy_with_fallback(src, dest)
+    try:
+        if get_file_hash(dest) != expected_hash:
+            raise ValueError(
+                "Video staging content differs from import source identity"
+            )
+    except (OSError, RuntimeError, ValueError):
+        safe_unlink_file(dest, missing_ok=True)
+        raise
+    ctx.file_hash = expected_hash
     return dest
 
 

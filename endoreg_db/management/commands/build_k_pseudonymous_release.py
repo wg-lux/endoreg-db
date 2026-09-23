@@ -15,7 +15,10 @@ from endoreg_db.services.k_pseudonymity import (
     ReleaseRow,
     build_k_pseudonymous_release,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_write_file,
+    safe_unlink_file,
+)
 
 
 class CommandOptions(TypedDict):

@@ -63,6 +63,10 @@ definition_of_done:
   category: data_integrity
   title: Preserve source identity and human annotations when reconciling duplicate video imports
   acceptance:
+  - Die Video-Staging-Kopie muss vor Übergabe an die Persistenz denselben über get_file_hash ermittelten
+    Inhaltshash wie der Importkontext besitzen. Abweichungen brechen vor der Datensatzerstellung ab; die
+    Eingangsquelle bleibt erhalten. Gespeicherte Dateien liefern nur dann einen Hash, wenn die vollständig
+    gelesene Klartextmenge der vor und nach dem Lesen bestätigten Größe entspricht.
   - Persist the immutable incoming plaintext source SHA-256 (Secure Hash Algorithm, 256-bit) before anonymization,
     normalization, remuxing or encryption. Keep this identity distinct from the anonymized master hash
     and each derivative generation hash; transformed output hashes must never overwrite the original import
@@ -171,8 +175,20 @@ definition_of_done:
         preserved. Free space increased from 11 to107 GiB after package cache and orphan HLS-work cleanup.
         Evidence: /var/lib/lx-annotate/recovery/import-cleanup-20260908/{cleanup-result.json,source-verification.json,reimport-list.yml};
         /var/lib/lx-annotate/recovery/space-cleanup-20260908/summary.yml. No full playback recovery claimed.'
-    assessed_by: codex-gc10-20260908-diagnostics
-    assessed_at: '2026-09-08T14:17:06.470275Z'
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/storage.py; endoreg_db/utils/hashs.py; tests/import_files/test_file_storage.py;
+        tests/utils/test_file_hash_integrity.py
+    - kind: command
+      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py tests/utils/test_report_artifact_fields.py
+        tests/import_files/test_import_encryption.py tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py tests/utils/test_encryption_streaming.py -q --tb=short:
+        151 passed, 2 warnings in 54.75s. Fokussierter Pyright: 0 Fehler, 0 Warnungen. Gesamt-Pyright:
+        50 Fehler in fremden Report-Modellen/Views, 6 Warnungen. Ruff und Formatprüfung bestanden. Staging-Hashabweichungen
+        und unvollständige/größenveränderte Klartextstreams werden abgewiesen; keine neuen Typhelfer oder
+        Änderungen an Laufzeitpfaden. Keine PostgreSQL- oder Produktionsfreigabe.'
+    assessed_by: codex-import-integrity-20260923
+    assessed_at: '2026-09-23T07:37:10.171917Z'
 - id: report_spacy_fallback_without_llm
   category: functionality
   title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex
@@ -354,6 +370,8 @@ definition_of_done:
   category: functionality
   title: Master, Derivate, Status und Erfolgsevidenz werden als eine Generation veröffentlicht
   acceptance:
+  - PDF-Staging wird vor der Publikation mit derselben Artefaktprüfung wie gespeicherte PDFs geprüft;
+    ungültige Kandidaten und fehlgeschlagener Dateiaustausch erhalten die bisherige Datei unverändert.
   - Ein Import wird erst erfolgreich, wenn kanonischer Master, erforderliche Derivate, Zustände und Erfolgshistorie
     auf dieselbe Generation zeigen und vollständig validiert sind.
   - Ein Fehler nach Master-Staging, während Raw- oder Processed-HLS oder beim History-Commit hinterlässt
@@ -389,13 +407,35 @@ definition_of_done:
     - kind: command
       reference: 'Kombinierte Lifecycle-Lane einschließlich Video-Finalisierung: 171 passed, 3 subtests
         passed, 2 warnings'
-    note: finalize_video_success hält die Operation bis nach Kandidatenprüfung, beiden HTTP-Live-Streaming-Renditionen,
-      ProcessingHistory und VideoState auf RUNNING. Reanonymisierung schreibt eine neue generationenspezifische
-      Masterdatei und stellt bei jedem Fehler die vorherige Datei-, Hash- und Metadatenreferenz wieder
-      her; Staging wird erst nach vollständigem Erfolg bereinigt. Eine echte gemeinsame atomare Commit-Grenze
-      für Master und beide bereits separat publizierten HLS-Generationen bleibt offen.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:01:15.723574Z'
+    - kind: test
+      reference: tests/import_files/test_report_finalize_success.py
+    - kind: command
+      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        --ds=endoreg_db.config.settings.test tests/import_files/test_report_finalize_success.py tests/services/test_report_artifact_integrity.py
+        tests/import_files/test_import_encryption.py tests/services/test_report_import_service_unit.py
+        tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
+        tests/services/test_report_llm_jobs.py tests/import_files/test_report_import_workload_timing.py
+        -q --tb=short -rs: 97 passed, 2 warnings, 50.52s. Fokussierter Pyright: 0 Fehler, 0 Warnungen.
+        Vollständiger Pyright: 50 externe Fehler in parallel bearbeiteten Report-Modellen/Views; 4 eigene
+        Test-Typfehler anschließend behoben. Ruff und Diff-Prüfung der betroffenen Dateien bestanden.'
+    - kind: command
+      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_import_file_locks.py
+        tests/import_files/test_report_finalize_success.py tests/services/test_report_import_service_unit.py
+        tests/services/test_report_artifact_integrity.py tests/import_files/test_import_encryption.py
+        tests/services/test_video_import_service_unit.py tests/import_files/test_video_finalize_success.py
+        tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
+        -q --tb=short -rs: 170 passed, 2 warnings, keine Skips, 40.42s.'
+    note: 'Video-Generationspublikation und deren offene gemeinsame Commit-Grenze unverändert. PDF-Aktualisierung
+      2026-09-23: unveränderliche Generationspfade erhalten vorherige Dateien auch bei History-Fehler
+      und äußerem Transaktionsrollback. Parserprüfung einschließlich Reparaturstatus und Seitenzugriff
+      sowie Rücklesen des gespeicherten Klartexts vor Referenzwechsel. Referenz, Ausgabehash, Zustand
+      und Erfolgshistorie committen zusammen; Cleanup erst nach äußerem Commit und ohne Widerruf bei Cleanup-Fehler.
+      Kandidaten mit unklarem Commitstatus werden nicht gelöscht. SQLite-Regressionen einschließlich verschlüsseltem
+      Speicher bestanden; PostgreSQL-Prozesskonkurrenz, referenzgeprüfte Bereinigung alter PDF-Generationen
+      und tatsächliche OCR-Ende-zu-Ende-Verifikation bleiben offen. Details im Kriterium lossless_report_and_owned_import_locks.'
+    assessed_by: codex-integrity-review-20260923
+    assessed_at: '2026-09-23T12:19:21.461085Z'
 - id: report_attempt_heartbeat_and_metadata_fencing
   category: functionality
   title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
@@ -406,6 +446,9 @@ definition_of_done:
     vor jeder persistenten Mutation.
   - Ein ersetzter Worker kann weder Metadaten noch Dateien oder Erfolgszustände eines neueren Versuchs
     ändern.
+  - Vor einer neuen Report-Verarbeitung prüft der Service die deutschen und englischen OCR-Sprachdaten
+    über den vorhandenen lx-anonymizer-Resolver. Fehlende Laufzeitdaten führen vor Report-Anlage und Retry-Reset
+    zu einem Konfigurationsfehler; abgeschlossene Duplikate bleiben ohne OCR erneut nutzbar.
   required: true
   verification:
     kind: command
@@ -440,19 +483,31 @@ definition_of_done:
         --check für tests/services/test_report_import_fencing.py bestanden. .devenv/state/venv/bin/pytest
         tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
         -q: 18 passed, 4 dependency/plugin warnings in 70.06s; SQLite.'
-    note: 'ReportImportAttempt besitzt nun den explizit persistierten Zustand LOST. Ein abgelaufener ACTIVE-Versuch
-      wird zuerst als OWNERSHIP_LOST sichtbar gespeichert und erst danach über RECONCILE_RETRY mit neuer
-      Attempt-ID und monoton erhöhtem Fencing-Token übernommen; ein lebender Owner bleibt gesperrt. Ergänzung
-      2026-09-08: Sechs parametrisierte Datenbankregressionen prüfen, dass ein ersetzter Owner weder Lease-Erneuerung,
-      Metadaten-Mutationsguard, Finalisierung noch Fehlerfreigabe auf den aktuellen Versuch anwenden kann.
-      Der vollständige Datensatz des neuen Owners bleibt unverändert und dieser kann anschließend erfolgreich
-      abschließen. Fehler innerhalb von Mutations- und Finalisierungsgrenzen rollen eine zusätzliche Datenbankzeile
-      zurück, erhalten die ursprüngliche Ausnahme und lassen den aktuellen Owner weiter abschließen. Die
-      Tests verwenden SQLite und prüfen den Transaktionsvertrag der Guards; sie ersetzen weder PostgreSQL-Prozesskonkurrenz
-      noch End-to-End-Nachweise für Text, SensitiveMeta und PDF-Dateipublikation. Keine Änderung am Anwendungscode;
-      Kriterium bleibt in_progress.'
-    assessed_by: codex-import-20260908-a
-    assessed_at: '2026-09-08T09:47:39.706449Z'
+    - kind: command
+      reference: 'SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        --ds=endoreg_db.config.settings.test tests/services/test_report_import_service_unit.py tests/services/test_report_import_fencing.py
+        tests/services/test_report_import_concurrency.py tests/services/test_report_llm_jobs.py tests/import_files/test_report_import_workload_timing.py
+        -q --tb=short -rs: 85 passed, 2 warnings, 58.85s.'
+    - kind: command
+      reference: 'Fokussierter Pyright für report_import_service.py und test_report_import_service_unit.py:
+        0 Fehler, 1 externe MissingTypeStubs-Warnung. Vollständiger Pyright vor OCR-Ergänzung: 50 Fehler
+        in anderweitig geänderten Report-Modellen/Views, 5 Warnungen. Ruff check/format und git diff --check
+        bestanden.'
+    - kind: command
+      reference: 'gc-02 lokal: systemctl show für Webdienst, Pipeline-Worker und Startup-Units; journalctl
+        --namespace=lx-annotate -u lx-annotate-celery-pipeline-worker.service -n 400 --no-pager -o short-iso.
+        Webdienst und Pipeline-Worker aktiv; erster Importabbruch in OCR/PDF-Schwärzung. sudo -n nicht
+        verfügbar; Journal direkt lesbar.'
+    note: 'Ergänzung 2026-09-23: Bestehender Mutationsguard schützt jetzt Report-Anlage, Retry-Reset und
+      Fehlerabschluss. Eine frühe Sprachdatenprüfung verwendet lx_anonymizer.ocr.tessdata.get_tessdata_path;
+      Konfigurationsfehler werden als RuntimeError statt als verlorene PDF-Quelle weitergegeben. Erfolgreiche
+      Duplikate bleiben ohne OCR wiederverwendbar. Diagnose auf gc-02, Profil site-client/wheel: Pipeline-Journal
+      belegt am 2026-09-22 um 16:09 CEST fehlende deu+eng-Sprachdaten und fehlendes tesseract im OCR-Ersatzpfad;
+      daraus folgt der spätere Fehler ohne anonymisierte PDF-Ausgabe. Aktuelle Unit verweist auf das fehlende
+      Verzeichnis /run/current-system/sw/share/tessdata. Keine Deployment-Änderung oder erneute Produktionsverarbeitung.
+      PostgreSQL-Prozesskonkurrenz und Ende-zu-Ende-Verifikation bleiben offen.'
+    assessed_by: codex-pdf-import-20260923
+    assessed_at: '2026-09-23T06:37:33.234570Z'
 - id: cross_entrypoint_failure_injection
   category: testing
   title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
@@ -511,6 +566,11 @@ definition_of_done:
   - Automatische Reparatur verändert nur eindeutig besessene, wiederherstellbare Zustände; unbekannte
     oder klinisch unsichere Zustände werden als LOST oder Quarantäne sichtbar und bleiben erhalten.
   - Retry ist begrenzt, idempotent, kapazitätsgeprüft und löscht nie die einzige gültige Quelle oder Generation.
+  - Nach klinischer Validierung darf die Start-Reconciliation entfernte Rohdateien nicht aus alten Kopien
+    wieder verknüpfen; vor der Mutation wird der aktuelle Zustand unter Zeilensperre erneut geprüft. Die
+    Übersicht zeigt historische Rohstream-Fehler bei validiertem Video und belegter aktueller fertiger
+    anonymisierter Streaming-Generation nicht als aktuellen Fehler. Aktive Rohverarbeitung und fehlende,
+    ungeprüfte oder fehlerhafte anonymisierte Generationen bleiben sichtbar.
   required: true
   verification:
     kind: manual
@@ -555,14 +615,30 @@ definition_of_done:
     - kind: command
       reference: 'Vollständige Media-Integrity-Regression: 15 passed, 2 warnings; fokussierter Pyright:
         0 Fehler'
-    note: Media-Reconciliation trennt gewöhnliche Verarbeitungsausfälle (FAILED) von belegtem Integritätsverlust
-      (LOST), erkennt leere Referenzen nach Erfolg beziehungsweise persistierte Uploadquellen ohne Storage-Referenz
-      und zählt bereits normalisierte LOST-Datensätze bei jeder Inventur. Der Verlust eines bestätigten
-      Videoartefakts propagiert atomar an angewandte TransferJob-Ledger und abgeschlossene AIModelTrainingRun-Ledger
-      der referenzierenden Datensätze; eigenständige Trainingsergebnis-Artefakte werden zusätzlich periodisch
-      reconciled.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:22:14.470261Z'
+    - kind: review
+      reference: '2026-09-23: Autorisierte Bestandserhaltung auf gc-02 (7 Videos) und gc-10 (31 Videos);
+        25 vollständige Master-Prüfsummen ergänzt, 21 Streaming-Zuordnungen anhand belegter Quellidentität
+        korrigiert, 3 veraltete Streaming-Versuche und 2 abgelaufene Importe ohne Medienbereinigung beendet.
+        37 transaktionale Vorher-/Nachher-Belege bestätigen unveränderte klinische Daten und Master; aktiver
+        Import 58 unberührt. Rohdateibereinigung nach Validierung ist kein Verlust; selbst gesetzte Warnung
+        für gc-10 Video 12 zurückgenommen. Abschlussprüfung aller 38 Videos: mindestens eine Mediendatei
+        vorhanden. Details und verschlüsselte hostlokale Belegpfade: docs/video_datenerhalt_gc02_gc10_20260923.yml.
+        Treiberkonflikt, unvollständige Ausgaben und nicht belegbare historische Stream-Zuordnungen bleiben
+        offen; keine allgemeine Produktionsfreigabe.'
+    - kind: code
+      reference: endoreg_db/services/reconciliation.py::ReconciliationService.relink_broken_video_raw_files;
+        endoreg_db/serializers/misc/file_overview.py::current_overview_hls_artifacts
+    - kind: command
+      reference: '2026-09-23 Folgekorrektur: 79 unterschiedliche relevante Tests bestanden (gemeinsamer
+        Lauf Reconciliation/Overview/MediaIntegrity: 76 bestanden, 3 neue Testaufbaufehler; nach Center-Fixture-Korrektur
+        3/3 im Wiederholungslauf bestanden). Fokussierter Pyright der vier geänderten Python-Dateien:
+        0 Fehler/0 Warnungen; Ruff check und format bestanden. Gesamter Pyright meldete zusätzlich einen
+        fremden Report-Serializer-Typfehler; keine saubere Gesamtprüfung behauptet. Testfälle decken klinisch
+        validierte Rohbereinigung, Validierung/Quellwechsel während Kandidatensuche und sichtbare echte
+        Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Dokumentation: docs/video_datenerhalt_gc02_gc10_20260923.yml.
+        Kein Rollout.'
+    assessed_by: codex-video-import-20260923-a
+    assessed_at: '2026-09-23T08:39:52.120429Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert
@@ -591,3 +667,52 @@ definition_of_done:
       remains outstanding.
     assessed_by: codex-import-robustness-20260826
     assessed_at: '2026-08-26T08:22:58.351741Z'
+- id: lossless_report_and_owned_import_locks
+  category: data_integrity
+  title: Reportquellen bleiben vollständig erhalten und Importsperren besitzen eindeutige Eigentümer
+  acceptance:
+  - TXT-Quellen bleiben bei Erfolg und Fehler bytegleich erhalten; die Konvertierung verwendet eine stabile
+    Eingangskopie, übernimmt alle Seiten und Unicode-Zeichen oder bricht bei Inhaltsverlust laut ab.
+  - Ein Timeout eines wartenden Imports gibt niemals die Sperre eines aktiven Imports frei; Prozessende
+    gibt die Betriebssystemsperre frei.
+  - Erzeugte Reports werden vor Veröffentlichung parserbasiert geprüft; beschädigte, reparaturbedürftige,
+    leere oder verschlüsselte PDFs werden abgewiesen.
+  - Reportersatz publiziert eine neue unveränderliche Generation. Datenbankfehler einschließlich äußerem
+    Transaktionsrollback erhalten die vorherige Datei und Referenz; unklarer Commitstatus führt nicht
+    zur Löschung einer möglicherweise referenzierten Generation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fokussierte Quellerhalt-, Textvollständigkeits-, Prozesssperren-, PDF-Parser- und Transaktionsrollback-Tests
+      einschließlich verschlüsseltem Speicher ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_import_file_locks.py
+        tests/import_files/test_report_finalize_success.py tests/services/test_report_import_service_unit.py
+        tests/services/test_report_artifact_integrity.py tests/import_files/test_import_encryption.py
+        tests/services/test_video_import_service_unit.py tests/import_files/test_video_finalize_success.py
+        tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
+        -q --tb=short -rs: 170 passed, 2 warnings, keine Skips, 40.42s.'
+    - kind: command
+      reference: 'Vollständiger Pyright: 0 Fehler, 6 Warnungen; abschließender fokussierter Pyright: 0
+        Fehler, 1 externe MissingTypeStubs-Warnung. Ruff check, Ruff format --check und git diff --check
+        bestanden.'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md: Import reservation and delivery recovery'
+    note: 'TXT-Import verwendet stabile Snapshots, mehrseitige Unicode-Konvertierung mit Rückleseprüfung
+      einschließlich Wortgrenzen und deterministischen PDF-Bytes; Original bleibt erhalten. Importsperren
+      nutzen den bestehenden prozessgebundenen Wrapper. PDF-Publikation prüft Parser und gespeicherten
+      Hash und schreibt eine neue Generation; Referenz, Hash, Zustand und History werden gemeinsam transaktional
+      gespeichert. Vorherige Dateien und Kandidaten bei unklarem Commit bleiben erhalten; automatische
+      referenzgeprüfte Bereinigung dieser PDF-Generationen ist nicht implementiert. Geänderte PDF-Inhalte
+      erben keine Anonymisierungsfreigabe. Cleanup erfolgt nach äußerem Commit; Cleanup-Fehler widerrufen
+      keinen Erfolg. Gemeinsamer Neustart aller Importworker erforderlich, kein Mischbetrieb alter Existenzsperren
+      und neuer Betriebssystemsperren. SQLite-Prüfung bestanden; PostgreSQL-Prozesskonkurrenz bleibt offen.
+      Zusätzliche Ende-zu-Ende-Reporttests: 3 Fehler wegen fehlender deu+eng-OCR-Sprachdaten, keine Umgehung
+      der Vorprüfung. Kein Deployment, keine Produktionsdaten verändert.'
+    assessed_by: codex-integrity-review-20260923
+    assessed_at: '2026-09-23T12:19:19.895155Z'

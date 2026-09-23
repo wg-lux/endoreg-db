@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from django.db import models
 
@@ -13,6 +14,10 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
+    instance_id: models.UUIDField[UUID, UUID] = models.UUIDField(
+        default=uuid4, unique=True, editable=False
+    )
+
     patient_examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.CASCADE,
@@ -67,11 +72,6 @@ class PatientFinding(models.Model):
         ordering = ["patient_examination", "finding"]
 
         constraints = [
-            models.UniqueConstraint(
-                fields=["patient_examination", "finding"],
-                condition=models.Q(is_active=True),
-                name="unique_active_finding_per_examination",
-            ),
             models.CheckConstraint(
                 condition=(
                     models.Q(
@@ -106,6 +106,8 @@ class PatientFinding(models.Model):
         return patient
 
     if TYPE_CHECKING:
+        patient_examination_id: int
+        finding_id: int
 
         @property
         def classifications(

@@ -39,11 +39,10 @@ except ModuleNotFoundError as exc:
             [str(_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
         )
     raise RuntimeError(
-        "Feature-Tracker-Abhängigkeiten fehlen. Zuerst "
-        "'devenv tasks run agent:sync' ausführen."
+        "Feature-Tracker-Abhängigkeiten fehlen. Zuerst 'direnv allow' ausführen."
     ) from exc
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     advisory_file_lock,
     atomic_create_file,
     atomic_move_file,

@@ -55,11 +55,23 @@ def get_file_hash(file: str | Path | FieldFile | None) -> str:
 
         digest = hashlib.sha256()
         size = field_file_size(file)
+        if size < 0:
+            raise ValueError("Stored file plaintext size must not be negative")
+        consumed = 0
         if size > 0:
             for chunk in iter_field_file_bytes(
                 file, start=0, end=size - 1, chunk_size=1024 * 1024
             ):
+                consumed += len(chunk)
+                if consumed > size:
+                    raise ValueError(
+                        "Stored file stream exceeds declared plaintext size"
+                    )
                 digest.update(chunk)
+        if consumed != size or field_file_size(file) != size:
+            raise ValueError(
+                "Stored file plaintext size changed or stream is incomplete"
+            )
         return digest.hexdigest()
 
     path = file if isinstance(file, (str, Path)) else getattr(file, "path", None)

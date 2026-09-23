@@ -16,7 +16,13 @@ storage adapter and local streaming resolvers use that same boundary.
 The central filename policy is `canonical_media_name()` in
 `endoreg_db/utils/storage/files.py`. Videos and Portable Document Format (PDF)
 reports use `<media_hash>.<extension>`, with a lowercase extension. A published
-video generation can use `<media_hash>.<generation>.<extension>`; generation
+video generation can use `<media_hash>.<generation>.<extension>`. Processed report
+imports also publish immutable `<source_hash>.<generation>.pdf` files: the stored
+reference, plaintext digest, state, and success history commit together after
+parser and stored-content validation. Previous PDF files and candidates whose
+commit outcome is uncertain remain available for reference-aware reconciliation;
+import does not delete them. Staging cleanup runs only after the outer database
+commit and its failure does not revoke committed success. Video generation
 publication, leases, and previous-master retention remain unchanged. Raw videos,
 processed videos, raw reports, and processed reports retain distinct directories:
 `sensitive_videos`, `processed_videos_final`, `sensitive_reports`, and
@@ -37,6 +43,22 @@ is manually started, uses the encrypted runtime root, and does not bypass the
 feature-tracker migration gates. No deployed migration is implied by a code change.
 
 ## Import reservation and delivery recovery
+
+Source and content-hash import locks use the existing process-owned operating
+system advisory-lock wrapper. Lock files are persistent and must not be unlinked
+or reclaimed by age: waiters and owners must use the same file identity. Process
+termination releases ownership. Deployment must stop all legacy import workers
+before starting workers with this lock implementation; legacy existence-based
+locks and advisory locks must not run concurrently. Database leases and fencing
+remain authoritative for durable workflow mutations.
+
+TXT report conversion snapshots the input before reading, retains the original
+TXT even on failure, paginates the complete escaped text, and checks extracted
+text and word boundaries against the source after normalizing whitespace. Content
+that cannot be preserved fails explicitly. This conversion no longer uses the
+legacy single-page renderer. Scope and verification evidence are recorded in
+[`ImportPipelineRobustness.yml`](../feature-tracking/ImportPipelineRobustness.yml),
+criterion `lossless_report_and_owned_import_locks`.
 
 Queued imports reserve a database lease with owner `queued-task:<Celery task ID>`.
 The first delivery atomically claims that reservation as `execution-<UUID>`, using

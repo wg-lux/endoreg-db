@@ -107,7 +107,7 @@ from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.encryption.encryption import MAGIC
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.permissions import is_debug_mode
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,

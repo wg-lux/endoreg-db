@@ -13,7 +13,7 @@ from endoreg_db.authz.views_auth import auth_bootstrap
 from endoreg_db.utils.django_static import static
 from endoreg_db.views import PatientExaminationViewSet
 from endoreg_db.views.case import CaseViewSet
-from endoreg_db.views.report import patient_examination_report
+from endoreg_db.views.patient_report import patient_examination_report
 
 from .anonymization import url_patterns as anonymization_url_patterns
 from .auth import urlpatterns as auth_url_patterns

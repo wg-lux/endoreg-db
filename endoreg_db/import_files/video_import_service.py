@@ -737,7 +737,7 @@ class VideoImportService:
                 raise ValueError("Transferred video belongs to a different center")
             ensure_transferred_video_hls(video, execution_guard=ctx.execution_guard)
         else:
-            ensure_video_hls(video)
+            ensure_video_hls(video, execution_guard=ctx.execution_guard)
 
     def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
         file_hash = ctx.file_hash
@@ -797,6 +797,7 @@ class VideoImportService:
             )
 
     def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
+        _require_execution_ownership(ctx)
         safe_cleanup_staging_file(
             ctx.sensitive_path,
             label="duplicate video sensitive copy",
@@ -809,6 +810,7 @@ class VideoImportService:
             isinstance(original_path, Path)
             and original_path.parent.resolve() == _video_import_dir().resolve()
         ):
+            _require_execution_ownership(ctx)
             safe_cleanup_staging_file(
                 original_path,
                 label="duplicate video import source",

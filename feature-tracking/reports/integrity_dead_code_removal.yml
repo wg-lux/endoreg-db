@@ -1,0 +1,138 @@
+feature: code_quality
+criterion: dead_code_reduction
+revision: e68abf11cbbeb2c95c4dfb8101d07ac2cf1c8674
+arbeitsverzeichnis: /home/admin/endoreg-db
+umfang: Private veraltete Integritätshelfer in endoreg_db/services/media_integrity.py; Python-Inventar
+  über endoreg_db und scripts. Vorhandene fremde Änderungen bleiben erhalten.
+vulture:
+  primaerer_guard: devenv tasks run quality:dead-code
+  ergebnis: 'Bestanden: 34 geprüfte Ausnahmen, keine neuen/veralteten/abgelaufenen Einträge.'
+  explorativer_aufruf: .devenv/state/venv/bin/vulture endoreg_db scripts --exclude '*/migrations/*,*/tests/*,*/settings/*,*/management/commands/*,*/apps.py,*/admin.py'
+    --min-confidence 60 --sort-by-size
+  einordnung: 60-Prozent-Funde sind Kandidaten; Löschung erst nach separater Verbraucherprüfung.
+entfernt:
+- pfad: endoreg_db/services/media_integrity.py
+  symbol: _verify_streamable_artifact
+  zeilen_vorher: 525-544
+  klassifikation: confirmed_dead
+  vulture_meldung: unused function '_verify_streamable_artifact'
+  konfidenz: 60
+  groesse: 20
+  radon_komplexitaet: 6
+  risiko: niedrig nach statischer und dynamischer Vertragsprüfung
+  aktion: Definition entfernt; ausschließlich abhängigen STREAMABLE_FILE_MODE-Import ebenfalls entfernt.
+- pfad: endoreg_db/services/media_integrity.py
+  symbol: _parse_frame_number
+  zeilen_vorher: 625-629
+  klassifikation: confirmed_dead
+  vulture_meldung: unused function '_parse_frame_number'
+  konfidenz: 60
+  groesse: 5
+  radon_komplexitaet: 2
+  risiko: niedrig nach statischer und dynamischer Vertragsprüfung
+  aktion: Definition entfernt; ausschließlich abhängigen STREAMABLE_FILE_MODE-Import ebenfalls entfernt.
+- pfad: endoreg_db/services/media_integrity.py
+  symbol: _verify_canonical_probe
+  zeilen_vorher: 1120-1134
+  klassifikation: confirmed_dead
+  vulture_meldung: unused function '_verify_canonical_probe'
+  konfidenz: 60
+  groesse: 15
+  radon_komplexitaet: 5
+  risiko: niedrig nach statischer und dynamischer Vertragsprüfung
+  aktion: Definition entfernt; ausschließlich abhängigen STREAMABLE_FILE_MODE-Import ebenfalls entfernt.
+- pfad: endoreg_db/services/media_integrity.py
+  symbol: _file_mode
+  zeilen_vorher: 323-324
+  klassifikation: confirmed_dead
+  vulture_meldung: Kein direkter Fund; nur vom entfernten _verify_streamable_artifact verwendet.
+  konfidenz: null
+  groesse: 2
+  radon_komplexitaet: 1
+  risiko: niedrig nach statischer und dynamischer Vertragsprüfung
+  aktion: Definition entfernt; ausschließlich abhängigen STREAMABLE_FILE_MODE-Import ebenfalls entfernt.
+beibehalten:
+- symbol: PdfDocument.layout.fontsize, PdfDocument.xref_set_key.xref, PdfDocument.tobytes.no_new_id
+  klassifikation: protocol_signature
+  beleg: report_import_service.py ruft layout(fontsize=10), xref_set_key(-1, "ID", "null") und tobytes(no_new_id=True)
+    auf. Konkrete PyMuPDF-Verträge; drei einzeln begründete Baseline-Ausnahmen mit Prüftermin 2026-12-23.
+- symbol: mark_video_integrity_lost
+  klassifikation: compatibility_contract
+  beleg: Öffentliche Funktion mit aktiven Tests, unter anderem test_frame_extraction_completeness.py;
+    keine öffentliche API entfernt.
+- symbol: nuke_transcoding_dir
+  klassifikation: compatibility_contract
+  beleg: Öffentlicher Helper mit direkten Tests und Mock-Seams; kein Bestandteil dieser privaten Kohorte.
+- symbol: ImportContext-Validatoren, Serializer-Methoden und persistierte Integritätsfelder
+  klassifikation: framework_contract
+  beleg: Dynamische Pydantic-/Django-Verträge; Vulture-Nichtverwendung allein ist kein Löschbeleg.
+- symbol: _repair_processed_metadata_from_streamable
+  klassifikation: compatibility_contract
+  beleg: Aktive Reconciliation-Aufrufe verweigern damit ausdrücklich die Rekonstruktion eines kanonischen
+    Masters aus einer alten Streaming-Kopie; der Warnungs- und Fehlervertrag ist kein toter Code.
+verbraucherpruefung:
+  statisch: 'rg über endoreg_db, tests, scripts, docs, feature-tracking sowie lx-annotate, lx-data-models,
+    lx-anonymizer und luxnix: ausschließlich Definitionen und interne Aufrufe von _file_mode im entfernten
+    Helper.'
+  dynamisch: Keine Registrierungsdekoratoren, Barrel-Exporte, __all__-Einträge, Namensstrings oder Modul-Reflection
+    für diese privaten Symbole. Aktive _probe_video_path-, _storage_absolute_path- und Reconciliation-Aufrufe
+    bleiben erhalten.
+  laufzeitgrenze: Eine einzelne Ausführung beweist keine globale Nichtverwendung. Der Werkzeug-Trace von
+    scripts/check_dead_code.py ist kein Laufzeitnachweis für Medien-Reconciliation.
+  konstantenimport: Pyright identifizierte einen Testverbraucher von media_integrity.STREAMABLE_FILE_MODE.
+    Der Test importiert dieselbe Konstante jetzt direkt aus services.streamable_media; keine Assertions
+    oder Tests entfernt.
+  ast_vergleich: Alle 82 verbleibenden Top-Level-Definitionen stimmen im positionsunabhängigen Abstract
+    Syntax Tree mit dem Vorherstand überein; genau vier Definitionen entfernt, keine hinzugefügt.
+metriken:
+  werkzeuge: radon.raw.analyze und radon.complexity.cc_visit, direkt über die Projekt-Python-Umgebung
+    ohne Shell-Unterprozess auf den Quelldateitext angewandt.
+  vorher:
+    zeilen: 1828
+    codezeilen: 1613
+    logische_zeilen: 864
+  nachher:
+    zeilen: 1777
+    codezeilen: 1570
+    logische_zeilen: 836
+  entfernte_zeilen_gesamt: 51
+grenzen:
+  quality_boundaries: 'Vorher bereits fehlgeschlagen: erwartet 389 broad_exception, tatsächlich 388. Diese
+    Kohorte entfernt genau _verify_canonical_probe/Exception, fügt keine Grenze hinzu; danach 387. Die
+    bereits abweichende globale Baseline wird nicht neu eingefroren.'
+  sprachen: Python-Scan. Rust- und andere Sprachoberflächen wurden nicht mit Vulture bewertet.
+  tests: Fokussierte Tests unter SQLite bestanden; keine globale Coverage- oder PostgreSQL-Aussage.
+verifikation:
+  pyright_vollstaendig: 0 Fehler, 6 Warnungen vor der externen Abhängigkeits-Neuinstallation.
+  pyright_fokussiert: 0 Fehler, 0 Warnungen nach agent:sync.
+  ruff: check und format --check bestanden.
+  diff: git diff --check bestanden.
+  tracker: 'validate: 36 gültige Feature-Definitionen.'
+  unterbrochener_trace: Eigener Trace-Lauf nach Entfernung von lx_dtypes/PyYAML durch den parallel gestarteten
+    uv-add-Prozess beendet; kein Test- oder Laufzeitnachweis daraus abgeleitet.
+  pytest: 'RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+    --ds=endoreg_db.config.settings.test tests/services/test_media_integrity_reconciliation_plan.py tests/management/commands/test_reconcile_media_integrity.py
+    tests/models/video/test_frame_extraction_completeness.py tests/services/test_report_artifact_integrity.py
+    tests/services/test_report_import_service_unit.py tests/scripts/test_check_dead_code.py -q --tb=short
+    -rs: 84 passed, 2 warnings, 46.87s; keine Skips.'
+  trace:
+    kommando: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+      .devenv/state/venv/bin/python -m trace --count -C /tmp/integrity-reconciliation-trace --ignore-dir
+      '/nix/store:/home/admin/endoreg-db/.devenv:/home/admin/lx-anonymizer:/home/admin/lx-data-models:/home/admin/.cache:/home/admin/dev/lx-annotate'
+      --module pytest --ds=endoreg_db.config.settings.test tests/services/test_media_integrity_reconciliation_plan.py::test_ffmpeg_report_does_not_use_streamable_fallback_source
+      tests/services/test_media_integrity_reconciliation_plan.py::test_legacy_streamable_probe_reports_removal_only_in_dry_run
+      -q --tb=short -rs
+    ergebnis: 2 passed, 1 warning, 128.86s
+    artefakt: /tmp/integrity-reconciliation-trace/endoreg_db.services.media_integrity.cover
+    beobachtung: Ausgeführte Auswahl des Probe-Ursprungs und Reconciliation der alten Streaming-Pfade
+      im Dry-Run bestätigt. Tests verwenden kontrollierte Probes; dies ist kein Nachweis echter FFmpeg-Verarbeitung
+      oder globaler Nichtverwendung.
+ungeklaert:
+- symbol: ensure_processed_video_hls
+  pfad: endoreg_db/import_files/file_storage/state_management.py
+  konfidenz: 60
+  klassifikation: uncertain
+  begruendung: Öffentlicher Helper außerhalb der privaten Reconciliation-Kohorte. Kein ausreichender Deprecation-/Downstream-Vertragsnachweis
+    für eine Löschung in diesem Durchlauf.
+  naechster_schritt: Öffentliche und historische Verbraucher gesondert prüfen; gegebenenfalls Deprecation-Vertrag
+    festlegen.

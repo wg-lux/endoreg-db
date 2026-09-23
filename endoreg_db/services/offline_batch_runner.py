@@ -27,7 +27,7 @@ from pydantic import (
     model_validator,
 )
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     advisory_file_lock,
     atomic_write_file,
 )

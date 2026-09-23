@@ -379,7 +379,7 @@ Relevant files:
 - `endoreg_db/models/hub/transfer_job.py`
 
 Upload source deletion runs through the typed Django-storage wrapper in
-`endoreg_db.utils.file_operations` and emits both structured file-operation and
+`endoreg_db.utils.filesystem.file_operations` and emits both structured file-operation and
 hub audit events. The lx-annotate administration view exposes recent outbound
 transfers with local/remote correlation and cleanup state.
 

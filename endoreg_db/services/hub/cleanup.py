@@ -36,7 +36,7 @@ from endoreg_db.utils.paths import (
     ensure_within_storage_root,
 )
 from endoreg_db.utils.file_operations import get_file_hash
-from endoreg_db.utils.filesystem.file_operations import safe_delete_field_file
+from endoreg_db.utils.file_operations import safe_delete_field_file
 
 logger = logging.getLogger(__name__)
 

@@ -34,7 +34,10 @@ from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.rust_backend import (
     is_lx_encrypted_file,
 )
-from endoreg_db.utils.file_operations import atomic_create_file, secure_unlink_file
+from endoreg_db.utils.file_operations import (
+    atomic_create_file,
+    secure_unlink_file,
+)
 
 logger = logging.getLogger(__name__)
 

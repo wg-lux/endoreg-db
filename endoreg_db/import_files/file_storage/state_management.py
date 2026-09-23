@@ -30,8 +30,10 @@ from endoreg_db.services.hub.media_integrity import (
     has_verified_processed_video_transfer,
 )
 from endoreg_db.services.raw_pdf_files.integrity import (
-    verify_and_persist_processed_report_sha256,
+    verify_processed_report_artifact,
+    verify_processed_report_path,
 )
+from endoreg_db.services.raw_pdf_files.state import get_or_create_raw_pdf_state
 from endoreg_db.services.video_storage_normalization import evidence_as_json
 from endoreg_db.services.processed_video_cleanup import (
     reconcile_previous_processed_cleanup,
@@ -46,15 +48,13 @@ from endoreg_db.utils.paths import (
 )
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
-    atomic_move_file,
     atomic_move_path,
     safe_delete_field_file,
     safe_rmtree,
     safe_unlink_file,
-    get_file_hash,
 )
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.storage_profile import PayloadKind, requires_app_encrypted_storage
 
 logger = logging.getLogger(__name__)
 
@@ -290,10 +290,11 @@ def finalize_report_success(
     """
     Finalize a successful instance import/anonymization.
 
-    - Move anonymized Report from temp to canonical anonymized dir
+    - Store a verified, immutable anonymized report generation
     - Update RawPdfFile.processed_file and .anonymized flag
     - Mark RawPdfState as anonymized + sensitive_meta_processed
-    - Mark ProcessingHistory.success = True
+    - Commit the reference, state and ProcessingHistory together
+    - Retain previous files and defer staging cleanup until the outer commit
     """
     instance = ctx.current_report
     if not isinstance(instance, RawPdfFile):
@@ -303,106 +304,58 @@ def finalize_report_success(
     if not instance.pk:
         raise RuntimeError("Cannot finalize report import with an unsaved RawPdfFile.")
 
-    # --- Move anonymized path into final storage ---
     if ctx.anonymized_path is None:
         raise RuntimeError(
-            "Cannot finalize report import without an anonymized PDF output "
-            f"(instance={instance.pk}, hash={getattr(instance, 'pdf_hash', None)})."
+            "Cannot finalize report import without an anonymized PDF output."
         )
-
-    pdf_hash = getattr(instance, "pdf_hash", None) or instance.pk
-    expected_final_path = _processed_report_dir() / canonical_media_name(
-        str(pdf_hash), ".pdf"
-    )
     src = Path(ctx.anonymized_path)
-
-    logger.debug(
-        "finalize_report_success: src=%s (exists=%s, resolved=%s), expected_final=%s",
-        src,
-        src.exists(),
-        src.resolve(),
-        expected_final_path,
+    verify_processed_report_path(src)
+    candidate_sha256 = get_file_hash(src)
+    candidate_path = _processed_report_dir() / canonical_media_name(
+        instance.pdf_hash, ".pdf", generation=uuid.uuid4().hex
     )
+    previous_name = instance.processed_file.name
 
-    if not src.exists() or not src.is_file() or src.stat().st_size <= 0:
-        raise RuntimeError(
-            f"Cannot finalize report import because anonymized output is missing or empty: {src}"
-        )
-
-    if requires_app_encrypted_storage(PayloadKind.REPORT_PDF):
-        relative_name = to_storage_relative(expected_final_path)
-        saved_name = _store_existing_final_file(
-            instance.processed_file,
-            src,
-            relative_name=relative_name,
-        )
-        logger.info("Updated processed_file to %s", saved_name)
-        if src.resolve() != expected_final_path.resolve():
-            safe_cleanup_staging_file(
+    # Files cannot participate in database rollback. Publish a fresh generation
+    # and retain previous and uncertain-commit candidates for reconciliation.
+    # Never overwrite or delete a file that an outer transaction may reference.
+    try:
+        with transaction.atomic():
+            _store_existing_final_file(
+                instance.processed_file,
                 src,
-                label="processed report staging output",
-                missing_ok=True,
+                relative_name=to_storage_relative(candidate_path),
             )
-    else:
-        if src.resolve() == expected_final_path.resolve():
-            logger.info(
-                "Anonymizer output already at final path %s; skipping move.",
-                expected_final_path,
+            processed_file_sha256 = verify_processed_report_artifact(
+                instance, expected_sha256=candidate_sha256
             )
-            final_path = expected_final_path
-        else:
-            if expected_final_path.exists():
-                safe_unlink_file(expected_final_path, missing_ok=True)
-            atomic_move_file(source=src, destination=expected_final_path)
-            final_path = expected_final_path
-            logger.info("Moved anonymized report to %s", final_path)
+            instance.save()
+            state = get_or_create_raw_pdf_state(instance)
+            if state.processed_file_sha256 != processed_file_sha256:
+                state.anonymization_validated = False
+            state.processed_file_sha256 = processed_file_sha256
+            state.mark_processing_started()
+            state.mark_anonymized()
+            state.mark_sensitive_meta_processed()
+            state.save()
+            if not isinstance(ctx.file_hash, str):
+                ctx.file_hash = get_file_hash(ctx.file_path)
+            ProcessingHistory.get_or_create_for_hash(
+                obj=instance, file_hash=ctx.file_hash, success=True
+            )
+            staging_paths = (src, ctx.sensitive_path)
 
-        relative_name = to_storage_relative(final_path)
-        current_name = getattr(instance.processed_file, "name", None)
-        if current_name != relative_name:
-            instance.processed_file.name = relative_name
-            logger.info("Updated processed_file to %s", relative_name)
+            def cleanup_committed_staging() -> None:
+                for path in staging_paths:
+                    safe_cleanup_staging_file(
+                        path, label="committed report staging output", missing_ok=True
+                    )
 
-    cast(_StatefulImportInstance, instance).save()
-    processed_file_sha256 = verify_and_persist_processed_report_sha256(instance)
-    logger.info(
-        "Verified processed report artifact: report=%s sha256=%s",
-        instance.pk,
-        processed_file_sha256,
-    )
-
-    # --- Update RawPdfState flags (mirrors _finalize_processing) ---
-    state = _ensure_instance_state(instance)
-
-    with transaction.atomic():
-        if state is not None:
-            processable_state = cast(_ProcessableState, state)
-            if not processable_state.processing_started:
-                processable_state.mark_processing_started()
-
-            # We consider text/meta extraction + anonymization done at this point
-            processable_state.mark_anonymized()
-            processable_state.mark_sensitive_meta_processed()
-
-            processable_state.save()
-
-        cast(_StatefulImportInstance, instance).save()
-
-    if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = get_file_hash(ctx.file_path)
-    with transaction.atomic():
-        ProcessingHistory.get_or_create_for_hash(
-            obj=instance,
-            file_hash=ctx.file_hash,
-            success=True,
-        )
-
-    if isinstance(ctx.sensitive_path, Path):
-        safe_cleanup_staging_file(
-            ctx.sensitive_path,
-            label="report sensitive staging copy after success",
-            missing_ok=False,
-        )
+            # Cleanup failure must not turn committed publication into failure.
+            transaction.on_commit(cleanup_committed_staging, robust=True)
+    except Exception:
+        instance.processed_file.name = previous_name
+        raise
 
 
 def finalize_video_success(

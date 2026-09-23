@@ -42,9 +42,6 @@ accepted_findings:
     path: endoreg_db/serializers/misc/sensitive_patient_data.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature
-    path: endoreg_db/services/annotation_access.py
-    message: "unused variable 'flat'"
-  - <<: *protocol_signature
     path: endoreg_db/utils/media/frame_anonymization_utils.py
     message: "unused variable 'flat'"
     occurrences: 2
@@ -83,6 +80,22 @@ accepted_findings:
     reason: _MagicModule.from_buffer declares the python-magic keyword contract; the upload content-type check invokes the concrete module with mime=True.
     review_after: 2026-12-09
 
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'fontsize'"
+    reason: PdfDocument.layout declares the PyMuPDF keyword contract; report_import_service calls document.layout with fontsize=10.
+    review_after: 2026-12-23
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'xref'"
+    reason: PdfDocument.xref_set_key declares the PyMuPDF cross-reference contract; report_import_service calls result.xref_set_key to remove nondeterministic document identifiers.
+    review_after: 2026-12-23
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'no_new_id'"
+    reason: PdfDocument.tobytes declares the PyMuPDF keyword contract; report_import_service passes no_new_id=True to preserve deterministic import identity.
+    review_after: 2026-12-23
+
   - &framework_contract
     path: endoreg_db/checks.py
     message: "unused variable 'app_configs'"
@@ -106,9 +119,6 @@ accepted_findings:
   - <<: *framework_contract
     path: endoreg_db/urls/patient.py
     message: "unused variable 'actions'"
-  - <<: *framework_contract
-    path: endoreg_db/utils/storage/files.py
-    message: "unused variable '__s'"
 
   - &compatibility_contract
     path: endoreg_db/helpers/download_segmentation_model.py
@@ -138,9 +148,6 @@ accepted_findings:
   - <<: *typing_only
     path: endoreg_db/services/raw_pdf_files/metadata.py
     message: "unused import 'CenterModel'"
-  - <<: *typing_only
-    path: endoreg_db/utils/yaml_model_loader.py
-    message: "unused import 'DataLoaderLoadModelDataMetadata'"
 
 deletion_candidates:
   - &consumer_check

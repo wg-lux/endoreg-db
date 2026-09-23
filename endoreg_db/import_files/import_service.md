@@ -23,6 +23,12 @@ Local file-watcher ingestion and authenticated API upload both converge on share
 
 ## Producer handoff
 
-Producers that place files into a watched directory must write to a temporary name outside the watched final-name pattern, flush and close the file, and atomically rename it to the final name only when complete. The current Python helper is `endoreg_db.utils.file_operations.atomic_handoff_file(...)`; it remains on the legacy import surface while filesystem helpers migrate to the canonical package.
+Producers that place files into a watched directory must write to a temporary name outside the watched final-name pattern, flush and close the file, and atomically rename it to the final name only when complete. The current Python helper is `endoreg_db.utils.filesystem.file_operations.atomic_handoff_file(...)`; its implementation lives in the canonical filesystem package.
+
+Direct imports from the removed `endoreg_db.utils.file_operations` module must
+use `endoreg_db.utils.filesystem.file_operations`. All helper names remain
+available there. The package export `from endoreg_db.utils import file_operations`
+still resolves to that same module, and the operational logger retains its
+existing name `endoreg_db.utils.file_operations`.
 
 For exact execution order, leases, cleanup gates, presentation-timestamp rules, and operational recovery, follow the canonical runbook and its feature-tracker evidence rather than duplicating those details here.

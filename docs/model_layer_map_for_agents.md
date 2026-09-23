@@ -189,10 +189,10 @@ dependency search of the `lx_dtypes` source tree are required cohort evidence.
 Run the guard and its focused verification from the repository root:
 
 ```bash
-devenv shell -- .devenv/state/venv/bin/python \
+.devenv/state/venv/bin/python \
   scripts/check_lx_dtypes_model_inventory.py
 .devenv/state/venv/bin/pyright
-devenv shell -- .devenv/state/venv/bin/pytest \
+.devenv/state/venv/bin/pytest \
   tests/scripts/test_check_lx_dtypes_model_inventory.py -q
 ```
 
@@ -465,10 +465,14 @@ This ranking is based on workflow responsibility, not just line count.
 
 1. Add or keep import-boundary checks before moving behavior. Use a temporary
    allowlist for current debt instead of allowing new debt.
-   - Current check: `tests/app/test_model_import_boundaries.py` records the
-     existing `endoreg_db.models -> endoreg_db.services` import debt as an AST
-     allowlist. Update the allowlist only when removing existing debt or when a
-     consciously accepted compatibility wrapper is added.
+   - Current checks: `tests/app/test_clean_layer_cohorts.py` enforces the
+     established model/service and serializer/workflow boundaries for reviewed
+     cohorts. `scripts/check_lx_dtypes_model_inventory.py` checks registered
+     models, current consumers and shared/local contract ownership against
+     `quality/lx_dtypes_model_inventory.yml`; its regression tests are in
+     `tests/scripts/test_check_lx_dtypes_model_inventory.py`. The former
+     `test_model_import_boundaries.py` allowlist has been retired. These checks
+     do not imply a repository-wide ban on existing model/service imports.
 2. Replace barrel imports in touched service files with explicit leaf imports.
    Start with `endoreg_db/services`, then serializers, then views.
 3. Move neutral payload schemas out of service packages if models need them for

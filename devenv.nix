@@ -68,7 +68,7 @@ let
   ];
 
   
-  SYNC_CMD = "uv sync --extra dev --extra docs";
+  SYNC_CMD = "uv sync --extra dev";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
   FAST_TEST_ENV = ''
     export SKIP_EXPENSIVE_TESTS=true

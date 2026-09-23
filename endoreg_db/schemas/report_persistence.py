@@ -4,8 +4,19 @@ from typing import Any, Literal, cast
 
 from lx_dtypes.models.contracts.patient_examination_report import (
     ReportJsonObject,
+    SegmentFrameSelectorQueryPayload,
 )
-from pydantic import ConfigDict, TypeAdapter
+from pydantic import ConfigDict, Field, TypeAdapter
+
+
+class ReportAutoSelectionPayload(SegmentFrameSelectorQueryPayload):
+    """Validated command shared by report API and selection service."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+
+    action: Literal["auto_populate"] = "auto_populate"
+    limit: int = Field(default=5, ge=1, le=50)
+    template_name: str | None = Field(default=None, min_length=1)
 
 
 REPORT_JSON_CONTRACT_VERSION = "lx-dtypes==0.2.26"

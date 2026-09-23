@@ -12,7 +12,10 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max, Min, fields
 from django.utils.timezone import is_aware, make_naive
 
-from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
+from endoreg_db.utils.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+)
 
 type SummaryCell = str | int
 type CsvSummaryRow = tuple[str, str]

@@ -9,6 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from endoreg_db.import_files.context.default_sensitive_meta import (
     default_sensitive_meta,
 )
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import RawPdfFile
 from endoreg_db.services.raw_pdf_files import (
     ProcessedReportIntegrityError,
@@ -19,8 +20,7 @@ from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.storage import file_exists
 from tests.helpers.default_objects import get_default_center
 
-
-PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+PDF_BYTES = ReportImportService._render_single_page_pdf("report integrity fixture")  # pyright: ignore[reportPrivateUsage]
 
 pytestmark = pytest.mark.django_db
 

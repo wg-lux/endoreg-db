@@ -21,6 +21,101 @@ source_documents:
   disposition: reference
   note: Versioniertes Relationsinventar, Ownership-, Kardinalitäts-, API- und Abfragevertrag des Fallgraphs.
 definition_of_done:
+- id: repeated_finding_instances
+  category: data_integrity
+  title: Mehrere Läsionen desselben Befundtyps bleiben getrennte Instanzen im bestehenden Fallgraph
+  acceptance:
+  - Zwei aktive Polypen derselben Untersuchung können als getrennte PatientFinding-Instanzen mit eigenen
+    Klassifikationen und Interventionen gespeichert, erneut geladen und gezielt geändert werden.
+  - Berichts- und Segmentzuordnung adressieren die konkrete Befundinstanz; eine mehrdeutige Auswahl nur
+    über den Befundtyp wird abgelehnt und verwendet niemals stillschweigend den ersten Treffer.
+  - Bestehende Befund-, Klassifikations-, Interventions- und Segmentrelationen werden erweitert; eine
+    parallele Studien-Läsionspersistenz wird nicht eingeführt.
+  - Wiederholte und konkurrierende Übermittlungen erhalten die Instanzidentität; Zuordnungen zu fremden
+    Patienten oder Untersuchungen werden vor einer Mutation abgelehnt.
+  - Migration und kompatible Altdatenbehandlung erhalten bestehende Befund-IDs und Beziehungen.
+  - Ein Integrationstest verfolgt zwei Polypen derselben Untersuchung mit unterschiedlichen Resektionstechniken
+    durch Berichtsspeicherung, Segmentzuordnung und Kohortenansicht ohne Vermischung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Persistenzmigration, alle schreibenden Befund- und Segmentpfade sowie den Zwei-Polypen-Integrationstest
+      gemeinsam prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 6 existing warnings; lx-data-models pyright:
+        0 errors, 0 warnings.'
+    - kind: test
+      reference: 'Backend regression: 244 passed, 9 subtests passed, 2 warnings in 128.50s. Suites: test_report_finding_sync,
+        test_report_history, test_report_persistence_service, test_patient_examination_report_ninja_api,
+        test_study_cohort, test_dtypes_record_persistence, report/video import unit tests, test_canonical_graph,
+        test_check_lx_dtypes_model_inventory, test_lx_dtypes_import_boundary.'
+    - kind: test
+      reference: 'Dedicated temporary PostgreSQL: tests/migrations/test_patient_finding_instances.py and
+        tests/services/test_report_finding_concurrency.py passed. PostgreSQL report two-polyp integration
+        and idempotent finding API test passed on rerun after nullable-join row-lock fix (2 passed in
+        10.36s). Test server stopped.'
+    - kind: test
+      reference: 'lx-data-models: tests/unit/lx_dtypes/models/contracts/test_patient_finding_identity.py
+        and test_patient_examination_report.py: 27 passed in 0.17s.'
+    - kind: command
+      reference: Targeted Ruff, model inventory guard and git diff --check in both repositories passed.
+    note: Alle sechs Akzeptanzpunkte anhand der bestehenden PatientFinding-, Bericht-, Ledger- und Segmentrelationen
+      geprüft. UUID-Identität, idempotente Übermittlung, explizite Segmentauswahl und getrennte Resektionstechniken
+      sind durch Regressionstests belegt. PostgreSQL-Prüfungen bestätigen konkurrierende Synchronisation,
+      Migration einschließlich gesperrtem mehrdeutigem Downgrade, den Zwei-Polypen-Ablauf und wiederholbare
+      API-Anlage. Gemeinsame Verträge wurden gegen den lokalen lx-data-models-Quellstand geprüft; der
+      gekoppelte Auslieferungsvertrag ist in docs/case_graph_persistence.md dokumentiert.
+    assessed_by: codex-study-gap-20260923
+    assessed_at: '2026-09-23T08:45:02.194683Z'
+- id: study_finding_context
+  category: data_integrity
+  title: Studienvorschau bewahrt Befundinstanzen und zeitlich korrektes Berichtsvorwissen
+  acceptance:
+  - Jede Untersuchung der Kohortenantwort enthält aktive Befundinstanzen mit stabiler PatientFinding-ID,
+    Klassifikationen und Interventionen gemäß dem bestehenden lx_dtypes-Berichtsvertrag.
+  - Bericht und Video behalten in der aggregierten Patientenansicht ihre Untersuchungs-ID; bisherige Namenslisten
+    bleiben als Übersicht erhalten. Die additive Antwort trägt Schema-Version 1.1.
+  - Berichtshistorie enthält ausschließlich Untersuchungen vor dem Datum der aktuellen Untersuchung. Gleichdatierte,
+    spätere und undatierte Untersuchungen werden nicht als Vorwissen dargestellt; ohne aktuelles Untersuchungsdatum
+    ist die Historie ausdrücklich leer.
+  - Pseudonyme Datensätze mit demselben nichtleeren Patientenhash werden nur innerhalb desselben bekannten
+    Zentrums für die Historie verbunden; reale Patienten werden nicht per Hash zusammengeführt.
+  - Das Historienlimit wird erst nach Identitäts- und Datumsfilterung angewandt und akzeptiert 1 bis 50.
+  - Kohorte und Historie verwenden denselben Befundserializer und einen gebündelten Loader; zusätzliche
+    Befunde erzeugen keine zusätzlichen Abfragen je Befund.
+  - Tests belegen getrennte Befundinstanzen über Untersuchungen hinweg, Ausschluss inaktiver Daten, Patiententrennung,
+    Datumsgrenzen und begrenzte Abfragezahl.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_history.py
+    - tests/views/media/test_study_cohort.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 6 warnings'
+    - kind: test
+      reference: '.devenv/state/venv/bin/pytest tests/services/test_report_history.py tests/views/media/test_study_cohort.py
+        -q: 14 passed, 9 subtests passed, 2 warnings in 37.70s'
+    - kind: test
+      reference: '.devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py tests/services/test_report_finding_sync.py
+        tests/views/report/test_patient_examination_report_ninja_api.py -q: 64 passed, 2 warnings in 45.89s'
+    note: 'Alle sieben Akzeptanzpunkte geprüft: additive Kohortenantwort 1.1, gemeinsame aktive Befundprojektion
+      aus lx_dtypes-Berichtsverträgen, streng frühere Untersuchungsdaten, zentrumsbegrenzter pseudonymer
+      Hashabgleich und gebündelte Abfragen. Fokussierte Prüfung: 14 Tests und 9 Untertests bestanden;
+      Berichtsintegration: 64 Tests bestanden. Vollständiger Pyright-Lauf: 0 Fehler und 6 Warnungen außerhalb
+      der Änderung. Ruff und Diff-Prüfung erfolgreich.'
+    assessed_by: codex-study-gap-20260923
+    assessed_at: '2026-09-23T08:12:31.824375Z'
 - id: complete_graph_scope
   category: requirements
   title: Der persistente Fallgraph und seine Ownership sind vollständig definiert
@@ -146,7 +241,7 @@ definition_of_done:
         (0 errors)
     note: Grouping by the center-scoped patient hash now aggregates duplicate identity records and follow-up
       examinations into one row while retaining all occurrences and media. The focused grouping regression
-      passed. 
+      passed.
     assessed_by: codex-patient-case-identity-v1
     assessed_at: '2026-08-27T14:26:27.339676Z'
 - id: media_attachment_persistence
@@ -209,9 +304,9 @@ definition_of_done:
   category: interoperability
   title: ReportingShell verwendet den persistenten Fall statt einer Untersuchung als Fallersatz
   acceptance:
-  - /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID,
-    Fallstatus, Aufnahme- und Entlasszeitpunkt sowie die Liste der zugehörigen PatientExaminations über
-    einen typisierten snake_case-API-Vertrag.
+  - /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID, Fallstatus,
+    Aufnahme- und Entlasszeitpunkt sowie die Liste der zugehörigen PatientExaminations über einen typisierten
+    snake_case-API-Vertrag.
   - Fallauswahl und Fall-ID-Anzeige leiten die Case-ID nicht länger aus flow.patientExaminationId ab;
     eine Untersuchung wird innerhalb des ausgewählten Falls separat gewählt und kann gewechselt werden.
   - Medien-Preload, Berichtsentwurf, Befunde und Timeline bleiben an Fall und ausgewählte Untersuchung
@@ -280,9 +375,8 @@ definition_of_done:
       reference: tests/views/case/test_case_viewset.py (unknown fields, scalar coercion, and orphan-patient
         rollback)
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
-        tests/views/case/test_case_viewset.py tests/services/test_case_persistence_transactions.py tests/authz/test_case_policy.py
-        -q (12 passed)
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest tests/views/case/test_case_viewset.py
+        tests/services/test_case_persistence_transactions.py tests/authz/test_case_policy.py -q (12 passed)
     - kind: command
       reference: .devenv/state/venv/bin/pyright endoreg_db/schemas/case_creation.py endoreg_db/views/case.py
         tests/views/case/test_case_viewset.py (0 errors)

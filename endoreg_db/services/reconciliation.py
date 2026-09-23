@@ -157,6 +157,10 @@ class ReconciliationService:
         for video in VideoFile.objects.filter(raw_file__isnull=False).exclude(
             raw_file=""
         ):
+            if getattr(getattr(video, "state", None), "anonymization_validated", False):
+                # Validation intentionally retires raw media. Never resurrect it
+                # from an older intake copy, even with a dangling legacy pointer.
+                continue
             if not file_exists(getattr(video, "raw_file", None)):
                 unresolved.append(video)
 
@@ -170,6 +174,7 @@ class ReconciliationService:
 
         for video in unresolved:
             raw_video_hash = str(video.raw_video_hash)
+            raw_file_name = video.raw_file.name
             if raw_video_hash in claimed_hashes:
                 logger.warning(
                     "Skipping relink for video %s because that hash was already claimed in this reconciliation run.",
@@ -185,15 +190,26 @@ class ReconciliationService:
             if candidate is None:
                 continue
 
-            final_path, relative_name = self._promote_video_raw_candidate(
-                video=video,
-                candidate=candidate,
-                sensitive_dir=sensitive_dir,
-            )
-            if final_path is None:
-                continue
-
             with transaction.atomic():
+                video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                if (
+                    str(video.raw_video_hash) != raw_video_hash
+                    or video.raw_file.name != raw_file_name
+                ):
+                    continue
+                if getattr(
+                    getattr(video, "state", None), "anonymization_validated", False
+                ):
+                    continue
+                if file_exists(video.raw_file):
+                    continue
+                final_path, relative_name = self._promote_video_raw_candidate(
+                    video=video,
+                    candidate=candidate,
+                    sensitive_dir=sensitive_dir,
+                )
+                if final_path is None:
+                    continue
                 video.raw_file.name = relative_name
                 video.save(update_fields=["raw_file"])
             try:

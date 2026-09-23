@@ -181,7 +181,7 @@ import django
 django.setup()
 
 from endoreg_db.import_files import video_import_service
-from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.filesystem.file_operations import atomic_write_file
 
 class BlockingImportService:
     def import_and_anonymize(self, **_kwargs):

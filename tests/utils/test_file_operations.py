@@ -193,7 +193,7 @@ def test_get_file_hash_raises_on_none_or_missing() -> None:
 def test_atomic_write_file_replaces_destination_and_emits_json_log(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "nested" / "payload.bin"
 
     result = atomic_write_file(
@@ -221,7 +221,7 @@ def test_atomic_write_file_replaces_destination_and_emits_json_log(
 def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "payload.bin"
 
     def failing_content() -> Iterable[bytes]:
@@ -259,7 +259,7 @@ def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "incoming.mp4"
     fsync_calls: list[int] = []
     original_fsync = file_operations.os.fsync
@@ -296,7 +296,7 @@ def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
     caplog: LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "incoming.mp4"
 
     with pytest.raises(ValueError, match="byte count mismatch"):
@@ -319,7 +319,7 @@ def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
 def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
     caplog: LogCaptureFixture, monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     source = tmp_path / "source.bin"
     destination = tmp_path / "other" / "destination.bin"
     source.write_bytes(b"move-me")
@@ -393,7 +393,7 @@ def test_atomic_move_file_copy_failure_keeps_source_and_removes_partial_destinat
 def test_safe_unlink_file_missing_required_path_logs_and_raises(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     missing = tmp_path / "missing.bin"
 
     with pytest.raises(FileNotFoundError):
@@ -412,7 +412,7 @@ def test_safe_unlink_file_missing_required_path_logs_and_raises(
 def test_ensure_directory_and_safe_rmtree_emit_structured_events(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     target = tmp_path / "created" / "nested"
 
     ensure_directory(target, dir_mode=0o700)
@@ -439,7 +439,7 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(
 def test_safe_rmtree_retries_directory_not_empty_race(
     monkeypatch: MonkeyPatch, caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     target = tmp_path / "racy"
     ensure_directory(target)
     atomic_write_file(destination=target / "child.txt", content=(b"payload",))

@@ -28,6 +28,7 @@ from endoreg_db.services.media_integrity import (
     reconcile_upload_job_integrity,
     reconcile_video_integrity,
 )
+from endoreg_db.services.streamable_media import STREAMABLE_FILE_MODE
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
 )
@@ -414,7 +415,7 @@ def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
     _write_test_file(
         streamable_path,
         b"corrupt-streamable",
-        file_mode=media_integrity.STREAMABLE_FILE_MODE,
+        file_mode=STREAMABLE_FILE_MODE,
     )
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])

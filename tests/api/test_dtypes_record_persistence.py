@@ -5,6 +5,7 @@ import json
 from collections.abc import Iterator, Mapping
 from datetime import date
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -296,6 +297,44 @@ def test_dtypes_api_rejects_dtypes_record_for_wrong_examination() -> None:
     assert response.status_code == 422, response.content.decode()
     patient_examination.refresh_from_db()
     assert patient_examination.dtypes_record == {}
+
+
+def test_patient_finding_instance_create_is_repeatable_and_keeps_two_polyps() -> None:
+    client = Client()
+    examination, finding, _classification, _choice, _intervention = (
+        _create_dtypes_exam_graph()
+    )
+    client.force_login(
+        _create_center_user(
+            center=examination.patient.center, username="instance-create-reviewer"
+        )
+    )
+    first_id, second_id = uuid4(), uuid4()
+    created_ids: list[int] = []
+    for instance_id in (first_id, first_id, second_id):
+        response = client.post(
+            "/dtypes-api/patient-findings/",
+            data=json.dumps(
+                {
+                    "patient_examination": examination.pk,
+                    "finding": finding.pk,
+                    "instance_id": str(instance_id),
+                }
+            ),
+            content_type="application/json",
+            secure=True,
+        )
+        assert response.status_code == 200, response.content
+        created_ids.append(response.json()["id"])
+        assert response.json()["instance_id"] == str(instance_id)
+    assert created_ids[0] == created_ids[1] != created_ids[2]
+    assert PatientFinding.objects.filter(patient_examination=examination).count() == 2
+    examination.refresh_from_db()
+    assert len(_dtypes_record(examination).patient_findings) == 2
+    assert {str(row.uuid) for row in _dtypes_record(examination).patient_findings} == {
+        str(first_id),
+        str(second_id),
+    }
 
 
 def test_patient_finding_create_updates_dtypes_record() -> None:

@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 from contextlib import nullcontext
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 from uuid import uuid4
 
 import pymupdf
@@ -51,7 +52,8 @@ from endoreg_db.services.report_import_fencing import (
     report_import_finalization_guard,
     report_import_mutation_guard,
 )
-from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
+from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.rust_backend import (
     render_single_page_pdf as rust_render_pdf,
@@ -81,13 +83,6 @@ def _set_report_import_outcome(outcome: WorkloadOutcome) -> None:
 
 class InvalidReportDocumentError(ValueError):
     """The submitted PDF cannot be parsed as a supported report document."""
-
-
-class _PdfDocument(Protocol):
-    needs_pass: bool
-    page_count: int
-
-    def close(self) -> None: ...
 
 
 class ReportImportService:
@@ -180,6 +175,7 @@ class ReportImportService:
                         return existing_completed
 
                     # 2. Acquire fence & execute owned import
+                    self._validate_ocr_runtime()
                     fence = acquire_report_import_fence(snapshot.sha256)
                     try:
                         with ReportImportFenceHeartbeat(fence) as heartbeat:
@@ -188,10 +184,11 @@ class ReportImportService:
                                 fence
                             )
 
-                            ctx.current_report, processed, needs_processing = (
-                                create_or_retrieve_report_file(ctx)
-                            )
-                            get_or_create_raw_pdf_state(ctx.current_report)
+                            with report_import_mutation_guard(fence):
+                                ctx.current_report, processed, needs_processing = (
+                                    create_or_retrieve_report_file(ctx)
+                                )
+                                get_or_create_raw_pdf_state(ctx.current_report)
 
                             if processed or retry:
                                 ctx.retry = True
@@ -204,10 +201,13 @@ class ReportImportService:
 
                             if ctx.retry:
                                 renew_report_import_fence(fence)
-                                finalize_failure(ctx, preserve_sensitive_staging=True)
-                                ctx.current_report, _, needs_processing = (
-                                    create_or_retrieve_report_file(ctx)
-                                )
+                                with report_import_mutation_guard(fence):
+                                    finalize_failure(
+                                        ctx, preserve_sensitive_staging=True
+                                    )
+                                    ctx.current_report, _, needs_processing = (
+                                        create_or_retrieve_report_file(ctx)
+                                    )
                                 if needs_processing is not True:
                                     raise ValueError(
                                         f"File already processed: {ctx.original_path}"
@@ -263,6 +263,18 @@ class ReportImportService:
                 )
                 raise
 
+    @staticmethod
+    def _validate_ocr_runtime() -> None:
+        from lx_anonymizer.ocr.tessdata import get_tessdata_path
+
+        try:
+            # Match the existing report redactor's German/English OCR contract.
+            get_tessdata_path("deu+eng")
+        except (OSError, ValueError) as exc:
+            # A runtime dependency failure must not look like a lost source PDF
+            # to the upload-job boundary, which handles FileNotFoundError.
+            raise RuntimeError(f"Report OCR runtime is not configured: {exc}") from exc
+
     def _create_import_context(
         self,
         file_path: Path | str,
@@ -283,11 +295,15 @@ class ReportImportService:
         )
 
     def _create_temp_pdf_from_txt(self, txt_path: Path) -> Path:
-        txt_content = self._read_txt_content(txt_path)
-        txt_hash = get_file_hash(txt_path)
-        pdf_bytes = self._render_single_page_pdf(
-            f"txt_sha256:{txt_hash}\n{txt_content}"
-        )
+        with file_lock(txt_path):
+            snapshot = create_snapshot(txt_path, get_runtime_paths().sensitive_report)
+        try:
+            txt_content = self._read_txt_content(snapshot.path)
+            pdf_bytes = self._render_report_pdf(
+                f"txt_sha256:{snapshot.sha256}\n{txt_content}"
+            )
+        finally:
+            safe_cleanup_staging_file(snapshot.path, label="TXT conversion snapshot")
         destination = (
             get_runtime_paths().sensitive_report / f"txt-conversion-{uuid4().hex}.pdf"
         )
@@ -296,8 +312,38 @@ class ReportImportService:
             content=(pdf_bytes,),
             required_bytes=len(pdf_bytes),
         )
-        txt_path.unlink()
         return destination
+
+    @staticmethod
+    def _render_report_pdf(text: str) -> bytes:
+        """Paginate escaped text and verify content and word boundaries."""
+        html = (
+            '<html><body><pre style="white-space:pre-wrap">'
+            + escape(text)
+            + "</pre></body></html>"
+        )
+        document = cast(
+            PdfDocument, pymupdf.open(stream=html.encode("utf-8"), filetype="html")
+        )
+        try:
+            document.layout(width=595, height=842, fontsize=10)
+            payload = document.convert_to_pdf()
+        finally:
+            document.close()
+        result = cast(PdfDocument, pymupdf.open(stream=payload, filetype="pdf"))
+        try:
+            extracted = "".join(
+                result[index].get_text() for index in range(result.page_count)
+            )
+            if " ".join(extracted.split()) != " ".join(text.split()):
+                raise InvalidReportDocumentError(
+                    "TXT conversion did not preserve the complete report text."
+                )
+            # Stable generated bytes retain duplicate detection across retries.
+            result.xref_set_key(-1, "ID", "null")
+            return result.tobytes(no_new_id=True)
+        finally:
+            result.close()
 
     @staticmethod
     def _read_txt_content(txt_path: Path) -> str:
@@ -306,7 +352,7 @@ class ReportImportService:
                 return txt_path.read_text(encoding=encoding)
             except UnicodeDecodeError:
                 continue
-        return txt_path.read_text(encoding="utf-8", errors="replace")
+        raise InvalidReportDocumentError("TXT report cannot be decoded losslessly.")
 
     @staticmethod
     def _escape_pdf_text(value: str) -> str:
@@ -365,7 +411,7 @@ class ReportImportService:
     @staticmethod
     def _validate_pdf_document(file_path: Path) -> None:
         try:
-            document = cast(_PdfDocument, pymupdf.open(filename=str(file_path)))
+            document = cast(PdfDocument, pymupdf.open(filename=str(file_path)))
             try:
                 if document.needs_pass or document.page_count < 1:
                     raise InvalidReportDocumentError(
@@ -396,8 +442,16 @@ class ReportImportService:
             )
             return
         try:
-            if isinstance(ctx.current_report, RawPdfFile):
-                finalize_failure(ctx)
+            with report_import_mutation_guard(fence):
+                if isinstance(ctx.current_report, RawPdfFile):
+                    finalize_failure(ctx)
+        except StaleReportImportAttemptError:
+            self.logger.warning(
+                "Skipping failure finalization after report ownership changed "
+                "(content_hash=%s, token=%s).",
+                fence.content_hash,
+                fence.fencing_token,
+            )
         except Exception:
             self.logger.exception(
                 "Failed to persist report failure state while releasing fence "

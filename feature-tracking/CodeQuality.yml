@@ -177,15 +177,23 @@ definition_of_done:
         no internal, dynamic or known external consumers
     - kind: command
       reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139 passed)
-    note: Bestätigte Dead-Code-Kohorten entfernten zusätzlich drei private SensitiveMeta-Delegationsmethoden,
-      den unverdrahteten Legacy-Frame-Cache-Anonymisierungspfad samt ausschließlich abhängigen Helfern
-      sowie den verwaisten SensitiveMetaVerificationSerializer mit Barrel-Re-Exports. Interne, dynamische,
-      historische und bekannte repositoryübergreifende Consumer wurden vor der Löschung geprüft. Aktive
-      Identitäts-, Streaming-, Timeline-, Storage-, Lease- und Publikationspfade bleiben unverändert.
-      Der Dead-Code-Guard ist ausschließlich durch die fremde Änderung endoreg_db/services/hls_media.py:219
-      blockiert; die Baseline wurde nicht angepasst.
-    assessed_by: codex-boundary-cleanup-20260825
-    assessed_at: '2026-08-25T11:15:35.993624Z'
+    - kind: document
+      reference: feature-tracking/reports/integrity_dead_code_removal.yml
+    - kind: command
+      reference: '2026-09-23: quality:dead-code bestanden, 34 geprüfte Ausnahmen; Pyright vollständig
+        0 Fehler/6 Warnungen, fokussiert 0 Fehler/0 Warnungen; SQLite-Integritäts-/Import-/Guard-Tests
+        84 passed, 2 warnings, 46.87s; Ruff check/format und git diff --check bestanden.'
+    note: 'Neue private Integritätskohorte: drei Vulture-Kandidaten und der ausschließlich davon verwendete
+      _file_mode entfernt; insgesamt 51 Zeilen. Repository-, Geschwisterprojekt-, Import-/Export- und
+      dynamische Vertragsprüfung ohne verbleibende Verbraucher. Ein Test importiert STREAMABLE_FILE_MODE
+      jetzt direkt vom Eigentümer. AST-Vergleich: alle 82 verbleibenden Top-Level-Definitionen unverändert.
+      Öffentliche Integritätsfunktionen, Framework-Hooks und aktive PDF-Protokolle bleiben erhalten; drei
+      benötigte Protokollparameter einzeln als geprüfte Ausnahmen dokumentiert. 84 fokussierte Tests bestanden,
+      vollständiger Pyright ohne Fehler; Detailinventar in reports/integrity_dead_code_removal.yml. Der
+      separate Boundary-Guard war bereits vor dieser Kohorte abweichend und bleibt sichtbar fehlgeschlagen;
+      seine globale Baseline wurde nicht neu eingefroren.'
+    assessed_by: codex-integrity-review-20260923
+    assessed_at: '2026-09-23T13:37:36.537468Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
@@ -224,14 +232,28 @@ definition_of_done:
     - kind: command
       reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations); integrierter
         Pytest-Lauf über 13 Boundary-/Runtime-Dateien (90 passed)
-    note: Die AIDataSet-Kohorte besitzt nun keine Model→Service-Abhängigkeit und keine der sieben Legacy-Servicefassaden;
-      bekannte Consumer in Endoreg, lx-annotate und lx-data-models sind auf direkte Services migriert
-      beziehungsweise leer geprüft. SensitiveMeta-PATCH validiert nur noch am HTTP-Rand und delegiert
-      Relation-, Skalar- und Verifikationsmutation atomar an einen Service; explizites false bleibt erhalten,
-      die PDF-Doppelmutation und sensitive Response-Protokollierung entfallen. AST-Tests erzwingen die
-      Nullgrenzen. Weitere Modell-, View- und Serializer-Altbestände bleiben kohortenweise zu migrieren.
-    assessed_by: codex-boundary-cleanup-20260825
-    assessed_at: '2026-08-25T11:51:30.946367Z'
+    - kind: review
+      reference: '2026-09-23: Berichtsauswahl-Kohorte: PatientExaminationFrames, SelectedReportFrame und
+        PatientExaminationVideo waren neue, unmigrierte Parallelmodelle; ihre einzigen Verbraucher lagen
+        in zwei Report-Endpunkten. Auf kanonische VideoFile.examination-/Frame-Beziehungen und PatientExaminationReport.editor_payload
+        migriert; Modelldateien und unbenutzten privaten _assign_report_editor_payload-Wrapper entfernt.
+        Suche in Endoreg, lx-annotate und lx-data-models: keine verbleibenden Verbraucher der entfernten
+        Symbole. HTTP-Endpunkte bleiben erhalten. Service besitzt Auswahl und gesperrte Persistenz; bestehende
+        lx_dtypes-Verträge bleiben führend.'
+    - kind: command
+      reference: '2026-09-23: vollständiger .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende Warnungen.
+        SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        tests/views/report/test_patient_examination_report_ninja_api.py tests/views/report/test_reporting_shell_finalization_aaa.py
+        tests/views/report/test_pdf_redaction.py tests/utils/test_media_urlpatterns_contract.py tests/contracts/test_media_centralization.py
+        tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py tests/app/test_clean_layer_cohorts.py
+        -q --tb=short: 82 passed, 2 warnings in 62.61s. Kein PostgreSQL-Konkurrenznachweis.'
+    - kind: command
+      reference: 'Radon raw -s: entfernte Container und View vorher 1788 LOC/1525 SLOC; Service und View
+        nachher 1719 LOC/1514 SLOC; zusätzlich 13 Zeilen im bestehenden Schema. Radon cc -s neuer Service:
+        report_frame_candidates A(5), persist_segment_selection A(2), _save_selections A(2), auto_select_report_frames
+        B(8). Ausgangsrevision e68abf11 mit bereits vorhandenen Indexänderungen, Arbeitsverzeichnis /home/admin/endoreg-db.'
+    assessed_by: codex-import-integrity-20260923
+    assessed_at: '2026-09-23T07:54:18.642021Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
@@ -424,8 +446,19 @@ definition_of_done:
         aus devenv überschrieb zuvor den Zig-Linker; separater Cargo-Build ohne Entfernung reproduzierte
         den Fehler. Bestehende Rust-Warnungen und nicht fataler Cargo.toml-Suchhinweis bei sdist bleiben
         sichtbar.'
-    assessed_by: codex-final-tests-20260921
-    assessed_at: '2026-09-21T14:38:10.265432Z'
+    - kind: command
+      reference: '2026-09-23: devenv tasks run quality:dead-code quality:boundaries bestanden. Aktueller
+        Dead-Code-Guard: 31 geprüfte Findings, keine neuen/veralteten/abgelaufenen Ausnahmen, 0 bestätigte
+        Löschkandidaten; 5 öffentliche Kompatibilitätskandidaten bleiben mangels vollständigen externen
+        Verbrauchernachweises erhalten. Boundary-Guard: 389 breite Handler, 109 Typunterdrückungen. Review
+        und Fingerprint-Begründung in quality/quality_boundary_baseline.yml; keine pauschale Sicherheitsfreigabe.'
+    - kind: command
+      reference: '2026-09-23: scripts/check_lx_dtypes_model_inventory.py nach Aktualisierung reproduzierbarer
+        Aufrufstellen und Importmetadaten bestanden: 166 registrierte und 5 abstrakte Modelle, 53 shared_lx_dtypes_contract,
+        60 local_boundary_schema, 58 persistence_only. Manuelle Zielklassifikationen unverändert. Breiter
+        quality:code-regression-Lauf wegen fremdem pytest PID 934853 nicht parallel gestartet.'
+    assessed_by: codex-import-integrity-20260923
+    assessed_at: '2026-09-23T07:54:21.980995Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam

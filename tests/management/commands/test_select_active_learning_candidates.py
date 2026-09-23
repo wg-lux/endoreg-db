@@ -24,7 +24,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import get_runtime_paths
 
 

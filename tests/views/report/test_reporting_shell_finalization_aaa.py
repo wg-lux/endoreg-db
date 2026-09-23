@@ -90,12 +90,12 @@ def test_make_report_arranges_renderer_failure_and_asserts_finalization_rollback
         return {"ok": True, "issues": []}
 
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "validate_final_report_submission",
         successful_validation,
     )
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "persist_report_pdf_artifact",
         Mock(side_effect=RuntimeError("renderer unavailable")),
     )
@@ -129,12 +129,12 @@ def test_make_report_arranges_identity_mismatch_and_asserts_no_callee_or_mutatio
     validate = Mock(return_value={"ok": True, "issues": []})
     persist = Mock(return_value=(101, 202))
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "validate_final_report_submission",
         validate,
     )
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "persist_report_pdf_artifact",
         persist,
     )
@@ -172,12 +172,12 @@ def test_make_report_arranges_no_frame_selections_and_asserts_empty_export(
     validate = Mock(return_value={"ok": True, "issues": []})
     persist = Mock(return_value=(None, None))
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "validate_final_report_submission",
         validate,
     )
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report."
+        "endoreg_db.views.patient_report.patient_examination_report."
         "persist_report_pdf_artifact",
         persist,
     )

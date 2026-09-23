@@ -23,7 +23,7 @@ from endoreg_db.utils.encryption.encryption import (
     unwrap_file_dek,
 )
 from endoreg_db.utils.encryption.rotation import rotate_encrypted_file
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 def write_ring(

@@ -6,13 +6,18 @@ owners:
 - endoreg_db maintainers
 production_critical: true
 tracking:
-  state: done
+  state: active
   history:
   - action: done
     changed_by: Codex
     changed_at: '2026-07-31T09:11:30.433709Z'
     note: Definition of Done vollständig verifiziert; Typ- und Modellgrenzen werden aus dem aktiven Tracking
       abgeschlossen.
+  - action: reopened
+    changed_by: codex-import-integrity-20260923
+    changed_at: '2026-09-23T07:51:53.364375Z'
+    note: Prüfaufruf verweist auf entfernten test_model_import_boundaries.py; auf aktuelle Schicht- und
+      Inventartests umstellen und erneut ausführen.
 source_documents:
 - path: docs/pydantic_django_hardening_plan.md
   disposition: migrated
@@ -56,31 +61,30 @@ definition_of_done:
   verification:
     kind: command
     command:
-    - devenv
-    - shell
-    - --
     - .devenv/state/venv/bin/pytest
     - tests/services/test_patient_examination_links.py
-    - tests/app/test_model_import_boundaries.py
+    - tests/app/test_clean_layer_cohorts.py
+    - tests/scripts/test_check_lx_dtypes_model_inventory.py
     - tests/utils/test_model_links.py
     - tests/models/test_patient_examination_knowledge_base_identity.py
     - tests/api/test_dtypes_record_persistence.py
     - -q
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: blocked
     evidence:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_patient_examination_links.py
-        tests/app/test_model_import_boundaries.py tests/utils/test_model_links.py tests/models/test_patient_examination_knowledge_base_identity.py
-        tests/api/test_dtypes_record_persistence.py -q (24 passed)
-    - kind: document
-      reference: docs/model_layer_map_for_agents.md#typed-boundary-rules
-    note: PatientExamination no longer owns a links property or imports the service layer. The canonical
-      service loader performs six bounded queries for the complete traversed graph; service-owned aggregation
-      performs zero queries and fails loudly for incomplete prefetches.
-    assessed_by: Codex
-    assessed_at: '2026-07-17T13:16:32.044589Z'
+        tests/app/test_clean_layer_cohorts.py tests/scripts/test_check_lx_dtypes_model_inventory.py tests/utils/test_model_links.py
+        tests/models/test_patient_examination_knowledge_base_identity.py tests/api/test_dtypes_record_persistence.py
+        -q
+      note: Kriterienprüfung fehlgeschlagen
+    note: 'Exit-Code 127: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_patient_examination_links.py
+      tests/app/test_clean_layer_cohorts.py tests/scripts/test_check_lx_dtypes_model_inventory.py tests/utils/test_model_links.py
+      tests/models/test_patient_examination_knowledge_base_identity.py tests/api/test_dtypes_record_persistence.py
+      -q'
+    assessed_by: codex-import-integrity-20260923
+    assessed_at: '2026-09-23T07:53:57.513514Z'
 - id: inheritance_safety
   category: maintainability
   title: Mehrfachvererbung und ListField-Serialisierung sind deterministisch
@@ -110,10 +114,9 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: cd /lx-data-models && devenv shell -- .devenv/state/venv/bin/pytest -o addopts=''
-        --ds=lx_dtypes.django_settings_ci_test lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py
-        lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py lx_dtypes/models/contracts/tests/test_dicom_export.py
-        -q (18 passed)
+      reference: cd /lx-data-models && devenv shell -- .devenv/state/venv/bin/pytest -o addopts='' --ds=lx_dtypes.django_settings_ci_test
+        lx_dtypes/models/base/app_base_model/tests/test_inheritance_safety.py lx_dtypes/models/base/app_base_model/tests/test_app_base_model_fixtures.py
+        lx_dtypes/models/contracts/tests/test_dicom_export.py -q (18 passed)
     - kind: document
       reference: docs/model_layer_map_for_agents.md#typed-boundary-rules
     note: lx_dtypes imports all 271 model modules for the guard, detects synthetic direct-parent collisions,

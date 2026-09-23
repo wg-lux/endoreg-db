@@ -89,7 +89,7 @@ linked feature definition for current status and evidence.
 - [Repository alignment TODO](repo_alignment_todo.md) →
   [`StorageSecurity.yml`](../feature-tracking/StorageSecurity.yml)
 - [Video typing integration plan](video_typing_integration_plan.md) →
-  [`TypeSafety.yml`](../feature-tracking/done/TypeSafety.yml)
+  [`TypeSafety.yml`](../feature-tracking/TypeSafety.yml)
 - [Hub ingest gap-closure plan](wiki/hub_ingest_gap_closure.md) →
   [`HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
 

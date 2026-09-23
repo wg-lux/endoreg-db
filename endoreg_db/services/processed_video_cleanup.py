@@ -27,7 +27,7 @@ from endoreg_db.schemas.processed_video_cleanup import (
 )
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
 from endoreg_db.utils.file_operations import get_file_hash
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
     safe_rmtree,
     safe_unlink_file,

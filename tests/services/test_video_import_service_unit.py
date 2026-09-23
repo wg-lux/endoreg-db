@@ -438,7 +438,7 @@ class TestImportInputBoundaries:
             "_get_existing_completed_video",
             existing_completed,
         )
-        monkeypatch.setattr(sut, "ensure_video_hls", lambda _video: None)
+        monkeypatch.setattr(sut, "ensure_video_hls", Mock())
         monkeypatch.setattr(
             sut.VideoImportService,
             "_cleanup_duplicate_staging",
@@ -793,6 +793,62 @@ class TestNormalizationExecution:
 
 
 class TestImportOrchestration:
+    def test_duplicate_streaming_rejects_lost_execution_ownership(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from endoreg_db.import_files.file_storage import state_management
+
+        def reject() -> None:
+            raise RuntimeError("import ownership lost")
+
+        ctx = _context(tmp_path / "input.mp4", execution_guard=reject)
+        video = VideoFile(id=7, raw_file="raw/source.mp4")
+        materialize = Mock()
+        monkeypatch.setattr(state_management, "materialize_video_hls", materialize)
+
+        with pytest.raises(RuntimeError, match="import ownership lost"):
+            sut.VideoImportService._ensure_duplicate_streaming(ctx, video)
+
+        materialize.assert_not_called()
+
+    @pytest.mark.parametrize("lost_after_staging_cleanup", [False, True])
+    def test_duplicate_cleanup_preserves_source_after_ownership_loss(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        lost_after_staging_cleanup: bool,
+    ) -> None:
+        from endoreg_db.import_files.file_storage import cleanup
+
+        monkeypatch.setattr(cleanup, "staging_cleanup_roots", lambda: (tmp_path,))
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"retained source")
+        staging = tmp_path / "staging.mp4"
+        staging.write_bytes(b"retained staging")
+        guard_calls = 0
+
+        def guard() -> None:
+            nonlocal guard_calls
+            guard_calls += 1
+            if guard_calls > int(lost_after_staging_cleanup):
+                raise RuntimeError("import ownership lost")
+
+        ctx = _context(
+            source,
+            original_path=source,
+            sensitive_path=staging,
+            execution_guard=guard,
+        )
+        monkeypatch.setattr(sut, "_video_import_dir", lambda: tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        with pytest.raises(RuntimeError, match="import ownership lost"):
+            service._cleanup_duplicate_staging(ctx)
+
+        assert source.read_bytes() == b"retained source"
+        assert staging.exists() is (not lost_after_staging_cleanup)
+
     @pytest.mark.parametrize("renamed_source", [False, True])
     def test_repeated_completed_import_preserves_external_source_and_skips_heavy_work(
         self,
@@ -834,7 +890,10 @@ class TestImportOrchestration:
         # Assert
         assert first is second is video
         assert source.read_bytes() == second_source.read_bytes() == b"video"
-        assert ensure_hls.call_args_list == [call(video), call(video)]
+        assert ensure_hls.call_args_list == [
+            call(video, execution_guard=None),
+            call(video, execution_guard=None),
+        ]
         budget.assert_not_called()
         stage.assert_not_called()
         create.assert_not_called()
@@ -879,7 +938,10 @@ class TestImportOrchestration:
         # Assert
         assert result is video
         cleanup.assert_called_once()
-        assert ensure_hls.call_args_list == [call(video), call(video)]
+        assert ensure_hls.call_args_list == [
+            call(video, execution_guard=None),
+            call(video, execution_guard=None),
+        ]
         anonymizer.anonymize_video.assert_not_called()
 
     def test_rejects_a_missing_source_path(
@@ -1005,7 +1067,7 @@ class TestImportOrchestration:
 
         # Assert
         assert result is video
-        ensure_hls.assert_called_once_with(video)
+        ensure_hls.assert_called_once_with(video, execution_guard=None)
         cleanup.assert_called_once()
 
     def test_retry_resets_invalid_processing_before_anonymizing(

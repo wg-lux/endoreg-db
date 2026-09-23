@@ -31,7 +31,7 @@ examination, infer a patient, or mutate a closed case.
 | Case | owns `case_id`, admission/leave timestamps and state | one stable UUID per episode | `created_at`, `updated_at`; admission and leave are timezone-aware | soft-delete flag exists; final retention is not yet approved | top-level case record |
 | PatientExamination | `Case.patient_examinations` | one or more; an examination may currently be referenced by more than one case | examination date range and knowledge-base identity | case relation removal does not delete examination | nested `patient_examinations` |
 | Examination indication | `PatientExaminationIndication.patient_examination -> PatientExamination` | many per examination | no independent event timestamp | cascades with examination | reachable through examination APIs |
-| Patient finding | `PatientFinding.patient_examination -> PatientExamination` | many; one active row per finding type | created/updated and explicit deactivation actor/time | cascades with examination | reachable through finding/report APIs |
+| Patient finding | `PatientFinding.patient_examination -> PatientExamination` | many, including repeated finding types; each has a unique `instance_id` | created/updated and explicit deactivation actor/time | cascades with examination | reachable through finding/report APIs |
 | Finding classification | `PatientFindingClassification.finding -> PatientFinding` | many per finding | active state plus validated descriptor snapshots | cascades with finding | finding payload |
 | Finding intervention | `PatientFindingIntervention.finding -> PatientFinding` | many per finding | date and optional start/end timestamps | cascades with finding | finding payload |
 | Authored text report | `PatientExaminationReport.patient_examination -> PatientExamination` | many versions/occurrences | created, updated, finalized, actors, template identity and snapshots | cascades with examination | `documents[]` as `text_report` |
@@ -65,6 +65,53 @@ The response is the canonical case representation, including every reachable
 document occurrence.
 
 ## Query and lifecycle boundaries
+
+### Repeated finding instances
+
+The authoritative acceptance criteria are
+`case_persistence/repeated_finding_instances` in
+[`CasePersistence.yml`](../feature-tracking/CasePersistence.yml).
+`PatientFinding.id` continues to identify existing database relationships.
+`PatientFinding.instance_id` is a unique UUID identifying one lesion, not its
+terminology type. The existing clinical ledger uses this same identity in
+`PFinding.uuid` and its child references, so refreshing the ledger preserves it.
+Report submissions create repeatable instances by supplying
+`instance_id` alongside `finding_id`; updates may instead supply
+`patient_finding_id`. When both identifiers are supplied they must agree.
+Replaying the same UUID reuses the existing instance and its child relations.
+An inactive instance or an instance owned by another examination or finding
+type is rejected. The full findings list remains a replacement of the active
+report findings, so callers must retain unchanged lesions in that list.
+
+Legacy report submissions without instance identity remain supported only when
+the finding type identifies at most one active instance. Repeated finding types
+in one submission require explicit identities. The shared patient-findings POST
+route also accepts `instance_id`: an identical retry returns the existing finding;
+a changed create payload conflicts and requires PATCH. POST without a UUID
+creates a new instance and does not promise replay detection.
+
+The report segment selector accepts `patient_finding_id`. A report stores its
+selected instance in the existing segment-selection map; the segment's existing
+many-to-many relation can retain multiple lesions. Reads expose the linked
+`attached_findings` and leave the singular selection empty when it is ambiguous;
+report frame export requires an explicit selection in that case. Frame stepping
+retains the stored finding selection. An explicit video examination takes
+precedence over shared sensitive metadata. These operations serialize on the
+owning examination before mutating findings or report selections.
+
+Migration `0084_patient_finding_instances` backfills a distinct UUID for every
+existing row without changing primary keys, child foreign keys, or segment
+links. Apply the updated shared lx-dtypes contracts and application writers
+together before enabling repeated-lesion entry; older writers may select by
+type alone. The source checkout is required for local verification until these
+shared changes are included in a released package. Downgrade refuses multiple
+active instances of one type. A permitted downgrade removes UUIDs, so UUID-based
+clients must be stopped before downgrading; no automatic merge is performed.
+
+The current relationship is examination-local. Linking an index lesion to a
+later scar, specimen, or histology outcome requires a separately validated
+relationship in this same clinical graph; equal terminology names do not imply
+that two findings represent the same lesion.
 
 `CaseViewSet.get_queryset()` owns the read plan and prefetches examinations,
 PDFs, videos, authored reports, medications, schedules, samples, and values.

@@ -335,6 +335,7 @@ class SegmentFrameSelectorPatchSchema(SegmentFrameSelectorQuerySchema):
     frame_number: int | None = Field(default=None, ge=0)
     step: int = 5
     finding_id: int | None = Field(default=None, ge=1)
+    patient_finding_id: int | None = Field(default=None, ge=1)
     template_name: str | None = None
 
     @model_validator(mode="before")
@@ -395,6 +396,9 @@ class SegmentFrameSelectorItemSchema(Schema):
     selected_frame: SegmentFramePreviewSchema | None
     controls: SegmentFrameControlsSchema
     attached_finding: SegmentAttachedFindingSchema | None
+    attached_findings: list[SegmentAttachedFindingSchema] = Field(
+        default_factory=list[SegmentAttachedFindingSchema]
+    )
     selection_meta: SegmentSelectionMetaSchema
 
 

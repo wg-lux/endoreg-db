@@ -114,6 +114,45 @@ def test_overview_rejects_stale_or_unknown_publication(changed: str) -> None:
     assert current_overview_hls_artifacts([failed, published], video=video) == [failed]
 
 
+@pytest.mark.parametrize("validated", [False, True])
+@pytest.mark.parametrize("processed_status", ["ready", "failed", "stale", "absent"])
+@pytest.mark.parametrize("raw_status", ["failed", "queued", "materializing"])
+def test_overview_retires_only_historical_raw_failure_after_validation(
+    validated: bool, processed_status: str, raw_status: str
+) -> None:
+    video = VideoFile(
+        raw_file="raw/legacy-reference.mp4",
+        processed_file="processed/current.mp4",
+        processed_video_hash="a" * 64,
+    )
+    video.state = VideoState(anonymization_validated=validated)
+    raw = VideoHlsArtifact(
+        id=1,
+        video=video,
+        artifact_kind="raw",
+        status=raw_status,
+        updated_at=timezone.now(),
+    )
+    processed = VideoHlsArtifact(
+        id=2,
+        video=video,
+        artifact_kind="processed",
+        status="ready" if processed_status == "stale" else processed_status,
+        source_content_hash="b" * 64 if processed_status == "stale" else "a" * 64,
+        source_file_name=video.processed_file.name,
+        source_generation_id=uuid5(
+            NAMESPACE_URL, f"endoreg-db:hls:processed:{'a' * 64}"
+        ),
+        updated_at=timezone.now(),
+    )
+    artifacts = [raw] if processed_status == "absent" else [raw, processed]
+    selected = current_overview_hls_artifacts(artifacts, video=video)
+    hidden = validated and processed_status == "ready" and raw_status == "failed"
+    assert (raw not in selected) == hidden
+    assert (processed in selected) == (processed_status in {"ready", "failed"})
+    assert raw.status == raw_status
+
+
 def test_overview_does_not_substitute_ready_raw_for_failed_processed() -> None:
     video = VideoFile(raw_file="raw/current.mp4", raw_video_hash="a" * 64)
     raw = VideoHlsArtifact(

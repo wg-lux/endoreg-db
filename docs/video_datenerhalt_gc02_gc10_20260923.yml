@@ -1,0 +1,278 @@
+titel: "Datenerhalt und Videozustände auf gc-02 und gc-10"
+datum: "2026-09-23"
+sprache: de
+zweck: >
+  Betriebsprotokoll der ausdrücklich beauftragten Bestandserhaltung.
+  Verbindlicher Funktions- und Freigabestatus steht ausschließlich im Feature-Tracker.
+referenzen:
+  feature: feature-tracking/ImportPipelineRobustness.yml
+  kriterium: import_reconciliation_and_recovery
+  speicherregeln: docs/video_storage_normalization.md
+  speicherfreigaben: feature-tracking/VideoStorageNormalization.yml
+umfang:
+  gc_02: 7
+  gc_10: 31
+  profil_beider_hosts: site-client
+  zugriff: "gc-02 über lokales Terminal; gc-10 über SSH, jeweils bestehende Dienstumgebung."
+  eingriff: >
+    Bestehende Dateien und klinische Arbeit erhalten, fehlende beweisbare
+    Prüfsummen ergänzen, passende Streaming-Zuordnungen wiederherstellen,
+    abgelaufene Bearbeitungsversuche eindeutig beenden.
+ergebnis:
+  videos_mit_mindestens_einer_vorhandenen_mediendatei: 38
+  datensaetze_mit_transaktionalen_vorher_nachher_belegen: 37
+  aktiver_import_beim_eingriff_unveraendert: "gc-10 Video 58"
+  vollstaendig_gepruefte_und_ergaenzte_processed_pruefsummen: 25
+  wiederhergestellte_streaming_zuordnungen: 21
+  abgelaufene_streaming_versuche_beendet: 3
+  abgelaufene_importversuche_beendet: 2
+  unvollstaendige_videos_mit_ehrlichem_fehlerstatus: 5
+  erhaltene_annotationen_gc_02: 376607
+  erhaltene_annotationen_gc_10_gepruefte_datensaetze: 368498
+  erhaltene_segmente_gc_02: 264
+  erhaltene_segmente_gc_10_gepruefte_datensaetze: 3137
+  aktuelle_verarbeitete_streams_mit_datei_und_schluesselpruefung:
+    gc_02: 3
+    gc_10: 22
+  keine_irreversiblen_medienverluste_nachgewiesen: true
+rohdateien_nach_validierung:
+  einordnung: >
+    Eine fehlende Rohdatei allein ist kein Datenverlust. Laut Betreiber werden
+    Rohdateien bei der Validierung über VideoExaminationAnnotation.vue gezielt
+    bereinigt. Der Backend-Pfad bestätigt die vorgesehene Löschung nach Validierung
+    bei erfüllten Bereinigungsbedingungen; der anonymisierte Master bleibt erhalten.
+    Für jeden historischen Löschvorgang wurde kein eigener Lognachweis rekonstruiert.
+  betroffene_videos_ohne_rohdatei:
+    gc_02: [2]
+    gc_10: [12, 34, 36, 54]
+  korrektur_video_12_gc_10: >
+    Die während dieser Bearbeitung zunächst gesetzte missing_raw_warning wurde
+    zurückgenommen. Ausschließlich die selbst gesetzten Integritätsfelder wurden
+    auf ihren vorherigen Wert zurückgesetzt; sonstige Metadaten blieben erhalten.
+    Die anonymisierte Datei, 29698 Annotationen und 13 Segmente sind vorhanden.
+    Der historische fehlgeschlagene Rohstream bleibt als Historie bestehen.
+  code:
+    - "/home/admin/dev/lx-annotate/frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue"
+    - "endoreg_db/services/video_files/validation.py::validate_video_metadata_annotation"
+    - "endoreg_db/services/video_files/io.py::delete_raw_file_after_validation"
+befunde_zu_fehlenden_daten_und_ursachen:
+  - punkt: "Fehlende Prüfsummen vorhandener anonymisierter Dateien"
+    gc_02: [4, 6]
+    gc_10: [13, 14, 15, 19, 21, 23, 25, 26, 27, 34, 36, 38, 39, 40, 41, 44, 45, 46, 47, 48, 50, 51, 52]
+    nachweis: >
+      Dateien waren vorhanden und wurden vollständig entschlüsselt gehasht.
+      Gespeicherter processed_video_hash war leer. Die ursprüngliche Ursache
+      fehlender Persistenz ist nicht belegt; ein Verlust der Videobytes folgt daraus nicht.
+    auswirkung: >
+      Die Übersicht konnte vorhandene fertige Streams wegen der abweichenden
+      abgeleiteten Generationsidentität nicht als aktuelle Generation erkennen.
+    massnahme: >
+      Prüfsummen über get_file_hash ergänzt. Bei 21 Streams stimmten tatsächlicher
+      Quellinhalt, Quellpfad und vorhandene Herkunftsangaben überein; nur die
+      Generationszuordnung wurde korrigiert. Keine Dateien neu kodiert.
+  - punkt: "Fehlende sensible Metadaten"
+    gc_02: [3, 15]
+    gc_10: [35, 37, 42, 59]
+    einordnung: >
+      Fehlende Verknüpfung festgestellt. Ob Daten zuvor bestanden oder die Extraktion
+      nie fertig wurde, ist nicht für jeden Fall belegt. Keine Metadaten erfunden
+      und keine bestehenden Annotationen oder klinischen Freigaben zurückgesetzt.
+      Bei gc-02 Video 3 bleibt eine nachvollziehbare Integritätswarnung.
+  - punkt: "Fehlende anonymisierte Ausgabe"
+    gc_02: [15]
+    gc_10: [35, 37, 42, 58, 59]
+    einordnung: >
+      Rohdateien sind vorhanden. Kein Beleg, dass eine früher erfolgreich erzeugte
+      anonymisierte Ausgabe gelöscht wurde. Video 58 hatte beim Eingriff einen
+      aktiven Import und blieb unverändert. Die übrigen fünf Videos wurden als
+      unvollständige Verarbeitung mit erhaltener Quelle gekennzeichnet.
+  - punkt: "Verwaiste laufende Versuche"
+    gc_02:
+      streaming_artefakte: [60, 76, 69]
+      import_video: 15
+    gc_10:
+      import_video: 59
+    nachweis: >
+      Abgelaufene Bearbeitungsreservierungen beziehungsweise veraltete
+      Materialisierungsversuche. Der gc-02 Import war rund acht Tage alt.
+      Die Startbedingung des Streaming-Nachlaufs berücksichtigt offene Statuswerte,
+      ohne abgelaufene Importreservierungen auszunehmen; dadurch konnte sie blockieren.
+    massnahme: >
+      Importbesitz über den vorhandenen Reservierungsdienst neu abgegrenzt und
+      Fehlerabschluss durchgeführt. Veraltete Streaming-Versuche unter Zeilensperren
+      beendet, ohne Schlüssel, Pfade, Segmente oder Quelldateien zu bereinigen.
+  - punkt: "Fehlende historische Streaming-Herkunft"
+    gc_02:
+      verarbeitete_videos: [4, 6]
+      roh_videos: [3, 4, 5, 6, 13]
+    einordnung: >
+      Alte Artefakte ohne belegten Quellinhaltshash. Keine sichere automatische
+      Übernahme allein anhand von Dateinamen oder Dateiexistenz möglich.
+      Dateien und Schlüssel bleiben erhalten; kein nachgewiesener Masterverlust.
+  - punkt: "Streaming gehört zu einer anderen Generation"
+    gc_02: [5]
+    gc_10: [53, 54]
+    einordnung: >
+      Vorhandene ältere Streams stimmen nicht mit der aktuellen verarbeiteten
+      Quelle überein. Keine unbelegte Neuzuordnung oder Löschung durchgeführt.
+      Aktuelle Master und Annotationen bleiben erhalten.
+  - punkt: "Neuerzeugung auf gc-10 scheitert an der Grafiktreiberumgebung"
+    besonders_sichtbar_bei_verarbeiteten_streams: [44, 50]
+    nachweis: >
+      Geladenes NVIDIA-Kernelmodul 580.119.02 und NVIDIA Management Library
+      (NVML) 595.45 passen nicht zusammen. Worker melden unsupported device.
+      Dies belegt einen aktuellen Verarbeitungsblocker, nicht die Ursache jedes
+      historischen Importfehlers. Auf gc-02 waren die Versionen 595.45.04 konsistent.
+  - punkt: "Geringer freier Speicher"
+    gc_02: "Ungefähr 94 Prozent belegt, 32 GiB frei zum Diagnosezeitpunkt."
+    gc_10: "Ungefähr 95 Prozent belegt, 51 GiB frei zum Diagnosezeitpunkt."
+    einordnung: >
+      Verbleibendes Betriebsrisiko für neue Verarbeitung. GiB bezeichnet Gibibyte.
+      Keine Mediendateien zur Platzgewinnung gelöscht; vorhandene verschlüsselte
+      Speicherräume weiterverwendet.
+  - punkt: "Generischer Fehlerpfad kann Streaming-Schlüssel und Pfade entfernen"
+    code: "endoreg_db/services/hls_media.py::_mark_artifact_failed"
+    einordnung: >
+      Im Code beobachtetes Bereinigungsverhalten; kein Beweis, dass dieser Pfad
+      einen konkreten historischen Verlust verursacht hat. Bei dieser Maßnahme
+      wurde er für die drei veralteten Streaming-Versuche ausdrücklich nicht benutzt.
+schutz_und_pruefungen:
+  - "Vor jeder Änderung verschlüsselte, zurückgelesene Belege im jeweiligen lokalen Medienspeicher."
+  - "Geplante Änderungen zunächst innerhalb von Transaktionen ausgeführt und zurückgerollt."
+  - "Änderungen unter Datenbank-Zeilensperren und Prüfung aktiver Medienreservierungen."
+  - "25 vollständige Klartext-Prüfsummenprüfungen über den vorhandenen Hash-Helfer."
+  - "Vorhandene kanonische Dateien zusätzlich mit authentifizierten Anfangs- und Endbereichslesungen geprüft."
+  - "Annotationen und Segmente über vollständige Zeilendaten-Prüfsummen vor/nach dem Eingriff verglichen."
+  - "Bildanzahl, Bildrate, Dauer, Zeitkoordinaten und klinische Freigabefelder unverändert."
+  - "Masterreferenzen, Dateisystemidentität, Dateigröße und Änderungszeit vor/nach dem Eingriff unverändert."
+  - "Streaming-Schlüssel, Initialisierungsvektoren, Pfade, Segmentanzahl und Quellinhaltshashes unverändert."
+  - "Abschlussprüfung: Alle von der Übersicht ausgewählten fertigen Streams haben vorhandene Dateien und entschlüsselbare Schlüssel."
+  - "Kein Export von Rohmedien; keine Patientendaten, Zugangsdaten oder Schlüssel in diesem Dokument."
+grenzen_der_aussage:
+  - "Keine vollständige Dekodierung aller Videos oder klinische Sichtprüfung."
+  - "Keine vollständige kryptografische Prüfung jedes Streaming-Segments."
+  - "Keine allgemeine Produktionsfreigabe des Import- oder Wiederherstellungsprozesses."
+  - "Historische Ursachen fehlender Metadaten und Herkunftsangaben bleiben teilweise unbekannt."
+  - "Nicht jeder Fehlerstatus bedeutet verlorene Daten; früh gescheiterte Versuche können nie Ausgaben erzeugt haben."
+  - "Keine Treiberaktivierung, kein Neustart und kein neues Anwendungspaket ausgerollt."
+  - "Verbleibende rote Felder für tatsächlich unvollständige oder unbelegte Zustände sind weiterhin sachlich begründet."
+abgeleitete_backend_aenderungen:
+  auftrag: "Nachprüfung der Reparaturbefunde auf notwendige Änderungen in endoreg_db."
+  rohdatei_reconciliation:
+    datei: endoreg_db/services/reconciliation.py
+    befund: >
+      Die Start-Reconciliation konnte bei einer noch gesetzten Rohdateireferenz
+      nach klinischer Validierung eine alte Eingangskopie erneut zuordnen.
+    aenderung: >
+      Validierte Videos werden vor der Kandidatensuche ausgenommen. Vor einer
+      Dateipromotion wird das Video unter Datenbank-Zeilensperre frisch geladen.
+      Zwischenzeitliche Validierung, geänderte Quellidentität oder Referenz und
+      eine inzwischen wieder vorhandene Rohdatei verhindern die Änderung.
+  uebersicht:
+    datei: endoreg_db/serializers/misc/file_overview.py
+    befund: >
+      Historische fehlgeschlagene Rohstreams konnten auch nach erfolgreicher
+      klinischer Validierung als aktueller Fehler angezeigt werden.
+    aenderung: >
+      Ausschließlich der historische fehlgeschlagene Rohstream entfällt aus der
+      aktuellen Übersicht, wenn klinische Validierung vorliegt und der vorhandene
+      fertige anonymisierte Stream zur aktuellen Quellmetadaten-Identität passt.
+      Aktive Rohverarbeitung sowie fehlende, veraltete oder fehlerhafte
+      anonymisierte Streams bleiben sichtbar. Die gespeicherte Historie bleibt erhalten.
+  weitere_gepruefte_befunde:
+    - >
+      Die aktuellen Import- und Anonymisierungspfade speichern processed_video_hash
+      bereits vor ensure_video_hls. Keine belegte neue Ursache der historischen
+      Prüfsummenlücken in diesen Pfaden festgestellt; keine spekulative automatische
+      Übernahme alter Streaming-Generationen ergänzt.
+    - >
+      Die allgemeine Video-Integritätsprüfung prüft den kanonischen anonymisierten
+      Master und setzt fehlende Rohdateien allein nicht auf verloren.
+    - >
+      Veraltete Importzustände werden von der Start-Reconciliation bereits bewusst
+      beibehalten, weil die Zuordnung zum besitzenden Verarbeitungsversuch fehlt.
+      Kein pauschales Zurücksetzen ergänzt, das aktive Verarbeitung gefährden würde.
+    - >
+      NVIDIA-Treiberkonflikt und Startbedingung des Streaming-Nachlaufs liegen in
+      der Host-/Dienstkonfiguration; sie werden durch diese Backend-Änderung nicht behoben.
+  auslieferung: "Quellcodeänderung im Arbeitsverzeichnis; noch nicht auf gc-02/gc-10 ausgerollt."
+  code_pruefungen:
+    - >
+      Fokussierter Pyright für die vier geänderten Python-Dateien: 0 Fehler,
+      0 Warnungen. Ruff check und format --check bestanden.
+    - >
+      Gemeinsamer pytest-Lauf für test_reconciliation_service.py,
+      test_anonymization_overview.py und test_media_integrity_reconciliation_plan.py:
+      76 bestanden; drei neue Fälle zunächst wegen fehlendem Pflichtfeld center
+      im Testaufbau fehlgeschlagen. Nach Korrektur und erneuter Typprüfung bestanden
+      diese drei Fälle im fokussierten Wiederholungslauf. Insgesamt 79 unterschiedliche
+      Fälle erfolgreich geprüft; bestehende Plugin-/Abhängigkeitswarnungen.
+    - >
+      Die Datenbankfälle simulieren eine Änderung während der Kandidatensuche.
+      SQLite prüft dabei den erneuten Zustandsvergleich, nicht die Wirksamkeit
+      konkurrierender PostgreSQL-Zeilensperren.
+    - >
+      Vollständiger Projekt-Pyright meldete zunächst sechs Fehler und sechs Warnungen.
+      Fünf Fehler in neuen Testfunktionen wurden korrigiert und fokussiert nachgeprüft.
+      Der verbleibende, außerhalb dieses Umfangs beobachtete Fehler betraf
+      serializers/report/patient_examination_report.py:399 (attached_findings,
+      teilweise unbekannter Listentyp). Keine fehlerfreie Gesamtprüfung behauptet.
+belege:
+  basis: "Je Host get_runtime_paths().storage; Speicherung verschlüsselt über den vorhandenen Django-Medienspeicher."
+  gc_02: "recovery/video-preservation-20260923-89225c4a1ea342d68d2938f1b7f03134"
+  gc_10: "recovery/video-preservation-20260923-60aea4d60b024df495230b8b88c4f073"
+  dateien:
+    - before.json
+    - verified-processed-identities.json
+    - rollback-test-summary.json
+    - "rollback-test-video-<id>-before.json / -after.json"
+    - executed-preservation-command.py
+    - "committed-video-<id>-before.json / -after.json"
+    - committed-summary.json
+    - final-verification.json
+    - "gc-10 zusätzlich: raw-cleanup-correction-before.json / raw-cleanup-correction-after.json"
+  hinweis: >
+    Die ursprünglichen unveränderten Ausführungsbelege enthalten noch die zunächst
+    gesetzte Rohdatei-Warnung für Video 12. Der gesonderte Korrekturbeleg und die
+    Abschlussprüfung zeigen ihre Rücknahme. Belege bleiben lokal verschlüsselt.
+einzelnachweis:
+  gc-02:
+    - {"video":2,"rohdatei":false,"anonymisierte_datei":true,"annotationen":35786,"segmente":36,"massnahmen":["Bestand unverändert erhalten"]}
+    - {"video":3,"rohdatei":true,"anonymisierte_datei":true,"annotationen":67115,"segmente":40,"massnahmen":["Veralteter Streaming-Versuch beendet, Artefakt 60","Warnung wegen fehlender sensibler Metadaten"]}
+    - {"video":4,"rohdatei":true,"anonymisierte_datei":true,"annotationen":90039,"segmente":69,"massnahmen":["Dateiprüfsumme ergänzt"]}
+    - {"video":5,"rohdatei":true,"anonymisierte_datei":true,"annotationen":175670,"segmente":83,"massnahmen":["Veralteter Streaming-Versuch beendet, Artefakt 76"]}
+    - {"video":6,"rohdatei":true,"anonymisierte_datei":true,"annotationen":3428,"segmente":1,"massnahmen":["Dateiprüfsumme ergänzt","Veralteter Streaming-Versuch beendet, Artefakt 69"]}
+    - {"video":13,"rohdatei":true,"anonymisierte_datei":true,"annotationen":4569,"segmente":35,"massnahmen":["Bestand unverändert erhalten"]}
+    - {"video":15,"rohdatei":true,"anonymisierte_datei":false,"annotationen":0,"segmente":0,"massnahmen":["Abgelaufener Importversuch abgesichert und beendet","Verarbeitung unvollständig; Quelle erhalten"]}
+  gc-10:
+    - {"video":12,"rohdatei":false,"anonymisierte_datei":true,"annotationen":29698,"segmente":13,"massnahmen":["Rohdatei-Warnung zurückgenommen; erwartete Bereinigung"]}
+    - {"video":13,"rohdatei":true,"anonymisierte_datei":true,"annotationen":7133,"segmente":14,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 2"]}
+    - {"video":14,"rohdatei":true,"anonymisierte_datei":true,"annotationen":18804,"segmente":19,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 3"]}
+    - {"video":15,"rohdatei":true,"anonymisierte_datei":true,"annotationen":13142,"segmente":40,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 4"]}
+    - {"video":19,"rohdatei":true,"anonymisierte_datei":true,"annotationen":9566,"segmente":23,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 5"]}
+    - {"video":21,"rohdatei":true,"anonymisierte_datei":true,"annotationen":21351,"segmente":61,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 6"]}
+    - {"video":23,"rohdatei":true,"anonymisierte_datei":true,"annotationen":4197,"segmente":15,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 8"]}
+    - {"video":25,"rohdatei":true,"anonymisierte_datei":true,"annotationen":1489,"segmente":5,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 9"]}
+    - {"video":26,"rohdatei":true,"anonymisierte_datei":true,"annotationen":61817,"segmente":43,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 10"]}
+    - {"video":27,"rohdatei":true,"anonymisierte_datei":true,"annotationen":26715,"segmente":51,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 11"]}
+    - {"video":34,"rohdatei":false,"anonymisierte_datei":true,"annotationen":10321,"segmente":51,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 12"]}
+    - {"video":35,"rohdatei":true,"anonymisierte_datei":false,"annotationen":0,"segmente":0,"massnahmen":["Verarbeitung unvollständig; Quelle erhalten"]}
+    - {"video":36,"rohdatei":false,"anonymisierte_datei":true,"annotationen":48856,"segmente":38,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 13"]}
+    - {"video":37,"rohdatei":true,"anonymisierte_datei":false,"annotationen":0,"segmente":0,"massnahmen":["Verarbeitung unvollständig; Quelle erhalten"]}
+    - {"video":38,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":21,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 80"]}
+    - {"video":39,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 83"]}
+    - {"video":40,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 58"]}
+    - {"video":41,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 59"]}
+    - {"video":42,"rohdatei":true,"anonymisierte_datei":false,"annotationen":0,"segmente":0,"massnahmen":["Verarbeitung unvollständig; Quelle erhalten"]}
+    - {"video":44,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt"]}
+    - {"video":45,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 68"]}
+    - {"video":46,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 69"]}
+    - {"video":47,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 70"]}
+    - {"video":48,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 71"]}
+    - {"video":50,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":0,"massnahmen":["Dateiprüfsumme ergänzt"]}
+    - {"video":51,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":470,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 73"]}
+    - {"video":52,"rohdatei":true,"anonymisierte_datei":true,"annotationen":0,"segmente":504,"massnahmen":["Dateiprüfsumme ergänzt","Streaming-Zuordnung korrigiert, Artefakt 74"]}
+    - {"video":53,"rohdatei":true,"anonymisierte_datei":true,"annotationen":83564,"segmente":1186,"massnahmen":["Bestand unverändert erhalten"]}
+    - {"video":54,"rohdatei":false,"anonymisierte_datei":true,"annotationen":31845,"segmente":583,"massnahmen":["Bestand unverändert erhalten"]}
+    - {"video":58,"rohdatei":true,"anonymisierte_datei":false,"annotationen":"Aktiver Import; keine Änderung","segmente":"Aktiver Import; keine Änderung","massnahmen":["Aktiven Import unverändert belassen"]}
+    - {"video":59,"rohdatei":true,"anonymisierte_datei":false,"annotationen":0,"segmente":0,"massnahmen":["Abgelaufener Importversuch abgesichert und beendet","Vorhandene technische Videometadaten im Status bestätigt","Verarbeitung unvollständig; Quelle erhalten"]}

@@ -4,11 +4,17 @@ from collections.abc import Iterable, Mapping
 from datetime import date, datetime, time
 from typing import Protocol, cast
 
-from django.db.models import Prefetch, QuerySet
+from django.db.models import Prefetch, Q
 
 from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.patient.patient_finding_classification import (
+    PatientFindingClassification,
+)
+from endoreg_db.models.medical.patient.patient_finding_intervention import (
+    PatientFindingIntervention,
+)
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientExaminationHistoryContextData,
     PatientFindingClassificationHistoryData,
@@ -24,20 +30,13 @@ class _IdentifiedLike(Protocol):
     id: int
 
 
-class _HistoryRelatedQuery(Protocol):
-    def select_related(self, *fields: str) -> Iterable[object]: ...
-
-
 class _HistoryRelatedManager(Protocol):
-    def filter(self, **kwargs: object) -> _HistoryRelatedQuery: ...
-
-
-class _PatientFindingManager(Protocol):
     def all(self) -> Iterable[object]: ...
 
 
 class _PatientFindingSummaryLike(Protocol):
     pk: int
+    patient_examination_id: int
     finding_id: int | None
     finding: object
     classifications: _HistoryRelatedManager
@@ -70,7 +69,6 @@ class _PatientExaminationHistoryLike(Protocol):
     examination: object
     date_start: object
     date_end: object
-    patient_findings: _PatientFindingManager
 
 
 def _related_name(value: object) -> str | None:
@@ -142,24 +140,58 @@ def _serialize_patient_finding_summary(
 
     classifications = [
         _serialize_patient_finding_classification(row)
-        for row in patient_finding_ref.classifications.filter(
-            is_active=True
-        ).select_related("classification", "classification_choice")
+        for row in patient_finding_ref.classifications.all()
     ]
     interventions = [
         _serialize_patient_finding_intervention(row)
-        for row in patient_finding_ref.interventions.filter(
-            is_active=True
-        ).select_related("intervention")
+        for row in patient_finding_ref.interventions.all()
     ]
 
     return {
         "patient_finding_id": model_pk(patient_finding),
+        "instance_id": str(patient_finding.instance_id),
         "finding_id": patient_finding_ref.finding_id,
         "finding_name": _related_name(patient_finding_ref.finding),
         "classifications": classifications,
         "interventions": interventions,
     }
+
+
+def get_patient_finding_summaries(
+    patient_examination_ids: list[int],
+) -> dict[int, list[PatientFindingHistoryData]]:
+    """Load active clinical context for reports and cohorts in three queries."""
+    summaries: dict[int, list[PatientFindingHistoryData]] = {}
+    if not patient_examination_ids:
+        return summaries
+    findings = (
+        PatientFinding.objects.filter(
+            patient_examination_id__in=patient_examination_ids,
+            is_active=True,
+        )
+        .select_related("finding")
+        .order_by("patient_examination_id", "pk")
+        .prefetch_related(
+            Prefetch(
+                "classifications",
+                queryset=PatientFindingClassification.objects.filter(is_active=True)
+                .select_related("classification", "classification_choice")
+                .order_by("pk"),
+            ),
+            Prefetch(
+                "interventions",
+                queryset=PatientFindingIntervention.objects.filter(is_active=True)
+                .select_related("intervention")
+                .order_by("pk"),
+            ),
+        )
+    )
+    for finding in findings:
+        finding_ref = cast(_PatientFindingSummaryLike, finding)
+        summaries.setdefault(finding_ref.patient_examination_id, []).append(
+            _serialize_patient_finding_summary(finding)
+        )
+    return summaries
 
 
 def get_patient_examination_history_context(
@@ -170,36 +202,46 @@ def get_patient_examination_history_context(
     """
     Build a history payload for report rendering from existing records.
 
-    This is read-only derived context. It should not persist any report data.
+    Only strictly earlier examination dates establish prior knowledge. An
+    undated current examination therefore has no historical context. This is
+    read-only derived context, not an immutable snapshot of past clinical state.
     """
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise ValueError("history limit must be an integer between 1 and 50.")
     patient = patient_examination.patient
     assert patient is not None, "PatientExamination must have an associated patient."
     patient_ref = cast(_IdentifiedLike, patient)
     patient_examination_ref = cast(_IdentifiedLike, patient_examination)
 
-    prior_examinations: QuerySet[PatientExamination] = (
-        PatientExamination.objects.filter(patient=patient)
-        .exclude(pk=patient_examination.pk)
-        .select_related("examination")
-        .prefetch_related(
-            Prefetch(
-                "patient_findings",
-                queryset=PatientFinding.objects.filter(is_active=True).select_related(
-                    "finding"
-                ),
-            )
+    identity = Q(patient=patient)
+    if (
+        not patient.is_real_person
+        and patient.patient_hash
+        and patient.patient_hash.strip()
+        and patient.center_id is not None
+    ):
+        identity |= Q(
+            patient__patient_hash=patient.patient_hash,
+            patient__center_id=patient.center_id,
+            patient__is_real_person=False,
         )
-        .order_by("-date_start", "-id")[:limit]
+    prior_examinations: list[PatientExamination] = []
+    if patient_examination.date_start is not None:
+        prior_examinations = list(
+            PatientExamination.objects.filter(
+                identity, date_start__lt=patient_examination.date_start
+            )
+            .exclude(pk=patient_examination.pk)
+            .select_related("examination")
+            .order_by("-date_start", "-id")[:limit]
+        )
+    findings_by_examination = get_patient_finding_summaries(
+        [row.pk for row in prior_examinations]
     )
 
     previous_examinations: list[PreviousPatientExaminationHistoryData] = []
     for patient_examination_row in prior_examinations:
         pe = cast(_PatientExaminationHistoryLike, patient_examination_row)
-        findings = [
-            _serialize_patient_finding_summary(cast(PatientFinding, patient_finding))
-            for patient_finding in pe.patient_findings.all()
-            if getattr(patient_finding, "is_active", True)
-        ]
         previous_examinations.append(
             {
                 "patient_examination_id": pe.id,
@@ -207,7 +249,7 @@ def get_patient_examination_history_context(
                 "examination_name": _related_name(pe.examination),
                 "date_start": _temporal_value(pe.date_start),
                 "date_end": _temporal_value(pe.date_end),
-                "findings": findings,
+                "findings": findings_by_examination.get(pe.id, []),
             }
         )
 

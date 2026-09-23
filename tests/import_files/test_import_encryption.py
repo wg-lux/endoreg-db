@@ -1,4 +1,5 @@
 from pathlib import Path
+from endoreg_db.import_files.report_import_service import ReportImportService
 from typing import Protocol, cast
 
 import pytest
@@ -50,11 +51,7 @@ def _default_processor_name() -> str:
 
 
 def _write_minimal_pdf(path: Path, marker: bytes) -> bytes:
-    payload = (
-        b"%PDF-1.4\n1 0 obj\n<< /Marker ("
-        + marker
-        + b") >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
-    )
+    payload = ReportImportService._render_single_page_pdf(marker.decode("ascii"))  # pyright: ignore[reportPrivateUsage]
     path.write_bytes(payload)
     return payload
 

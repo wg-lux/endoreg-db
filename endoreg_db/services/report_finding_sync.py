@@ -6,7 +6,9 @@ from datetime import date, datetime
 from typing import Protocol, cast
 
 from django.contrib.auth.models import User as AuthUser
+from django.db import transaction
 from django.utils import timezone
+from pydantic import ValidationError as PayloadValidationError
 from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models.medical.finding.finding import Finding
@@ -27,6 +29,7 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     PatientFindingClassificationSyncData,
     PatientFindingInterventionSyncData,
 )
+from lx_dtypes.models.contracts.patient_finding import PatientFindingIdentityPayload
 from lx_dtypes.models.contracts.patient_finding_classification_runtime import (
     PatientFindingClassificationNumericalDescriptorsData,
     PatientFindingClassificationNumericalDescriptorsPayload,
@@ -104,6 +107,7 @@ class _ResolvedInterventionSync:
 @dataclass(frozen=True, slots=True)
 class _ResolvedFindingSync:
     finding: Finding
+    identity: PatientFindingIdentityPayload
     classifications: Sequence[PatientFindingClassificationSyncData]
     interventions: Sequence[PatientFindingInterventionSyncData]
 
@@ -456,6 +460,18 @@ def _resolve_finding_sync(
     patient_examination: PatientExamination,
     item: Mapping[str, object],
 ) -> _ResolvedFindingSync:
+    try:
+        identity = PatientFindingIdentityPayload.model_validate(
+            {
+                key: item[key]
+                for key in ("patient_finding_id", "instance_id")
+                if key in item
+            }
+        )
+    except PayloadValidationError as exc:
+        raise ValidationError(
+            {"findings": "Invalid patient finding identity."}
+        ) from exc
     finding = _resolve_finding(item.get("finding_id", item.get("finding")))
     if finding is None:
         raise ValidationError({"findings": "Unknown finding."})
@@ -472,6 +488,7 @@ def _resolve_finding_sync(
         )
     return _ResolvedFindingSync(
         finding=finding,
+        identity=identity,
         classifications=cast(
             Sequence[PatientFindingClassificationSyncData],
             item.get("classifications", []),
@@ -484,18 +501,45 @@ def _resolve_finding_sync(
 
 
 def _find_active_patient_finding(
+    patient_examination: PatientExamination,
     existing_active: Sequence[PatientFinding],
-    finding: Finding,
-) -> _PatientFindingLike | None:
-    finding_id = cast(_IdentifiedLike, finding).id
-    return next(
-        (
-            cast(_PatientFindingLike, row)
-            for row in existing_active
-            if cast(_PatientFindingLike, row).finding_id == finding_id
-        ),
-        None,
-    )
+    resolved: _ResolvedFindingSync,
+) -> PatientFinding | None:
+    identity = resolved.identity
+    if identity.patient_finding_id is not None or identity.instance_id is not None:
+        queryset = PatientFinding.objects.all()
+        if identity.patient_finding_id is not None:
+            queryset = queryset.filter(pk=identity.patient_finding_id)
+        else:
+            queryset = queryset.filter(instance_id=identity.instance_id)
+        match = queryset.first()
+        if match is None:
+            if identity.patient_finding_id is not None:
+                raise ValidationError({"findings": "Unknown patient_finding_id."})
+            return None
+        if (
+            match not in existing_active
+            or match.patient_examination_id != patient_examination.pk
+            or match.finding_id != resolved.finding.pk
+            or (
+                identity.instance_id is not None
+                and match.instance_id != identity.instance_id
+            )
+        ):
+            raise ValidationError(
+                {
+                    "findings": "Finding identity does not match an active finding in this examination."
+                }
+            )
+        return match
+    matches = [row for row in existing_active if row.finding_id == resolved.finding.pk]
+    if len(matches) > 1:
+        raise ValidationError(
+            {
+                "findings": "Ambiguous finding type; supply patient_finding_id or instance_id."
+            }
+        )
+    return matches[0] if matches else None
 
 
 def _create_patient_finding(
@@ -511,6 +555,8 @@ def _create_patient_finding(
         updated_by=user,
         is_active=True,
     )
+    if resolved.identity.instance_id is not None:
+        patient_finding.instance_id = resolved.identity.instance_id
     patient_finding.save()
     return patient_finding
 
@@ -570,12 +616,15 @@ def _deactivate_unmatched_findings(
         )
 
 
+@transaction.atomic
 def sync_report_findings(
     patient_examination: PatientExamination,
     findings_payload: Sequence[Mapping[str, object]],
     *,
     user: AuthUser | None,
 ) -> None:
+    # All report and selector writers serialize on the owning examination.
+    PatientExamination.objects.select_for_update().get(pk=patient_examination.pk)
     resolved_payload = [
         _resolve_finding_sync(patient_examination, item) for item in findings_payload
     ]
@@ -590,9 +639,40 @@ def sync_report_findings(
             "finding"
         )
     )
-    matched_ids: set[int] = set()
+    resolved_matches: list[tuple[_ResolvedFindingSync, PatientFinding | None]] = []
+    seen: set[tuple[str, str]] = set()
     for resolved in resolved_payload:
-        match = _find_active_patient_finding(existing_active, resolved.finding)
+        same_type = [
+            item for item in resolved_payload if item.finding.pk == resolved.finding.pk
+        ]
+        if len(same_type) > 1 and any(
+            item.identity.patient_finding_id is None
+            and item.identity.instance_id is None
+            for item in same_type
+        ):
+            raise ValidationError(
+                {
+                    "findings": "Repeated finding types require explicit instance identities."
+                }
+            )
+        match = _find_active_patient_finding(
+            patient_examination, existing_active, resolved
+        )
+        key = (
+            ("existing", str(match.pk))
+            if match is not None
+            else ("instance", str(resolved.identity.instance_id))
+            if resolved.identity.instance_id is not None
+            else ("legacy", str(resolved.finding.pk))
+        )
+        if key in seen:
+            raise ValidationError(
+                {"findings": "Duplicate finding instance in submission."}
+            )
+        seen.add(key)
+        resolved_matches.append((resolved, match))
+    matched_ids: set[int] = set()
+    for resolved, match in resolved_matches:
         if match is None:
             patient_finding = _create_patient_finding(
                 patient_examination,
@@ -600,8 +680,8 @@ def sync_report_findings(
                 user=user,
             )
         else:
-            _update_patient_finding(match, user=user)
-            patient_finding = cast(PatientFinding, match)
+            _update_patient_finding(cast(_PatientFindingLike, match), user=user)
+            patient_finding = match
         matched_ids.add(cast(_IdentifiedLike, patient_finding).id)
         _sync_finding_children(patient_finding, resolved)
     _deactivate_unmatched_findings(existing_active, matched_ids, user=user)

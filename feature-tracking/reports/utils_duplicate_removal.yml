@@ -1,0 +1,50 @@
+feature: code_quality
+criterion: dead_code_reduction
+assessor: codex-utils-dedup-20260923
+date: '2026-09-23'
+revision: e68abf11cbbeb2c95c4dfb8101d07ac2cf1c8674
+working_directory: /home/admin/endoreg-db
+scope: Inhaltlich identische Dateien unter endoreg_db/utils, rekursiv ohne Python-Bytecode.
+removed:
+  path: endoreg_db/utils/ai/data_loader_for_model_training.py
+  classification: confirmed_dead
+  evidence:
+    - Vor Entfernung bytegleich mit data_loader_for_model_input.py (774 Bytes).
+    - Ausschließlich Re-Exports aus multilabel_dataset_builder.py; keine eigene Laufzeitlogik oder Registrierung.
+    - Einziger Python-Verbraucher im Repository war tests/ai/test_multilabel_data_loader_video_ids.py; auf das Implementierungsmodul migriert.
+    - Dokumentationsreferenz und Import-Migrationshinweis in docs/annotation_export_guide.md aktualisiert.
+    - Keine Verbraucher in den geprüften Geschwister-Repositories lx-ai-core, lx-data-models und lx-production gefunden.
+  metrics:
+    command: .devenv/state/venv/bin/python -m radon raw endoreg_db/utils/ai/data_loader_for_model_training.py
+    before: 25 LOC, 23 SLOC
+    after: Datei entfernt, 0 LOC
+    complexity_command: .devenv/state/venv/bin/python -m radon cc -s endoreg_db/utils/ai/data_loader_for_model_training.py
+    complexity: Keine Funktionen oder Klassen im entfernten Re-Export-Modul.
+retained:
+  - Leere __init__.py-Dateien in product und encryption bleiben als Paketgrenzen erhalten.
+  - filesystem/file_operations.py ist ein kanonischer Re-Export, kein Duplikat der Implementierung in utils/file_operations.py.
+  - data_loader_for_model_input.py bleibt für aktive Command- und Trainer-Importe erhalten.
+verification:
+  - command: .devenv/state/venv/bin/pyright
+    result: 'Exit 0; 0 Fehler, 6 bestehende Warnungen.'
+  - command: TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest tests/ai/test_multilabel_data_loader_video_ids.py tests/ai/test_model_input_command.py tests/ai/test_trainer_multilabel_unit.py -q --tb=short
+    result: 'Exit 0; 15 bestanden, 1 Warnung. Bestehende Testfälle und Assertions unverändert.'
+  - command: devenv tasks run quality:dead-code quality:boundaries
+    result: 'Exit 1; unabhängige Guard-Fehler, durch direkte Script-Aufrufe konkretisiert.'
+  - command: .devenv/state/venv/bin/python scripts/check_dead_code.py
+    result: 'Exit 1; neue Funde fontsize, xref und no_new_id in endoreg_db/services/raw_pdf_files/types.py:24,28,30.'
+  - command: .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+    result: 'Exit 1; broad_exception-Baseline erwartet 389, tatsächlich 388. Entferntes Modul enthält keine Exception-Handler.'
+  - command: ./feature-tracking/tracker.py validate
+    result: 'Exit 0; 36 gültige Feature-Definitionen.'
+  - command: ./feature-tracking/tracker.py show code_quality
+    result: 'Erfolgreich; bestehende Bewertung unverändert.'
+  - command: ./feature-tracking/tracker.py check code_quality
+    result: 'Exit 1; bestehender Gesamtstatus nicht produktionsreif, 5/11 Pflichtkriterien.'
+  - command: git diff --check
+    result: 'Exit 0.'
+  - review: Erneuter Bytevergleich aller Quelldateien unter utils.
+    result: Keine verbleibenden nichtleeren, bytegleichen Dateigruppen.
+limitations:
+  - Nicht verfügbare externe Verbraucher können weiterhin den entfernten Modulpfad verwenden; dokumentierter Ersatz ist multilabel_dataset_builder.
+  - Keine vollständige Import-, Streaming- oder PostgreSQL-Konkurrenztestsuite; keine Änderung der betreffenden Implementierungen.

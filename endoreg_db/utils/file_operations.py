@@ -24,7 +24,8 @@ from endoreg_db.utils.structured_logging import (
 if TYPE_CHECKING:
     from endoreg_db.schemas.import_file import SourceSnapshot
 
-logger = logging.getLogger(__name__)
+# Preserve the operational logger name across the module relocation.
+logger = logging.getLogger("endoreg_db.utils.file_operations")
 
 
 def get_content_hash_filename(file: Path) -> tuple[str, str]:
@@ -867,3 +868,17 @@ def safe_rmtree(path: Path, *, missing_ok: bool = True) -> None:
                 attempts=attempt,
             )
             return
+
+
+__all__ = [
+    "advisory_file_lock",
+    "atomic_copy_file",
+    "atomic_create_file",
+    "atomic_move_file",
+    "atomic_move_path",
+    "atomic_report_source_snapshot",
+    "atomic_write_file",
+    "safe_delete_field_file",
+    "safe_rmtree",
+    "safe_unlink_file",
+]

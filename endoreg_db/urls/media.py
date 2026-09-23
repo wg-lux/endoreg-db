@@ -31,7 +31,7 @@ from endoreg_db.views.media.sensitive_metadata import (
 )
 from endoreg_db.views.media.video_media import VideoMediaView
 from endoreg_db.views.report.reimport import ReportLlmJobStatusView, ReportReimportView
-from endoreg_db.views.report.pdf_redaction import (
+from endoreg_db.views.pdf.pdf_redaction import (
     PdfApplyRedactionsView,
     PdfProcessingHistoryView,
 )

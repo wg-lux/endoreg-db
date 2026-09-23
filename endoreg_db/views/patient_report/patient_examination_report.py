@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import random
 from collections.abc import Mapping
-from copy import deepcopy
 from contextlib import ExitStack
 from typing import Any, cast
 
@@ -19,7 +18,6 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     PatientExaminationReportMakeReportPayload,
     PreferredReportFramePayload,
     ReportFrameCandidatesQuery,
-    ReportFrameCandidate,
     ReportFrameCandidatesResponse,
     PatientExaminationReportSubmissionData,
     PatientExaminationReportSubmissionPayload,
@@ -53,16 +51,11 @@ from endoreg_db.helpers.model_ids import model_pk, optional_model_pk
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
-from endoreg_db.models.label.annotation.image_classification import (
-    ImageClassificationAnnotation,
-)
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
-from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
+
 from endoreg_db.serializers.report.patient_examination_report import (
     PatientExaminationReportSchema,
     SegmentFrameSelectorResponseSchema,
@@ -73,6 +66,17 @@ from endoreg_db.services.report_persistence import (
     ReportPersistenceValidationError,
     persist_report_pdf_artifact,
     save_report_submission,
+)
+from endoreg_db.schemas.report_persistence import ReportAutoSelectionPayload
+from endoreg_db.services.report_frame_selection import (
+    SEGMENT_FRAME_SELECTIONS_KEY,
+    auto_select_report_frames,
+    persist_segment_selection,
+    report_frame_candidates,
+    assign_segment_patient_finding,
+    selected_segment_patient_finding,
+    segment_patient_findings,
+    patient_examination_segment_filter,
 )
 from endoreg_db.services.report_frame_export import materialized_report_frame
 from endoreg_db.services.report_runtime_validation import (
@@ -197,16 +201,6 @@ def _serialized_report_data(report: PatientExaminationReport) -> ReportJsonObjec
     )
 
 
-def _assign_report_editor_payload(
-    report: PatientExaminationReport,
-    payload: ReportJsonObject,
-) -> None:
-    # Django JSONField stubs use JsonObject, while the report contract allows
-    # JSON null. The payload is produced by report_json_safe_dict and is safe at
-    # this persistence boundary.
-    cast(Any, report).editor_payload = payload
-
-
 def _assign_report_user_fields(
     report: PatientExaminationReport,
     *,
@@ -217,13 +211,6 @@ def _assign_report_user_fields(
         cast(Any, report).finalized_by = finalized_by
     if updated_by is not None or updated_by is None:
         cast(Any, report).updated_by = updated_by
-
-
-def _assign_patient_finding_updated_by(
-    patient_finding: PatientFinding,
-    user: User,
-) -> None:
-    cast(Any, patient_finding).updated_by = user
 
 
 def _request_json_object(request: HttpRequest) -> ReportJsonObject:
@@ -247,7 +234,7 @@ def _request_json_object(request: HttpRequest) -> ReportJsonObject:
 
 
 class PatientExaminationReportApi:
-    SEGMENT_FRAME_SELECTIONS_KEY = "report_segment_frame_selections"
+    SEGMENT_FRAME_SELECTIONS_KEY = SEGMENT_FRAME_SELECTIONS_KEY
 
     def __init__(self, request: HttpRequest) -> None:
         self.request = request
@@ -400,46 +387,7 @@ class PatientExaminationReportApi:
         self,
         patient_examination: PatientExamination,
     ) -> Q:
-        segment_filter = Q(
-            video_file__examination_id=_patient_examination_pk(patient_examination)
-        )
-
-        sensitive_meta_ids = self._patient_examination_sensitive_meta_ids(
-            patient_examination
-        )
-        if sensitive_meta_ids:
-            segment_filter |= Q(video_file__sensitive_meta_id__in=sensitive_meta_ids)
-
-        return segment_filter
-
-    @staticmethod
-    def _patient_examination_sensitive_meta_ids(
-        patient_examination: PatientExamination,
-    ) -> set[int]:
-        patient_examination_id = _patient_examination_pk(patient_examination)
-
-        sensitive_meta_ids: set[int] = {
-            int(sensitive_meta_id)
-            for sensitive_meta_id in RawPdfFile.objects.filter(
-                examination_id=patient_examination_id,
-                sensitive_meta_id__isnull=False,
-            ).values_list("sensitive_meta_id", flat=True)
-        }
-
-        sensitive_meta_ids.update(
-            int(sensitive_meta_id)
-            for sensitive_meta_id in AnonymExaminationReport.objects.filter(
-                patient_examination_id=patient_examination_id,
-                sensitive_meta_id__isnull=False,
-            ).values_list("sensitive_meta_id", flat=True)
-        )
-
-        video = getattr(patient_examination, "video", None)
-        sensitive_meta_id = getattr(video, "sensitive_meta_id", None)
-        if isinstance(sensitive_meta_id, int):
-            sensitive_meta_ids.add(sensitive_meta_id)
-
-        return sensitive_meta_ids
+        return patient_examination_segment_filter(patient_examination)
 
     def _resolve_report_for_export(
         self,
@@ -480,38 +428,12 @@ class PatientExaminationReportApi:
         segment_id: int,
         selection_value: ReportSegmentFrameSelectionData | None,
     ) -> None:
-        # Important: your pasted DRF version builds payload but does not persist it.
-        # This version locks, mutates, assigns editor_payload, and saves.
-        with transaction.atomic():
-            locked_report = PatientExaminationReport.objects.select_for_update().get(
-                pk=report.pk
-            )
-
-            payload: ReportJsonObject = report_json_safe_dict(
-                deepcopy(getattr(locked_report, "editor_payload", {}) or {})
-            )
-            selections = payload.get(self.SEGMENT_FRAME_SELECTIONS_KEY, {})
-            selection_map = validate_segment_selection_map(selections)
-
-            key = str(segment_id)
-            if selection_value is None:
-                selection_map.pop(key, None)
-            else:
-                selection_map[key] = selection_value
-
-            payload[self.SEGMENT_FRAME_SELECTIONS_KEY] = report_json_safe(selection_map)
-
-            _assign_report_editor_payload(locked_report, payload)
-            _assign_report_user_fields(
-                locked_report,
-                updated_by=(
-                    _authenticated_user_from_request(self.request)
-                    or cast(Any, locked_report).updated_by
-                ),
-            )
-            locked_report.save(
-                update_fields=["editor_payload", "updated_by", "updated_at"]
-            )
+        persist_segment_selection(
+            report,
+            segment_id=segment_id,
+            selection=selection_value,
+            user=_authenticated_user_from_request(self.request),
+        )
 
     def _selected_frame_for_export(
         self,
@@ -665,15 +587,14 @@ class PatientExaminationReportApi:
 
             frame_path = frame_scope.enter_context(materialized_report_frame(frame))
 
-            patient_finding = (
-                segment.patient_findings.filter(
-                    patient_examination=patient_examination,
-                    is_active=True,
+            try:
+                patient_finding = selected_segment_patient_finding(
+                    segment,
+                    patient_examination,
+                    patient_finding_id=selection.get("patient_finding_id"),
                 )
-                .select_related("finding")
-                .order_by("-updated_at", "-id")
-                .first()
-            )
+            except ValueError as exc:
+                raise HttpError(409, str(exc)) from exc
 
             caption = self._frame_caption(
                 segment=segment,
@@ -853,53 +774,18 @@ class PatientExaminationReportApi:
         patient_examination: PatientExamination,
         segment: LabelVideoSegment,
         finding_id: int | None,
-    ) -> tuple[PatientFinding | None, bool]:
-        if finding_id is None:
-            existing = (
-                segment.patient_findings.filter(
-                    patient_examination=patient_examination,
-                    is_active=True,
-                )
-                .select_related("finding")
-                .order_by("-updated_at", "-id")
-                .first()
+        patient_finding_id: int | None,
+    ) -> PatientFinding | None:
+        try:
+            return assign_segment_patient_finding(
+                segment,
+                patient_examination,
+                finding_id=finding_id,
+                patient_finding_id=patient_finding_id,
+                user=_authenticated_user_from_request(self.request),
             )
-            return existing, False
-
-        finding = Finding.objects.filter(pk=finding_id).first()
-        if finding is None:
-            raise HttpError(400, "finding_id does not exist")
-
-        user = _authenticated_user_from_request(self.request)
-        patient_finding = (
-            PatientFinding.objects.filter(
-                patient_examination=patient_examination,
-                finding=finding,
-                is_active=True,
-            )
-            .select_related("finding")
-            .first()
-        )
-
-        created = False
-        if patient_finding is None:
-            patient_finding = PatientFinding(
-                patient_examination=patient_examination,
-                finding=finding,
-                created_by=user,
-                updated_by=user,
-                is_active=True,
-            )
-            cast(Any, patient_finding).save()
-            created = True
-        else:
-            user_id = getattr(user, "id", None)
-            if user and getattr(patient_finding, "updated_by_id", None) != user_id:
-                _assign_patient_finding_updated_by(patient_finding, user)
-                patient_finding.save(update_fields=["updated_by", "updated_at"])
-
-        segment.patient_findings.add(patient_finding)
-        return patient_finding, created
+        except ValueError as exc:
+            raise HttpError(409, str(exc)) from exc
 
     def _serialize_segment_frame_item(
         self,
@@ -917,27 +803,20 @@ class PatientExaminationReportApi:
         if not isinstance(stored_frame_number, int):
             stored_frame_number = None
 
+        attached_findings = segment_patient_findings(segment, patient_examination)
         patient_finding = None
-        for pf in segment.patient_findings.all():
-            if (
-                getattr(pf, "patient_examination_id") == patient_examination.pk
-                and pf.is_active
-            ):
-                patient_finding = pf
-                break
-
-        if patient_finding is None:
-            pf_id = selection.get("patient_finding_id")
-            if pf_id:
-                patient_finding = (
-                    PatientFinding.objects.filter(
-                        pk=pf_id,
-                        patient_examination=patient_examination,
-                        is_active=True,
-                    )
-                    .select_related("finding")
-                    .first()
+        if (
+            selection.get("patient_finding_id") is not None
+            or len(attached_findings) <= 1
+        ):
+            try:
+                patient_finding = selected_segment_patient_finding(
+                    segment,
+                    patient_examination,
+                    patient_finding_id=selection.get("patient_finding_id"),
                 )
+            except ValueError as exc:
+                raise HttpError(409, str(exc)) from exc
 
         frame_qs = segment.get_frames().order_by("frame_number")
         available_frame_numbers = [
@@ -1013,6 +892,14 @@ class PatientExaminationReportApi:
                 if patient_finding is not None
                 else None
             ),
+            "attached_findings": [
+                {
+                    "patient_finding_id": _patient_finding_pk(finding),
+                    "finding_id": _patient_finding_finding_id(finding),
+                    "finding_name": _patient_finding_finding_name(finding),
+                }
+                for finding in attached_findings
+            ],
             "selection_meta": {
                 "updated_at": selection.get("updated_at"),
                 "selection_source": (
@@ -1303,51 +1190,7 @@ def get_report_frame_candidates(
 ) -> ReportFrameCandidatesResponse:
     api = PatientExaminationReportApi(request)
     examination = api._get_scoped_patient_examination(query.patient_examination_id)
-    frames = Frame.objects.select_related("video").filter(
-        video__examination=examination,
-        video__state__anonymized=True,
-        video__state__anonymization_validated=True,
-        video__state__processing_error=False,
-        timestamp__gte=0,
-    )
-    annotations = ImageClassificationAnnotation.objects.filter(
-        frame__in=frames, value=True
-    )
-    labels = list(
-        annotations.order_by("label__name")
-        .values_list("label__name", flat=True)
-        .distinct()
-    )
-    if query.label is not None:
-        frames = frames.filter(
-            pk__in=annotations.filter(label__name=query.label).values("frame_id")
-        )
-    rows = list(
-        frames.order_by("video_id", "frame_number", "pk")[
-            query.offset : query.offset + query.limit + 1
-        ]
-    )
-    page = rows[: query.limit]
-    labels_by_frame: dict[int, list[str]] = {}
-    for frame_id, name in (
-        annotations.filter(frame__in=page)
-        .values_list("frame_id", "label__name")
-        .distinct()
-    ):
-        labels_by_frame.setdefault(frame_id, []).append(name)
-    return ReportFrameCandidatesResponse(
-        frames=[
-            ReportFrameCandidate(
-                video_id=model_pk(frame.video),
-                frame_number=frame.frame_number,
-                timestamp=cast(float, frame.timestamp),
-                labels=sorted(labels_by_frame.get(_frame_pk(frame), [])),
-            )
-            for frame in page
-        ],
-        labels=labels,
-        next_offset=query.offset + query.limit if len(rows) > query.limit else None,
-    )
+    return report_frame_candidates(model_pk(examination), query)
 
 
 @router.get(
@@ -1387,6 +1230,7 @@ def get_segment_frame_selector(
     "/segment-frame-selector",
     response=SegmentFrameSelectorResponseSchema,
 )
+@transaction.atomic
 def patch_segment_frame_selector(
     request: HttpRequest,
 ) -> SegmentFrameSelectorResponseData:
@@ -1402,6 +1246,7 @@ def patch_segment_frame_selector(
     patient_examination = api._get_scoped_patient_examination(
         selector_patch.patient_examination_id
     )
+    PatientExamination.objects.select_for_update().get(pk=patient_examination.pk)
 
     report, auto_created = api._get_or_create_selection_report(
         patient_examination=patient_examination,
@@ -1437,10 +1282,14 @@ def patch_segment_frame_selector(
         current_frame_number=current_frame_number,
     )
 
-    patient_finding, _ = api._resolve_patient_finding_for_segment(
+    selected_finding_id = selector_patch.patient_finding_id
+    if selected_finding_id is None and selector_patch.finding_id is None:
+        selected_finding_id = current.get("patient_finding_id")
+    patient_finding = api._resolve_patient_finding_for_segment(
         patient_examination=patient_examination,
         segment=segment,
         finding_id=selector_patch.finding_id,
+        patient_finding_id=selected_finding_id,
     )
 
     segment_pk = _segment_pk(segment)
@@ -1487,6 +1336,47 @@ def patch_segment_frame_selector(
             segment_id=segment_pk,
             selection_value=dump_segment_frame_selection_payload(selection_payload),
         )
+
+    report.refresh_from_db()
+
+    return api.build_segment_frame_selector_response(
+        patient_examination=patient_examination,
+        report=report,
+        auto_created=auto_created,
+    )
+
+
+@router.post(
+    "/segment-frame-selector",
+    response=SegmentFrameSelectorResponseSchema,
+)
+def post_segment_frame_selector(
+    request: HttpRequest,
+) -> SegmentFrameSelectorResponseData:
+    api = PatientExaminationReportApi(request)
+    try:
+        command = ReportAutoSelectionPayload.model_validate(
+            _request_json_object(request)
+        )
+    except ValidationError as exc:
+        raise HttpError(422, json.dumps(exc.errors())) from exc
+    patient_examination = api._get_scoped_patient_examination(
+        command.patient_examination_id
+    )
+    report, auto_created = api._get_or_create_selection_report(
+        patient_examination=patient_examination,
+        report_id=command.report_id,
+        template_name=command.template_name,
+    )
+    try:
+        auto_select_report_frames(
+            report,
+            command=command,
+            segments=api._patient_examination_segments(patient_examination),
+            user=_authenticated_user_from_request(request),
+        )
+    except ValueError as exc:
+        raise HttpError(409, str(exc)) from exc
 
     report.refresh_from_db()
 

@@ -198,6 +198,20 @@ def current_overview_hls_artifacts(
             current.pk,
         ):
             current_by_kind[artifact.artifact_kind] = artifact
+    # A failed raw derivative is historical after clinical acceptance when the
+    # current anonymized generation is published. Keep active raw work visible,
+    # and never hide a missing or failed processed generation.
+    processed = current_by_kind.get("processed")
+    raw = current_by_kind.get("raw")
+    state = getattr(video, "state", None)
+    if (
+        getattr(state, "anonymization_validated", False)
+        and processed is not None
+        and processed.status == VideoHlsArtifact.Status.READY.value
+        and raw is not None
+        and raw.status == VideoHlsArtifact.Status.FAILED.value
+    ):
+        del current_by_kind["raw"]
     return [current_by_kind[kind] for kind in sorted(current_by_kind)]
 
 

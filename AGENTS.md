@@ -6,6 +6,10 @@ The goal of this repository is to provide consistent, anonymous data and to keep
 2. Ensure Data Is Streamable
 3. Ensure Concurrent Behaviour Is Given
 
+Paths are exclusively accessed through endoreg_db.utils.paths and the get_runtime_paths() function.
+Hashes are exclusively assigned through endoreg_db.utils.hashs and the get_file_hash() function.
+New typing helpers are only allowed if they unify typing usage across various files. Get to the type root.
+
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
 Before editing:

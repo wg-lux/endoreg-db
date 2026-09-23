@@ -443,7 +443,7 @@ def _resolve_submission_examination(
     patient_examination_id: int,
 ) -> PatientExamination:
     patient_examination = (
-        PatientExamination.objects.select_for_update()
+        PatientExamination.objects.select_for_update(of=("self",))
         .select_related("patient", "examination")
         .filter(pk=patient_examination_id)
         .first()

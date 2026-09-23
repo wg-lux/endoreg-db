@@ -7,8 +7,8 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 406
-  fingerprint: f45f2d00b78f2db3ff896939149ec62993b92332e72218598f90107ccc4c63fb
+  count: 389
+  fingerprint: 31d2a68ee84e22a32f88d92fa715d52f9c024cf97e472dfe3ecb1a648cd377ff
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -36,10 +36,19 @@ broad_exception:
     and translate fail-closed into the existing non-disclosing HTTP 404 contract.
     The materialization lifetime itself uses ExitStack and requires neither broad
     cleanup handlers nor manual __exit__ calls.
+    Review 2026-09-23 gegen den Quellstand 4c84c423: 24 neue oder verschobene
+    Handler-Signaturen und 34 entfernte Signaturen geprüft. Die verbleibenden
+    Grenzen betreffen Import-Finalisierung, Transcode-/Storage-Cleanup, Lease-
+    Heartbeats, HTTP-Adapter und Fehlertelemetrie. Fehler werden weitergereicht,
+    als fehlgeschlagene Ergebnisse gemeldet oder an die besitzende Ausführung
+    übertragen; Post-Commit-Cleanup behält seinen Wiederholungsbeleg.
+    Zwei Report-HTTP-Handler wurden lediglich verschoben. Der Bestand bleibt
+    technische Schuld; insbesondere ältere best-effort Löschpfade und HLS-
+    Fehlertexte erhalten hierdurch keine Produktions- oder Sicherheitsfreigabe.
   review_after: 2026-10-17
 type_suppression:
-  count: 140
-  fingerprint: dddceaafd234083599b4a8e417eeb4825850cd1f8b298701f067deb255cf2774
+  count: 109
+  fingerprint: 88f8e5210db32e57ded53ec698d80762a06d2acdd6cf6ce49adbae09d81cef5c
   owner: endoreg_db maintainers
   reason: >-
     Reviewed legacy inventory after removing four type suppressions from the
@@ -49,4 +58,7 @@ type_suppression:
     remaining inventory is not a general exemption.
     A local, narrow gender_guesser stub replaces the former missing third-party
     type suppression and keeps the adapter fully typed.
+    Review 2026-09-23: Die 109 aktuellen Unterdrückungen stimmen bereits mit
+    dem tatsächlichen Quellbestand von 4c84c423 überein; der damalige Zähler
+    140 war veraltet. Die Berichtsauswahl fügt keine Unterdrückung hinzu.
   review_after: 2026-10-17

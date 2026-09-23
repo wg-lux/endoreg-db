@@ -31,7 +31,6 @@ from endoreg_db.services.video_files._frames._extract_frames import (
     build_frame_cache_manifest,
 )
 from endoreg_db.services.streamable_media import (
-    STREAMABLE_FILE_MODE,
     sync_video_streamable_artifacts,
 )
 from endoreg_db.services.hub.upload_job_state_machine import (
@@ -320,10 +319,6 @@ def _storage_absolute_path(relative_name: str) -> Path:
     return get_runtime_paths().storage / str(relative_name)
 
 
-def _file_mode(path: Path) -> int:
-    return path.stat().st_mode & 0o777
-
-
 def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) -> None:
     existing = report.get(key)
     if existing is None:
@@ -522,28 +517,6 @@ def _repair_processed_metadata_from_streamable(
     return False
 
 
-def _verify_streamable_artifact(
-    video: VideoFile, *, processed: bool
-) -> tuple[bool, str, Path | None]:
-    relative_name = (
-        video.processed_streamable_relative_path
-        if processed
-        else video.raw_streamable_relative_path
-    ) or ""
-    if not relative_name:
-        return False, "missing streamable relative path", None
-    candidate = _storage_absolute_path(relative_name)
-    if not candidate.is_file():
-        return False, f"missing streamable artifact: {candidate}", candidate
-    if _file_mode(candidate) != STREAMABLE_FILE_MODE:
-        return (
-            False,
-            f"unexpected mode {oct(_file_mode(candidate))} for {candidate}",
-            candidate,
-        )
-    return True, "", candidate
-
-
 def _probe_video_path(path: Path) -> tuple[bool, dict[str, Any] | None, str]:
     try:
         probe_data = cast(dict[str, Any] | None, ffmpeg_wrapper.get_stream_info(path))
@@ -620,13 +593,6 @@ def _expected_frame_count(video: VideoFile) -> int | None:
         if count > 0:
             return count
     return None
-
-
-def _parse_frame_number(frame_path: Path) -> int | None:
-    try:
-        return int(frame_path.stem.split("_")[-1])
-    except (ValueError, IndexError):
-        return None
 
 
 def _has_manual_annotations(video: VideoFile) -> bool:
@@ -1115,23 +1081,6 @@ def reconcile_ffmpeg_metadata(
         video.save(update_fields=["fps", "date_modified"])
     report["action"] = "backfilled_ffmpeg_meta"
     return 1, report
-
-
-def _verify_canonical_probe(video: VideoFile, *, processed: bool) -> tuple[bool, str]:
-    file_type = "processed" if processed else "raw"
-    field_file = getattr(video, f"{file_type}_file", None)
-    if not getattr(field_file, "name", ""):
-        return False, f"missing canonical {file_type} file"
-    try:
-        with (
-            ensure_local_processed_video_file(video)
-            if processed
-            else ensure_local_raw_video_file(video)
-        ) as path:
-            ok, _, detail = _probe_video_path(path)
-            return ok, detail
-    except Exception as exc:
-        return False, str(exc)
 
 
 def reconcile_streamable_probe(

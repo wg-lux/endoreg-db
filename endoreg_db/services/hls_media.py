@@ -71,7 +71,7 @@ from endoreg_db.services.video_storage_normalization import (
     validate_proven_resampled_hls_equivalence,
 )
 from endoreg_db.utils.encryption.encryption import load_master_key, decrypt_wrapped_key
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
     ensure_disk_capacity,
@@ -1885,6 +1885,15 @@ def _run_ffmpeg_hls(
     timeline_validation: _HlsTimelineValidation,
     encoding_profile: HlsEncodingProfile,
 ) -> None:
+    with _timed_hls_phase(WorkloadPhase.ENCODER_PREFLIGHT):
+        ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+        if ffmpeg_executable is None:
+            raise RuntimeError("ffmpeg executable is not available")
+        assert_hls_encoder_runtime_available(
+            ffmpeg_executable=ffmpeg_executable,
+            profile=encoding_profile,
+        )
+
     source_path: Path | None = None
     source_pts: PresentationTimestampTimeline | None = None
     source_frame_timestamps: list[FramePresentationTimestamp] = []
@@ -1948,19 +1957,6 @@ def _run_ffmpeg_hls(
         segment_base_url=segment_base_url,
         encoding_profile=encoding_profile,
     )
-    ffmpeg_executable = command[0]
-    try:
-        with _timed_hls_phase(WorkloadPhase.ENCODER_PREFLIGHT):
-            assert_hls_encoder_runtime_available(
-                ffmpeg_executable=ffmpeg_executable,
-                profile=encoding_profile,
-            )
-    except (VideoStorageNormalizationError, OSError, RuntimeError, AssertionError):
-        _cleanup_seekable_plaintext_source(
-            temp_source_dir=temp_source_dir,
-            source_path=source_path,
-        )
-        raise
     stderr_chunks: deque[bytes] = deque()
     try:
         with _timed_hls_phase(WorkloadPhase.ENCODE):

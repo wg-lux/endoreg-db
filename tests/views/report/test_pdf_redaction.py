@@ -218,9 +218,7 @@ class TestPdfRedactionEndpoints:
             "redaction_manifest": json.dumps(MINIMAL_PDF_MANIFEST),
             "source_type": "raw",
         }
-        with patch(
-            "endoreg_db.views.report.pdf_redaction.MAX_REDACTION_UPLOAD_BYTES", 8
-        ):
+        with patch("endoreg_db.views.pdf.pdf_redaction.MAX_REDACTION_UPLOAD_BYTES", 8):
             response = client.post(
                 f"/api/media/pdfs/{pdf.pk}/apply-redactions/",
                 data=payload,

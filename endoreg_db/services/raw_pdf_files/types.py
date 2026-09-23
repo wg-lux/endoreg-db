@@ -1,7 +1,33 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol
+
+
+class PdfPage(Protocol):
+    def get_text(self) -> str: ...
+
+    def get_displaylist(self) -> object: ...
+
+
+class PdfDocument(Protocol):
+    """Shared typed boundary for report conversion and artifact validation."""
+
+    needs_pass: bool
+    page_count: int
+    is_repaired: bool
+
+    def __getitem__(self, index: int) -> PdfPage: ...
+
+    def close(self) -> None: ...
+
+    def layout(self, *, width: int, height: int, fontsize: int) -> None: ...
+
+    def convert_to_pdf(self) -> bytes: ...
+
+    def xref_set_key(self, xref: int, key: str, value: str) -> None: ...
+
+    def tobytes(self, *, no_new_id: bool) -> bytes: ...
 
 
 class ReportPdfArtifactKind(StrEnum):

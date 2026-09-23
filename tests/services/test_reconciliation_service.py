@@ -27,6 +27,12 @@ class _FakeQuerySet(Generic[T]):
     def exclude(self, **kwargs: object) -> list[T]:
         return list(self._items)
 
+    def select_for_update(self) -> "_FakeQuerySet[T]":
+        return self
+
+    def get(self, *, pk: int) -> T:
+        return next(item for item in self._items if getattr(item, "pk", None) == pk)
+
 
 class _FakeManager(Generic[T]):
     def __init__(self, items: Sequence[T]) -> None:
@@ -49,6 +55,7 @@ class _DummyRawFile:
 
 
 class _DummyVideo:
+    pk: int
     raw_video_hash: str
     raw_file: _DummyRawFile
     suffix: str
@@ -58,6 +65,7 @@ class _DummyVideo:
         self, raw_video_hash: str, raw_file_name: str, suffix: str = ".mp4"
     ) -> None:
         self.raw_video_hash = raw_video_hash
+        self.pk = id(self)
         self.raw_file = _DummyRawFile(raw_file_name)
         self.suffix = suffix
         self.saved = []
@@ -831,6 +839,73 @@ def test_reconciliation_retains_incomplete_states_without_generation_link(
 
     assert reset == 0
     assert events == []
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change", ["already_validated", "validated_during_scan", "source_changed"]
+)
+def test_reconciliation_does_not_resurrect_validated_raw_media(
+    monkeypatch: MonkeyPatch, tmp_path: Path, change: str
+) -> None:
+    from endoreg_db.models import Center, VideoFile
+    import endoreg_db.services.reconciliation as module
+
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name=f"reconciliation-{uuid.uuid4().hex}"),
+        raw_video_hash=uuid.uuid4().hex,
+        raw_file="sensitive_videos/retired.mp4",
+        processed_file="processed_videos_final/accepted.mp4",
+    )
+    state = video.get_or_create_state()
+    state.anonymization_validated = change == "already_validated"
+    state.save(update_fields=["anonymization_validated"])
+    original_reference = video.raw_file.name
+
+    def scan(
+        self: ReconciliationService, *, sensitive_dir: Path, target_hashes: set[str]
+    ) -> dict[str, list[Path]]:
+        assert change != "already_validated"
+        if change == "source_changed":
+            VideoFile.objects.filter(pk=video.pk).update(
+                raw_file="sensitive_videos/new-source.mp4"
+            )
+        else:
+            state.anonymization_validated = True
+            state.save(update_fields=["anonymization_validated"])
+        return {}
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Validated raw media must not be restored or streamed")
+
+    def missing_file(field_file: object) -> bool:
+        return False
+
+    def candidate(*args: object, **kwargs: object) -> Path:
+        return tmp_path / "old-intake.mp4"
+
+    monkeypatch.setattr(module, "file_exists", missing_file)
+    monkeypatch.setattr(ReconciliationService, "_build_content_hash_index", scan)
+    monkeypatch.setattr(
+        ReconciliationService,
+        "_resolve_video_raw_candidate",
+        candidate,
+    )
+    monkeypatch.setattr(
+        ReconciliationService, "_promote_video_raw_candidate", forbidden
+    )
+    monkeypatch.setattr(module, "sync_video_streamable_artifacts", forbidden)
+
+    assert ReconciliationService().relink_broken_video_raw_files() == 0
+    video.refresh_from_db()
+    state.refresh_from_db()
+    assert video.raw_file.name == (
+        "sensitive_videos/new-source.mp4"
+        if change == "source_changed"
+        else original_reference
+    )
+    assert video.processed_file.name == "processed_videos_final/accepted.mp4"
+    assert state.anonymization_validated == (change != "source_changed")
 
 
 def test_should_run_startup_reconciliation_skips_pytest_entrypoints(

@@ -389,10 +389,15 @@ For in-process endoreg-db training, attach persisted annotations to an
 - `AIDataSet.image_annotations` contains the `ImageClassificationAnnotation`
   rows selected for training.
 
-`endoreg_db.utils.ai.data_loader_for_model_training.build_dataset_for_training`
+`endoreg_db.utils.ai.multilabel_dataset_builder.build_dataset_for_training`
 builds aligned `image_paths`, `label_vectors`, `label_masks`, `labels`,
 `frame_ids`, and `old_examination_ids`. The GastroNet trainer consumes that
 structure through `EndoMultiLabelDataset`.
+
+The duplicate `data_loader_for_model_training` module has been removed. Migrate
+imports to `endoreg_db.utils.ai.multilabel_dataset_builder`; all exported names
+are available there unchanged. The existing `data_loader_for_model_input`
+compatibility import remains available.
 
 ## Notes and Caveats
 
