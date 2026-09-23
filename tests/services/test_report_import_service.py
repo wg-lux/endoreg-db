@@ -8,10 +8,12 @@ with text/anonymization pipeline.
 import logging
 import os
 import tempfile
+from datetime import date
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
-from django.test import TestCase
+from django.test import TransactionTestCase
 from django.utils import timezone
 
 from endoreg_db.models import Center, PatientExamination, RawPdfFile
@@ -19,11 +21,18 @@ from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.services.report_materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
 )
-from tests.helpers.default_objects import get_default_center, get_default_processor
+from tests.helpers.default_objects import (
+    DEFAULT_PATIENT_BIRTH_DATE,
+    DEFAULT_PATIENT_FIRST_NAME,
+    DEFAULT_PATIENT_GENDER_NAME,
+    DEFAULT_PATIENT_LAST_NAME,
+    get_default_center,
+    get_default_processor,
+)
 
 # Environment-based test control (mirror video tests)
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -66,24 +75,15 @@ startxref
 """
 
 
-def _report_pipeline_ready() -> bool:
-    return bool(os.environ.get("EXPECTED_MODEL_SHA256"))
-
-
-class TestReportImportService(TestCase):
+class TestReportImportService(TransactionTestCase):
     """Test cases for report (report) import service."""
 
-    @classmethod
-    def setUpClass(cls):
-        """Set up session-scoped fixtures."""
-        super().setUpClass()
+    def setUp(self):
+        """Load fixtures outside a test-wide transaction for heartbeat threads."""
+        super().setUp()
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
-
-    def setUp(self):
-        """Set up test fixtures."""
-        super().setUp()
         self.center = get_default_center()
         self.processor = get_default_processor()
 
@@ -98,10 +98,6 @@ class TestReportImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-        if not _report_pipeline_ready():
-            self.skipTest(
-                "Skipping expensive report import test (EXPECTED_MODEL_SHA256 is not configured)."
             )
 
         # Create a temporary report file
@@ -122,10 +118,12 @@ class TestReportImportService(TestCase):
             self.assertIsNotNone(pdf_file, "RawPdfFile should be created")
             self.assertIsInstance(pdf_file, RawPdfFile)
             self.assertIsNotNone(pdf_file)
+            assert pdf_file is not None
             self.assertIsInstance(pdf_file.center, Center)
             self.assertEqual(pdf_file.center, self.center)
 
             # State exists and is attached
+            assert pdf_file is not None
             if hasattr(pdf_file, "state") and pdf_file.state:
                 self.assertIsNotNone(pdf_file.state)
 
@@ -141,10 +139,6 @@ class TestReportImportService(TestCase):
         if SKIP_EXPENSIVE_TESTS:
             self.skipTest(
                 "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-        if not _report_pipeline_ready():
-            self.skipTest(
-                "Skipping expensive report import test (EXPECTED_MODEL_SHA256 is not configured)."
             )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -170,10 +164,26 @@ class TestReportImportService(TestCase):
             self.assertTrue(bool(raw_pdf.file))
             self.assertTrue(bool(raw_pdf.processed_file))
             self.assertIsNotNone(raw_pdf.sensitive_meta_id)
-            self.assertIsNotNone(raw_pdf.sensitive_meta.pseudo_patient_id)
+            sensitive_meta = raw_pdf.sensitive_meta
+            assert sensitive_meta is not None
+            # This document contains no identity; resolve reviewed metadata before
+            # promoting the imported artifact into a patient-linked report.
+            self.assertIsNone(sensitive_meta.pseudo_patient_id)
+            self.assertIsNone(sensitive_meta.pseudo_examination_id)
+            sensitive_meta.update_from_dict(
+                {
+                    "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
+                    "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
+                    "patient_dob": DEFAULT_PATIENT_BIRTH_DATE,
+                    "patient_gender": DEFAULT_PATIENT_GENDER_NAME,
+                    "examination_date": date(2024, 2, 15),
+                }
+            )
+            sensitive_meta.refresh_from_db()
+            self.assertIsNotNone(sensitive_meta.pseudo_patient_id)
 
             raw_pdf.examination = PatientExamination.objects.create(
-                patient=raw_pdf.sensitive_meta.pseudo_patient
+                patient=sensitive_meta.pseudo_patient
             )
             raw_pdf.save(update_fields=["examination"])
 
@@ -186,9 +196,60 @@ class TestReportImportService(TestCase):
 
             raw_pdf.refresh_from_db()
             self.assertIsNotNone(raw_pdf.anonym_examination_report_id)
-            self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.id)
-            self.assertEqual(report_obj.raw_pdf_file.id, raw_pdf.id)
-            self.assertEqual(report_obj.type.name, "report_draft")
+            self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.pk)
+            linked_raw_pdf = cast(RawPdfFile, getattr(report_obj, "raw_pdf_file"))
+            self.assertEqual(linked_raw_pdf.pk, raw_pdf.pk)
+            report_type = cast(_AnonymizedReportType, getattr(report_obj, "type"))
+            assert report_type is not None
+            self.assertEqual(report_type.name, "report_draft")
 
         finally:
             safe_unlink_file(pdf_path, missing_ok=True)
+
+    @pytest.mark.integration
+    def test_success_history_with_missing_processed_pdf_is_repaired(self):
+        if SKIP_EXPENSIVE_TESTS:
+            self.skipTest(
+                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            pdf_path = Path(tmp.name)
+        atomic_write_file(
+            destination=pdf_path,
+            content=(MINIMAL_report_BYTES + b"\n%report-repair-check\n",),
+        )
+
+        try:
+            first = ReportImportService().import_and_anonymize(
+                file_path=pdf_path,
+                center_name=self.center.name,
+                retry=False,
+            )
+            assert isinstance(first, RawPdfFile)
+            first.refresh_from_db()
+            assert first.processed_file
+            first.processed_file.delete(save=True)
+
+            repaired = ReportImportService().import_and_anonymize(
+                file_path=pdf_path,
+                center_name=self.center.name,
+                retry=False,
+            )
+
+            assert isinstance(repaired, RawPdfFile)
+            repaired.refresh_from_db()
+            assert repaired.pk == first.pk
+            assert repaired.processed_file
+            processed_name = repaired.processed_file.name
+            assert processed_name is not None
+            assert repaired.processed_file.storage.exists(processed_name)
+            assert repaired.state is not None
+            assert repaired.state.anonymized is True
+            assert len(repaired.state.processed_file_sha256) == 64
+        finally:
+            safe_unlink_file(pdf_path, missing_ok=True)
+
+
+class _AnonymizedReportType(Protocol):
+    name: str

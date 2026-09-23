@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Module for distribution models."""
 
 from .base_value_distribution import BaseValueDistribution

@@ -1,8 +1,10 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -14,23 +16,17 @@ def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = True) -
     return _anonymize(video, delete_original_raw=delete_original_raw)
 
 
-def create_anonymized_video_frame_files(video: "VideoFile", *args, **kwargs):
-    from ._anonymization import _create_anonymized_frame_files
-
-    return _create_anonymized_frame_files(video, *args, **kwargs)
-
-
 def cleanup_video_raw_assets(
-    video_hash: str,
+    raw_video_hash: str,
     *,
     raw_file_name: str = "",
     raw_file_path: Path | None = None,
     raw_frame_dir: Path | None = None,
 ) -> None:
-    from ._anonymization import _cleanup_raw_assets
+    from endoreg_db.services.video_files._anonymization import _cleanup_raw_assets
 
     _cleanup_raw_assets(
-        video_hash=video_hash,
+        raw_video_hash=raw_video_hash,
         raw_file_name=raw_file_name,
         raw_file_path=raw_file_path,
         raw_frame_dir=raw_frame_dir,

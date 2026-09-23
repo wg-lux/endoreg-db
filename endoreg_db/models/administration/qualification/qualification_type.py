@@ -1,15 +1,15 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        Qualification,
-    )
+    from .qualification import Qualification
 
 
-class QualificationTypeManager(models.Manager):
-    def get_queryset(self):
+class QualificationTypeManager(models.Manager["QualificationType"]):
+    def get_queryset(self) -> models.QuerySet["QualificationType"]:
         """
         Returns a queryset of active qualification types.
 
@@ -23,16 +23,18 @@ class QualificationType(models.Model):
     Model representing a qualification type.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
-    is_active = models.BooleanField(default=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[str | None, Any] = models.TextField(
+        blank=True, null=True
+    )
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     objects = QualificationTypeManager()
 
     if TYPE_CHECKING:
         qualification: models.QuerySet["Qualification"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns the string representation of the qualification type's name.
         """

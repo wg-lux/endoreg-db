@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Module for annotation models"""
 
 from .frame_box import FrameBoxAnnotation

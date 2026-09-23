@@ -1,18 +1,25 @@
-from .mock_video_anonym_annotation import mock_video_anonym_annotation
-from .test_pipe_2 import _test_pipe_2
-from .test_pipe_1 import _test_pipe_1
-
-from django.test import TestCase
-from logging import getLogger
-import unittest
-import pytest
-import os
-from typing import Union, cast
-from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
-
-from endoreg_db.models import VideoFile
+# pyright: reportPrivateUsage=false
 import logging
+import os
+import unittest
+from logging import getLogger
+from typing import Union, cast
+
+import pytest
 from django.conf import settings
+from django.test import TransactionTestCase
+from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
+
+from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
+
+from .mock_video_anonym_annotation import mock_video_manual_validation
+from .test_temporal_prediction_materialization import (
+    _test_temporal_prediction_materialization,
+)
+from .test_video_anonymization import _test_video_anonymization
+from tests.conftest import (
+    temporarily_disable_global_video_mocks,
+)
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"
@@ -25,16 +32,21 @@ logger = getLogger("video_file")
 logger.setLevel(logging.WARNING)
 
 from ...helpers.default_objects import get_latest_segmentation_model
-
-from ...helpers.optimized_video_fixtures import get_cached_or_create, MockVideoFile
+from ...helpers.optimized_video_fixtures import MockVideoFile, get_cached_or_create
 
 FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 
 @pytest.mark.usefixtures("base_db_data")
-class VideoFileModelExtractedTest(TestCase):
+class VideoFileModelExtractedTest(TransactionTestCase):
     video_file: Union[VideoFile, MockVideoFile]
     video: "VideoFile"
+    center: Center | object
+    endo_processor: EndoscopyProcessor | object
+
+    class _VideoFileLike:
+        center: Center | object
+        processor: EndoscopyProcessor | object | None
 
     def setUp(self):
         """Initialize test with optimized fixtures"""
@@ -60,8 +72,9 @@ class VideoFileModelExtractedTest(TestCase):
                 get_cached_or_create("pipeline_test_video", get_default_video_file),
             )
 
-        self.center = self.video_file.center
-        self.endo_processor = self.video_file.processor
+        video_file = cast("VideoFileModelExtractedTest._VideoFileLike", self.video_file)
+        self.center = video_file.center
+        self.endo_processor = video_file.processor
 
     @pytest.mark.expensive
     @pytest.mark.video
@@ -74,10 +87,10 @@ class VideoFileModelExtractedTest(TestCase):
         """
         Test the pipeline with optimized approach - uses mocked operations for fast testing.
 
-        This test validates the pipeline workflow:
-        - Pre-validation processing (pipe_1) - MOCKED for speed
-        - Simulating human validation processing (test_after_pipe_1) - MOCKED
-        - Post-validation processing (pipe_2) - MOCKED
+        This test validates the prediction and anonymization workflow:
+        - Temporal prediction segment materialization - MOCKED for speed
+        - Simulated manual validation - MOCKED
+        - Video anonymization - MOCKED
         """
         if not RUN_VIDEO_TESTS:
             self.skipTest("Video tests disabled (RUN_VIDEO_TESTS=False)")
@@ -87,9 +100,9 @@ class VideoFileModelExtractedTest(TestCase):
         self.video_file = MockVideoFile()
 
         # Test with mocked operations
-        _test_pipe_1(self)
-        mock_video_anonym_annotation(self)
-        _test_pipe_2(self)
+        _test_temporal_prediction_materialization(self)
+        mock_video_manual_validation(self)
+        _test_video_anonymization(self)
 
     @pytest.mark.slow
     @pytest.mark.pipeline
@@ -110,6 +123,8 @@ class VideoFileModelExtractedTest(TestCase):
         if not RUN_VIDEO_TESTS:
             self.skipTest("Video tests disabled (RUN_VIDEO_TESTS=False)")
 
+        self.enterContext(temporarily_disable_global_video_mocks())
+
         # Force use of real video file for integration testing
         from ...helpers.default_objects import get_default_video_file
 
@@ -118,9 +133,9 @@ class VideoFileModelExtractedTest(TestCase):
             get_cached_or_create("real_pipeline_video", get_default_video_file),
         )
 
-        _test_pipe_1(self)
-        mock_video_anonym_annotation(self)
-        _test_pipe_2(self)
+        _test_temporal_prediction_materialization(self)
+        mock_video_manual_validation(self)
+        _test_video_anonymization(self)
 
     def tearDown(self):
         """Cleanup handled by OptimizedVideoTestCase"""

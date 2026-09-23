@@ -19,7 +19,7 @@ def _bulk_create_frames(video: "VideoFile", frames_to_create: List["Frame"]):
     except Exception as e:
         logger.error(
             "Error during bulk creation of frames for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )

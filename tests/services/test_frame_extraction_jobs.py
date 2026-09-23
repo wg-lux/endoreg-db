@@ -2,23 +2,26 @@ from __future__ import annotations
 
 import shutil
 import uuid
+from datetime import timedelta
+from typing import Any
 
 import pytest
 from django.test import TestCase
+from django.utils import timezone
 
 from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
 from endoreg_db.services.jobs import frame_extraction_jobs
-from endoreg_db.utils.filesystem.paths import protected_media_root
+from endoreg_db.utils.paths import protected_media_root
 
 
 class FrameExtractionJobsTest(TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.center = Center.objects.create(
             name=f"frame-extraction-center-{uuid.uuid4().hex[:8]}"
         )
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"frame-extraction-video-{uuid.uuid4().hex}",
+            raw_video_hash=f"frame-extraction-video-{uuid.uuid4().hex}",
             frame_count=20,
             original_file_name="frame_extraction_test.mp4",
         )
@@ -29,10 +32,12 @@ class FrameExtractionJobsTest(TestCase):
         self.video.frame_dir = str(self.frame_dir)
         self.video.save(update_fields=["frame_dir"])
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         shutil.rmtree(self.frame_dir, ignore_errors=True)
 
-    def test_request_frame_extraction_dispatches_to_frame_extraction_queue(self):
+    def test_request_frame_extraction_dispatches_to_frame_extraction_queue(
+        self,
+    ) -> None:
         calls: list[dict[str, object]] = []
 
         class _FakeAsyncResult:
@@ -44,9 +49,14 @@ class FrameExtractionJobsTest(TestCase):
             "_ensure_frame_extraction_broker_transport_allowed",
             lambda: None,
         )
+
+        def fake_apply_async(**kwargs: object) -> _FakeAsyncResult:
+            calls.append(dict(kwargs))
+            return _FakeAsyncResult()
+
         monkeypatches.setattr(
             "endoreg_db.tasks.run_frame_extraction_request_task.apply_async",
-            lambda **kwargs: calls.append(kwargs) or _FakeAsyncResult(),
+            fake_apply_async,
         )
         try:
             result = frame_extraction_jobs.request_frame_extraction(
@@ -72,7 +82,7 @@ class FrameExtractionJobsTest(TestCase):
         assert request.task_id == "queued-task-1"
         assert request.status == FrameExtractionRequest.STATUS_PENDING
 
-    def test_request_frame_extraction_reuses_active_request(self):
+    def test_request_frame_extraction_reuses_active_request(self) -> None:
         request = FrameExtractionRequest.objects.create(
             video=self.video,
             frame_number=8,
@@ -91,7 +101,52 @@ class FrameExtractionJobsTest(TestCase):
         request.refresh_from_db()
         assert request.task_id == "running-task"
 
-    def test_run_frame_extraction_request_marks_success_and_frame_extracted(self):
+    def test_request_frame_extraction_recovers_stale_request(self) -> None:
+        request = FrameExtractionRequest.objects.create(
+            video=self.video,
+            frame_number=18,
+            status=FrameExtractionRequest.STATUS_RUNNING,
+            task_id="stale-task",
+        )
+        FrameExtractionRequest.objects.filter(pk=request.pk).update(
+            started_at=timezone.now()
+            - frame_extraction_jobs.FRAME_EXTRACTION_STALE_TIMEOUT
+            - timedelta(seconds=1)
+        )
+
+        monkeypatches = pytest.MonkeyPatch()
+        monkeypatches.setattr(
+            frame_extraction_jobs,
+            "_ensure_frame_extraction_broker_transport_allowed",
+            lambda: None,
+        )
+
+        class _ReplacementTaskResult:
+            id = "replacement-task"
+
+        def replacement_apply_async(**_kwargs: object) -> _ReplacementTaskResult:
+            return _ReplacementTaskResult()
+
+        monkeypatches.setattr(
+            "endoreg_db.tasks.run_frame_extraction_request_task.apply_async",
+            replacement_apply_async,
+        )
+        try:
+            result = frame_extraction_jobs.request_frame_extraction(
+                video=self.video,
+                frame_number=18,
+            )
+        finally:
+            monkeypatches.undo()
+
+        assert result.status == frame_extraction_jobs.REQUEST_STATUS_QUEUED
+        request.refresh_from_db()
+        assert request.status == FrameExtractionRequest.STATUS_PENDING
+        assert request.task_id == "replacement-task"
+
+    def test_run_frame_extraction_request_marks_success_and_frame_extracted(
+        self,
+    ) -> None:
         request = FrameExtractionRequest.objects.create(
             video=self.video,
             frame_number=9,
@@ -108,8 +163,12 @@ class FrameExtractionJobsTest(TestCase):
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         def _fake_extract_video_frame_range(
-            video_self, start_frame, end_frame, overwrite=False, **kwargs
-        ):
+            video_self: VideoFile,
+            start_frame: int,
+            end_frame: int,
+            overwrite: bool = False,
+            **kwargs: Any,
+        ) -> bool:
             assert video_self.pk == self.video.pk
             assert start_frame == 9
             assert end_frame == 10
@@ -139,3 +198,19 @@ class FrameExtractionJobsTest(TestCase):
         assert request.status == FrameExtractionRequest.STATUS_SUCCESS
         assert frame.is_extracted is True
         assert target_path.exists()
+
+    def test_run_frame_extraction_request_skips_duplicate_running_task(self) -> None:
+        request = FrameExtractionRequest.objects.create(
+            video=self.video,
+            frame_number=19,
+            status=FrameExtractionRequest.STATUS_RUNNING,
+            task_id="running-task",
+        )
+
+        result = frame_extraction_jobs.run_frame_extraction_request(
+            request_id=request.pk,
+            video_id=self.video.pk,
+            frame_number=19,
+        )
+
+        assert result is False

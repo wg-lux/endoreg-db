@@ -1,35 +1,30 @@
-import os
 import logging
+import os
 import sys
 import time
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from django.db import OperationalError, ProgrammingError, transaction
 
 from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.media_integrity import reconcile_media_integrity
-from endoreg_db.services.streamable_media import (
-    STREAMABLE_PROCESSED_VIDEO_ROOT,
-    STREAMABLE_RAW_VIDEO_ROOT,
-    STREAMABLE_VIDEO_ROOT,
-    sync_video_streamable_artifacts,
-)
-from endoreg_db.models.state.processing_history.processing_history import (
-    ProcessingHistory,
-)
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.services.media_integrity import reconcile_media_integrity
+from endoreg_db.services.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     ensure_directory,
     safe_unlink_file,
-    sha256_file,
+    get_file_hash,
 )
-from endoreg_db.utils.filesystem.paths import data_paths
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import file_exists, save_local_file
 
 logger = logging.getLogger(__name__)
@@ -87,33 +82,36 @@ class ReconciliationService:
         reconcile_media_integrity()
 
     def clear_stale_lock_files(self) -> int:
-        """Delete abandoned import lock files older than the stale threshold."""
+        """Retain local lock files; age is not authoritative ownership evidence."""
 
-        now = self._now()
-        removed = 0
-        for root in (data_paths["import_video"], data_paths["import_report"]):
+        for root in (
+            get_runtime_paths().import_video,
+            get_runtime_paths().import_report,
+        ):
             for lock_path in Path(root).glob("*.lock"):
-                try:
-                    age = now - lock_path.stat().st_mtime
-                except FileNotFoundError:
-                    continue
-                if age > STALE_LOCK_SECONDS:
-                    safe_unlink_file(lock_path, missing_ok=True)
-                    removed += 1
-                    logger.warning("Removed stale lock file: %s", lock_path)
-        return removed
+                logger.warning(
+                    "Retaining local import lock during reconciliation because "
+                    "database lease state is authoritative: %s",
+                    lock_path,
+                )
+        return 0
 
     def cleanup_orphaned_artifacts(self, *, dry_run: bool = False) -> int:
-        """Remove stale temporary and partial artifacts from media directories."""
+        """Classify apparent staging artifacts without deleting unknown ownership."""
 
         removed = 0
+        reproducible_cache_roots = {
+            get_runtime_paths().streamable_videos_raw_media,
+            get_runtime_paths().streamable_videos_processed_media,
+            get_runtime_paths().streamable_videos_root,
+        }
         scan_dirs = (
-            Path(data_paths["sensitive_video"]),
-            Path(data_paths["anonym_video"]),
-            Path(data_paths["transcoding"]),
-            STREAMABLE_VIDEO_ROOT,
-            STREAMABLE_RAW_VIDEO_ROOT,
-            STREAMABLE_PROCESSED_VIDEO_ROOT,
+            get_runtime_paths().sensitive_video,
+            get_runtime_paths().anonym_video,
+            get_runtime_paths().transcoding,
+            get_runtime_paths().streamable_videos_raw_media,
+            get_runtime_paths().streamable_videos_processed_media,
+            get_runtime_paths().streamable_videos_root,
         )
         for root in scan_dirs:
             if not root.exists():
@@ -125,27 +123,35 @@ class ReconciliationService:
                     continue
                 if not self._is_stale(path, self.artifact_stale_seconds):
                     continue
-                if not dry_run:
-                    safe_unlink_file(path, missing_ok=True)
-                removed += 1
-                if dry_run:
-                    logger.warning("Would remove orphaned startup artifact: %s", path)
-                else:
-                    logger.warning("Removed orphaned startup artifact: %s", path)
+                if root in reproducible_cache_roots:
+                    if not dry_run:
+                        safe_unlink_file(path, missing_ok=True)
+                    removed += 1
+                    logger.warning(
+                        "%s stale unpublished streamable-cache artifact: %s",
+                        "Would remove" if dry_run else "Removed",
+                        path,
+                    )
+                    continue
+                logger.warning(
+                    "Retaining apparent orphaned artifact because no durable "
+                    "attempt generation proves cleanup ownership: %s",
+                    path,
+                )
         return removed
 
     def relink_broken_video_raw_files(self) -> int:
         """Repair `VideoFile.raw_file` pointers whose referenced file is missing.
 
         The service first looks for deterministic candidates such as the
-        canonical `<video_hash>.<suffix>` name and then falls back to content
+        canonical `<raw_video_hash>.<suffix>` name and then falls back to content
         hash matches in the sensitive video directory. Ambiguous matches are
         skipped rather than guessed.
         """
 
         recovered = 0
-        sensitive_dir = Path(data_paths["sensitive_video"])
-        unresolved = []
+        sensitive_dir = get_runtime_paths().sensitive_video
+        unresolved: list[VideoFile] = []
         claimed_hashes: set[str] = set()
 
         for video in VideoFile.objects.filter(raw_file__isnull=False).exclude(
@@ -159,15 +165,15 @@ class ReconciliationService:
 
         hashed_candidates = self._build_content_hash_index(
             sensitive_dir=sensitive_dir,
-            target_hashes={str(video.video_hash) for video in unresolved},
+            target_hashes={str(video.raw_video_hash) for video in unresolved},
         )
 
         for video in unresolved:
-            video_hash = str(video.video_hash)
-            if video_hash in claimed_hashes:
+            raw_video_hash = str(video.raw_video_hash)
+            if raw_video_hash in claimed_hashes:
                 logger.warning(
                     "Skipping relink for video %s because that hash was already claimed in this reconciliation run.",
-                    video.video_hash,
+                    video.raw_video_hash,
                 )
                 continue
 
@@ -200,48 +206,40 @@ class ReconciliationService:
             except Exception as exc:
                 logger.warning(
                     "Could not synchronize reconciled raw streamable artifact for video %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     exc,
                 )
 
             recovered += 1
-            claimed_hashes.add(video_hash)
+            claimed_hashes.add(raw_video_hash)
             logger.warning(
                 "Relinked raw file for video %s to %s",
-                video.video_hash,
+                video.raw_video_hash,
                 final_path,
             )
 
         return recovered
 
     def reset_incomplete_processing_states(self) -> int:
-        """Reset media states that were left mid-processing by interrupted work.
+        """Retain ambiguous legacy processing states for fenced recovery.
 
-        Only rows that still claim `processing_started=True` while lacking the
-        expected downstream completion flags are reset. A failure entry is also
-        recorded in `ProcessingHistory` so follow-up processing can reason about
-        the interrupted attempt.
+        A media state is not currently linked to the exact import-attempt
+        generation that created it. Resetting it from process startup would let
+        an old process race a current database owner. The reconciliation pass
+        therefore reports these rows and leaves recovery to the attempt-aware
+        upload/report services. Once generation linkage is persisted, this
+        method may auto-repair only a row whose lease and fencing token are
+        proved current in the same database transaction.
         """
-
-        reset = 0
 
         video_states = VideoState.objects.select_related("video_file").filter(
             processing_started=True,
             sensitive_meta_processed=False,
         )
         for state in video_states:
-            with transaction.atomic():
-                state.mark_processing_not_started()
-                video = getattr(state, "video_file", None)
-                if video is not None:
-                    ProcessingHistory.mark_failure(
-                        file_hash=video.video_hash,
-                        obj=video,
-                    )
-            reset += 1
             logger.warning(
-                "Reset incomplete video processing state for video %s",
-                getattr(getattr(state, "video_file", None), "video_hash", None),
+                "Retaining incomplete video processing state for fenced recovery: %s",
+                getattr(getattr(state, "video_file", None), "raw_video_hash", None),
             )
 
         pdf_states = RawPdfState.objects.select_related("raw_pdf_file").filter(
@@ -249,21 +247,11 @@ class ReconciliationService:
             sensitive_meta_processed=False,
         )
         for state in pdf_states:
-            with transaction.atomic():
-                state.mark_processing_not_started()
-                raw_pdf = getattr(state, "raw_pdf_file", None)
-                if raw_pdf is not None:
-                    ProcessingHistory.mark_failure(
-                        file_hash=raw_pdf.pdf_hash,
-                        obj=raw_pdf,
-                    )
-            reset += 1
             logger.warning(
-                "Reset incomplete report processing state for pdf %s",
+                "Retaining incomplete report processing state for fenced recovery: %s",
                 getattr(getattr(state, "raw_pdf_file", None), "pdf_hash", None),
             )
-
-        return reset
+        return 0
 
     def _is_cleanup_candidate(self, path: Path) -> bool:
         return (
@@ -279,52 +267,97 @@ class ReconciliationService:
         sensitive_dir: Path,
         hashed_candidates: dict[str, list[Path]],
     ) -> Path | None:
-        raw_file_name = getattr(video.raw_file, "name", None)
-        raw_name = Path(raw_file_name).name if raw_file_name else None
-        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
-        canonical_path = (
-            sensitive_dir / f"{video.video_hash}{suffix}" if suffix else None
+        raw_name, canonical_path = self._raw_candidate_names(
+            video=video,
+            sensitive_dir=sensitive_dir,
         )
-        content_matches = hashed_candidates.get(str(video.video_hash), [])
+        content_matches = hashed_candidates.get(str(video.raw_video_hash), [])
         competing_content_matches = [
             path
             for path in content_matches
             if canonical_path is None or path != canonical_path
         ]
 
-        if canonical_path and canonical_path.is_file():
-            if raw_name == canonical_path.name:
-                return canonical_path
-            if competing_content_matches:
-                logger.warning(
-                    "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
-                    video.video_hash,
-                    canonical_path,
-                    [str(path) for path in competing_content_matches],
-                )
-                return None
+        if canonical_path is not None and canonical_path.is_file():
+            return self._resolve_existing_canonical_candidate(
+                video=video,
+                raw_name=raw_name,
+                canonical_path=canonical_path,
+                competing_content_matches=competing_content_matches,
+            )
+        deterministic_candidate = self._first_deterministic_raw_candidate(
+            raw_name=raw_name,
+            canonical_path=canonical_path,
+            sensitive_dir=sensitive_dir,
+        )
+        if deterministic_candidate is not None:
+            return deterministic_candidate
+        return self._unique_content_hash_candidate(video, content_matches)
+
+    def _raw_candidate_names(
+        self,
+        *,
+        video: VideoFile,
+        sensitive_dir: Path,
+    ) -> tuple[str | None, Path | None]:
+        raw_file_name = getattr(video.raw_file, "name", None)
+        raw_name = Path(raw_file_name).name if raw_file_name else None
+        suffix = Path(raw_name).suffix if raw_name else (video.suffix or ".mp4")
+        canonical_path = (
+            sensitive_dir / f"{video.raw_video_hash}{suffix}" if suffix else None
+        )
+        return raw_name, canonical_path
+
+    def _resolve_existing_canonical_candidate(
+        self,
+        *,
+        video: VideoFile,
+        raw_name: str | None,
+        canonical_path: Path,
+        competing_content_matches: list[Path],
+    ) -> Path | None:
+        if raw_name == canonical_path.name:
             return canonical_path
+        if not competing_content_matches:
+            return canonical_path
+        logger.warning(
+            "Skipping relink for video %s because canonical path %s exists but competing content-hash candidates were also found: %s",
+            video.raw_video_hash,
+            canonical_path,
+            [str(path) for path in competing_content_matches],
+        )
+        return None
 
-        deterministic_candidates: list[Path] = []
-        if canonical_path:
-            deterministic_candidates.append(canonical_path)
+    def _first_deterministic_raw_candidate(
+        self,
+        *,
+        raw_name: str | None,
+        canonical_path: Path | None,
+        sensitive_dir: Path,
+    ) -> Path | None:
+        candidates = [canonical_path] if canonical_path is not None else []
         if raw_name:
-            deterministic_candidates.append(sensitive_dir / raw_name)
-
-        seen = set()
-        for candidate in deterministic_candidates:
+            candidates.append(sensitive_dir / raw_name)
+        seen: set[Path] = set()
+        for candidate in candidates:
             if candidate in seen:
                 continue
             seen.add(candidate)
             if candidate.is_file():
                 return candidate
+        return None
 
+    def _unique_content_hash_candidate(
+        self,
+        video: VideoFile,
+        content_matches: list[Path],
+    ) -> Path | None:
         if len(content_matches) == 1:
             return content_matches[0]
         if len(content_matches) > 1:
             logger.warning(
                 "Multiple content-hash candidates found for video %s: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 [str(path) for path in content_matches],
             )
         return None
@@ -342,7 +375,7 @@ class ReconciliationService:
             if raw_name
             else (video.suffix or candidate.suffix or ".mp4")
         )
-        canonical_path = sensitive_dir / f"{video.video_hash}{suffix}"
+        canonical_path = sensitive_dir / f"{video.raw_video_hash}{suffix}"
         relative_name = str(Path(sensitive_dir.name) / canonical_path.name)
 
         if candidate == canonical_path:
@@ -355,7 +388,7 @@ class ReconciliationService:
         if canonical_path.exists():
             logger.warning(
                 "Cannot relink video %s because canonical path already exists: %s",
-                video.video_hash,
+                video.raw_video_hash,
                 canonical_path,
             )
             return None, relative_name
@@ -437,7 +470,7 @@ class ReconciliationService:
             if not path.is_file() or self._should_skip_recovery_candidate(path):
                 continue
             try:
-                file_hash = sha256_file(path)
+                file_hash = get_file_hash(path)
             except OSError as exc:
                 logger.warning("Could not hash recovery candidate %s: %s", path, exc)
                 continue
@@ -472,23 +505,23 @@ class ReconciliationService:
             return False
 
     def _startup_lock(self):
-        lock_path = data_paths["storage"] / self.lock_filename
+        lock_path = get_runtime_paths().storage / self.lock_filename
         return _exclusive_lock(lock_path)
 
 
 class _exclusive_lock:
     def __init__(self, path: Path):
         self.path = path
-        self.fd = None
+        self.fd: int | None = None
 
-    def __enter__(self):
+    def __enter__(self) -> "_exclusive_lock":
         self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.write(self.fd, str(os.getpid()).encode("ascii"))
         os.close(self.fd)
         self.fd = None
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> Literal[False]:
         if self.fd is not None:
             os.close(self.fd)
         safe_unlink_file(self.path, missing_ok=True)

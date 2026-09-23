@@ -1,33 +1,20 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Any
 import uuid
+from collections.abc import Iterable
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, Unpack
 
-import numpy as np
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field
-
-from endoreg_db.schemas import (
-    AIFrameFormatManifest,
-    AIFrameFormatStrategy,
-    AITrainingDatasetManifest,
-    AITrainingLabel,
-    AITrainingSample,
-    validate_ai_model_training_artifact_paths,
-    validate_ai_model_training_request_payload,
-    validate_ai_model_training_result_payload,
-)
-from endoreg_db.services.aidataset_exports import (
+from django.db.models import QuerySet
+from lx_dtypes.models.contracts.aidataset_export import (
     AIDataSetExportPayload,
     AIDataSetExportSummary,
     AIDataSetFrameAnnotationExport,
     AIDataSetFrameLabelExport,
 )
-from endoreg_db.services.aidataset_frame_buckets import (
+from lx_dtypes.models.contracts.aidataset_frame_buckets import (
     AIDataSetFrameBucketCount,
     AIDataSetFrameBucketDistribution,
     AIDataSetFrameBucketSummary,
@@ -36,11 +23,21 @@ from endoreg_db.services.aidataset_frame_buckets import (
     AIDataSetTargetFrameBucket,
 )
 
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.schemas import (
+    dump_ai_dataset_export_request_payload,
+    dump_ai_dataset_export_summary,
+    validate_ai_model_training_artifact_paths,
+    validate_ai_model_training_command_kwargs,
+    validate_ai_model_training_request_payload,
+    validate_ai_model_training_result_payload,
+)
+
 __all__ = [
     "AIDataSet",
-    "AIDataSetActiveLearningCandidate",
-    "AIDataSetActiveLearningConfig",
-    "AIDataSetActiveLearningSelection",
+    "AIDataSetActiveLearningCandidateContract",
+    "AIDataSetActiveLearningConfigContract",
+    "AIDataSetActiveLearningSelectionContract",
     "AIDataSetExportArtifact",
     "AIDataSetExportPayload",
     "AIDataSetExportSummary",
@@ -51,77 +48,29 @@ __all__ = [
     "AIDataSetFrameLabelExport",
     "AIDataSetLabelDistributionEntry",
     "AIDataSetLabelFrameBucketCount",
-    "AIDataSetScoredActiveLearningCandidate",
+    "AIDataSetScoredActiveLearningCandidateContract",
     "AIDataSetTargetFrameBucket",
     "AIModelTrainingRun",
 ]
 
 if TYPE_CHECKING:
-    from django.db.models import QuerySet
-
     from endoreg_db.models import (
         ImageClassificationAnnotation,
-        Label,
-        LabelSet,
         LabelVideoSegment,
         VideoFile,
     )
 
 
-class AIDataSetActiveLearningConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    budget: int = 32
-    segment_gap_frames: int = 150
-    temporal_spacing_frames: int = 75
-    min_quality_score: float = 0.35
-    max_samples_per_segment: int = 1
-    max_rarity_boost: float = 2.0
-    max_label_weight: float = 3.0
+AIDataSetRelation: TypeAlias = "AIDataSet | None"
+_ModelT = TypeVar("_ModelT", bound=models.Model)
 
 
-class AIDataSetActiveLearningCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    sample_index: int
-    video_id: int
-    frame_number: int
-    frame_id: int | None = None
-    timestamp: float | None = None
-    probs: list[float]
-    embedding: list[float]
-    quality_score: float | None = None
-
-
-class AIDataSetScoredActiveLearningCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    sample_index: int
-    video_id: int
-    frame_number: int
-    frame_id: int | None = None
-    timestamp: float | None = None
-    segment_id: int
-    probs: list[float]
-    quality_score: float | None = None
-    uncertainty: float
-    diversity: float
-    rarity: float
-    quality_gate: float
-    frame_score: float
-
-
-class AIDataSetActiveLearningSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    config: AIDataSetActiveLearningConfig
-    candidate_count: int
-    segment_count: int
-    selected_sample_indices: list[int] = Field(default_factory=list)
-    selected_frame_ids: list[int] = Field(default_factory=list)
-    selected_candidates: list[AIDataSetScoredActiveLearningCandidate] = Field(
-        default_factory=list
-    )
+from lx_dtypes.models.contracts.ai_dataset import (
+    AIDataSetActiveLearningCandidateContract,
+    AIDataSetActiveLearningConfigContract,
+    AIDataSetActiveLearningSelectionContract,
+    AIDataSetScoredActiveLearningCandidateContract,
+)
 
 
 class AIDataSet(models.Model):
@@ -148,18 +97,18 @@ class AIDataSet(models.Model):
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
     AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION = "video_segment_classification"
 
-    name = models.CharField(
+    name: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         blank=True,
         null=True,
         help_text='Human-readable identifier, e.g. "Legacy multilabel dataset v1".',
     )
-    description = models.TextField(
+    description: models.TextField[str | None, Any] = models.TextField(
         blank=True,
         null=True,
         help_text="Optional notes / explanation about this dataset.",
     )
-    ai_model_type = models.CharField(
+    ai_model_type: models.CharField[str, Any] = models.CharField(
         max_length=255,
         default=AI_MODEL_TYPE_IMAGE_MULTILABEL,
         help_text=(
@@ -167,7 +116,7 @@ class AIDataSet(models.Model):
             '"image_multilabel_classification".'
         ),
     )
-    dataset_type = models.CharField(
+    dataset_type: models.CharField[str, Any] = models.CharField(
         max_length=32,
         choices=DATASET_TYPE_CHOICES,
         default=DATASET_TYPE_IMAGE,
@@ -176,7 +125,9 @@ class AIDataSet(models.Model):
             "still include both frame and video annotations attached to the dataset."
         ),
     )
-    image_annotations = models.ManyToManyField(
+    image_annotations: models.ManyToManyField[
+        ImageClassificationAnnotation, ImageClassificationAnnotation
+    ] = models.ManyToManyField(
         "ImageClassificationAnnotation",
         related_name="image_ai_datasets",
         blank=True,
@@ -184,38 +135,44 @@ class AIDataSet(models.Model):
             "Frame-level annotations collected from the frame annotation workflow."
         ),
     )
-    video_annotations = models.ManyToManyField(
-        "LabelVideoSegment",
-        related_name="video_ai_datasets",
-        blank=True,
-        help_text=(
-            "Video-segment annotations collected from the video examination "
-            "annotation workflow."
-        ),
+    video_annotations: models.ManyToManyField[LabelVideoSegment, LabelVideoSegment] = (
+        models.ManyToManyField(
+            "LabelVideoSegment",
+            related_name="video_ai_datasets",
+            blank=True,
+            help_text=(
+                "Video-segment annotations collected from the video examination "
+                "annotation workflow."
+            ),
+        )
     )
-    created_at = models.DateTimeField(
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now_add=True,
         help_text="When this AIDataSet was created.",
     )
-    updated_at = models.DateTimeField(
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
         auto_now=True,
         help_text="When this AIDataSet was last modified.",
     )
-    is_active = models.BooleanField(
+    is_active: models.BooleanField[bool, Any] = models.BooleanField(
         default=True,
         help_text="Soft toggle to enable/disable this dataset for training.",
     )
+    is_default_video_dataset: models.BooleanField[bool, Any] = models.BooleanField(
+        default=False,
+        help_text=(
+            "Marks the one system-managed dataset assigned to every VideoFile when "
+            "no explicit joined_dataset is supplied."
+        ),
+    )
 
     if TYPE_CHECKING:
-        image_annotations: models.Manager[ImageClassificationAnnotation]
-        video_annotations: models.Manager[LabelVideoSegment]
+        id: int
 
     @staticmethod
     def _coerce_objects(
-        objects: Iterable[models.Model] | QuerySet[models.Model],
-    ) -> list[models.Model]:
-        if isinstance(objects, models.QuerySet):
-            return list(objects)
+        objects: Iterable[_ModelT] | QuerySet[_ModelT],
+    ) -> list[_ModelT]:
         return list(objects)
 
     def get_image_annotations_queryset(self):
@@ -233,494 +190,6 @@ class AIDataSet(models.Model):
         if self.dataset_type == self.DATASET_TYPE_VIDEO:
             return self.video_annotations
         return self.image_annotations.none()
-
-    @staticmethod
-    def _l2_normalize(
-        values: np.ndarray,
-        *,
-        axis: int = -1,
-        eps: float = 1e-8,
-    ) -> np.ndarray:
-        norms = np.linalg.norm(values, axis=axis, keepdims=True)
-        return values / np.clip(norms, eps, None)
-
-    @staticmethod
-    def _binary_entropy(probabilities: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-        clipped = np.clip(probabilities, eps, 1.0 - eps)
-        return -(clipped * np.log(clipped) + (1.0 - clipped) * np.log(1.0 - clipped))
-
-    @staticmethod
-    def _make_label_weights(
-        class_frequencies: np.ndarray,
-        *,
-        max_weight: float,
-    ) -> np.ndarray:
-        bounded = np.clip(class_frequencies.astype(np.float64), 1e-6, None)
-        weights = 1.0 / np.sqrt(bounded)
-        weights = weights / np.clip(weights.mean(), 1e-8, None)
-        return np.clip(weights, 0.5, max_weight)
-
-    @staticmethod
-    def _normalize_nonconstant(values: np.ndarray) -> np.ndarray:
-        if values.size == 0:
-            return values
-        lower = float(values.min())
-        upper = float(values.max())
-        if upper - lower <= 1e-8:
-            if upper <= 1e-8:
-                return np.zeros_like(values)
-            return np.ones_like(values)
-        return (values - lower) / (upper - lower)
-
-    @classmethod
-    def _cosine_distance_to_set(
-        cls,
-        candidate_embedding: np.ndarray,
-        reference_embeddings: np.ndarray,
-    ) -> float:
-        if reference_embeddings.size == 0:
-            return 1.0
-        candidate = cls._l2_normalize(candidate_embedding[None, :])[0]
-        references = cls._l2_normalize(reference_embeddings)
-        similarities = references @ candidate
-        return float(1.0 - np.max(similarities))
-
-    @classmethod
-    def _coerce_active_learning_candidates(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
-    ) -> list[AIDataSetActiveLearningCandidate]:
-        return [
-            (
-                candidate
-                if isinstance(candidate, AIDataSetActiveLearningCandidate)
-                else AIDataSetActiveLearningCandidate.model_validate(candidate)
-            )
-            for candidate in candidates
-        ]
-
-    @staticmethod
-    def _validate_active_learning_matrix(
-        rows: Sequence[Sequence[float]],
-        *,
-        name: str,
-    ) -> int:
-        if not rows:
-            return 0
-        width = len(rows[0])
-        if width == 0:
-            raise ValueError(f"{name} rows must not be empty.")
-        if any(len(row) != width for row in rows):
-            raise ValueError(f"all {name} rows must have the same length.")
-        return width
-
-    @classmethod
-    def _build_segment_ids(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate],
-        *,
-        segment_gap_frames: int,
-    ) -> list[int]:
-        ordered_positions = sorted(
-            range(len(candidates)),
-            key=lambda idx: (
-                candidates[idx].video_id,
-                candidates[idx].frame_number,
-                candidates[idx].sample_index,
-            ),
-        )
-        segment_ids = [0] * len(candidates)
-        current_segment_id = -1
-        previous_video_id: int | None = None
-        previous_frame_number: int | None = None
-
-        for position in ordered_positions:
-            candidate = candidates[position]
-            if (
-                previous_video_id != candidate.video_id
-                or previous_frame_number is None
-                or candidate.frame_number - previous_frame_number > segment_gap_frames
-            ):
-                current_segment_id += 1
-            segment_ids[position] = current_segment_id
-            previous_video_id = candidate.video_id
-            previous_frame_number = candidate.frame_number
-
-        return segment_ids
-
-    @classmethod
-    def _pick_segment_candidate(
-        cls,
-        segment_candidates: Sequence[dict[str, Any]],
-        *,
-        selected_embeddings: list[np.ndarray],
-        selected_frames_by_video: dict[int, list[int]],
-        temporal_spacing_frames: int,
-    ) -> dict[str, Any] | None:
-        best_candidate: dict[str, Any] | None = None
-        best_score = -1.0
-        selected_reference = (
-            np.vstack(selected_embeddings)
-            if selected_embeddings
-            else np.empty((0, 0), dtype=np.float64)
-        )
-
-        for candidate in segment_candidates:
-            if candidate["picked"]:
-                continue
-
-            if candidate["quality_gate"] <= 0.0:
-                continue
-
-            selected_frame_numbers = selected_frames_by_video.get(
-                candidate["video_id"], []
-            )
-            if any(
-                abs(candidate["frame_number"] - frame_number) < temporal_spacing_frames
-                for frame_number in selected_frame_numbers
-            ):
-                continue
-
-            if selected_reference.size == 0:
-                dynamic_diversity = 1.0
-            else:
-                dynamic_diversity = cls._cosine_distance_to_set(
-                    candidate["embedding"],
-                    selected_reference,
-                )
-            candidate_score = candidate["frame_score"] * max(dynamic_diversity, 1e-6)
-            if candidate_score > best_score:
-                best_score = candidate_score
-                best_candidate = candidate
-
-        return best_candidate
-
-    @classmethod
-    def _select_active_learning_candidates_locally(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
-        *,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
-        resolved_config = config or AIDataSetActiveLearningConfig()
-        normalized_candidates = cls._coerce_active_learning_candidates(candidates)
-        if not normalized_candidates:
-            return AIDataSetActiveLearningSelection(
-                config=resolved_config,
-                candidate_count=0,
-                segment_count=0,
-            )
-
-        prob_rows = [candidate.probs for candidate in normalized_candidates]
-        embedding_rows = [candidate.embedding for candidate in normalized_candidates]
-        num_labels = cls._validate_active_learning_matrix(
-            prob_rows,
-            name="probability",
-        )
-        embedding_width = cls._validate_active_learning_matrix(
-            embedding_rows,
-            name="embedding",
-        )
-        if num_labels == 0:
-            raise ValueError(
-                "active learning candidates must contain at least one label."
-            )
-
-        probs = np.asarray(prob_rows, dtype=np.float64)
-        embeddings = np.asarray(embedding_rows, dtype=np.float64)
-
-        if class_frequencies is None:
-            frequencies = np.ones(num_labels, dtype=np.float64)
-        else:
-            frequencies = np.asarray(class_frequencies, dtype=np.float64)
-            if frequencies.shape != (num_labels,):
-                raise ValueError(
-                    "class_frequencies must match the number of model output labels."
-                )
-
-        if labeled_embeddings is None:
-            reference_embeddings = np.empty((0, embedding_width), dtype=np.float64)
-        else:
-            reference_rows = [
-                [float(value) for value in row] for row in labeled_embeddings
-            ]
-            reference_width = cls._validate_active_learning_matrix(
-                reference_rows,
-                name="labeled embedding",
-            )
-            if reference_width not in (0, embedding_width):
-                raise ValueError(
-                    "labeled_embeddings must be empty or shaped [N, embedding_dim]."
-                )
-            reference_embeddings = (
-                np.asarray(reference_rows, dtype=np.float64)
-                if reference_rows
-                else np.empty((0, embedding_width), dtype=np.float64)
-            )
-
-        label_weights = cls._make_label_weights(
-            frequencies,
-            max_weight=resolved_config.max_label_weight,
-        )
-        label_weight_sum = max(float(label_weights.sum()), 1e-8)
-        uncertainties = (cls._binary_entropy(probs) * label_weights).sum(
-            axis=1,
-        ) / label_weight_sum
-        normalized_uncertainties = cls._normalize_nonconstant(uncertainties)
-
-        diversities = np.asarray(
-            [
-                cls._cosine_distance_to_set(embedding, reference_embeddings)
-                for embedding in embeddings
-            ],
-            dtype=np.float64,
-        )
-        normalized_diversities = cls._normalize_nonconstant(diversities)
-
-        rarity_weights = cls._make_label_weights(
-            frequencies,
-            max_weight=resolved_config.max_rarity_boost,
-        )
-        rarity = np.asarray(
-            [
-                min(
-                    max(
-                        float((row * rarity_weights).sum())
-                        / max(float(row.sum()), 1e-8),
-                        0.5,
-                    ),
-                    resolved_config.max_rarity_boost,
-                )
-                for row in probs
-            ],
-            dtype=np.float64,
-        )
-
-        quality_scores = np.asarray(
-            [
-                (
-                    1.0
-                    if candidate.quality_score is None
-                    else float(candidate.quality_score)
-                )
-                for candidate in normalized_candidates
-            ],
-            dtype=np.float64,
-        )
-        quality_gate = np.asarray(
-            [
-                (
-                    min(max(score, 0.0), 1.0)
-                    if score >= resolved_config.min_quality_score
-                    else 0.0
-                )
-                for score in quality_scores
-            ],
-            dtype=np.float64,
-        )
-        frame_scores = (
-            normalized_uncertainties * normalized_diversities * rarity * quality_gate
-        )
-
-        segment_ids = cls._build_segment_ids(
-            normalized_candidates,
-            segment_gap_frames=resolved_config.segment_gap_frames,
-        )
-        scored_candidates: list[dict[str, Any]] = []
-        segments: dict[int, list[dict[str, Any]]] = {}
-
-        for idx, candidate in enumerate(normalized_candidates):
-            scored = {
-                "sample_index": candidate.sample_index,
-                "frame_id": candidate.frame_id,
-                "video_id": candidate.video_id,
-                "frame_number": candidate.frame_number,
-                "timestamp": candidate.timestamp,
-                "segment_id": segment_ids[idx],
-                "probs": [float(value) for value in probs[idx]],
-                "embedding": embeddings[idx],
-                "quality_score": candidate.quality_score,
-                "uncertainty": float(normalized_uncertainties[idx]),
-                "diversity": float(normalized_diversities[idx]),
-                "rarity": float(rarity[idx]),
-                "quality_gate": float(quality_gate[idx]),
-                "frame_score": float(frame_scores[idx]),
-                "picked": False,
-            }
-            scored_candidates.append(scored)
-            segments.setdefault(segment_ids[idx], []).append(scored)
-
-        segment_ranking = sorted(
-            segments.items(),
-            key=lambda item: max(candidate["frame_score"] for candidate in item[1]),
-            reverse=True,
-        )
-
-        selected: list[dict[str, Any]] = []
-        selected_embeddings: list[np.ndarray] = []
-        selected_frames_by_video: dict[int, list[int]] = {}
-        segment_pick_counts: dict[int, int] = {segment_id: 0 for segment_id in segments}
-
-        while len(selected) < resolved_config.budget:
-            made_progress = False
-            for segment_id, segment_candidates in segment_ranking:
-                if len(selected) >= resolved_config.budget:
-                    break
-                if (
-                    segment_pick_counts[segment_id]
-                    >= resolved_config.max_samples_per_segment
-                ):
-                    continue
-
-                pick = cls._pick_segment_candidate(
-                    segment_candidates,
-                    selected_embeddings=selected_embeddings,
-                    selected_frames_by_video=selected_frames_by_video,
-                    temporal_spacing_frames=resolved_config.temporal_spacing_frames,
-                )
-                if pick is None:
-                    continue
-
-                pick["picked"] = True
-                segment_pick_counts[segment_id] += 1
-                selected.append(pick)
-                selected_embeddings.append(pick["embedding"])
-                selected_frames_by_video.setdefault(pick["video_id"], []).append(
-                    pick["frame_number"]
-                )
-                made_progress = True
-
-            if not made_progress:
-                break
-
-        selected_candidates = [
-            AIDataSetScoredActiveLearningCandidate.model_validate(
-                {
-                    key: value
-                    for key, value in candidate.items()
-                    if key not in {"embedding", "picked"}
-                }
-            )
-            for candidate in selected
-        ]
-
-        return AIDataSetActiveLearningSelection(
-            config=resolved_config,
-            candidate_count=len(normalized_candidates),
-            segment_count=len(segments),
-            selected_sample_indices=[
-                candidate.sample_index for candidate in selected_candidates
-            ],
-            selected_frame_ids=[
-                candidate.frame_id
-                for candidate in selected_candidates
-                if candidate.frame_id is not None
-            ],
-            selected_candidates=selected_candidates,
-        )
-
-    @classmethod
-    def select_active_learning_frame_indices_from_candidates(
-        cls,
-        candidates: Sequence[AIDataSetActiveLearningCandidate | dict[str, Any]],
-        *,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
-        resolved_config = config or AIDataSetActiveLearningConfig()
-        normalized_candidates = cls._coerce_active_learning_candidates(candidates)
-        reference_embeddings = (
-            None
-            if labeled_embeddings is None
-            else np.asarray(labeled_embeddings, dtype=np.float64).tolist()
-        )
-        frequencies = (
-            None
-            if class_frequencies is None
-            else np.asarray(class_frequencies, dtype=np.float64).tolist()
-        )
-
-        try:
-            from lx_ai_core.active_learning import select_active_learning_candidates
-        except ModuleNotFoundError as exc:
-            if exc.name != "lx_ai_core":
-                raise
-            return cls._select_active_learning_candidates_locally(
-                normalized_candidates,
-                labeled_embeddings=reference_embeddings,
-                class_frequencies=frequencies,
-                config=resolved_config,
-            )
-
-        selection = select_active_learning_candidates(
-            [candidate.model_dump(mode="json") for candidate in normalized_candidates],
-            labeled_embeddings=reference_embeddings,
-            class_frequencies=frequencies,
-            config=resolved_config.model_dump(mode="json"),
-        )
-        return AIDataSetActiveLearningSelection.model_validate(
-            selection.model_dump(mode="json")
-        )
-
-    @classmethod
-    def select_active_learning_frame_indices(
-        cls,
-        *,
-        sample_indices: Sequence[int],
-        video_ids: Sequence[int],
-        frame_numbers: Sequence[int],
-        probs: Sequence[Sequence[float]],
-        embeddings: Sequence[Sequence[float]],
-        frame_ids: Sequence[int | None] | None = None,
-        timestamps: Sequence[float | None] | None = None,
-        quality_scores: Sequence[float | None] | None = None,
-        labeled_embeddings: np.ndarray | Sequence[Sequence[float]] | None = None,
-        class_frequencies: np.ndarray | Sequence[float] | None = None,
-        config: AIDataSetActiveLearningConfig | None = None,
-    ) -> AIDataSetActiveLearningSelection:
-        candidate_count = len(sample_indices)
-        if not (
-            len(video_ids)
-            == len(frame_numbers)
-            == len(probs)
-            == len(embeddings)
-            == candidate_count
-        ):
-            raise ValueError("All active learning arrays must have the same length.")
-
-        resolved_frame_ids: Sequence[int | None] = (
-            frame_ids if frame_ids is not None else [None] * candidate_count
-        )
-        resolved_timestamps: Sequence[float | None] = (
-            timestamps if timestamps is not None else [None] * candidate_count
-        )
-        resolved_quality_scores: Sequence[float | None] = (
-            quality_scores if quality_scores is not None else [None] * candidate_count
-        )
-
-        candidates = [
-            AIDataSetActiveLearningCandidate(
-                sample_index=sample_indices[idx],
-                frame_id=resolved_frame_ids[idx],
-                video_id=video_ids[idx],
-                frame_number=frame_numbers[idx],
-                timestamp=resolved_timestamps[idx],
-                probs=list(probs[idx]),
-                embedding=list(embeddings[idx]),
-                quality_score=resolved_quality_scores[idx],
-            )
-            for idx in range(candidate_count)
-        ]
-
-        return cls.select_active_learning_frame_indices_from_candidates(
-            candidates,
-            labeled_embeddings=labeled_embeddings,
-            class_frequencies=class_frequencies,
-            config=config,
-        )
 
     def add_frame_annotations(
         self,
@@ -769,6 +238,10 @@ class AIDataSet(models.Model):
         if isinstance(video, int):
             video = VideoFile.objects.get(pk=video)
 
+        if video.joined_dataset_id != self.pk:
+            video.joined_dataset = self
+            video.save(update_fields=["joined_dataset"])
+
         normalized_source_names = None
         if information_source_names is not None:
             normalized_source_names = [
@@ -814,487 +287,29 @@ class AIDataSet(models.Model):
             "video_file_id", flat=True
         )
         return VideoFile.objects.filter(
-            pk__in=set(image_video_ids).union(set(segment_video_ids))
+            models.Q(joined_dataset=self)
+            | models.Q(pk__in=set(image_video_ids).union(set(segment_video_ids)))
         ).distinct()
-
-    @staticmethod
-    def _infer_training_label_set_from_annotations(
-        annotations_qs: QuerySet[ImageClassificationAnnotation],
-    ) -> LabelSet:
-        from endoreg_db.models import Label, LabelSet
-
-        label_ids = list(annotations_qs.values_list("label_id", flat=True).distinct())
-        if not label_ids:
-            raise ValueError("Cannot infer LabelSet: dataset has no frame labels.")
-
-        labels = Label.objects.filter(pk__in=label_ids).prefetch_related("label_sets")
-        labelset_id_sets: list[set[int]] = []
-        for label in labels:
-            labelset_ids = set(label.label_sets.values_list("pk", flat=True))
-            if not labelset_ids:
-                raise ValueError(
-                    f"Cannot infer LabelSet: label id={label.pk} "
-                    f"name={label.name!r} is not attached to a LabelSet."
-                )
-            labelset_id_sets.append(labelset_ids)
-
-        common_labelset_ids = set.intersection(*labelset_id_sets)
-        if not common_labelset_ids:
-            raise ValueError(
-                "Cannot infer LabelSet: no common LabelSet contains all frame labels."
-            )
-        if len(common_labelset_ids) > 1:
-            raise ValueError(
-                "Cannot infer LabelSet: multiple common LabelSets found. "
-                "Pass label_set explicitly."
-            )
-
-        return LabelSet.objects.get(pk=next(iter(common_labelset_ids)))
-
-    @staticmethod
-    def _build_frame_format_manifest(
-        *,
-        frames: Sequence[Any],
-        check_frame_format: bool,
-        crop_templates_by_video_uuid: dict[str, list[int] | None],
-        preprocessing_strategy: AIFrameFormatStrategy,
-        recommended_model_input_strategy: AIFrameFormatStrategy,
-    ) -> AIFrameFormatManifest:
-        notes = [
-            "Current anonymization output preserves frame dimensions and blackens "
-            "pixels outside the endoscope ROI.",
-            "New model training should prefer crop_to_endoscope_roi when the "
-            "consumer can handle cropped dimensions.",
-        ]
-
-        if not check_frame_format:
-            return AIFrameFormatManifest(
-                check_required=True,
-                status="not_checked",
-                preprocessing_strategy=preprocessing_strategy,
-                recommended_model_input_strategy=recommended_model_input_strategy,
-                crop_templates_by_video_uuid=crop_templates_by_video_uuid,
-                notes=notes,
-            )
-
-        from PIL import Image, UnidentifiedImageError
-
-        expected: tuple[str, int, int, str] | None = None
-        checked_frame_count = 0
-        errors: list[str] = []
-
-        for frame in frames:
-            frame_id = getattr(frame, "pk", None)
-            frame_number = getattr(frame, "frame_number", None)
-            try:
-                frame_path = frame.file_path
-            except Exception as exc:
-                errors.append(
-                    f"frame_id={frame_id} frame_number={frame_number}: "
-                    f"could not resolve frame path ({exc})"
-                )
-                continue
-
-            if not frame_path.exists():
-                errors.append(
-                    f"frame_id={frame_id} frame_number={frame_number}: "
-                    f"frame file missing at {frame_path}"
-                )
-                continue
-
-            try:
-                with Image.open(frame_path) as image:
-                    image_format = (
-                        image.format or frame_path.suffix.lstrip(".")
-                    ).upper()
-                    width, height = image.size
-                    mode = image.mode
-            except (OSError, UnidentifiedImageError) as exc:
-                errors.append(
-                    f"frame_id={frame_id} frame_number={frame_number}: "
-                    f"could not inspect frame image ({exc})"
-                )
-                continue
-
-            checked_frame_count += 1
-            current = (image_format, int(width), int(height), mode)
-            if expected is None:
-                expected = current
-                continue
-            if current != expected:
-                errors.append(
-                    f"frame_id={frame_id} frame_number={frame_number}: "
-                    "format mismatch "
-                    f"expected={expected} observed={current}"
-                )
-
-        if errors:
-            detail = "; ".join(errors[:5])
-            if len(errors) > 5:
-                detail = f"{detail}; {len(errors) - 5} more errors"
-            raise ValueError(f"Frame format validation failed: {detail}")
-
-        if expected is None:
-            raise ValueError(
-                "Frame format validation failed: no frames were inspected."
-            )
-
-        image_format, width, height, mode = expected
-        return AIFrameFormatManifest(
-            check_required=True,
-            status="passed",
-            checked_frame_count=checked_frame_count,
-            expected_image_format=image_format,
-            expected_width=width,
-            expected_height=height,
-            expected_mode=mode,
-            preprocessing_strategy=preprocessing_strategy,
-            recommended_model_input_strategy=recommended_model_input_strategy,
-            crop_templates_by_video_uuid=crop_templates_by_video_uuid,
-            notes=notes,
-        )
-
-    def build_frame_multilabel_training_manifest(
-        self,
-        *,
-        label_set: LabelSet | None = None,
-        treat_unlabeled_as_negative: bool = False,
-        include_file_paths: bool = False,
-        check_frame_format: bool = True,
-        preprocessing_strategy: AIFrameFormatStrategy = "preserve_dimensions_black_mask",
-        recommended_model_input_strategy: AIFrameFormatStrategy = "crop_to_endoscope_roi",
-        information_source_names: Iterable[str] | None = None,
-    ) -> AITrainingDatasetManifest:
-        """
-        Build a typed frame-level multilabel manifest for lx-ai-core training.
-
-        The manifest keeps one sample per extracted frame, fixes label columns by
-        LabelSet order, and groups samples by video UUID so downstream splitting
-        does not leak frames from the same procedure across train/validation/test.
-        """
-        if self.pk is None:
-            raise ValueError(
-                "Cannot build a training manifest for an unsaved AIDataSet."
-            )
-        if self.dataset_type != self.DATASET_TYPE_IMAGE:
-            raise ValueError(
-                "frame multilabel training manifests require dataset_type='image'."
-            )
-        if self.ai_model_type != self.AI_MODEL_TYPE_IMAGE_MULTILABEL:
-            raise ValueError(
-                "frame multilabel training manifests require "
-                f"ai_model_type={self.AI_MODEL_TYPE_IMAGE_MULTILABEL!r}."
-            )
-
-        annotations_qs = (
-            self.image_annotations.select_related(
-                "frame__video",
-                "label",
-                "information_source",
-            )
-            .filter(
-                frame__isnull=False,
-                frame__is_extracted=True,
-            )
-            .order_by("frame__video_id", "frame__frame_number", "label__name", "pk")
-        )
-        normalized_source_names: list[str] | None = None
-        if information_source_names is not None:
-            normalized_source_names = [
-                str(source_name).strip()
-                for source_name in information_source_names
-                if str(source_name).strip()
-            ]
-            if normalized_source_names:
-                annotations_qs = annotations_qs.filter(
-                    information_source__name__in=normalized_source_names
-                )
-
-        if not annotations_qs.exists():
-            raise ValueError(
-                f"AIDataSet id={self.pk} has no extracted frame annotations."
-            )
-
-        resolved_label_set = (
-            label_set or self._infer_training_label_set_from_annotations(annotations_qs)
-        )
-        labels = resolved_label_set.get_labels_in_order()
-        if not labels:
-            raise ValueError(
-                f"LabelSet id={resolved_label_set.pk} "
-                f"name={resolved_label_set.name!r} has no labels."
-            )
-
-        label_id_to_index = {
-            int(label.pk): index
-            for index, label in enumerate(labels)
-            if label.pk is not None
-        }
-        annotations_qs = annotations_qs.filter(label_id__in=label_id_to_index)
-        if not annotations_qs.exists():
-            raise ValueError(
-                "AIDataSet has no extracted frame annotations for the selected "
-                f"LabelSet id={resolved_label_set.pk}."
-            )
-
-        annotations_by_frame_id: dict[int, list[ImageClassificationAnnotation]] = (
-            defaultdict(list)
-        )
-        frame_order: list[int] = []
-        for annotation in annotations_qs.iterator():
-            frame_id = int(annotation.frame_id)
-            if frame_id not in annotations_by_frame_id:
-                frame_order.append(frame_id)
-            annotations_by_frame_id[frame_id].append(annotation)
-
-        training_labels = [
-            AITrainingLabel(
-                id=int(label.pk),
-                name=label.name,
-                index=index,
-                labelset_name=resolved_label_set.name,
-                labelset_version=resolved_label_set.version,
-            )
-            for index, label in enumerate(labels)
-            if label.pk is not None
-        ]
-
-        samples: list[AITrainingSample] = []
-        frames_for_manifest: list[Any] = []
-        crop_templates_by_video_uuid: dict[str, list[int] | None] = {}
-        for sample_index, frame_id in enumerate(frame_order):
-            frame_annotations = annotations_by_frame_id[frame_id]
-            frame = frame_annotations[0].frame
-            video = frame.video
-            frames_for_manifest.append(frame)
-            values_by_label_index: dict[int, list[ImageClassificationAnnotation]] = (
-                defaultdict(list)
-            )
-            for annotation in frame_annotations:
-                label_index = label_id_to_index.get(annotation.label_id)
-                if label_index is None:
-                    continue
-                values_by_label_index[label_index].append(annotation)
-
-            label_values = [0.0] * len(training_labels)
-            label_mask = (
-                [1] * len(training_labels)
-                if treat_unlabeled_as_negative
-                else [0] * len(training_labels)
-            )
-            annotation_ids_by_label: dict[str, list[int]] = {}
-            source_names: set[str] = set()
-
-            for label_index, label_annotations in values_by_label_index.items():
-                distinct_values = {
-                    bool(annotation.value) for annotation in label_annotations
-                }
-                label_name = training_labels[label_index].name
-                if len(distinct_values) > 1:
-                    raise ValueError(
-                        "Conflicting annotations for "
-                        f"frame_id={frame_id} label={label_name!r}. "
-                        "Filter by information_source_names or resolve the "
-                        "annotation conflict before training."
-                    )
-                value = distinct_values.pop()
-                label_values[label_index] = 1.0 if value else 0.0
-                label_mask[label_index] = 1
-                annotation_ids_by_label[label_name] = [
-                    int(annotation.pk)
-                    for annotation in label_annotations
-                    if annotation.pk is not None
-                ]
-                source_names.update(
-                    annotation.information_source.name
-                    for annotation in label_annotations
-                    if annotation.information_source is not None
-                )
-
-            path = frame.file_path if include_file_paths else None
-            video_uuid = str(video.uuid)
-            if video_uuid not in crop_templates_by_video_uuid:
-                try:
-                    crop_templates_by_video_uuid[video_uuid] = video.get_crop_template()
-                except Exception:
-                    crop_templates_by_video_uuid[video_uuid] = None
-
-            samples.append(
-                AITrainingSample(
-                    sample_index=sample_index,
-                    path=path,
-                    relative_path=frame.relative_path,
-                    labels=label_values,
-                    label_mask=label_mask,
-                    group_id=video_uuid,
-                    frame_id=frame.pk,
-                    video_id=video.pk,
-                    video_uuid=video_uuid,
-                    frame_number=frame.frame_number,
-                    timestamp=frame.timestamp,
-                    metadata={
-                        "annotation_ids_by_label": annotation_ids_by_label,
-                        "information_source_names": sorted(source_names),
-                    },
-                )
-            )
-
-        frame_format = self._build_frame_format_manifest(
-            frames=frames_for_manifest,
-            check_frame_format=check_frame_format,
-            crop_templates_by_video_uuid=crop_templates_by_video_uuid,
-            preprocessing_strategy=preprocessing_strategy,
-            recommended_model_input_strategy=recommended_model_input_strategy,
-        )
-        frame_ids_for_provenance: list[int] = []
-        frame_numbers_for_provenance: list[int] = []
-        frame_numbers_by_video_uuid: dict[str, list[int]] = defaultdict(list)
-        source_video_kind_by_video_uuid: dict[str, str] = {}
-        for frame in frames_for_manifest:
-            if frame.pk is not None:
-                frame_ids_for_provenance.append(int(frame.pk))
-            frame_numbers_for_provenance.append(int(frame.frame_number))
-            video_uuid = str(frame.video.uuid)
-            frame_numbers_by_video_uuid[video_uuid].append(int(frame.frame_number))
-            source_video_kind_by_video_uuid[video_uuid] = (
-                "processed"
-                if getattr(frame.video, "is_processed", False)
-                else "extracted_frame_cache"
-            )
-
-        positive_counts = [0.0] * len(training_labels)
-        known_counts = [0.0] * len(training_labels)
-        for sample in samples:
-            for label_index, (value, mask) in enumerate(
-                zip(sample.labels, sample.label_mask)
-            ):
-                if mask:
-                    known_counts[label_index] += 1.0
-                    positive_counts[label_index] += float(value)
-        class_frequencies = [
-            (
-                positive_counts[index] / known_counts[index]
-                if known_counts[index] > 0.0
-                else 0.0
-            )
-            for index in range(len(training_labels))
-        ]
-
-        return AITrainingDatasetManifest(
-            dataset_id=self.pk,
-            name=self.name,
-            description=self.description,
-            labels=training_labels,
-            samples=samples,
-            frame_format=frame_format,
-            class_frequencies=class_frequencies,
-            provenance={
-                "source": "endoreg_db.AIDataSet",
-                "dataset_id": self.pk,
-                "labelset_id": resolved_label_set.pk,
-                "labelset_name": resolved_label_set.name,
-                "labelset_version": resolved_label_set.version,
-                "treat_unlabeled_as_negative": treat_unlabeled_as_negative,
-                "include_file_paths": include_file_paths,
-                "check_frame_format": check_frame_format,
-                "information_source_names": normalized_source_names,
-                "frame_source_mode": "selected_frame_materialization",
-                "source_video_kind": (
-                    "processed"
-                    if set(source_video_kind_by_video_uuid.values()) == {"processed"}
-                    else "mixed_or_frame_cache"
-                ),
-                "source_video_kind_by_video_uuid": source_video_kind_by_video_uuid,
-                "frame_ids": frame_ids_for_provenance,
-                "frame_numbers": frame_numbers_for_provenance,
-                "frame_numbers_by_video_uuid": dict(frame_numbers_by_video_uuid),
-                "materialization_timestamp": timezone.now().isoformat(),
-            },
-        )
-
-    def export_lx_ai_core_training_manifest(
-        self,
-        *,
-        label_set: LabelSet | None = None,
-        treat_unlabeled_as_negative: bool = False,
-        include_file_paths: bool = False,
-        check_frame_format: bool = True,
-        preprocessing_strategy: AIFrameFormatStrategy = "preserve_dimensions_black_mask",
-        recommended_model_input_strategy: AIFrameFormatStrategy = "crop_to_endoscope_roi",
-        information_source_names: Iterable[str] | None = None,
-    ) -> dict[str, Any]:
-        manifest = self.build_frame_multilabel_training_manifest(
-            label_set=label_set,
-            treat_unlabeled_as_negative=treat_unlabeled_as_negative,
-            include_file_paths=include_file_paths,
-            check_frame_format=check_frame_format,
-            preprocessing_strategy=preprocessing_strategy,
-            recommended_model_input_strategy=recommended_model_input_strategy,
-            information_source_names=information_source_names,
-        )
-        return manifest.to_lx_ai_core_dict()
-
-    def build_frame_bucket_distribution(
-        self,
-        *,
-        label_set: LabelSet | None = None,
-        target_label: Label | None = None,
-        prediction_segments_only: bool = True,
-    ) -> AIDataSetFrameBucketDistribution:
-        from endoreg_db.services.aidataset_frame_buckets import (
-            build_frame_bucket_distribution,
-        )
-
-        return build_frame_bucket_distribution(
-            self,
-            label_set=label_set,
-            target_label=target_label,
-            prediction_segments_only=prediction_segments_only,
-        )
-
-    def build_export_payload(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> AIDataSetExportPayload:
-        from endoreg_db.services.aidataset_exports import build_export_payload
-
-        return build_export_payload(
-            self,
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
-
-    def export_to_standardized_structure(
-        self,
-        *,
-        center_key: str | None = None,
-        all_centers: bool = False,
-        only_validated: bool = False,
-    ) -> dict[str, Any]:
-        from endoreg_db.services.aidataset_exports import (
-            export_to_standardized_structure,
-        )
-
-        return export_to_standardized_structure(
-            self,
-            center_key=center_key,
-            all_centers=all_centers,
-            only_validated=only_validated,
-        )
 
     def __str__(self) -> str:
         if self.name:
             return f"AIDataSet(id={self.id}, name={self.name})"
         return f"AIDataSet(id={self.id})"
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default_video_dataset"],
+                condition=models.Q(is_default_video_dataset=True),
+                name="aidataset_one_default_video_dataset",
+            )
+        ]
+
 
 class AIModelTrainingRun(models.Model):
     STATUS_QUEUED = "queued"
     STATUS_RUNNING = "running"
+    STATUS_RETRY_WAIT = "retry_wait"
     STATUS_COMPLETED = "completed"
     STATUS_FAILED = "failed"
     STATUS_LOST = "lost"
@@ -1302,48 +317,108 @@ class AIModelTrainingRun(models.Model):
     STATUS_CHOICES = [
         (STATUS_QUEUED, "Queued"),
         (STATUS_RUNNING, "Running"),
+        (STATUS_RETRY_WAIT, "Retry wait"),
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
         (STATUS_LOST, "Lost"),
     ]
 
-    run_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    dataset = models.ForeignKey(
+    run_id: models.UUIDField[uuid.UUID, Any] = models.UUIDField(
+        default=uuid.uuid4, editable=False, unique=True
+    )
+    dataset: models.ForeignKey[Any] = models.ForeignKey(
         AIDataSet,
         blank=True,
         null=True,
         on_delete=models.SET_NULL,
         related_name="model_training_runs",
     )
-    dataset_name = models.CharField(max_length=255, blank=True, null=True)
-    dataset_type = models.CharField(max_length=32, blank=True)
-    ai_model_type = models.CharField(max_length=255, blank=True)
-    backbone_name = models.CharField(max_length=128)
-    feature_mode = models.CharField(max_length=64)
-    freeze_backbone = models.BooleanField(default=True)
-    epochs = models.PositiveIntegerField(default=10)
-    batch_size = models.PositiveIntegerField(default=32)
-    labelset_version = models.PositiveIntegerField(default=1)
-    treat_unlabeled_as_negative = models.BooleanField(default=True)
-    backbone_checkpoint = models.TextField(blank=True, null=True)
-    request_payload = models.JSONField(default=dict, blank=True)
-    command_kwargs = models.JSONField(default=dict, blank=True)
-    status = models.CharField(
+    dataset_name: models.CharField[str | None, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    dataset_type: models.CharField[str, Any] = models.CharField(
+        max_length=32, blank=True
+    )
+    ai_model_type: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True
+    )
+    backbone_name: models.CharField[str, Any] = models.CharField(max_length=128)
+    feature_mode: models.CharField[str, Any] = models.CharField(max_length=64)
+    freeze_backbone: models.BooleanField[bool, Any] = models.BooleanField(default=True)
+    epochs: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=10
+    )
+    batch_size: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=32
+    )
+    labelset_version: models.PositiveIntegerField[int, Any] = (
+        models.PositiveIntegerField(default=1)
+    )
+    treat_unlabeled_as_negative: models.BooleanField[bool, Any] = models.BooleanField(
+        default=True
+    )
+    backbone_checkpoint: models.TextField[str | None, Any] = models.TextField(
+        blank=True, null=True
+    )
+    request_payload: models.JSONField[Any, Any] = models.JSONField(
+        default=dict, blank=True
+    )
+    command_kwargs: models.JSONField[Any, Any] = models.JSONField(
+        default=dict, blank=True
+    )
+    status: models.CharField[str, Any] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
         db_index=True,
     )
-    server_instance_id = models.CharField(max_length=64, blank=True, db_index=True)
-    result = models.JSONField(blank=True, null=True)
-    artifact_paths = models.JSONField(default=dict, blank=True)
-    error = models.TextField(blank=True)
-    stdout = models.TextField(blank=True)
-    stderr = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    started_at = models.DateTimeField(blank=True, null=True)
-    finished_at = models.DateTimeField(blank=True, null=True)
+    server_instance_id: models.CharField[str, Any] = models.CharField(
+        max_length=64, blank=True, db_index=True
+    )
+    attempt_id: models.UUIDField[uuid.UUID | None, Any] = models.UUIDField(
+        blank=True, null=True, editable=False
+    )
+    owner_id: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True, default="", editable=False
+    )
+    fencing_token: models.PositiveBigIntegerField[int, Any] = (
+        models.PositiveBigIntegerField(default=0, editable=False)
+    )
+    heartbeat_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True, editable=False
+    )
+    lease_expires_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True, db_index=True, editable=False
+    )
+    retry_count: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=0
+    )
+    max_retries: models.PositiveIntegerField[int, Any] = models.PositiveIntegerField(
+        default=3
+    )
+    next_retry_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True, db_index=True
+    )
+    dispatch_error: models.TextField[str, Any] = models.TextField(blank=True)
+    result: models.JSONField[Any, Any] = models.JSONField(blank=True, null=True)
+    artifact_paths: models.JSONField[dict[str, str]] = models.JSONField(
+        default=dict, blank=True
+    )
+    error: models.TextField[str, Any] = models.TextField(blank=True)
+    stdout: models.TextField[str, Any] = models.TextField(blank=True)
+    stderr: models.TextField[str, Any] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now=True
+    )
+    started_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True
+    )
+    finished_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True
+    )
 
     class Meta:
         indexes = [
@@ -1352,6 +427,29 @@ class AIModelTrainingRun(models.Model):
                 fields=["server_instance_id", "status"],
                 name="aid_train_server_idx",
             ),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="running",
+                        attempt_id__isnull=False,
+                        heartbeat_at__isnull=False,
+                        lease_expires_at__isnull=False,
+                    )
+                    & ~models.Q(owner_id="")
+                )
+                | (
+                    ~models.Q(status="running")
+                    & models.Q(
+                        attempt_id__isnull=True,
+                        owner_id="",
+                        heartbeat_at__isnull=True,
+                        lease_expires_at__isnull=True,
+                    )
+                ),
+                name="aid_train_lease_state_consistent",
+            )
         ]
         ordering = ["-created_at", "-id"]
 
@@ -1373,6 +471,12 @@ class AIModelTrainingRun(models.Model):
         except ValueError as exc:
             errors["request_payload"] = str(exc)
         try:
+            self.command_kwargs = validate_ai_model_training_command_kwargs(
+                self.command_kwargs
+            )
+        except ValueError as exc:
+            errors["command_kwargs"] = str(exc)
+        try:
             self.result = validate_ai_model_training_result_payload(self.result)
         except ValueError as exc:
             errors["result"] = str(exc)
@@ -1385,9 +489,9 @@ class AIModelTrainingRun(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
-        return super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"AIModelTrainingRun(run_id={self.run_key}, status={self.status})"
@@ -1403,36 +507,58 @@ class AIDataSetExportArtifact(models.Model):
         (STATUS_FAILED, "Failed"),
     ]
 
-    artifact_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    dataset = models.ForeignKey(
+    artifact_id: models.UUIDField[uuid.UUID, Any] = models.UUIDField(
+        default=uuid.uuid4, editable=False, unique=True
+    )
+    dataset: models.ForeignKey[Any] = models.ForeignKey(
         AIDataSet,
         blank=True,
         null=True,
         on_delete=models.SET_NULL,
         related_name="export_artifacts",
     )
-    dataset_name = models.CharField(max_length=255, blank=True, null=True)
-    dataset_type = models.CharField(max_length=32, blank=True)
-    ai_model_type = models.CharField(max_length=255, blank=True)
-    request_payload = models.JSONField(default=dict, blank=True)
-    center_key = models.CharField(max_length=255, blank=True, null=True)
-    all_centers = models.BooleanField(default=False)
-    only_validated = models.BooleanField(default=True)
-    status = models.CharField(
+    dataset_name: models.CharField[str | None, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    dataset_type: models.CharField[str, Any] = models.CharField(
+        max_length=32, blank=True
+    )
+    ai_model_type: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True
+    )
+    request_payload: models.JSONField[Any, Any] = models.JSONField(
+        default=dict, blank=True
+    )
+    center_key: models.CharField[str | None, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    all_centers: models.BooleanField[bool, Any] = models.BooleanField(default=False)
+    only_validated: models.BooleanField[bool, Any] = models.BooleanField(default=True)
+    status: models.CharField[str, Any] = models.CharField(
         max_length=16,
         choices=STATUS_CHOICES,
         default=STATUS_RUNNING,
         db_index=True,
     )
-    output_path = models.TextField(blank=True)
-    download_filename = models.CharField(max_length=255, blank=True)
-    sha256 = models.CharField(max_length=64, blank=True)
-    byte_size = models.PositiveBigIntegerField(default=0)
-    summary = models.JSONField(default=dict, blank=True)
-    error = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    finished_at = models.DateTimeField(blank=True, null=True)
+    output_path: models.TextField[str, Any] = models.TextField(blank=True)
+    download_filename: models.CharField[str, Any] = models.CharField(
+        max_length=255, blank=True
+    )
+    sha256: models.CharField[str, Any] = models.CharField(max_length=64, blank=True)
+    byte_size: models.PositiveBigIntegerField[int, Any] = (
+        models.PositiveBigIntegerField(default=0)
+    )
+    summary: models.JSONField[Any, Any] = models.JSONField(default=dict, blank=True)
+    error: models.TextField[str, Any] = models.TextField(blank=True)
+    created_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    updated_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now=True
+    )
+    finished_at: models.DateTimeField[datetime | None, Any] = models.DateTimeField(
+        blank=True, null=True
+    )
 
     class Meta:
         indexes = [
@@ -1448,6 +574,26 @@ class AIDataSetExportArtifact(models.Model):
     @property
     def artifact_key(self) -> str:
         return self.artifact_id.hex
+
+    def clean(self) -> None:
+        super().clean()
+        errors: dict[str, str] = {}
+        try:
+            self.request_payload = dump_ai_dataset_export_request_payload(
+                self.request_payload
+            )
+        except ValueError as exc:
+            errors["request_payload"] = str(exc)
+        try:
+            self.summary = dump_ai_dataset_export_summary(self.summary)
+        except ValueError as exc:
+            errors["summary"] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return (

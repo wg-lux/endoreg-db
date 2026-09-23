@@ -25,16 +25,16 @@ Goals
    - If a user has "patient:write", they automatically satisfy "patient:read".
 """
 
-from typing import Dict, Union
-
 # ------------------------------------------------------------
 # Types
 # ------------------------------------------------------------
 
-# A route can map to:
-#   - a single role string ("patient:read")
-#   - or per-method roles: {"GET": "patient:read", "POST": "patient:write", ...}
-RouteRoles = Dict[str, Union[str, Dict[str, str]]]
+type ResourceRoles = dict[str, dict[str, str]]
+type RouteResourceMap = dict[str, str]
+type RouteRoles = dict[str, dict[str, str]]
+from lx_dtypes.models.contracts.authz import validate_authz_route_lookup
+
+type MethodRoles = dict[str, str]
 
 # ------------------------------------------------------------
 # Resource → roles (technical roles in Keycloak)
@@ -43,7 +43,7 @@ RouteRoles = Dict[str, Union[str, Dict[str, str]]]
 # and assign to users/groups (directly or via composite roles).
 #
 # For each resource, define which role is used for read & write.
-RESOURCE_ROLES = {
+RESOURCE_ROLES: ResourceRoles = {
     "patient": {
         "read": "patient:read",
         "write": "patient:write",
@@ -73,10 +73,22 @@ RESOURCE_ROLES = {
 #       "<basename>-<action_name>"
 #   - path(..., name="..."):
 #       exactly that "name"
-ROUTE_RESOURCE = {
+ROUTE_RESOURCE: RouteResourceMap = {
     # Patients
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
+    "patient-medical-ledger": "patient",
+    "patient-create-medication": "patient",
+    "patient-update-medication": "patient",
+    "patient-create-medication-schedule": "patient",
+    "patient-update-medication-schedule": "patient",
+    # Clinical cases are patient-owned resources.
+    "case-list": "patient",
+    "case-detail": "patient",
+    "case-close": "patient",
+    "case-reopen": "patient",
+    "case-create-with-examination": "patient",
+    "case-attach-document": "patient",
     # Custom patient helper
     "check_pe_exist": "patient",
     # Example for videos (if you have these ViewSets registered)
@@ -87,13 +99,37 @@ ROUTE_RESOURCE = {
     "video-detail": "video",
     "video-detail-stream": "video",
     "video-stream": "video",
+    "video-hls-playlist-m3u8": "video",
+    "video-hls-playlist": "video",
+    "video-hls-key": "video",
+    "video-hls-segment": "video",
     "video-frame-stream": "video",
+    "video-frame-decoded-stream": "video",
     "video-reimport": "video",
     "video-correction": "video",
+    "video-anonymization-correction": "video",
+    "video-processing-history": "video",
     "video-metadata": "video",
     "video-apply-mask": "video",
     "video-remove-frames": "video",
     "video-segments-blacken-outside": "video",
+    "video-segments-rerun-predictions": "video",
+    "video-segments-normalize-fps": "video",
+    "video-segments-import-predictions": "video",
+    "video-segment-ensure-annotations": "video",
+    "video-segments-ensure-annotations": "video",
+    "video-segment-ensure-prediction-annotations": "video",
+    "video-segments-ensure-prediction-annotations": "video",
+    "video-segments-stats": "video",
+    "video-segments-by-video": "video",
+    "video-segments-bulk-mutation": "video",
+    "video-segment-detail": "video",
+    "video-segment-validate": "video",
+    "video-segments-validate-bulk": "video",
+    "video-segments-validation-status": "video",
+    "video-annotated-export": "video",
+    "video-mark-ready-for-export": "video",
+    "video_upload": "patient",
     "get_lvs_list": "video",
     # report + sensitive metadata endpoints expose patient-linked data.
     "pdf-list": "patient",
@@ -102,6 +138,7 @@ ROUTE_RESOURCE = {
     "report-reimport": "patient",
     "report-llm-job-status": "patient",
     "patient-media-timeline": "patient",
+    "study-cohort-preview": "patient",
     "sm-pk": "patient",
     "video-sensitive-metadata": "patient",
     "video-sensitive-metadata-verify": "patient",
@@ -110,6 +147,11 @@ ROUTE_RESOURCE = {
     "sensitive-metadata-list": "patient",
     "pdf-sensitive-metadata-list": "patient",
     "media-anonymization-metrics": "anonymization",
+    "quarantine-item-list": "anonymization",
+    "quarantine-sync": "anonymization",
+    "quarantine-reap-approved": "anonymization",
+    "quarantine-approve-deletion": "anonymization",
+    "quarantine-retain": "anonymization",
     "anonymization_items_overview": "anonymization",
     "upload_status": "patient",
     # Add more mappings as your API grows
@@ -128,12 +170,17 @@ ROUTE_RESOURCE = {
 #   1) ROUTE_RESOURCE + RESOURCE_ROLES
 #   2) DEFAULT_ROLE_BY_METHOD
 REQUIRED_ROLES: RouteRoles = {
+    "anonymization_items_overview": {
+        "GET": "video:read",
+    },
     # Example: make patient DELETE admin-only (optional)
     # "patient-detail": {
     #     "DELETE": "admin",  # admin role in Keycloak
     # },
-    # Example: a special helper route that you always want read-only patients role:
-    # "check_pe_exist": "patient:read",
+    # Example: special helper route that should always require read:
+    # "check_pe_exist": {
+    #     "GET": "patient:read",
+    # },
 }
 
 # ------------------------------------------------------------
@@ -147,7 +194,7 @@ REQUIRED_ROLES: RouteRoles = {
 #
 # If you move fully to resource-based roles, you can leave this as None
 # or a generic "data:read"/"data:write" depending on your preference.
-DEFAULT_ROLE_BY_METHOD = {
+DEFAULT_ROLE_BY_METHOD: MethodRoles = {
     "GET": "data:read",
     "HEAD": "data:read",
     "OPTIONS": "data:read",
@@ -215,29 +262,32 @@ def satisfies(user_roles: set[str], needed: str) -> bool:
 # ------------------------------------------------------------
 
 
-def get_needed_role(route_name: str, method: str) -> str | None:
+def get_needed_role(route_name: str, method: str) -> str:
     """
     Compute the required role for a given route + HTTP method.
 
     Priority:
       1) REQUIRED_ROLES[route_name] if present
-         - if dict: use per-method role if defined
-         - if str : use that role for all methods
+         - use per-method role if defined
       2) ROUTE_RESOURCE + RESOURCE_ROLES (resource-based policy)
          - e.g. route "patient-list" with GET → "patient:read"
       3) DEFAULT_ROLE_BY_METHOD[method] as final fallback
          - e.g. "data:read"/"data:write" if you keep those as global roles.
     """
-    method = (method or "").upper()
+    lookup = validate_authz_route_lookup(
+        {
+            "route_name": route_name,
+            "method": method,
+        }
+    )
+    route_name = lookup.route_name
+    method = lookup.method
 
     # 1) explicit per-route overrides
-    per_route = REQUIRED_ROLES.get(route_name)
-    if isinstance(per_route, dict):
-        role = per_route.get(method)
-        if role:
-            return role
-    elif isinstance(per_route, str):
-        return per_route  # one role for all methods of that route
+    per_route = REQUIRED_ROLES.get(route_name, {})
+    role = per_route.get(method, "")
+    if role:
+        return role
 
     # 2) resource-based default
     resource = ROUTE_RESOURCE.get(route_name)
@@ -248,4 +298,4 @@ def get_needed_role(route_name: str, method: str) -> str | None:
             return role
 
     # 3) global fallback by method
-    return DEFAULT_ROLE_BY_METHOD.get(method)
+    return DEFAULT_ROLE_BY_METHOD.get(method, "")

@@ -1,17 +1,31 @@
-from django.core.management.base import BaseCommand
+from __future__ import annotations
 
-from endoreg_db.models import (
+
+from django.core.management.base import BaseCommand, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
+
+from endoreg_db.models.medical.disease import (
     Disease,
     DiseaseClassificationChoice,
-    Event,
-    InformationSource,
-    Medication,
-    MedicationIndication,
-    MedicationIndicationType,
-    MedicationIntakeTime,
-    MedicationSchedule,
-    Unit,
 )
+from endoreg_db.models.medical.event import Event
+from endoreg_db.models.medical.medication.medication import Medication
+from endoreg_db.models.medical.medication.medication_indication import (
+    MedicationIndication,
+)
+from endoreg_db.models.medical.medication.medication_indication_type import (
+    MedicationIndicationType,
+)
+from endoreg_db.models.medical.medication.medication_intake_time import (
+    MedicationIntakeTime,
+)
+from endoreg_db.models.medical.medication.medication_schedule import (
+    MedicationSchedule,
+)
+from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.models.other.unit import Unit
 
 from ...data import (
     MEDICATION_DATA_DIR,
@@ -21,8 +35,10 @@ from ...data import (
     MEDICATION_SCHEDULE_DATA_DIR,
 )
 from ...utils import load_model_data_from_yaml
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
-IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
+
+IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
     Medication.__name__,
     MedicationIndicationType.__name__,
     MedicationIntakeTime.__name__,
@@ -30,7 +46,7 @@ IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
     MedicationIndication.__name__,
 ]
 
-IMPORT_METADATA = {
+IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
     Medication.__name__: {
         "dir": MEDICATION_DATA_DIR,  # e.g. "interventions"
         "model": Medication,
@@ -90,15 +106,19 @@ class Command(BaseCommand):
     help = """Load all .yaml files in the data/intervention directory
     into the Intervention and InterventionType model"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output",
         )
 
-    def handle(self, *args, **options):
-        verbose = options["verbose"]
+    def handle(
+        self,
+        *args: str,
+        **options: object,
+    ) -> None:
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)

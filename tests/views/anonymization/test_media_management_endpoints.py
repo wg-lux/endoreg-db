@@ -13,7 +13,7 @@ class MediaManagementEndpointTests(TestCase):
         self.center = Center.objects.create(name=f"mm-center-{suffix}")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"mm-video-{uuid4().hex}",
+            raw_video_hash=f"mm-video-{uuid4().hex}",
             original_file_name="mm-video.mp4",
         )
 

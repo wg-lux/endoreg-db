@@ -1,23 +1,41 @@
+# pyright: reportPrivateUsage=false
 """Integration-style tests for video file I/O helpers using real assets."""
 
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from typing import Any, Generator, Protocol, cast
 from unittest.mock import patch
 
 import pytest
-from django.core.files import File
+from django.core.files.base import File
 from django.core.files.storage import default_storage
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
-from endoreg_db.models.media.video.video_file_io import (
-    _ensure_local_processed_file,
-    _ensure_local_raw_file,
+from endoreg_db.services.video_files.io import (
+    ensure_local_processed_video_file,
+    ensure_local_raw_video_file,
 )
 from endoreg_db.utils import delete_field_file
 
 pytestmark = pytest.mark.django_db
+
+
+class _CenterRelation(Protocol):
+    def add(self, *objs: Center | int) -> None: ...
+
+
+class _WritableFieldFile(Protocol):
+    def save(self, name: str, content: File[Any], save: bool = True) -> None: ...
+
+
+def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
+    cast(_CenterRelation, processor.centers).add(center)
+
+
+def _field_file(field: object) -> _WritableFieldFile:
+    return cast(_WritableFieldFile, field)
 
 
 @pytest.fixture
@@ -67,7 +85,7 @@ def processor(center: Center) -> EndoscopyProcessor:
         endoscope_sn_width=100,
         endoscope_sn_height=50,
     )
-    processor.centers.add(center)
+    _add_center(processor, center)
     return processor
 
 
@@ -76,21 +94,25 @@ def video_with_files(
     center: Center,
     processor: EndoscopyProcessor,
     video_asset_file: Path,
-):
+) -> Generator[VideoFile, None, None]:
     video = VideoFile.objects.create(
         center=center,
         processor=processor,
-        video_hash=f"hash-{uuid.uuid4()}",
+        raw_video_hash=f"hash-{uuid.uuid4()}",
     )
 
-    raw_name = f"videos/{video.video_hash}_raw.mp4"
-    processed_name = f"anonym_videos/{video.video_hash}_processed.mp4"
+    raw_name = f"videos/{video.raw_video_hash}_raw.mp4"
+    processed_name = f"anonym_videos/{video.raw_video_hash}_processed.mp4"
 
     with video_asset_file.open("rb") as raw_handle:
-        video.raw_file.save(raw_name, File(raw_handle), save=True)
+        _field_file(video.raw_file).save(raw_name, File(raw_handle), save=True)
 
     with video_asset_file.open("rb") as processed_handle:
-        video.processed_file.save(processed_name, File(processed_handle), save=True)
+        _field_file(video.processed_file).save(
+            processed_name,
+            File(processed_handle),
+            save=True,
+        )
 
     video.refresh_from_db()
 
@@ -139,11 +161,11 @@ def test_delete_with_file_handles_pathless_storage(video_with_files: VideoFile):
     with (
         patch.object(video, "delete_frames", return_value="ok"),
         patch(
-            "endoreg_db.models.media.video.video_file_io._get_raw_file_path",
+            "endoreg_db.services.video_files.io.get_raw_video_file_path",
             return_value=None,
         ),
         patch(
-            "endoreg_db.models.media.video.video_file_io._get_processed_file_path",
+            "endoreg_db.services.video_files.io.get_processed_video_file_path",
             return_value=None,
         ),
     ):
@@ -161,7 +183,7 @@ def test_ensure_local_raw_file_downloads_without_path(video_with_files: VideoFil
     video = video_with_files
 
     with patch("endoreg_db.utils.storage._resolve_local_path", return_value=None):
-        with _ensure_local_raw_file(video) as local_path:
+        with ensure_local_raw_video_file(video) as local_path:
             assert local_path.exists()
             assert local_path.is_file()
             assert local_path.stat().st_size > 0
@@ -174,7 +196,7 @@ def test_ensure_local_processed_file_downloads_without_path(
     video = video_with_files
 
     with patch("endoreg_db.utils.storage._resolve_local_path", return_value=None):
-        with _ensure_local_processed_file(video) as local_path:
+        with ensure_local_processed_video_file(video) as local_path:
             assert local_path.exists()
             assert local_path.is_file()
             assert local_path.stat().st_size > 0

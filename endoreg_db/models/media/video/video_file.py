@@ -1,77 +1,165 @@
 """Concrete model for video files, handling both raw and processed states."""
 
-import logging
-import uuid
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Sequence, Union
+from __future__ import annotations
 
+import logging
+import uuid as uuid_lib
+from contextlib import AbstractContextManager
+from datetime import date, datetime
+from pathlib import Path
+from typing import (
+    Any,
+    TYPE_CHECKING,
+    Protocol,
+    Sequence,
+    TypedDict,
+    Unpack,
+    cast,
+)
+
+import numpy as np
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from lx_dtypes.models.contracts.video_file import (
+    FrameSourceMode,
+    VideoFileMetaJsonObject,
+)
+from lx_dtypes.models.contracts.video_segments import (
+    VideoSegmentsPayloadDict,
+    validate_video_segments_payload,
+)
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
+from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
+from numpy.typing import NDArray
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.models.media.video.storage_mode import (
     VIDEO_STORAGE_MODE_CHOICES,
     VideoStorageMode,
     get_default_video_storage_mode_value,
 )
-from endoreg_db.utils.filesystem.paths import (
-    ANONYM_VIDEO_DIR,
-    SENSITIVE_VIDEO_DIR,
-)
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
+from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from endoreg_db.schemas import validate_video_file_meta_payload
 from .video_file_queries import VideoQuerySet
 
 # Configure logging
 logger = logging.getLogger(__name__)  # Changed from "video_file"
 
-if TYPE_CHECKING:
-    from endoreg_db.models import FFMpegMeta, Frame, LabelVideoSegment, VideoState
+
+def _validate_video_sequence_ranges(sequences: VideoSegmentsPayloadDict) -> None:
+    """Reject frame-coordinate ranges that cannot identify a video segment."""
+    for label_name, ranges in sequences.items():
+        for start_frame, end_frame in ranges:
+            if start_frame < 0 or end_frame < 0:
+                raise ValueError(
+                    f"Video segment range for {label_name!r} must use non-negative "
+                    "frame coordinates."
+                )
+            if start_frame >= end_frame:
+                raise ValueError(
+                    f"Video segment range for {label_name!r} must have start_frame "
+                    "less than end_frame."
+                )
 
 
-def _merge_outside_frame_intervals(
-    video: "VideoFile",
-    *,
-    only_validated: bool = False,
-) -> list[tuple[int, int]]:
-    """Compatibility wrapper for the post-validation blackening service."""
-    from endoreg_db.services.video_post_validation_blackening import (
-        merge_outside_frame_intervals,
+def get_default_joined_dataset_id() -> int:
+    """Return the stable system dataset used when a video has no explicit dataset."""
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+
+    dataset, _ = AIDataSet.objects.get_or_create(
+        is_default_video_dataset=True,
+        defaults={
+            "name": "default-joined-video-dataset-v1",
+            "description": (
+                "System-managed dataset assigned to every video so dataset-scoped "
+                "training workflows always have a video dataset identifier."
+            ),
+            "dataset_type": AIDataSet.DATASET_TYPE_IMAGE,
+            "ai_model_type": AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        },
     )
+    if dataset.pk is None:
+        raise RuntimeError("Default joined video dataset was not persisted.")
+    return int(dataset.pk)
 
-    return merge_outside_frame_intervals(video, only_validated=only_validated)
+
+if TYPE_CHECKING:
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
+    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.metadata.video_meta import FFMpegMeta
+    from endoreg_db.models.metadata.model_meta import ModelMeta
+    from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+    from endoreg_db.models.state.video import VideoState
+
+
+class VideoFrameScoreResult(Protocol):
+    @property
+    def labels(self) -> list[str]: ...
+
+    @property
+    def frame_scores(self) -> NDArray[np.float64]: ...
+
+    @property
+    def device(self) -> str: ...
+
+    @property
+    def frame_count(self) -> int: ...
+
+    @property
+    def frame_numbers(self) -> list[int] | None: ...
+
+    @property
+    def timestamps(self) -> list[float] | None: ...
+
+
+class _VideoFileCreateKwargs(TypedDict, total=False):
+    pass
 
 
 class VideoFile(models.Model):
     StorageMode = VideoStorageMode
 
     objects = VideoQuerySet.as_manager()
-    default_fps = DEFAULT_VIDEO_FPS
+    default_fps: float = DEFAULT_VIDEO_FPS
     use_default_fps = True
 
-    raw_file = models.FileField(
-        upload_to=SENSITIVE_VIDEO_DIR.name,  # Use .name for relative path
-        storage=LazyEncryptedStorage(),
-        validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        null=True,
-        blank=True,
-    )
-    processed_file = models.FileField(
-        max_length=500,
-        upload_to=ANONYM_VIDEO_DIR.name,  # Use .name for relative path
-        storage=LazyEncryptedStorage(),
-        validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
-        null=True,
-        blank=True,
+    if TYPE_CHECKING:
+        raw_file: VideoArtifactFieldFile
+        processed_file: VideoArtifactFieldFile
+    else:
+        raw_file: models.FileField = models.FileField(
+            upload_to=get_runtime_paths().sensitive_video.name,  # Use .name for relative path
+            storage=LazyEncryptedStorage(),
+            validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
+            null=True,
+            blank=True,
+        )
+        processed_file: models.FileField = models.FileField(
+            max_length=500,
+            upload_to=get_runtime_paths().anonym_video.name,  # Use .name for relative path
+            storage=LazyEncryptedStorage(),
+            validators=[FileExtensionValidator(allowed_extensions=["mp4"])],
+            null=True,
+            blank=True,
+        )
+
+        raw_file.attr_class = VideoArtifactFieldFile
+        processed_file.attr_class = VideoArtifactFieldFile
+
+    uuid: models.UUIDField[uuid_lib.UUID, Any] = models.UUIDField(
+        default=uuid_lib.uuid4, unique=True, editable=False
     )
 
-    uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-
-    video_hash = models.CharField(
+    raw_video_hash: models.CharField[str, Any] = models.CharField(
         max_length=255, unique=True, help_text="Hash of the raw video file."
     )
-    processed_video_hash = models.CharField(
+    processed_video_hash: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         unique=True,
         null=True,
@@ -79,54 +167,68 @@ class VideoFile(models.Model):
         help_text="Hash of the processed video file, unique if not null.",
     )
 
-    sensitive_meta = models.OneToOneField(
+    sensitive_meta: models.OneToOneField[Any] = models.OneToOneField(
         "SensitiveMeta",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    center = models.ForeignKey("Center", on_delete=models.PROTECT)
-    processor = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
+        "Center", on_delete=models.PROTECT
+    )
+    processor: models.ForeignKey[Any] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.PROTECT, blank=True, null=True
     )
-    video_meta = models.OneToOneField(
+    video_meta: models.OneToOneField[Any] = models.OneToOneField(
         "VideoMeta",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    examination = models.ForeignKey(
+    examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
     )
-    patient = models.ForeignKey(
+    patient: models.ForeignKey[Any] = models.ForeignKey(
         "Patient",
         on_delete=models.SET_NULL,
         blank=True,
         null=True,
         related_name="video_files",
     )
-    ai_model_meta = models.ForeignKey(
+    ai_model_meta: models.ForeignKey[Any] = models.ForeignKey(
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
     )
-    state = models.OneToOneField(
+    state: models.OneToOneField[Any] = models.OneToOneField(
         "VideoState",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="video_file",
     )
-    import_meta = models.OneToOneField(
+    import_meta: models.OneToOneField[Any] = models.OneToOneField(
         "VideoImportMeta", on_delete=models.CASCADE, blank=True, null=True
     )
+    joined_dataset: models.ForeignKey[Any] = models.ForeignKey(
+        "AIDataSet",
+        on_delete=models.PROTECT,
+        related_name="joined_videos",
+        blank=True,
+        help_text=(
+            "Dataset identifier assigned to this video for dataset-scoped training. "
+            "Callers may explicitly assign a different dataset."
+        ),
+    )
 
-    original_file_name = models.CharField(max_length=255, blank=True, null=True)
-    storage_mode = models.CharField(
+    original_file_name: models.CharField[str | None, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    storage_mode: models.CharField[str, Any] = models.CharField(
         max_length=64,
         choices=VIDEO_STORAGE_MODE_CHOICES,
         default=get_default_video_storage_mode_value,
@@ -136,7 +238,7 @@ class VideoFile(models.Model):
             "filesystem-backed media root."
         ),
     )
-    raw_streamable_relative_path = models.CharField(
+    raw_streamable_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text=(
@@ -144,7 +246,7 @@ class VideoFile(models.Model):
             "storage_mode = fs_encrypted_streamable."
         ),
     )
-    processed_streamable_relative_path = models.CharField(
+    processed_streamable_relative_path: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text=(
@@ -152,33 +254,64 @@ class VideoFile(models.Model):
             "when storage_mode = fs_encrypted_streamable."
         ),
     )
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-    frame_dir = models.CharField(
+    uploaded_at: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    frame_dir: models.CharField[str, Any] = models.CharField(
         max_length=512,
         blank=True,
         help_text="Path to frames extracted from the raw video.",
     )
-    fps = models.FloatField(blank=True, null=True)
-    duration = models.FloatField(blank=True, null=True)
-    frame_count = models.IntegerField(blank=True, null=True)
-    width = models.IntegerField(blank=True, null=True)
-    height = models.IntegerField(blank=True, null=True)
-    suffix = models.CharField(max_length=10, blank=True, null=True)
-    sequences = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="AI prediction sequences based on raw frames.",
+    fps: models.FloatField[float | None, Any] = models.FloatField(blank=True, null=True)
+    duration: models.FloatField[float | None, Any] = models.FloatField(
+        blank=True, null=True
     )
-    export_segments_by_video = models.BooleanField(
+    frame_count: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    width: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    height: models.IntegerField[int | None, Any] = models.IntegerField(
+        blank=True, null=True
+    )
+    suffix: models.CharField[str | None, Any] = models.CharField(
+        max_length=10, blank=True, null=True
+    )
+    sequences: models.JSONField[VideoSegmentsPayloadDict, VideoSegmentsPayloadDict] = (
+        models.JSONField(
+            default=dict,
+            blank=True,
+            help_text="AI prediction sequences based on raw frames.",
+        )
+    )
+    export_segments_by_video: models.BooleanField[bool, Any] = models.BooleanField(
         default=False,
         help_text="If true, include all segments for this video in exports.",
     )
-    date = models.DateField(blank=True, null=True)
-    meta = models.JSONField(blank=True, null=True)
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
+    date: models.DateField[date | None, Any] = models.DateField(blank=True, null=True)
+    meta: models.JSONField[
+        VideoFileMetaJsonObject | None, VideoFileMetaJsonObject | None
+    ] = models.JSONField(blank=True, null=True)
+    date_created: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    date_modified: models.DateTimeField[datetime, Any] = models.DateTimeField(
+        auto_now=True
+    )
 
     if TYPE_CHECKING:
+        pk: int
+        sensitive_meta_id: int | None
+        center_id: int
+        processor_id: int | None
+        video_meta_id: int | None
+        examination_id: int | None
+        patient_id: int | None
+        ai_model_meta_id: int | None
+        state_id: int | None
+        import_meta_id: int | None
+        joined_dataset_id: int | None
 
         @property
         def label_video_segments(self) -> models.Manager[LabelVideoSegment]: ...
@@ -207,23 +340,23 @@ class VideoFile(models.Model):
     NO_ACTIVE_FILE = "Has no raw file"
     NO_FILE_ASSOCIATED = "Active file has no associated file."
 
-    def ensure_local_raw_file(self):
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]:
         from endoreg_db.services.video_files import ensure_local_raw_video_file
 
         return ensure_local_raw_video_file(self)
 
-    def ensure_local_processed_file(self):
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]:
         from endoreg_db.services.video_files import ensure_local_processed_video_file
 
         return ensure_local_processed_video_file(self)
 
     @property
-    def active_raw_file(self):
+    def active_raw_file(self) -> "VideoArtifactFieldFile":
         from endoreg_db.services.video_files import get_active_raw_video_file
 
         return get_active_raw_video_file(self)
 
-    def _protected_stream_url(self, *, file_type: str):
+    def _protected_stream_url(self, *, file_type: str) -> str | None:
         from endoreg_db.services.video_files import (
             get_protected_video_stream_url,
             parse_video_artifact_kind,
@@ -235,115 +368,151 @@ class VideoFile(models.Model):
         )
 
     @property
-    def active_raw_file_url(self):
+    def active_raw_file_url(self) -> str | None:
         from endoreg_db.services.video_files import get_active_raw_video_file_url
 
         return get_active_raw_video_file_url(self)
 
-    def pipe_1(self, *args, **kwargs):
-        from endoreg_db.services.video_files import run_video_pipe_1
-
-        return run_video_pipe_1(self, *args, **kwargs)
-
-    def test_after_pipe_1(self, *args, **kwargs):
-        from endoreg_db.services.video_files import test_after_video_pipe_1
-
-        return test_after_video_pipe_1(self, *args, **kwargs)
-
-    def pipe_2(self) -> bool:
-        from endoreg_db.services.video_files import run_video_pipe_2
-
-        return run_video_pipe_2(self)
-
-    def update_video_meta(self, save_instance: bool = True):
+    def update_video_meta(
+        self, save_instance: bool = True, raw_video_path: Path | None = None
+    ) -> "VideoFile | None":
         from endoreg_db.services.video_files import update_video_meta
 
-        return update_video_meta(self, save_instance=save_instance)
+        return update_video_meta(
+            self, save_instance=save_instance, raw_video_path=raw_video_path
+        )
 
-    def initialize_video_specs(self, use_raw: bool = True) -> bool:
+    def initialize_video_specs(
+        self, use_raw: bool = True, local_video_path: Path | None = None
+    ) -> bool:
         from endoreg_db.services.video_files import initialize_video_specs
 
-        return initialize_video_specs(self, use_raw=use_raw)
+        return initialize_video_specs(
+            self, use_raw=use_raw, local_video_path=local_video_path
+        )
 
     def get_fps(self) -> float:
         from endoreg_db.services.video_files import get_video_fps
 
         return get_video_fps(self)
 
-    def get_endo_roi(self, *args, **kwargs):
+    def get_endo_roi(self) -> RoiBoxCore | None:
         from endoreg_db.services.video_files import get_video_endo_roi
 
-        return get_video_endo_roi(self, *args, **kwargs)
+        return get_video_endo_roi(self)
 
-    def get_crop_template(self, *args, **kwargs):
+    def get_crop_template(self) -> list[int] | None:
         from endoreg_db.services.video_files import get_video_crop_template
 
-        return get_video_crop_template(self, *args, **kwargs)
+        return get_video_crop_template(self)
 
-    def update_text_metadata(self, *args, **kwargs):
+    def update_text_metadata(
+        self,
+        extracted_data_dict: VideoFileMetaJsonObject | None = None,
+        ocr_frame_fraction: float = 0.1,
+        cap: int = 50,
+        overwrite: bool = False,
+    ) -> "SensitiveMeta | None":
         from endoreg_db.services.video_files import update_video_text_metadata
+        from lx_dtypes.models.contracts.video_text_metadata import (
+            VideoTextMetaPayload as LxVideoTextMetaPayload,
+        )
 
-        return update_video_text_metadata(self, *args, **kwargs)
+        contract_payload = (
+            LxVideoTextMetaPayload.model_validate(extracted_data_dict)
+            if extracted_data_dict is not None
+            else None
+        )
+        return update_video_text_metadata(
+            self,
+            extracted_data_dict=contract_payload,
+            ocr_frame_fraction=ocr_frame_fraction,
+            cap=cap,
+            overwrite=overwrite,
+        )
 
-    def extract_frames(self, *args, **kwargs):
+    def extract_frames(
+        self,
+        quality: int = 2,
+        overwrite: bool = False,
+        ext: str = "jpg",
+        verbose: bool = False,
+        from_processed: bool = False,
+    ) -> bool:
         from endoreg_db.services.video_files import extract_video_frames
 
-        return extract_video_frames(self, *args, **kwargs)
+        return extract_video_frames(
+            self,
+            quality=quality,
+            overwrite=overwrite,
+            ext=ext,
+            verbose=verbose,
+            from_processed=from_processed,
+        )
 
-    def initialize_frames(self, *args, **kwargs):
+    def initialize_frames(self, frame_paths: list[Path] | None = None) -> None:
         from endoreg_db.services.video_files import initialize_video_frames
 
-        return initialize_video_frames(self, *args, **kwargs)
+        return initialize_video_frames(self, frame_paths=frame_paths)
 
-    def delete_frames(self, *args, **kwargs):
+    def delete_frames(self) -> str:
         from endoreg_db.services.video_files import delete_video_frames
 
-        return delete_video_frames(self, *args, **kwargs)
+        return delete_video_frames(self)
 
-    def get_frame_path(self, *args, **kwargs):
+    def get_frame_path(self, frame_number: int) -> Path | None:
         from endoreg_db.services.video_files import get_video_frame_path
 
-        return get_video_frame_path(self, *args, **kwargs)
+        return get_video_frame_path(self, frame_number)
 
-    def get_frame_paths(self, *args, **kwargs):
+    def get_frame_paths(self) -> list[Path]:
         from endoreg_db.services.video_files import get_video_frame_paths
 
-        return get_video_frame_paths(self, *args, **kwargs)
+        return get_video_frame_paths(self)
 
-    def get_frame_number(self, *args, **kwargs):
+    def get_frame_number(self) -> int:
         from endoreg_db.services.video_files import get_video_frame_number
 
-        return get_video_frame_number(self, *args, **kwargs)
+        return get_video_frame_number(self)
 
-    def get_frames(self, *args, **kwargs):
+    def get_frames(self) -> models.QuerySet["Frame"]:
         from endoreg_db.services.video_files import get_video_frames
 
-        return get_video_frames(self, *args, **kwargs)
+        return get_video_frames(self)
 
-    def get_frame(self, *args, **kwargs):
+    def get_frame(self, frame_number: int) -> "Frame":
         from endoreg_db.services.video_files import get_video_frame
 
-        return get_video_frame(self, *args, **kwargs)
+        return get_video_frame(self, frame_number)
 
-    def get_frame_range(self, *args, **kwargs):
+    def get_frame_range(
+        self, start_frame_number: int, end_frame_number: int
+    ) -> models.QuerySet["Frame"]:
         from endoreg_db.services.video_files import get_video_frame_range
 
-        return get_video_frame_range(self, *args, **kwargs)
+        return get_video_frame_range(self, start_frame_number, end_frame_number)
 
-    def get_duration(self):
+    def get_duration(self) -> float:
         from endoreg_db.services.video_files import get_video_duration
 
         return get_video_duration(self)
 
-    def create_frame_object(self, *args, **kwargs):
+    def create_frame_object(
+        self, frame_number: int, relative_path: str, extracted: bool = False
+    ) -> "Frame":
         from endoreg_db.services.video_files import create_video_frame_object
 
-        return create_video_frame_object(self, *args, **kwargs)
+        return create_video_frame_object(
+            self,
+            frame_number=frame_number,
+            relative_path=relative_path,
+            extracted=extracted,
+        )
 
-    def bulk_create_frames(self, *args, **kwargs):
+    def bulk_create_frames(self, frames_to_create: list["Frame"]) -> None:
         from endoreg_db.services.video_files import bulk_create_video_frames
 
-        return bulk_create_video_frames(self, *args, **kwargs)
+        return bulk_create_video_frames(self, frames_to_create)
 
     def ensure_default_fps(self) -> float:
         from endoreg_db.services.video_files import ensure_default_video_fps
@@ -351,7 +520,13 @@ class VideoFile(models.Model):
         return ensure_default_video_fps(self)
 
     def extract_specific_frame_range(
-        self, start_frame: int, end_frame: int, overwrite: bool = False, **kwargs
+        self,
+        start_frame: int,
+        end_frame: int,
+        overwrite: bool = False,
+        quality: int = 2,
+        ext: str = "jpg",
+        verbose: bool = False,
     ) -> bool:
         from endoreg_db.services.video_files import extract_video_frame_range
 
@@ -360,7 +535,9 @@ class VideoFile(models.Model):
             start_frame=start_frame,
             end_frame=end_frame,
             overwrite=overwrite,
-            **kwargs,
+            quality=quality,
+            ext=ext,
+            verbose=verbose,
         )
 
     def delete_specific_frame_range(self, start_frame: int, end_frame: int) -> None:
@@ -372,47 +549,57 @@ class VideoFile(models.Model):
             end_frame=end_frame,
         )
 
-    def delete_with_file(self, *args, **kwargs):
+    def delete_with_file(
+        self,
+        using: str | None = None,
+        keep_parents: bool = False,
+    ) -> tuple[int, dict[str, int]]:
         from endoreg_db.services.video_files import delete_video_with_owned_files
 
-        return delete_video_with_owned_files(self, *args, **kwargs)
+        return delete_video_with_owned_files(
+            self,
+            using=using,
+            keep_parents=keep_parents,
+        )
 
-    def get_base_frame_dir(self):
+    def get_base_frame_dir(self) -> Path:
         from endoreg_db.services.video_files import get_video_base_frame_dir
 
         return get_video_base_frame_dir(self)
 
-    def set_frame_dir(self, force_update: bool = False):
+    def set_frame_dir(self) -> Path:
         from endoreg_db.services.video_files import set_video_frame_dir
 
-        return set_video_frame_dir(self, force_update=force_update)
+        return set_video_frame_dir(self)
 
-    def get_frame_dir_path(self):
+    def get_frame_dir_path(self) -> Path | None:
         from endoreg_db.services.video_files import get_video_frame_dir_path
 
         return get_video_frame_dir_path(self)
 
-    def get_temp_anonymized_frame_dir(self):
+    def get_temp_anonymized_frame_dir(self) -> Path:
         from endoreg_db.services.video_files import get_temp_anonymized_video_frame_dir
 
         return get_temp_anonymized_video_frame_dir(self)
 
-    def get_target_anonymized_video_path(self):
+    def get_target_anonymized_video_path(self) -> Path:
         from endoreg_db.services.video_files import get_target_anonymized_video_path
 
         return get_target_anonymized_video_path(self)
 
-    def get_raw_file_path(self):
+    def get_raw_file_path(self) -> Path | None:
         from endoreg_db.services.video_files import get_raw_video_file_path
 
         return get_raw_video_file_path(self)
 
-    def get_raw_stream_path(self):
+    def get_raw_stream_path(self) -> Path | None:
         from endoreg_db.services.video_files import get_raw_video_stream_path
 
         return get_raw_video_stream_path(self)
 
-    def get_processed_stream_path(self, *, materialize_if_missing: bool = False):
+    def get_processed_stream_path(
+        self, *, materialize_if_missing: bool = False
+    ) -> Path | None:
         from endoreg_db.services.video_files import get_processed_video_stream_path
 
         return get_processed_video_stream_path(
@@ -420,7 +607,7 @@ class VideoFile(models.Model):
             materialize_if_missing=materialize_if_missing,
         )
 
-    def get_processed_file_path(self):
+    def get_processed_file_path(self) -> Path | None:
         from endoreg_db.services.video_files import get_processed_video_file_path
 
         return get_processed_video_file_path(self)
@@ -430,31 +617,50 @@ class VideoFile(models.Model):
 
         return anonymize_video_file(self, delete_original_raw=delete_original_raw)
 
-    def _create_anonymized_frame_files(self, *args, **kwargs):
-        from endoreg_db.services.video_files import create_anonymized_video_frame_files
-
-        return create_anonymized_video_frame_files(self, *args, **kwargs)
-
-    def _cleanup_raw_assets(self, *args, **kwargs):
+    def _cleanup_raw_assets(self, raw_video_hash: str) -> None:
         from endoreg_db.services.video_files import cleanup_video_raw_assets
 
-        return cleanup_video_raw_assets(*args, **kwargs)
+        return cleanup_video_raw_assets(raw_video_hash)
 
-    def predict_video(self, *args, **kwargs):
+    def predict_video(
+        self,
+        model_meta: "ModelMeta",
+        dataset_name: str = "inference_dataset",
+        smooth_window_size_s: int = 1,
+        binarize_threshold: float = 0.5,
+        test_run: bool = False,
+        n_test_frames: int = 10,
+        return_frame_scores: bool = False,
+        frame_source_mode: "FrameSourceMode" = "stream",
+        frame_source_file_type: str = "raw",
+    ) -> "dict[str, list[tuple[int, int]]] | VideoFrameScoreResult":
         from endoreg_db.services.video_files import predict_video
 
-        return predict_video(self, *args, **kwargs)
+        return predict_video(
+            self,
+            model_meta=model_meta,
+            dataset_name=dataset_name,
+            smooth_window_size_s=smooth_window_size_s,
+            binarize_threshold=binarize_threshold,
+            test_run=test_run,
+            n_test_frames=n_test_frames,
+            return_frame_scores=return_frame_scores,
+            frame_source_mode=frame_source_mode,
+            frame_source_file_type=frame_source_file_type,
+        )
 
-    def extract_text_from_frames(self, *args, **kwargs):
+    def extract_text_from_frames(
+        self,
+        frame_fraction: float = 0.001,
+        cap: int = 15,
+    ) -> dict[str, str | None] | None:
         from endoreg_db.services.video_files import extract_text_from_video_frames
 
-        return extract_text_from_video_frames(self, *args, **kwargs)
-
-    @classmethod
-    def check_hash_exists(cls, video_hash: str) -> bool:
-        from endoreg_db.services.video_files import video_hash_exists
-
-        return video_hash_exists(video_hash, model_cls=cls)
+        return extract_text_from_video_frames(
+            self,
+            frame_fraction=frame_fraction,
+            cap=cap,
+        )
 
     @property
     def is_processed(self) -> bool:
@@ -468,27 +674,30 @@ class VideoFile(models.Model):
         return bool(self.raw_file and self.raw_file.name)
 
     @property
-    def active_file(self):
+    def active_file(self) -> "VideoArtifactFieldFile":
         from endoreg_db.services.video_files import get_active_video_file
 
         return get_active_video_file(self)
 
     @property
-    def active_file_path(self):
+    def active_file_path(self) -> Path:
         from endoreg_db.services.video_files import get_active_video_file_path
 
         return get_active_video_file_path(self)
 
     @property
-    def active_file_url(self):
+    def active_file_url(self) -> str | None:
         from endoreg_db.services.video_files import get_active_video_file_url
 
         return get_active_video_file_url(self)
 
     @classmethod
     def create_from_file(
-        cls, file_path: Union[str, Path], center_name: str, **kwargs
-    ) -> Optional["VideoFile"]:
+        cls,
+        file_path: str | Path,
+        center_name: str,
+        **kwargs: Unpack[_VideoFileCreateKwargs],
+    ) -> "VideoFile | None":
         from endoreg_db.services.video_files import create_video_file_from_path
 
         return create_video_file_from_path(
@@ -501,12 +710,13 @@ class VideoFile(models.Model):
     @classmethod
     def create_from_file_initialized(
         cls,
-        file_path: Union[str, Path],
+        file_path: str | Path,
         center_name: str,
-        processor_name: Optional[str],
-        video_hash: str,
+        processor_name: str | None,
+        raw_video_hash: str,
         save_video_file: bool = True,
-    ):
+        initialize: bool = True,
+    ) -> "VideoFile":
         """
         Creates a VideoFile instance from a given video file path.
         Handles transcoding (if necessary), hashing, file storage, and database record creation.
@@ -520,27 +730,37 @@ class VideoFile(models.Model):
             file_path=file_path,
             center_name=center_name,
             processor_name=processor_name,
-            video_hash=video_hash,
+            raw_video_hash=raw_video_hash,
             save_video_file=save_video_file,
+            initialize=initialize,
             model_cls=cls,
         )
 
-    def delete(self, using=None, keep_parents=False):
+    def delete(
+        self,
+        using: str | None = None,
+        keep_parents: bool = False,
+    ) -> tuple[int, dict[str, int]]:
         return self.delete_with_file(using=using, keep_parents=keep_parents)
 
     def validate_metadata_annotation(
-        self, extracted_data_dict: Optional[dict] = None
+        self, extracted_data_dict: VideoTextMetaPayload | None = None
     ) -> bool:
         from endoreg_db.services.video_files import validate_video_metadata_annotation
 
-        return validate_video_metadata_annotation(self, extracted_data_dict)
+        payload: VideoTextMetaPayload | None = (
+            extracted_data_dict.model_dump()
+            if extracted_data_dict is not None
+            else None
+        )
+        return validate_video_metadata_annotation(self, payload)
 
-    def initialize(self):
+    def initialize(self) -> "VideoFile":
         from endoreg_db.services.video_files import initialize_video_file
 
         return initialize_video_file(self)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return a human-readable string summarizing the video's state, active file name, and UUID.
         """
@@ -553,7 +773,7 @@ class VideoFile(models.Model):
         state = (
             "Processed" if self.is_processed else ("Raw" if self.has_raw else "No File")
         )
-        return f"VideoFile ({state}): {file_name} (UUID: {self.video_hash})"
+        return f"VideoFile ({state}): {file_name} (UUID: {self.raw_video_hash})"
 
     # --- Convenience state/meta helpers used in tests and admin workflows ---
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> "VideoFile":
@@ -589,11 +809,22 @@ class VideoFile(models.Model):
     def clean(self) -> None:
         super().clean()
         try:
-            self.meta = validate_video_file_meta_payload(self.meta)
+            validated_sequences = validate_video_segments_payload(self.sequences or {})
+        except ValueError as exc:
+            raise ValidationError({"sequences": str(exc)}) from exc
+        canonical_sequences = validated_sequences.model_dump(mode="json")
+        try:
+            _validate_video_sequence_ranges(canonical_sequences)
+        except ValueError as exc:
+            raise ValidationError({"sequences": str(exc)}) from exc
+        self.sequences = canonical_sequences
+        try:
+            validated_meta = validate_video_file_meta_payload(self.meta)
         except ValueError as exc:
             raise ValidationError({"meta": str(exc)}) from exc
+        self.meta = cast(VideoFileMetaJsonObject | None, validated_meta)
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         # Ensure state exists or is created before the main save operation
         # Now call the original save method
         """
@@ -601,22 +832,28 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
-        previous_processed_name = None
-        if self.pk:
-            previous_processed_name = (
-                type(self)
-                .objects.filter(pk=self.pk)
-                .values_list("processed_file", flat=True)
-                .first()
-            )
-        current_processed_name = getattr(self.processed_file, "name", None) or ""
-        self.clean()
-        super().save(*args, **kwargs)
-        if self.pk and previous_processed_name is not None:
-            if str(previous_processed_name or "") != str(current_processed_name):
-                self.get_or_create_state().clear_export_readiness(
-                    clear_outside_segments_removed=True
+        from endoreg_db.services.media_operation_gate import video_file_save_guard
+
+        with video_file_save_guard(self, update_fields=kwargs.get("update_fields")):
+            if self.joined_dataset_id is None:
+                self.joined_dataset_id = get_default_joined_dataset_id()
+
+            previous_processed_name = None
+            if self.pk:
+                previous_processed_name = (
+                    type(self)
+                    .objects.filter(pk=self.pk)
+                    .values_list("processed_file", flat=True)
+                    .first()
                 )
+            current_processed_name = getattr(self.processed_file, "name", None) or ""
+            self.clean()
+            super().save(*args, **kwargs)
+            if self.pk and previous_processed_name is not None:
+                if str(previous_processed_name or "") != str(current_processed_name):
+                    self.get_or_create_state().clear_export_readiness(
+                        clear_outside_segments_removed=True
+                    )
 
     def get_or_create_state(self) -> "VideoState":
         from endoreg_db.services.video_files import get_or_create_video_state
@@ -666,53 +903,24 @@ class VideoFile(models.Model):
             outside_intervals=outside_intervals,
         )
 
-    @classmethod
-    def get_all_videos(cls):
-        from endoreg_db.services.video_files import get_all_videos
-
-        return get_all_videos(model_cls=cls)
-
-    def count_unmodified_others(self) -> int:
-        """
-        Count the number of other VideoFile instances that have not been modified since creation.
-
-        Returns:
-            int: The count of VideoFile records, excluding this instance, where the modification timestamp matches the creation timestamp.
-        """
-        from endoreg_db.services.video_files import count_unmodified_other_videos
-
-        return count_unmodified_other_videos(self)
-
     def frame_number_to_s(self, frame_number: int) -> float:
         from endoreg_db.services.video_files import video_frame_number_to_seconds
 
         return video_frame_number_to_seconds(self, frame_number)
 
-    @staticmethod
-    def get_video_by_pk(pk: int):
-        from endoreg_db.services.video_files import get_video_by_pk
-
-        return get_video_by_pk(pk)
-
-    @staticmethod
-    def get_video_by_content_hash(hash: str):
-        from endoreg_db.services.video_files import get_video_by_content_hash
-
-        return get_video_by_content_hash(hash)
-
-    def get_raw_stream_relative_path(self):
+    def get_raw_stream_relative_path(self) -> str | None:
         from endoreg_db.services.video_files import get_raw_video_stream_relative_path
 
         return get_raw_video_stream_relative_path(self)
 
-    def get_processed_stream_relative_path(self):
+    def get_processed_stream_relative_path(self) -> str | None:
         from endoreg_db.services.video_files import (
             get_processed_video_stream_relative_path,
         )
 
         return get_processed_video_stream_relative_path(self)
 
-    def get_stream_relative_path(self, file_type: str):
+    def get_stream_relative_path(self, file_type: str) -> str | None:
         from endoreg_db.services.video_files import (
             get_video_stream_relative_path,
             parse_video_artifact_kind,
@@ -728,7 +936,7 @@ class VideoFile(models.Model):
         file_type: str,
         *,
         materialize_if_missing: bool = False,
-    ):
+    ) -> tuple["VideoArtifactFieldFile", Path | None]:
         from endoreg_db.services.video_files import (
             parse_video_artifact_kind,
             resolve_video_stream_source,
@@ -749,7 +957,7 @@ class VideoFile(models.Model):
         return can_offload_video_stream(self, parse_video_artifact_kind(file_type))
 
     @staticmethod
-    def _is_encrypted_streamable_path(path):
+    def _is_encrypted_streamable_path(path: Path | None) -> bool:
         from endoreg_db.services.video_files import is_encrypted_streamable_video_path
 
         return is_encrypted_streamable_video_path(path)

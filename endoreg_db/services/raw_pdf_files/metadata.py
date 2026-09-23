@@ -3,16 +3,52 @@ from __future__ import annotations
 import copy
 import logging
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol, cast
 
 from django.core.exceptions import ValidationError
+from lx_dtypes.models.contracts.pdf_file import (
+    PdfFileMetaJsonObject,
+    PdfFileMetaJsonValue,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from endoreg_db.utils.security.hashs import get_pdf_hash
-from endoreg_db.utils.storage import ensure_local_file, file_exists
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from endoreg_db.models.administration.center.center import Center as CenterModel
+    from endoreg_db.models.administration.person.patient.patient import Patient
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    from endoreg_db.models.medical.patient.patient_examination import (
+        PatientExamination,
+    )
+
+
+class _ReportSensitiveMeta(Protocol):
+    pseudo_patient: "Patient | None"
+    pseudo_examination: "PatientExamination | None"
+    center: "CenterModel | None"
+
+    def update_from_dict(self, data: PdfFileMetaJsonObject) -> None: ...
+
+    def save(self) -> None: ...
+
+
+class _ReportReaderFlag(Protocol):
+    value: str
+
+
+class _ReportReaderFlagRows(Protocol):
+    def all(self) -> "Iterable[_ReportReaderFlag]": ...
+
+
+class _ReportReaderPdfType(Protocol):
+    patient_info_line: _ReportReaderFlag
+    endoscope_info_line: _ReportReaderFlag | None
+    examiner_info_line: _ReportReaderFlag
+    cut_off_below_lines: _ReportReaderFlagRows
+    cut_off_above_lines: _ReportReaderFlagRows
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,34 +58,36 @@ class ReportProcessingPayload(BaseModel):
 
     text: str | None = None
     anonymized_text: str | None = None
-    raw_meta: dict[str, Any] = Field(default_factory=dict)
+    raw_meta: PdfFileMetaJsonObject = Field(default_factory=dict)
 
     @field_validator("raw_meta", mode="before")
     @classmethod
-    def _validate_raw_meta(cls, value: Any) -> dict[str, Any]:
+    def _validate_raw_meta(cls, value: object) -> PdfFileMetaJsonObject:
         if value is None:
             return {}
         if not isinstance(value, dict):
             raise TypeError("raw_meta must be a dictionary")
-        return _json_compatible_mapping(value)
+        return _json_compatible_mapping(cast(dict[object, object], value))
 
 
-def _json_compatible_value(value: Any) -> Any:
+def _json_compatible_value(value: object) -> PdfFileMetaJsonValue:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, list):
-        return [_json_compatible_value(item) for item in value]
+        return [_json_compatible_value(item) for item in cast(list[object], value)]
     if isinstance(value, tuple):
-        return [_json_compatible_value(item) for item in value]
+        return [
+            _json_compatible_value(item) for item in cast(tuple[object, ...], value)
+        ]
     if isinstance(value, dict):
-        return _json_compatible_mapping(value)
+        return _json_compatible_mapping(cast(dict[object, object], value))
     raise TypeError(f"Unsupported raw_meta value type: {type(value).__name__}")
 
 
-def _json_compatible_mapping(value: dict[Any, Any]) -> dict[str, Any]:
-    payload: dict[str, Any] = {}
+def _json_compatible_mapping(value: dict[object, object]) -> PdfFileMetaJsonObject:
+    payload: PdfFileMetaJsonObject = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise TypeError("raw_meta keys must be strings")
@@ -58,52 +96,29 @@ def _json_compatible_mapping(value: dict[Any, Any]) -> dict[str, Any]:
 
 
 def prepare_raw_pdf_before_save(report: "RawPdfFile") -> None:
-    if not report.pk and not report.pdf_hash and report.file:
-        try:
-            with ensure_local_file(report.file) as local_path:
-                report.pdf_hash = get_pdf_hash(local_path)
-                logger.info("Calculated hash during pre-save for %s", report.file.name)
-        except Exception as exc:
-            logger.warning(
-                "Could not calculate hash before initial save for %s: %s",
-                report.file.name,
-                exc,
-            )
-
-    file_name = report.file.name if report.file else None
-    if file_name and not file_name.endswith(".pdf"):
+    if report.file and report.file.name and not report.file.name.endswith(".pdf"):
         raise ValidationError("Only report files are allowed")
-
-    if not report.pdf_hash and report.pk and report.file and file_exists(report.file):
-        try:
-            with ensure_local_file(report.file) as local_path:
-                logger.warning(
-                    "Hash missing for saved file %s. Recalculating.",
-                    report.file.name,
-                )
-                report.pdf_hash = get_pdf_hash(local_path)
-        except Exception as exc:
-            logger.error(
-                "Could not calculate hash during save for existing file %s: %s",
-                report.file.name,
-                exc,
-            )
+    if not report.pdf_hash and report.file:
+        report.pdf_hash = report.file.get_hash()
 
     if not report.patient and report.sensitive_meta:
-        report.patient = report.sensitive_meta.pseudo_patient
+        sensitive_meta = cast(_ReportSensitiveMeta, report.sensitive_meta)
+        report.patient = sensitive_meta.pseudo_patient
     if not report.examination and report.sensitive_meta:
-        report.examination = report.sensitive_meta.pseudo_examination
+        sensitive_meta = cast(_ReportSensitiveMeta, report.sensitive_meta)
+        report.examination = sensitive_meta.pseudo_examination
     if not report.center and report.sensitive_meta:
-        report.center = report.sensitive_meta.center
+        sensitive_meta = cast(_ReportSensitiveMeta, report.sensitive_meta)
+        report.center = sensitive_meta.center
 
 
 def process_raw_pdf_file(
     report: "RawPdfFile",
-    text,
-    anonymized_text,
-    report_meta,
-    verbose,
-):
+    text: str,
+    anonymized_text: str,
+    report_meta: PdfFileMetaJsonObject,
+    verbose: bool,
+) -> tuple[str, str, PdfFileMetaJsonObject]:
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
     report.text = text
@@ -117,7 +132,7 @@ def process_raw_pdf_file(
         report.sensitive_meta = sensitive_meta
     else:
         sensitive_meta = report.sensitive_meta
-        sensitive_meta.update_from_dict(report_meta)
+        cast(_ReportSensitiveMeta, sensitive_meta).update_from_dict(report_meta)
 
     serializable_report_meta = copy.deepcopy(report_meta)
     payload = ReportProcessingPayload(
@@ -127,13 +142,13 @@ def process_raw_pdf_file(
     )
     report.raw_meta = payload.raw_meta
 
-    sensitive_meta.save()
+    cast(_ReportSensitiveMeta, sensitive_meta).save()
     report.save()
 
     return text, anonymized_text, report_meta
 
 
-def build_report_reader_config(report: "RawPdfFile") -> dict[str, Any]:
+def build_report_reader_config(report: "RawPdfFile") -> PdfFileMetaJsonObject:
     from warnings import warn
 
     from endoreg_db.models.administration.center.center import Center
@@ -148,8 +163,9 @@ def build_report_reader_config(report: "RawPdfFile") -> dict[str, Any]:
     else:
         pdf_type = report.pdf_type
     center: Center = center_obj
-    if pdf_type.endoscope_info_line:
-        endoscope_info_line = pdf_type.endoscope_info_line.value
+    reader_pdf_type = cast(_ReportReaderPdfType, pdf_type)
+    if reader_pdf_type.endoscope_info_line:
+        endoscope_info_line = reader_pdf_type.endoscope_info_line.value
     else:
         endoscope_info_line = None
 
@@ -159,14 +175,14 @@ def build_report_reader_config(report: "RawPdfFile") -> dict[str, Any]:
         "employee_last_names": [item.name for item in center.last_names.all()],
         "text_date_format": "%d.%m.%Y",
         "flags": {
-            "patient_info_line": pdf_type.patient_info_line.value,
+            "patient_info_line": reader_pdf_type.patient_info_line.value,
             "endoscope_info_line": endoscope_info_line,
-            "examiner_info_line": pdf_type.examiner_info_line.value,
+            "examiner_info_line": reader_pdf_type.examiner_info_line.value,
             "cut_off_below": [
-                item.value for item in pdf_type.cut_off_below_lines.all()
+                item.value for item in reader_pdf_type.cut_off_below_lines.all()
             ],
             "cut_off_above": [
-                item.value for item in pdf_type.cut_off_above_lines.all()
+                item.value for item in reader_pdf_type.cut_off_above_lines.all()
             ],
         },
     }

@@ -1,9 +1,34 @@
 # endoreg_db/utils/ai/model_training/metrics.py
 from __future__ import annotations
+from typing import TypedDict
 import torch
 
 
-def compute_metrics(logits, targets, masks, threshold=0.5):
+class PerLabelStats(TypedDict):
+    precision: float | None
+    recall: float | None
+    f1: float | None
+    support: int
+
+
+class MetricsResult(TypedDict):
+    precision: float
+    recall: float
+    f1: float
+    accuracy: float
+    tp: float
+    fp: float
+    tn: float
+    fn: float
+    per_label: list[PerLabelStats]
+
+
+def compute_metrics(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    masks: torch.Tensor,
+    threshold: float = 0.5,
+) -> MetricsResult:
     """
     Computes multi-label metrics:
       - Global Precision/Recall/F1
@@ -29,7 +54,7 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
     accuracy = (tp + tn) / (tp + tn + fp + fn + 1e-6)
 
     # ------- PER-LABEL METRICS -------
-    per_label = []
+    per_label: list[PerLabelStats] = []
     num_labels = targets.shape[1]
 
     for j in range(num_labels):
@@ -61,7 +86,7 @@ def compute_metrics(logits, targets, masks, threshold=0.5):
                 "precision": precision_j,
                 "recall": recall_j,
                 "f1": f1_j,
-                "support": t.sum().item(),
+                "support": int(t.sum().item()),
             }
         )
 

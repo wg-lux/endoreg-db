@@ -1,4 +1,5 @@
 """Create pydantic classes for ntx data."""
+
 from pydantic import BaseModel
 from typing import List, Optional
 

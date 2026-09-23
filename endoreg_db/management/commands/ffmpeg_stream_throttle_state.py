@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import json
+from typing import TypedDict, Unpack
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from endoreg_db.services.media_operation_gate import (
     get_ffmpeg_stream_throttle_state,
 )
 
 
+class FfmpegStreamThrottleCommandOptions(TypedDict):
+    mode_only: bool
+    json: bool
+
+
 class Command(BaseCommand):
     help = "Report whether active user streams should throttle the FFmpeg worker."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--mode-only",
             action="store_true",
@@ -24,9 +30,13 @@ class Command(BaseCommand):
             help="Print the full throttle-state payload as JSON.",
         )
 
-    def handle(self, *args, **options) -> None:
-        mode_only = bool(options["mode_only"])
-        json_output = bool(options["json"])
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[FfmpegStreamThrottleCommandOptions],
+    ) -> None:
+        mode_only = options["mode_only"]
+        json_output = options["json"]
 
         if mode_only and json_output:
             raise CommandError("--mode-only and --json are mutually exclusive.")

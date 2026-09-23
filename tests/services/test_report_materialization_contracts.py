@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
+# pyright: reportUnknownMemberType=false
+
+from datetime import date, datetime
 
 import pytest
+from django.utils import timezone
 
 from endoreg_db.models import (
+    AnonymExaminationReport,
     Center,
     Patient,
     PatientExamination,
@@ -13,24 +17,21 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.report_materialization import (
     build_report_context_from_validation,
+    upsert_anonym_examination_report_from_pdf,
 )
 
 
 @pytest.mark.django_db
-def test_build_report_context_from_validation_uses_contract_fields() -> None:
+def test_build_report_context_from_validation_uses_contract_fields(
+    base_db_data: bool,
+) -> None:
     center = Center.objects.create(name="contract-center")
-    patient = Patient.objects.create(
-        patient_hash="contract-patient-hash",
-        center=center,
-    )
-    patient_examination = PatientExamination.objects.create(patient=patient)
     sensitive_meta = SensitiveMeta.objects.create(
         center=center,
+        patient_first_name="Ada",
+        patient_last_name="Lovelace",
+        patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
         examination_date=date(2024, 2, 15),
-        patient_hash="patient-hash",
-        examination_hash="exam-hash",
-        pseudo_patient=patient,
-        pseudo_examination=patient_examination,
     )
 
     pdf = RawPdfFile.objects.create(
@@ -53,3 +54,56 @@ def test_build_report_context_from_validation_uses_contract_fields() -> None:
     assert report_context.patient_hash == sensitive_meta.patient_hash
     assert report_context.examination_hash == sensitive_meta.examination_hash
     assert report_context.source_pdf_id == pdf.pk
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(None, id="no-payload"),
+        pytest.param({}, id="missing-anonymized-text"),
+        pytest.param(
+            {"anonymized_text": "   "},
+            id="blank-anonymized-text",
+        ),
+    ],
+)
+def test_materialization_never_falls_back_to_raw_report_text(
+    payload: dict[str, str] | None,
+) -> None:
+    raw_text_sentinel = "RAW-PHI-SENTINEL-MUST-NOT-BE-MATERIALIZED"
+    center = Center.objects.create(name="fail-closed-materialization-center")
+    patient = Patient.objects.create(
+        patient_hash="fail-closed-patient-hash",
+        center=center,
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    sensitive_meta = SensitiveMeta.objects.create(
+        center=center,
+        examination_date=date(2024, 2, 15),
+        patient_hash="fail-closed-patient-hash",
+        examination_hash="fail-closed-exam-hash",
+        pseudo_patient=patient,
+        pseudo_examination=patient_examination,
+        anonymized_text="",
+    )
+    pdf = RawPdfFile.objects.create(
+        center=center,
+        examination=patient_examination,
+        sensitive_meta=sensitive_meta,
+        text=raw_text_sentinel,
+        anonymized_text="",
+    )
+
+    with pytest.raises(ValueError, match="without non-empty anonymized text"):
+        upsert_anonym_examination_report_from_pdf(
+            pdf=pdf,
+            payload=payload,
+            document_type_name="report_final",
+        )
+
+    pdf.refresh_from_db()
+    assert pdf.anonym_examination_report_id is None
+    assert not AnonymExaminationReport.objects.filter(
+        text__contains=raw_text_sentinel
+    ).exists()

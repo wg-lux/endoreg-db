@@ -10,22 +10,67 @@ Boundary terminology used throughout the media pipeline:
 from __future__ import annotations
 
 import contextlib
-import io
 import logging
-import os
-import shutil
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Any, ContextManager, Iterator, Optional, cast
+from uuid import uuid4
+from typing import (
+    Any,
+    BinaryIO,
+    ContextManager,
+    Generator,
+    Optional,
+    Protocol,
+    cast,
+)
 
 from django.core.files import File
-from django.conf import settings
+from endoreg_db.helpers.typing import DjangoFile
+from endoreg_db.utils.paths import (
+    get_runtime_paths,
+    resolve_existing_protected_media_path,
+)
 from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.rust_backend import (
+    is_lx_encrypted_file,
+)
+from endoreg_db.utils.file_operations import atomic_create_file, secure_unlink_file
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
+
+class _VideoMaterializable(Protocol):
+    raw_video_hash: str
+
+    def ensure_local_raw_file(self) -> ContextManager[Path]: ...
+
+    def ensure_local_processed_file(self) -> ContextManager[Path]: ...
+
+    raw_file: FieldFile | None
+    processed_file: FieldFile | None
+
+
+class _StoredFieldFile(Protocol):
+    name: str
+    storage: "_BinaryFileStorage"
+    field: Any
+    instance: Any
+
+    def delete(self, *, save: bool = False) -> None: ...
+
+    def save(self, name: str, content: DjangoFile, save: bool = False) -> None: ...
+
+
+class _BinaryFileStorage(Protocol):
+    def open(self, name: str, mode: str = "rb") -> DjangoFile: ...
+
+    def save(self, name: str, content: DjangoFile) -> str: ...
+
+    def delete(self, name: str) -> None: ...
+
+    def exists(self, name: str) -> bool: ...
 
 
 def _has_field_file(field_file: object | None) -> bool:
@@ -40,55 +85,21 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
     ):
         return None
 
-    try:
-        path = Path(field_file.path)
-    except (NotImplementedError, AttributeError, ValueError):
-        return _resolve_media_root_fallback(field_file)
-    if path.exists():
-        try:
-            with path.open("rb") as handle:
-                if handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC:
-                    raise IOError(
-                        f"{field_file.name} is encrypted but storage has no decrypting reader"
-                    )
-        except OSError:
-            raise
-        return path
-
-    fallback_path = _resolve_media_root_fallback(field_file)
-    if fallback_path is not None:
-        return fallback_path
+    name = field_file.name
+    if not name:
+        return None
+    path = resolve_existing_protected_media_path(name)
+    if path is None:
+        return None
+    rust_result = is_lx_encrypted_file(path)
+    if rust_result is None:
+        with path.open("rb") as handle:
+            is_encrypted = handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+    else:
+        is_encrypted = rust_result
+    if is_encrypted:
+        raise IOError(f"{name} is encrypted but storage has no decrypting reader")
     return path
-
-
-def _resolve_media_root_fallback(field_file: FieldFile) -> Optional[Path]:
-    file_name = getattr(field_file, "name", None)
-    if not file_name:
-        return None
-    relative_name = Path(str(file_name))
-    if relative_name.is_absolute():
-        return None
-
-    media_root = Path(getattr(settings, "MEDIA_ROOT", "") or "")
-    if not media_root:
-        return None
-
-    try:
-        resolved_root = media_root.resolve()
-        candidate = (resolved_root / relative_name).resolve()
-        candidate.relative_to(resolved_root)
-    except ValueError:
-        return None
-
-    if not candidate.exists():
-        return None
-
-    with candidate.open("rb") as handle:
-        if handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC:
-            raise IOError(
-                f"{field_file.name} is encrypted but storage has no decrypting reader"
-            )
-    return candidate
 
 
 def file_exists(field_file: Optional[FieldFile]) -> bool:
@@ -97,7 +108,8 @@ def file_exists(field_file: Optional[FieldFile]) -> bool:
     assert field_file is not None
     assert isinstance(field_file.name, str)
     try:
-        return field_file.storage.exists(field_file.name)
+        stored_file = cast(_StoredFieldFile, field_file)
+        return bool(stored_file.storage.exists(stored_file.name))
     except Exception as exc:  # pragma: no cover - storage backend failure
         logger.warning("Failed to check file existence for %s: %s", field_file, exc)
         return False
@@ -115,7 +127,10 @@ def field_file_is_readable(field_file: Optional[FieldFile]) -> bool:
         return False
 
 
-def materialize_video_file(video, file_type: str) -> ContextManager[Path]:
+def materialize_video_file(
+    video: _VideoMaterializable,
+    file_type: str,
+) -> ContextManager[Path]:
     """
     Return a context manager yielding a local plaintext file for a VideoFile payload.
 
@@ -134,14 +149,14 @@ def materialize_video_file(video, file_type: str) -> ContextManager[Path]:
         field_file = getattr(video, "raw_file", None)
 
     if callable(ensure_method):
-        return ensure_method()
+        return cast(ContextManager[Path], ensure_method())
 
     if field_file and getattr(field_file, "name", None):
         return ensure_local_file(field_file)
 
-    video_hash = getattr(video, "video_hash", "<unknown>")
+    raw_video_hash = getattr(video, "raw_video_hash", "<unknown>")
     raise FileNotFoundError(
-        f"{normalized_type.title()} video file is not available for {video_hash}."
+        f"{normalized_type.title()} video file is not available for {raw_video_hash}."
     )
 
 
@@ -151,7 +166,7 @@ def ensure_local_file(
     *,
     suffix: str | None = None,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
-) -> Iterator[Path]:
+) -> Generator[Path, None, None]:
     if not _has_field_file(field_file):
         raise FileNotFoundError("FieldFile is empty or has no associated storage name.")
     assert isinstance(field_file.name, str)
@@ -161,41 +176,45 @@ def ensure_local_file(
         yield local_path
         return
 
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
     suffix = suffix or Path(field_file.name).suffix
-
-    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-        temp_path = Path(tmp_file.name)
-        try:
-            with field_file.storage.open(field_file.name, "rb") as source:
-                # Reset the cursor when the storage stream supports it.
-                if hasattr(source, "seek"):
-                    try:
-                        if not hasattr(source, "seekable") or source.seekable():
-                            source.seek(0)
-                    except (io.UnsupportedOperation, OSError):
-                        pass
-
-                shutil.copyfileobj(source, tmp_file, length=chunk_size)
-
-            # 2. Force the OS to write the buffers to the actual physical disk
-            tmp_file.flush()
-            os.fsync(tmp_file.fileno())
-
-        except Exception as exc:
-            temp_path.unlink(missing_ok=True)
-            raise IOError(
-                f"Could not download {field_file.name} from storage to a local file"
-            ) from exc
-
+    if Path(suffix).name != suffix:
+        raise ValueError("suffix must not contain path components")
+    temp_path = get_runtime_paths().transcoding / f"{uuid4().hex}{suffix}"
     try:
-        # 3. Widen permissions so external binaries like ffprobe can always read it
-        temp_path.chmod(0o644)
+        stored_file = cast(_StoredFieldFile, field_file)
+        with cast(BinaryIO, stored_file.storage.open(stored_file.name, "rb")) as source:
+            atomic_create_file(
+                destination=temp_path,
+                content=iter(lambda: source.read(chunk_size), b""),
+                file_mode=0o600,
+            )
         yield temp_path
     finally:
-        temp_path.unlink(missing_ok=True)
+        secure_unlink_file(temp_path, missing_ok=True)
 
 
 def delete_field_file(
+    target: Optional[FieldFile] | object,
+    field_name: str | None = None,
+    *,
+    missing_ok: bool = True,
+    save: bool = False,
+) -> bool:
+    """Keep video ownership across deletion, including direct storage adapters."""
+    from endoreg_db.utils.storage.video_fields import video_field_mutation
+
+    field_file = getattr(target, field_name, None) if field_name else target
+    if not _has_field_file(field_file):
+        return False
+    with video_field_mutation(cast(FieldFile, field_file)):
+        return _delete_field_file_contents(
+            target, field_name, missing_ok=missing_ok, save=save
+        )
+
+
+def _delete_field_file_contents(
     target: Optional[FieldFile] | object,
     field_name: str | None = None,
     *,
@@ -242,6 +261,31 @@ def save_local_file(
     overwrite: bool = False,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
 ) -> str:
+    """Hold durable writer ownership before an existing video artifact can change."""
+    from endoreg_db.utils.storage.video_fields import video_field_mutation
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source path does not exist: {source_path}")
+    with video_field_mutation(field_file):
+        return _save_local_file_contents(
+            field_file,
+            source_path,
+            name=name,
+            save=save,
+            overwrite=overwrite,
+            chunk_size=chunk_size,
+        )
+
+
+def _save_local_file_contents(
+    field_file: FieldFile,
+    source_path: Path,
+    *,
+    name: Optional[str] = None,
+    save: bool = False,
+    overwrite: bool = False,
+    chunk_size: int = _DEFAULT_CHUNK_SIZE,
+) -> str:
     if not source_path.exists():
         raise FileNotFoundError(f"Source path does not exist: {source_path}")
 
@@ -254,30 +298,56 @@ def save_local_file(
             filename,
         )
 
+    stored_file = cast(_StoredFieldFile, field_file)
+
     if overwrite:
         try:
-            if field_file.storage.exists(storage_name):
+            if stored_file.storage.exists(storage_name):
                 logger.info(
                     "Replacing existing stored file through storage API: %s",
                     storage_name,
                 )
-                field_file.storage.delete(storage_name)
+                stored_file.storage.delete(storage_name)
         except FileNotFoundError:
             pass
 
     with source_path.open("rb") as source:
-        django_file = File(source, name=filename)
+        django_file: DjangoFile = File(source, name=filename)
         if has_explicit_storage_path or overwrite:
-            saved_name = field_file.storage.save(storage_name, django_file)
-            field_file.name = saved_name
+            saved_name = stored_file.storage.save(storage_name, django_file)
+            stored_file.name = str(saved_name)
             if save:
-                field_file.instance.save(update_fields=[field_file.field.name])
-            return str(field_file.name)
-        field_file.save(filename, django_file, save=save)
-    return str(field_file.name)
+                stored_file.instance.save(update_fields=[stored_file.field.name])
+            return str(stored_file.name)
+        stored_file.save(filename, django_file, save=save)
+    return str(stored_file.name)
+
+
+def canonical_media_name(
+    media_hash: str, suffix: str, *, generation: str | None = None
+) -> str:
+    """Name video and PDF artifacts by stable identity and optional generation."""
+    for token in (media_hash,) if generation is None else (media_hash, generation):
+        if (
+            not token
+            or not token.isascii()
+            or not all(char.isalnum() or char in "-_" for char in token)
+        ):
+            raise ValueError(
+                "Media identity and generation must be safe filename tokens"
+            )
+    if (
+        not suffix.startswith(".")
+        or not suffix[1:].isascii()
+        or not suffix[1:].isalnum()
+    ):
+        raise ValueError("Media suffix must be a single file extension")
+    stem = media_hash if generation is None else f"{media_hash}.{generation}"
+    return f"{stem}{suffix.lower()}"
 
 
 __all__ = [
+    "canonical_media_name",
     "delete_field_file",
     "ensure_local_file",
     "field_file_is_readable",

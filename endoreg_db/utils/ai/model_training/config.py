@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from django.conf import settings
-from endoreg_db.config.env import get_data_dir
+from endoreg_db.config.env import get_runtime_root
 from endoreg_db.utils.ai.multilabel_dataset_builder import (
     ANNOTATION_SOURCE_SCOPE_ALL,
     AnnotationSourceScope,
 )
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
+from endoreg_db.utils.file_operations import ensure_directory
 
 
 # ---------------------------------------------------------------------
@@ -23,7 +24,7 @@ BASE_DIR = Path(getattr(settings, "BASE_DIR", Path(__file__).resolve().parents[4
 
 # All training artifacts go under the runtime DATA_DIR, not the installed
 # package/wheel location.
-TRAINING_ROOT = (get_data_dir() / "model_training").resolve()
+TRAINING_ROOT = (get_runtime_root() / "model_training").resolve()
 CHECKPOINTS_DIR = TRAINING_ROOT / "checkpoints"
 RUNS_DIR = TRAINING_ROOT / "runs"
 
@@ -40,6 +41,19 @@ DEFAULT_LABELSET_VERSION_TO_TRAIN: int = 2
 # ---------------------------------------------------------------------
 # TRAINING CONFIG
 # ---------------------------------------------------------------------
+
+
+def validate_training_split_ratios(val_split: float, test_split: float) -> None:
+    """Reject split fractions that cannot leave a training partition."""
+    for name, value in (("val_split", val_split), ("test_split", test_split)):
+        if (
+            isinstance(value, bool)
+            or not math.isfinite(value)
+            or not 0.0 <= value < 1.0
+        ):
+            raise ValueError(f"{name} must be finite and in [0, 1).")
+    if val_split + test_split >= 1.0:
+        raise ValueError("val_split and test_split must sum to less than 1.")
 
 
 @dataclass
@@ -124,3 +138,6 @@ class TrainingConfig:
     freeze_backbone: bool = True
 
     # backbone_name: str = "gastro_rn50"
+
+    def __post_init__(self) -> None:
+        validate_training_split_ratios(self.val_split, self.test_split)

@@ -151,6 +151,15 @@ Current behavior:
 
 - scans configured local drop folders for reports, videos, and preanonymized
   media
+- treats `.tmp`, `.part`, `.partial`, `.crdownload`, and `.download` names as
+  in-progress handoff files that must not be ingested
+- requires producers that bypass the lx-annotate watcher to write a temporary
+  handoff file, flush and fsync it, close it, and atomically rename to the final
+  watched name such as `.mp4`; Python producers can use
+  `atomic_handoff_file(...)` from `endoreg_db.utils.filesystem.file_operations`
+- performs a service-layer settle check before hashing and before persisting a
+  watcher `UploadJob`, so a changing file is retried/deferred instead of
+  captured mid-write
 - resolves the default center when no center is explicitly passed
 - creates or reuses an `UploadJob`
 - uses content hash plus file metadata for watcher idempotency
@@ -163,8 +172,9 @@ without re-running the full anonymization pipeline.
 
 Relevant files:
 
-- `endoreg_db/services/file_watcher.py`
+- `lx_annotate/file_watcher.py` in the lx-annotate repository
 - `endoreg_db/services/hub/ingest.py`
+- `endoreg_db/services/hub/watcher_handoff.py`
 
 ### 2. Upload API
 
@@ -216,11 +226,14 @@ Current validation and security behavior:
   `DJANGO_SECURE_PROXY_SSL_HEADER_NAME=HTTP_X_FORWARDED_PROTO` and
   `DJANGO_SECURE_PROXY_SSL_HEADER_VALUE=https` so `request.is_secure()` sees
   proxy-attested HTTPS
-- if the request is not already authenticated as a user, the caller must
-  present `X-Network-Node-Key` and `X-Network-Node-Secret`
+- every receiver request presents `X-Network-Node-Key` and
+  `X-Network-Node-Secret`; a Django user session is neither required nor used
+  as a substitute for node authentication
 - when `ENDOREG_HUB_TRANSFER_REQUIRE_MTLS=true`, the request must also carry
   the configured proxy-verified mTLS metadata
-- source-center access is still scoped for authenticated users
+- registration, status and processed-media upload derive source-center scope
+  exclusively from the authenticated `NetworkNode.owning_center`; an unrelated
+  or missing Django user session does not change that machine-to-machine scope
 
 Current transfer-mode rules:
 
@@ -228,6 +241,23 @@ Current transfer-mode rules:
 - `metadata_and_processed_media` is supported
 - raw-media transfer modes are rejected
 - the media upload endpoint accepts only anonymized `processed` media
+- processed-media ciphertext uses a fixed-length `application/octet-stream`
+  body; `X-Hub-Media-Role` and `X-Hub-Media-Envelope` carry size-bounded control
+  metadata
+- the endpoint has no Django REST framework body parsers, rejects multipart,
+  and passes the raw request stream to the atomic encrypted staging boundary
+
+Current replay and ownership rules:
+
+- reuse of a `transfer_key` requires equality of the complete canonical sender
+  payload; changing metadata, processing state, policy, schema version or
+  sender provenance returns a conflict instead of silently reusing stale state
+- a node with an `owning_center` may only declare that center as
+  `source_center_key`
+- an existing globally hashed media row is never reassigned to another center
+  or source node; an ownership collision is persisted as `INCONSISTENT`
+- media upload is rejected for ownership-conflicted or otherwise rejected
+  transfers
 
 Relevant files:
 
@@ -247,10 +277,18 @@ Current behavior:
   or inline execution
 - `process_upload_job(...)` dispatches to `ReportImportService` or
   `VideoImportService`
-- successful completion marks the job `anonymized`
+- video completion marks the job `anonymized` only after canonical master,
+  required raw and processed HTTP Live Streaming generations, state, and
+  successful processing history have committed under the current fencing token
+- report completion marks the job `anonymized` only after the processed PDF,
+  text, `SensitiveMeta`, state, and successful processing history have committed
+  under the current report fencing token
 - failed processing marks the job `error`
 - missing or inconsistent stored input fails loudly rather than silently
   recovering
+- source-path and content-hash file locks are local performance optimizations;
+  persisted database lease state and fencing tokens are authoritative across
+  processes and nodes
 
 ### Transfer jobs
 
@@ -340,6 +378,11 @@ Relevant files:
 - `endoreg_db/services/hub/cleanup.py`
 - `endoreg_db/models/hub/transfer_job.py`
 
+Upload source deletion runs through the typed Django-storage wrapper in
+`endoreg_db.utils.file_operations` and emits both structured file-operation and
+hub audit events. The lx-annotate administration view exposes recent outbound
+transfers with local/remote correlation and cleanup state.
+
 ## Operational Boundaries And Current Limits
 
 Implemented today:
@@ -352,13 +395,20 @@ Implemented today:
 - center-scoped status reads
 - structured provenance and audit output
 
+Implemented in the repository but not yet production-verified:
+
+- production verification of the implemented recipient-envelope media transfer;
+  the receiver contract and focused tests are implemented, but the feature
+  tracker still records the production rehearsal as in progress
+
 Not implemented yet:
 
-- envelope encryption for transferred blobs
 - KMS-backed key management
 - full peer discovery or topology negotiation
 - automatic transfer cleanup execution
-- cross-node conflict resolution between multiple authoritative peers
+- automatic reconciliation of cross-node conflicts between multiple
+  authoritative peers; ownership conflicts currently fail closed for operator
+  review
 - complete federation of the wider database graph beyond the currently applied
   media-related rows
 
@@ -389,6 +439,7 @@ Primary files for current hub functionality:
 
 ## Related Docs
 
+- `docs/hub_ingest_operations.md`
 - `docs/deployment_note_hub_contract.md`
 - `docs/wiki/hub_ingest_gap_closure.md`
 - `endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`

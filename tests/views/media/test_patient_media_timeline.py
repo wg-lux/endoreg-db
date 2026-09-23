@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
 from datetime import date
 from uuid import uuid4
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth.models import User
 from django.test import TestCase
 
 from endoreg_db.models import (
@@ -18,6 +21,7 @@ from endoreg_db.models import (
     PatientExamination,
     PatientFinding,
     PatientFindingIntervention,
+    PortalUserInfo,
     RawPdfFile,
     VideoFile,
 )
@@ -43,6 +47,10 @@ class PatientMediaTimelineViewTests(TestCase):
             examination=self.examination,
             hash=f"timeline-pe-{uuid4().hex}",
         )
+        user = User.objects.create_user(username=f"timeline-user-{uuid4().hex}")
+        portal_info = PortalUserInfo.objects.create(user=user)
+        portal_info.centers.add(self.center)
+        self.client.force_login(user)
 
     def _create_report(self, anonymized_text: str) -> RawPdfFile:
         return RawPdfFile.objects.create(
@@ -60,7 +68,7 @@ class PatientMediaTimelineViewTests(TestCase):
     def _create_video(self) -> VideoFile:
         return VideoFile.objects.create(
             center=self.center,
-            video_hash=f"timeline-video-{uuid4().hex}",
+            raw_video_hash=f"timeline-video-{uuid4().hex}",
             examination=self.patient_examination,
             patient=self.patient,
             fps=25.0,
@@ -134,18 +142,20 @@ class PatientMediaTimelineViewTests(TestCase):
         assert latest_report is not None
         assert latest_report["id"] == report.pk
         assert latest_report["anonymized_text"] == "ANONYMIZED REPORT TEXT"
-        assert {entry["type"] for entry in latest_report["stream_options"]} == {
-            "raw",
-            "processed",
-        }
+        assert [entry["type"] for entry in latest_report["stream_options"]] == ["raw"]
 
         latest_video = payload["latest_video"]
         assert latest_video is not None
         assert latest_video["id"] == video.pk
-        assert {entry["type"] for entry in latest_video["stream_options"]} == {
-            "raw",
-            "processed",
-        }
+        assert latest_video["stream_options"] == [
+            {
+                "type": "processed",
+                "url": (
+                    "http://testserver/endoreg-api/media/videos/"
+                    f"{video.pk}/hls/playlist.m3u8?type=processed"
+                ),
+            }
+        ]
 
         latest_frames = payload["latest_frames"]
         assert len(latest_frames) == 3
@@ -161,7 +171,10 @@ class PatientMediaTimelineViewTests(TestCase):
             segment_other.pk,
         ]
         for frame_item in latest_frames:
-            expected_path = f"/api/media/videos/{video.pk}/frames/{frame_item['frame_number']}/stream/"
+            expected_path = (
+                f"/endoreg-api/media/videos/{video.pk}/frames/"
+                f"{frame_item['frame_number']}/stream/"
+            )
             assert frame_item["stream_url"].endswith(expected_path)
             assert frame_item["selection_source"] == "segment_priority"
 
@@ -191,8 +204,9 @@ class PatientMediaTimelineViewTests(TestCase):
         assert latest_report["id"] == full_report.pk
         assert latest_report["raw_pdf_id"] == raw_pdf.pk
         assert latest_report["anonymized_text"] == "FULL REPORT TEXT"
+        assert [entry["type"] for entry in latest_report["stream_options"]] == ["raw"]
         assert all(
-            f"/api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
+            f"/endoreg-api/media/pdfs/{raw_pdf.pk}/stream/" in option["url"]
             for option in latest_report["stream_options"]
         )
 
@@ -234,5 +248,8 @@ class PatientMediaTimelineViewTests(TestCase):
         assert all(item["category"] == "fallback_latest" for item in latest_frames)
         assert all(item["selection_source"] == "latest_frame" for item in latest_frames)
         for frame_item in latest_frames:
-            expected_path = f"/api/media/videos/{video.pk}/frames/{frame_item['frame_number']}/stream/"
+            expected_path = (
+                f"/endoreg-api/media/videos/{video.pk}/frames/"
+                f"{frame_item['frame_number']}/stream/"
+            )
             assert frame_item["stream_url"].endswith(expected_path)

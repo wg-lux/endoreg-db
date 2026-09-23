@@ -4,8 +4,10 @@ from datetime import date, datetime, time
 from unittest.mock import patch
 from uuid import uuid4
 
+from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase
+from django.utils import timezone
 
 from endoreg_db.models import (
     Center,
@@ -46,7 +48,7 @@ class StatsEndpointTests(TestCase):
         self.sensitive_meta = SensitiveMeta.objects.create(
             patient_first_name="Stats",
             patient_last_name="Patient",
-            patient_dob=datetime(1990, 1, 1, 0, 0),
+            patient_dob=timezone.make_aware(datetime(1990, 1, 1, 0, 0)),
             examination_date=date(2026, 1, 1),
             examination_time=time(9, 0),
             center=self.center,
@@ -58,7 +60,7 @@ class StatsEndpointTests(TestCase):
             patient=self.patient,
             examination=self.patient_examination,
             sensitive_meta=self.sensitive_meta,
-            video_hash=f"stats-video-{uuid4().hex}",
+            raw_video_hash=f"stats-video-{uuid4().hex}",
             original_file_name="stats.mp4",
         )
         label = Label.objects.create(name=f"stats-label-{suffix}")
@@ -131,6 +133,30 @@ class StatsEndpointTests(TestCase):
         assert payload["status"] == "verified"
         assert payload["verified"] is True
         assert payload["source"] == "cache"
+
+    def test_audit_ledger_integrity_endpoint_is_read_only_and_requires_auth_in_production(
+        self,
+    ):
+        with patch("endoreg_db.utils.permissions.is_debug_mode", return_value=False):
+            get_response = self.client.get("/api/audit-ledger/integrity/")
+            post_response = self.client.post(
+                "/api/audit-ledger/integrity/",
+                data={},
+                content_type="application/json",
+            )
+
+            assert get_response.status_code == 403
+            assert post_response.status_code == 403
+
+            user = User.objects.create_user(username="audit-status-reader")
+            self.client.force_login(user)
+            authenticated_post = self.client.post(
+                "/api/audit-ledger/integrity/",
+                data={},
+                content_type="application/json",
+            )
+
+        assert authenticated_post.status_code == 405
 
     def test_audit_ledger_integrity_refresh_detects_tampering(self):
         first = AuditLedger.append_identity_commit(

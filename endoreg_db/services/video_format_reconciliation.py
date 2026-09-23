@@ -2,27 +2,28 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 from uuid import uuid4
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_disk_capacity,
     safe_unlink_file,
 )
-from endoreg_db.utils.filesystem.paths import (
+from endoreg_db.utils.paths import (
+    get_runtime_paths,
     ANONYM_VIDEO_DIR_NAME,
-    EndoregPathsModel,
     SENSITIVE_VIDEO_DIR_NAME,
-    ensure_within_data_root,
-    ensure_within_protected_root,
+    ensure_within_runtime_root,
 )
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,10 @@ VIDEO_EXTENSIONS = frozenset(
         ".webm",
     }
 )
-REQUIRED_CODEC = "h264"
-REQUIRED_PIXEL_FORMAT = "yuv420p"
-REQUIRED_COLOR_RANGE = "pc"
+REQUIRED_CODEC = STANDARD_VIDEO_ENCODING.codec_name
+REQUIRED_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
+REQUIRED_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
+REQUIRED_MAX_FPS = STANDARD_VIDEO_ENCODING.max_fps
 FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({REQUIRED_PIXEL_FORMAT, "yuvj420p"})
 DEFAULT_MIN_FREE_BYTES = 20 * 1024 * 1024 * 1024
 LEGACY_ROOT_READ_ONLY = "legacy_root_read_only"
@@ -62,6 +64,18 @@ class VideoFormatAction(StrEnum):
     SKIP_REPAIR = "skip_repair"
 
 
+def _new_str_list() -> list[str]:
+    return []
+
+
+def _new_root_report_list() -> list["VideoFormatRootReport"]:
+    return []
+
+
+def _new_file_report_list() -> list["VideoFormatFileReport"]:
+    return []
+
+
 @dataclass(slots=True)
 class VideoFormatFileReport:
     path: str
@@ -70,7 +84,8 @@ class VideoFormatFileReport:
     codec_name: str | None = None
     pixel_format: str | None = None
     color_range: str | None = None
-    reasons: list[str] = field(default_factory=list)
+    fps: float | None = None
+    reasons: list[str] = field(default_factory=_new_str_list)
     action: VideoFormatAction = VideoFormatAction.NONE
     bytes_before: int | None = None
     bytes_after: int | None = None
@@ -84,6 +99,7 @@ class VideoFormatFileReport:
             "codec_name": self.codec_name,
             "pixel_format": self.pixel_format,
             "color_range": self.color_range,
+            "fps": self.fps,
             "reasons": list(self.reasons),
             "action": self.action.value,
             "bytes_before": self.bytes_before,
@@ -119,8 +135,8 @@ class VideoFormatSummary:
     repaired_files: int = 0
     repair_failed_files: int = 0
     skipped_files: int = 0
-    roots: list[VideoFormatRootReport] = field(default_factory=list)
-    reports: list[VideoFormatFileReport] = field(default_factory=list)
+    roots: list[VideoFormatRootReport] = field(default_factory=_new_root_report_list)
+    reports: list[VideoFormatFileReport] = field(default_factory=_new_file_report_list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -141,23 +157,23 @@ class VideoFormatSummary:
 
 
 def default_managed_video_roots() -> tuple[Path, ...]:
-    paths = EndoregPathsModel.from_environment()
+    paths = get_runtime_paths()
     return _dedupe_paths(
         (
             paths.sensitive_video,
             paths.anonym_video,
-            paths.storage / "streamable_videos",
+            paths.streamable_videos_root,
         )
     )
 
 
 def legacy_compatibility_video_roots() -> tuple[Path, ...]:
-    paths = EndoregPathsModel.from_environment()
+    paths = get_runtime_paths()
     return _dedupe_paths(
         (
-            paths.data / SENSITIVE_VIDEO_DIR_NAME,
-            paths.data / ANONYM_VIDEO_DIR_NAME,
-            paths.data / "streamable_videos",
+            paths.runtime_root / SENSITIVE_VIDEO_DIR_NAME,
+            paths.runtime_root / ANONYM_VIDEO_DIR_NAME,
+            paths.runtime_root / "streamable_videos",
         )
     )
 
@@ -286,19 +302,17 @@ def classify_video_format(path: Path) -> VideoFormatFileReport:
         report.error = str(exc)
         return report
 
-    stream_info = ffmpeg_wrapper.get_stream_info(path)
+    stream_info = cast(dict[str, Any] | None, ffmpeg_wrapper.get_stream_info(path))
     if not stream_info or "streams" not in stream_info:
         report.error = "ffprobe returned no stream metadata"
         return report
 
-    video_stream = next(
-        (
-            stream
-            for stream in stream_info["streams"]
-            if stream.get("codec_type") == "video"
-        ),
-        None,
-    )
+    streams = stream_info.get("streams")
+    if not isinstance(streams, list):
+        report.error = "ffprobe returned malformed stream metadata"
+        return report
+
+    video_stream = _first_video_stream(cast(list[Any], streams))
     if video_stream is None:
         report.error = "ffprobe returned no video stream"
         return report
@@ -306,6 +320,7 @@ def classify_video_format(path: Path) -> VideoFormatFileReport:
     report.codec_name = _optional_str(video_stream.get("codec_name"))
     report.pixel_format = _optional_str(video_stream.get("pix_fmt"))
     report.color_range = _optional_str(video_stream.get("color_range")) or "tv"
+    report.fps = _video_stream_fps(video_stream)
     report.reasons = _format_mismatch_reasons(path, report)
 
     if report.reasons:
@@ -371,13 +386,14 @@ def _repair_file(
             {
                 "path": str(input_path),
                 "temp_path": str(temp_path),
-                "reasons": report.reasons,
+                "reasons": list(report.reasons),
             },
         )
-        result = ffmpeg_wrapper.transcode_videofile_if_required(
+        result = ffmpeg_wrapper.transcode_video(
             input_path=input_path,
             output_path=temp_path,
             force_cpu=force_cpu,
+            extra_args=STANDARD_VIDEO_ENCODING.ffmpeg_output_args(),
         )
         if result is None:
             raise RuntimeError("ffmpeg transcode did not produce an output")
@@ -453,11 +469,50 @@ def _format_mismatch_reasons(
         reasons.append(
             f"color_range_mismatch:{report.color_range}!={REQUIRED_COLOR_RANGE}"
         )
+    if report.fps is None:
+        reasons.append("fps_missing")
+    elif report.fps > REQUIRED_MAX_FPS and not math.isclose(
+        report.fps,
+        REQUIRED_MAX_FPS,
+        rel_tol=0.001,
+        abs_tol=0.01,
+    ):
+        reasons.append(f"fps_exceeds_max:{report.fps}>{REQUIRED_MAX_FPS:g}")
     return reasons
 
 
 def _has_required_pixel_format(pixel_format: str | None) -> bool:
     return pixel_format in FULL_RANGE_YUV420P_PIXEL_FORMATS
+
+
+def _video_stream_fps(video_stream: dict[str, Any]) -> float | None:
+    value = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "0/0":
+        return None
+    try:
+        if "/" in text:
+            numerator_text, denominator_text = text.split("/", 1)
+            denominator = float(denominator_text)
+            if denominator == 0:
+                return None
+            fps = float(numerator_text) / denominator
+        else:
+            fps = float(text)
+    except ValueError:
+        return None
+    return fps if math.isfinite(fps) and fps > 0 else None
+
+
+def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:
+    for stream in streams:
+        if isinstance(stream, dict):
+            stream_dict = cast(dict[str, Any], stream)
+            if stream_dict.get("codec_type") == "video":
+                return stream_dict
+    return None
 
 
 def _iter_video_files(root: Path, extensions: frozenset[str]) -> Iterable[Path]:
@@ -509,12 +564,12 @@ def _validate_root(root: str | Path, *, allow_unmanaged_roots: bool) -> Path:
     if allow_unmanaged_roots:
         return resolved
     try:
-        ensure_within_protected_root(resolved)
+        ensure_within_runtime_root(resolved)
         return resolved
     except ValueError:
         pass
     try:
-        ensure_within_data_root(resolved)
+        ensure_within_runtime_root(resolved)
         return resolved
     except ValueError as exc:
         raise ValueError(

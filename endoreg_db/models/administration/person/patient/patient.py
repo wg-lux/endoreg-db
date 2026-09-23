@@ -1,7 +1,10 @@
+from __future__ import annotations
 import logging
 import random
+import unicodedata
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, List, Optional, Self  # Added List
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast, Any
 
 from django.db import models
 from django.utils import timezone  # Add this import
@@ -14,20 +17,147 @@ from ..person import Person
 logger = logging.getLogger("patient")
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        AnonymExaminationReport,
-        AnonymHistologyReport,
-        Center,
-        Gender,
-        PatientDisease,
-        PatientEvent,
-        PatientExamination,
-        PatientExternalID,
-        PatientLabValue,
-        PatientMedication,
-        RawPdfFile,
-    )
+    from endoreg_db.models import AnonymExaminationReport, AnonymHistologyReport
     from endoreg_db.utils.links import ModelLinks
+
+    from ....medical.patient.patient_disease import PatientDisease
+    from ....medical.patient.patient_event import PatientEvent
+    from ....medical.patient.patient_examination import PatientExamination
+    from ....medical.patient.patient_lab_sample import PatientLabSample
+    from ....medical.patient.patient_lab_sample import PatientLabSampleType
+    from ....medical.patient.patient_lab_value import PatientLabValue
+    from ....medical.patient.patient_medication import PatientMedication
+    from ....media.pdf.raw_pdf import RawPdfFile
+    from ....other.gender import Gender
+    from ....medical.disease import Disease, DiseaseClassificationChoice
+    from ....medical.medication.medication import Medication
+    from ....medical.medication.medication_indication import MedicationIndication
+    from ....medical.medication.medication_intake_time import MedicationIntakeTime
+    from ...center.center import Center
+    from .patient_external_id import PatientExternalID
+
+PatientGenderInput: TypeAlias = "Gender | str | None"
+PatientCenterInput: TypeAlias = "Center | str"
+
+
+class _PatientGenderManager(Protocol):
+    def resolve_by_name(self, name: str) -> "Gender | None": ...
+
+
+class _PatientGenderSource(Protocol):
+    name: str
+
+
+class _PatientSaveSource(Protocol):
+    def save(self) -> None: ...
+
+
+class _PatientDiseaseLinkSource(Protocol):
+    disease: "Disease | None"
+    classification_choices: models.Manager["DiseaseClassificationChoice"]
+
+
+class _PatientMedicationLinkSource(Protocol):
+    medication: "Medication | None"
+    medication_indication: "MedicationIndication | None"
+    intake_times: models.Manager["MedicationIntakeTime"]
+
+
+@dataclass(frozen=True, slots=True)
+class _PseudoPatientProfile:
+    first_name: str
+    last_name: str
+    dob: date
+    gender: "Gender"
+
+
+@dataclass(frozen=True, slots=True)
+class _PseudoPatientCreationInput:
+    center: "Center"
+    gender: "Gender"
+    birth_month: int
+    birth_year: int
+
+
+def _resolve_pseudo_patient_gender(gender: "Gender | str") -> "Gender":
+    from ....other import Gender
+
+    if not isinstance(gender, str):
+        return gender
+
+    gender_manager = cast(_PatientGenderManager, Gender.objects)
+    gender_obj = gender_manager.resolve_by_name(gender)
+    if gender_obj is None:
+        raise ValueError(f"Gender '{gender}' not found in database.")
+    return gender_obj
+
+
+def _validate_pseudo_patient_creation_input(
+    *,
+    center: "Center | None",
+    gender: PatientGenderInput,
+    birth_month: int | None,
+    birth_year: int | None,
+) -> _PseudoPatientCreationInput:
+    assert center, "Center must be provided to create a new pseudo patient"
+    assert gender, "Gender must be provided to create a new pseudo patient"
+    assert birth_month, "Birth month must be provided to create a new pseudo patient"
+    assert birth_year, "Birth year must be provided to create a new pseudo patient"
+
+    gender_obj = _resolve_pseudo_patient_gender(gender)
+    if not 1 <= birth_month <= 12:
+        raise ValueError("Birth month must be between 1 and 12.")
+    return _PseudoPatientCreationInput(
+        center=center,
+        gender=gender_obj,
+        birth_month=birth_month,
+        birth_year=birth_year,
+    )
+
+
+def _build_pseudo_patient_profile(
+    creation_input: _PseudoPatientCreationInput,
+    *,
+    patient_hash: str,
+) -> _PseudoPatientProfile:
+    from endoreg_db.utils import random_day_by_month_year
+
+    pseudo_dob = random_day_by_month_year(
+        month=creation_input.birth_month,
+        year=creation_input.birth_year,
+    )
+    gender_name = cast(_PatientGenderSource, creation_input.gender).name
+    first_name, last_name = canonical_pseudo_patient_name(
+        patient_hash=patient_hash,
+        gender_name=gender_name,
+    )
+    return _PseudoPatientProfile(
+        first_name=first_name,
+        last_name=last_name,
+        dob=pseudo_dob,
+        gender=creation_input.gender,
+    )
+
+
+def canonical_pseudo_patient_name(
+    *,
+    patient_hash: str,
+    gender_name: str,
+    locale: str = "de_DE",
+) -> tuple[str, str]:
+    """Return the stable display pseudonym owned by a patient identity hash."""
+    normalized_hash = unicodedata.normalize("NFKC", patient_hash).strip().casefold()
+    if not normalized_hash:
+        raise ValueError("patient_hash is required for canonical name generation")
+
+    fake = Faker(locale)
+    fake.seed_instance(normalized_hash)
+    normalized_gender = gender_name.strip().casefold()
+    if normalized_gender == "male":
+        return fake.first_name_male(), fake.last_name_male()
+    if normalized_gender == "female":
+        return fake.first_name_female(), fake.last_name_female()
+    return fake.first_name(), fake.last_name()
 
 
 class Patient(Person):
@@ -44,20 +174,24 @@ class Patient(Person):
 
     """
 
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    dob = models.DateField(null=True, blank=True)
-    gender = models.ForeignKey(
+    first_name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    last_name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    dob: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
+    gender: models.ForeignKey["Gender | None"] = models.ForeignKey(
         "Gender", on_delete=models.SET_NULL, null=True, blank=True
     )
-    center = models.ForeignKey(
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center", on_delete=models.SET_NULL, null=True, blank=True
     )
-    patient_hash = models.CharField(max_length=255, blank=True, null=True)
+    patient_hash: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
-    objects = models.Manager()  # Default manager
+    objects = cast(models.Manager["Patient"], models.Manager())
 
     if TYPE_CHECKING:
+        center_id: int | None
+        gender_id: int | None
 
         @property
         def events(self) -> models.Manager[PatientEvent]: ...
@@ -87,86 +221,84 @@ class Patient(Person):
         @property
         def lab_values(self) -> models.Manager[PatientLabValue]: ...
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.first_name} {self.last_name} ({self.dob})"
+
+    @classmethod
+    def get_pseudo_patient_by_hash(
+        cls,
+        patient_hash: str,
+        center: "Center | None" = None,
+    ) -> "Patient | None":
+        """Resolve an unambiguous pseudonymous identity without changing records."""
+        if not patient_hash or not patient_hash.strip():
+            raise ValueError("Patient hash is required for pseudonym resolution")
+        try:
+            patient = cls.objects.get(patient_hash=patient_hash)
+        except cls.DoesNotExist:
+            return None
+        except cls.MultipleObjectsReturned as exc:
+            raise ValueError("Ambiguous patient hash requires identity review") from exc
+        if patient.is_real_person:
+            raise ValueError("Patient hash resolves to a real person, not a pseudonym")
+        if center is not None and patient.center_id != center.pk:
+            raise ValueError("Patient pseudonym belongs to a different center")
+        return patient
 
     @classmethod
     def get_or_create_pseudo_patient_by_hash(
         cls,
         patient_hash: str,
-        center: Optional["Center"] = None,
-        gender: Optional["Gender | str"] = None,  # Allow string type hint
-        birth_month: Optional[int] = None,
-        birth_year: Optional[int] = None,
-    ) -> tuple[Self, bool]:
-        from endoreg_db.utils import create_mock_patient_name, random_day_by_month_year
-
-        from ....other import Gender  # Import Gender model
-
-        created: bool = False
-
-        existing_patient = cls.objects.filter(patient_hash=patient_hash).first()
+        center: "Center | None" = None,
+        gender: PatientGenderInput = None,
+        birth_month: int | None = None,
+        birth_year: int | None = None,
+    ) -> tuple["Patient", bool]:
+        existing_patient = cls.get_pseudo_patient_by_hash(patient_hash, center)
         if existing_patient:
-            logger.info(f"Patient with hash {patient_hash} already exists")
-            logger.info(f"Returning existing patient: {existing_patient}")
-            return existing_patient, created
+            logger.info(
+                "Reusing pseudonymous patient",
+                extra={"patient_id": existing_patient.pk},
+            )
+            return existing_patient, False
 
-        # If no patient with the given hash exists, create a new pseudo patient
-        assert center, "Center must be provided to create a new pseudo patient"
-        assert gender, "Gender must be provided to create a new pseudo patient"
-        assert birth_month, (
-            "Birth month must be provided to create a new pseudo patient"
+        creation_input = _validate_pseudo_patient_creation_input(
+            center=center,
+            gender=gender,
+            birth_month=birth_month,
+            birth_year=birth_year,
         )
-        assert birth_year, "Birth year must be provided to create a new pseudo patient"
-
-        # Ensure gender is a Gender object
-        if isinstance(gender, str):
-            gender_obj = Gender.objects.resolve_by_name(gender)
-            if gender_obj is None:
-                raise ValueError(f"Gender '{gender}' not found in database.")
-        elif isinstance(gender, Gender):
-            gender_obj = gender
-        else:
-            raise ValueError("Gender must be a string name or a Gender object.")
-
-        assert birth_month is not None
-        if not 1 <= birth_month <= 12:
-            raise ValueError("Birth month must be between 1 and 12.")
-        assert birth_year is not None
-        pseudo_dob = random_day_by_month_year(month=birth_month, year=birth_year)
-        gender_name = gender_obj.name
-        first_name, last_name = create_mock_patient_name(gender_name)
-
-        logger.info(f"Creating pseudo patient with hash {patient_hash}")
-        logger.info(f"Generated name: {first_name} {last_name}")
+        profile = _build_pseudo_patient_profile(
+            creation_input,
+            patient_hash=patient_hash,
+        )
 
         patient = cls.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            dob=pseudo_dob,
-            gender=gender_obj,  # Use the fetched/validated Gender object
-            center=center,
+            first_name=profile.first_name,
+            last_name=profile.last_name,
+            dob=profile.dob,
+            gender=profile.gender,
+            center=creation_input.center,
             patient_hash=patient_hash,
             is_real_person=False,
         )
 
-        patient.save()
-        created = True
-
-        return patient, created
+        return patient, True
 
     def get_dob(self) -> date | None:
         return self.dob
 
-    def get_patient_examinations(self):  # field: self.patient_examinations
+    def get_patient_examinations(
+        self,
+    ) -> models.QuerySet["PatientExamination"]:  # field: self.patient_examinations
         """Returns all patient examinations for this patient ordered by date (most recent is first)."""
         return self.patient_examinations.order_by("-date_start")
 
     def create_examination(
         self,
-        examination_name_str: Optional[str] = None,
-        date_start: Optional[datetime] = None,
-        date_end: Optional[datetime] = None,
+        examination_name_str: str | None = None,
+        date_start: datetime | None = None,
+        date_end: datetime | None = None,
         save: bool = True,
     ) -> "PatientExamination":
         """Creates a patient examination for this patient."""
@@ -187,17 +319,17 @@ class Patient(Person):
             )
 
         if save:
-            patient_examination.save()
+            cast(_PatientSaveSource, patient_examination).save()
 
         return patient_examination
 
     def create_event(
         self,
         event_name_str: str,
-        date_start: Optional[datetime] = None,
-        date_end: Optional[datetime] = None,
-        description: Optional[str] = None,
-    ):
+        date_start: datetime | None = None,
+        date_end: datetime | None = None,
+        description: str | None = None,
+    ) -> "PatientEvent":
         """
         Creates a patient event with the specified event name and start date.
 
@@ -218,7 +350,7 @@ class Patient(Person):
 
         return patient_event
 
-    def create_examination_by_pdf(self, pdf: "RawPdfFile"):
+    def create_examination_by_pdf(self, pdf: "RawPdfFile") -> "PatientExamination":
         """
         Creates a patient examination and associates it with the provided report report file.
 
@@ -233,20 +365,20 @@ class Patient(Person):
         from ....medical import PatientExamination
 
         patient_examination = PatientExamination(patient=self)
-        patient_examination.save()
+        cast(_PatientSaveSource, patient_examination).save()
         pdf.examination = patient_examination
-        pdf.save()
+        cast(_PatientSaveSource, pdf).save()
 
         return patient_examination
 
     @classmethod
-    def get_random_gender(cls, p_male=0.5, p_female=0.5):
+    def get_random_gender(cls, p_male: float = 0.5, p_female: float = 0.5) -> "Gender":
         """
-        Get a Gender object by name (male, female) from the database with given probability.
+        Get a Gender instance by name (male, female) from the database with given probability.
 
         :param p_male: Probability of selecting 'male' gender.
         :param p_female: Probability of selecting 'female' gender.
-        :return: Gender object selected based on given probabilities.
+        :return: Gender instance selected based on given probabilities.
         """
         from ....other import Gender
 
@@ -256,8 +388,9 @@ class Patient(Person):
 
         selected_gender = random.choices(gender_names, probabilities)[0]
 
-        # Fetch the corresponding Gender object from the database
-        gender_obj = Gender.objects.resolve_by_name(selected_gender)
+        # Fetch the corresponding Gender instance from the database.
+        gender_manager = cast(_PatientGenderManager, Gender.objects)
+        gender_obj = gender_manager.resolve_by_name(selected_gender)
         if gender_obj is None:
             raise ValueError(f"Gender '{selected_gender}' not found in database.")
 
@@ -265,8 +398,13 @@ class Patient(Person):
 
     @classmethod
     def get_random_age(
-        cls, min_age=55, max_age=90, mean_age=65, std_age=10, distribution="normal"
-    ):
+        cls,
+        min_age: int = 55,
+        max_age: int = 90,
+        mean_age: int = 65,
+        std_age: int = 10,
+        distribution: str = "normal",
+    ) -> int:
         """
         Get a random age based on the given distribution.
 
@@ -290,7 +428,11 @@ class Patient(Person):
         return age
 
     @classmethod
-    def get_dob_from_age(cls, age, current_date=None):
+    def get_dob_from_age(
+        cls,
+        age: int,
+        current_date: date | datetime | None = None,
+    ) -> date:
         """
         Get a date of birth based on the given age and current date.
 
@@ -323,8 +465,11 @@ class Patient(Person):
         return earliest_dob + timedelta(days=offset_days)
 
     @classmethod
-    def get_random_name_for_gender(cls, gender_obj, locale="de_DE"):
-        gender = gender_obj.name
+    def get_random_name_for_gender(
+        cls, gender_obj: "Gender", locale: str = "de_DE"
+    ) -> tuple[str, str]:
+        gender_source = cast(_PatientGenderSource, gender_obj)
+        gender = gender_source.name
         fake = Faker(locale)
 
         if gender == "male":
@@ -338,11 +483,13 @@ class Patient(Person):
         return last_name, first_name
 
     @classmethod
-    def create_generic(cls, center="gplay_case_generator"):
+    def create_generic(
+        cls, center: PatientCenterInput = "gplay_case_generator"
+    ) -> "Patient":
         """
         Create a generic patient with random attributes.
 
-        :param center: The center name or Center object of the patient.
+        :param center: The center name or Center instance of the patient.
         :return: The created patient.
         """
         from ....administration import Center
@@ -358,22 +505,21 @@ class Patient(Person):
             age = Patient.get_random_age()
         else:
             age = patient.age()
+            assert age is not None, "Patient age is not set."
         dob = Patient.get_dob_from_age(age)
 
-        # Fetch the center object if a name is provided
+        # Fetch the center instance if a name is provided.
         if isinstance(center, str):
             center_obj = Center.objects.get(name=center)
-        elif isinstance(center, Center):
-            center_obj = center.objects.get(name=center.name)
         else:
-            raise ValueError("Center must be a string name or a Center object.")
+            center_obj = center.objects.get(name=center.name)
 
         patient = Patient.objects.create(
             first_name=first_name,
             last_name=last_name,
             dob=dob,
             gender=gender,
-            center=center_obj,  # Assign the center object
+            center=center_obj,  # Assign the center instance.
         )
         # No need to call save() again after create()
         return patient
@@ -405,12 +551,17 @@ class Patient(Person):
             return age
         return None  # Or handle the case where dob is None appropriately
 
-    def create_lab_sample(self, sample_type="generic", date=None, save=True):
+    def create_lab_sample(
+        self,
+        sample_type: "PatientLabSampleType | str" = "generic",
+        date: datetime | None = None,
+        save: bool = True,
+    ) -> "PatientLabSample":
         """
         Create a lab sample for this patient.
 
         :param sample_type: The sample type. Should be either string of the sample types
-            name or the sample type object. If not set, the default sample type ("generic") is used.
+            name or the sample type instance. If not set, the default sample type ("generic") is used.
         :param date: The date of the lab sample. Must be timezone-aware if provided.
         :return: The created lab sample.
         """
@@ -430,10 +581,6 @@ class Patient(Person):
             assert sample_type is not None, (
                 f"Sample type with name '{sample_type}' not found."
             )
-        elif not isinstance(sample_type, PatientLabSampleType):
-            raise ValueError(
-                "Sample type must be either a string or a PatientLabSampleType object."
-            )
 
         patient_lab_sample = PatientLabSample.objects.create(
             patient=self, sample_type=sample_type, date=date
@@ -445,22 +592,11 @@ class Patient(Person):
     def links(self) -> "ModelLinks":
         """
         Aggregates and returns all related model instances for linked-model traversal
-        as a ModelLinks object. For a Patient, this includes their diseases, associated classification choices,
+        as ModelLinks. For a Patient, this includes their diseases, associated classification choices,
         all their lab values, and medication information.
         """
-        from endoreg_db.models.medical.disease import (
-            Disease,
-            DiseaseClassificationChoice,
-        )
 
         # Imports for medication related models
-        from endoreg_db.models.medical.medication.medication import Medication
-        from endoreg_db.models.medical.medication.medication_indication import (
-            MedicationIndication,
-        )
-        from endoreg_db.models.medical.medication.medication_intake_time import (
-            MedicationIntakeTime,
-        )
         from endoreg_db.utils.links import ModelLinks
 
         # PatientMedication objects are retrieved via self.patientmedication_set
@@ -469,14 +605,15 @@ class Patient(Person):
         patient_disease_instances = list(
             self.diseases.all()
         )  # These are PatientDisease model instances
-        actual_diseases: List[Disease] = []
-        all_classification_choices: List[DiseaseClassificationChoice] = []
+        actual_diseases: list[Disease] = []
+        all_classification_choices: list[DiseaseClassificationChoice] = []
 
         for pd_instance in patient_disease_instances:
-            if pd_instance.disease:  # pd_instance.disease is a Disease instance
-                actual_diseases.append(pd_instance.disease)
+            disease_source = cast(_PatientDiseaseLinkSource, pd_instance)
+            if disease_source.disease:  # disease is a Disease instance
+                actual_diseases.append(disease_source.disease)
             all_classification_choices.extend(
-                list(pd_instance.classification_choices.all())
+                list(disease_source.classification_choices.all())
             )
 
         # Assuming self.lab_values is a related manager for PatientLabValue instances
@@ -488,30 +625,29 @@ class Patient(Person):
         # self.patientmedication_set gives a QuerySet of PatientMedication
         patient_medication_instances = list(self.patientmedication_set.all())
 
-        actual_medications: List[Medication] = []
-        med_indications: List[MedicationIndication] = []
-        med_intake_times: List[MedicationIntakeTime] = []
+        actual_medications: list[Medication] = []
+        med_indications: list[MedicationIndication] = []
+        med_intake_times: list[MedicationIntakeTime] = []
 
         for pm_instance in patient_medication_instances:
-            if (
-                pm_instance.medication
-            ):  # pm_instance.medication is a Medication instance
-                actual_medications.append(pm_instance.medication)
-            if (
-                pm_instance.medication_indication
-            ):  # pm_instance.medication_indication is a MedicationIndication instance
-                med_indications.append(pm_instance.medication_indication)
+            medication_source = cast(_PatientMedicationLinkSource, pm_instance)
+            if medication_source.medication:
+                actual_medications.append(medication_source.medication)
+            if medication_source.medication_indication:
+                med_indications.append(medication_source.medication_indication)
             med_intake_times.extend(
-                list(pm_instance.intake_times.all())
+                list(medication_source.intake_times.all())
             )  # pm_instance.intake_times is a ManyRelatedManager for MedicationIntakeTime
 
-        return ModelLinks(
-            diseases=list(set(actual_diseases)),
-            patient_diseases=patient_disease_instances,
-            disease_classification_choices=list(set(all_classification_choices)),
-            patient_lab_values=patient_lab_value_instances,
-            medications=list(set(actual_medications)),
-            patient_medications=patient_medication_instances,
-            medication_indications=list(set(med_indications)),
-            medication_intake_times=list(set(med_intake_times)),
+        return ModelLinks.model_validate(
+            {
+                "diseases": list(set(actual_diseases)),
+                "patient_diseases": patient_disease_instances,
+                "disease_classification_choices": list(set(all_classification_choices)),
+                "patient_lab_values": patient_lab_value_instances,
+                "medications": list(set(actual_medications)),
+                "patient_medications": patient_medication_instances,
+                "medication_indications": list(set(med_indications)),
+                "medication_intake_times": list(set(med_intake_times)),
+            }
         )

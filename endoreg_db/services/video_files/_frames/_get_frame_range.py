@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from typing import TYPE_CHECKING
 
@@ -25,7 +26,7 @@ def _get_frame_range(
     except AttributeError:
         logger.error(
             "Could not access frame range for video %s via related manager.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         # Fallback query
         return Frame.objects.filter(
@@ -38,7 +39,7 @@ def _get_frame_range(
             "Error getting frame range (%d-%d) for video %s: %s",
             start_frame_number,
             end_frame_number,
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )

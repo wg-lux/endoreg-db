@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+from endoreg_db.utils.storage.files import canonical_media_name
+
+
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, TypedDict, Unpack
 
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
-from endoreg_db.utils.security.hashs import get_pdf_hash
-from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.observability.structured_logging import emit_structured_event
+from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.utils.structured_logging import (
+    emit_structured_event,
+    path_reference,
+)
 
 from .state import get_or_create_raw_pdf_state
 from .types import ReportPdfArtifactKind
@@ -19,19 +23,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _raw_pdf_model():
+class _RawPdfFileCreateKwargs(TypedDict, total=False):
+    pass
+
+
+def _raw_pdf_model() -> type[RawPdfFile]:
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 
     return RawPdfFile
 
 
 def create_raw_pdf_file_from_path(
-    file_path: Union[str, Path],
-    center_name: Optional[str] = None,
+    file_path: str | Path,
+    center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
     save: bool = True,
-    **kwargs,
+    **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     from endoreg_db.models.administration.center.center import Center
 
@@ -57,7 +65,7 @@ def create_raw_pdf_file_from_path(
         raise ValueError(f"Center '{center_name}' not found.") from exc
 
     try:
-        pdf_hash = get_pdf_hash(file_path)
+        pdf_hash = get_file_hash(file_path)
         logger.debug("Calculated PDF hash: %s", pdf_hash)
     except Exception as exc:
         logger.error("Could not calculate hash for %s: %s", file_path, exc)
@@ -71,9 +79,7 @@ def create_raw_pdf_file_from_path(
             existing_pdf_file.pk,
         )
 
-        field_file = existing_pdf_file.file
-        file_name = field_file.name if field_file else None
-        if file_name and field_file.storage.exists(file_name):
+        if existing_pdf_file.file.exists():
             logger.warning("File is present. Returning existing instance.")
             return existing_pdf_file
 
@@ -82,15 +88,14 @@ def create_raw_pdf_file_from_path(
         )
         existing_pdf_file.delete()
 
-    new_file_name, _uuid = get_content_hash_filename(file_path)
+    new_file_name = canonical_media_name(pdf_hash, ".pdf")
     try:
         raw_pdf = model(
             pdf_hash=pdf_hash,
             center=center,
             **kwargs,
         )
-        saved_name = save_local_file(
-            raw_pdf.file,
+        saved_name = raw_pdf.file.save_local(
             file_path,
             name=new_file_name,
             save=False,
@@ -107,7 +112,7 @@ def create_raw_pdf_file_from_path(
             report_id=raw_pdf.pk,
             pdf_hash=raw_pdf.pdf_hash,
             artifact_kind=ReportPdfArtifactKind.RAW.value,
-            source_path=file_path,
+            source_path=path_reference(file_path),
             storage_name=saved_name,
         )
         return raw_pdf
@@ -118,11 +123,11 @@ def create_raw_pdf_file_from_path(
 
 
 def create_initialized_raw_pdf_file_from_path(
-    file_path: Union[str, Path],
-    center_name: Optional[str] = None,
+    file_path: str | Path,
+    center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
-    **kwargs,
+    **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     raw_pdf = create_raw_pdf_file_from_path(
         file_path=file_path,

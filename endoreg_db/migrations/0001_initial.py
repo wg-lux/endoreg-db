@@ -766,7 +766,7 @@ class Migration(migrations.Migration):
                     "file_hash",
                     models.CharField(
                         blank=True,
-                        help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
+                        help_text="Content hash of the original file (e.g. raw_video_hash/pdf_hash).",
                         max_length=64,
                         primary_key=True,
                         serialize=False,
@@ -4735,7 +4735,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 (
-                    "video_hash",
+                    "raw_video_hash",
                     models.CharField(
                         help_text="Hash of the raw video file.",
                         max_length=255,

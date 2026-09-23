@@ -58,6 +58,7 @@ Supported roles:
 
 - `central_hub`
 - `site_node`
+- `local_study_server`
 - `standalone`
 
 When role is `central_hub`:
@@ -66,7 +67,19 @@ When role is `central_hub`:
 - API uploads must declare `center_key`
 - API uploads do not fall back to the default center
 - SQLite is rejected in production settings
-- transfer API is enabled and must run with secure transport plus mTLS
+- transfer API may be enabled explicitly and, when enabled, must run with secure
+  transport plus mutual Transport Layer Security (mTLS)
+
+`central_hub` does not enable transfer ingest by itself. Transfer endpoints are
+disabled by default and require:
+
+```bash
+ENDOREG_ENABLE_HUB_TRANSFERS=true
+```
+
+The implementation and its production-readiness approval are separate. Before
+enabling this boundary, check `feature-tracking/HubTransfer.yml`; any required
+criterion that is not `verified` remains an unmet production gate.
 
 Watcher ingestion remains supported in hub deployments and keeps trusted
 local-drop behavior.
@@ -107,6 +120,20 @@ The proxy must:
   certificate verification
 - leave the mTLS attestation header absent or non-successful when client
   certificate verification fails
+
+The executable reference configuration is
+[`deployment/nginx/hub-transfer.conf`](../deployment/nginx/hub-transfer.conf).
+It is intended for a dedicated transfer hostname and must be included exactly
+once in the Nginx `http` context after adapting the listen address, three
+credential paths, and Django upstream address. Its explicit `proxy_set_header`
+assignments replace spoofed inbound values. Its transfer location rejects every
+request whose Nginx certificate-verification result is not `SUCCESS` before the
+request reaches Django. Publish each overlap or replacement CA bundle atomically
+under a new path, point the configuration at that path, and then reload Nginx;
+changing only the contents at an already loaded path is not a reliable rotation.
+During a graceful reload, old workers can briefly retain the previous trust set.
+Validate both identities during the overlap and wait for bounded old-worker
+retirement before treating the previous CA or certificate as revoked.
 
 Do not expose the Django process directly to untrusted clients when these
 headers are trusted.
@@ -172,6 +199,9 @@ Before promoting an upgrade, verify the following in the host environment:
 5. watcher ingest still works for the local trusted drop zone
 6. upload-job status and media-read endpoints respect center scope
 7. cleanup jobs do not delete retained source artifacts unexpectedly
+8. if `ENDOREG_ENABLE_HUB_TRANSFERS=true` is part of the approved deployment,
+   hub transfer registration, status and processed-media upload succeed with
+   valid node credentials without a Django user and reject node/center mismatch
 
 ## What downstream projects can remove
 

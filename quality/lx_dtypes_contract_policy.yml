@@ -1,0 +1,52 @@
+schema_version: '1.0'
+source_root: endoreg_db
+maximum_local_type_aliases: 147
+inline_alias_shapes:
+- str
+- int
+- float
+- bool
+- str | None
+- int | None
+- float | None
+- bool | None
+- date | None
+- datetime | None
+forbid_lx_dtypes_realiases: true
+canonical_import_prefixes:
+- lx_dtypes.models.contracts
+- lx_dtypes.models.interface
+- lx_dtypes.models.knowledge_base
+canonical_local_types:
+  DjangoFile: helpers/typing.py
+  BinaryFieldFileSaver: helpers/typing.py
+  YamlValue: helpers/typing.py
+  YamlEntry: helpers/typing.py
+  LoadModelDataModel: helpers/typing.py
+  LoadModelDataDirectory: helpers/typing.py
+  LoadModelDataValidator: helpers/typing.py
+  LoadModelDataMetadata: helpers/typing.py
+  DataLoaderModel: helpers/typing.py
+  DataLoaderValidator: helpers/typing.py
+  CompositePermissionClass: helpers/typing.py
+  ReportLlmOperation: schemas/report_llm.py
+canonical_type_imports:
+  VideoFrameAnnotationExportProfile: lx_dtypes.models.contracts.video_frame_export
+  VideoFrameAnnotationExportFormat: lx_dtypes.models.contracts.video_frame_export
+  JsonScalar: lx_dtypes.models.contracts.json_types
+  FrameSourceMode: lx_dtypes.models.contracts.video_file
+  YamlScalar: lx_dtypes.models.contracts.video_frame_export
+  StructuredLogValue: lx_dtypes.models.contracts.json_types.JsonValue
+  StructuredLogPayload: lx_dtypes.models.contracts.json_types.JsonObject
+  ReportLlmJobJsonValue: lx_dtypes.models.contracts.json_types.JsonValue
+  ReportLlmJobJsonObject: lx_dtypes.models.contracts.json_types.JsonObject
+canonical_alias_shapes:
+  'Literal["legacy_table_v1", "pts_dataset_v1"]': lx_dtypes.models.contracts.video_frame_export.VideoFrameAnnotationExportProfile
+  'Literal["csv", "json"]': lx_dtypes.models.contracts.video_frame_export.VideoFrameAnnotationExportFormat
+  'str | int | float | bool': lx_dtypes.models.contracts.json_types.JsonScalar
+  'Literal["cache", "stream", "auto"]': lx_dtypes.models.contracts.video_file.FrameSourceMode
+  'Literal["report_llm_reimport", "report_llm_import"]': endoreg_db.schemas.report_llm.ReportLlmOperation
+  'type[BasePermission] | OperandHolder | SingleOperandHolder': endoreg_db.helpers.typing.CompositePermissionClass
+  'str | int | float | bool | None': lx_dtypes.models.contracts.video_frame_export.YamlScalar
+  'str | int | float | bool | None | list[Self] | dict[str, Self]': lx_dtypes.models.contracts.json_types.JsonValue
+  'JsonValue | None | list[Self] | dict[str, Self]': lx_dtypes.models.contracts.json_types.JsonValue

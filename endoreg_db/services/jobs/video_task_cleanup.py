@@ -8,7 +8,7 @@ from endoreg_db.services.video_files import (
     delete_video_frames,
     get_video_frame_dir_path,
 )
-from endoreg_db.utils.filesystem.file_operations import safe_rmtree
+from endoreg_db.utils.file_operations import safe_rmtree
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ def _staged_frame_artifact_patterns(
     video: VideoFile, frame_dir: Path
 ) -> tuple[str, ...]:
     return (
-        f".extracting_{video.video_hash}_*",
+        f".extracting_{video.raw_video_hash}_*",
         f"{frame_dir.name}.pending_replace.*",
         f"{frame_dir.name}.pending_delete.*",
     )

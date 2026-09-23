@@ -8,7 +8,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-from endoreg_db.utils.video.names import get_video_key_regex_by_examination_alias
+from endoreg_db.utils.video_names import get_video_key_regex_by_examination_alias
 
 from django.conf import settings
 

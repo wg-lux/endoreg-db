@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import BinaryIO, Protocol, cast
 from uuid import uuid4
 
 import pytest
-from django.core.files.storage import default_storage
-
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
 from tests.helpers.model_weights import (
     MANAGED_STUB_WEIGHT_PAYLOAD,
     ensure_managed_stub_weights,
 )
+
+
+class _BinaryStorage(Protocol):
+    def open(self, name: str, mode: str = "rb") -> BinaryIO: ...
 
 
 @pytest.mark.django_db
@@ -29,13 +31,17 @@ def test_ensure_managed_stub_weights_recreates_missing_referenced_stub():
         labelset=labelset,
         weights=weights_name,
     )
-    if default_storage.exists(weights_name):
-        default_storage.delete(weights_name)
+    storage = meta.weights.storage
+    if storage.exists(weights_name):
+        storage.delete(weights_name)
 
     ensure_managed_stub_weights(meta)
 
-    weights_path = Path(default_storage.path(weights_name))
-    assert weights_path.exists()
-    assert weights_path.read_bytes() == MANAGED_STUB_WEIGHT_PAYLOAD
+    storage = cast(_BinaryStorage, meta.weights.storage)
+    with storage.open(weights_name, "rb") as weights_file:
+        assert weights_file.read() == MANAGED_STUB_WEIGHT_PAYLOAD
+    is_encrypted = getattr(meta.weights.storage, "is_encrypted", None)
+    if callable(is_encrypted):
+        assert is_encrypted(weights_name) is True
     meta.refresh_from_db()
     assert meta.weights.name == weights_name

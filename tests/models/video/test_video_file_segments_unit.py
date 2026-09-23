@@ -1,7 +1,8 @@
+# pyright: reportPrivateUsage=false
+from pathlib import Path
+
 import pytest
 
-import endoreg_db.models.media.video.pipe_1 as pipe_1_module
-import endoreg_db.models.media.video.video_file_segments as segments_module
 from endoreg_db.models import (
     AiModel,
     Center,
@@ -14,14 +15,15 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
+from endoreg_db.services.video_files import _segments as segments_module
 
 
 @pytest.mark.django_db
-def test_convert_sequences_creates_segments():
+def test_convert_sequences_creates_segments() -> None:
     center = Center.objects.create(
         name="segments-center", display_name="Segments Center"
     )
-    video = VideoFile.objects.create(center=center, video_hash="segments-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="segments-hash")
 
     label_type = LabelType.objects.create(name="video")
     label = Label.objects.create(name="lesion", label_type=label_type)
@@ -39,7 +41,6 @@ def test_convert_sequences_creates_segments():
 
     sequences = {
         "lesion": [(0, 4), (10, 12)],
-        "unknown": [(3, 6)],
     }
 
     segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
@@ -49,15 +50,54 @@ def test_convert_sequences_creates_segments():
     )
     assert created.count() == 2
     assert all(segment.state is not None for segment in created)
-    assert {segment.source.name for segment in created} == {"prediction"}
+    source_names: set[str] = set()
+    for segment in created:
+        assert segment.source is not None
+        source_names.add(str(segment.source.name))
+    assert source_names == {"prediction"}
 
 
 @pytest.mark.django_db
-def test_convert_sequences_skips_single_frame_segments():
+def test_convert_sequences_rejects_unknown_label_atomically() -> None:
+    center = Center.objects.create(name="unknown-center", display_name="Unknown Center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="unknown-hash")
+
+    label_type = LabelType.objects.create(name="video")
+    label = Label.objects.create(name="lesion", label_type=label_type)
+
+    labelset = LabelSet.objects.create(name="set-unknown", version=1)
+    labelset.labels.add(label)
+
+    ai_model = AiModel.objects.create(name="model-unknown")
+    model_meta = ModelMeta.objects.create(
+        name="meta-unknown", version="1", model=ai_model, labelset=labelset
+    )
+    prediction_meta = VideoPredictionMeta.objects.create(
+        model_meta=model_meta, video_file=video
+    )
+
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="unresolved prediction label 'unknown'",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            {"lesion": [(0, 4)], "unknown": [(3, 6)]},
+            prediction_meta,
+        )
+
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        prediction_meta=prediction_meta,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_convert_sequences_rejects_single_frame_segments_atomically() -> None:
     center = Center.objects.create(
         name="singleton-center", display_name="Singleton Center"
     )
-    video = VideoFile.objects.create(center=center, video_hash="singleton-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="singleton-hash")
 
     label_type = LabelType.objects.create(name="video")
     label = Label.objects.create(name="appendix", label_type=label_type)
@@ -77,69 +117,27 @@ def test_convert_sequences_skips_single_frame_segments():
         "appendix": [(5, 5), (10, 12)],
     }
 
-    segments_module._convert_sequences_to_db_segments(video, sequences, prediction_meta)
+    with pytest.raises(
+        segments_module.PredictionSegmentMaterializationError,
+        match="Invalid prediction sequence",
+    ):
+        segments_module._convert_sequences_to_db_segments(
+            video,
+            sequences,
+            prediction_meta,
+        )
 
-    created = LabelVideoSegment.objects.filter(
-        video_file=video, label=label, prediction_meta=prediction_meta
-    )
-    assert created.count() == 1
-    segment = created.get()
-    assert segment.start_frame_number == 10
-    assert segment.end_frame_number == 12
-    assert segment.source.name == "prediction"
-    assert segment.state is not None
-
-
-@pytest.mark.django_db
-def test_pipe_1_fails_when_prediction_ranges_do_not_materialize(monkeypatch):
-    center = Center.objects.create(
-        name="pipe-materialization-center", display_name="Pipe Materialization Center"
-    )
-    video = VideoFile.objects.create(center=center, video_hash="pipe-materialization")
-    state = video.get_or_create_state()
-
-    labelset = LabelSet.objects.create(name="pipe-materialization-set", version=1)
-    ai_model = AiModel.objects.create(name="pipe-materialization-model")
-    model_meta = ModelMeta.objects.create(
-        name="pipe-materialization-meta",
-        version="1",
-        model=ai_model,
-        labelset=labelset,
-    )
-    ai_model.active_meta = model_meta
-    ai_model.save(update_fields=["active_meta"])
-    VideoPredictionMeta.objects.create(model_meta=model_meta, video_file=video)
-
-    def mark_frames_extracted(**_kwargs):
-        state.frames_extracted = True
-        state.save(update_fields=["frames_extracted"])
-
-    monkeypatch.setattr(video, "refresh_from_db", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "update_video_meta", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(video, "extract_frames", mark_frames_extracted)
-    monkeypatch.setattr(video, "update_text_metadata", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
-        pipe_1_module, "_has_extracted_frame_files", lambda _video: True
-    )
-    monkeypatch.setattr(
-        video,
-        "predict_video",
-        lambda **_kwargs: {"missing-label": [(1, 5)]},
-    )
-
-    result = video.pipe_1(model_name=ai_model.name, delete_frames_after=False)
-
-    assert result is False
-    state.refresh_from_db()
-    assert state.initial_prediction_completed is True
-    assert state.lvs_created is False
-    assert LabelVideoSegment.objects.filter(video_file=video).count() == 0
+    assert not LabelVideoSegment.objects.filter(
+        video_file=video,
+        label=label,
+        prediction_meta=prediction_meta,
+    ).exists()
 
 
 @pytest.mark.django_db
-def test_get_outside_helpers_return_expected_frames(tmp_path):
+def test_get_outside_helpers_return_expected_frames(tmp_path: Path) -> None:
     center = Center.objects.create(name="outside-center", display_name="Outside Center")
-    video = VideoFile.objects.create(center=center, video_hash="outside-hash")
+    video = VideoFile.objects.create(center=center, raw_video_hash="outside-hash")
     frame_dir = tmp_path / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
     video.frame_dir = str(frame_dir)

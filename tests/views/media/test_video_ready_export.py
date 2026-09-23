@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
+from typing import cast
 import hashlib
 from unittest.mock import patch
 from uuid import uuid4
@@ -9,6 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
 
+from django.core.files.base import ContentFile
 from endoreg_db.models import (
     Center,
     Label,
@@ -18,7 +22,7 @@ from endoreg_db.models import (
     VideoState,
 )
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.models.state import video_segment_validation as segment_state
+import endoreg_db.services.video_segment_blackening as blackening
 
 
 class VideoReadyExportEndpointTests(TestCase):
@@ -36,7 +40,7 @@ class VideoReadyExportEndpointTests(TestCase):
         default_state = state is None
         video = VideoFile.objects.create(
             center=self.center,
-            video_hash=f"ready-video-{uuid4().hex[:8]}",
+            raw_video_hash=f"ready-video-{uuid4().hex[:8]}",
             state=state
             or VideoState.objects.create(
                 anonymization_validated=True,
@@ -45,15 +49,19 @@ class VideoReadyExportEndpointTests(TestCase):
                 segment_annotations_validated=True,
             ),
         )
-        video.processed_file = SimpleUploadedFile(
-            "ready-processed.mp4",
-            content,
-            content_type="video/mp4",
+        video.processed_file.save(
+            "processed.mp4",
+            SimpleUploadedFile(
+                "ready-processed.mp4",
+                content,
+                content_type="video/mp4",
+            ),
+            save=True,
         )
         video.save(update_fields=["processed_file"])
         self.processed_sha = hashlib.sha256(content).hexdigest()
         if default_state:
-            video_state = video.state
+            video_state = cast(VideoState, video.state)
             assert video_state is not None
             video_state.anonymization_validated = True
             video_state.outside_segments_removed = True
@@ -85,16 +93,28 @@ class VideoReadyExportEndpointTests(TestCase):
         video = self._video()
         self.client.force_login(self.user)
 
-        response = self.client.post(
-            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
-            data={
-                "center_key": self.center.center_key,
-                "processed_file_sha256": self.processed_sha,
-            },
-            content_type="application/json",
-        )
+        with patch.object(
+            VideoFile.objects,
+            "select_for_update",
+            wraps=VideoFile.objects.select_for_update,
+        ) as select_video_for_update:
+            with patch.object(
+                VideoState.objects,
+                "select_for_update",
+                wraps=VideoState.objects.select_for_update,
+            ) as select_state_for_update:
+                response = self.client.post(
+                    f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+                    data={
+                        "center_key": self.center.center_key,
+                        "processed_file_sha256": self.processed_sha,
+                    },
+                    content_type="application/json",
+                )
 
         assert response.status_code == 200, response.content
+        select_video_for_update.assert_called_with(of=("self",))
+        select_state_for_update.assert_called_once_with()
         body = response.json()
         assert body["success"] is True
         assert body["processed_file_sha256"] == self.processed_sha
@@ -105,11 +125,56 @@ class VideoReadyExportEndpointTests(TestCase):
         assert state.ready_for_export_by == self.user.username
         assert state.processed_file_sha256 == self.processed_sha
         assert state.ready_for_export_at is not None
-        assert AuditLedger.objects.filter(
+        audit_entry = AuditLedger.objects.get(
+            object_type="VideoFile",
+            object_pk=str(video.pk),
+            action="ready_for_export",
+        )
+        assert audit_entry.data == {
+            "center_key": self.center.center_key,
+            "processed_file": video.processed_file.name,
+            "processed_file_sha256": self.processed_sha,
+            "ready_for_export": True,
+        }
+        assert "processed_file_path" not in audit_entry.data
+
+    def test_rejects_non_object_payload_before_ready_promotion(self):
+        video = self._video()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data=["not", "an", "object"],
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400, response.content
+        assert video.get_or_create_state().ready_for_export is False
+        assert not AuditLedger.objects.filter(
             object_type="VideoFile",
             object_pk=str(video.pk),
             action="ready_for_export",
         ).exists()
+
+    def test_backfills_hashes_from_final_blackened_processed_artifact(self):
+        video = self._video()
+        video.processed_video_hash = "0" * 64
+        video.save(update_fields=["processed_video_hash", "date_modified"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data={"center_key": self.center.center_key},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        video.refresh_from_db()
+        state = video.get_or_create_state()
+        assert video.processed_video_hash == self.processed_sha
+        assert state.processed_file_sha256 == self.processed_sha
+        assert state.outside_segments_removed is True
+        assert state.ready_for_export is True
 
     def test_ledger_down_aborts_ready_promotion(self):
         video = self._video()
@@ -207,7 +272,7 @@ class VideoReadyExportEndpointTests(TestCase):
                         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
                         status=history_status,
                         task_id=f"cleanup-{history_status}",
-                        config=segment_state._blackening_history_config(
+                        config=blackening.blackening_history_config(
                             only_validated=False
                         ),
                     )
@@ -257,12 +322,11 @@ class VideoReadyExportEndpointTests(TestCase):
         video = self._video()
         self._mark_ready_state(video)
 
-        video.processed_file = SimpleUploadedFile(
+        video.processed_file.save(
             "replacement-processed.mp4",
-            b"replacement-processed-video",
-            content_type="video/mp4",
+            ContentFile(b"replacement-processed-video"),
+            save=True,
         )
-        video.save(update_fields=["processed_file"])
 
         video.refresh_from_db()
         state = video.get_or_create_state()

@@ -1,49 +1,48 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-import pandas as pd
+from math import isnan
+from typing import Any
+
 from django.db import models
-
-if TYPE_CHECKING:
-    pass
-
-
-class ProductWeightManager(models.Manager):
-    def get_by_natural_key(self, product, product_group, weight):
-        return self.get(product=product, product_group=product_group, weight=weight)
 
 
 class ProductWeight(models.Model):
-    objects = ProductWeightManager()
+    objects = models.Manager["ProductWeight"]()
 
-    name = models.CharField(max_length=255, null=True)
-    product = models.ForeignKey("Product", on_delete=models.CASCADE)
-    measured = models.FloatField(null=True)
-    verified = models.FloatField(null=True)
-    manufacturer = models.FloatField(null=True)
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, null=True)
+    product: models.ForeignKey[Any] = models.ForeignKey(
+        "Product", on_delete=models.CASCADE
+    )
+    measured: models.FloatField[Any, Any] = models.FloatField(null=True)
+    verified: models.FloatField[Any, Any] = models.FloatField(null=True)
+    manufacturer: models.FloatField[Any, Any] = models.FloatField(null=True)
+    unit: models.ForeignKey[Any] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
 
-    if TYPE_CHECKING:
-        pass
+    @staticmethod
+    def _has_weight(value: float | None) -> bool:
+        if value is None:
+            return False
+        return not isnan(value)
 
-    def get_weight(self):
-        if not pd.isnull(self.verified):
+    def get_weight(self) -> float | None:
+        if self._has_weight(self.verified):
             return self.verified
-        elif not pd.isnull(self.measured):
+        if self._has_weight(self.measured):
             return self.measured
-        elif not pd.isnull(self.manufacturer):
+        if self._has_weight(self.manufacturer):
             return self.manufacturer
-        else:
-            return None
+        return None
 
-    def get_weight_source(self):
-        if not pd.isnull(self.verified):
+    def get_weight_source(self) -> str | None:
+        if self._has_weight(self.verified):
             return "verified"
-        elif not pd.isnull(self.measured):
+        if self._has_weight(self.measured):
             return "measured"
-        elif not pd.isnull(self.manufacturer):
+        if self._has_weight(self.manufacturer):
             return "manufacturer"
-        else:
-            return None
+        return None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.product} - {self.get_weight()} {self.unit} (Source: {self.get_weight_source()})"

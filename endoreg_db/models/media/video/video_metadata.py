@@ -1,12 +1,16 @@
-"""
-Video Metadata Model
+from __future__ import annotations
 
-Stores analysis results for videos (sensitive frames, detection statistics).
-"""
+"""Video metadata model for analysis results and correction UI metrics."""
+
+from typing import Protocol, cast, Any
 
 from django.db import models
 
 from .video_file import VideoFile
+
+
+class _VideoHashSource(Protocol):
+    raw_video_hash: str
 
 
 class VideoMetadata(models.Model):
@@ -17,7 +21,9 @@ class VideoMetadata(models.Model):
     and provides metrics for the correction UI.
     """
 
-    video = models.OneToOneField(
+    objects = models.Manager["VideoMetadata"]()
+
+    video: models.OneToOneField[Any] = models.OneToOneField(
         VideoFile,
         on_delete=models.CASCADE,
         related_name="metadata",
@@ -25,24 +31,24 @@ class VideoMetadata(models.Model):
     )
 
     # Analysis Results
-    sensitive_frame_count = models.IntegerField(
+    sensitive_frame_count: models.IntegerField[Any, Any] = models.IntegerField(
         null=True,
         blank=True,
         help_text="Number of frames detected as containing sensitive information",
     )
-    sensitive_ratio = models.FloatField(
+    sensitive_ratio: models.FloatField[Any, Any] = models.FloatField(
         null=True,
         blank=True,
         help_text="Ratio of sensitive frames to total frames (0.0-1.0)",
     )
-    sensitive_frame_ids = models.TextField(
+    sensitive_frame_ids: models.TextField[Any, Any] = models.TextField(
         null=True,
         blank=True,
         help_text="JSON array of sensitive frame indices (0-based)",
     )
 
     # Metadata
-    analyzed_at = models.DateTimeField(
+    analyzed_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now=True, help_text="Timestamp of last analysis"
     )
 
@@ -51,8 +57,13 @@ class VideoMetadata(models.Model):
         verbose_name = "Video Metadata"
         verbose_name_plural = "Video Metadata"
 
-    def __str__(self):
-        return f"Metadata for {self.video.video_hash} ({self.sensitive_frame_count or 0} sensitive frames)"
+    def __str__(self) -> str:
+        sensitive_frame_count = self.sensitive_frame_count or 0
+        video = cast(_VideoHashSource, self.video)
+        return (
+            f"Metadata for {video.raw_video_hash} "
+            f"({sensitive_frame_count} sensitive frames)"
+        )
 
     @property
     def has_analysis(self) -> bool:
@@ -62,6 +73,7 @@ class VideoMetadata(models.Model):
     @property
     def sensitive_percentage(self) -> float:
         """Get sensitivity as percentage (0-100)."""
-        if self.sensitive_ratio is not None:
-            return self.sensitive_ratio * 100
+        sensitive_ratio = self.sensitive_ratio
+        if sensitive_ratio is not None:
+            return sensitive_ratio * 100.0
         return 0.0

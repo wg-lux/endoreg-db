@@ -1,38 +1,14 @@
 import logging
 from pathlib import Path
 from typing import Iterable
-from endoreg_db.utils.filesystem.file_operations import ensure_directory
-from endoreg_db.utils.filesystem.paths import (
-    ANONYM_REPORT_DIR,
-    ANONYM_VIDEO_DIR,
-    FRAME_IMPORT_DIR,
-    IMPORT_ANONYMIZED_REPORT_DIR,
-    IMPORT_ANONYMIZED_VIDEO_DIR,
-    IMPORT_REPORT_DIR,
-    IMPORT_VIDEO_DIR,
-    SENSITIVE_REPORT_DIR,
-    SENSITIVE_VIDEO_DIR,
-    WEIGHTS_IMPORT_DIR,
-)
-
-dirs = [
-    ANONYM_REPORT_DIR,
-    ANONYM_VIDEO_DIR,
-    IMPORT_REPORT_DIR,
-    IMPORT_VIDEO_DIR,
-    IMPORT_ANONYMIZED_REPORT_DIR,
-    IMPORT_ANONYMIZED_VIDEO_DIR,
-    FRAME_IMPORT_DIR,
-    WEIGHTS_IMPORT_DIR,
-    SENSITIVE_REPORT_DIR,
-    SENSITIVE_VIDEO_DIR,
-]
+from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 logger = logging.getLogger(__name__)
 
 
-def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
+def validate_directories(dirs: Iterable[Path] | None = None) -> bool:
     """
     Ensure all directories in `dirs` exist.
     Missing directories are created automatically.
@@ -44,6 +20,20 @@ def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
         bool: True if all directories exist or were created successfully,
               False if any directory could not be created.
     """
+    if dirs is None:
+        dirs = [
+            get_runtime_paths().anonym_report,
+            get_runtime_paths().anonym_video,
+            get_runtime_paths().import_report,
+            get_runtime_paths().import_video,
+            get_runtime_paths().import_anonymized_report,
+            get_runtime_paths().import_anonymized_video,
+            get_runtime_paths().import_frame,
+            get_runtime_paths().weights_import,
+            get_runtime_paths().sensitive_report,
+            get_runtime_paths().sensitive_video,
+        ]
+
     ok = True
 
     for d in dirs:
@@ -61,6 +51,3 @@ def validate_directories(dirs: Iterable[Path] = dirs) -> bool:
             ok = False
 
     return ok
-
-
-validate_directories(dirs)

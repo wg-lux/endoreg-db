@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from endoreg_db.utils.storage.files import canonical_media_name
+
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -8,25 +10,23 @@ from typing import TYPE_CHECKING
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
-from endoreg_db.models.label.label_video_segment import LabelVideoSegment
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
 from endoreg_db.services.media_operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
 from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.ffmpeg_wrapper import blacken_video_frame_intervals
+from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.security.hashs import get_video_hash
-from endoreg_db.utils.filesystem.paths import (
-    ANONYM_VIDEO_DIR,
-    data_paths,
-    to_storage_relative,
-)
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.paths import to_storage_relative, get_runtime_paths
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.video.ffmpeg_wrapper import blacken_video_frame_intervals
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -65,7 +65,7 @@ def merge_outside_frame_intervals(
         if start_frame < 0 or end_frame <= start_frame:
             logger.warning(
                 "Skipping invalid outside segment for video %s: start=%s end=%s",
-                video.video_hash,
+                video.raw_video_hash,
                 start_frame,
                 end_frame,
             )
@@ -119,7 +119,7 @@ def rebuild_processed_video_without_outside_frames(
     if not video or not video.is_processed:
         logger.warning(
             "No processed video file available for VideoFile %s.",
-            getattr(video, "video_hash", "<unknown>"),
+            getattr(video, "raw_video_hash", "<unknown>"),
         )
         return False
 
@@ -134,16 +134,16 @@ def rebuild_processed_video_without_outside_frames(
     if not intervals:
         logger.info(
             "No applicable outside segments found for video %s. Skipping rebuild.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return True
 
     try:
         with ensure_local_processed_video_file(video) as processed_path:
-            transcoding_dir = ensure_directory(Path(data_paths["transcoding"]))
+            transcoding_dir = ensure_directory(get_runtime_paths().transcoding)
             staged_output_path = (
                 transcoding_dir
-                / f"{video.video_hash}.outside_frame_blackening.staged.mp4"
+                / f"{video.raw_video_hash}.outside_frame_blackening.staged.mp4"
             )
             safe_unlink_file(staged_output_path, missing_ok=True)
             rebuilt_path = blacken_video_frame_intervals(
@@ -154,7 +154,7 @@ def rebuild_processed_video_without_outside_frames(
             if rebuilt_path is None:
                 raise AssertionError("Failed to rebuild processed video with FFmpeg.")
 
-            new_processed_hash = get_video_hash(rebuilt_path)
+            new_processed_hash = get_file_hash(rebuilt_path)
             if (
                 type(video)
                 .objects.filter(processed_video_hash=new_processed_hash)
@@ -166,9 +166,8 @@ def rebuild_processed_video_without_outside_frames(
                 )
 
             defer_if_video_media_busy(video_id=video.pk)
-            target_path = (
-                Path(ANONYM_VIDEO_DIR)
-                / f"{video.video_hash}.post_validation.{new_processed_hash}.mp4"
+            target_path = get_runtime_paths().anonym_video / canonical_media_name(
+                video.raw_video_hash, ".mp4", generation=new_processed_hash
             )
             target_name = to_storage_relative(target_path)
             save_local_file(
@@ -204,7 +203,7 @@ def rebuild_processed_video_without_outside_frames(
     except AssertionError as ae:
         logger.error(
             "Assertion error while streaming outside-frame rebuild for VideoFile %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             ae,
             exc_info=True,
         )
@@ -214,7 +213,7 @@ def rebuild_processed_video_without_outside_frames(
     except Exception as e:
         logger.error(
             "Error creating video without 'outside' frames for VideoFile %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )
@@ -224,13 +223,13 @@ def rebuild_processed_video_without_outside_frames(
             if replace_completed:
                 logger.info(
                     "Cleaning up staged outside-frame rebuild output for video %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     staged_output_path,
                 )
             else:
                 logger.warning(
                     "Cleaning failed staged outside-frame rebuild output for video %s: %s",
-                    video.video_hash,
+                    video.raw_video_hash,
                     staged_output_path,
                 )
             safe_unlink_file(staged_output_path, missing_ok=True)

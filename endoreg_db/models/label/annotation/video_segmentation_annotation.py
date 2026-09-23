@@ -1,4 +1,6 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 from django.db.models import CheckConstraint, F, Q
@@ -6,7 +8,6 @@ from django.db.models import CheckConstraint, F, Q
 
 if TYPE_CHECKING:
     from ...media.video.video_file import VideoFile
-    from ..video_segmentation_label import VideoSegmentationLabel
 
 
 class VideoSegmentationAnnotation(models.Model):
@@ -17,26 +18,25 @@ class VideoSegmentationAnnotation(models.Model):
     An annotation must be associated with exactly one `VideoFile`.
     """
 
-    video_file = models.ForeignKey(
+    video_file: models.ForeignKey[Any] = models.ForeignKey(
         "VideoFile",
         on_delete=models.CASCADE,
         related_name="video_segmentation_annotations",
     )
 
-    label = models.ForeignKey(
+    label: models.ForeignKey[Any] = models.ForeignKey(
         "VideoSegmentationLabel",
         on_delete=models.CASCADE,
     )
 
     # times in seconds
-    start_time = models.FloatField()
-    stop_time = models.FloatField()
+    start_time: models.FloatField[Any, Any] = models.FloatField()
+    stop_time: models.FloatField[Any, Any] = models.FloatField()
 
-    is_true = models.BooleanField(default=True)
+    is_true: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
     if TYPE_CHECKING:
-        video_file: models.ForeignKey["VideoFile"]
-        label: models.ForeignKey["VideoSegmentationLabel"]
+        pass
 
     def __str__(self) -> str:
         return f"{self.video_file.pk} - {self.label.name} - {self.start_time} to {self.stop_time}"
@@ -45,9 +45,6 @@ class VideoSegmentationAnnotation(models.Model):
         """
         Convenience accessor for the associated VideoFile instance.
         """
-        if self.video_file.pk is None:
-            # Should not happen due to null=False
-            raise ValueError("Annotation is not linked to a VideoFile.")
         return self.video_file
 
     class Meta:

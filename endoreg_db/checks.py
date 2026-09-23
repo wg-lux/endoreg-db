@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 
+from django.apps import AppConfig
 from django.conf import settings
-from django.core.checks import Error, Tags, Warning, register
+from django.core.checks import CheckMessage, Error, Tags, Warning, register
 
 from endoreg_db.config.env import (
     celery_broker_secure_transport_confirmed,
@@ -18,6 +20,15 @@ class CeleryMode:
     env_key: str
     default: str
     label: str
+
+
+@dataclass(frozen=True)
+class CeleryRuntimeConfiguration:
+    broker_url: str
+    strict: bool
+    watcher_inline_fallback: bool
+    require_secure_transport: bool
+    enabled_job_labels: str
 
 
 CELERY_MODES = (
@@ -36,6 +47,9 @@ CELERY_MODES = (
     CeleryMode("MODEL_TRAINING_JOB_MODE", "celery", "model training"),
 )
 ALWAYS_CELERY_LABELS = ("upload pipeline ingest",)
+type AppConfigSequence = Sequence[AppConfig] | None
+type DatabaseAliasSequence = Sequence[str] | None
+type CheckKwargValue = str | bool | int | AppConfigSequence | DatabaseAliasSequence
 
 
 def _job_mode(mode: CeleryMode) -> str:
@@ -55,91 +69,116 @@ def _celery_enabled_labels() -> list[str]:
     ]
 
 
-@register("celery", Tags.security)
-def check_celery_runtime_configuration(app_configs=None, **kwargs):
-    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)):
-        return []
-
-    broker_url = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()
+def _celery_runtime_configuration() -> CeleryRuntimeConfiguration:
     strict = bool(getattr(settings, "CELERY_RUNTIME_CONFIG_STRICT", False))
-    watcher_inline_fallback = bool(
-        getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
+    return CeleryRuntimeConfiguration(
+        broker_url=str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip(),
+        strict=strict,
+        watcher_inline_fallback=bool(
+            getattr(settings, "WATCHER_CELERY_INLINE_FALLBACK_ENABLED", False)
+        ),
+        require_secure_transport=strict
+        or bool(getattr(settings, "CELERY_REQUIRE_SECURE_TRANSPORT", False)),
+        enabled_job_labels=", ".join(_celery_enabled_labels()),
     )
-    require_secure_transport = strict or bool(
-        getattr(settings, "CELERY_REQUIRE_SECURE_TRANSPORT", False)
+
+
+def _watcher_inline_fallback_error(
+    configuration: CeleryRuntimeConfiguration,
+) -> Error | None:
+    if not configuration.strict or not configuration.watcher_inline_fallback:
+        return None
+    return Error(
+        (
+            "WATCHER_CELERY_INLINE_FALLBACK_ENABLED is not allowed when "
+            "CELERY_RUNTIME_CONFIG_STRICT is enabled."
+        ),
+        hint=(
+            "Disable the watcher inline fallback for production/clinical "
+            "profiles, or run a non-strict development settings module."
+        ),
+        id="endoreg_db.E003",
     )
-    celery_enabled = _celery_enabled_labels()
-    labels = ", ".join(celery_enabled)
-    messages = []
 
-    if strict and watcher_inline_fallback:
-        messages.append(
-            Error(
-                (
-                    "WATCHER_CELERY_INLINE_FALLBACK_ENABLED is not allowed when "
-                    "CELERY_RUNTIME_CONFIG_STRICT is enabled."
-                ),
-                hint=(
-                    "Disable the watcher inline fallback for production/clinical "
-                    "profiles, or run a non-strict development settings module."
-                ),
-                id="endoreg_db.E003",
-            )
-        )
 
+def _broker_transport_message(
+    configuration: CeleryRuntimeConfiguration,
+) -> CheckMessage | None:
     broker_error = celery_broker_transport_error(
-        broker_url=broker_url,
+        broker_url=configuration.broker_url,
         require_broker=True,
         require_secure_transport=False,
         workload="Celery",
     )
-    if broker_error is not None:
-        message = f"{broker_error} Celery-backed jobs enabled: {labels}."
-        if strict:
-            messages.append(
-                Error(
-                    message,
-                    hint=(
-                        "Set CELERY_BROKER_URL or switch affected *_JOB_MODE "
-                        "values to inline/thread for this profile."
-                    ),
-                    id="endoreg_db.E001",
-                )
-            )
-        else:
-            messages.append(
-                Warning(
-                    message,
-                    hint=(
-                        "Set CELERY_BROKER_URL before relying on asynchronous "
-                        "processing."
-                    ),
-                    id="endoreg_db.W001",
-                )
-            )
-        return messages
-
-    if not require_secure_transport:
-        return messages
-
-    if celery_broker_secure_transport_confirmed():
-        return messages
-    if celery_broker_url_uses_secure_transport(broker_url):
-        return messages
+    if broker_error is None:
+        return None
 
     message = (
-        "Celery-backed jobs require secure broker transport in this profile. "
-        f"Configured broker is not rediss:// or amqps://. Jobs enabled: {labels}."
+        f"{broker_error} Celery-backed jobs enabled: "
+        f"{configuration.enabled_job_labels}."
     )
-    messages.append(
-        Error(
+    if configuration.strict:
+        return Error(
             message,
             hint=(
-                "Use rediss:// or amqps://, or set "
-                "CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1 only when an "
-                "external mTLS/VPN boundary already protects the broker."
+                "Set CELERY_BROKER_URL or switch affected *_JOB_MODE "
+                "values to inline/thread for this profile."
             ),
-            id="endoreg_db.E002",
+            id="endoreg_db.E001",
         )
+    return Warning(
+        message,
+        hint="Set CELERY_BROKER_URL before relying on asynchronous processing.",
+        id="endoreg_db.W001",
     )
+
+
+def _secure_broker_transport_error(
+    configuration: CeleryRuntimeConfiguration,
+) -> Error | None:
+    if not configuration.require_secure_transport:
+        return None
+    if celery_broker_secure_transport_confirmed():
+        return None
+    if celery_broker_url_uses_secure_transport(configuration.broker_url):
+        return None
+
+    return Error(
+        (
+            "Celery-backed jobs require secure broker transport in this profile. "
+            "Configured broker is not rediss:// or amqps://. Jobs enabled: "
+            f"{configuration.enabled_job_labels}."
+        ),
+        hint=(
+            "Use rediss:// or amqps://, or set "
+            "CELERY_BROKER_SECURE_TRANSPORT_CONFIRMED=1 only when an "
+            "external mTLS/VPN boundary already protects the broker."
+        ),
+        id="endoreg_db.E002",
+    )
+
+
+@register("celery", Tags.security)
+def check_celery_runtime_configuration(
+    *,
+    app_configs: AppConfigSequence = None,
+    databases: DatabaseAliasSequence = None,
+    **kwargs: CheckKwargValue,
+) -> list[CheckMessage]:
+    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)):
+        return []
+
+    configuration = _celery_runtime_configuration()
+    messages: list[CheckMessage] = [
+        message
+        for message in (_watcher_inline_fallback_error(configuration),)
+        if message is not None
+    ]
+    broker_message = _broker_transport_message(configuration)
+    if broker_message is not None:
+        return [*messages, broker_message]
+
+    secure_transport_error = _secure_broker_transport_error(configuration)
+    if secure_transport_error is not None:
+        messages.append(secure_transport_error)
     return messages

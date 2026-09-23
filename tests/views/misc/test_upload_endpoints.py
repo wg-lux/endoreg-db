@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+# pyright: reportUnknownMemberType=false
+
+from typing import cast
 from unittest.mock import patch
 from uuid import uuid4
 
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
@@ -23,16 +26,81 @@ MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
 
 class UploadEndpointTests(TestCase):
+    def test_changed_content_with_same_key_returns_conflict_without_dispatch(self):
+        self._authenticate_for_center()
+        with patch(
+            "endoreg_db.services.hub.ingest.start_upload_job_processing",
+            return_value="inline",
+        ) as dispatch:
+            first = self.client.post(
+                "/api/upload/",
+                data={
+                    "file": SimpleUploadedFile(
+                        "first.pdf", MINIMAL_PDF_BYTES, content_type="application/pdf"
+                    )
+                },
+                HTTP_IDEMPOTENCY_KEY="immutable-upload",
+            )
+            assert first.status_code == 201, first.content
+            second = self.client.post(
+                "/api/upload/",
+                data={
+                    "file": SimpleUploadedFile(
+                        "changed.pdf",
+                        MINIMAL_PDF_BYTES + b"\n% changed",
+                        content_type="application/pdf",
+                    )
+                },
+                HTTP_IDEMPOTENCY_KEY="immutable-upload",
+            )
+        assert second.status_code == 409, second.content
+        assert UploadJob.objects.count() == 1
+        dispatch.assert_called_once()
+
+    def _authenticate_for_center(self, center: Center | None = None) -> Center:
+        resolved_center = center or ApplicationSettings.get_solo().center
+        if resolved_center is None:
+            resolved_center = Center.objects.create(name=f"upload-{uuid4().hex[:8]}")
+            settings_obj = ApplicationSettings.get_solo()
+            settings_obj.center = resolved_center
+            settings_obj.save(update_fields=["center"])
+        user = User.objects.create_user(username=f"upload-user-{uuid4().hex[:8]}")
+        user.groups.add(Group.objects.get_or_create(name="patient:write")[0])
+        portal_info = PortalUserInfo.objects.create(user=user)
+        portal_info.centers.add(resolved_center)
+        self.client.force_login(user)
+        return resolved_center
+
     def test_upload_rejects_missing_file(self):
         response = self.client.post("/api/upload/", data={})
         assert response.status_code == 400, response.content
         assert "No file provided" in response.json()["error"]
+
+    def test_upload_rejects_unknown_multipart_fields_before_job_creation(self):
+        self._authenticate_for_center()
+        uploaded = SimpleUploadedFile(
+            name="upload-test.pdf",
+            content=MINIMAL_PDF_BYTES,
+            content_type="application/pdf",
+        )
+
+        response = self.client.post(
+            "/api/upload/",
+            data={"file": uploaded, "unexpected": "silently-dropped-before"},
+        )
+
+        assert response.status_code == 400, response.content
+        assert response.json() == {
+            "error": "Unknown upload request field(s): unexpected"
+        }
+        assert UploadJob.objects.count() == 0
 
     def test_upload_status_returns_404_for_unknown_job(self):
         response = self.client.get(f"/api/upload/{uuid4()}/status/")
         assert response.status_code == 404, response.content
 
     def test_upload_pdf_creates_job_and_status_is_available(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -42,7 +110,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -61,6 +129,7 @@ class UploadEndpointTests(TestCase):
         assert status_payload["status"] == "pending"
 
     def test_upload_reuses_existing_job_for_same_idempotency_key(self):
+        self._authenticate_for_center()
         uploaded_a = SimpleUploadedFile(
             name="upload-a.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -75,7 +144,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -95,6 +164,7 @@ class UploadEndpointTests(TestCase):
         assert first.json()["upload_id"] == second.json()["upload_id"]
 
     def test_upload_reuses_existing_job_for_same_content_hash(self):
+        self._authenticate_for_center()
         uploaded_a = SimpleUploadedFile(
             name="upload-a.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -109,7 +179,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -136,7 +206,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -156,6 +226,7 @@ class UploadEndpointTests(TestCase):
         settings_obj = ApplicationSettings.get_solo()
         settings_obj.center = default_center
         settings_obj.save()
+        self._authenticate_for_center(default_center)
 
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
@@ -166,7 +237,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -174,7 +245,8 @@ class UploadEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
-        assert upload_job.source_center == default_center
+        source_center = cast(Center, getattr(upload_job, "source_center"))
+        assert source_center == default_center
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_hub_mode_rejects_unauthenticated_upload(self):
@@ -187,7 +259,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -212,7 +284,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -235,7 +307,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -260,7 +332,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -291,7 +363,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -324,7 +396,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -335,7 +407,8 @@ class UploadEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
         upload_job = UploadJob.objects.get(id=response.json()["upload_id"])
-        assert upload_job.source_center == center
+        source_center = cast(Center, getattr(upload_job, "source_center"))
+        assert source_center == center
 
     @override_settings(
         ENDOREG_DEPLOYMENT_ROLE="central_hub",
@@ -367,7 +440,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -401,7 +474,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ),
         ):
@@ -437,7 +510,7 @@ class UploadEndpointTests(TestCase):
     #     with (
     #         patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
     #         patch(
-    #             "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+    #             "endoreg_db.services.hub.ingest.start_upload_job_processing",
     #             return_value="inline",
     #         ),
     #     ):
@@ -478,6 +551,7 @@ class UploadEndpointTests(TestCase):
 
     def test_upload_status_includes_report_llm_job_for_queued_import(self):
         center = Center.objects.create(name="llm-status-center")
+        self._authenticate_for_center(center)
         upload_job = UploadJob.objects.create(
             file=SimpleUploadedFile(
                 name="status-report.pdf",
@@ -514,6 +588,7 @@ class UploadEndpointTests(TestCase):
 
     def test_upload_status_report_llm_job_includes_poll_url_after_pdf_exists(self):
         center = Center.objects.create(name="llm-status-completed-center")
+        self._authenticate_for_center(center)
         report = RawPdfFile.objects.create(
             center=center,
             pdf_hash=f"llm-status-completed-report-{uuid4().hex}",
@@ -551,10 +626,11 @@ class UploadEndpointTests(TestCase):
         report_job = response.json()["report_llm_job"]
         assert report_job["report_id"] == report.pk
         assert report_job["poll_url"] == (
-            f"/api/media/pdfs/{report.pk}/llm-jobs/{job.job_key}/"
+            f"/endoreg-api/media/pdfs/{report.pk}/llm-jobs/{job.job_key}/"
         )
 
     def test_upload_dispatches_inline_processing_when_celery_is_unavailable(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -564,7 +640,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 return_value="inline",
             ) as start_processing,
         ):
@@ -576,12 +652,10 @@ class UploadEndpointTests(TestCase):
         assert upload_job.storage_tier == UploadJob.StorageTier.UPLOAD_API
         assert upload_job.retention_policy == UploadJob.RetentionPolicy.PRESERVE_SOURCE
         assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
-        start_processing.assert_called_once_with(
-            upload_job=upload_job,
-            task_dispatcher=None,
-        )
+        start_processing.assert_called_once_with(upload_job=upload_job)
 
     def test_upload_returns_500_when_processing_handoff_fails(self):
+        self._authenticate_for_center()
         uploaded = SimpleUploadedFile(
             name="upload-test.pdf",
             content=MINIMAL_PDF_BYTES,
@@ -591,7 +665,7 @@ class UploadEndpointTests(TestCase):
         with (
             patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
             patch(
-                "endoreg_db.views.misc.upload_views.start_upload_job_processing",
+                "endoreg_db.services.hub.ingest.start_upload_job_processing",
                 side_effect=RuntimeError("inline processing failed"),
             ),
         ):

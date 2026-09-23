@@ -10,7 +10,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.utils.filesystem.file_operations import safe_unlink_file
+from endoreg_db.utils.file_operations import safe_unlink_file
 
 logger = logging.getLogger(__name__)
 

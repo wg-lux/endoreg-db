@@ -1,20 +1,30 @@
-from django.core.management.base import BaseCommand
+from __future__ import annotations
+
+
+from django.core.management.base import BaseCommand, CommandParser
+from lx_dtypes.models.contracts.management_command import (
+    VerboseManagementCommandOptionsPayload,
+)
 
 from ...data import REPORT_TYPE_DATA_DIR
 
-#### CUSTOMIZE
-from ...models import PdfType, ReportReaderFlag
+from endoreg_db.models.media.pdf.report_reader.report_reader_flag import (
+    ReportReaderFlag,
+)
+from endoreg_db.models.metadata.pdf_meta import PdfType
 from ...utils import load_model_data_from_yaml
+from endoreg_db.helpers.typing import LoadModelDataMetadata
 
 SOURCE_DIR = REPORT_TYPE_DATA_DIR  # e.g. settings.DATA_DIR_INTERVENTION
 
 MODEL_0 = PdfType
 
-IMPORT_MODELS = [  # string as model key, serves as key in IMPORT_METADATA
+
+IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
     MODEL_0.__name__,
 ]
 
-IMPORT_METADATA = {
+IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
     MODEL_0.__name__: {
         "dir": SOURCE_DIR,  # e.g. "interventions"
         "model": MODEL_0,  # e.g. Intervention
@@ -39,15 +49,19 @@ IMPORT_METADATA = {
 class Command(BaseCommand):
     help = f"""Load all .yaml files in the {SOURCE_DIR} directory"""
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--verbose",
             action="store_true",
             help="Display verbose output",
         )
 
-    def handle(self, *args, **options):
-        verbose = options["verbose"]
+    def handle(
+        self,
+        *args: str,
+        **options: object,
+    ) -> None:
+        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
         for model_name in IMPORT_MODELS:
-            _metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, _metadata, verbose)
+            metadata = IMPORT_METADATA[model_name]
+            load_model_data_from_yaml(self, model_name, metadata, verbose)

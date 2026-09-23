@@ -1,17 +1,29 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
-import os
 import uuid
-from typing import Any, Literal
+from collections.abc import Mapping
+from typing import Any, Literal, cast
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field
+from lx_dtypes.models.contracts.video_reimport import (
+    VideoReimportDispatchResult,
+    VideoReimportHistoryConfig,
+    VideoReimportJobMode,
+    VideoReimportJsonValue,
+    dump_video_reimport_request_payload,
+    validate_video_reimport_request_payload,
+    video_reimport_json_safe_dict,
+)
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.config.env import (
+    env_choice,
+    env_int,
     get_celery_broker_url,
     get_celery_ffmpeg_media_queue,
 )
@@ -21,16 +33,23 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
+from endoreg_db.services.jobs.stale_recovery import (
+    recover_stale_video_processing_history,
+)
+from endoreg_db.services.hub.upload_job_state_machine import (
+    validate_upload_job_status_transition,
+)
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_import import VideoImportService
 from endoreg_db.services.video_files import (
     initialize_video_frames,
-    initialize_video_specs,
+    initialize_video_specs as initialize_video_file_specs,
 )
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
@@ -40,6 +59,7 @@ from endoreg_db.services.video_temporal_inference import (
     dispatch_video_temporal_inference,
     extract_temporal_options,
 )
+from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
@@ -52,7 +72,6 @@ INACTIVE_UPLOAD_JOB_STATUSES = {
 VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY = Q(content_type__startswith="video/") | Q(
     content_type=""
 )
-VIDEO_REIMPORT_HISTORY_KIND: Literal["video_reimport"] = "video_reimport"
 ACTIVE_REIMPORT_STATUSES = (
     VideoProcessingHistory.STATUS_PENDING,
     VideoProcessingHistory.STATUS_RUNNING,
@@ -60,88 +79,30 @@ ACTIVE_REIMPORT_STATUSES = (
 RESERVATION_CREATED = "created"
 RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
-DEFAULT_VIDEO_REIMPORT_JOB_MODE = "celery"
+DEFAULT_VIDEO_REIMPORT_JOB_MODE: VideoReimportJobMode = "celery"
+VIDEO_REIMPORT_JOB_MODES: tuple[VideoReimportJobMode, ...] = ("celery", "inline")
 DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS = 0
 
 
-JsonValue = Any
-
-
-class VideoReimportHistoryConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["video_reimport"] = VIDEO_REIMPORT_HISTORY_KIND
-    queue: str
-    refresh_predictions: bool = True
-    prediction_payload: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class VideoReimportDispatchResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str
-    mode: str
-    status: Literal[
-        "queued",
-        "already_queued",
-        "busy",
-        "completed",
-        "failed",
-        "lost",
-    ]
-    operation: str = VIDEO_REIMPORT_HISTORY_KIND
-    video_id: int
-    queue: str
-    history_id: int | None = None
-    poll_url: str | None = None
-    message: str | None = None
-    reason: str | None = None
-    prediction_refresh: dict[str, JsonValue] | None = None
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return self.model_dump(mode="json", exclude_none=True)
-
-
-def _env_int(key: str, default: int) -> int:
-    raw_value = os.environ.get(key)
-    if raw_value is None:
-        return default
-    try:
-        return int(str(raw_value).strip())
-    except (TypeError, ValueError):
-        return default
-
-
-def get_video_reimport_job_mode() -> str:
-    raw_mode = os.environ.get("VIDEO_REIMPORT_JOB_MODE")
-    if raw_mode is None:
-        broker_url = str(
-            getattr(settings, "CELERY_BROKER_URL", None)
-            or get_celery_broker_url()
-            or ""
-        ).strip()
-        if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)) or not broker_url:
-            return "inline"
-        mode = DEFAULT_VIDEO_REIMPORT_JOB_MODE
-    else:
-        mode = raw_mode
-    normalized = str(mode or DEFAULT_VIDEO_REIMPORT_JOB_MODE).strip().lower()
-    if normalized not in {"celery", "inline"}:
-        logger.warning(
-            "Unsupported VIDEO_REIMPORT_JOB_MODE=%s; using celery.",
-            mode,
-        )
-        return DEFAULT_VIDEO_REIMPORT_JOB_MODE
-    return normalized
+def get_video_reimport_job_mode() -> VideoReimportJobMode:
+    broker_url = str(
+        getattr(settings, "CELERY_BROKER_URL", None) or get_celery_broker_url() or ""
+    ).strip()
+    default_mode: VideoReimportJobMode = DEFAULT_VIDEO_REIMPORT_JOB_MODE
+    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)) or not broker_url:
+        default_mode = "inline"
+    return env_choice(
+        "VIDEO_REIMPORT_JOB_MODE",
+        VIDEO_REIMPORT_JOB_MODES,
+        default_mode,
+    )
 
 
 def get_video_reimport_dispatch_delay_seconds() -> int:
-    return max(
-        0,
-        _env_int(
-            "VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS",
-            DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS,
-        ),
+    return env_int(
+        "VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS",
+        DEFAULT_VIDEO_REIMPORT_DISPATCH_DELAY_SECONDS,
+        minimum=0,
     )
 
 
@@ -158,31 +119,16 @@ def _as_bool(value: Any, *, default: bool) -> bool:
     return default
 
 
-def _json_safe(value: Any) -> JsonValue:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, dict):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
-    return str(value)
-
-
-def _json_safe_dict(payload: Any) -> dict[str, JsonValue]:
-    if not hasattr(payload, "items"):
-        return {}
-    return {str(key): _json_safe(value) for key, value in payload.items()}
-
-
 def _config_from_payload(payload: Any, *, queue: str) -> VideoReimportHistoryConfig:
-    safe_payload = _json_safe_dict(payload)
+    request_payload = validate_video_reimport_request_payload(payload)
+    safe_payload = dump_video_reimport_request_payload(request_payload)
     return VideoReimportHistoryConfig(
         queue=queue,
         refresh_predictions=_as_bool(
             safe_payload.get("refresh_predictions"),
             default=True,
         ),
-        prediction_payload=safe_payload,
+        prediction_payload=dict(safe_payload),
     )
 
 
@@ -221,7 +167,7 @@ def _resolve_prediction_model_meta(payload: dict[str, Any]) -> ModelMeta:
 
 
 def _reimport_upload_job_queryset(video: VideoFile):
-    queryset = UploadJob.objects.filter(content_hash=video.video_hash).filter(
+    queryset = UploadJob.objects.filter(content_hash=video.raw_video_hash).filter(
         VIDEO_UPLOAD_JOB_CONTENT_TYPE_QUERY
     )
     center_id = getattr(video, "center_id", None)
@@ -233,7 +179,7 @@ def _reimport_upload_job_queryset(video: VideoFile):
     return queryset
 
 
-def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
+def _select_reimport_upload_jobs(video: VideoFile) -> list[UploadJob]:
     selected_by_scope: dict[tuple[int | None, str], UploadJob] = {}
     total_count = 0
     queryset = (
@@ -243,7 +189,11 @@ def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
     )
     for upload_job in queryset:
         total_count += 1
-        scope = (upload_job.source_center_id, upload_job.content_type or "")
+        source_center = upload_job.source_center
+        scope = (
+            int(source_center.pk) if source_center is not None else None,
+            upload_job.content_type or "",
+        )
         selected_job = selected_by_scope.get(scope)
         if selected_job is None:
             selected_by_scope[scope] = upload_job
@@ -254,23 +204,32 @@ def _select_reimport_upload_job_ids(video: VideoFile) -> list[Any]:
         ):
             selected_by_scope[scope] = upload_job
 
-    selected_ids = [upload_job.pk for upload_job in selected_by_scope.values()]
-    skipped_count = total_count - len(selected_ids)
+    selected_jobs = list(selected_by_scope.values())
+    skipped_count = total_count - len(selected_jobs)
     if skipped_count > 0:
         logger.info(
             "Skipped %d duplicate inactive UploadJob row(s) for video %s "
             "during re-import state update",
             skipped_count,
-            video.video_hash,
+            video.raw_video_hash,
         )
-    return selected_ids
+    return selected_jobs
 
 
 def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
+    target_status = updates.get("status")
+    if not isinstance(target_status, str):
+        raise ValueError("video re-import UploadJob update requires a status")
     with transaction.atomic():
-        selected_ids = _select_reimport_upload_job_ids(video)
-        if not selected_ids:
+        selected_jobs = _select_reimport_upload_jobs(video)
+        if not selected_jobs:
             return 0
+        for upload_job in selected_jobs:
+            validate_upload_job_status_transition(
+                current_status=upload_job.status,
+                target_status=target_status,
+            )
+        selected_ids = [upload_job.pk for upload_job in selected_jobs]
         return UploadJob.objects.filter(pk__in=selected_ids).update(
             **updates,
             updated_at=timezone.now(),
@@ -278,12 +237,28 @@ def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
 
 
 def _reset_reimport_state(video: VideoFile) -> int:
+    if _video_has_integrity_loss(video):
+        raise RuntimeError(
+            "Video is marked lost by media integrity and cannot be re-imported."
+        )
+
+    get_state = getattr(video, "get_or_create_state", None)
+    if callable(get_state):
+        state = cast(VideoState, get_state())
+        locked_state = VideoState.objects.select_for_update().get(pk=state.pk)
+        # A processing failure is retryable when the durable integrity marker is
+        # absent. Revoke every derived release flag before the new attempt; the
+        # prior processing history, audit ledger, and quality metrics remain rows.
+        locked_state.processing_error = False
+        locked_state.mark_processing_not_started()
+        video.state = locked_state
+
     old_meta_id = video.sensitive_meta_id
     if old_meta_id is not None:
         logger.info(
             "Clearing existing SensitiveMeta %s for video %s",
             old_meta_id,
-            video.video_hash,
+            video.raw_video_hash,
         )
         video.sensitive_meta = None
         video.save(update_fields=["sensitive_meta"])
@@ -305,11 +280,11 @@ def _reset_reimport_state(video: VideoFile) -> int:
     logger.info(
         "Reset %d UploadJob row(s) to processing for video %s",
         reset_count,
-        video.video_hash,
+        video.raw_video_hash,
     )
 
-    logger.info("Re-initializing video specs for %s", video.video_hash)
-    initialize_video_specs(video)
+    logger.info("Re-initializing video specs for %s", video.raw_video_hash)
+    initialize_video_file_specs(video)
     initialize_video_frames(video)
     return reset_count
 
@@ -340,15 +315,11 @@ def _mark_upload_jobs_lost(video: VideoFile, error_detail: str) -> int:
 
 
 def _video_has_integrity_loss(video: VideoFile) -> bool:
-    get_state = getattr(video, "get_or_create_state", None)
-    video_state = get_state() if callable(get_state) else getattr(video, "state", None)
-    video_meta = getattr(video, "meta", None)
+    video_meta: object | None = getattr(video, "meta", None)
     if not isinstance(video_meta, dict):
         video_meta = {}
-    return bool(
-        getattr(video_state, "processing_error", False)
-        or video_meta.get("integrity_status") == "lost"
-    )
+    video_meta_dict = cast(dict[str, object], video_meta)
+    return video_meta_dict.get("integrity_status") == "lost"
 
 
 def _dispatch_prediction_refresh(
@@ -407,6 +378,11 @@ def _reserve_reimport_history(
         ).select_for_update()
         for history in active_histories:
             if _is_video_reimport_history(history):
+                if recover_stale_video_processing_history(
+                    history,
+                    job_name="video re-import",
+                ):
+                    continue
                 return history, RESERVATION_ALREADY_QUEUED
             return history, RESERVATION_BUSY
 
@@ -442,14 +418,14 @@ def _get_processing_history(
 def _job_dispatch_result(
     *,
     task_id: str,
-    mode: str,
+    mode: VideoReimportJobMode,
     status: Literal["queued", "already_queued", "busy", "completed", "failed", "lost"],
     video_id: int,
     queue: str,
     history_id: int | None = None,
     message: str | None = None,
     reason: str | None = None,
-    prediction_refresh: dict[str, JsonValue] | None = None,
+    prediction_refresh: dict[str, VideoReimportJsonValue] | None = None,
 ) -> VideoReimportDispatchResult:
     return VideoReimportDispatchResult(
         task_id=task_id,
@@ -458,7 +434,7 @@ def _job_dispatch_result(
         video_id=int(video_id),
         queue=queue,
         history_id=history_id,
-        poll_url=f"/api/media/videos/{int(video_id)}/processing-history/",
+        poll_url=endoreg_api_path(f"media/videos/{int(video_id)}/processing-history/"),
         message=message,
         reason=reason,
         prediction_refresh=prediction_refresh,
@@ -485,9 +461,9 @@ def _prediction_refresh_payload(
     *,
     status: str,
     queued: bool,
-    **extra: JsonValue,
-) -> dict[str, JsonValue]:
-    payload: dict[str, JsonValue] = {"status": status, "queued": queued}
+    **extra: VideoReimportJsonValue,
+) -> dict[str, VideoReimportJsonValue]:
+    payload: dict[str, VideoReimportJsonValue] = {"status": status, "queued": queued}
     payload.update(extra)
     return payload
 
@@ -496,7 +472,7 @@ def _run_prediction_refresh(
     *,
     video: VideoFile,
     config: VideoReimportHistoryConfig,
-) -> dict[str, JsonValue]:
+) -> dict[str, VideoReimportJsonValue]:
     if not config.refresh_predictions:
         return _prediction_refresh_payload(
             status="skipped",
@@ -504,7 +480,46 @@ def _run_prediction_refresh(
             reason="disabled",
         )
     raw_result = _dispatch_prediction_refresh(video, dict(config.prediction_payload))
-    return _json_safe_dict(raw_result)
+    return video_reimport_json_safe_dict(raw_result)
+
+
+def _regenerate_reimport_hls_artifacts(
+    video: VideoFile,
+) -> dict[str, VideoReimportJsonValue]:
+    """
+    Rebuild processed HLS from the freshly committed encrypted processed_file.
+
+    The HLS service streams through the FieldFile storage API, so encrypted
+    storage is the only durable source and plaintext is confined to ffmpeg pipes.
+    """
+    try:
+        video_id = int(video.pk)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Cannot regenerate HLS for an unsaved video.") from exc
+
+    try:
+        from endoreg_db.services.hls_media import materialize_video_hls
+
+        result = materialize_video_hls(
+            video_id,
+            artifact_kind="processed",
+            force=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Processed HLS source is missing after video re-import."
+        ) from exc
+
+    payload = video_reimport_json_safe_dict(
+        cast(Mapping[str, JsonValue], result.as_dict())
+    )
+    logger.info(
+        "Regenerated processed HLS after video re-import: video=%s status=%s key_id=%s",
+        getattr(video, "raw_video_hash", video_id),
+        payload.get("status"),
+        payload.get("key_id"),
+    )
+    return payload
 
 
 def _run_video_reimport_job(
@@ -538,7 +553,7 @@ def _run_video_reimport_job(
             video.refresh_from_db()
             logger.info(
                 "Starting asynchronous VideoImportService re-anonymization for %s",
-                video.video_hash,
+                video.raw_video_hash,
             )
             VideoImportService().reanonymize_existing_video(
                 video,
@@ -546,6 +561,7 @@ def _run_video_reimport_job(
             )
 
         video.refresh_from_db()
+        hls_refresh = _regenerate_reimport_hls_artifacts(video)
         completed_upload_jobs = _mark_upload_jobs_anonymized(video)
         prediction_refresh = _run_prediction_refresh(video=video, config=config)
 
@@ -557,12 +573,14 @@ def _run_video_reimport_job(
                     "Video re-import completed: "
                     f"reset_upload_jobs={reset_upload_jobs}, "
                     f"completed_upload_jobs={completed_upload_jobs}, "
+                    f"hls_status={hls_refresh.get('status')}, "
+                    f"hls_key_id={hls_refresh.get('key_id')}, "
                     f"prediction_refresh_status={prediction_refresh.get('status')}"
                 ),
             )
         logger.info(
             "Video re-import completed successfully for %s",
-            video.video_hash,
+            video.raw_video_hash,
         )
         return True
     except FileNotFoundError as exc:
@@ -695,3 +713,13 @@ def dispatch_video_reimport(
             history_id=history.pk,
             reason=str(exc),
         )
+
+
+as_bool = _as_bool
+dispatch_prediction_refresh = _dispatch_prediction_refresh
+mark_upload_jobs_anonymized = _mark_upload_jobs_anonymized
+mark_upload_jobs_error = _mark_upload_jobs_error
+mark_upload_jobs_lost = _mark_upload_jobs_lost
+regenerate_reimport_hls_artifacts = _regenerate_reimport_hls_artifacts
+reset_reimport_state = _reset_reimport_state
+video_has_integrity_loss = _video_has_integrity_loss

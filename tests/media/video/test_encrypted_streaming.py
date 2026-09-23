@@ -1,5 +1,5 @@
-from endoreg_db.utils.storage.streaming import iter_field_file_bytes
-from endoreg_db.utils.storage.streaming import field_file_size
+from endoreg_db.utils.storage_streaming import iter_field_file_bytes
+from endoreg_db.utils.storage_streaming import field_file_size
 
 
 def test_field_file_size_uses_encrypted_storage_plaintext_size():
@@ -28,7 +28,7 @@ class FakeEncryptedStorage:
 
 
 class FakeFieldFile:
-    def __init__(self, name: str, storage):
+    def __init__(self, name: str, storage: FakeEncryptedStorage):
         self.name = name
         self.storage = storage
 

@@ -1,16 +1,34 @@
+import logging
+from collections.abc import Mapping
+from typing import Protocol, cast
+
+from django.db.models import QuerySet
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
+from lx_dtypes.models.contracts.json_types import JsonValue
 
 from rest_framework import generics, status
+from rest_framework.request import Request
 from rest_framework.response import Response
-from endoreg_db.utils.web.permissions import DEBUG_PERMISSIONS
-
-import logging
+from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
 logger = logging.getLogger(__name__)
 
 
-class PatientExaminationListView(generics.ListAPIView):
+class _SerializerDataLike(Protocol):
+    @property
+    def data(self) -> JsonValue: ...
+
+
+def _query_params(request: Request) -> Mapping[str, str]:
+    return cast(Mapping[str, str], request.query_params)
+
+
+def _serializer_data(serializer: _SerializerDataLike) -> JsonValue:
+    return serializer.data
+
+
+class PatientExaminationListView(generics.ListAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
     """
     List PatientExamination instances with filtering.
     GET /api/examinations/list/
@@ -25,38 +43,44 @@ class PatientExaminationListView(generics.ListAPIView):
     serializer_class = PatientExaminationSerializer
     permission_classes = DEBUG_PERMISSIONS
 
-    def get_queryset(self):
-        queryset = PatientExamination.objects.select_related(
-            "patient", "examination"
-        ).order_by("-date_start", "-id")
+    def get_queryset(self) -> QuerySet[PatientExamination]:
+        queryset: QuerySet[PatientExamination] = (
+            PatientExamination.objects.select_related(
+                "patient", "examination"
+            ).order_by("-date_start", "-id")
+        )
 
         # Apply filters
-        patient_id = self.request.query_params.get("patient_id")
+        patient_id = _query_params(self.request).get("patient_id")
         if patient_id:
             queryset = queryset.filter(patient_id=patient_id)
 
-        examination_name = self.request.query_params.get("examination_name")
+        examination_name = _query_params(self.request).get("examination_name")
         if examination_name:
             queryset = queryset.filter(examination__name__icontains=examination_name)
 
         return queryset
 
-    def list(self, request, *args, **kwargs):
+    def list(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
             queryset = self.get_queryset()
 
             # Pagination
-            limit = int(request.query_params.get("limit", 20))
-            offset = int(request.query_params.get("offset", 0))
+            query_params = _query_params(request)
+            limit = int(query_params.get("limit", "20"))
+            offset = int(query_params.get("offset", "0"))
 
             total_count = queryset.count()
             paginated_queryset = queryset[offset : offset + limit]
 
-            serializer = self.get_serializer(paginated_queryset, many=True)
+            serializer: _SerializerDataLike = cast(
+                _SerializerDataLike,
+                self.get_serializer(paginated_queryset, many=True),
+            )
 
             return Response(
                 {
-                    "results": serializer.data,
+                    "results": _serializer_data(serializer),
                     "total_count": total_count,
                     "limit": limit,
                     "offset": offset,

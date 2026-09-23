@@ -11,6 +11,9 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
+from endoreg_db.services.aidataset_frame_buckets import (
+    build_frame_bucket_distribution,
+)
 
 
 class AIDataSetFrameBucketDistributionTests(TestCase):
@@ -18,7 +21,7 @@ class AIDataSetFrameBucketDistributionTests(TestCase):
         self.center = Center.objects.create(name="dataset-bucket-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="dataset-bucket-video",
+            raw_video_hash="dataset-bucket-video",
             original_file_name="dataset_bucket.mp4",
             fps=25.0,
             frame_count=4,
@@ -83,7 +86,8 @@ class AIDataSetFrameBucketDistributionTests(TestCase):
         )
         self.dataset.video_annotations.add(prediction_segment)
 
-        distribution = self.dataset.build_frame_bucket_distribution(
+        distribution = build_frame_bucket_distribution(
+            self.dataset,
             label_set=self.label_set,
             target_label=self.target_label,
             prediction_segments_only=True,

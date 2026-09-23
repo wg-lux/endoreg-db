@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from typing import TypeGuard
+
 from django.conf import settings
+from lx_dtypes.models.contracts.application_settings import (
+    ApplicationSettingsDeploymentProfilePayload,
+    ApplicationSettingsDeploymentRole,
+)
 
 VALID_DEPLOYMENT_ROLES = (
     "standalone",
@@ -10,10 +16,14 @@ VALID_DEPLOYMENT_ROLES = (
 )
 
 
-def get_deployment_role() -> str:
+def _is_deployment_role(value: str) -> TypeGuard[ApplicationSettingsDeploymentRole]:
+    return value in VALID_DEPLOYMENT_ROLES
+
+
+def get_deployment_role() -> ApplicationSettingsDeploymentRole:
     role = str(getattr(settings, "ENDOREG_DEPLOYMENT_ROLE", "standalone") or "").strip()
     normalized = role.lower() or "standalone"
-    if normalized not in VALID_DEPLOYMENT_ROLES:
+    if not _is_deployment_role(normalized):
         return "standalone"
     return normalized
 
@@ -26,33 +36,38 @@ def local_study_server_mode_enabled() -> bool:
     return get_deployment_role() == "local_study_server"
 
 
-def transfer_api_enabled() -> bool:
-    return get_deployment_role() == "central_hub" and bool(
-        getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)
+def _coerce_bool_setting(setting_name: str) -> bool:
+    value = getattr(settings, setting_name, False)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _incoming_hub_transfers_enabled() -> bool:
+    return _coerce_bool_setting("ENDOREG_ENABLE_HUB_TRANSFERS") or _coerce_bool_setting(
+        "ENDOREG_ENABLE_INCOMING_HUB_TRANSFERS",
     )
 
 
-def deployment_profile_payload() -> dict[str, object]:
-    return {
-        "deployment_role": get_deployment_role(),
-        "hub_mode": hub_mode_enabled(),
-        "enable_hub_transfers": bool(
-            getattr(settings, "ENDOREG_ENABLE_HUB_TRANSFERS", False)
-        ),
-        "transfer_api_enabled": transfer_api_enabled(),
-        "transfer_require_secure_transport": bool(
+def transfer_api_enabled() -> bool:
+    return get_deployment_role() == "central_hub" and _incoming_hub_transfers_enabled()
+
+
+def deployment_profile_payload() -> ApplicationSettingsDeploymentProfilePayload:
+    return ApplicationSettingsDeploymentProfilePayload(
+        deployment_role=get_deployment_role(),
+        hub_mode=hub_mode_enabled(),
+        enable_hub_transfers=_incoming_hub_transfers_enabled(),
+        transfer_api_enabled=transfer_api_enabled(),
+        transfer_require_secure_transport=bool(
             getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_SECURE_TRANSPORT", True)
         ),
-        "transfer_require_mtls": bool(
+        transfer_require_mtls=bool(
             getattr(settings, "ENDOREG_HUB_TRANSFER_REQUIRE_MTLS", False)
         ),
-        "transfer_mtls_meta_key": str(
-            getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_KEY", "") or ""
-        ).strip(),
-        "transfer_mtls_meta_value": str(
-            getattr(settings, "ENDOREG_HUB_TRANSFER_MTLS_META_VALUE", "") or ""
-        ).strip(),
-    }
+    )
 
 
 __all__ = [

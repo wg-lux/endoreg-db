@@ -28,7 +28,12 @@ def gather_yaml_data(source_dir):
                     if not model_name or not isinstance(fields, dict):
                         continue
 
-                    normalized_fields = {key: ", ".join(map(str, value)) if isinstance(value, list) else value for key, value in fields.items()}
+                    normalized_fields = {
+                        key: ", ".join(map(str, value))
+                        if isinstance(value, list)
+                        else value
+                        for key, value in fields.items()
+                    }
 
                     model_data.setdefault(model_name, []).append(normalized_fields)
 

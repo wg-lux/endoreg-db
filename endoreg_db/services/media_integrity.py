@@ -1,20 +1,24 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 from __future__ import annotations
 
 import logging
 import math
-import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
-from uuid import uuid4
+from typing import Any, cast
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
+from endoreg_db.models.aidataset.aidataset import AIModelTrainingRun
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.video_meta import FFMpegMeta, VideoMeta
@@ -23,39 +27,108 @@ from endoreg_db.models.media.video.storage_mode import (
     coerce_video_storage_mode,
 )
 from endoreg_db.services.video_files._frames._extract_frames import (
-    _sync_extracted_frame_records,
-    _normalize_full_extraction_paths,
+    FrameCacheManifest,
     build_frame_cache_manifest,
-    extract_full_frame_set_to_directory,
-)
-from endoreg_db.services.video_files._frames._manage_frame_range import (
-    extract_frame_range_to_directory,
 )
 from endoreg_db.services.streamable_media import (
     STREAMABLE_FILE_MODE,
     sync_video_streamable_artifacts,
 )
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_integrity_lost,
+)
+from endoreg_db.services.lifecycle_state_machine import (
+    OperationLifecycleEvent,
+    OperationLifecycleState,
+    transition_operation_lifecycle,
+)
 from endoreg_db.services.video_files import (
+    ensure_local_processed_video_file,
+    ensure_local_raw_video_file,
     get_or_create_video_state,
     get_video_frame_dir_path,
 )
-from endoreg_db.utils.filesystem.file_operations import (
-    atomic_move_file,
-    atomic_move_path,
-    ensure_directory,
-    safe_rmtree,
-    sha256_file,
-)
-from endoreg_db.utils.filesystem.paths import STORAGE_DIR
-from endoreg_db.utils.storage import materialize_video_file
-from endoreg_db.utils.observability.structured_logging import (
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.structured_logging import (
     emit_structured_event,
-    hash_identifier,
     safe_log_value,
 )
-from endoreg_db.utils.video import ffmpeg_wrapper
+from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.utils.hashs import get_file_hash
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_applied_transfer_jobs_lost(
+    *,
+    detail: str,
+    resource_hash: str | None = None,
+    upload_job_id: object | None = None,
+) -> int:
+    if not resource_hash and upload_job_id is None:
+        raise ValueError("transfer integrity propagation requires a resource identity")
+    reduced = transition_operation_lifecycle(
+        OperationLifecycleState.SUCCEEDED,
+        OperationLifecycleEvent.INTEGRITY_LOST,
+    )
+    if reduced is not OperationLifecycleState.LOST:
+        raise RuntimeError("transfer integrity loss did not reduce to LOST")
+    queryset = TransferJob.objects.filter(
+        transfer_status=TransferJob.TransferStatus.APPLIED
+    )
+    if resource_hash:
+        queryset = queryset.filter(resource_hash=resource_hash)
+    if upload_job_id is not None:
+        queryset = queryset.filter(upload_job_id=upload_job_id)
+    return queryset.update(
+        transfer_status=TransferJob.TransferStatus.LOST,
+        status_detail=detail,
+        updated_at=timezone.now(),
+    )
+
+
+def _mark_upload_job_transfer_dependencies_lost(
+    upload_job: UploadJob,
+    *,
+    detail: str,
+) -> int:
+    upload_job_id = getattr(upload_job, "pk", None)
+    if not isinstance(upload_job_id, UUID):
+        return 0
+    return _mark_applied_transfer_jobs_lost(
+        upload_job_id=upload_job_id,
+        detail=detail,
+    )
+
+
+def _mark_video_training_dependencies_lost(video: VideoFile) -> int:
+    reduced = transition_operation_lifecycle(
+        OperationLifecycleState.SUCCEEDED,
+        OperationLifecycleEvent.INTEGRITY_LOST,
+    )
+    if reduced is not OperationLifecycleState.LOST:
+        raise RuntimeError("training dependency loss did not reduce to LOST")
+    run_ids = list(
+        AIModelTrainingRun.objects.filter(
+            status=AIModelTrainingRun.STATUS_COMPLETED,
+        )
+        .filter(
+            Q(dataset__image_annotations__frame__video_id=video.pk)
+            | Q(dataset__video_annotations__video_file_id=video.pk)
+        )
+        .values_list("run_id", flat=True)
+        .distinct()
+    )
+    if not run_ids:
+        return 0
+    return AIModelTrainingRun.objects.filter(run_id__in=run_ids).update(
+        status=AIModelTrainingRun.STATUS_LOST,
+        error=(
+            "A confirmed training input video artifact was lost after successful "
+            "training."
+        ),
+        updated_at=timezone.now(),
+    )
 
 
 class FrameCacheStatus(StrEnum):
@@ -71,6 +144,38 @@ class FpsProvenance(StrEnum):
     FROM_EXISTING_DB = "fps_from_existing_db"
     DEFAULTED = "fps_defaulted"
     UNAVAILABLE = "fps_unavailable"
+
+
+def _coerce_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:
+    for stream in streams:
+        if isinstance(stream, dict):
+            stream_dict = cast(dict[str, Any], stream)
+            if stream_dict.get("codec_type") == "video":
+                return stream_dict
+    return None
+
+
+def _new_int_list() -> list[int]:
+    return []
+
+
+def _new_str_list() -> list[str]:
+    return []
+
+
+def _new_video_report_list() -> list[dict[str, Any]]:
+    return []
+
+
+def _new_upload_report_list() -> list[dict[str, Any]]:
+    return []
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +194,7 @@ class MediaIntegrityOptions:
 @dataclass(slots=True)
 class FrameCacheClassification:
     video_id: int | None
-    video_hash: str
+    raw_video_hash: str
     frame_dir: str
     expected_count: int | None
     db_frame_count: int
@@ -98,11 +203,11 @@ class FrameCacheClassification:
     cache_status: FrameCacheStatus
     db_extracted_frame_count: int = 0
     db_extracted_frame_contract_valid: bool = False
-    db_extracted_missing_file_numbers: list[int] = field(default_factory=list)
-    missing_frame_numbers: list[int] = field(default_factory=list)
-    extra_frame_numbers: list[int] = field(default_factory=list)
-    invalid_file_names: list[str] = field(default_factory=list)
-    unexpected_file_names: list[str] = field(default_factory=list)
+    db_extracted_missing_file_numbers: list[int] = field(default_factory=_new_int_list)
+    missing_frame_numbers: list[int] = field(default_factory=_new_int_list)
+    extra_frame_numbers: list[int] = field(default_factory=_new_int_list)
+    invalid_file_names: list[str] = field(default_factory=_new_str_list)
+    unexpected_file_names: list[str] = field(default_factory=_new_str_list)
     has_manual_annotations: bool = False
     repair_action: str = ""
     repair_detail: str = ""
@@ -131,7 +236,7 @@ class FrameCacheClassification:
     def as_dict(self) -> dict[str, Any]:
         return {
             "video_id": self.video_id,
-            "video_hash": self.video_hash,
+            "raw_video_hash": self.raw_video_hash,
             "frame_dir": self.frame_dir,
             "expected_count": self.expected_count,
             "db_frame_count": self.db_frame_count,
@@ -180,8 +285,10 @@ class MediaIntegritySummary:
     streamable_artifacts_checked: int = 0
     streamable_artifacts_repaired: int = 0
     stale_artifacts_removed: int = 0
-    video_reports: list[dict[str, Any]] = field(default_factory=list)
-    upload_job_reports: list[dict[str, Any]] = field(default_factory=list)
+    video_reports: list[dict[str, Any]] = field(default_factory=_new_video_report_list)
+    upload_job_reports: list[dict[str, Any]] = field(
+        default_factory=_new_upload_report_list
+    )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -210,15 +317,11 @@ class MediaIntegritySummary:
 
 
 def _storage_absolute_path(relative_name: str) -> Path:
-    return STORAGE_DIR / str(relative_name)
+    return get_runtime_paths().storage / str(relative_name)
 
 
 def _file_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
-
-
-def _field_hash(field_file) -> str:
-    return sha256_file(field_file)
 
 
 def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) -> None:
@@ -226,26 +329,30 @@ def _record_report(report: dict[str, Any], key: str, payload: dict[str, Any]) ->
     if existing is None:
         report[key] = payload
     elif isinstance(existing, list):
-        existing.append(payload)
+        cast(list[dict[str, Any]], existing).append(payload)
     else:
-        report[key] = [existing, payload]
+        report[key] = [cast(dict[str, Any], existing), payload]
 
 
 def _video_integrity_detail(video: VideoFile) -> str:
-    payload = video.meta if isinstance(video.meta, dict) else {}
+    payload: dict[str, object]
+    if isinstance(video.meta, dict):
+        payload = cast(dict[str, object], video.meta)
+    else:
+        payload = cast(dict[str, object], {})
     detail = str(payload.get("integrity_error") or "").strip()
     if detail:
         return detail
-    if bool(getattr(getattr(video, "state", None), "processing_error", False)):
-        return "video state is marked failed/lost"
     return ""
 
 
 def _video_integrity_is_lost(video: VideoFile) -> bool:
-    payload = video.meta if isinstance(video.meta, dict) else {}
-    return payload.get("integrity_status") == "lost" or bool(
-        getattr(getattr(video, "state", None), "processing_error", False)
-    )
+    payload: dict[str, object]
+    if isinstance(video.meta, dict):
+        payload = cast(dict[str, object], video.meta)
+    else:
+        payload = cast(dict[str, object], {})
+    return payload.get("integrity_status") == "lost"
 
 
 def _mark_video_state_failed(
@@ -274,7 +381,7 @@ def _mark_video_state_failed(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -294,7 +401,7 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -307,13 +414,18 @@ def _mark_video_lost(video: VideoFile, detail: str, *, dry_run: bool = False) ->
         payload["integrity_checked_at"] = timezone.now().isoformat()
         video.meta = payload
         video.save(update_fields=["meta", "date_modified"])
+        _mark_applied_transfer_jobs_lost(
+            resource_hash=video.raw_video_hash,
+            detail=detail,
+        )
+        _mark_video_training_dependencies_lost(video)
     emit_structured_event(
         logger,
         "media.integrity_lost",
         level=logging.ERROR,
         media_type="video",
         video_id=video.pk,
-        video_hash_sha256=hash_identifier(video.video_hash),
+        video_hash_sha256=video.raw_video_hash,
         dry_run=False,
         detail=safe_log_value(detail),
     )
@@ -338,7 +450,7 @@ def _mark_video_warning(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             status="warning_not_applied",
             detail=safe_log_value(_video_integrity_detail(video)),
             suppressed_warning=safe_log_value(detail),
@@ -351,7 +463,7 @@ def _mark_video_warning(
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             dry_run=True,
             detail=safe_log_value(detail),
         )
@@ -368,7 +480,7 @@ def _mark_video_warning(
         level=logging.WARNING,
         media_type="video",
         video_id=video.pk,
-        video_hash_sha256=hash_identifier(video.video_hash),
+        video_hash_sha256=video.raw_video_hash,
         dry_run=False,
         detail=safe_log_value(detail),
     )
@@ -382,7 +494,7 @@ def _mark_video_ok(video: VideoFile, *, dry_run: bool = False) -> None:
             level=logging.WARNING,
             media_type="video",
             video_id=video.pk,
-            video_hash_sha256=hash_identifier(video.video_hash),
+            video_hash_sha256=video.raw_video_hash,
             status="ok_not_applied",
             detail=safe_log_value(_video_integrity_detail(video)),
         )
@@ -401,27 +513,13 @@ def _mark_video_ok(video: VideoFile, *, dry_run: bool = False) -> None:
 def _repair_processed_metadata_from_streamable(
     video: VideoFile, *, dry_run: bool = False
 ) -> bool:
-    relative_name = (video.processed_streamable_relative_path or "").strip()
-    if not relative_name:
-        return False
-    candidate = _storage_absolute_path(relative_name)
-    if not candidate.is_file():
-        return False
-    if dry_run:
-        logger.warning(
-            "Would repair processed_file metadata for video %s using streamable artifact %s",
-            video.pk,
-            relative_name,
-        )
-        return True
-    video.processed_file.name = relative_name
-    video.save(update_fields=["processed_file", "date_modified"])
     logger.warning(
-        "Repaired processed_file metadata for video %s using streamable artifact %s",
+        "Refusing processed_file metadata repair for video %s from legacy "
+        "streamable artifact; canonical encrypted storage is required.",
         video.pk,
-        relative_name,
     )
-    return True
+    _ = dry_run
+    return False
 
 
 def _verify_streamable_artifact(
@@ -448,20 +546,16 @@ def _verify_streamable_artifact(
 
 def _probe_video_path(path: Path) -> tuple[bool, dict[str, Any] | None, str]:
     try:
-        probe_data = ffmpeg_wrapper.get_stream_info(path)
+        probe_data = cast(dict[str, Any] | None, ffmpeg_wrapper.get_stream_info(path))
     except Exception as exc:
         return False, None, str(exc)
     if not probe_data or "streams" not in probe_data:
         return False, probe_data, "ffprobe returned no streams"
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
-    if not video_stream:
+    streams = probe_data.get("streams")
+    if not isinstance(streams, list):
+        return False, probe_data, "ffprobe returned malformed stream metadata"
+    video_stream = _first_video_stream(cast(list[Any], streams))
+    if video_stream is None:
         return False, probe_data, "ffprobe returned no video stream"
     return True, probe_data, ""
 
@@ -469,28 +563,21 @@ def _probe_video_path(path: Path) -> tuple[bool, dict[str, Any] | None, str]:
 def _repair_streamable_state(
     video: VideoFile, *, dry_run: bool = False
 ) -> tuple[bool, str, bool]:
-    processed_ok, processed_detail, _ = (
-        _verify_streamable_artifact(video, processed=True)
-        if getattr(video.processed_file, "name", "")
-        else (True, "", None)
-    )
-    raw_ok, raw_detail, _ = (
-        _verify_streamable_artifact(video, processed=False)
-        if getattr(video.raw_file, "name", "")
-        else (True, "", None)
-    )
-    if processed_ok and raw_ok:
+    stale_paths = [
+        attr
+        for attr in (
+            "raw_streamable_relative_path",
+            "processed_streamable_relative_path",
+        )
+        if str(getattr(video, attr, "") or "").strip()
+    ]
+    if not stale_paths:
         return True, "", False
 
+    detail = "legacy streamable MP4 paths are not allowed: " + ", ".join(stale_paths)
     try:
         if dry_run:
-            return (
-                False,
-                "; ".join(
-                    detail for detail in (processed_detail, raw_detail) if detail
-                ),
-                True,
-            )
+            return False, detail, True
         sync_video_streamable_artifacts(
             video,
             include_raw=bool(getattr(video.raw_file, "name", "")),
@@ -500,23 +587,7 @@ def _repair_streamable_state(
     except Exception as exc:
         return False, str(exc), False
 
-    processed_ok, processed_detail, _ = (
-        _verify_streamable_artifact(video, processed=True)
-        if getattr(video.processed_file, "name", "")
-        else (True, "", None)
-    )
-    raw_ok, raw_detail, _ = (
-        _verify_streamable_artifact(video, processed=False)
-        if getattr(video.raw_file, "name", "")
-        else (True, "", None)
-    )
-    if processed_ok and raw_ok:
-        return True, "", True
-    return (
-        False,
-        "; ".join(detail for detail in (processed_detail, raw_detail) if detail),
-        False,
-    )
+    return True, "", True
 
 
 def _degrade_video_to_encrypted(
@@ -583,6 +654,166 @@ def _has_manual_annotations(video: VideoFile) -> bool:
     ).exists()
 
 
+@dataclass(frozen=True, slots=True)
+class _FrameDatabaseContract:
+    frame_count: int
+    extracted_frame_count: int
+    expected_paths: dict[int, str]
+    frame_contract_valid: bool
+    extracted_contract_valid: bool
+    extracted_missing_file_numbers: list[int]
+
+
+def _classify_frame_database_contract(
+    frame_rows: Sequence[Mapping[str, Any]],
+    *,
+    frame_dir: Path | None,
+    expected_count: int | None,
+    ext: str,
+) -> _FrameDatabaseContract:
+    extracted_rows = _extracted_frame_rows(frame_rows)
+    if expected_count is None:
+        return _unknown_frame_database_contract(frame_rows, extracted_rows)
+    expected_paths = _expected_frame_paths(expected_count, ext=ext)
+    db_paths = _frame_paths_by_number(frame_rows)
+    extracted_paths = _frame_paths_by_number(extracted_rows)
+    missing_files = _missing_extracted_frame_files(
+        frame_dir,
+        extracted_paths=extracted_paths,
+    )
+    return _FrameDatabaseContract(
+        frame_count=len(frame_rows),
+        extracted_frame_count=len(extracted_rows),
+        expected_paths=expected_paths,
+        frame_contract_valid=db_paths == expected_paths,
+        extracted_contract_valid=_extracted_contract_is_valid(
+            extracted_paths,
+            expected_paths=expected_paths,
+            missing_files=missing_files,
+        ),
+        extracted_missing_file_numbers=missing_files,
+    )
+
+
+def _extracted_frame_rows(
+    frame_rows: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    return [row for row in frame_rows if row["is_extracted"]]
+
+
+def _expected_frame_paths(
+    expected_count: int,
+    *,
+    ext: str,
+) -> dict[int, str]:
+    return {
+        frame_number: _expected_relative_path(frame_number, ext)
+        for frame_number in range(expected_count)
+    }
+
+
+def _extracted_contract_is_valid(
+    extracted_paths: dict[int, str],
+    *,
+    expected_paths: dict[int, str],
+    missing_files: Sequence[int],
+) -> bool:
+    return extracted_paths == expected_paths and not missing_files
+
+
+def _unknown_frame_database_contract(
+    frame_rows: Sequence[Mapping[str, Any]],
+    extracted_rows: Sequence[Mapping[str, Any]],
+) -> _FrameDatabaseContract:
+    return _FrameDatabaseContract(
+        frame_count=len(frame_rows),
+        extracted_frame_count=len(extracted_rows),
+        expected_paths={},
+        frame_contract_valid=False,
+        extracted_contract_valid=False,
+        extracted_missing_file_numbers=[],
+    )
+
+
+def _frame_paths_by_number(
+    frame_rows: Sequence[Mapping[str, Any]],
+) -> dict[int, str]:
+    return {int(row["frame_number"]): str(row["relative_path"]) for row in frame_rows}
+
+
+def _missing_extracted_frame_files(
+    frame_dir: Path | None,
+    *,
+    extracted_paths: dict[int, str],
+) -> list[int]:
+    if frame_dir is None:
+        return []
+    return sorted(
+        frame_number
+        for frame_number, relative_path in extracted_paths.items()
+        if not (frame_dir / relative_path).is_file()
+    )
+
+
+def _frame_cache_status(
+    manifest: FrameCacheManifest,
+    *,
+    expected_count: int | None,
+    expected_paths: dict[int, str],
+) -> FrameCacheStatus:
+    if _manifest_has_invalid_names(manifest):
+        return FrameCacheStatus.CORRUPT
+    if expected_count is None:
+        return FrameCacheStatus.CORRUPT
+    if set(manifest.actual_names) == set(expected_paths.values()):
+        return FrameCacheStatus.COMPLETE
+    if _manifest_is_shifted(manifest, expected_count=expected_count):
+        return FrameCacheStatus.SHIFTED
+    return FrameCacheStatus.PARTIAL
+
+
+def _manifest_has_invalid_names(manifest: FrameCacheManifest) -> bool:
+    return bool(manifest.invalid_file_names or manifest.duplicate_frame_numbers)
+
+
+def _manifest_is_shifted(
+    manifest: FrameCacheManifest,
+    *,
+    expected_count: int,
+) -> bool:
+    shifted_numbers = set(range(1, expected_count + 1))
+    return (
+        set(manifest.frame_numbers) == shifted_numbers
+        and manifest.file_count == expected_count
+    )
+
+
+def _missing_frame_cache_classification(
+    video: VideoFile,
+    *,
+    frame_dir: Path | None,
+    expected_count: int | None,
+    database_contract: _FrameDatabaseContract,
+) -> FrameCacheClassification:
+    return FrameCacheClassification(
+        video_id=video.pk,
+        raw_video_hash=str(video.raw_video_hash),
+        frame_dir=str(frame_dir or ""),
+        expected_count=expected_count,
+        db_frame_count=database_contract.frame_count,
+        db_extracted_frame_count=database_contract.extracted_frame_count,
+        file_count=0,
+        db_frame_contract_valid=database_contract.frame_contract_valid,
+        db_extracted_frame_contract_valid=(database_contract.extracted_contract_valid),
+        db_extracted_missing_file_numbers=(
+            database_contract.extracted_missing_file_numbers
+        ),
+        cache_status=FrameCacheStatus.MISSING,
+        missing_frame_numbers=list(range(expected_count or 0))[:50],
+        has_manual_annotations=_has_manual_annotations(video),
+    )
+
+
 def classify_frame_cache(
     video: VideoFile, *, ext: str = "jpg"
 ) -> FrameCacheClassification:
@@ -595,337 +826,56 @@ def classify_frame_cache(
             "is_extracted",
         )
     )
-    db_frame_count = len(frame_rows)
-
-    expected_paths: dict[int, str] = {}
-    db_frame_contract_valid = False
-    db_extracted_contract_valid = False
-    db_extracted_missing_file_numbers: list[int] = []
-    db_extracted_rows = [row for row in frame_rows if row["is_extracted"]]
-    db_extracted_frame_count = len(db_extracted_rows)
-    if expected_count is not None:
-        expected_paths = {
-            frame_number: _expected_relative_path(frame_number, ext)
-            for frame_number in range(expected_count)
-        }
-        db_paths = {
-            int(row["frame_number"]): str(row["relative_path"]) for row in frame_rows
-        }
-        db_frame_contract_valid = db_paths == expected_paths
-        db_extracted_paths = {
-            int(row["frame_number"]): str(row["relative_path"])
-            for row in db_extracted_rows
-        }
-        db_extracted_contract_valid = db_extracted_paths == expected_paths
-        if frame_dir is not None:
-            db_extracted_missing_file_numbers = sorted(
-                frame_number
-                for frame_number, relative_path in db_extracted_paths.items()
-                if not (frame_dir / relative_path).is_file()
-            )
-        if db_extracted_missing_file_numbers:
-            db_extracted_contract_valid = False
-
-    manifest = None
-    if frame_dir is not None:
-        manifest = build_frame_cache_manifest(
-            frame_dir,
+    database_contract = _classify_frame_database_contract(
+        frame_rows,
+        frame_dir=frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    if frame_dir is None:
+        return _missing_frame_cache_classification(
+            video,
+            frame_dir=frame_dir,
             expected_count=expected_count,
-            ext=ext,
+            database_contract=database_contract,
         )
-
-    if frame_dir is None or manifest is None or manifest.file_count == 0:
-        return FrameCacheClassification(
-            video_id=video.pk,
-            video_hash=str(video.video_hash),
-            frame_dir=str(frame_dir or ""),
+    manifest = build_frame_cache_manifest(
+        frame_dir,
+        expected_count=expected_count,
+        ext=ext,
+    )
+    if manifest.file_count == 0:
+        return _missing_frame_cache_classification(
+            video,
+            frame_dir=frame_dir,
             expected_count=expected_count,
-            db_frame_count=db_frame_count,
-            db_extracted_frame_count=db_extracted_frame_count,
-            file_count=0,
-            db_frame_contract_valid=db_frame_contract_valid,
-            db_extracted_frame_contract_valid=db_extracted_contract_valid,
-            db_extracted_missing_file_numbers=db_extracted_missing_file_numbers,
-            cache_status=FrameCacheStatus.MISSING,
-            missing_frame_numbers=list(range(expected_count or 0))[:50],
-            has_manual_annotations=_has_manual_annotations(video),
+            database_contract=database_contract,
         )
-
-    actual_names = set(manifest.actual_names)
-    actual_numbers = set(manifest.frame_numbers)
-    expected_names = set(expected_paths.values())
-
-    if manifest.invalid_file_names or manifest.duplicate_frame_numbers:
-        cache_status = FrameCacheStatus.CORRUPT
-    elif expected_count is None:
-        cache_status = FrameCacheStatus.CORRUPT
-    elif actual_names == expected_names:
-        cache_status = FrameCacheStatus.COMPLETE
-    elif (
-        actual_numbers == set(range(1, expected_count + 1))
-        and manifest.file_count == expected_count
-    ):
-        cache_status = FrameCacheStatus.SHIFTED
-    else:
-        cache_status = FrameCacheStatus.PARTIAL
 
     return FrameCacheClassification(
         video_id=video.pk,
-        video_hash=str(video.video_hash),
+        raw_video_hash=str(video.raw_video_hash),
         frame_dir=str(frame_dir or ""),
         expected_count=expected_count,
-        db_frame_count=db_frame_count,
-        db_extracted_frame_count=db_extracted_frame_count,
+        db_frame_count=database_contract.frame_count,
+        db_extracted_frame_count=database_contract.extracted_frame_count,
         file_count=manifest.file_count,
-        db_frame_contract_valid=db_frame_contract_valid,
-        db_extracted_frame_contract_valid=db_extracted_contract_valid,
-        db_extracted_missing_file_numbers=db_extracted_missing_file_numbers,
-        cache_status=cache_status,
+        db_frame_contract_valid=database_contract.frame_contract_valid,
+        db_extracted_frame_contract_valid=(database_contract.extracted_contract_valid),
+        db_extracted_missing_file_numbers=(
+            database_contract.extracted_missing_file_numbers
+        ),
+        cache_status=_frame_cache_status(
+            manifest,
+            expected_count=expected_count,
+            expected_paths=database_contract.expected_paths,
+        ),
         missing_frame_numbers=manifest.missing_frame_numbers,
         extra_frame_numbers=manifest.extra_frame_numbers,
         invalid_file_names=manifest.invalid_file_names,
         unexpected_file_names=manifest.unexpected_file_names,
         has_manual_annotations=_has_manual_annotations(video),
     )
-
-
-def _staged_frame_dir(frame_dir: Path, video: VideoFile) -> Path:
-    return frame_dir.with_name(
-        f".extracting_{video.video_hash}_{os.getpid()}_{uuid4().hex}"
-    )
-
-
-def _staged_replacement_dir(frame_dir: Path) -> Path:
-    return frame_dir.with_name(f"{frame_dir.name}.pending_replace.{uuid4().hex}")
-
-
-def _use_processed_for_frame_repair(video: VideoFile) -> bool:
-    return bool(getattr(video.processed_file, "name", ""))
-
-
-def _repair_specific_frames(
-    video: VideoFile,
-    *,
-    frame_numbers: list[int],
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    frame_dir = get_video_frame_dir_path(video)
-    if frame_dir is None:
-        return 0, "frame_dir unavailable"
-
-    unique_numbers = sorted(set(frame_numbers))
-    if not unique_numbers:
-        return 0, "no missing frames to repair"
-    if dry_run:
-        return 0, f"would repair frames {unique_numbers[:20]}"
-
-    ensure_directory(frame_dir.parent)
-    ensure_directory(frame_dir)
-    staged_dir = _staged_frame_dir(frame_dir, video)
-    repaired = 0
-    try:
-        for frame_number in unique_numbers:
-            extract_frame_range_to_directory(
-                video,
-                output_dir=staged_dir,
-                start_frame=frame_number,
-                end_frame=frame_number + 1,
-                from_processed=_use_processed_for_frame_repair(video),
-                ext=ext,
-            )
-            staged_path = staged_dir / _expected_relative_path(frame_number, ext)
-            stable_path = frame_dir / _expected_relative_path(frame_number, ext)
-            if not staged_path.is_file():
-                raise RuntimeError(f"missing staged frame file: {staged_path}")
-            atomic_move_file(source=staged_path, destination=stable_path)
-            repaired += 1
-
-        with transaction.atomic():
-            existing_frames = {
-                frame.frame_number: frame
-                for frame in Frame.objects.filter(
-                    video=video,
-                    frame_number__in=unique_numbers,
-                )
-            }
-            frames_to_create: list[Frame] = []
-            frames_to_update: list[Frame] = []
-            for frame_number in unique_numbers:
-                relative_path = _expected_relative_path(frame_number, ext)
-                frame = existing_frames.get(frame_number)
-                if frame is None:
-                    frames_to_create.append(
-                        Frame(
-                            video=video,
-                            frame_number=frame_number,
-                            relative_path=relative_path,
-                            is_extracted=True,
-                        )
-                    )
-                    continue
-                changed = False
-                if frame.relative_path != relative_path:
-                    frame.relative_path = relative_path
-                    changed = True
-                if not frame.is_extracted:
-                    frame.is_extracted = True
-                    changed = True
-                if changed:
-                    frames_to_update.append(frame)
-            if frames_to_create:
-                Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
-            if frames_to_update:
-                Frame.objects.bulk_update(
-                    frames_to_update,
-                    ["relative_path", "is_extracted"],
-                )
-        return repaired, f"repaired frames {unique_numbers[:20]}"
-    finally:
-        safe_rmtree(staged_dir, missing_ok=True)
-
-
-def _repair_full_frame_cache(
-    video: VideoFile,
-    *,
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    frame_dir = get_video_frame_dir_path(video)
-    expected_count = _expected_frame_count(video)
-    if frame_dir is None:
-        return 0, "frame_dir unavailable"
-    if expected_count is None:
-        return 0, "expected frame count unavailable"
-    if dry_run:
-        return 0, "would replace frame cache atomically"
-
-    ensure_directory(frame_dir.parent)
-    staged_dir = _staged_frame_dir(frame_dir, video)
-    replaced_dir: Path | None = None
-    installed_new_cache = False
-    try:
-        extracted_paths = extract_full_frame_set_to_directory(
-            video,
-            output_dir=staged_dir,
-            from_processed=_use_processed_for_frame_repair(video),
-            ext=ext,
-        )
-        extracted_paths = _normalize_full_extraction_paths(
-            extracted_paths,
-            frame_dir=staged_dir,
-            ext=ext,
-        )
-        expected_names = {
-            _expected_relative_path(frame_number, ext)
-            for frame_number in range(expected_count)
-        }
-        actual_names = {
-            path.name for path in staged_dir.glob(f"frame_*.{ext}") if path.is_file()
-        }
-        if actual_names != expected_names:
-            missing = sorted(expected_names - actual_names)
-            extra = sorted(actual_names - expected_names)
-            raise RuntimeError(
-                "staged full cache does not match expected frame set: "
-                f"missing_sample={missing[:10]}, extra_sample={extra[:10]}"
-            )
-
-        if frame_dir.exists():
-            replaced_dir = _staged_replacement_dir(frame_dir)
-            atomic_move_path(source=frame_dir, destination=replaced_dir)
-        atomic_move_path(source=staged_dir, destination=frame_dir)
-        installed_new_cache = True
-
-        with transaction.atomic():
-            Frame.objects.filter(video=video, is_extracted=True).update(
-                is_extracted=False
-            )
-            existing_frames = {
-                frame.frame_number: frame for frame in Frame.objects.filter(video=video)
-            }
-            frames_to_create: list[Frame] = []
-            frames_to_update: list[Frame] = []
-            for frame_number in range(expected_count):
-                relative_path = _expected_relative_path(frame_number, ext)
-                frame = existing_frames.get(frame_number)
-                if frame is None:
-                    frames_to_create.append(
-                        Frame(
-                            video=video,
-                            frame_number=frame_number,
-                            relative_path=relative_path,
-                            is_extracted=True,
-                        )
-                    )
-                    continue
-                frame.relative_path = relative_path
-                frame.is_extracted = True
-                frames_to_update.append(frame)
-            if frames_to_create:
-                Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
-            if frames_to_update:
-                Frame.objects.bulk_update(
-                    frames_to_update,
-                    ["relative_path", "is_extracted"],
-                )
-            state = get_or_create_video_state(video)
-            state.frames_initialized = True
-            state.frame_count = expected_count
-            state.mark_frames_extracted(save=False)
-            state.save(
-                update_fields=[
-                    "frames_initialized",
-                    "frame_count",
-                    "frames_extracted",
-                    "date_modified",
-                ]
-            )
-
-        if replaced_dir is not None:
-            safe_rmtree(replaced_dir, missing_ok=True)
-        return expected_count, "replaced frame cache atomically"
-    except Exception:
-        safe_rmtree(staged_dir, missing_ok=True)
-        if replaced_dir is not None and replaced_dir.exists():
-            if frame_dir.exists():
-                safe_rmtree(frame_dir, missing_ok=True)
-            atomic_move_path(source=replaced_dir, destination=frame_dir)
-        elif installed_new_cache and frame_dir.exists():
-            safe_rmtree(frame_dir, missing_ok=True)
-        raise
-
-
-def _repair_complete_frame_cache_db_contract(
-    video: VideoFile,
-    *,
-    expected_count: int,
-    dry_run: bool,
-    ext: str = "jpg",
-) -> tuple[int, str]:
-    if dry_run:
-        return 0, "would sync extracted frame DB rows from complete disk cache"
-
-    frame_numbers = list(range(expected_count))
-    with transaction.atomic():
-        synced_count = _sync_extracted_frame_records(
-            video,
-            frame_numbers=frame_numbers,
-            ext=ext,
-        )
-        state = get_or_create_video_state(video)
-        state.frames_initialized = True
-        state.frame_count = expected_count
-        state.mark_frames_extracted(save=False)
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-                "date_modified",
-            ]
-        )
-    return synced_count, "synced extracted frame DB rows from complete disk cache"
 
 
 def repair_frame_cache(
@@ -935,77 +885,10 @@ def repair_frame_cache(
     dry_run: bool,
     requested_frame_numbers: tuple[int, ...] = (),
 ) -> tuple[int, FrameCacheClassification]:
-    repaired = 0
-    action = "skipped"
-    detail = ""
-    requested = sorted(set(requested_frame_numbers))
-
-    if (
-        classification.cache_complete
-        and not classification.db_extracted_frame_contract_valid
-        and classification.expected_count is not None
-    ):
-        repaired, detail = _repair_complete_frame_cache_db_contract(
-            video,
-            expected_count=classification.expected_count,
-            dry_run=dry_run,
-        )
-        action = "sync_db_from_complete_cache"
-    elif classification.cache_complete:
-        action = "none"
-        detail = "cache already complete"
-    elif classification.cache_missing and not requested:
-        action = "skipped"
-        detail = "missing cache is not repaired without explicit frame numbers"
-    elif classification.cache_missing and requested:
-        repaired, detail = _repair_specific_frames(
-            video,
-            frame_numbers=requested,
-            dry_run=dry_run,
-        )
-        action = "repair_specific_frames"
-    elif classification.cache_shifted:
-        if classification.has_manual_annotations:
-            action = "manual_review_required"
-            detail = "shifted cache has manual annotations"
-        else:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-    elif classification.cache_corrupt:
-        if classification.has_manual_annotations:
-            action = "manual_review_required"
-            detail = "corrupt cache has manual annotations"
-        else:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-    else:
-        frame_numbers = sorted(
-            set(classification.missing_frame_numbers) | set(requested)
-        )
-        if frame_numbers:
-            repaired, detail = _repair_specific_frames(
-                video,
-                frame_numbers=frame_numbers,
-                dry_run=dry_run,
-            )
-            action = "repair_specific_frames"
-        elif (
-            classification.unexpected_file_names
-            and classification.has_manual_annotations
-        ):
-            action = "manual_review_required"
-            detail = "partial cache has unexpected files and manual annotations"
-        elif classification.unexpected_file_names:
-            repaired, detail = _repair_full_frame_cache(video, dry_run=dry_run)
-            action = "repair_full_cache"
-        else:
-            action = "none"
-            detail = "no repairable cache issue"
-
-    classification.repair_action = action
-    classification.repair_detail = detail
-    classification.repaired_frames = repaired
-    return repaired, classification
+    """Legacy caches may be inspected, but must not be regenerated."""
+    raise ValueError(
+        "Frame cache repair is retired. Use video frame streaming or an explicit frame export."
+    )
 
 
 def _is_valid_fps(value: Any) -> bool:
@@ -1033,15 +916,11 @@ def _parse_frame_rate(frame_rate: Any) -> tuple[int | None, int | None]:
 def _probe_fps(probe_data: dict[str, Any] | None) -> float | None:
     if not probe_data:
         return None
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
-    if not video_stream:
+    streams = probe_data.get("streams")
+    if not isinstance(streams, list):
+        return None
+    video_stream = _first_video_stream(cast(list[Any], streams))
+    if video_stream is None:
         return None
     for key in ("avg_frame_rate", "r_frame_rate"):
         numerator, denominator = _parse_frame_rate(video_stream.get(key))
@@ -1060,14 +939,6 @@ def _ffmpeg_meta_fps(video: VideoFile) -> float | None:
     return float(fps)
 
 
-def _streamable_processed_path(video: VideoFile) -> Path | None:
-    relative_name = (video.processed_streamable_relative_path or "").strip()
-    if not relative_name:
-        return None
-    candidate = _storage_absolute_path(relative_name)
-    return candidate if candidate.is_file() else None
-
-
 def _select_ffmpeg_probe_source(
     video: VideoFile,
 ) -> tuple[str, str, dict[str, Any] | None, str]:
@@ -1079,7 +950,11 @@ def _select_ffmpeg_probe_source(
         if not getattr(field_file, "name", ""):
             continue
         try:
-            with materialize_video_file(video, file_type) as path:
+            with (
+                ensure_local_processed_video_file(video)
+                if file_type == "processed"
+                else ensure_local_raw_video_file(video)
+            ) as path:
                 ok, probe_data, detail = _probe_video_path(path)
                 if ok:
                     return (
@@ -1102,23 +977,11 @@ def _select_ffmpeg_probe_source(
                 exc,
             )
 
-    processed_streamable = _streamable_processed_path(video)
-    if processed_streamable is not None:
-        ok, probe_data, detail = _probe_video_path(processed_streamable)
-        if ok:
-            return (
-                str(processed_streamable),
-                "processed_streamable_fallback",
-                probe_data,
-                "",
-            )
-        return "", "processed_streamable_fallback", probe_data, detail
-
     return (
         "",
         "unavailable",
         None,
-        "no probeable canonical or processed streamable media",
+        "no probeable canonical media",
     )
 
 
@@ -1137,20 +1000,20 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMeta:
-    video_stream = next(
-        (
-            stream
-            for stream in probe_data.get("streams", [])
-            if isinstance(stream, dict) and stream.get("codec_type") == "video"
-        ),
-        None,
-    )
+    normalized_probe_data = FfmpegProbeDataPayload.model_validate(
+        probe_data, extra="ignore"
+    ).model_dump(mode="json")
+    streams = normalized_probe_data.get("streams")
+    if not isinstance(streams, list):
+        raise RuntimeError("Cannot create FFMpegMeta without stream metadata")
+    video_stream = _first_video_stream(cast(list[Any], streams))
     if video_stream is None:
         raise RuntimeError("Cannot create FFMpegMeta without a video stream")
 
     duration_value = video_stream.get("duration")
-    if duration_value is None and isinstance(probe_data.get("format"), dict):
-        duration_value = probe_data["format"].get("duration")
+    format_value = normalized_probe_data.get("format")
+    if duration_value is None and isinstance(format_value, dict):
+        duration_value = cast(dict[str, Any], format_value).get("duration")
 
     frame_rate_str = video_stream.get("r_frame_rate")
     if not frame_rate_str or frame_rate_str == "0/0":
@@ -1158,8 +1021,8 @@ def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMet
     frame_rate_num, frame_rate_den = _parse_frame_rate(frame_rate_str)
 
     bit_rate_value = video_stream.get("bit_rate")
-    if bit_rate_value is None and isinstance(probe_data.get("format"), dict):
-        bit_rate_value = probe_data["format"].get("bit_rate")
+    if bit_rate_value is None and isinstance(format_value, dict):
+        bit_rate_value = cast(dict[str, Any], format_value).get("bit_rate")
 
     return FFMpegMeta.objects.create(
         width=_int_or_none(video_stream.get("width")),
@@ -1170,7 +1033,7 @@ def _create_ffmpeg_meta_from_probe_data(probe_data: dict[str, Any]) -> FFMpegMet
         codec_name=video_stream.get("codec_name"),
         pixel_format=video_stream.get("pix_fmt"),
         bit_rate=_int_or_none(bit_rate_value),
-        raw_probe_data=probe_data,
+        raw_probe_data=normalized_probe_data,
     )
 
 
@@ -1260,7 +1123,11 @@ def _verify_canonical_probe(video: VideoFile, *, processed: bool) -> tuple[bool,
     if not getattr(field_file, "name", ""):
         return False, f"missing canonical {file_type} file"
     try:
-        with materialize_video_file(video, file_type) as path:
+        with (
+            ensure_local_processed_video_file(video)
+            if processed
+            else ensure_local_raw_video_file(video)
+        ) as path:
             ok, _, detail = _probe_video_path(path)
             return ok, detail
     except Exception as exc:
@@ -1273,67 +1140,304 @@ def reconcile_streamable_probe(
     dry_run: bool,
 ) -> tuple[int, int, dict[str, Any]]:
     repaired = 0
-    lost = 0
     artifacts: list[dict[str, Any]] = []
     for processed in (False, True):
-        field_file = video.processed_file if processed else video.raw_file
-        if not getattr(field_file, "name", ""):
+        attr = (
+            "processed_streamable_relative_path"
+            if processed
+            else "raw_streamable_relative_path"
+        )
+        relative_path = str(getattr(video, attr, "") or "").strip()
+        if not relative_path:
             continue
-        ok, detail, path = _verify_streamable_artifact(video, processed=processed)
+        path = _storage_absolute_path(relative_path)
         artifact_report = {
             "kind": "processed" if processed else "raw",
-            "path": str(path) if path is not None else "",
-            "exists_and_mode_ok": ok,
+            "path": str(path),
+            "exists_and_mode_ok": path.is_file(),
             "probe_ok": False,
-            "action": "none",
-            "detail": detail,
+            "action": "would_remove_streamable" if dry_run else "removed_streamable",
+            "detail": "legacy streamable MP4 is not allowed at rest",
         }
-        if ok and path is not None:
-            probe_ok, _, probe_detail = _probe_video_path(path)
-            artifact_report["probe_ok"] = probe_ok
-            artifact_report["detail"] = probe_detail
-            if probe_ok:
-                artifacts.append(artifact_report)
-                continue
-
-        canonical_ok, canonical_detail = _verify_canonical_probe(
-            video,
-            processed=processed,
-        )
-        artifact_report["canonical_probe_ok"] = canonical_ok
-        artifact_report["canonical_detail"] = canonical_detail
-        if canonical_ok:
-            artifact_report["action"] = (
-                "would_rebuild_streamable" if dry_run else "rebuilt_streamable"
-            )
-            if not dry_run:
-                sync_video_streamable_artifacts(
-                    video,
-                    include_raw=not processed,
-                    include_processed=processed,
-                    save=True,
-                )
-            repaired += 1
-        else:
-            active_is_this_file = bool(video.is_processed) == processed
-            if active_is_this_file:
-                artifact_report["action"] = "lost"
-                _mark_video_lost(
-                    video,
-                    f"{artifact_report['kind']} streamable corrupt and canonical media unverifiable: {canonical_detail}",
-                    dry_run=dry_run,
-                )
-                lost += 1
-            else:
-                artifact_report["action"] = "warning"
-                _mark_video_warning(
-                    video,
-                    f"{artifact_report['kind']} streamable corrupt and canonical media unverifiable: {canonical_detail}",
-                    dry_run=dry_run,
-                )
         artifacts.append(artifact_report)
+        repaired += 1
 
-    return repaired, lost, {"artifacts": artifacts}
+    if artifacts and not dry_run:
+        try:
+            sync_video_streamable_artifacts(
+                video,
+                include_raw=bool(
+                    str(getattr(video, "raw_streamable_relative_path", "") or "")
+                ),
+                include_processed=bool(
+                    str(getattr(video, "processed_streamable_relative_path", "") or "")
+                ),
+                save=True,
+            )
+        except Exception as exc:
+            return (
+                0,
+                1,
+                {
+                    "artifacts": artifacts,
+                    "error": str(exc),
+                },
+            )
+
+    return repaired, 0, {"artifacts": artifacts}
+
+
+def _mark_existing_integrity_loss(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+    report: dict[str, Any],
+) -> int | None:
+    if not _video_integrity_is_lost(video):
+        return None
+    detail = _video_integrity_detail(video) or "video is marked lost"
+    _mark_video_state_failed(video, detail, dry_run=dry_run)
+    report["status"] = "lost"
+    report["detail"] = detail
+    return 1
+
+
+def _ensure_processed_file_available(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+    processed_path: Path,
+    report: dict[str, Any],
+) -> tuple[bool, int, bool]:
+    if processed_path.is_file():
+        return True, 0, False
+    if _repair_processed_metadata_from_streamable(video, dry_run=dry_run):
+        report["processed_metadata_action"] = (
+            "would_repair_from_streamable" if dry_run else "repaired_from_streamable"
+        )
+        return not dry_run, 1, False
+
+    _mark_video_lost(
+        video,
+        f"processed file missing: {processed_path}",
+        dry_run=dry_run,
+    )
+    report["status"] = "lost"
+    return False, 0, True
+
+
+def _processed_hash_matches_after_repair(
+    video: VideoFile,
+    *,
+    expected_hash: str,
+    dry_run: bool,
+) -> tuple[bool, int]:
+    if not _repair_processed_metadata_from_streamable(video, dry_run=dry_run):
+        return False, 0
+    actual_hash = expected_hash if dry_run else get_file_hash(video.processed_file)
+    return actual_hash == expected_hash, 1
+
+
+def _persist_missing_processed_hash(
+    video: VideoFile,
+    *,
+    actual_hash: str,
+    dry_run: bool,
+) -> int:
+    if not dry_run:
+        video.processed_video_hash = actual_hash
+        video.save(update_fields=["processed_video_hash", "date_modified"])
+    return 1
+
+
+def _mark_processed_hash_mismatch(
+    video: VideoFile,
+    *,
+    repaired: int,
+    dry_run: bool,
+    report: dict[str, Any],
+) -> None:
+    detail = "processed file hash mismatch"
+    if repaired:
+        detail = "processed file hash mismatch persists after metadata repair"
+    _mark_video_lost(video, detail, dry_run=dry_run)
+    report["status"] = "lost"
+
+
+def _reconcile_processed_hash(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+    report: dict[str, Any],
+) -> tuple[int, bool]:
+    expected_hash = (video.processed_video_hash or "").strip()
+    actual_hash = get_file_hash(video.processed_file)
+    if not expected_hash:
+        repaired = _persist_missing_processed_hash(
+            video,
+            actual_hash=actual_hash,
+            dry_run=dry_run,
+        )
+        return repaired, False
+    if expected_hash == actual_hash:
+        return 0, False
+
+    repaired_ok, repaired = _processed_hash_matches_after_repair(
+        video,
+        expected_hash=expected_hash,
+        dry_run=dry_run,
+    )
+    if repaired_ok:
+        return repaired, False
+    _mark_processed_hash_mismatch(
+        video,
+        repaired=repaired,
+        dry_run=dry_run,
+        report=report,
+    )
+    return repaired, True
+
+
+def _reconcile_processed_file(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+    report: dict[str, Any],
+) -> tuple[int, bool]:
+    processed_name = getattr(video.processed_file, "name", "") or ""
+    if not processed_name:
+        state = getattr(video, "state", None)
+        requires_processed_artifact = bool(
+            state is not None
+            and (
+                getattr(state, "anonymized", False)
+                or getattr(state, "anonymization_validated", False)
+                or getattr(state, "ready_for_export", False)
+            )
+        )
+        if requires_processed_artifact:
+            detail = "validated video has no canonical processed-file reference"
+            _mark_video_lost(video, detail, dry_run=dry_run)
+            report["status"] = "lost"
+            report["detail"] = detail
+            return 0, True
+        return 0, False
+
+    processed_path = _storage_absolute_path(processed_name)
+    available, repaired, lost = _ensure_processed_file_available(
+        video,
+        dry_run=dry_run,
+        processed_path=processed_path,
+        report=report,
+    )
+    if lost or not available:
+        return repaired, lost
+    hash_repaired, hash_lost = _reconcile_processed_hash(
+        video,
+        dry_run=dry_run,
+        report=report,
+    )
+    return repaired + hash_repaired, hash_lost
+
+
+def _reconcile_streamable_storage_mode(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+) -> int:
+    repaired_ok, detail, changed = _repair_streamable_state(
+        video,
+        dry_run=dry_run,
+    )
+    if repaired_ok:
+        _mark_video_ok(video, dry_run=dry_run)
+        return int(changed)
+    if dry_run:
+        _mark_video_warning(
+            video,
+            f"would downgrade to encrypted mode: {detail}",
+            dry_run=True,
+        )
+    else:
+        _degrade_video_to_encrypted(video, detail)
+    return 1
+
+
+def _reconcile_storage_mode(
+    video: VideoFile,
+    *,
+    dry_run: bool,
+    report: dict[str, Any],
+) -> tuple[int, bool]:
+    try:
+        storage_mode = coerce_video_storage_mode(video.storage_mode)
+    except ValueError:
+        _degrade_video_to_encrypted(
+            video,
+            f"unsupported storage_mode={video.storage_mode!r}",
+            dry_run=dry_run,
+        )
+        report["storage_mode_action"] = "downgrade_to_encrypted"
+        return 1, True
+
+    if storage_mode == VideoStorageMode.ENCRYPTED:
+        _mark_video_ok(video, dry_run=dry_run)
+        return 0, False
+    return _reconcile_streamable_storage_mode(video, dry_run=dry_run), False
+
+
+def _reconcile_frame_cache_if_requested(
+    video: VideoFile,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> int:
+    if not (options.check_frames or options.repair_frames):
+        return 0
+    classification = classify_frame_cache(video)
+    repaired = 0
+    if options.repair_frames:
+        repaired, classification = repair_frame_cache(
+            video,
+            classification,
+            dry_run=options.dry_run,
+            requested_frame_numbers=options.repair_frame_numbers,
+        )
+    _record_report(report, "frame_cache", classification.as_dict())
+    return repaired
+
+
+def _reconcile_ffmpeg_metadata_if_requested(
+    video: VideoFile,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> int:
+    if not (options.check_ffmpeg_meta or options.repair_ffmpeg_meta):
+        return 0
+    repaired, ffmpeg_report = reconcile_ffmpeg_metadata(
+        video,
+        dry_run=options.dry_run,
+        repair=options.repair_ffmpeg_meta,
+    )
+    _record_report(report, "ffmpeg_metadata", ffmpeg_report)
+    return repaired
+
+
+def _reconcile_streamable_probe_if_requested(
+    video: VideoFile,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> tuple[int, int]:
+    if not options.check_streamable_probe:
+        return 0, 0
+    repaired, lost, streamable_report = reconcile_streamable_probe(
+        video,
+        dry_run=options.dry_run,
+    )
+    _record_report(report, "streamable_probe", streamable_report)
+    return repaired, lost
 
 
 def reconcile_video_integrity(
@@ -1346,152 +1450,51 @@ def reconcile_video_integrity(
     lost = 0
     report: dict[str, Any] = {
         "video_id": video.pk,
-        "video_hash": str(video.video_hash),
+        "raw_video_hash": str(video.raw_video_hash),
     }
 
-    if _video_integrity_is_lost(video):
-        detail = _video_integrity_detail(video) or "video is marked lost"
-        changed = _mark_video_state_failed(
-            video,
-            detail,
-            dry_run=options.dry_run,
-        )
-        report["status"] = "lost"
-        report["detail"] = detail
-        return repaired, int(changed), report
+    existing_loss = _mark_existing_integrity_loss(
+        video,
+        dry_run=options.dry_run,
+        report=report,
+    )
+    if existing_loss is not None:
+        return repaired, existing_loss, report
 
-    processed_name = getattr(video.processed_file, "name", "") or ""
-    if processed_name:
-        processed_path = _storage_absolute_path(processed_name)
-        processed_available_for_hash = True
-        if not processed_path.is_file():
-            if _repair_processed_metadata_from_streamable(
-                video,
-                dry_run=options.dry_run,
-            ):
-                repaired += 1
-                report["processed_metadata_action"] = (
-                    "would_repair_from_streamable"
-                    if options.dry_run
-                    else "repaired_from_streamable"
-                )
-                if options.dry_run:
-                    processed_available_for_hash = False
-                else:
-                    processed_name = getattr(video.processed_file, "name", "") or ""
-                    processed_path = _storage_absolute_path(processed_name)
-            else:
-                _mark_video_lost(
-                    video,
-                    f"processed file missing: {processed_path}",
-                    dry_run=options.dry_run,
-                )
-                report["status"] = "lost"
-                return repaired, 1, report
+    repaired, processed_lost = _reconcile_processed_file(
+        video,
+        dry_run=options.dry_run,
+        report=report,
+    )
+    if processed_lost:
+        return repaired, 1, report
 
-        if processed_available_for_hash:
-            expected_hash = (video.processed_video_hash or "").strip()
-            actual_hash = _field_hash(video.processed_file)
-            if not expected_hash:
-                if not options.dry_run:
-                    video.processed_video_hash = actual_hash
-                    video.save(update_fields=["processed_video_hash", "date_modified"])
-                repaired += 1
-            elif expected_hash != actual_hash:
-                if _repair_processed_metadata_from_streamable(
-                    video,
-                    dry_run=options.dry_run,
-                ):
-                    repaired += 1
-                    actual_hash = (
-                        expected_hash
-                        if options.dry_run
-                        else _field_hash(video.processed_file)
-                    )
-                    if actual_hash != expected_hash:
-                        _mark_video_lost(
-                            video,
-                            "processed file hash mismatch persists after metadata repair",
-                            dry_run=options.dry_run,
-                        )
-                        report["status"] = "lost"
-                        return repaired, 1, report
-                else:
-                    _mark_video_lost(
-                        video,
-                        "processed file hash mismatch",
-                        dry_run=options.dry_run,
-                    )
-                    report["status"] = "lost"
-                    return repaired, 1, report
+    storage_repaired, storage_terminal = _reconcile_storage_mode(
+        video,
+        dry_run=options.dry_run,
+        report=report,
+    )
+    repaired += storage_repaired
+    if storage_terminal:
+        return repaired, lost, report
 
-    try:
-        storage_mode = coerce_video_storage_mode(video.storage_mode)
-    except ValueError:
-        _degrade_video_to_encrypted(
-            video,
-            f"unsupported storage_mode={video.storage_mode!r}",
-            dry_run=options.dry_run,
-        )
-        report["storage_mode_action"] = "downgrade_to_encrypted"
-        return repaired + 1, lost, report
-
-    match storage_mode:
-        case VideoStorageMode.ENCRYPTED:
-            _mark_video_ok(video, dry_run=options.dry_run)
-        case VideoStorageMode.STREAMABLE:
-            repaired_ok, detail, changed = _repair_streamable_state(
-                video,
-                dry_run=options.dry_run,
-            )
-            if repaired_ok:
-                _mark_video_ok(video, dry_run=options.dry_run)
-                if changed:
-                    repaired += 1
-            elif options.dry_run:
-                _mark_video_warning(
-                    video,
-                    f"would downgrade to encrypted mode: {detail}",
-                    dry_run=True,
-                )
-                repaired += 1
-            else:
-                _degrade_video_to_encrypted(video, detail)
-                repaired += 1
-
-    if options.check_frames or options.repair_frames:
-        classification = classify_frame_cache(video)
-        if options.repair_frames:
-            repair_count, classification = repair_frame_cache(
-                video,
-                classification,
-                dry_run=options.dry_run,
-                requested_frame_numbers=options.repair_frame_numbers,
-            )
-            if repair_count:
-                repaired += repair_count
-        _record_report(report, "frame_cache", classification.as_dict())
-
-    if options.check_ffmpeg_meta or options.repair_ffmpeg_meta:
-        repair_count, ffmpeg_report = reconcile_ffmpeg_metadata(
-            video,
-            dry_run=options.dry_run,
-            repair=options.repair_ffmpeg_meta,
-        )
-        if repair_count:
-            repaired += repair_count
-        _record_report(report, "ffmpeg_metadata", ffmpeg_report)
-
-    if options.check_streamable_probe:
-        streamable_repaired, streamable_lost, streamable_report = (
-            reconcile_streamable_probe(
-                video,
-                dry_run=options.dry_run,
-            )
-        )
-        repaired += streamable_repaired
-        lost += streamable_lost
-        _record_report(report, "streamable_probe", streamable_report)
+    repaired += _reconcile_frame_cache_if_requested(
+        video,
+        options=options,
+        report=report,
+    )
+    repaired += _reconcile_ffmpeg_metadata_if_requested(
+        video,
+        options=options,
+        report=report,
+    )
+    streamable_repaired, streamable_lost = _reconcile_streamable_probe_if_requested(
+        video,
+        options=options,
+        report=report,
+    )
+    repaired += streamable_repaired
+    lost += streamable_lost
 
     return repaired, lost, report
 
@@ -1506,20 +1509,35 @@ def reconcile_upload_job_integrity(
     report: dict[str, Any] = {"upload_job_id": upload_job.pk}
     file_name = getattr(upload_job.file, "name", "") or ""
     if not file_name:
+        if upload_job.source_file_persisted:
+            detail = "persisted upload source has no storage reference"
+            if not dry_run:
+                mark_upload_job_integrity_lost(upload_job, detail)
+                _mark_upload_job_transfer_dependencies_lost(upload_job, detail=detail)
+            report["action"] = "lost"
+            report["detail"] = detail
+            return repaired, 1, report
         return repaired, lost, report
 
     upload_path = _storage_absolute_path(file_name)
     should_exist = bool(upload_job.source_file_persisted)
     if should_exist and not upload_path.is_file():
         if not dry_run:
-            upload_job.mark_lost(f"upload file missing: {upload_path}")
+            mark_upload_job_integrity_lost(
+                upload_job,
+                f"upload file missing: {upload_path}",
+            )
+            _mark_upload_job_transfer_dependencies_lost(
+                upload_job,
+                detail=f"upload file missing: {upload_path}",
+            )
         report["action"] = "lost"
         report["detail"] = f"upload file missing: {upload_path}"
         return repaired, 1, report
     if not upload_path.is_file():
         return repaired, lost, report
 
-    actual_hash = sha256_file(upload_path)
+    actual_hash = get_file_hash(upload_job.file)
     expected_hash = (upload_job.content_hash or "").strip()
     if not expected_hash:
         if not dry_run:
@@ -1529,8 +1547,13 @@ def reconcile_upload_job_integrity(
         repaired += 1
     elif expected_hash != actual_hash:
         if not dry_run:
-            upload_job.mark_lost(
-                f"content hash mismatch for {upload_path}: expected={expected_hash} actual={actual_hash}"
+            mark_upload_job_integrity_lost(
+                upload_job,
+                f"content hash mismatch for {upload_path}: expected={expected_hash} actual={actual_hash}",
+            )
+            _mark_upload_job_transfer_dependencies_lost(
+                upload_job,
+                detail="upload source content hash mismatch",
             )
         report["action"] = "lost"
         report["detail"] = (
@@ -1539,6 +1562,227 @@ def reconcile_upload_job_integrity(
         )
         lost += 1
     return repaired, lost, report
+
+
+def _build_media_integrity_options(
+    *,
+    dry_run: bool,
+    video_ids: list[int] | tuple[int, ...] | None,
+    check_frames: bool,
+    repair_frames: bool,
+    repair_frame_numbers: list[int] | tuple[int, ...] | None,
+    check_ffmpeg_meta: bool,
+    repair_ffmpeg_meta: bool,
+    check_streamable_probe: bool,
+    cleanup_stale_artifacts: bool,
+) -> MediaIntegrityOptions:
+    return MediaIntegrityOptions(
+        dry_run=dry_run,
+        video_ids=tuple(video_ids or ()),
+        check_frames=check_frames or repair_frames,
+        repair_frames=repair_frames,
+        repair_frame_numbers=tuple(repair_frame_numbers or ()),
+        check_ffmpeg_meta=check_ffmpeg_meta or repair_ffmpeg_meta,
+        repair_ffmpeg_meta=repair_ffmpeg_meta,
+        check_streamable_probe=check_streamable_probe,
+        cleanup_stale_artifacts=cleanup_stale_artifacts,
+    )
+
+
+def _cleanup_stale_artifacts_if_requested(
+    options: MediaIntegrityOptions,
+) -> int:
+    if not options.cleanup_stale_artifacts:
+        return 0
+    from endoreg_db.services.reconciliation import ReconciliationService
+
+    return ReconciliationService().cleanup_orphaned_artifacts(
+        dry_run=options.dry_run,
+    )
+
+
+def _update_frame_cache_summary(
+    summary: MediaIntegritySummary,
+    report: dict[str, Any],
+) -> None:
+    summary.frame_caches_checked += 1
+    frame_report = report.get("frame_cache")
+    if not isinstance(frame_report, dict):
+        return
+    frame_report_dict = cast(dict[str, Any], frame_report)
+    cache_status = str(frame_report_dict.get("cache_status") or "")
+    counter_name = {
+        FrameCacheStatus.MISSING.value: "frame_cache_missing",
+        FrameCacheStatus.COMPLETE.value: "frame_cache_complete",
+        FrameCacheStatus.PARTIAL.value: "frame_cache_partial",
+        FrameCacheStatus.SHIFTED.value: "frame_cache_shifted",
+        FrameCacheStatus.CORRUPT.value: "frame_cache_corrupt",
+    }.get(cache_status)
+    if counter_name is not None:
+        setattr(summary, counter_name, getattr(summary, counter_name) + 1)
+    if frame_report_dict.get("repair_action") == "manual_review_required":
+        summary.frame_cache_manual_review_required += 1
+    repaired_frames = _coerce_int(frame_report_dict.get("repaired_frames"))
+    summary.repaired_frames += repaired_frames
+    summary.frame_caches_repaired += int(repaired_frames > 0)
+
+
+def _update_ffmpeg_metadata_summary(
+    summary: MediaIntegritySummary,
+    report: dict[str, Any],
+) -> None:
+    summary.ffmpeg_metadata_checked += 1
+    ffmpeg_report = report.get("ffmpeg_metadata")
+    if not isinstance(ffmpeg_report, dict):
+        return
+    ffmpeg_report_dict = cast(dict[str, Any], ffmpeg_report)
+    if ffmpeg_report_dict.get("action") in {
+        "would_backfill_ffmpeg_meta",
+        "backfilled_ffmpeg_meta",
+    }:
+        summary.ffmpeg_metadata_repaired += 1
+
+
+def _update_streamable_probe_summary(
+    summary: MediaIntegritySummary,
+    report: dict[str, Any],
+) -> None:
+    summary.streamable_artifacts_checked += 1
+    streamable_report = report.get("streamable_probe")
+    if not isinstance(streamable_report, dict):
+        return
+    artifacts = cast(dict[str, Any], streamable_report).get("artifacts")
+    if not isinstance(artifacts, list):
+        return
+    repaired_actions = {"would_remove_streamable", "removed_streamable"}
+    summary.streamable_artifacts_repaired += sum(
+        int(
+            isinstance(artifact, dict)
+            and cast(dict[str, Any], artifact).get("action") in repaired_actions
+        )
+        for artifact in cast(list[object], artifacts)
+    )
+
+
+def _include_video_reports(options: MediaIntegrityOptions) -> bool:
+    return any(
+        (
+            options.dry_run,
+            options.check_frames,
+            options.repair_frames,
+            options.check_ffmpeg_meta,
+            options.repair_ffmpeg_meta,
+            options.check_streamable_probe,
+        )
+    )
+
+
+def _update_frame_cache_summary_if_requested(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> None:
+    if options.check_frames or options.repair_frames:
+        _update_frame_cache_summary(summary, report)
+
+
+def _update_ffmpeg_metadata_summary_if_requested(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> None:
+    if options.check_ffmpeg_meta or options.repair_ffmpeg_meta:
+        _update_ffmpeg_metadata_summary(summary, report)
+
+
+def _update_streamable_probe_summary_if_requested(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> None:
+    if options.check_streamable_probe:
+        _update_streamable_probe_summary(summary, report)
+
+
+def _append_video_report_if_requested(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> None:
+    if _include_video_reports(options):
+        summary.video_reports.append(report)
+
+
+def _update_optional_video_summaries(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+    report: dict[str, Any],
+) -> None:
+    _update_frame_cache_summary_if_requested(
+        summary,
+        options=options,
+        report=report,
+    )
+    _update_ffmpeg_metadata_summary_if_requested(
+        summary,
+        options=options,
+        report=report,
+    )
+    _update_streamable_probe_summary_if_requested(
+        summary,
+        options=options,
+        report=report,
+    )
+    _append_video_report_if_requested(
+        summary,
+        options=options,
+        report=report,
+    )
+
+
+def _reconcile_videos(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+) -> None:
+    videos = VideoFile.objects.all().order_by("pk")
+    if options.video_ids:
+        videos = videos.filter(pk__in=options.video_ids)
+
+    for video in videos.iterator():
+        summary.checked_videos += 1
+        repaired, lost, report = reconcile_video_integrity(video, options=options)
+        summary.repaired_records += repaired
+        summary.lost_records += lost
+        _update_optional_video_summaries(
+            summary,
+            options=options,
+            report=report,
+        )
+
+
+def _reconcile_upload_jobs(
+    summary: MediaIntegritySummary,
+    *,
+    options: MediaIntegrityOptions,
+) -> None:
+    if options.video_ids:
+        return
+    for upload_job in UploadJob.objects.all().order_by("created_at").iterator():
+        summary.checked_upload_jobs += 1
+        repaired, lost, report = reconcile_upload_job_integrity(
+            upload_job,
+            dry_run=options.dry_run,
+        )
+        summary.repaired_records += repaired
+        summary.lost_records += lost
+        if options.dry_run:
+            summary.upload_job_reports.append(report)
 
 
 def reconcile_media_integrity(
@@ -1555,99 +1799,21 @@ def reconcile_media_integrity(
     cleanup_stale_artifacts: bool = False,
 ) -> MediaIntegritySummary:
     if options is None:
-        options = MediaIntegrityOptions(
+        options = _build_media_integrity_options(
             dry_run=dry_run,
-            video_ids=tuple(video_ids or ()),
-            check_frames=check_frames or repair_frames,
+            video_ids=video_ids,
+            check_frames=check_frames,
             repair_frames=repair_frames,
-            repair_frame_numbers=tuple(repair_frame_numbers or ()),
-            check_ffmpeg_meta=check_ffmpeg_meta or repair_ffmpeg_meta,
+            repair_frame_numbers=repair_frame_numbers,
+            check_ffmpeg_meta=check_ffmpeg_meta,
             repair_ffmpeg_meta=repair_ffmpeg_meta,
             check_streamable_probe=check_streamable_probe,
             cleanup_stale_artifacts=cleanup_stale_artifacts,
         )
     summary = MediaIntegritySummary(dry_run=options.dry_run)
-
-    if options.cleanup_stale_artifacts:
-        from endoreg_db.services.reconciliation import ReconciliationService
-
-        summary.stale_artifacts_removed = (
-            ReconciliationService().cleanup_orphaned_artifacts(
-                dry_run=options.dry_run,
-            )
-        )
-
-    videos = VideoFile.objects.all().order_by("pk")
-    if options.video_ids:
-        videos = videos.filter(pk__in=options.video_ids)
-
-    for video in videos.iterator():
-        summary.checked_videos += 1
-        repaired, lost, report = reconcile_video_integrity(video, options=options)
-        summary.repaired_records += repaired
-        summary.lost_records += lost
-        if options.check_frames or options.repair_frames:
-            summary.frame_caches_checked += 1
-            frame_report = report.get("frame_cache")
-            if isinstance(frame_report, dict):
-                match frame_report.get("cache_status"):
-                    case FrameCacheStatus.MISSING.value:
-                        summary.frame_cache_missing += 1
-                    case FrameCacheStatus.COMPLETE.value:
-                        summary.frame_cache_complete += 1
-                    case FrameCacheStatus.PARTIAL.value:
-                        summary.frame_cache_partial += 1
-                    case FrameCacheStatus.SHIFTED.value:
-                        summary.frame_cache_shifted += 1
-                    case FrameCacheStatus.CORRUPT.value:
-                        summary.frame_cache_corrupt += 1
-                if frame_report.get("repair_action") == "manual_review_required":
-                    summary.frame_cache_manual_review_required += 1
-                repaired_frames = int(frame_report.get("repaired_frames") or 0)
-                summary.repaired_frames += repaired_frames
-                if repaired_frames > 0:
-                    summary.frame_caches_repaired += 1
-        if options.check_ffmpeg_meta or options.repair_ffmpeg_meta:
-            summary.ffmpeg_metadata_checked += 1
-            ffmpeg_report = report.get("ffmpeg_metadata")
-            if isinstance(ffmpeg_report, dict) and ffmpeg_report.get("action") in {
-                "would_backfill_ffmpeg_meta",
-                "backfilled_ffmpeg_meta",
-            }:
-                summary.ffmpeg_metadata_repaired += 1
-        if options.check_streamable_probe:
-            summary.streamable_artifacts_checked += 1
-            streamable_report = report.get("streamable_probe")
-            if isinstance(streamable_report, dict):
-                artifacts = streamable_report.get("artifacts") or []
-                summary.streamable_artifacts_repaired += sum(
-                    1
-                    for artifact in artifacts
-                    if isinstance(artifact, dict)
-                    and artifact.get("action")
-                    in {"would_rebuild_streamable", "rebuilt_streamable"}
-                )
-        if (
-            options.dry_run
-            or options.check_frames
-            or options.repair_frames
-            or options.check_ffmpeg_meta
-            or options.repair_ffmpeg_meta
-            or options.check_streamable_probe
-        ):
-            summary.video_reports.append(report)
-
-    if not options.video_ids:
-        for upload_job in UploadJob.objects.all().order_by("created_at").iterator():
-            summary.checked_upload_jobs += 1
-            repaired, lost, report = reconcile_upload_job_integrity(
-                upload_job,
-                dry_run=options.dry_run,
-            )
-            summary.repaired_records += repaired
-            summary.lost_records += lost
-            if options.dry_run:
-                summary.upload_job_reports.append(report)
+    summary.stale_artifacts_removed = _cleanup_stale_artifacts_if_requested(options)
+    _reconcile_videos(summary, options=options)
+    _reconcile_upload_jobs(summary, options=options)
 
     emit_structured_event(
         logger,

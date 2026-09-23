@@ -1,8 +1,9 @@
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, cast, Any
 from logging import getLogger
 from pathlib import Path
 from django.db import models
-from endoreg_db.utils.filesystem.file_operations import get_content_hash_filename
+from endoreg_db.utils.file_operations import get_content_hash_filename
 
 logger = getLogger(__name__)
 
@@ -11,27 +12,28 @@ class ProcessingHistory(models.Model):
     """
     Processing history keyed by a stable file *content hash*.
 
-    - For videos: use VideoFile.video_hash (raw mp4 bytes)
+    - For videos: use VideoFile.raw_video_hash (raw mp4 bytes)
     - For reports: use RawPdfFile.pdf_hash (raw pdf bytes)
 
     We *optionally* link back to a concrete model instance using
     (content_type, object_id), but the logical identity is file_hash.
     """
 
-    file_hash = models.CharField(
+    file_hash: models.CharField[Any, Any] = models.CharField(
         max_length=64,
         primary_key=True,
-        help_text="Content hash of the original file (e.g. video_hash/pdf_hash).",
+        help_text="Content hash of the original file (e.g. raw_video_hash/pdf_hash).",
         blank=True,
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    success = models.BooleanField(default=False, blank=True)
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
+    success: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, blank=True
+    )
 
-    object_id = models.PositiveBigIntegerField(null=True, blank=True)
-
-    if False:  # pragma: no cover
-        objects: models.Manager["ProcessingHistory"]
+    object_id: models.PositiveBigIntegerField[int | None, Any] = (
+        models.PositiveBigIntegerField(null=True, blank=True)
+    )
 
     class Meta:
         ordering = ["-created_at"]
@@ -72,7 +74,7 @@ class ProcessingHistory(models.Model):
 
         if obj is not None:
             if ph.object_id != obj.pk:
-                ph.object_id = obj.pk
+                ph.object_id = cast(int, obj.pk)
                 changed.append("object_id")
 
         if success is not None and ph.success != success:
@@ -86,7 +88,7 @@ class ProcessingHistory(models.Model):
             logger.info(
                 "Created ProcessingHistory for hash=%s (success=%s).",
                 file_hash,
-                ph.success,
+                bool(ph.success),
             )
 
         return ph

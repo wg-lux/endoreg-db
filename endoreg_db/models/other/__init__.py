@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .material import Material
 from .resource import Resource
 from .transport_route import TransportRoute

@@ -33,34 +33,50 @@ let
     onetbb
     numbaSupport
   ];
-  runtimePackages = with pkgs; [
+  runtimeLibraries = with pkgs; [
     stdenv.cc.cc
     clang
-    ffmpeg-headless.bin
-    jq
-    ripgrep
-    tesseract
-    uvPackage
-    libglvnd # Add libglvnd for libGL.so.1
+    libglvnd
     glib
-    zlib
-    ollama.out
-    tesseract
-    # --- ADDED THESE FOR OPENCV 4.13+ SUPPORT ---
     libxcb      # Provides libxcb.so.1
     libx11      # Common dependency for XCB
     libxext     # Common dependency for OpenCV
     libxrender  # Common dependency for OpenCV
-    libxkbcommon     # Often required by newer Qt/OpenCV builds
+    libxkbcommon     # Often required by newer Qt/OpenCV builds    
+
+  ];
+  runtimePackages = with pkgs; [
+    ffmpeg-headless.bin
+    zlib
+    jq
+    ripgrep
+    tesseract
+    uvPackage
+    ollama.out
+    tesseract
     # ------------------------------------------
     cargo
     rustc
     rustfmt
     maturin
+    valgrind
+    kdePackages.kcachegrind     # Contains both kcachegrind and the pure Qt qcachegrind
+    graphviz        # Enables the call-graph visualization tab inside Cachegrind
+    python312
+    python312Packages.pyprof2calltree
+
   ];
+
   
   SYNC_CMD = "uv sync --extra dev --extra docs";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
+  FAST_TEST_ENV = ''
+    export SKIP_EXPENSIVE_TESTS=true
+    export RUN_VIDEO_TESTS=false
+    export USE_STUB_MODEL_META=true
+    export TEST_DB_REUSE=true
+  '';
+  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' -n auto --dist=loadscope";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
   COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
@@ -84,25 +100,39 @@ in
   dotenv.enable = true;
   dotenv.disableHint = true;
 
-  packages = runtimePackages ++ buildInputs;
+  packages = runtimePackages ++ runtimeLibraries ++ buildInputs;
 
   env = {
-    # include runtimePackages as well so runtime native libs (e.g. zlib) are on LD_LIBRARY_PATH
-    LD_LIBRARY_PATH = lib.makeLibraryPath (buildInputs ++ runtimePackages) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+    LD_LIBRARY_PATH =
+      lib.makeLibraryPath (
+        buildInputs
+        ++ runtimePackages
+        ++ [ pkgs.stdenv.cc.cc.lib ]
+      )
+      + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
+
     PYO3_PYTHON = "${python}/bin/python";
+
     UV_PYTHON = lib.mkForce "${python}/bin/python";
     UV_PYTHON_DOWNLOADS = "never";
+
+    # Critical: uv and devenv use the same environment.
+    UV_PROJECT_ENVIRONMENT = "${config.devenv.state}/venv";
   };
 
   languages.python = {
     enable = true;
     version = "3.12";
+
+    venv.enable = true;
+
     uv = {
       enable = true;
       package = uvPackage;
       sync.enable = true;
     };
   };
+
 
   languages.rust.enable = true;
 
@@ -142,7 +172,7 @@ in
         pythonApp = pythonSet.mkVirtualEnv "endoreg_db-env" workspace.deps.default;
         nativeDrv = pkgs.rustPlatform.buildRustPackage {
           pname = "rust_endoreg_rust_backend";
-          version = "0.1.0";
+          version = "0.1.1";
           src = ./rust/endoreg_rust_backend;
           cargoLock.lockFile = ./rust/endoreg_rust_backend/Cargo.lock;
           cargoBuildFlags = [ "--lib" ];
@@ -152,7 +182,7 @@ in
         };
         nativeLibDrv = lib.getLib nativeDrv;
 
-        nativeApp = pkgs.runCommand "endoreg-rust-backend-0.1.0" { } ''
+        nativeApp = pkgs.runCommand "endoreg-rust-backend-0.1.1" { } ''
           mkdir -p "$out/${python.sitePackages}"
           native_lib="$(find -L ${nativeLibDrv}/lib -type f -name 'libendoreg_rust_backend*.so' | head -n 1)"
           test -n "$native_lib"
@@ -174,7 +204,6 @@ in
     );
 
   scripts = {
-
     export-nix-vars.exec = ''
       cat > .devenv-vars.json << EOF
       {
@@ -214,9 +243,6 @@ in
     '';
     uvsnc.exec = ''
       sync_cmd="${SYNC_CMD}"
-      if [ -d "../lx-ai-core" ]; then
-        sync_cmd="$sync_cmd --group ai-local"
-      fi
       $sync_cmd
     '';
   };
@@ -224,7 +250,7 @@ in
   tasks = {
     "env:build" = {
       description = "Generate/update .env file with secrets and config";
-      exec = "export-nix-vars && uv run env_setup.py";
+      exec = "export-nix-vars";
     };
     "env:clean" = {
       description = "Remove the uv virtual environment and lock file for a clean sync";
@@ -241,9 +267,6 @@ in
       description = "Sync the Python environment for Codex/agent workflows";
       exec = ''
         sync_cmd="${SYNC_CMD}"
-        if [ -d "../lx-ai-core" ]; then
-          sync_cmd="$sync_cmd --group ai-local"
-        fi
         $sync_cmd
       '';
     };
@@ -262,9 +285,43 @@ in
         .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py -q
       '';
     };
+    "rust:stubs" = {
+      description = "Regenerate Python stubs for the PyO3 Rust backend";
+      exec = ''
+        cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
+        cp rust/endoreg_rust_backend/endoreg_rust_backend.pyi endoreg_db/endoreg_rust_backend.pyi
+        rm rust/endoreg_rust_backend/endoreg_rust_backend.pyi
+      '';
+    };
+    "rust:report-runtime" = {
+      description = "Verify Rust report snapshot tests, stubs, capability, and wheel";
+      exec = "scripts/check_report_native_runtime.sh";
+    };
     "agent:pre-commit" = {
       description = "Run the full default pre-commit suite for agent preflight";
       exec = ".devenv/state/venv/bin/pre-commit run --all-files";
+    };
+    "quality:dead-code" = {
+      description = "Reject new, stale, or expired reviewed dead-code findings";
+      exec = ".devenv/state/venv/bin/python scripts/check_dead_code.py";
+    };
+    "quality:boundaries" = {
+      description = "Reject unreviewed broad exceptions and type suppressions";
+      exec = ".devenv/state/venv/bin/python scripts/check_quality_boundaries.py";
+    };
+    "quality:type-safety-operational" = {
+      description = "Rehearse the persisted DICOM V2 JSON migration path";
+      exec = ".devenv/state/venv/bin/pytest tests/services/test_dicom_manifest_backfill.py -q";
+    };
+    "quality:code-regression" = {
+      description = "Run quality guards and the fast lane in the synced project venv";
+      exec = ''
+        .devenv/state/venv/bin/pyright
+        .devenv/state/venv/bin/python scripts/check_dead_code.py
+        .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        ${FAST_TEST_ENV}
+        .devenv/state/venv/bin/pytest -q ${FAST_TEST_PYTEST_ARGS}
+      '';
     };
     "celery:check" = {
       description = "Validate Celery broker, queue, and secure transport settings";
@@ -341,11 +398,8 @@ in
       description = "Run the fast PR pytest lane with live logging";
       exec = ''
         devenv tasks run test:sync
-        export SKIP_EXPENSIVE_TESTS=true
-        export RUN_VIDEO_TESTS=false
-        export USE_STUB_MODEL_META=true
-        export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -m '${FAST_TEST_MARKER}' -n auto --dist=loadscope
+        ${FAST_TEST_ENV}
+        pytest -s -o log_cli=true --log-level=INFO ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "test:heavy" = {
@@ -398,34 +452,7 @@ in
   };
 
   enterShell = ''
-
-    export SYNC_CMD="${SYNC_CMD}"
-    if [ -d "../lx-ai-core" ]; then
-      export SYNC_CMD="$SYNC_CMD --group ai-local"
-    fi
-
-    # Ensure dependencies are synced using uv
-    # Check if venv exists. If not, run sync verbosely. If it exists, sync quietly.
-    if [ ! -d ".devenv/state/venv" ]; then
-       echo "Virtual environment not found. Running initial uv sync..."
-       $SYNC_CMD || echo "Error: Initial uv sync failed. Please check network and pyproject.toml."
-    else
-       # Sync quietly if venv exists
-       echo "Syncing Python dependencies with uv..."
-       $SYNC_CMD --quiet || echo "Warning: uv sync failed. Environment might be outdated."
-    fi
-
-    # Activate Python virtual environment managed by uv
-    ACTIVATED=false
-    if [ -f ".devenv/state/venv/bin/activate" ]; then
-      source .devenv/state/venv/bin/activate
-      ACTIVATED=true
-      echo "Virtual environment activated."
-    else
-      echo "Warning: uv virtual environment activation script not found. Run 'devenv task run env:clean' and re-enter shell."
-    fi
-
-    env-setup
+    
   '';
 
   enterTest = ''

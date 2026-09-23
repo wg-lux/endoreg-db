@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 from typing import Dict, List, Optional, Tuple
@@ -27,6 +28,8 @@ def _detect_nvenc_support() -> bool:
         # Test NVENC availability with a minimal command (minimum size for NVENC)
         cmd = [
             ffmpeg_executable,
+            "-nostdin",
+            "-hide_banner",
             "-f",
             "lavfi",
             "-i",
@@ -35,13 +38,19 @@ def _detect_nvenc_support() -> bool:
             "h264_nvenc",
             "-preset",
             "p1",
+            "-an",
             "-f",
             "null",
             "-",
         ]
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=15, check=False
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+            stdin=subprocess.DEVNULL,
         )
 
         if result.returncode == 0:

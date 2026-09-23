@@ -1,12 +1,88 @@
 import os
+from pathlib import Path
+from typing import Literal, TypedDict
 
-from endoreg_db.utils.filesystem.paths import LOG_DIR
+from endoreg_db.utils.paths import get_runtime_paths
 
 DEFAULT_FILE_LOG_LEVEL = "INFO"
 DEFAULT_CONSOLE_LOG_LEVEL = "WARNING"
 
 
-def clear_log_files(logger_names, log_dir=None):
+class _FormatterConfig(TypedDict):
+    format: str
+
+
+_FileHandlerConfig = TypedDict(
+    "_FileHandlerConfig",
+    {
+        "level": str,
+        "class": str,
+        "filename": Path,
+        "formatter": str,
+    },
+)
+
+
+_ConsoleHandlerConfig = TypedDict(
+    "_ConsoleHandlerConfig",
+    {
+        "level": str,
+        "class": str,
+        "formatter": str,
+    },
+)
+
+
+class _LoggerConfig(TypedDict):
+    handlers: list[str]
+    level: str
+    propagate: bool
+
+
+type _HandlerConfig = _FileHandlerConfig | _ConsoleHandlerConfig
+type _FormatterConfigMap = dict[str, _FormatterConfig]
+type _HandlerConfigMap = dict[str, _HandlerConfig]
+type _LoggerConfigMap = dict[str, _LoggerConfig]
+
+
+class LoggingConfig(TypedDict):
+    version: Literal[1]
+    disable_existing_loggers: bool
+    formatters: _FormatterConfigMap
+    handlers: _HandlerConfigMap
+    loggers: _LoggerConfigMap
+
+
+def _file_handler_config(
+    *,
+    level: str,
+    filename: Path,
+    formatter: str,
+) -> _FileHandlerConfig:
+    return {
+        "level": level,
+        "class": "logging.FileHandler",
+        "filename": filename,
+        "formatter": formatter,
+    }
+
+
+def _console_handler_config(
+    *,
+    level: str,
+    formatter: str,
+) -> _ConsoleHandlerConfig:
+    return {
+        "level": level,
+        "class": "logging.StreamHandler",
+        "formatter": formatter,
+    }
+
+
+def clear_log_files(
+    logger_names: list[str],
+    log_dir: Path | None = None,
+) -> None:
     """
     Clears specified log files in the log directory.
 
@@ -14,7 +90,7 @@ def clear_log_files(logger_names, log_dir=None):
         logger_names (list): A list of strings, each being a logger name.
         log_dir (Path, optional): The directory containing log files. Defaults to LOG_DIR.
     """
-    log_dir = log_dir or LOG_DIR
+    log_dir = log_dir or get_runtime_paths().logs
 
     # Ensure log directory exists (though clearing implies it might)
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -38,8 +114,11 @@ def clear_log_files(logger_names, log_dir=None):
 
 
 def get_logging_config(
-    logger_names, file_log_level=None, console_log_level=None, log_dir=None
-):
+    logger_names: list[str],
+    file_log_level: str | None = None,
+    console_log_level: str | None = None,
+    log_dir: Path | None = None,
+) -> LoggingConfig:
     """
     Generates Django LOGGING configuration dynamically.
 
@@ -58,25 +137,23 @@ def get_logging_config(
     console_log_level = console_log_level or os.environ.get(
         "CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL
     )
-    log_dir = log_dir or LOG_DIR
+    log_dir = log_dir or get_runtime_paths().logs
 
     # Ensure log directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    handlers = {
-        "console": {
-            "level": console_log_level,  # Use console level
-            "class": "logging.StreamHandler",
-            "formatter": "standard",
-        },
-        "file_root": {  # Handler for the root logger's file
-            "level": file_log_level,  # Use file level
-            "class": "logging.FileHandler",
-            "filename": log_dir / "root.log",
-            "formatter": "standard",
-        },
+    handlers: _HandlerConfigMap = {
+        "console": _console_handler_config(
+            level=console_log_level,
+            formatter="standard",
+        ),
+        "file_root": _file_handler_config(
+            level=file_log_level,
+            filename=log_dir / "root.log",
+            formatter="standard",
+        ),
     }
-    loggers = {
+    loggers: _LoggerConfigMap = {
         # Root logger configuration - logs INFO+ to file, WARNING+ to console
         "": {
             "handlers": ["console", "file_root"],  # Use both handlers
@@ -94,12 +171,11 @@ def get_logging_config(
     # Dynamically create file handlers and logger configurations
     for name in logger_names:
         handler_name = f"file_{name}"
-        handlers[handler_name] = {
-            "level": file_log_level,  # Use file level
-            "class": "logging.FileHandler",
-            "filename": log_dir / f"{name}.log",
-            "formatter": "standard",
-        }
+        handlers[handler_name] = _file_handler_config(
+            level=file_log_level,
+            filename=log_dir / f"{name}.log",
+            formatter="standard",
+        )
         loggers[name] = {
             "handlers": [handler_name],  # Log only to its own file directly
             "level": file_log_level,  # Use file level
@@ -122,7 +198,7 @@ def get_logging_config(
 # Example usage (optional, for testing the function itself)
 if __name__ == "__main__":
     test_loggers = ["app1", "app2", "database"]
-    log_directory = LOG_DIR.parent / "logs_test"
+    log_directory = get_runtime_paths().logs.parent / "logs_test"
 
     # Optionally clear logs before configuring logging
     print("Clearing logs...")

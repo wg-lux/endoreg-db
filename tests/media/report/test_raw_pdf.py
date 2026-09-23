@@ -3,9 +3,9 @@ from logging import getLogger
 
 from django.conf import settings
 from django.test import TestCase
+from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import RawPdfFile  # Import Frame model
-from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 RUN_VIDEO_TESTS = settings.RUN_VIDEO_TESTS
 assert isinstance(RUN_VIDEO_TESTS, bool), "RUN_VIDEO_TESTS must be a boolean value"

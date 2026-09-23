@@ -8,16 +8,25 @@ from typing import Any, Mapping
 from uuid import UUID
 
 from django.utils import timezone
+from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.aidataset.aidataset import AIDataSet, AIDataSetExportArtifact
+from endoreg_db.schemas.aidataset_export import (
+    AIDataSetExportRequestPayload,
+    dump_ai_dataset_export_request_payload,
+    dump_ai_dataset_export_summary,
+    parse_ai_dataset_export_request_payload,
+)
+from endoreg_db.services.aidataset_exports import export_to_standardized_structure
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
-    resolve_allowed_center_id,
 )
-from endoreg_db.utils.filesystem import paths as path_settings
-from endoreg_db.utils.defaults.set_default_center import get_application_settings
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file, sha256_file
+from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.api_urls import endoreg_api_path
+from endoreg_db.utils.set_default_center import get_application_settings
+from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,55 +52,55 @@ class DownloadResponse:
         return self.file_path is not None
 
 
-def _normalize_payload(payload: Mapping[str, Any] | None) -> dict[str, Any]:
-    if not payload:
+def _request_validation_errors(
+    exc: PydanticValidationError,
+) -> dict[str, str]:
+    errors: dict[str, str] = {}
+    for item in exc.errors(include_url=False):
+        location = item.get("loc", ())
+        field_name = str(location[0]) if location else "request_payload"
+        message = str(item.get("msg", "Invalid value."))
+        if message.startswith("Value error, "):
+            message = message.removeprefix("Value error, ")
+        if not message.endswith("."):
+            message = f"{message}."
+        errors[field_name] = message
+    return errors
+
+
+def _selection_validation_errors(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, str]:
+    """Preserve all deterministic selection errors from one request.
+
+    Pydantic stops constructing the typed payload when one field has an
+    invalid literal.  The endpoint contract still reports independent name
+    and type selection errors together, so validate those raw fields at the
+    request boundary as well.
+    """
+    if payload is None:
         return {}
-    return {str(key): value for key, value in payload.items()}
 
+    errors: dict[str, str] = {}
+    if "ai_dataset_name" in payload:
+        value = payload["ai_dataset_name"]
+        if not isinstance(value, str):
+            errors["ai_dataset_name"] = "ai_dataset_name must be a string."
+        elif not value.strip():
+            errors["ai_dataset_name"] = "ai_dataset_name is required."
 
-def _integer_param_error_payload(field_name: str) -> dict[str, Any]:
-    return {"errors": {field_name: f"{field_name} must be an integer."}}
-
-
-def _parse_optional_integer_param(
-    raw_value: object,
-    *,
-    field_name: str,
-) -> tuple[int | None, ServiceResponse | None]:
-    if raw_value in (None, ""):
-        return None, None
-    if isinstance(raw_value, bool) or not isinstance(
-        raw_value, (str, bytes, bytearray, int)
-    ):
-        return None, ServiceResponse(
-            payload=_integer_param_error_payload(field_name),
-            status_code=400,
-        )
-    try:
-        return int(raw_value), None
-    except (TypeError, ValueError):
-        return None, ServiceResponse(
-            payload=_integer_param_error_payload(field_name),
-            status_code=400,
-        )
-
-
-def _payload_bool(value: Any, *, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    return bool(value)
+    if "ai_dataset_type" in payload:
+        value = payload["ai_dataset_type"]
+        if not isinstance(value, str) or value not in {
+            AIDataSet.DATASET_TYPE_IMAGE,
+            AIDataSet.DATASET_TYPE_VIDEO,
+        }:
+            errors["ai_dataset_type"] = "ai_dataset_type must be one of: image, video."
+    return errors
 
 
 def sanitize_export_token(value: str) -> str:
-    normalized = []
+    normalized: list[str] = []
     for char in value.strip():
         if char.isalnum():
             normalized.append(char.lower())
@@ -104,45 +113,91 @@ def sanitize_export_token(value: str) -> str:
 
 
 def ai_dataset_export_download_url(artifact: AIDataSetExportArtifact) -> str:
-    return (
-        f"/api/settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
+    return endoreg_api_path(
+        f"settings/application/ai_dataset_export/{artifact.artifact_key}/download/"
     )
 
 
+def _model_text(instance: object, field_name: str) -> str:
+    return str(getattr(instance, field_name, "") or "")
+
+
+def _model_int(instance: object, field_name: str) -> int:
+    value = getattr(instance, field_name, 0) or 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float | str):
+        return int(value)
+    raise TypeError(f"{field_name} must be numeric.")
+
+
+def _dataset_text(dataset: AIDataSet, field_name: str) -> str:
+    return _model_text(dataset, field_name)
+
+
+def _center_id(center: Center) -> int:
+    return _model_int(center, "id")
+
+
+def _artifact_text(artifact: AIDataSetExportArtifact, field_name: str) -> str:
+    return _model_text(artifact, field_name)
+
+
+def _artifact_status(artifact: AIDataSetExportArtifact) -> str:
+    return _artifact_text(artifact, "status")
+
+
+def _artifact_dataset_id(artifact: AIDataSetExportArtifact) -> int | None:
+    value = getattr(artifact, "dataset_id", None)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float | str):
+        return int(value)
+    raise TypeError("dataset_id must be numeric.")
+
+
+def _artifact_byte_size(artifact: AIDataSetExportArtifact) -> int:
+    return _model_int(artifact, "byte_size")
+
+
+def _artifact_summary(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
+    return dump_ai_dataset_export_summary(artifact.summary)
+
+
 def ai_dataset_export_payload(artifact: AIDataSetExportArtifact) -> dict[str, Any]:
+    status = _artifact_status(artifact)
     return {
-        "success": artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED,
+        "success": status == AIDataSetExportArtifact.STATUS_COMPLETED,
         "artifact_id": artifact.artifact_key,
-        "dataset_id": artifact.dataset_id,
-        "dataset_name": artifact.dataset_name,
-        "dataset_type": artifact.dataset_type,
-        "output_path": artifact.output_path,
+        "dataset_id": _artifact_dataset_id(artifact),
+        "dataset_name": _artifact_text(artifact, "dataset_name"),
+        "dataset_type": _artifact_text(artifact, "dataset_type"),
+        "output_path": _artifact_text(artifact, "output_path"),
         "download_url": (
             ai_dataset_export_download_url(artifact)
-            if artifact.status == AIDataSetExportArtifact.STATUS_COMPLETED
+            if status == AIDataSetExportArtifact.STATUS_COMPLETED
             else None
         ),
-        "sha256": artifact.sha256,
-        "byte_size": artifact.byte_size,
-        "summary": artifact.summary,
-        "status": artifact.status,
-        "error": artifact.error or None,
+        "sha256": _artifact_text(artifact, "sha256"),
+        "byte_size": _artifact_byte_size(artifact),
+        "summary": _artifact_summary(artifact),
+        "status": status,
+        "error": _artifact_text(artifact, "error") or None,
     }
 
 
 def _resolve_ai_dataset_export_dataset(
-    payload: Mapping[str, Any],
+    payload: AIDataSetExportRequestPayload,
 ) -> tuple[AIDataSet | None, ServiceResponse | None]:
     settings_obj = get_application_settings()
-    normalized_dataset_id, dataset_id_error = _parse_optional_integer_param(
-        payload.get("dataset_id"),
-        field_name="dataset_id",
-    )
-
-    if dataset_id_error is not None:
-        return None, dataset_id_error
-    if normalized_dataset_id is not None:
-        dataset = AIDataSet.objects.filter(pk=normalized_dataset_id).first()
+    if payload.dataset_id is not None:
+        dataset = AIDataSet.objects.filter(pk=payload.dataset_id).first()
         if dataset is None:
             return None, ServiceResponse(
                 payload={"errors": {"dataset_id": "AIDataSet not found."}},
@@ -150,8 +205,8 @@ def _resolve_ai_dataset_export_dataset(
             )
         return dataset, None
 
-    dataset_name = payload.get("ai_dataset_name", settings_obj.ai_dataset_name)
-    dataset_type = payload.get("ai_dataset_type", settings_obj.ai_dataset_type)
+    dataset_name = payload.ai_dataset_name or settings_obj.ai_dataset_name
+    dataset_type = payload.ai_dataset_type or settings_obj.ai_dataset_type
 
     errors: dict[str, str] = {}
     if not isinstance(dataset_name, str) or not dataset_name.strip():
@@ -232,10 +287,13 @@ def _dataset_export_scope_error(
         center = Center.objects.filter(center_key=center_key).first()
         if center is None:
             return f"Unknown center_key: {center_key}", 400
-        allowed_center_id = resolve_allowed_center_id(user)
-        if allowed_center_id == -1:
+        allowed_center_ids = resolve_allowed_center_ids(user)
+        if allowed_center_ids == frozenset():
             return "You do not have access to export center data.", 403
-        if allowed_center_id is not None and center.id != allowed_center_id:
+        if (
+            allowed_center_ids is not None
+            and _center_id(center) not in allowed_center_ids
+        ):
             return "Export center is outside the authenticated scope.", 403
 
     return None
@@ -253,8 +311,8 @@ def _json_bytes(payload: Mapping[str, Any]) -> bytes:
 def _export_file_name(dataset: AIDataSet, artifact: AIDataSetExportArtifact) -> str:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return (
-        f"{sanitize_export_token(dataset.name or 'dataset')}"
-        f"_{sanitize_export_token(dataset.dataset_type)}"
+        f"{sanitize_export_token(_dataset_text(dataset, 'name') or 'dataset')}"
+        f"_{sanitize_export_token(_dataset_text(dataset, 'dataset_type'))}"
         f"_{timestamp}_{artifact.artifact_key}.json"
     )
 
@@ -273,7 +331,7 @@ def _mark_artifact_failed(
 def _resolve_export_root(export_root: Path | None) -> Path:
     if export_root is not None:
         return Path(export_root)
-    return Path(path_settings.EXPORT_DIR)
+    return get_runtime_paths().export_dir
 
 
 def create_ai_dataset_export(
@@ -282,15 +340,23 @@ def create_ai_dataset_export(
     user: Any,
     export_root: Path | None = None,
 ) -> ServiceResponse:
-    request_payload = _normalize_payload(payload)
+    try:
+        request_payload = parse_ai_dataset_export_request_payload(payload)
+    except PydanticValidationError as exc:
+        errors = _request_validation_errors(exc)
+        errors.update(_selection_validation_errors(payload))
+        return ServiceResponse(
+            payload={"errors": errors},
+            status_code=400,
+        )
     dataset, dataset_error = _resolve_ai_dataset_export_dataset(request_payload)
     if dataset_error is not None:
         return dataset_error
     assert dataset is not None
 
-    center_key = str(request_payload.get("center_key") or "").strip() or None
-    all_centers = _payload_bool(request_payload.get("all_centers"), default=False)
-    only_validated = _payload_bool(request_payload.get("only_validated"), default=True)
+    center_key = request_payload.center_key
+    all_centers = request_payload.all_centers
+    only_validated = request_payload.only_validated
     scope_error = _dataset_export_scope_error(
         user,
         center_key=center_key,
@@ -306,10 +372,12 @@ def create_ai_dataset_export(
 
     artifact = AIDataSetExportArtifact.objects.create(
         dataset=dataset,
-        dataset_name=dataset.name,
-        dataset_type=dataset.dataset_type,
-        ai_model_type=dataset.ai_model_type,
-        request_payload=request_payload,
+        dataset_name=_dataset_text(dataset, "name"),
+        dataset_type=_dataset_text(dataset, "dataset_type"),
+        ai_model_type=_dataset_text(dataset, "ai_model_type"),
+        request_payload=dump_ai_dataset_export_request_payload(
+            request_payload.model_copy(update={"dataset_id": dataset.pk})
+        ),
         center_key=center_key,
         all_centers=all_centers,
         only_validated=only_validated,
@@ -321,7 +389,8 @@ def create_ai_dataset_export(
     output_path = export_dir / file_name
 
     try:
-        export_payload = dataset.export_to_standardized_structure(
+        export_payload = export_to_standardized_structure(
+            dataset,
             center_key=center_key,
             all_centers=all_centers,
             only_validated=only_validated,
@@ -335,7 +404,7 @@ def create_ai_dataset_export(
         artifact.status = AIDataSetExportArtifact.STATUS_COMPLETED
         artifact.output_path = str(output_path)
         artifact.download_filename = file_name
-        artifact.sha256 = sha256_file(output_path)
+        artifact.sha256 = get_file_hash(output_path)
         artifact.byte_size = len(json_bytes)
         artifact.summary = export_payload.get("summary", {})
         artifact.error = ""
@@ -391,14 +460,14 @@ def prepare_ai_dataset_export_download(
             payload={"detail": "AI dataset export artifact not found."},
             status_code=404,
         )
-    if artifact.status != AIDataSetExportArtifact.STATUS_COMPLETED:
+    if _artifact_status(artifact) != AIDataSetExportArtifact.STATUS_COMPLETED:
         return DownloadResponse(
             payload=ai_dataset_export_payload(artifact),
             status_code=409,
             artifact=artifact,
         )
 
-    output_path = Path(artifact.output_path)
+    output_path = Path(_artifact_text(artifact, "output_path"))
     resolved_export_root = _resolve_export_root(export_root)
     try:
         output_path.resolve().relative_to(resolved_export_root.resolve())
@@ -425,7 +494,7 @@ def prepare_ai_dataset_export_download(
         status_code=200,
         artifact=artifact,
         file_path=output_path,
-        filename=artifact.download_filename or output_path.name,
-        sha256=artifact.sha256,
-        byte_size=artifact.byte_size,
+        filename=_artifact_text(artifact, "download_filename") or output_path.name,
+        sha256=_artifact_text(artifact, "sha256"),
+        byte_size=_artifact_byte_size(artifact),
     )

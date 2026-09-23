@@ -1,26 +1,42 @@
 from __future__ import annotations
 
 import ast
+import logging
+import re
 from pathlib import Path
+from typing import Any, Protocol, cast
 from unittest.mock import patch
 
 import pytest
 from django.conf import settings
 
 from endoreg_db import tasks
+from endoreg_db.exceptions import (
+    MediaOperationDeferred as CentralMediaOperationDeferred,
+)
 from endoreg_db.services.media_operation_gate import MediaOperationDeferred
 
 
-def _current_task(task):
-    if hasattr(task, "_get_current_object"):
-        return task._get_current_object()
-    return task
+class _TaskLike(Protocol):
+    acks_late: bool
+    reject_on_worker_lost: bool | None
+    track_started: bool
+
+    def retry(self, *args: Any, **kwargs: Any) -> object: ...
+
+
+def _current_task(task: object) -> _TaskLike:
+    getter = getattr(task, "_get_current_object", None)
+    if callable(getter):
+        return cast(_TaskLike, getter())
+    return cast(_TaskLike, task)
 
 
 def test_job_tasks_are_configured_for_worker_loss_redelivery() -> None:
     celery_tasks = [
         tasks.run_frame_extraction_request_task,
         tasks.run_video_post_validation_rebuild_task,
+        tasks.video_hls_materialization,
         tasks.run_video_temporal_inference_task,
         tasks.run_model_training_task,
         tasks.process_upload_job,
@@ -40,6 +56,23 @@ def test_celery_defaults_bound_worker_memory_pressure() -> None:
     assert settings.CELERY_WORKER_PREFETCH_MULTIPLIER == 1
     assert settings.CELERY_TASK_TRACK_STARTED is True
     assert settings.CELERY_TASK_SOFT_TIME_LIMIT < settings.CELERY_TASK_TIME_LIMIT
+
+
+def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
+    queue = settings.CELERY_FFMPEG_MEDIA_QUEUE
+    assert settings.CELERY_TASK_ROUTES[
+        "endoreg_db.tasks.video_hls_materialization"
+    ] == {
+        "queue": queue,
+        "routing_key": queue,
+    }
+
+    devenv_source = Path("devenv.nix").read_text(encoding="utf-8")
+    assert re.search(
+        r'"celery:worker:ffmpeg".*CELERY_FFMPEG_MEDIA_CONCURRENCY:-1',
+        devenv_source,
+        flags=re.DOTALL,
+    )
 
 
 def test_task_module_defers_service_imports_until_execution() -> None:
@@ -63,7 +96,9 @@ def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
         "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
         return_value=True,
     ) as runner:
-        result = tasks.run_frame_extraction_request_task.run("11", "22", "33")
+        result = cast(Any, tasks.run_frame_extraction_request_task).run(
+            "11", "22", "33"
+        )
 
     assert result is True
     runner.assert_called_once_with(
@@ -79,7 +114,7 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
         "_run_video_post_validation_rebuild",
         return_value=True,
     ) as runner:
-        result = tasks.run_video_post_validation_rebuild_task.run(
+        result = cast(Any, tasks.run_video_post_validation_rebuild_task).run(
             "42",
             only_validated=1,
             history_id="7",
@@ -89,17 +124,61 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
     runner.assert_called_once_with(42, only_validated=True, history_id=7)
 
 
-def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
-    deferred = MediaOperationDeferred("active stream")
-    retry_exc = RuntimeError("retry requested")
-    current_task = _current_task(tasks.run_video_post_validation_rebuild_task)
-
-    with (
-        patch(
+@pytest.mark.parametrize(
+    ("task", "service_path", "args", "kwargs", "job_name"),
+    [
+        (
+            tasks.run_video_reimport_task,
+            "endoreg_db.services.jobs.video_reimport_jobs._run_video_reimport_job",
+            ("42",),
+            {},
+            "video_reimport",
+        ),
+        (
+            tasks.run_video_anonymization_correction_task,
+            "endoreg_db.services.jobs.video_correction_jobs."
+            "run_video_anonymization_correction",
+            ("42", "7"),
+            {},
+            "video_anonymization_correction",
+        ),
+        (
+            tasks.run_video_post_validation_rebuild_task,
             "endoreg_db.services.jobs.video_post_validation_jobs."
             "_run_video_post_validation_rebuild",
-            side_effect=deferred,
-        ) as runner,
+            ("42",),
+            {"only_validated": 1, "history_id": "7"},
+            "video_post_validation_rebuild",
+        ),
+        (
+            tasks.video_hls_materialization,
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            ("42",),
+            {
+                "artifact_kind": "processed",
+                "force": False,
+                "reserved_artifact_id": 7,
+                "reservation_key_id": "11111111-1111-1111-1111-111111111111",
+            },
+            "video_hls_materialization",
+        ),
+    ],
+)
+def test_media_tasks_share_retry_contract_when_media_busy(
+    task: object,
+    service_path: str,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
+    job_name: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    deferred = MediaOperationDeferred("active stream")
+    retry_exc = RuntimeError("retry requested")
+    current_task = _current_task(task)
+
+    with (
+        caplog.at_level(logging.INFO, logger="endoreg_db.jobs"),
+        patch(service_path, side_effect=deferred),
         patch(
             "endoreg_db.config.env.get_video_post_validation_dispatch_delay_seconds",
             return_value=17,
@@ -107,14 +186,172 @@ def test_video_post_validation_rebuild_task_retries_when_media_busy() -> None:
         patch.object(current_task, "retry", side_effect=retry_exc) as retry,
         pytest.raises(RuntimeError, match="retry requested"),
     ):
-        tasks.run_video_post_validation_rebuild_task.run(
+        cast(Any, task).run(*args, **kwargs)
+
+    retry.assert_called_once_with(exc=deferred, countdown=60, max_retries=20)
+    event = getattr(caplog.records[-1], "structured_event", {})
+    assert event["event"] == "job.retry_scheduled"
+    assert event["job_name"] == job_name
+    assert event["error_code"] == "media_operation_deferred"
+    assert event["retryable"] is True
+    assert event["countdown_seconds"] == 60
+    assert "subject_id_sha256" in event
+    assert "active stream" not in caplog.text
+
+
+def test_job_boundary_preserves_unknown_error_without_retry() -> None:
+    sentinel = RuntimeError("unknown job failure")
+    current_task = _current_task(tasks.run_video_post_validation_rebuild_task)
+
+    with (
+        patch(
+            "endoreg_db.services.jobs.video_post_validation_jobs."
+            "_run_video_post_validation_rebuild",
+            side_effect=sentinel,
+        ),
+        patch.object(current_task, "retry") as retry,
+        pytest.raises(RuntimeError) as exc_info,
+    ):
+        cast(Any, tasks.run_video_post_validation_rebuild_task).run("42")
+
+    assert exc_info.value is sentinel
+    retry.assert_not_called()
+
+
+def test_media_operation_deferred_public_import_remains_compatible() -> None:
+    assert MediaOperationDeferred is CentralMediaOperationDeferred
+
+
+def test_video_hls_materialization_task_delegates_with_normalized_args() -> None:
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 42, "status": "materialized"}
+
+    with patch(
+        "endoreg_db.services.hls_media.materialize_video_hls",
+        return_value=_Result(),
+    ) as runner:
+        result = cast(Any, tasks.video_hls_materialization).run(
             "42",
-            only_validated=1,
-            history_id="7",
+            artifact_kind="processed",
+            force=1,
+            reserved_artifact_id=7,
+            reservation_key_id="11111111-1111-1111-1111-111111111111",
         )
 
-    runner.assert_called_once_with(42, only_validated=True, history_id=7)
-    retry.assert_called_once_with(exc=deferred, countdown=17, max_retries=20)
+    assert result == {"video_id": 42, "status": "materialized"}
+    runner.assert_called_once_with(
+        42,
+        artifact_kind="processed",
+        force=True,
+        reserved_artifact_id=7,
+        reservation_key_id="11111111-1111-1111-1111-111111111111",
+    )
+
+
+def test_video_hls_materialization_task_requires_reservation_identity() -> None:
+    with pytest.raises(ValueError, match="durable reservation identity"):
+        cast(Any, tasks.video_hls_materialization).run("42")
+
+
+@pytest.mark.parametrize("hls", [False, True])
+def test_database_outage_retries_import_and_hls_delivery(hls: bool) -> None:
+    from django.db import OperationalError
+
+    task = (
+        tasks.video_hls_materialization if hls else tasks.run_video_upload_import_task
+    )
+    service = (
+        "endoreg_db.services.hls_media.materialize_video_hls"
+        if hls
+        else "endoreg_db.services.hub.ingest._run_video_upload_import_job"
+    )
+    with (
+        patch(service, side_effect=OperationalError("private database details")),
+        patch.object(
+            _current_task(task), "retry", side_effect=RuntimeError("scheduled")
+        ) as retry,
+        pytest.raises(RuntimeError, match="scheduled"),
+    ):
+        if hls:
+            tasks.video_hls_materialization.run(
+                42,
+                "processed",
+                False,
+                7,
+                "11111111-1111-1111-1111-111111111111",
+            )
+        else:
+            tasks.run_video_upload_import_task.run("42")
+    assert retry.call_args.kwargs["max_retries"] is None
+    assert str(retry.call_args.kwargs["exc"]) == "database_unavailable"
+
+
+def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 42, "status": "already_materializing"}
+
+    current_task = _current_task(tasks.video_hls_materialization)
+    retry_error = RuntimeError("retry scheduled")
+    with (
+        patch(
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            return_value=_Result(),
+        ),
+        patch.object(current_task, "retry", side_effect=retry_error) as retry,
+        pytest.raises(RuntimeError, match="retry scheduled"),
+    ):
+        cast(Any, tasks.video_hls_materialization).run(
+            "42",
+            reserved_artifact_id=7,
+            reservation_key_id="11111111-1111-1111-1111-111111111111",
+        )
+
+    retry.assert_called_once()
+    assert retry.call_args.kwargs["countdown"] == 60
+    assert retry.call_args.kwargs["max_retries"] is None
+
+
+def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
+    from endoreg_db.services.video_storage_normalization import (
+        VideoStorageNormalizationError,
+    )
+
+    class _Result:
+        def as_dict(self) -> dict[str, object]:
+            return {"video_id": 43, "status": "materialized"}
+
+    current_task = _current_task(tasks.video_hls_materialization)
+    with (
+        patch(
+            "endoreg_db.services.hls_media.materialize_video_hls",
+            side_effect=[
+                VideoStorageNormalizationError("deterministic timeline drift"),
+                _Result(),
+            ],
+        ),
+        patch.object(current_task, "retry") as retry,
+    ):
+        failed = cast(Any, tasks.video_hls_materialization).run(
+            "44",
+            reserved_artifact_id=44,
+            reservation_key_id="44444444-4444-4444-4444-444444444444",
+        )
+        subsequent = cast(Any, tasks.video_hls_materialization).run(
+            "43",
+            reserved_artifact_id=43,
+            reservation_key_id="33333333-3333-3333-3333-333333333333",
+        )
+
+    assert failed == {
+        "video_id": 44,
+        "artifact_kind": "processed",
+        "status": "failed_validation",
+        "retryable": False,
+    }
+    assert subsequent == {"video_id": 43, "status": "materialized"}
+    retry.assert_not_called()
 
 
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:
@@ -122,7 +359,7 @@ def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None
         "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
         return_value=True,
     ) as runner:
-        result = tasks.run_video_temporal_inference_task.run(
+        result = cast(Any, tasks.run_video_temporal_inference_task).run(
             "42",
             "7",
             frame_source_mode="stream",
@@ -151,7 +388,7 @@ def test_model_training_task_delegates_and_returns_small_result() -> None:
         "endoreg_db.services.jobs.model_training_jobs._execute_model_training_run",
         return_value=None,
     ) as runner:
-        result = tasks.run_model_training_task.run("run-1", command_kwargs)
+        result = cast(Any, tasks.run_model_training_task).run("run-1", command_kwargs)
 
     assert result is True
     runner.assert_called_once_with(
@@ -166,7 +403,7 @@ def test_upload_processing_task_delegates_with_normalized_job_id() -> None:
         "endoreg_db.services.hub.process_upload_job",
         return_value=True,
     ) as processor:
-        result = tasks.process_upload_job.run(123)
+        result = cast(Any, tasks.process_upload_job).run(123)
 
     assert result is True
     processor.assert_called_once_with("123")
@@ -180,7 +417,7 @@ def test_refresh_audit_ledger_integrity_task_delegates_to_locked_refresh() -> No
         "refresh_audit_ledger_integrity_status_once",
         return_value=payload,
     ) as refresh:
-        result = tasks.refresh_audit_ledger_integrity_status_task.run()
+        result = cast(Any, tasks.refresh_audit_ledger_integrity_status_task).run()
 
     assert result == payload
     refresh.assert_called_once_with()

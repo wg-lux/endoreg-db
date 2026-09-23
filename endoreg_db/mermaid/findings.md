@@ -5,3 +5,4 @@ graph TD;
     B --> C["Retrieve Patient Examination ID"]
     C --> D["Save in endoreg_db_patientfinding with Examination ID (Link Finding to Examination via Foreign Key)"]
     D --> E["Finding Process Completed"]
+```

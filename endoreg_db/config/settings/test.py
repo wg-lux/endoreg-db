@@ -1,19 +1,33 @@
 import os
+import sys
 from pathlib import Path
-from typing import Any
 
 from endoreg_db.config.env import env_bool, env_str
-
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.file_operations import ensure_directory
 from .base import *  # noqa: F401,F403
-from .base import BASE_DIR, INSTALLED_APPS as BASE_INSTALLED_APPS
+from .base import INSTALLED_APPS as BASE_INSTALLED_APPS
 
-TEST_DB_DIR = BASE_DIR / "data" / "tests" / "db"
-TEST_DB_DIR.mkdir(parents=True, exist_ok=True)
+type DatabaseOptions = dict[str, int]
+type DatabaseConfigValue = str | DatabaseOptions
 
-# Use an isolated SQLite file per pytest process by default. Shared file-backed
-# databases interact badly with --reuse-db after interrupted runs because stale
-# pytest processes can keep WAL/SHM locks open for the next session.
-TEST_DB_REUSE = env_bool("TEST_DB_REUSE", False)
+TEST_DIR = get_runtime_paths().test
+
+TEST_DB_DIR = ensure_directory(get_runtime_paths().test / "data" / "tests" / "db")
+
+TERMINOLOGY_ROOT = ensure_directory(get_runtime_paths().test / "terminology")
+
+
+def _running_under_pytest() -> bool:
+    return "PYTEST_CURRENT_TEST" in os.environ or any(
+        "pytest" in Path(arg).name for arg in sys.argv[:2]
+    )
+
+
+# Pytest uses an isolated SQLite file per process by default. Normal management
+# commands using test settings reuse a stable test DB so `migrate` and a later
+# profiled command open the same schema.
+TEST_DB_REUSE = env_bool("TEST_DB_REUSE", not _running_under_pytest())
 TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
 REUSED_TEST_DB_NAME = (
     f"test_db_{TEST_DB_WORKER}.sqlite3"
@@ -35,7 +49,7 @@ def _normalize_test_db_path(value: str | os.PathLike[str]) -> Path:
     candidate = Path(value)
     if candidate.is_absolute():
         return candidate
-    return BASE_DIR / candidate
+    return TEST_DIR / candidate
 
 
 if raw_test_db_file:
@@ -53,17 +67,22 @@ TEST_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
+DJANGO_SALT = "test-identity-salt-not-for-production"
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = str(TEST_DB_FILE)
+DB_NAME = (
+    str(TEST_DB_FILE)
+    if DB_ENGINE.endswith("sqlite3")
+    else env_str("TEST_DB_NAME", "postgres")
+)
 DB_USER = env_str("TEST_DB_USER", "")
 DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
 DB_HOST = env_str("TEST_DB_HOST", "")
 DB_PORT = env_str("TEST_DB_PORT", "")
 
 # Build DB config without redundant conditionals and avoid passing empty creds
-_db_config: dict[str, Any] = {
+_db_config: dict[str, DatabaseConfigValue] = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
@@ -83,7 +102,7 @@ if not DB_ENGINE.endswith("sqlite3"):
 DATABASES = {"default": _db_config}
 
 # Configure cache with explicit TIMEOUT for tests
-CACHES = {
+globals()["CACHES"] = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         "LOCATION": "endoreg-test-cache",
@@ -91,8 +110,15 @@ CACHES = {
     }
 }
 
+# Keep task dispatch deterministic and broker-independent in the test profile.
+# These must be Django settings; similarly named variables in pytest's
+# conftest module are not consumed by Celery.
+globals()["CELERY_TASK_ALWAYS_EAGER"] = True
+globals()["CELERY_TASK_EAGER_PROPAGATES"] = True
+globals()["CELERY_BROKER_URL"] = "memory://"
+
 # Tests exercise watcher-local import behavior without requiring a live broker.
-WATCHER_CELERY_INLINE_FALLBACK_ENABLED = env_bool(
+globals()["WATCHER_CELERY_INLINE_FALLBACK_ENABLED"] = env_bool(
     "WATCHER_CELERY_INLINE_FALLBACK_ENABLED",
     True,
 )
@@ -104,15 +130,13 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 if env_str("TEST_DISABLE_MIGRATIONS", "false").lower() == "true":
 
     class DisableMigrations:
-        def __contains__(self, item):
+        def __contains__(self, item: str) -> bool:
             return True
 
-        def __getitem__(self, item):
+        def __getitem__(self, item: str) -> None:
             return None
 
-    # MIGRATION_MODULES = DisableMigrations()
 
-INSTALLED_APPS = BASE_INSTALLED_APPS + [
-    "django.contrib.admin",
+globals()["INSTALLED_APPS"] = BASE_INSTALLED_APPS + [
     "django_extensions",
 ]

@@ -1,5 +1,7 @@
 from .overview import (
     AnonymizationOverviewView,
+    UploadJobRetryView,
+    UploadJobDismissView,
     anonymization_status,
     anonymization_current,
     start_anonymization,
@@ -21,6 +23,8 @@ from .media_management import (
 
 __all__ = [
     "AnonymizationOverviewView",
+    "UploadJobRetryView",
+    "UploadJobDismissView",
     "AnonymizationValidateView",
     "anonymization_document_types_dropdown",
     "anonymization_status",

@@ -1,12 +1,16 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from .label import Label
 
+LabelSetVersionLookup: TypeAlias = "int | str | None"
 
-class LabelSetManager(models.Manager):
+
+class LabelSetManager(models.Manager["LabelSet"]):
     """
     Manager class for handling LabelSet model operations.
     Methods
@@ -15,16 +19,18 @@ class LabelSetManager(models.Manager):
 
     """
 
-    def get_by_natural_key(self, name, version=None):
+    def get_by_natural_key(
+        self, name: str, version: LabelSetVersionLookup = None
+    ) -> "LabelSet":
         """Retrieves a LabelSet instance by its natural key (name[, version])."""
 
         queryset = self.filter(name=name)
-        if version not in (None, "", -1):
+        if version is not None and version not in ("", -1):
             queryset = queryset.filter(version=version)
 
         labelset = queryset.order_by("-version").first()
         if not labelset:
-            raise self.model.DoesNotExist(
+            raise LabelSet.DoesNotExist(
                 f"LabelSet with name='{name}' and version='{version}' not found"
             )
         return labelset
@@ -40,10 +46,10 @@ class LabelSet(models.Model):
 
     """
 
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
-    version = models.IntegerField()
-    labels: "models.ManyToManyField[Label, Label]" = models.ManyToManyField(
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    version: models.IntegerField[Any, Any] = models.IntegerField()
+    labels: models.ManyToManyField[Label, Label] = models.ManyToManyField(
         "Label", related_name="label_sets"
     )
 
@@ -52,7 +58,7 @@ class LabelSet(models.Model):
     if TYPE_CHECKING:
         pass
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str, int]:
         """Return the natural key of this label set"""
         return (self.name, self.version)
 

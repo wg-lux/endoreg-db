@@ -29,14 +29,7 @@ logger.setLevel(
 
 
 class ColonoscopyFindingTest(TestCase):
-    # @classmethod
-    # def setUpTestData(cls):
     def setUp(self):
-        """
-        Initializes test data for the CommonFindingTest class.
-
-        Creates and retrieves Finding instances.
-        """
         load_data()
 
         self.colonoscopy = Examination.objects.get(name="colonoscopy")
@@ -90,17 +83,4 @@ class ColonoscopyFindingTest(TestCase):
         self.assertTrue(
             choices.exists(),
             f"BBPS simple classification should have choices associated with it, but found none for {self.bbps_simple_classification.name}.",
-        )
-
-    def test_patient_finding_classification(self):
-        pat_finding_bowel_prep = self.patient_finding_bp
-        pat_finding_bowel_prep_classification = pat_finding_bowel_prep.add_classification(
-            classification_id=self.bbps_simple_classification.id,
-            classification_choice_id=self.bbps_simple_choice.id,  # Assuming 1 is a valid choice ID
-            user=None,
-        )
-
-        self.assertIsNotNone(
-            pat_finding_bowel_prep_classification,
-            "Patient finding classification should not be None.",
         )

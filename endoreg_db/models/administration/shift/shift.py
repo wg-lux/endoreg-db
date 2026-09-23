@@ -1,17 +1,19 @@
-from typing import TYPE_CHECKING, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
-    from endoreg_db.models import (
-        CenterShift,
+    from endoreg_db.models.administration.center.center_shift import CenterShift
+    from endoreg_db.models.administration.qualification.qualification import (
         Qualification,
-        ShiftType,
     )
+    from .shift_type import ShiftType
 
 
-class ShiftManager(models.Manager):
-    def get_queryset(self):
+class ShiftManager(models.Manager["Shift"]):
+    def get_queryset(self) -> models.QuerySet["Shift"]:
         """
         Returns a queryset of active shifts.
 
@@ -25,32 +27,30 @@ class Shift(models.Model):
     Model representing a shift.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
-    is_active = models.BooleanField(default=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
-    shift_types = models.ManyToManyField(
+    shift_types: models.ManyToManyField[ShiftType, ShiftType] = models.ManyToManyField(
         "ShiftType",
         related_name="shifts",
     )
 
-    required_qualifications = models.ManyToManyField(
-        "Qualification",
-        related_name="shifts",
+    required_qualifications: models.ManyToManyField[Qualification, Qualification] = (
+        models.ManyToManyField(
+            "Qualification",
+            related_name="shifts",
+        )
     )
 
     if TYPE_CHECKING:
-        shift_types = cast(models.QuerySet["ShiftType"], shift_types)
-        required_qualifications = cast(
-            models.QuerySet["Qualification"], required_qualifications
-        )
 
         @property
         def center_shifts(self) -> models.QuerySet["CenterShift"]: ...
 
     objects = ShiftManager()
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Returns the string representation of the shift using its name.
         """

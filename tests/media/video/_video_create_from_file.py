@@ -1,3 +1,4 @@
+# pyright: reportUnusedFunction=false
 from logging import getLogger
 from typing import TYPE_CHECKING
 
@@ -51,13 +52,15 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
     finally:
         # Cleanup: Delete the video file and its associated file from storage
         if video_file and video_file.pk:
-            logger.info(f"Cleaning up test video file (UUID: {video_file.video_hash})")
+            logger.info(
+                f"Cleaning up test video file (UUID: {video_file.raw_video_hash})"
+            )
             try:
                 # Reload from DB to ensure we have the latest state before deleting
                 video_to_delete = VideoFile.objects.get(pk=video_file.pk)
                 video_to_delete.delete_with_file()
                 logger.info(
-                    f"Successfully cleaned up test video file (UUID: {video_file.video_hash})"
+                    f"Successfully cleaned up test video file (UUID: {video_file.raw_video_hash})"
                 )
                 # Optional: Assert the file no longer exists
                 if fp:
@@ -70,6 +73,6 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
                 )
             except Exception as e:
                 logger.error(
-                    f"Error during cleanup of video file (UUID: {video_file.video_hash}): {e}",
+                    f"Error during cleanup of video file (UUID: {video_file.raw_video_hash}): {e}",
                     exc_info=True,
                 )

@@ -1,17 +1,27 @@
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any, Unpack
 
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.schemas.classification_choice import (
+    ClassificationChoiceJSONValidationError,
+    validate_classification_choice_json_fields,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
         Examination,
+        ExaminationIndicationClassification,
+        ExaminationIndicationClassificationChoice,
         FindingIntervention,
         InformationSource,
     )
     from endoreg_db.utils.links import ModelLinks
 
 
-class ExaminationIndicationManager(models.Manager):
+class ExaminationIndicationManager(models.Manager["ExaminationIndication"]):
     """
     Manager for ExaminationIndication with custom query methods.
     """
@@ -26,7 +36,7 @@ class ExaminationIndicationManager(models.Manager):
         Returns:
             The ExaminationIndication instance corresponding to the specified name.
         """
-        return cast("ExaminationIndication", self.get(name=name))
+        return self.get(name=name)
 
 
 class ExaminationIndication(models.Model):
@@ -40,8 +50,8 @@ class ExaminationIndication(models.Model):
         expected_interventions (ManyToManyField): Expected interventions for this indication.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     classifications: "models.ManyToManyField[ExaminationIndicationClassification, ExaminationIndicationClassification]" = models.ManyToManyField(
         "ExaminationIndicationClassification",
@@ -84,11 +94,11 @@ class ExaminationIndication(models.Model):
             finding_interventions=list(self.expected_interventions.all()),
         )
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns a tuple containing the unique name of the indication as its natural key.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     def __str__(self) -> str:
         """
@@ -100,7 +110,9 @@ class ExaminationIndication(models.Model):
         return str(self.name)
 
 
-class ExaminationIndicationClassificationManager(models.Manager):
+class ExaminationIndicationClassificationManager(
+    models.Manager["ExaminationIndicationClassification"]
+):
     """
     Manager for ExaminationIndicationClassification with custom query methods.
     """
@@ -115,7 +127,7 @@ class ExaminationIndicationClassificationManager(models.Manager):
         Returns:
             The ExaminationIndicationClassification instance corresponding to the given name.
         """
-        return cast("ExaminationIndicationClassification", self.get(name=name))
+        return self.get(name=name)
 
 
 class ExaminationIndicationClassification(models.Model):
@@ -128,8 +140,8 @@ class ExaminationIndicationClassification(models.Model):
         examinations (ManyToManyField): The examinations associated with this classification.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     choices: "models.ManyToManyField[ExaminationIndicationClassificationChoice, ExaminationIndicationClassificationChoice]" = models.ManyToManyField(
         "ExaminationIndicationClassificationChoice",
         related_name="classifications",
@@ -138,14 +150,14 @@ class ExaminationIndicationClassification(models.Model):
 
     objects = ExaminationIndicationClassificationManager()
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the classification.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     def __str__(self) -> str:
         """
@@ -157,7 +169,9 @@ class ExaminationIndicationClassification(models.Model):
         return str(self.name)
 
 
-class ExaminationIndicationClassificationChoiceManager(models.Manager):
+class ExaminationIndicationClassificationChoiceManager(
+    models.Manager["ExaminationIndicationClassificationChoice"]
+):
     """
     Manager for ExaminationIndicationClassificationChoice with custom query methods.
     """
@@ -174,7 +188,7 @@ class ExaminationIndicationClassificationChoiceManager(models.Manager):
         Returns:
             An ExaminationIndicationClassificationChoice instance corresponding to the given name.
         """
-        return cast("ExaminationIndicationClassificationChoice", self.get(name=name))
+        return self.get(name=name)
 
 
 class ExaminationIndicationClassificationChoice(models.Model):
@@ -188,30 +202,39 @@ class ExaminationIndicationClassificationChoice(models.Model):
         classification (ForeignKey): The classification to which this choice belongs.
     """
 
-    name = models.CharField(max_length=255, unique=True)
-    subcategories = models.JSONField(default=dict)
-    numerical_descriptors = models.JSONField(default=dict)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
+    numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
     objects = ExaminationIndicationClassificationChoiceManager()
 
+    def clean(self) -> None:
+        super().clean()
+        try:
+            validate_classification_choice_json_fields(self)
+        except ClassificationChoiceJSONValidationError as exc:
+            raise ValidationError({exc.field_name: str(exc)}) from exc
+
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
+
     if TYPE_CHECKING:
-        from lx_dtypes.models.knowledge_base.classification_choice_descriptor import (
-            ClassificationChoiceDescriptorDataDict,
+        from lx_dtypes.models.contracts.examination_indication import (
+            ExaminationIndicationClassificationChoiceCore,
         )
 
-        JsonObjectMap: TypeAlias = dict[str, dict[str, Any]]
-        DescriptorTemplateMap: TypeAlias = dict[
-            str, "ClassificationChoiceDescriptorDataDict"
-        ]
+        @property
+        def contract(self) -> ExaminationIndicationClassificationChoiceCore: ...
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the classification choice.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     def __str__(self) -> str:
         """

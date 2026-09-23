@@ -1,14 +1,20 @@
 from django.urls import URLPattern, path
 
-from endoreg_db.views.media.frame_media import FrameStreamView
+from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
 from endoreg_db.views.media.hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
     HubTransferStatusView,
+    QuarantineApproveDeletionView,
+    QuarantineItemListView,
+    QuarantineReapApprovedView,
+    QuarantineRetainView,
+    QuarantineSyncView,
 )
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
+from endoreg_db.views.media.study_cohort import StudyCohortPreviewView
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -30,14 +36,21 @@ from endoreg_db.views.report.pdf_redaction import (
     PdfProcessingHistoryView,
 )
 from endoreg_db.views.report.report_stream import ReportStreamView
+from endoreg_db.views.video.hls_stream import (
+    HLSKeyView,
+    HLSPlaylistView,
+    HLSSegmentView,
+)
 from endoreg_db.views.video.video_stream import VideoStreamView
 from endoreg_db.views.video import (
     VideoReimportView,
     VideoFpsView,
-    export_annotated_data,
+    VideoFrameNeighborhoodView,
+    export_annotated,
     video_segment_detail,
     video_segment_validate,
     video_segments_blacken_outside,
+    video_segments_normalize_fps,
     video_segments_bulk_mutation,
     video_segments_by_video,
     video_segments_stats,
@@ -61,7 +74,9 @@ from endoreg_db.views.video.ai import (
 )
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
+    VideoAnonymizationCorrectionView,
     VideoCorrectionView,
+    VideoProcessingHistoryView,
     VideoRemoveFramesView,
 )
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
@@ -84,7 +99,40 @@ HUB_TRANSFER_URLPATTERNS: list[URLPattern] = [
     ),
 ]
 
+QUARANTINE_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/quarantine/",
+        QuarantineItemListView.as_view(),
+        name="quarantine-item-list",
+    ),
+    path(
+        "media/quarantine/sync/",
+        QuarantineSyncView.as_view(),
+        name="quarantine-sync",
+    ),
+    path(
+        "media/quarantine/reap-approved/",
+        QuarantineReapApprovedView.as_view(),
+        name="quarantine-reap-approved",
+    ),
+    path(
+        "media/quarantine/<uuid:item_id>/approve-deletion/",
+        QuarantineApproveDeletionView.as_view(),
+        name="quarantine-approve-deletion",
+    ),
+    path(
+        "media/quarantine/<uuid:item_id>/retain/",
+        QuarantineRetainView.as_view(),
+        name="quarantine-retain",
+    ),
+]
+
 MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/studies/cohort-preview/",
+        StudyCohortPreviewView.as_view(),
+        name="study-cohort-preview",
+    ),
     path(
         "media/patients/<int:patient_id>/timeline/",
         PatientMediaTimelineView.as_view(),
@@ -109,9 +157,34 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/stream/", VideoStreamView.as_view(), name="video-stream"
     ),  # Legacy support
     path(
+        "media/videos/<int:pk>/hls/playlist.m3u8",
+        HLSPlaylistView.as_view(),
+        name="video-hls-playlist-m3u8",
+    ),
+    path(
+        "media/videos/<int:pk>/hls/playlist/",
+        HLSPlaylistView.as_view(),
+        name="video-hls-playlist",
+    ),
+    path(
+        "media/videos/<int:pk>/hls/key/<uuid:key_id>/",
+        HLSKeyView.as_view(),
+        name="video-hls-key",
+    ),
+    path(
+        "media/videos/<int:pk>/hls/segments/<uuid:key_id>/<str:segment_name>",
+        HLSSegmentView.as_view(),
+        name="video-hls-segment",
+    ),
+    path(
         "media/videos/<int:video_id>/frames/<int:frame_number>/stream/",
         FrameStreamView.as_view(),
         name="video-frame-stream",
+    ),
+    path(
+        "media/videos/<int:video_id>/frames/<int:frame_number>/decoded-stream/",
+        DecodedFrameStreamView.as_view(),
+        name="video-frame-decoded-stream",
     ),
     path(
         "media/videos/<int:pk>/reimport/",
@@ -127,6 +200,16 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
         "media/videos/video-correction/<int:pk>",
         VideoCorrectionView.as_view(),
         name="video-correction",
+    ),
+    path(
+        "media/videos/video-correction/<int:pk>/anonymization/",
+        VideoAnonymizationCorrectionView.as_view(),
+        name="video-anonymization-correction",
+    ),
+    path(
+        "media/videos/<int:pk>/processing-history/",
+        VideoProcessingHistoryView.as_view(),
+        name="video-processing-history",
     ),
     path(
         "media/videos/<int:pk>/metadata/",
@@ -153,7 +236,7 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
 VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
     path(
         "media/videos/export-annotated/",
-        export_annotated_data,
+        export_annotated,
         name="video-annotated-export",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
@@ -171,6 +254,16 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/segments/rerun-predictions/",
         rerun_prediction_segments,
         name="video-segments-rerun-predictions",
+    ),
+    path(
+        "media/videos/<int:pk>/segments/normalize-fps/",
+        video_segments_normalize_fps,
+        name="video-segments-normalize-fps",
+    ),
+    path(
+        "media/videos/<int:pk>/timeline/frame-neighborhood/",
+        VideoFrameNeighborhoodView.as_view(),
+        name="video-frame-neighborhood",
     ),
     path(
         "media/videos/<int:pk>/segments/import-predictions/",
@@ -340,6 +433,7 @@ PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
 
 urlpatterns: list[URLPattern] = [
     *HUB_TRANSFER_URLPATTERNS,
+    *QUARANTINE_URLPATTERNS,
     *MEDIA_OVERVIEW_URLPATTERNS,
     *VIDEO_MEDIA_URLPATTERNS,
     *VIDEO_ANNOTATION_URLPATTERNS,

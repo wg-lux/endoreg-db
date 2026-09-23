@@ -5,7 +5,6 @@ import logging
 
 from ..helpers.data_loader import load_data
 from endoreg_db.models import Examination
-# from endoreg_db.models.other.distribution import NumericValueDistribution # For type hinting/mocking
 
 
 logger = getLogger(__name__)
@@ -15,14 +14,7 @@ logger.setLevel(
 
 
 class ColonPolypLocationTest(TestCase):
-    # @classmethod
-    # def setUpTestData(cls):
     def setUp(self):
-        """
-        Initializes test data for the CommonFindingTest class.
-
-        Creates and retrieves Finding instances.
-        """
         load_data()
 
         self.colonoscopy = Examination.objects.get(name="colonoscopy")
@@ -33,7 +25,6 @@ class ColonPolypLocationTest(TestCase):
         self.colo_findings = self.colonoscopy.findings.all()
 
     def test_colon_polyp_locations(self):
-        """ """
         logger.info("Testing colon polyp finding")
 
         # Check if the colon polyp finding exists

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+from typing import cast
 
 from endoreg_db.models.state.video import SHA256_HEX_LENGTH, VideoState
 
 
 VALID_SHA256 = "a" * SHA256_HEX_LENGTH
+
+
+VideoStateValues = dict[str, object]
+ExpectedError = str
 
 
 def _assert_rejected_by_database(**state_values: object) -> None:
@@ -44,12 +50,14 @@ def _ready_state_values(**overrides: object) -> dict[str, object]:
         _ready_state_values(processed_file_sha256=""),
     ],
 )
-def test_database_rejects_unsafe_video_state_combinations(state_values):
+def test_database_rejects_unsafe_video_state_combinations(
+    state_values: VideoStateValues,
+) -> None:
     _assert_rejected_by_database(**state_values)
 
 
 @pytest.mark.django_db
-def test_database_accepts_ready_state_with_required_evidence():
+def test_database_accepts_ready_state_with_required_evidence() -> None:
     state = VideoState.objects.create(**_ready_state_values())
 
     assert state.ready_for_export is True
@@ -68,9 +76,9 @@ def test_database_accepts_ready_state_with_required_evidence():
     ],
 )
 def test_mark_ready_for_export_enforces_transition_order(
-    state_values,
-    expected_error,
-):
+    state_values: VideoStateValues,
+    expected_error: ExpectedError,
+) -> None:
     state = VideoState.objects.create(**state_values)
 
     with pytest.raises(ValueError, match=expected_error):
@@ -81,13 +89,14 @@ def test_mark_ready_for_export_enforces_transition_order(
 
     state.refresh_from_db()
     assert state.ready_for_export is False
-    assert state.ready_for_export_at is None
+    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
+    assert ready_for_export_at is None
     assert state.ready_for_export_by == ""
     assert state.processed_file_sha256 == ""
 
 
 @pytest.mark.django_db
-def test_processing_error_remains_terminal_and_clears_in_progress_state():
+def test_processing_error_remains_terminal_and_clears_in_progress_state() -> None:
     state = VideoState.objects.create(
         anonymization_validated=True,
         outside_segments_removed=True,
@@ -111,7 +120,7 @@ def test_processing_error_remains_terminal_and_clears_in_progress_state():
 
 
 @pytest.mark.django_db
-def test_mark_ready_for_export_normalizes_required_evidence():
+def test_mark_ready_for_export_normalizes_required_evidence() -> None:
     state = VideoState.objects.create(
         anonymization_validated=True,
         outside_segments_removed=True,
@@ -127,4 +136,5 @@ def test_mark_ready_for_export_normalizes_required_evidence():
     assert state.ready_for_export is True
     assert state.processed_file_sha256 == VALID_SHA256
     assert state.ready_for_export_by == "validator"
-    assert state.ready_for_export_at is not None
+    ready_for_export_at = cast(datetime | None, getattr(state, "ready_for_export_at"))
+    assert ready_for_export_at is not None

@@ -23,7 +23,7 @@ class ReconcileFrameSegmentAnnotationsCommandTest(TestCase):
         self.center = Center.objects.create(name="reconcile-command-center")
         self.video = VideoFile.objects.create(
             center=self.center,
-            video_hash="reconcile-command-video",
+            raw_video_hash="reconcile-command-video",
             original_file_name="reconcile_command.mp4",
             fps=25.0,
             frame_count=4,

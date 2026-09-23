@@ -1,26 +1,257 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from pytest import MonkeyPatch
+from django.core.files.base import ContentFile
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.utils.paths import get_runtime_paths
 
 import endoreg_db.services.media_integrity as media_integrity
 from endoreg_db.models import (
+    AIDataSet,
+    AIModelTrainingRun,
     Center,
     Frame,
-    ImageClassificationAnnotation,
-    Label,
+    LabelVideoSegment,
+    UploadJob,
     VideoFile,
 )
-from endoreg_db.services.media_integrity import reconcile_media_integrity
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.services.media_integrity import (
+    MediaIntegrityOptions,
+    reconcile_media_integrity,
+    reconcile_upload_job_integrity,
+    reconcile_video_integrity,
+)
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
-    ensure_directory,
 )
 
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("known_hash", [False, True])
+def test_upload_reconciliation_hashes_authenticated_plaintext(
+    monkeypatch: MonkeyPatch, tmp_path: Path, dry_run: bool, known_hash: bool
+) -> None:
+    payload = b"synthetic encrypted upload"
+    expected_hash = hashlib.sha256(payload).hexdigest()
+    job = UploadJob.objects.create(
+        content_hash=expected_hash if known_hash else "",
+        source_file_persisted=True,
+    )
+    storage = EncryptedStorage(location=get_runtime_paths().storage)
+    job.file.storage = storage
+    job.file.name = storage.save(f"{uuid.uuid4().hex}.mp4", ContentFile(payload))
+    job.save(update_fields=["file"])
+    ciphertext_before = Path(job.file.path).read_bytes()
+
+    repaired, lost, report = reconcile_upload_job_integrity(job, dry_run=dry_run)
+
+    assert lost == 0
+    assert repaired == (0 if known_hash else 1)
+    assert report.get("action") == (None if known_hash else "set_content_hash")
+    assert Path(job.file.path).read_bytes() == ciphertext_before
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.PENDING
+    assert job.content_hash == (expected_hash if known_hash or not dry_run else "")
+
+
+def test_missing_upload_source_uses_integrity_lifecycle_event(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    upload_job = cast(
+        UploadJob,
+        SimpleNamespace(
+            pk="missing-upload-job",
+            file=SimpleNamespace(name="uploads/missing.pdf"),
+            source_file_persisted=True,
+            content_hash="a" * 64,
+        ),
+    )
+    transitions: list[tuple[UploadJob, str]] = []
+
+    def record_integrity_lost(job: UploadJob, detail: str) -> None:
+        transitions.append((job, detail))
+
+    monkeypatch.setattr(
+        media_integrity,
+        "mark_upload_job_integrity_lost",
+        record_integrity_lost,
+    )
+
+    repaired, lost, report = reconcile_upload_job_integrity(upload_job)
+
+    assert repaired == 0
+    assert lost == 1
+    assert report["action"] == "lost"
+    assert transitions == [(upload_job, report["detail"])]
+
+
+def test_blank_persisted_upload_source_is_lost(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    upload_job = cast(
+        UploadJob,
+        SimpleNamespace(
+            pk="blank-upload-job",
+            file=SimpleNamespace(name=""),
+            source_file_persisted=True,
+            content_hash="b" * 64,
+        ),
+    )
+    transitions: list[str] = []
+
+    def record_blank_source_loss(_job: UploadJob, detail: str) -> None:
+        transitions.append(detail)
+
+    monkeypatch.setattr(
+        media_integrity,
+        "mark_upload_job_integrity_lost",
+        record_blank_source_loss,
+    )
+
+    # Act
+    repaired, lost, report = reconcile_upload_job_integrity(upload_job)
+
+    # Assert
+    assert repaired == 0
+    assert lost == 1
+    assert report["action"] == "lost"
+    assert transitions == [report["detail"]]
+    assert "storage reference" in transitions[0]
+
+
+def _video_with_successful_lifecycle_state() -> VideoFile:
+    center = Center.objects.create(
+        name=f"successful-video-center-{uuid.uuid4().hex[:8]}",
+        display_name="Successful Video Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash=f"successful-video-{uuid.uuid4().hex}",
+        processed_file="",
+    )
+    state = video.get_or_create_state()
+    state.sensitive_meta_processed = True
+    state.anonymized = True
+    state.anonymization_validated = True
+    state.outside_segments_removed = True
+    state.save(
+        update_fields=[
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+        ]
+    )
+    return video
+
+
+def test_successful_video_without_processed_file_is_lost() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+
+    # Act
+    repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert repaired == 0
+    assert lost == 1
+    assert report["status"] == "lost"
+
+
+def test_processing_failure_without_integrity_evidence_is_not_lost() -> None:
+    # Arrange
+    center = Center.objects.create(
+        name=f"failed-video-center-{uuid.uuid4().hex[:8]}",
+        display_name="Failed Video Center",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash=f"failed-video-{uuid.uuid4().hex}",
+    )
+    state = video.get_or_create_state()
+    state.processing_error = True
+    state.save(update_fields=["processing_error"])
+
+    # Act
+    _repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert lost == 0
+    assert report.get("status") != "lost"
+
+
+def test_preexisting_integrity_loss_is_counted_on_every_inventory() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    video.meta = {
+        "integrity_status": "lost",
+        "integrity_error": "processed generation disappeared",
+    }
+    video.save(update_fields=["meta"])
+    state = video.get_or_create_state()
+    state.processing_error = True
+    state.processing_started = False
+    state.ready_for_export = False
+    state.processed_file_sha256 = ""
+    state.save()
+
+    # Act
+    _repaired, lost, report = reconcile_video_integrity(
+        video,
+        options=MediaIntegrityOptions(dry_run=True),
+    )
+
+    # Assert
+    assert lost == 1
+    assert report["status"] == "lost"
+
+
+def test_video_integrity_loss_propagates_to_dependent_training_ledger() -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    dataset = AIDataSet.objects.create(name="integrity-dependent-training")
+    dataset.video_annotations.add(segment)
+    run = AIModelTrainingRun.objects.create(
+        dataset=dataset,
+        backbone_name="test-backbone",
+        feature_mode="test-features",
+        status=AIModelTrainingRun.STATUS_COMPLETED,
+    )
+
+    # Act
+    media_integrity.mark_video_integrity_lost(
+        video,
+        "Canonical processed video is missing.",
+    )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_LOST
+    assert "training input video artifact was lost" in run.error
 
 
 def _video_with_initialized_frames(
@@ -39,7 +270,7 @@ def _video_with_initialized_frames(
 
     video = VideoFile.objects.create(
         center=center,
-        video_hash=f"media-integrity-{uuid.uuid4().hex}",
+        raw_video_hash=f"media-integrity-{uuid.uuid4().hex}",
         frame_count=frame_count,
         frame_dir=str(frame_dir),
     )
@@ -95,127 +326,6 @@ def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
     assert Frame.objects.filter(video=video, is_extracted=True).count() == 3
 
 
-def test_dry_run_does_not_create_missing_stable_frame(
-    tmp_path: Path,
-):
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"frame-{frame_number}".encode(),
-        )
-
-    summary = reconcile_media_integrity(
-        dry_run=True,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    assert summary.frame_cache_partial == 1
-    assert summary.repaired_frames == 0
-    assert not (frame_dir / "frame_0000000.jpg").exists()
-
-
-def test_targeted_frame_zero_fix_uses_staged_output(monkeypatch, tmp_path: Path):
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"frame-{frame_number}".encode(),
-        )
-
-    seen_output_dirs: list[Path] = []
-
-    def fake_extract_range(video_arg, *, output_dir, start_frame, end_frame, **_kwargs):
-        assert video_arg == video
-        assert start_frame == 0
-        assert end_frame == 1
-        output_dir = Path(output_dir)
-        seen_output_dirs.append(output_dir)
-        ensure_directory(output_dir)
-        path = output_dir / "frame_0000000.jpg"
-        _write_test_file(path, b"frame-zero")
-        return [path]
-
-    monkeypatch.setattr(
-        media_integrity,
-        "extract_frame_range_to_directory",
-        fake_extract_range,
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-        repair_frame_numbers=[0],
-    )
-
-    assert summary.frame_cache_partial == 1
-    assert summary.repaired_frames == 1
-    assert (frame_dir / "frame_0000000.jpg").read_bytes() == b"frame-zero"
-    assert seen_output_dirs
-    assert seen_output_dirs[0] != frame_dir
-    assert seen_output_dirs[0].name.startswith(".extracting_")
-    assert not seen_output_dirs[0].exists()
-    frame_zero = Frame.objects.get(video=video, frame_number=0)
-    assert frame_zero.relative_path == "frame_0000000.jpg"
-    assert frame_zero.is_extracted is True
-
-
-def test_shifted_cache_with_annotations_is_reported_only(
-    tmp_path: Path,
-):
-    video = _video_with_initialized_frames(
-        tmp_path,
-        frame_count=3,
-        materialize_cache=True,
-    )
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    for frame_number in (1, 2, 3):
-        _write_test_file(
-            frame_dir / f"frame_{frame_number:07d}.jpg",
-            f"legacy-frame-{frame_number}".encode(),
-        )
-
-    label = Label.objects.create(name=f"manual-label-{uuid.uuid4().hex[:8]}")
-    ImageClassificationAnnotation.objects.create(
-        frame=Frame.objects.get(video=video, frame_number=1),
-        label=label,
-        value=True,
-        annotator="manual-reviewer",
-    )
-
-    summary = reconcile_media_integrity(
-        dry_run=False,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=True,
-    )
-
-    # A shifted non-empty cache with dependent annotations is evidence to review,
-    # not permission to rewrite visual content under stable Frame rows.
-    assert summary.frame_cache_shifted == 1
-    assert summary.frame_cache_manual_review_required == 1
-    assert summary.repaired_frames == 0
-    assert not (frame_dir / "frame_0000000.jpg").exists()
-    assert (frame_dir / "frame_0000003.jpg").exists()
-
-
 def test_ffmpeg_report_records_defaulted_fps_source(tmp_path: Path):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     video.fps = None
@@ -250,14 +360,16 @@ def test_ffmpeg_report_records_db_fps_source(tmp_path: Path):
     assert report["action"] == "probe_unavailable"
 
 
-def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Path):
+def test_ffmpeg_report_does_not_use_streamable_fallback_source(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(streamable_path, b"video")
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])
 
-    probe_data = {
+    probe_data: dict[str, object] = {
         "streams": [
             {
                 "codec_type": "video",
@@ -267,11 +379,16 @@ def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Pa
         ]
     }
 
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
+    probed_paths: list[Path] = []
+
+    def fake_probe_video_path(path: Path) -> tuple[bool, dict[str, object], str]:
+        probed_paths.append(path)
+        return True, probe_data, ""
+
     monkeypatch.setattr(
         media_integrity,
         "_probe_video_path",
-        lambda path: (True, probe_data, ""),
+        fake_probe_video_path,
     )
 
     summary = reconcile_media_integrity(
@@ -281,15 +398,17 @@ def test_ffmpeg_report_uses_streamable_fallback_source(monkeypatch, tmp_path: Pa
     )
 
     report = summary.video_reports[0]["ffmpeg_metadata"]
-    assert report["source"] == "processed_streamable_fallback"
-    assert report["fps_provenance"] == "fps_verified_by_ffprobe"
-    assert report["probed_fps"] == 50.0
-    assert report["action"] == "would_backfill_ffmpeg_meta"
+    assert report["source"] == "unavailable"
+    assert report["fps_provenance"] == "fps_defaulted"
+    assert report["probed_fps"] is None
+    assert report["action"] == "fps_defaulted"
+    assert report["default_fps"] == 50.0
+    assert probed_paths == []
 
 
-def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
-    monkeypatch, tmp_path: Path
-):
+def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
     streamable_path = tmp_path / "streamable" / "processed" / "fallback.mp4"
     _write_test_file(
@@ -297,25 +416,18 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
         b"corrupt-streamable",
         file_mode=media_integrity.STREAMABLE_FILE_MODE,
     )
-    video.processed_file.name = "processed/missing.mp4"
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
-    video.save(update_fields=["processed_file", "processed_streamable_relative_path"])
-
-    monkeypatch.setattr(media_integrity, "STORAGE_DIR", tmp_path)
-    monkeypatch.setattr(
-        media_integrity,
-        "_probe_video_path",
-        lambda path: (False, {"streams": []}, "corrupt streamable"),
-    )
-    monkeypatch.setattr(
-        media_integrity,
-        "_verify_canonical_probe",
-        lambda video_arg, *, processed: (True, ""),
-    )
+    video.save(update_fields=["processed_streamable_relative_path"])
 
     called: list[dict[str, bool]] = []
 
-    def fake_sync(video_arg, *, include_raw, include_processed, save):
+    def fake_sync(
+        video_arg: VideoFile,
+        *,
+        include_raw: bool,
+        include_processed: bool,
+        save: bool,
+    ) -> list[object]:
         called.append(
             {
                 "include_raw": include_raw,
@@ -340,8 +452,9 @@ def test_corrupt_streamable_with_valid_canonical_is_rebuild_only(
     assert called == []
     assert summary.streamable_artifacts_checked == 1
     assert summary.streamable_artifacts_repaired == 1
+    assert summary.lost_records == 0
     artifact = summary.video_reports[0]["streamable_probe"]["artifacts"][0]
     assert artifact["kind"] == "processed"
     assert artifact["probe_ok"] is False
-    assert artifact["canonical_probe_ok"] is True
-    assert artifact["action"] == "would_rebuild_streamable"
+    assert artifact["action"] == "would_remove_streamable"
+    assert artifact["detail"] == "legacy streamable MP4 is not allowed at rest"

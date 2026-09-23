@@ -1,6 +1,8 @@
 from django.urls import path
 from endoreg_db.views.anonymization import (
     AnonymizationOverviewView,
+    UploadJobRetryView,
+    UploadJobDismissView,
     AnonymizationValidateView,
     start_anonymization,
     anonymization_current,
@@ -11,13 +13,29 @@ from endoreg_db.views.anonymization import (
     anonymization_document_types_dropdown,
 )
 from endoreg_db.views.anonymization import media_management
+from endoreg_db.views.anonymization.overview import UploadJobCancelView
 
 url_patterns = [
+    path(
+        "anonymization/upload-jobs/<uuid:job_id>/cancel/",
+        UploadJobCancelView.as_view(),
+        name="anonymization_upload_job_cancel",
+    ),
+    path(
+        "anonymization/upload-jobs/<uuid:job_id>/dismiss/",
+        UploadJobDismissView.as_view(),
+        name="anonymization_upload_job_dismiss",
+    ),
     # URL patterns for anonymization overview
     path(
         "anonymization/items/overview/",
         AnonymizationOverviewView.as_view(),
         name="anonymization_items_overview",
+    ),
+    path(
+        "anonymization/upload-jobs/<uuid:job_id>/retry/",
+        UploadJobRetryView.as_view(),
+        name="anonymization_upload_job_retry",
     ),
     path(
         "anonymization/<int:file_id>/current/",

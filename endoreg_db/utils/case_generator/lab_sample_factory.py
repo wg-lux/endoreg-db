@@ -1,5 +1,10 @@
 from datetime import datetime, timezone
-from endoreg_db.models import Patient, PatientLabSample, PatientLabSampleType
+
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.patient.patient_lab_sample import (
+    PatientLabSample,
+    PatientLabSampleType,
+)
 
 
 class LabSampleFactory:

@@ -1,0 +1,200 @@
+schema_version: '1.0'
+id: fhir
+name: FHIR-R4-Export
+description: Kanonischer, pseudonymisierter FHIR-R4-Export von Untersuchungen mit stabilen Ressourcenverknüpfungen.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: done
+  history:
+  - action: done
+    changed_by: Codex
+    changed_at: '2026-07-31T09:11:27.131977Z'
+    note: Definition of Done vollständig verifiziert; produktionsreifer FHIR-R4-Export wird aus dem aktiven
+      Tracking abgeschlossen.
+source_documents:
+- path: docs/fhir_r4_export.md
+  disposition: reference
+  note: Aktueller FHIR-R4-Integrationsvertrag, Datenschutzprofil und Betriebsablauf.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Unterstützte FHIR-R4-Ressourcen und Profile sind festgelegt
+  acceptance:
+  - Ressourcen, Kardinalitäten, Terminologien und nicht unterstützte Felder sind dokumentiert.
+  - Das Verhalten bei fehlenden klinischen Daten ist eindeutig definiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exportvertrag gegen FHIR-Schema, Service und API prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/fhir_r4_export.md
+    - kind: review
+      reference: endoreg_db/services/interoperability/fhir_r4.py
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:43:36.404819Z'
+- id: canonical_bundle
+  category: functionality
+  title: Untersuchung wird als konsistentes Bundle exportiert
+  acceptance:
+  - Alle Ressourcenreferenzen zeigen auf vorhandene Ressourcen im Bundle.
+  - Wiederholter Export desselben Zustands ist semantisch stabil.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py::test_build_patient_examination_fhir_bundle_links_resources
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py::test_build_patient_examination_fhir_bundle_links_resources
+        -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:24:26.894995Z'
+- id: standard_conformance
+  category: interoperability
+  title: Ausgabe entspricht dem kanonischen FHIR-R4-Wire-Format
+  acceptance:
+  - Ressourcen werden durch strikt typisierte FHIR-R4-Modelle validiert.
+  - Die API verwendet ausschließlich kanonische snake_case-interne Grenzen und FHIR-konforme Wire-Namen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:24:55.827605Z'
+- id: automated_tests
+  category: testing
+  title: Bundle-Aufbau und API-Ausgabe sind automatisiert getestet
+  acceptance:
+  - Schema-, Verknüpfungs- und Endpunkttests laufen reproduzierbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py -q
+      note: Exit-Code 0
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:25:23.352540Z'
+- id: security_controls
+  category: security
+  title: Export minimiert Identität und respektiert Center-Scope
+  acceptance:
+  - Direkte Identifikatoren werden nur gemäß freigegebenem Exportprofil ausgegeben.
+  - Zugriff und Export bleiben authentifiziert, autorisiert und center-bezogen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py
+    - kind: review
+      reference: endoreg_db/views/patient_examination/patient_examination.py
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:43:37.333620Z'
+- id: data_provenance
+  category: data_integrity
+  title: Ressourcenidentität und Provenienz sind nachvollziehbar
+  acceptance:
+  - IDs sind stabil und kollisionsfrei; Quelluntersuchung und Exportversion sind rekonstruierbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py::test_fhir_bundle_identity_and_wire_payload_are_stable
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py::test_fhir_bundle_identity_and_wire_payload_are_stable
+    - kind: code
+      reference: endoreg_db/schemas/fhir_r4.py
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:43:38.394911Z'
+- id: operational_readiness
+  category: operations
+  title: Exportfehler sind betreibbar und beobachtbar
+  acceptance:
+  - Fehler werden strukturiert protokolliert und lassen sich einer Untersuchung zuordnen.
+  - Ressourcen- oder Schemafehler führen nicht zu partiell freigegebenen Bundles.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_fhir_r4_export.py::test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py::test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing
+        -q
+      note: Exit-Code 0
+    assessed_by: Codex
+    assessed_at: '2026-07-29T12:51:36.138619Z'
+- id: integration_documentation
+  category: documentation
+  title: FHIR-Integrationsvertrag ist aktuell dokumentiert
+  acceptance:
+  - Ressourcenabbildung, Beispielbundle, Versionierung und bekannte Grenzen sind dokumentiert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokumentation mit einem neuen API-Consumer nachvollziehen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/fhir_r4_export.md
+    assessed_by: codex
+    assessed_at: '2026-07-17T11:43:39.603623Z'

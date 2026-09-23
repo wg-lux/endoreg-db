@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from io import BytesIO
+from typing import cast
 
 import pytest
 
-from endoreg_db.utils.storage.streaming import (
+from endoreg_db.utils.storage_streaming import (
     build_partial_content_response,
+    field_file_has_decrypted_range_storage,
     iter_field_file_bytes,
     parse_byte_range,
 )
@@ -19,7 +22,7 @@ class _NonSeekableHandle(BytesIO):
 class _ChunkedFieldFile:
     name = "chunked.bin"
 
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes) -> None:
         self._payload = payload
         self.file = _NonSeekableHandle(payload)
         self.closed = False
@@ -27,7 +30,7 @@ class _ChunkedFieldFile:
     def open(self, mode: str) -> None:
         assert mode == "rb"
 
-    def chunks(self, chunk_size: int):
+    def chunks(self, chunk_size: int) -> Iterable[bytes]:
         for index in range(0, len(self._payload), chunk_size):
             yield self._payload[index : index + chunk_size]
 
@@ -36,7 +39,7 @@ class _ChunkedFieldFile:
 
 
 class _EncryptedRangeStorage:
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes) -> None:
         self.payload = payload
         self.calls: list[dict[str, int | str]] = []
 
@@ -47,7 +50,7 @@ class _EncryptedRangeStorage:
         start: int,
         end: int,
         chunk_size: int,
-    ):
+    ) -> Iterable[bytes]:
         self.calls.append(
             {"name": name, "start": start, "end": end, "chunk_size": chunk_size}
         )
@@ -57,12 +60,22 @@ class _EncryptedRangeStorage:
 class _EncryptedFieldFile:
     name = "encrypted.bin"
 
-    def __init__(self, storage: _EncryptedRangeStorage):
+    def __init__(self, storage: _EncryptedRangeStorage) -> None:
         self.storage = storage
 
 
+class _SizeOnlyStorage:
+    def get_plaintext_size(self, name: str) -> int:
+        return 16
+
+
+class _SizeOnlyFieldFile:
+    name = "video.mp4"
+    storage = _SizeOnlyStorage()
+
+
 @pytest.mark.unit
-def test_parse_byte_range_clamps_end_to_file_size():
+def test_parse_byte_range_clamps_end_to_file_size() -> None:
     byte_range = parse_byte_range("bytes=2-999", file_size=10)
 
     assert byte_range.start == 2
@@ -79,13 +92,15 @@ def test_parse_byte_range_clamps_end_to_file_size():
         ("bytes=10-", "outside file size"),
     ],
 )
-def test_parse_byte_range_rejects_invalid_ranges(range_header: str, message: str):
+def test_parse_byte_range_rejects_invalid_ranges(
+    range_header: str, message: str
+) -> None:
     with pytest.raises(ValueError, match=message):
         parse_byte_range(range_header, file_size=10)
 
 
 @pytest.mark.unit
-def test_iter_field_file_bytes_selects_range_from_non_seekable_chunks():
+def test_iter_field_file_bytes_selects_range_from_non_seekable_chunks() -> None:
     field_file = _ChunkedFieldFile(b"0123456789abcdef")
 
     payload = b"".join(iter_field_file_bytes(field_file, start=3, end=10, chunk_size=4))
@@ -95,7 +110,7 @@ def test_iter_field_file_bytes_selects_range_from_non_seekable_chunks():
 
 
 @pytest.mark.unit
-def test_iter_field_file_bytes_prefers_encrypted_storage_range_api():
+def test_iter_field_file_bytes_prefers_encrypted_storage_range_api() -> None:
     storage = _EncryptedRangeStorage(b"0123456789abcdef")
     field_file = _EncryptedFieldFile(storage)
 
@@ -108,7 +123,15 @@ def test_iter_field_file_bytes_prefers_encrypted_storage_range_api():
 
 
 @pytest.mark.unit
-def test_build_partial_content_response_sets_expected_range_headers():
+def test_decrypted_range_capability_requires_the_range_method() -> None:
+    storage = _EncryptedRangeStorage(b"0123456789abcdef")
+    assert field_file_has_decrypted_range_storage(_EncryptedFieldFile(storage))
+
+    assert not field_file_has_decrypted_range_storage(_SizeOnlyFieldFile())
+
+
+@pytest.mark.unit
+def test_build_partial_content_response_sets_expected_range_headers() -> None:
     field_file = _ChunkedFieldFile(b"0123456789")
 
     response = build_partial_content_response(
@@ -126,4 +149,4 @@ def test_build_partial_content_response_sets_expected_range_headers():
     assert response["Content-Length"] == "4"
     assert response["Accept-Ranges"] == "bytes"
     assert response["Content-Disposition"] == 'inline; filename="clip.mp4"'
-    assert b"".join(response.streaming_content) == b"2345"
+    assert b"".join(cast(Iterable[bytes], response.streaming_content)) == b"2345"

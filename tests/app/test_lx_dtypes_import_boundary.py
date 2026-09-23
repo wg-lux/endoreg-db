@@ -3,11 +3,13 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_lx_dtypes_is_declared_package_dependency():
+def test_lx_dtypes_is_declared_package_dependency() -> None:
     pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
 
     dependencies = pyproject["project"]["dependencies"]
@@ -18,7 +20,9 @@ def test_lx_dtypes_is_declared_package_dependency():
     )
 
 
-def test_urlconf_does_not_add_lx_data_models_checkout_to_sys_path(monkeypatch):
+def test_urlconf_does_not_add_lx_data_models_checkout_to_sys_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     checkout_roots = {
         str((PROJECT_ROOT / "lx-data-models").resolve()),
         str((PROJECT_ROOT.parent / "lx-data-models").resolve()),

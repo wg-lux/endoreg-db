@@ -1,11 +1,12 @@
+# pyright: reportPrivateUsage=false
 import logging
 from logging import getLogger
 
 from django.conf import settings
 from django.test import TestCase
+from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import VideoFile  # Import Frame model
-from endoreg_db.utils.video.ffmpeg_wrapper import is_ffmpeg_available
 
 from ._video_create_from_file import _test_video_create_from_file
 from .helper import get_random_video_path_by_examination_alias
@@ -30,6 +31,11 @@ from ...helpers.data_loader import (
 from ...helpers.default_objects import get_default_center
 
 FFMPEG_AVAILABLE = is_ffmpeg_available()
+
+
+def _assert_float_not_none(value: float | None) -> float:
+    assert value is not None
+    return float(value)
 
 
 class VideoFileModelTest(TestCase):
@@ -95,7 +101,9 @@ class VideoFileModelTest(TestCase):
             self.assertEqual(video_file.width, 1920)
             self.assertEqual(video_file.height, 1080)
             # Duration might be slightly off due to float precision, check within a tolerance
-            self.assertAlmostEqual(video_file.duration, 10.0, delta=0.1)
+            self.assertAlmostEqual(
+                _assert_float_not_none(video_file.duration), 10.0, delta=0.1
+            )
             # Frame count might also vary slightly depending on calculation method
             # self.assertEqual(video_file.frame_count, 500) # Example, adjust if needed
 
@@ -103,14 +111,14 @@ class VideoFileModelTest(TestCase):
             # Cleanup
             if video_file and video_file.pk:
                 logger.info(
-                    f"Cleaning up video file from test_initialize_video_specs (UUID: {video_file.video_hash})"
+                    f"Cleaning up video file from test_initialize_video_specs (UUID: {video_file.raw_video_hash})"
                 )
                 try:
                     # Reload from DB before deleting
                     video_to_delete = VideoFile.objects.get(pk=video_file.pk)
                     video_to_delete.delete_with_file()
                     logger.info(
-                        f"Successfully cleaned up video file (UUID: {video_file.video_hash})"
+                        f"Successfully cleaned up video file (UUID: {video_file.raw_video_hash})"
                     )
                 except VideoFile.DoesNotExist:
                     logger.warning(
@@ -118,6 +126,6 @@ class VideoFileModelTest(TestCase):
                     )
                 except Exception as e:
                     logger.error(
-                        f"Error during cleanup of video file (UUID: {video_file.video_hash}): {e}",
+                        f"Error during cleanup of video file (UUID: {video_file.raw_video_hash}): {e}",
                         exc_info=True,
                     )

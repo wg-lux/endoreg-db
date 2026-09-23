@@ -1,44 +1,305 @@
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 from __future__ import annotations
 
 import logging
 import random
-from hashlib import sha256
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import (
+    TYPE_CHECKING,
+    Iterable,
+    Iterator,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    cast,
+)
 
-from django.db import models
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
-from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.web.media_urls import build_video_frame_stream_path
+from endoreg_db.models.state.frame_annotation_segment_identity import (
+    is_prediction_segment,
+    is_segment_derived_external_annotation_id,
+    manual_annotation_filter,
+    manual_frame_annotation_preference_filter,
+    prediction_annotation_filter,
+    segment_derived_external_annotation_id,
+)
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.utils.media_urls import build_video_frame_stream_path
+from endoreg_db.utils.rust_backend import (
+    derive_frame_annotation_status,
+    normalize_frame_sampling_strategy_token,
+    normalize_frame_task_mode_token,
+)
+from lx_dtypes.models.contracts.frame_annotation import (
+    FrameAnnotationAnnotationPayload,
+    FrameAnnotationLabelOptionPayload,
+    FrameAnnotationTaskPayload,
+)
 
 if TYPE_CHECKING:
-    from django.db.models import QuerySet
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
+    from endoreg_db.models.label.label import Label
+    from endoreg_db.models.label.label_set import LabelSet
+    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
 
-    from endoreg_db.models import AIDataSet, Frame, Label, LabelSet, VideoFile
+
+class RequestUserLike(Protocol):
+    is_authenticated: bool
+    username: str
+
+
+class RequestLike(Protocol):
+    user: RequestUserLike
+
+
+class FrameLike(Protocol):
+    id: int
+    video_id: int
+    frame_number: int
+    relative_path: str
+    image_classification_annotations: AnnotationQuerySetLike
+
+
+class LabelLike(Protocol):
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def pk(self) -> int: ...
+
+    @property
+    def name(self) -> str: ...
+
+
+class LabelQuerySetLike(Protocol):
+    def all(self) -> "LabelQuerySetLike": ...
+    def order_by(self, *args: object, **kwargs: object) -> "LabelQuerySetLike": ...
+    def filter(self, *args: object, **kwargs: object) -> "LabelQuerySetLike": ...
+    def exists(self) -> bool: ...
+    def __iter__(self) -> Iterable[LabelLike]: ...
+
+
+class LabelSetLike(Protocol):
+    @property
+    def labels(self) -> "LabelQuerySetLike": ...
+
+
+class AIDataSetLike(Protocol):
+    @property
+    def dataset_type(self) -> str: ...
+
+    @property
+    def ai_model_type(self) -> str: ...
+
+    @property
+    def image_annotations(self) -> AnnotationQuerySetLike: ...
+
+    @property
+    def video_annotations(self) -> VideoAnnotationQuerySetLike: ...
+
+
+class VideoFileLike(Protocol):
+    @property
+    def state(self) -> object | None: ...
+
+
+class LabelSetQuerySetLike(Protocol):
+    def all(self) -> "LabelSetQuerySetLike": ...
+    def order_by(self, *args: object, **kwargs: object) -> "LabelSetQuerySetLike": ...
+    def filter(self, *args: object, **kwargs: object) -> "LabelSetQuerySetLike": ...
+    def exists(self) -> bool: ...
+    def __iter__(self) -> Iterable[LabelLike]: ...
+
+
+class AnnotationQuerySetLike(Protocol):
+    def select_related(
+        self, *args: object, **kwargs: object
+    ) -> "AnnotationQuerySetLike": ...
+    def filter(self, *args: object, **kwargs: object) -> "AnnotationQuerySetLike": ...
+    def exclude(self, *args: object, **kwargs: object) -> "AnnotationQuerySetLike": ...
+    def __iter__(self) -> Iterator[ImageClassificationAnnotationLike]: ...
+    def iterator(self) -> Iterable[ImageClassificationAnnotationLike]: ...
+    def exists(self) -> bool: ...
+    def values_list(
+        self, *args: object, **kwargs: object
+    ) -> Iterable[tuple[int, int]]: ...
+    def order_by(self, *args: object, **kwargs: object) -> "AnnotationQuerySetLike": ...
+    def distinct(self) -> "AnnotationQuerySetLike": ...
+    def count(self) -> int: ...
+
+
+class VideoAnnotationQuerySetLike(Protocol):
+    def select_related(
+        self, *args: object, **kwargs: object
+    ) -> "VideoAnnotationQuerySetLike": ...
+    def filter(
+        self, *args: object, **kwargs: object
+    ) -> "VideoAnnotationQuerySetLike": ...
+    def exclude(
+        self, *args: object, **kwargs: object
+    ) -> "VideoAnnotationQuerySetLike": ...
+    def iterator(self) -> Iterable[LabelVideoSegmentLike]: ...
+    def exists(self) -> bool: ...
+    def order_by(
+        self, *args: object, **kwargs: object
+    ) -> "VideoAnnotationQuerySetLike": ...
+    def distinct(self) -> "VideoAnnotationQuerySetLike": ...
+
+
+class ImageClassificationAnnotationLike(Protocol):
+    id: int
+    label_id: int
+    label: LabelLike
+    value: bool
+    float_value: float | None
+    annotator: str | None
+    information_source: object | None
+    model_meta_id: int | None
+    external_annotation_id: str | None
+    frame_id: int
+
+
+class FrameModelLike(Protocol):
+    id: int
+    video_id: int
+    frame_number: int
+    relative_path: str
+    image_classification_annotations: QuerySet["ImageClassificationAnnotation"]
+
+
+class LabelSetModelLike(Protocol):
+    labels: QuerySet["Label"]
+
+
+class ImageClassificationAnnotationModelLike(Protocol):
+    id: int
+    label_id: int
+    label: LabelLike
+    value: bool
+    float_value: float | None
+    annotator: str | None
+    information_source: object | None
+    model_meta_id: int | None
+    external_annotation_id: str | None
+    frame_id: int
+
+
+class LabelVideoSegmentModelLike(Protocol):
+    pk: int
+    label: LabelLike | None
+    label_id: int
+    source_id: int | None
+    start_frame_number: int
+    end_frame_number: int
+    video_file_id: int
+
+    def get_model_meta(self) -> object | None: ...
+    def get_frames(self) -> QuerySet["Frame"]: ...
+
+
+class LabelVideoSegmentLike(Protocol):
+    pk: int
+    label: Label | None
+    label_id: int
+    source_id: int | None
+    start_frame_number: int
+    end_frame_number: int
+
+    def get_model_meta(self) -> object | None: ...
+    def get_frames(self) -> QuerySet["Frame"]: ...
+
+
+class FrameAnnotationImageAnnotationLike(Protocol):
+    @property
+    def id(self) -> int: ...
+
+    @property
+    def label(self) -> LabelLike: ...
+
+    @property
+    def label_id(self) -> int: ...
+
+    @property
+    def value(self) -> bool: ...
+
+    @property
+    def frame_id(self) -> int: ...
+
+    @property
+    def annotator(self) -> str | None: ...
+
+    @property
+    def information_source(self) -> object | None: ...
+
+    @property
+    def model_meta_id(self) -> int | None: ...
+
+    @property
+    def external_annotation_id(self) -> str | None: ...
+
+
+class FrameAnnotationVideoAnnotationLike(Protocol):
+    @property
+    def label(self) -> LabelLike: ...
+
+    @property
+    def label_id(self) -> int: ...
+
+    @property
+    def value(self) -> bool: ...
+
+    @property
+    def frame_id(self) -> int: ...
+
+    @property
+    def video_file_id(self) -> int: ...
+
+    @property
+    def source(self) -> FrameAnnotationSource: ...
+
+    @property
+    def prediction_meta_id(self) -> int | None: ...
+
+    def get_model_meta(self) -> object | None: ...
+
+
+class SegmentAnnotationSnapshot(TypedDict):
+    video: VideoFile
+    start_frame_number: int
+    end_frame_number: int
+    label: Label | None
+    information_source_id: int | None
+    model_meta_id: int | None
+
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_FRAME_INFORMATION_SOURCE_NAME = "manual_annotation"
-SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX = "segment-derived:v1"
 PHI_REGION_DATASET_MODEL_TYPE = "phi_region_detector"
 
-PREDICTION_INFORMATION_SOURCE_NAMES = {
-    "prediction",
-    "default_prediction",
-    "prediction_annotation",
-}
+FrameAnnotationSource: TypeAlias = "FrameAnnotationSourceName | None"
 
-MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES = {
-    "annotation",
-    "default_annotation",
-    "frame_annotation_frontend",
-    "human_annotation",
-    "lx_anonymizer_evaluation",
-    "manual_annotation",
-}
+
+class FrameAnnotationSourceName(Protocol):
+    name: str
+
+
+FrameAnnotationSourceInput: TypeAlias = "str | FrameAnnotationSourceName | None"
+
+
+class PredictionSegmentLike(Protocol):
+    @property
+    def source(self) -> FrameAnnotationSource: ...
+
+    @property
+    def prediction_meta_id(self) -> int | None: ...
 
 
 class FrameAnnotationStatus(str, Enum):
@@ -79,36 +340,11 @@ SUPPORTED_FRAME_SAMPLING_STRATEGIES = {
 }
 
 
-@dataclass(frozen=True)
-class FrameAnnotationQueueSpec:
-    limit: int
-    task_mode: FrameTaskMode = FrameTaskMode.RANDOM
-    video_id: int | None = None
-    label_set: LabelSet | None = None
-    target_label: Label | None = None
-    filter_label: Label | None = None
-    information_source_name: str = DEFAULT_FRAME_INFORMATION_SOURCE_NAME
-    annotator: str = ""
-    exclude_annotated: bool = True
-    ai_dataset: AIDataSet | None = None
-    sampling_strategy: FrameSamplingStrategy = FrameSamplingStrategy.BALANCED
-    prediction_segments_only: bool = True
-    exclude_frame_ids: frozenset[int] = field(default_factory=frozenset)
-
-
-@dataclass(frozen=True)
-class FrameAnnotationQueueResult:
-    tasks: list[dict[str, Any]]
-    selection_strategy: str
-    label_distribution: list[dict[str, Any]] = field(default_factory=list)
-    selected_label_counts: dict[str, int] = field(default_factory=dict)
-    segment_bucket_counts: dict[str, int] = field(default_factory=dict)
-    annotation_bucket_counts: dict[str, int] = field(default_factory=dict)
-    bucket_counts: dict[str, int] = field(default_factory=dict)
-
-
 def normalize_frame_task_mode(value: object) -> FrameTaskMode:
     parsed = str(value or FrameTaskMode.RANDOM.value).strip().lower()
+    rust_value = normalize_frame_task_mode_token(parsed)
+    if rust_value is not None:
+        return FrameTaskMode(rust_value)
     if parsed == FrameTaskMode.FILTERED.value:
         return FrameTaskMode.FILTERED
     return FrameTaskMode.RANDOM
@@ -116,6 +352,9 @@ def normalize_frame_task_mode(value: object) -> FrameTaskMode:
 
 def normalize_frame_sampling_strategy(value: object) -> FrameSamplingStrategy:
     parsed = str(value or FrameSamplingStrategy.BALANCED.value).strip().lower()
+    rust_value = normalize_frame_sampling_strategy_token(parsed)
+    if rust_value is not None:
+        return FrameSamplingStrategy(rust_value)
     for strategy in FrameSamplingStrategy:
         if parsed == strategy.value:
             return strategy
@@ -130,7 +369,7 @@ def normalize_frame_annotator(annotator: str | None) -> str | None:
 
 
 def resolve_request_annotator(
-    request,
+    request: RequestLike,
     requested_annotator: str | None = None,
 ) -> str:
     normalized = normalize_frame_annotator(requested_annotator)
@@ -142,7 +381,8 @@ def resolve_request_annotator(
 
 
 def resolve_frame_information_source_name(value: object) -> str:
-    source_name = str(value or DEFAULT_FRAME_INFORMATION_SOURCE_NAME).strip()
+    source_value = getattr(value, "name", value)
+    source_name = str(source_value or DEFAULT_FRAME_INFORMATION_SOURCE_NAME).strip()
     return source_name or DEFAULT_FRAME_INFORMATION_SOURCE_NAME
 
 
@@ -152,8 +392,8 @@ def resolve_ai_dataset_for_queue(
     dataset_type_raw: object,
     dataset_id_raw: object = None,
 ) -> AIDataSet | None:
-    from endoreg_db.models import AIDataSet
-    from endoreg_db.utils.defaults.set_default_center import get_application_settings
+    from endoreg_db.models.aidataset.aidataset import AIDataSet
+    from endoreg_db.utils.set_default_center import get_application_settings
 
     if dataset_id_raw not in (None, ""):
         try:
@@ -178,7 +418,9 @@ def resolve_ai_dataset_for_queue(
     )
 
     if not dataset_name and not dataset_type:
-        return AIDataSet.objects.first()
+        # The system video-assignment dataset is not an implicit annotation scope.
+        dataset = AIDataSet.objects.filter(is_default_video_dataset=False).first()
+        return dataset
 
     dataset_qs = AIDataSet.objects.all()
     if dataset_name:
@@ -239,22 +481,47 @@ def mark_frame_annotations_stale(video: VideoFile) -> None:
 def resolve_frame_annotation_status(video: VideoFile) -> str:
     state = getattr(video, "state", None)
     if state is None:
-        return FrameAnnotationStatus.NOT_STARTED.value
-    if not bool(getattr(state, "frames_extracted", False)):
+        rust_status = derive_frame_annotation_status(
+            has_state=False,
+            frames_extracted=False,
+            initial_prediction_completed=False,
+            lvs_created=False,
+            frame_annotations_generated=False,
+        )
+        return rust_status or FrameAnnotationStatus.NOT_STARTED.value
+
+    frames_extracted = bool(getattr(state, "frames_extracted", False))
+    initial_prediction_completed = bool(
+        getattr(state, "initial_prediction_completed", False)
+    )
+    lvs_created = bool(getattr(state, "lvs_created", False))
+    frame_annotations_generated = bool(
+        getattr(state, "frame_annotations_generated", False)
+    )
+    rust_status = derive_frame_annotation_status(
+        has_state=True,
+        frames_extracted=frames_extracted,
+        initial_prediction_completed=initial_prediction_completed,
+        lvs_created=lvs_created,
+        frame_annotations_generated=frame_annotations_generated,
+    )
+    if rust_status is not None:
+        return rust_status
+    if not frames_extracted:
         return FrameAnnotationStatus.FRAMES_UNAVAILABLE.value
-    if not bool(getattr(state, "initial_prediction_completed", False)):
+    if not initial_prediction_completed:
         return FrameAnnotationStatus.PREDICTION_PENDING.value
-    if bool(getattr(state, "initial_prediction_completed", False)) and not bool(
-        getattr(state, "lvs_created", False)
-    ):
+    if initial_prediction_completed and not lvs_created:
         return FrameAnnotationStatus.PREDICTION_READY.value
-    if bool(getattr(state, "frame_annotations_generated", False)):
+    if frame_annotations_generated:
         return FrameAnnotationStatus.ANNOTATION_COMPLETE.value
     return FrameAnnotationStatus.ANNOTATION_READY.value
 
 
 def validated_annotators_for_video(video: VideoFile) -> list[str]:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     annotators = (
         ImageClassificationAnnotation.objects.filter(frame__video=video)
@@ -267,97 +534,6 @@ def validated_annotators_for_video(video: VideoFile) -> list[str]:
     return [annotator for annotator in annotators if annotator]
 
 
-def _label_allowed_by_set(label_id: int | None, label_set: LabelSet | None) -> bool:
-    if label_id is None:
-        return False
-    if label_set is None:
-        return True
-    return label_set.labels.filter(pk=label_id).exists()
-
-
-def is_prediction_segment(segment) -> bool:
-    source_name = (segment.source.name if segment.source else "").strip().lower()
-    return (
-        segment.prediction_meta_id is not None
-        or source_name in PREDICTION_INFORMATION_SOURCE_NAMES
-        or source_name.startswith("prediction")
-        or source_name.startswith("model")
-    )
-
-
-def segment_derived_external_annotation_id(
-    *,
-    segment_id: int | None,
-    frame_id: int | None,
-    label_id: int | None,
-    information_source_id: int | None,
-    model_meta_id: int | None,
-    annotator: str | None = None,
-) -> str:
-    normalized_parts = [
-        str(segment_id or ""),
-        str(frame_id or ""),
-        str(label_id or ""),
-        str(information_source_id or ""),
-        str(model_meta_id or ""),
-        str(annotator or ""),
-    ]
-    digest = sha256("|".join(normalized_parts).encode("utf-8")).hexdigest()[:24]
-    return (
-        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-        f"{segment_id or 'none'}:{frame_id or 'none'}:{digest}"
-    )
-
-
-def segment_derived_external_annotation_prefix_for_segment(
-    segment_id: int,
-) -> str:
-    return f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:{segment_id}:"
-
-
-def is_segment_derived_external_annotation_id(value: object) -> bool:
-    return isinstance(value, str) and value.startswith(
-        f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-    )
-
-
-def non_segment_derived_annotation_filter() -> Q:
-    return (
-        Q(external_annotation_id__isnull=True)
-        | Q(external_annotation_id__exact="")
-        | ~Q(
-            external_annotation_id__startswith=(
-                f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
-            )
-        )
-    )
-
-
-def prediction_annotation_filter() -> Q:
-    return (
-        Q(information_source__information_source_types__name="prediction")
-        | Q(information_source__name__in=PREDICTION_INFORMATION_SOURCE_NAMES)
-        | Q(model_meta_id__isnull=False)
-    )
-
-
-def manual_annotation_filter(
-    information_source_name: str | None = None,
-) -> Q:
-    if information_source_name:
-        return Q(information_source__name=information_source_name)
-    return Q(
-        information_source__information_source_types__name__in=[
-            "annotation",
-            "manual_annotation",
-        ]
-    ) | Q(information_source__name__in=MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES)
-
-
-def manual_frame_annotation_preference_filter() -> Q:
-    return manual_annotation_filter() & non_segment_derived_annotation_filter()
-
-
 def _build_frame_task_queryset(
     *,
     video_id: int | None,
@@ -366,18 +542,33 @@ def _build_frame_task_queryset(
     annotator: str,
     exclude_annotated: bool,
     target_label_id: int | None,
+    require_extracted_frames: bool = True,
     require_raw_video: bool = False,
+    require_processed_video: bool = False,
+    require_streamable_video_artifact: bool = False,
     exclude_frame_ids: set[int] | None = None,
     candidate_frame_ids: set[int] | None = None,
 ) -> QuerySet[Frame]:
-    from endoreg_db.models import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
-    frames_qs = Frame.objects.select_related("video").filter(is_extracted=True)
+    frames_qs: QuerySet[Frame] = Frame.objects.select_related("video")
+    if require_extracted_frames:
+        frames_qs = frames_qs.filter(is_extracted=True)
     if video_id is not None:
         frames_qs = frames_qs.filter(video_id=video_id)
     if require_raw_video:
         frames_qs = frames_qs.exclude(video__raw_file__isnull=True).exclude(
             video__raw_file__exact=""
+        )
+    if require_processed_video:
+        frames_qs = frames_qs.exclude(video__processed_file__isnull=True).exclude(
+            video__processed_file__exact=""
+        )
+    if require_streamable_video_artifact:
+        frames_qs = frames_qs.filter(
+            Q(video__raw_file__isnull=False) & ~Q(video__raw_file__exact="")
+            | Q(video__processed_file__isnull=False)
+            & ~Q(video__processed_file__exact="")
         )
     if candidate_frame_ids is not None:
         if not candidate_frame_ids:
@@ -391,7 +582,7 @@ def _build_frame_task_queryset(
         )
 
     if exclude_annotated:
-        annotation_filter: dict[str, Any] = {
+        annotation_filter: dict[str, object] = {
             "image_classification_annotations__information_source__name": information_source_name
         }
         if annotator:
@@ -408,20 +599,63 @@ def _build_frame_task_queryset(
     return frames_qs.order_by("id").distinct()
 
 
+@dataclass(frozen=True)
+class FrameAnnotationQueueSpec:
+    limit: int
+    task_mode: FrameTaskMode = FrameTaskMode.RANDOM
+    video_id: int | None = None
+    label_set: LabelSet | None = None
+    target_label: Label | None = None
+    filter_label: Label | None = None
+    information_source_name: str = DEFAULT_FRAME_INFORMATION_SOURCE_NAME
+    annotator: str = ""
+    exclude_annotated: bool = True
+    ai_dataset: AIDataSet | None = None
+    sampling_strategy: FrameSamplingStrategy = FrameSamplingStrategy.BALANCED
+    prediction_segments_only: bool = True
+    exclude_frame_ids: set[int] = field(default_factory=set)
+    require_extracted_frames: bool = True
+    require_raw_video: bool = False
+    require_processed_video: bool = False
+    require_streamable_video_artifact: bool = False
+
+
+@dataclass(frozen=True)
+class FrameAnnotationQueueResult:
+    tasks: list[FrameAnnotationTaskPayload]
+    selection_strategy: str
+    label_distribution: list[dict[str, int]] = field(default_factory=list)
+    selected_label_counts: dict[str, int] = field(default_factory=dict)
+    segment_bucket_counts: dict[str, int] = field(default_factory=dict)
+    annotation_bucket_counts: dict[str, int] = field(default_factory=dict)
+    bucket_counts: dict[str, int] = field(default_factory=dict)
+
+
 def _pick_random_frame(
     *,
     spec: FrameAnnotationQueueSpec,
     exclude_frame_ids: set[int] | None = None,
     candidate_frame_ids: set[int] | None = None,
-) -> Frame | None:
+) -> FrameLike | None:
     frames_qs = _build_frame_task_queryset(
         video_id=spec.video_id,
-        filter_label_id=spec.filter_label.id if spec.filter_label is not None else None,
-        information_source_name=spec.information_source_name,
+        filter_label_id=cast(int | None, getattr(spec.filter_label, "id", None))
+        if spec.filter_label is not None
+        else None,
+        information_source_name=resolve_frame_information_source_name(
+            spec.information_source_name
+        ),
         annotator=spec.annotator,
         exclude_annotated=spec.exclude_annotated,
-        target_label_id=spec.target_label.id if spec.target_label is not None else None,
-        require_raw_video=ai_dataset_requires_raw_frames(spec.ai_dataset),
+        target_label_id=cast(int | None, getattr(spec.target_label, "id", None))
+        if spec.target_label is not None
+        else None,
+        require_extracted_frames=spec.require_extracted_frames,
+        require_raw_video=(
+            spec.require_raw_video or ai_dataset_requires_raw_frames(spec.ai_dataset)
+        ),
+        require_processed_video=spec.require_processed_video,
+        require_streamable_video_artifact=spec.require_streamable_video_artifact,
         exclude_frame_ids=exclude_frame_ids,
         candidate_frame_ids=candidate_frame_ids,
     )
@@ -429,119 +663,47 @@ def _pick_random_frame(
     if count == 0:
         return None
     offset = random.randint(0, count - 1)
-    return frames_qs[offset]
+    return cast(FrameLike, frames_qs[offset])
 
 
 def _build_dataset_target_buckets(
     *,
     dataset: AIDataSet | None,
     target_label: Label | None,
+    require_extracted_frames: bool,
 ) -> dict[str, set[int]]:
-    from endoreg_db.models import AIDataSet
-
-    if dataset is None:
-        return {}
-    if dataset.dataset_type != AIDataSet.DATASET_TYPE_IMAGE:
-        return {}
-    if target_label is None:
-        return {}
-
-    annotations = dataset.image_annotations.select_related("frame", "label").filter(
-        frame__isnull=False,
-        frame__is_extracted=True,
+    from endoreg_db.services.frame_annotation_buckets import (
+        build_dataset_target_buckets,
     )
-    if not annotations.exists():
-        return {}
 
-    frame_ids_by_bucket: dict[str, set[int]] = {
-        "positive": set(),
-        "negative": set(),
-        "unknown": set(),
-    }
-    seen_frame_ids: set[int] = set()
-    target_values_by_frame_id: dict[int, list[bool]] = defaultdict(list)
-
-    for annotation in annotations.iterator():
-        seen_frame_ids.add(annotation.frame_id)
-        if annotation.label_id == target_label.id:
-            target_values_by_frame_id[annotation.frame_id].append(annotation.value)
-
-    for frame_id in seen_frame_ids:
-        target_values = target_values_by_frame_id.get(frame_id, [])
-        if any(target_values):
-            frame_ids_by_bucket["positive"].add(frame_id)
-        elif target_values:
-            frame_ids_by_bucket["negative"].add(frame_id)
-        else:
-            frame_ids_by_bucket["unknown"].add(frame_id)
-
-    return {
-        bucket_name: frame_ids
-        for bucket_name, frame_ids in frame_ids_by_bucket.items()
-        if frame_ids
-    }
+    return build_dataset_target_buckets(
+        dataset=dataset,
+        target_label=target_label,
+        require_extracted_frames=require_extracted_frames,
+    )
 
 
 def _build_dataset_label_distribution(
     *,
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
-) -> dict[int, dict[str, Any]]:
-    if dataset is None:
-        return {}
+) -> dict[int, dict[str, int]]:
+    from endoreg_db.services.frame_annotation_buckets import (
+        build_dataset_label_distribution,
+    )
 
-    distribution: dict[int, dict[str, Any]] = {}
-
-    def ensure_label(label: Label | None) -> dict[str, Any] | None:
-        if label is None or not _label_allowed_by_set(label.pk, label_set):
-            return None
-        entry = distribution.setdefault(
-            label.pk,
-            {
-                "label_id": label.pk,
-                "label_name": label.name,
-                "frame_positive": 0,
-                "frame_negative": 0,
-                "segment_count": 0,
-                "total": 0,
-            },
-        )
-        return entry
-
-    for annotation in (
-        dataset.image_annotations.select_related("label")
-        .filter(label__isnull=False, frame__is_extracted=True)
-        .iterator()
-    ):
-        entry = ensure_label(annotation.label)
-        if entry is None:
-            continue
-        if annotation.value:
-            entry["frame_positive"] += 1
-        else:
-            entry["frame_negative"] += 1
-        entry["total"] += 1
-
-    for segment in (
-        dataset.video_annotations.select_related("label")
-        .filter(label__isnull=False)
-        .iterator()
-    ):
-        entry = ensure_label(segment.label)
-        if entry is None:
-            continue
-        entry["segment_count"] += 1
-        entry["total"] += 1
-
-    return distribution
+    return build_dataset_label_distribution(
+        dataset=dataset,
+        label_set=label_set,
+    )
 
 
 def serialize_label_distribution(
-    distribution: dict[int, dict[str, Any]],
-) -> list[dict[str, Any]]:
+    distribution: dict[int, dict[str, int]],
+) -> list[dict[str, int]]:
     return sorted(
-        distribution.values(),
-        key=lambda item: (item["total"], item["label_name"], item["label_id"]),
+        [{"label_id": label_id, **entry} for label_id, entry in distribution.items()],
+        key=lambda item: (item["total"], item["label_id"]),
     )
 
 
@@ -549,23 +711,25 @@ def _build_balanced_label_order(
     *,
     label_set: LabelSet | None,
     target_label: Label | None,
-    distribution: dict[int, dict[str, Any]],
+    distribution: dict[int, dict[str, int]],
 ) -> list[int]:
     if label_set is not None:
-        labels = list(label_set.labels.all().order_by("name", "id"))
+        labels = list(
+            cast(Iterable[LabelLike], label_set.labels.all().order_by("name", "id"))
+        )
     elif target_label is not None:
         labels = [target_label]
     else:
         labels = []
 
     return [
-        label.id
+        label.pk
         for label in sorted(
             labels,
             key=lambda item: (
-                distribution.get(item.id, {}).get("total", 0),
+                distribution.get(item.pk, {}).get("total", 0),
                 item.name,
-                item.id,
+                item.pk,
             ),
         )
     ]
@@ -576,86 +740,33 @@ def _build_segment_frame_buckets(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
     only_prediction_segments: bool,
+    require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    if dataset is None:
-        return {}
+    from endoreg_db.services.frame_annotation_buckets import build_segment_frame_buckets
 
-    from endoreg_db.models import Frame
-
-    buckets: dict[int, set[int]] = defaultdict(set)
-
-    segments = (
-        dataset.video_annotations.select_related("label", "source")
-        .filter(
-            label__isnull=False,
-            video_file_id__isnull=False,
-            start_frame_number__isnull=False,
-            end_frame_number__isnull=False,
-        )
-        .order_by("video_file_id", "start_frame_number", "end_frame_number")
+    return build_segment_frame_buckets(
+        dataset=dataset,
+        label_set=label_set,
+        only_prediction_segments=only_prediction_segments,
+        require_extracted_frames=require_extracted_frames,
     )
-
-    segments_by_video_id: dict[int, list[Any]] = defaultdict(list)
-
-    for segment in segments.iterator():
-        if only_prediction_segments and not is_prediction_segment(segment):
-            continue
-        if not _label_allowed_by_set(segment.label_id, label_set):
-            continue
-        if segment.start_frame_number >= segment.end_frame_number:
-            continue
-
-        segments_by_video_id[segment.video_file_id].append(segment)
-
-    for video_id, video_segments in segments_by_video_id.items():
-        min_start = min(segment.start_frame_number for segment in video_segments)
-        max_end = max(segment.end_frame_number for segment in video_segments)
-
-        frame_rows = Frame.objects.filter(
-            video_id=video_id,
-            frame_number__gte=min_start,
-            frame_number__lt=max_end,
-            is_extracted=True,
-        ).values_list("id", "frame_number")
-
-        frame_ids_by_number = {
-            frame_number: frame_id for frame_id, frame_number in frame_rows
-        }
-
-        for segment in video_segments:
-            for frame_number, frame_id in frame_ids_by_number.items():
-                if (
-                    segment.start_frame_number
-                    <= frame_number
-                    < segment.end_frame_number
-                ):
-                    buckets[segment.label_id].add(frame_id)
-
-    return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
 
 
 def _build_annotation_frame_buckets(
     *,
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
+    require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    if dataset is None:
-        return {}
-
-    buckets: dict[int, set[int]] = defaultdict(set)
-    annotations = dataset.image_annotations.select_related("label").filter(
-        label__isnull=False,
-        value=True,
-        frame__isnull=False,
-        frame__is_extracted=True,
+    from endoreg_db.services.frame_annotation_buckets import (
+        build_annotation_frame_buckets,
     )
 
-    for annotation in annotations.iterator():
-        if not _label_allowed_by_set(annotation.label_id, label_set):
-            continue
-        buckets[annotation.label_id].add(annotation.frame_id)
-
-    return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
+    return build_annotation_frame_buckets(
+        dataset=dataset,
+        label_set=label_set,
+        require_extracted_frames=require_extracted_frames,
+    )
 
 
 def _build_dataset_candidate_frame_ids(
@@ -663,29 +774,18 @@ def _build_dataset_candidate_frame_ids(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
     only_prediction_segments: bool,
+    require_extracted_frames: bool,
 ) -> set[int] | None:
-    if dataset is None:
-        return None
-
-    frame_ids: set[int] = set()
-    annotations = dataset.image_annotations.select_related("label").filter(
-        label__isnull=False,
-        frame__isnull=False,
-        frame__is_extracted=True,
+    from endoreg_db.services.frame_annotation_buckets import (
+        build_dataset_candidate_frame_ids,
     )
-    for annotation in annotations.iterator():
-        if _label_allowed_by_set(annotation.label_id, label_set):
-            frame_ids.add(annotation.frame_id)
 
-    segment_frame_buckets = _build_segment_frame_buckets(
+    return build_dataset_candidate_frame_ids(
         dataset=dataset,
         label_set=label_set,
         only_prediction_segments=only_prediction_segments,
+        require_extracted_frames=require_extracted_frames,
     )
-    for segment_frame_ids in segment_frame_buckets.values():
-        frame_ids.update(segment_frame_ids)
-
-    return frame_ids
 
 
 def _merge_frame_buckets(*bucket_maps: dict[int, set[int]]) -> dict[int, set[int]]:
@@ -702,7 +802,7 @@ def _pick_balanced_dataset_frame(
     label_order: list[int],
     frame_buckets: dict[int, set[int]],
     exclude_frame_ids: set[int],
-) -> tuple[Frame | None, int | None]:
+) -> tuple[FrameLike | None, int | None]:
     for label_id in label_order:
         bucket_frame_ids = frame_buckets.get(label_id)
         if not bucket_frame_ids:
@@ -719,31 +819,31 @@ def _pick_balanced_dataset_frame(
     return None, None
 
 
-def serialize_frame_annotation(annotation) -> dict[str, Any]:
-    return {
-        "id": annotation.id,
-        "label_id": annotation.label_id,
-        "label_name": annotation.label.name,
-        "value": annotation.value,
-        "float_value": annotation.float_value,
-        "annotator": annotation.annotator,
-        "information_source_name": (
-            annotation.information_source.name
-            if annotation.information_source
-            else None
+def serialize_frame_annotation(
+    annotation: FrameAnnotationImageAnnotationLike,
+) -> FrameAnnotationAnnotationPayload:
+    return FrameAnnotationAnnotationPayload(
+        id=cast(int, getattr(annotation, "pk", getattr(annotation, "id"))),
+        label_id=annotation.label_id,
+        label_name=cast(str, getattr(annotation.label, "name")),
+        value=annotation.value,
+        float_value=cast(float | None, getattr(annotation, "float_value", None)),
+        annotator=annotation.annotator,
+        information_source_name=cast(
+            str | None, getattr(annotation.information_source, "name", None)
         ),
-        "model_meta_id": annotation.model_meta_id,
-        "external_annotation_id": annotation.external_annotation_id,
-    }
+        model_meta_id=annotation.model_meta_id,
+        external_annotation_id=annotation.external_annotation_id,
+    )
 
 
 def frame_manual_annotations(
     *,
-    frame: Frame,
+    frame: FrameLike,
     label_set: LabelSet | None,
     information_source_name: str,
     annotator: str,
-) -> QuerySet:
+) -> QuerySet[ImageClassificationAnnotation]:
     queryset = frame.image_classification_annotations.select_related(
         "label", "information_source", "model_meta"
     ).filter(
@@ -754,44 +854,66 @@ def frame_manual_annotations(
         queryset = queryset.filter(label__label_sets=label_set)
     if annotator:
         queryset = queryset.filter(annotator=annotator)
-    return queryset.order_by("label__name", "id").distinct()
+    return cast(
+        "QuerySet[ImageClassificationAnnotation]",
+        queryset.order_by("label__name", "id").distinct(),
+    )
 
 
 def frame_prediction_annotations(
-    *, frame: Frame, label_set: LabelSet | None
-) -> QuerySet:
+    *, frame: FrameLike, label_set: LabelSet | None
+) -> QuerySet[ImageClassificationAnnotation]:
     queryset = frame.image_classification_annotations.select_related(
         "label", "information_source", "model_meta"
     ).filter(prediction_annotation_filter())
     if label_set is not None:
         queryset = queryset.filter(label__label_sets=label_set)
-    return queryset.order_by("label__name", "id").distinct()
+    return cast(
+        "QuerySet[ImageClassificationAnnotation]",
+        queryset.order_by("label__name", "id").distinct(),
+    )
 
 
 def serialize_frame_task(
-    frame: Frame,
+    frame: FrameLike,
     *,
     spec: FrameAnnotationQueueSpec,
-) -> dict[str, Any]:
-    label_options = []
+) -> FrameAnnotationTaskPayload:
+    label_options: list[FrameAnnotationLabelOptionPayload] = []
     if spec.label_set is not None:
         label_options = [
-            {"id": label.id, "name": label.name}
-            for label in spec.label_set.labels.all().order_by("name", "id")
+            FrameAnnotationLabelOptionPayload(
+                id=cast(int, getattr(label, "pk")),
+                name=cast(str, getattr(label, "name")),
+            )
+            for label in cast(
+                Iterable[LabelLike], spec.label_set.labels.all().order_by("name", "id")
+            )
         ]
     elif spec.target_label is not None:
-        label_options = [{"id": spec.target_label.id, "name": spec.target_label.name}]
+        label_options = [
+            FrameAnnotationLabelOptionPayload(
+                id=cast(int, getattr(spec.target_label, "pk")),
+                name=cast(str, getattr(spec.target_label, "name")),
+            )
+        ]
 
-    manual_annotations = list(
-        frame_manual_annotations(
-            frame=frame,
-            label_set=spec.label_set,
-            information_source_name=spec.information_source_name,
-            annotator=spec.annotator,
-        )
+    manual_annotations = cast(
+        list[FrameAnnotationImageAnnotationLike],
+        list(
+            frame_manual_annotations(
+                frame=frame,
+                label_set=spec.label_set,
+                information_source_name=resolve_frame_information_source_name(
+                    spec.information_source_name
+                ),
+                annotator=spec.annotator,
+            )
+        ),
     )
-    prediction_annotations = list(
-        frame_prediction_annotations(frame=frame, label_set=spec.label_set)
+    prediction_annotations = cast(
+        list[FrameAnnotationImageAnnotationLike],
+        list(frame_prediction_annotations(frame=frame, label_set=spec.label_set)),
     )
 
     manual_positive_ids = _preferred_manual_positive_label_ids(manual_annotations)
@@ -799,35 +921,38 @@ def serialize_frame_task(
         annotation.label_id for annotation in prediction_annotations if annotation.value
     ]
 
-    return {
-        "frame_id": frame.id,
-        "video_id": frame.video_id,
-        "frame_number": frame.frame_number,
-        "relative_path": frame.relative_path,
-        "frame_stream_path": build_video_frame_stream_path(
-            frame.video_id, frame.frame_number
+    return FrameAnnotationTaskPayload(
+        frame_id=cast(int, getattr(frame, "pk", getattr(frame, "id"))),
+        video_id=cast(int, getattr(frame, "video_id")),
+        frame_number=cast(int, getattr(frame, "frame_number")),
+        relative_path=cast(str, getattr(frame, "relative_path")),
+        frame_stream_path=build_video_frame_stream_path(
+            cast(int, getattr(frame, "video_id")),
+            cast(int, getattr(frame, "frame_number")),
         ),
-        "annotation_mode": "multilabel",
-        "label_options": label_options,
-        "manual_annotations": [
+        annotation_mode="multilabel",
+        label_options=label_options,
+        manual_annotations=[
             serialize_frame_annotation(annotation) for annotation in manual_annotations
         ],
-        "prediction_annotations": [
+        prediction_annotations=[
             serialize_frame_annotation(annotation)
             for annotation in prediction_annotations
         ],
-        "manual_positive_label_ids": manual_positive_ids,
-        "prediction_positive_label_ids": prediction_positive_ids,
-        "suggested_label_ids": manual_positive_ids or prediction_positive_ids,
-    }
+        manual_positive_label_ids=manual_positive_ids,
+        prediction_positive_label_ids=prediction_positive_ids,
+        suggested_label_ids=manual_positive_ids or prediction_positive_ids,
+    )
 
 
-def _preferred_manual_positive_label_ids(manual_annotations: list[Any]) -> list[int]:
-    annotations_by_label_id: dict[int, list[Any]] = defaultdict(list)
+def _preferred_manual_positive_label_ids(
+    manual_annotations: list[FrameAnnotationImageAnnotationLike],
+) -> list[int]:
+    annotations_by_label_id: dict[int, list[FrameAnnotationImageAnnotationLike]] = {}
     for annotation in manual_annotations:
-        annotations_by_label_id[annotation.label_id].append(annotation)
+        annotations_by_label_id.setdefault(annotation.label_id, []).append(annotation)
 
-    positive_label_ids = []
+    positive_label_ids: list[int] = []
     for label_id in sorted(annotations_by_label_id):
         label_annotations = annotations_by_label_id[label_id]
         preferred_annotations = [
@@ -843,173 +968,18 @@ def _preferred_manual_positive_label_ids(manual_annotations: list[Any]) -> list[
     return positive_label_ids
 
 
-def build_frame_task_queue(
-    spec: FrameAnnotationQueueSpec,
-) -> FrameAnnotationQueueResult:
-    dataset_buckets = _build_dataset_target_buckets(
-        dataset=spec.ai_dataset,
-        target_label=spec.target_label,
-    )
-    label_distribution = _build_dataset_label_distribution(
-        dataset=spec.ai_dataset,
-        label_set=spec.label_set,
-    )
-    balanced_label_order = _build_balanced_label_order(
-        label_set=spec.label_set,
-        target_label=spec.target_label,
-        distribution=label_distribution,
-    )
-    segment_frame_buckets = (
-        _build_segment_frame_buckets(
-            dataset=spec.ai_dataset,
-            label_set=spec.label_set,
-            only_prediction_segments=spec.prediction_segments_only,
-        )
-        if spec.sampling_strategy
-        in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.SEGMENTS}
-        else {}
-    )
-    annotation_frame_buckets = (
-        _build_annotation_frame_buckets(
-            dataset=spec.ai_dataset,
-            label_set=spec.label_set,
-        )
-        if spec.sampling_strategy
-        in {FrameSamplingStrategy.BALANCED, FrameSamplingStrategy.ANNOTATIONS}
-        else {}
-    )
-    balanced_frame_buckets = _merge_frame_buckets(
-        segment_frame_buckets,
-        annotation_frame_buckets,
-    )
-    dataset_candidate_frame_ids = _build_dataset_candidate_frame_ids(
-        dataset=spec.ai_dataset,
-        label_set=spec.label_set,
-        only_prediction_segments=spec.prediction_segments_only,
-    )
-
-    tasks: list[dict[str, Any]] = []
-    excluded_ids: set[int] = set(spec.exclude_frame_ids)
-    selected_label_counts: Counter[int] = Counter()
-    selection_strategy = "random"
-
-    use_target_bucket_order = bool(
-        dataset_buckets and spec.sampling_strategy == FrameSamplingStrategy.BALANCED
-    )
-    if (
-        spec.sampling_strategy != FrameSamplingStrategy.NONE
-        and balanced_frame_buckets
-        and not use_target_bucket_order
-    ):
-        selection_strategy = f"dataset_{spec.sampling_strategy.value}"
-        while len(tasks) < spec.limit:
-            label_order = sorted(
-                balanced_label_order,
-                key=lambda label_id: (
-                    selected_label_counts[label_id],
-                    label_distribution.get(label_id, {}).get("total", 0),
-                    label_id,
-                ),
-            )
-            frame, selected_label_id = _pick_balanced_dataset_frame(
-                spec=spec,
-                label_order=label_order,
-                frame_buckets=balanced_frame_buckets,
-                exclude_frame_ids=excluded_ids,
-            )
-            if frame is None:
-                break
-
-            serialized_task = serialize_frame_task(frame, spec=spec)
-            if selected_label_id is not None:
-                selected_label_counts[selected_label_id] += 1
-                serialized_task["dataset_selection_label_id"] = selected_label_id
-                serialized_task["dataset_selection_label_name"] = (
-                    label_distribution.get(selected_label_id, {}).get("label_name")
-                )
-            if dataset_buckets:
-                for bucket_name, bucket_frame_ids in dataset_buckets.items():
-                    if frame.id in bucket_frame_ids:
-                        serialized_task["dataset_bucket"] = bucket_name
-                        break
-            serialized_task["dataset_selection_source"] = spec.sampling_strategy.value
-            tasks.append(serialized_task)
-            excluded_ids.add(frame.id)
-
-    bucket_order = ["positive", "negative", "unknown"]
-    if dataset_buckets and len(tasks) < spec.limit:
-        while len(tasks) < spec.limit:
-            progress = False
-            for bucket_name in bucket_order:
-                bucket_frame_ids = dataset_buckets.get(bucket_name)
-                if not bucket_frame_ids:
-                    continue
-                frame = _pick_random_frame(
-                    spec=spec,
-                    exclude_frame_ids=excluded_ids,
-                    candidate_frame_ids=bucket_frame_ids,
-                )
-                if frame is None:
-                    continue
-                serialized_task = serialize_frame_task(frame, spec=spec)
-                serialized_task["dataset_bucket"] = bucket_name
-                tasks.append(serialized_task)
-                excluded_ids.add(frame.id)
-                progress = True
-                if len(tasks) >= spec.limit:
-                    break
-            if not progress:
-                break
-
-    while len(tasks) < spec.limit:
-        frame = _pick_random_frame(
-            spec=spec,
-            exclude_frame_ids=excluded_ids,
-            candidate_frame_ids=(
-                dataset_candidate_frame_ids
-                if dataset_candidate_frame_ids is not None
-                else set().union(*dataset_buckets.values())
-                if dataset_buckets
-                else None
-            ),
-        )
-        if frame is None:
-            if dataset_buckets and dataset_candidate_frame_ids is None:
-                frame = _pick_random_frame(
-                    spec=spec,
-                    exclude_frame_ids=excluded_ids,
-                )
-            if frame is None:
-                break
-        serialized_task = serialize_frame_task(frame, spec=spec)
-        if dataset_buckets and "dataset_bucket" not in serialized_task:
-            for bucket_name, bucket_frame_ids in dataset_buckets.items():
-                if frame.id in bucket_frame_ids:
-                    serialized_task["dataset_bucket"] = bucket_name
-                    break
-        tasks.append(serialized_task)
-        excluded_ids.add(frame.id)
-
-    return FrameAnnotationQueueResult(
-        tasks=tasks,
-        selection_strategy=selection_strategy,
-        label_distribution=serialize_label_distribution(label_distribution),
-        selected_label_counts={
-            str(label_id): count for label_id, count in selected_label_counts.items()
-        },
-        segment_bucket_counts={
-            str(label_id): len(frame_ids)
-            for label_id, frame_ids in segment_frame_buckets.items()
-        },
-        annotation_bucket_counts={
-            str(label_id): len(frame_ids)
-            for label_id, frame_ids in annotation_frame_buckets.items()
-        },
-        bucket_counts={
-            bucket_name: len(frame_ids)
-            for bucket_name, frame_ids in dataset_buckets.items()
-        },
-    )
+# Transitional service-facing aliases allow the workflow facade to own queue
+# orchestration while its query helpers are migrated out of this legacy module.
+build_frame_task_queryset = _build_frame_task_queryset
+build_dataset_target_buckets = _build_dataset_target_buckets
+build_dataset_label_distribution = _build_dataset_label_distribution
+build_balanced_label_order = _build_balanced_label_order
+build_segment_frame_buckets = _build_segment_frame_buckets
+build_annotation_frame_buckets = _build_annotation_frame_buckets
+build_dataset_candidate_frame_ids = _build_dataset_candidate_frame_ids
+merge_frame_buckets = _merge_frame_buckets
+pick_balanced_dataset_frame = _pick_balanced_dataset_frame
+pick_random_frame = _pick_random_frame
 
 
 def _segment_annotation_filters(
@@ -1020,7 +990,7 @@ def _segment_annotation_filters(
     label: Label | None,
     information_source_id: int | None,
     model_meta_id: int | None,
-) -> dict:
+) -> dict[str, object]:
     if label is None:
         return {}
 
@@ -1053,7 +1023,9 @@ def delete_frame_annotations_for_segment(
     information_source_id: int | None,
     model_meta_id: int | None,
 ) -> int:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     filters = _segment_annotation_filters(
         video=video,
@@ -1071,10 +1043,12 @@ def delete_frame_annotations_for_segment(
 
 def sync_frame_annotations_for_segment(
     *,
-    segment,
-    old_snapshot: dict | None = None,
+    segment: LabelVideoSegmentLike,
+    old_snapshot: SegmentAnnotationSnapshot | None = None,
 ) -> None:
-    from endoreg_db.models import ImageClassificationAnnotation
+    from endoreg_db.models.label.annotation.image_classification import (
+        ImageClassificationAnnotation,
+    )
 
     if old_snapshot:
         delete_frame_annotations_for_segment(
@@ -1091,11 +1065,9 @@ def sync_frame_annotations_for_segment(
 
     info_source_id = segment.source_id
     model_meta = segment.get_model_meta()
-    model_meta_id = model_meta.pk if model_meta else None
+    model_meta_id = cast(int | None, getattr(model_meta, "pk", None))
 
     frames_queryset = segment.get_frames().only("id")
-    if not isinstance(frames_queryset, models.QuerySet):
-        return
 
     existing_frame_ids = set(
         ImageClassificationAnnotation.objects.filter(
@@ -1117,8 +1089,9 @@ def sync_frame_annotations_for_segment(
         )
         existing_frame_ids.update(preferred_manual_frame_ids)
 
-    annotations_to_create = []
+    annotations_to_create: list[ImageClassificationAnnotation] = []
     for frame in frames_queryset.exclude(id__in=existing_frame_ids).iterator():
+        frame_pk = cast(int, getattr(frame, "pk"))
         annotations_to_create.append(
             ImageClassificationAnnotation(
                 frame=frame,
@@ -1128,7 +1101,7 @@ def sync_frame_annotations_for_segment(
                 model_meta_id=model_meta_id,
                 external_annotation_id=segment_derived_external_annotation_id(
                     segment_id=segment.pk,
-                    frame_id=frame.pk,
+                    frame_id=frame_pk,
                     label_id=segment.label_id,
                     information_source_id=info_source_id,
                     model_meta_id=model_meta_id,

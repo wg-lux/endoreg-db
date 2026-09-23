@@ -5,22 +5,27 @@ Provides dashboard statistics for the frontend including examination stats,
 video segment stats, sensitive meta stats, and general overview stats.
 """
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
+from __future__ import annotations
+
+from datetime import timedelta
 from django.db.models import Count
 from django.utils import timezone
-from datetime import timedelta
+from rest_framework import status
+from rest_framework.request import Request
+from rest_framework.response import Response
+from endoreg_db.openapi import OpenApiAPIView as APIView
 
-from ...models import (
-    VideoFile,
+from endoreg_db.models.label.label import Label
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
-    SensitiveMeta,
-    Examination,
-    PatientExamination,
-    Label,
 )
-from ...utils.web.permissions import EnvironmentAwarePermission
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.medical.examination.examination import Examination
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from ...utils.permissions import EnvironmentAwarePermission
+
+StatsDistribution = list[dict[str, object]]
 
 
 class ExaminationStatsView(APIView):
@@ -32,7 +37,7 @@ class ExaminationStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about examinations including total counts,
         recent activity, and status distribution.
@@ -44,27 +49,19 @@ class ExaminationStatsView(APIView):
 
             # Recent activity (last 30 days)
             thirty_days_ago = timezone.now() - timedelta(days=30)
-            recent_examinations = (
-                Examination.objects.filter(created_at__gte=thirty_days_ago).count()
-                if hasattr(Examination, "created_at")
-                else 0
-            )
+            recent_examinations = PatientExamination.objects.filter(
+                date_start__gte=thirty_days_ago
+            ).count()
 
             # Status distribution for patient examinations
-            status_distribution = (
-                PatientExamination.objects.values("status")
-                .annotate(count=Count("id"))
-                .order_by("status")
-                if hasattr(PatientExamination, "status")
-                else []
-            )
+            status_distribution: StatsDistribution = []
 
             return Response(
                 {
                     "total_examinations": total_examinations,
                     "total_patient_examinations": total_patient_examinations,
                     "recent_examinations": recent_examinations,
-                    "status_distribution": list(status_distribution),
+                    "status_distribution": status_distribution,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -86,7 +83,7 @@ class VideoSegmentStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about video segments including total counts,
         label distribution, and processing status.
@@ -95,7 +92,7 @@ class VideoSegmentStatsView(APIView):
             # Total segment counts
             total_segments = LabelVideoSegment.objects.count()
             total_videos_with_segments = (
-                VideoFile.objects.filter(labelvideosegment__isnull=False)
+                VideoFile.objects.filter(label_video_segments__isnull=False)
                 .distinct()
                 .count()
             )
@@ -109,7 +106,7 @@ class VideoSegmentStatsView(APIView):
 
             # Videos without segments
             videos_without_segments = VideoFile.objects.filter(
-                labelvideosegment__isnull=True
+                label_video_segments__isnull=True
             ).count()
 
             # Average segments per video
@@ -146,7 +143,7 @@ class SensitiveMetaStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns statistics about sensitive metadata including verification status,
         types of sensitive data found, and processing statistics.
@@ -156,35 +153,26 @@ class SensitiveMetaStatsView(APIView):
             total_sensitive_meta = SensitiveMeta.objects.count()
 
             # Verification status distribution
-            verified_count = (
-                SensitiveMeta.objects.filter(verified=True).count()
-                if hasattr(SensitiveMeta, "verified")
-                else 0
-            )
+            verified_count = 0
 
             unverified_count = total_sensitive_meta - verified_count
 
             # Videos with sensitive data
             videos_with_sensitive_data = (
-                VideoFile.objects.filter(sensitivemeta__isnull=False).distinct().count()
+                VideoFile.objects.filter(sensitive_meta__isnull=False)
+                .distinct()
+                .count()
             )
 
             # Type distribution (if available)
-            type_distribution = []
-            if hasattr(SensitiveMeta, "meta_type"):
-                type_distribution = (
-                    SensitiveMeta.objects.values("meta_type")
-                    .annotate(count=Count("id"))
-                    .order_by("-count")
-                )
-
+            type_distribution: StatsDistribution = []
             return Response(
                 {
                     "total_sensitive_meta": total_sensitive_meta,
                     "verified_count": verified_count,
                     "unverified_count": unverified_count,
                     "videos_with_sensitive_data": videos_with_sensitive_data,
-                    "type_distribution": list(type_distribution),
+                    "type_distribution": type_distribution,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -205,7 +193,7 @@ class GeneralStatsView(APIView):
 
     permission_classes = [EnvironmentAwarePermission]
 
-    def get(self, request):
+    def get(self, request: Request) -> Response:
         """
         Returns general overview statistics for the dashboard including
         total counts across all major entities.
@@ -220,13 +208,15 @@ class GeneralStatsView(APIView):
 
             # Processing status
             videos_with_segments = (
-                VideoFile.objects.filter(labelvideosegment__isnull=False)
+                VideoFile.objects.filter(label_video_segments__isnull=False)
                 .distinct()
                 .count()
             )
 
             videos_with_sensitive_data = (
-                VideoFile.objects.filter(sensitivemeta__isnull=False).distinct().count()
+                VideoFile.objects.filter(sensitive_meta__isnull=False)
+                .distinct()
+                .count()
             )
 
             # Calculate percentages

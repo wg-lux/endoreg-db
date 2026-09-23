@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from typing import TYPE_CHECKING, Set
 
@@ -16,11 +17,12 @@ def _mark_frames_extracted_status(
     """
     Bulk updates the is_extracted status for a set of frame numbers.
     """
-    from endoreg_db.models.media.frame import Frame
+    from endoreg_db.models.media.frame.frame import Frame
 
     if not extracted_frame_numbers:
         logger.warning(
-            "No frame numbers provided to update status for video %s.", video.video_hash
+            "No frame numbers provided to update status for video %s.",
+            video.raw_video_hash,
         )
         return 0
 
@@ -32,7 +34,7 @@ def _mark_frames_extracted_status(
         "Attempting to mark %d Frame objects as is_extracted=%s for video %s. Frame numbers range: [%s-%s]. Contains frame 0: %s",
         len(extracted_frame_numbers),
         status,
-        video.video_hash,
+        video.raw_video_hash,
         min_frame,
         max_frame,
         contains_zero,
@@ -50,14 +52,14 @@ def _mark_frames_extracted_status(
             "Database reported updating %d Frame objects to is_extracted=%s for video %s.",
             updated_count,
             status,
-            video.video_hash,
+            video.raw_video_hash,
         )
 
         # Verification step
         if updated_count != len(extracted_frame_numbers):
             logger.warning(
                 "Mismatch during status update for video %s. Expected to update %d frames, but DB reported updating %d.",
-                video.video_hash,
+                video.raw_video_hash,
                 len(extracted_frame_numbers),
                 updated_count,
             )
@@ -74,24 +76,24 @@ def _mark_frames_extracted_status(
                         logger.error(
                             "Verification check: Frame 0 (PK: %s) was NOT updated to is_extracted=True for video %s.",
                             frame_zero.pk,
-                            video.video_hash,
+                            video.raw_video_hash,
                         )
                     else:
                         # This case should ideally not happen if updated_count < expected count, but log just in case
                         logger.info(
                             "Verification check: Frame 0 (PK: %s) IS is_extracted=True for video %s, despite count mismatch.",
                             frame_zero.pk,
-                            video.video_hash,
+                            video.raw_video_hash,
                         )
                 except Frame.DoesNotExist:
                     logger.error(
                         "Verification check: Frame 0 does not exist for video %s during status check.",
-                        video.video_hash,
+                        video.raw_video_hash,
                     )
                 except Exception as verify_e:
                     logger.error(
                         "Verification check: Error checking frame 0 status for video %s: %s",
-                        video.video_hash,
+                        video.raw_video_hash,
                         verify_e,
                     )
             # --- End detailed check ---
@@ -100,7 +102,7 @@ def _mark_frames_extracted_status(
     except Exception as e:
         logger.error(
             "Failed to bulk update is_extracted status for video %s: %s",
-            video.video_hash,
+            video.raw_video_hash,
             e,
             exc_info=True,
         )

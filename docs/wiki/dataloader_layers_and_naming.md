@@ -1,9 +1,13 @@
 # Dataloader Layers And Naming
 
+> Status tracking was migrated to `feature-tracking/DataLoading.yml`. This
+> document defines naming and migration context, not an independent completion
+> status.
+
 ## Why Two Modules Exist
 There are currently two similarly named modules with different responsibilities:
 
-- `endoreg_db.utils.data_loading.dataloader`
+- `endoreg_db.utils.dataloader`
   - Core YAML-to-model loading engine.
   - Handles parsing, FK/M2M resolution, create/update logic, retry-on-lock behavior, and warning logging.
   - Used by management commands such as `load_*_data`.
@@ -22,8 +26,8 @@ Both names read like they do the same thing (`dataloader` vs `data_loader`) and 
 Use names that encode layer and responsibility directly.
 
 ### Layer 1: Engine (YAML -> ORM)
-- Legacy path: `endoreg_db.utils.data_loading.dataloader`
-- Canonical path: `endoreg_db.utils.data_loading.yaml_model_loader`
+- Legacy path: `endoreg_db.utils.dataloader`
+- Canonical path: `endoreg_db.utils.yaml_model_loader`
 
 Function naming guideline:
 - `load_model_data_from_yaml` can stay as-is (already explicit).
@@ -39,13 +43,18 @@ Function naming guideline:
   - `load_base_db_data`
   - `load_all_reference_data` (preferred successor to generic `load_data`)
 
-## Migration Plan (Non-Breaking)
-1. Canonical modules are added:
-   - `endoreg_db/utils/data_loading/yaml_model_loader.py`
-   - `endoreg_db/helpers/data_load_orchestrator.py`
-2. Legacy modules remain as compatibility paths.
-3. Internal imports are migrated incrementally to canonical names.
-4. Keep old paths for one release cycle, then remove after grep confirms no usages.
+## Current Migration State
+
+The non-breaking module migration has established these canonical modules:
+
+- `endoreg_db/utils/yaml_model_loader.py`
+- `endoreg_db/helpers/data_load_orchestrator.py`
+
+Application call sites use the canonical paths. The canonical modules still
+delegate to `endoreg_db.utils.dataloader` and
+`endoreg_db.helpers.data_loader`, which remain the compatibility
+implementations. Do not remove those legacy modules until there are no external
+consumers and the deprecation window has been explicitly completed.
 
 Compatibility rule:
 - No behavior changes during rename.
@@ -55,13 +64,13 @@ Compatibility rule:
 Prefer importing from canonical modules in new code:
 
 ```python
-from endoreg_db.utils.data_loading.yaml_model_loader import load_model_data_from_yaml
+from endoreg_db.utils.yaml_model_loader import load_model_data_from_yaml
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 ```
 
 Avoid ambiguous imports like:
 - `from ... import dataloader`
-- new call sites to `helpers.data_loader` after migration starts
+- new call sites to `helpers.data_loader`
 
 ## Scope Clarification
 This naming schema is for `endoreg_db` only.

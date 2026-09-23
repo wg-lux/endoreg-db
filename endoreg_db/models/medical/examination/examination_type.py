@@ -1,5 +1,5 @@
-from typing import cast
-
+from __future__ import annotations
+from typing import Any
 from django.db import models
 
 
@@ -18,7 +18,7 @@ class ExaminationTypeManager(models.Manager["ExaminationType"]):
         Returns:
             The ExaminationType instance that matches the given name.
         """
-        return cast("ExaminationType", self.get(name=name))
+        return self.get(name=name)
 
 
 class ExaminationType(models.Model):
@@ -30,7 +30,7 @@ class ExaminationType(models.Model):
     """
 
     objects = ExaminationTypeManager()
-    name = models.CharField(max_length=100, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
 
     def __str__(self) -> str:
         """
@@ -39,11 +39,11 @@ class ExaminationType(models.Model):
         name = str(self.name)
         return name
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the examination type.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)

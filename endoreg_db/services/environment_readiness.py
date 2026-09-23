@@ -3,24 +3,21 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from django.conf import settings
+
 from endoreg_db.config.env import (
     get_media_url,
     get_protected_media_root,
     get_protected_media_url,
 )
-from endoreg_db.services.streamable_media import (
-    STREAMABLE_PROCESSED_VIDEO_ROOT,
-    STREAMABLE_RAW_VIDEO_ROOT,
-    STREAMABLE_VIDEO_ROOT,
+
+from endoreg_db.utils.paths import (
+    get_runtime_paths,
+    ensure_within_protected_media_root,
+    ensure_within_storage_root,
+    ensure_within_runtime_root,
 )
-from endoreg_db.utils.filesystem.paths import (
-    DATA_DIR,
-    PROTECTED_DATA_ROOT,
-    STORAGE_DIR,
-    WATCHER_PREANONYMIZED_DROP_DIR,
-    WATCHER_REPORT_DROP_DIR,
-    WATCHER_VIDEO_DROP_DIR,
-)
+from endoreg_db.utils.rust_backend import has_native_capability
 
 
 @dataclass(frozen=True)
@@ -29,14 +26,6 @@ class ReadinessIssue:
     code: str
     message: str
     path: str | None = None
-
-
-def _path_within(root: Path, candidate: Path) -> bool:
-    try:
-        candidate.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True
 
 
 def _check_directory_access(path: Path, *, code_prefix: str) -> list[ReadinessIssue]:
@@ -82,6 +71,16 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
     media_url = get_media_url()
     protected_media_root = get_protected_media_root().resolve()
 
+    if protected_media_root != get_runtime_paths().storage:
+        issues.append(
+            ReadinessIssue(
+                severity="critical",
+                code="protected_media_root_mismatch",
+                message="Protected media root must equal canonical runtime storage.",
+                path=str(protected_media_root),
+            )
+        )
+
     if protected_media_url != "/protected_media/":
         issues.append(
             ReadinessIssue(
@@ -95,7 +94,7 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
             )
         )
 
-    if media_url == "/media/" or media_url.startswith("/media/"):
+    if media_url and media_url.startswith("/media/"):
         issues.append(
             ReadinessIssue(
                 severity="critical",
@@ -104,7 +103,8 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
                 path=media_url,
             )
         )
-    elif media_url and media_url != protected_media_url:
+
+    if media_url and media_url != protected_media_url:
         issues.append(
             ReadinessIssue(
                 severity="critical",
@@ -117,15 +117,14 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
             )
         )
 
-    if not _path_within(PROTECTED_DATA_ROOT, protected_media_root):
+    try:
+        ensure_within_protected_media_root(protected_media_root)
+    except ValueError:
         issues.append(
             ReadinessIssue(
                 severity="critical",
-                code="protected_media_root_outside_protected_root",
-                message=(
-                    "Protected media root must remain inside the protected runtime "
-                    "root."
-                ),
+                code="protected_media_root_outside_storage_root",
+                message=("Protected media root must remain inside canonical storage."),
                 path=str(protected_media_root),
             )
         )
@@ -133,47 +132,104 @@ def _check_protected_media_contract() -> list[ReadinessIssue]:
     return issues
 
 
-def check_environment_readiness() -> list[ReadinessIssue]:
+def _check_report_native_snapshot_contract() -> list[ReadinessIssue]:
+    if not bool(getattr(settings, "REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT", False)):
+        return []
+    if has_native_capability(
+        "report_source_snapshot",
+        "report_source_snapshot_v1",
+    ):
+        return []
+    return [
+        ReadinessIssue(
+            severity="critical",
+            code="report_native_snapshot_unavailable",
+            message=(
+                "The production report-import profile requires native capability "
+                "report_source_snapshot_v1, but the loaded extension does not "
+                "advertise it."
+            ),
+        )
+    ]
+
+
+def _check_runtime_topology_contract() -> list[ReadinessIssue]:
     issues: list[ReadinessIssue] = []
+    paths = get_runtime_paths()
+
+    runtime_paths = {
+        "runtime_root": paths.runtime_root,
+        "storage_root": paths.storage,
+        "terminology_root": paths.terminology,
+        "watcher_video_drop": paths.watcher_video_drop,
+        "watcher_report_drop": paths.watcher_report_drop,
+        "watcher_preanonymized_drop": paths.watcher_preanonymized_drop,
+    }
+
+    for label, path in runtime_paths.items():
+        try:
+            ensure_within_runtime_root(path)
+        except ValueError as exc:
+            issues.append(
+                ReadinessIssue(
+                    severity="critical",
+                    code=f"{label}_outside_runtime_root",
+                    message=str(exc),
+                    path=str(path.resolve()),
+                )
+            )
+
+    storage_paths = {
+        "storage_root": paths.storage,
+        "streamable_video_root": paths.streamable_videos_root,
+        "streamable_raw_root": paths.streamable_videos_raw_media,
+        "streamable_processed_root": paths.streamable_videos_processed_media,
+    }
+
+    for label, path in storage_paths.items():
+        try:
+            ensure_within_storage_root(path)
+        except ValueError as exc:
+            issues.append(
+                ReadinessIssue(
+                    severity="critical",
+                    code=f"{label}_outside_storage_root",
+                    message=str(exc),
+                    path=str(path.resolve()),
+                )
+            )
+
+    return issues
+
+
+def check_environment_readiness() -> list[ReadinessIssue]:
+    paths = get_runtime_paths()
+    issues: list[ReadinessIssue] = []
+
+    issues.extend(_check_runtime_topology_contract())
     issues.extend(_check_protected_media_contract())
-    issues.extend(
-        _check_directory_access(PROTECTED_DATA_ROOT, code_prefix="protected_root")
-    )
-    issues.extend(_check_directory_access(DATA_DIR, code_prefix="data_root"))
-    issues.extend(_check_directory_access(STORAGE_DIR, code_prefix="storage_root"))
-    issues.extend(
-        _check_directory_access(
-            WATCHER_VIDEO_DROP_DIR, code_prefix="watcher_video_drop"
+    issues.extend(_check_report_native_snapshot_contract())
+
+    required_directories = {
+        "runtime_root": paths.runtime_root,
+        "storage_root": paths.storage,
+        "terminology_root": paths.terminology,
+        "watcher_video_drop": paths.watcher_video_drop,
+        "watcher_report_drop": paths.watcher_report_drop,
+        "watcher_preanonymized_drop": paths.watcher_preanonymized_drop,
+        "streamable_video_root": paths.streamable_videos_root,
+        "streamable_raw_root": paths.streamable_videos_raw_media,
+        "streamable_processed_root": paths.streamable_videos_processed_media,
+    }
+
+    for code_prefix, path in required_directories.items():
+        issues.extend(
+            _check_directory_access(
+                path,
+                code_prefix=code_prefix,
+            )
         )
-    )
-    issues.extend(
-        _check_directory_access(
-            WATCHER_REPORT_DROP_DIR, code_prefix="watcher_report_drop"
-        )
-    )
-    issues.extend(
-        _check_directory_access(
-            WATCHER_PREANONYMIZED_DROP_DIR,
-            code_prefix="watcher_preanonymized_drop",
-        )
-    )
-    issues.extend(
-        _check_directory_access(
-            STREAMABLE_VIDEO_ROOT, code_prefix="streamable_video_root"
-        )
-    )
-    issues.extend(
-        _check_directory_access(
-            STREAMABLE_RAW_VIDEO_ROOT,
-            code_prefix="streamable_raw_root",
-        )
-    )
-    issues.extend(
-        _check_directory_access(
-            STREAMABLE_PROCESSED_VIDEO_ROOT,
-            code_prefix="streamable_processed_root",
-        )
-    )
+
     return issues
 
 

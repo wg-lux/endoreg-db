@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from typing import TYPE_CHECKING
 
@@ -20,12 +21,15 @@ def _get_frames(video: "VideoFile") -> "QuerySet[Frame]":
     except AttributeError:
         logger.error(
             "Could not access frames for video %s. 'frames' related manager not found.",
-            video.video_hash,
+            video.raw_video_hash,
         )
         # Fallback query
         return Frame.objects.filter(video=video).order_by("frame_number")
     except Exception as e:
         logger.error(
-            "Error getting frames for video %s: %s", video.video_hash, e, exc_info=True
+            "Error getting frames for video %s: %s",
+            video.raw_video_hash,
+            e,
+            exc_info=True,
         )
         return Frame.objects.none()  # Return empty queryset on error

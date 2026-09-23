@@ -1,23 +1,34 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Iterable, Optional
 
-from endoreg_db.utils.filesystem.file_operations import (
+from lx_dtypes.models.contracts.endoscopy_processor import (
+    RoiBoxCore,
+    roi_box_from_object,
+)
+from lx_dtypes.models.contracts.json_types import JsonValue
+
+from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_unlink_file,
 )
-
+from endoreg_db.services.video_storage.contracts import (
+    configured_video_storage_profile,
+)
 from .command_construction import (
     _build_filter_transcode_command,
     _update_or_append_ffmpeg_arg,
 )
 from .encoder_policy import _build_encoder_args
+from .encoding_standard import STANDARD_VIDEO_ENCODING
 from .executable_discovery import _resolve_ffmpeg_executable
-from .transcode_execution import (
+from ..transcode_execution import (
     FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
     _delete_partial_output,
     _run_ffmpeg_command,
@@ -71,13 +82,16 @@ def _build_blacken_filter_expression(
     return _build_blacken_filter_expression_from_normalized(normalized_intervals)
 
 
-def _normalize_video_roi(endo_roi: Dict[str, Any]) -> tuple[int, int, int, int]:
+def _normalize_video_roi(
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
+) -> tuple[int, int, int, int]:
     try:
-        x = int(endo_roi["x"])
-        y = int(endo_roi["y"])
-        width = int(endo_roi["width"])
-        height = int(endo_roi["height"])
-    except (KeyError, TypeError, ValueError) as exc:
+        roi = roi_box_from_object(endo_roi)
+        x = int(roi.x)
+        y = int(roi.y)
+        width = int(roi.width)
+        height = int(roi.height)
+    except (TypeError, ValueError) as exc:
         raise ValueError(
             "Endoscope ROI must define integer x, y, width, and height."
         ) from exc
@@ -89,7 +103,9 @@ def _normalize_video_roi(endo_roi: Dict[str, Any]) -> tuple[int, int, int, int]:
     return x, y, width, height
 
 
-def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
+def _build_roi_mask_filter_expressions(
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
+) -> list[str]:
     """Build drawbox filters that keep the ROI visible and blacken the rest."""
 
     x, y, width, height = _normalize_video_roi(endo_roi)
@@ -112,19 +128,20 @@ def _build_roi_mask_filter_expressions(endo_roi: Dict[str, Any]) -> list[str]:
 
 def _build_roi_mask_and_blacken_filter_expression(
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
 ) -> str:
     filter_parts = _build_roi_mask_filter_expressions(endo_roi)
     interval_list = list(intervals)
     if interval_list:
         filter_parts.append(_build_blacken_filter_expression(interval_list))
+    filter_parts.append(STANDARD_VIDEO_ENCODING.filter_chain())
     return ",".join(filter_parts)
 
 
 def _roi_mask_and_blacken_filter_args(
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
     inline_threshold: int = 120,
     script_dir: Path | None = None,
@@ -171,6 +188,7 @@ def _blacken_filter_args_from_normalized(
     filter_expression = _build_blacken_filter_expression_from_normalized(
         normalized_intervals
     )
+    filter_expression = f"{filter_expression},{STANDARD_VIDEO_ENCODING.filter_chain()}"
     if len(normalized_intervals) <= inline_threshold:
         return ["-vf", filter_expression], None
 
@@ -225,15 +243,19 @@ def blacken_video_frame_intervals(
     extra_args = [
         "-map",
         "0:v:0",
-        "-map",
-        "0:a?",
         *filter_args,
-        "-c:a",
-        "copy",
+        "-color_range",
+        STANDARD_VIDEO_ENCODING.color_range,
+        "-fpsmax",
+        STANDARD_VIDEO_ENCODING.max_fps_arg(),
         "-movflags",
         "+faststart",
     ]
-    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+    _update_or_append_ffmpeg_arg(
+        encoder_args,
+        "-pix_fmt",
+        STANDARD_VIDEO_ENCODING.pixel_format,
+    )
 
     command = _build_filter_transcode_command(
         ffmpeg_executable=ffmpeg_executable,
@@ -282,7 +304,7 @@ def mask_video_to_roi_and_blacken_intervals(
     input_path: Path,
     output_path: Path,
     *,
-    endo_roi: Dict[str, Any],
+    endo_roi: RoiBoxCore | Mapping[str, JsonValue],
     intervals: Iterable[tuple[int, int]] = (),
     quality_mode: str = "balanced",
     force_cpu: bool = False,
@@ -323,15 +345,40 @@ def mask_video_to_roi_and_blacken_intervals(
     extra_args = [
         "-map",
         "0:v:0",
-        "-map",
-        "0:a?",
         *filter_args,
-        "-c:a",
-        "copy",
+        "-color_range",
+        STANDARD_VIDEO_ENCODING.color_range,
+        "-fpsmax",
+        STANDARD_VIDEO_ENCODING.max_fps_arg(),
         "-movflags",
         "+faststart",
     ]
-    _update_or_append_ffmpeg_arg(encoder_args, "-pix_fmt", "yuv420p")
+    _update_or_append_ffmpeg_arg(
+        encoder_args,
+        "-pix_fmt",
+        STANDARD_VIDEO_ENCODING.pixel_format,
+    )
+
+    profile = configured_video_storage_profile()
+
+    # Match VideoStorageProfile.ffmpeg_output_args():
+    # bitrate in bits/second; buffer size in bits.
+    extra_args.extend(
+        [
+            "-maxrate",
+            str(profile.max_bit_rate_bps),
+            "-bufsize",
+            str(profile.max_bit_rate_bps * 2),
+        ]
+    )
+
+    command = _build_filter_transcode_command(
+        ffmpeg_executable=ffmpeg_executable,
+        input_path=input_path,
+        output_path=output_path,
+        encoder_args=encoder_args,
+        extra_args=extra_args,
+    )
 
     command = _build_filter_transcode_command(
         ffmpeg_executable=ffmpeg_executable,

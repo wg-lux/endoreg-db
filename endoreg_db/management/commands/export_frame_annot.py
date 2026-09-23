@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import TypedDict, Unpack
 
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
+from lx_dtypes.models.contracts import (
+    VideoAnnotationExportRequestPayload,
+    dump_video_annotation_export_update_payload,
+)
+from lx_dtypes.models.contracts.video_frame_export import (
+    VideoFrameAnnotationExportFormat,
+)
+from pydantic import ValidationError
 
 from endoreg_db.export.frames.export_frames_with_labels import (
     annotation_exporter_client,
@@ -20,6 +29,32 @@ from endoreg_db.export.frames.export_frames_with_labels import (
 #   --transcode-fps 50
 
 
+class ExportFrameAnnotOptions(TypedDict):
+    config: str | None
+    output_path: str | None
+    output_dir: str | None
+    video_id: int | None
+    label_id: int | None
+    center_key: str | None
+    all_centers: bool | None
+    information_source_name: str | None
+    only_true: bool | None
+    limit: int | None
+    load_base_data: bool | None
+    export_videos: bool | None
+    export_frames: bool | None
+    use_export_flags: bool | None
+    segment_ids: list[int] | None
+    only_validated: bool | None
+    transcode_frames: bool | None
+    transcode_fps: float | None
+    transcode_quality: int | None
+    transcode_ext: str | None
+    transcode_overwrite: bool | None
+    use_frame_pk_paths: bool | None
+    format: VideoFrameAnnotationExportFormat | None
+
+
 class Command(BaseCommand):
     help = (
         "Export frame annotations to CSV with optional transcoding. /n Usage Example: /n python manage.py export_frame_annot \
@@ -30,7 +65,7 @@ class Command(BaseCommand):
    --transcode-fps 50"
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--config",
             type=str,
@@ -222,7 +257,11 @@ class Command(BaseCommand):
             help="Export format (csv or json). Default: csv",
         )
 
-    def handle(self, *args, **options):
+    def handle(
+        self,
+        *args: str,
+        **options: Unpack[ExportFrameAnnotOptions],
+    ) -> None:
         config = self._build_config(options)
         client = annotation_exporter_client()
         try:
@@ -236,51 +275,46 @@ class Command(BaseCommand):
             )
         )
 
-    def _build_config(self, options) -> export_config:
-        config_path = options.get("config")
-        if config_path:
+    def _build_config(self, options: ExportFrameAnnotOptions) -> export_config:
+        config_path = options["config"]
+        if config_path is not None:
             config = export_config.from_yaml(Path(config_path))
         else:
-            output_path = options.get("output_path")
-            output_dir = options.get("output_dir")
+            output_path = options["output_path"]
+            output_dir = options["output_dir"]
             if not output_path:
                 output_path = "frames.csv" if output_dir else "data/export/frames.csv"
             config = export_config(output_path=Path(output_path))
 
-        # 1. Handle the format name mismatch manually
-        if options.get("format"):
-            # assuming the config object field is named 'output_format'
-            config = replace(config, output_format=options["format"])
+        try:
+            payload = VideoAnnotationExportRequestPayload(
+                output_path=options["output_path"],
+                output_dir=options["output_dir"],
+                format=options["format"],
+                video_id=options["video_id"],
+                label_id=options["label_id"],
+                information_source_name=options["information_source_name"],
+                only_true=options["only_true"],
+                limit=options["limit"],
+                load_base_data=options["load_base_data"],
+                export_videos=options["export_videos"],
+                export_frames=options["export_frames"],
+                transcode_frames=options["transcode_frames"],
+                transcode_fps=options["transcode_fps"],
+                transcode_quality=options["transcode_quality"],
+                transcode_ext=options["transcode_ext"],
+                transcode_overwrite=options["transcode_overwrite"],
+                use_frame_pk_paths=options["use_frame_pk_paths"],
+                use_export_flags=options["use_export_flags"],
+                segment_ids=options["segment_ids"],
+                center_key=options["center_key"],
+                all_centers=options["all_centers"],
+                only_validated=options["only_validated"],
+            )
+        except ValidationError as exc:
+            raise CommandError(str(exc)) from exc
 
-        updates = {}
-        # 2. Corrected tuple with commas
-        for key in (
-            "output_path",
-            "output_dir",
-            # "output_format",  <-- Removed, handled manually above due to name mismatch
-            "video_id",
-            "label_id",
-            "center_key",
-            "all_centers",
-            "information_source_name",
-            "only_true",
-            "limit",
-            "load_base_data",
-            "export_videos",
-            "export_frames",
-            "use_export_flags",
-            "segment_ids",
-            "only_validated",
-            "transcode_frames",
-            "transcode_fps",
-            "transcode_quality",
-            "transcode_ext",
-            "transcode_overwrite",
-            "use_frame_pk_paths",
-        ):
-            value = options.get(key)
-            if value is not None:
-                updates[key] = value
+        updates = dump_video_annotation_export_update_payload(payload)
 
         if updates:
             config = replace(config, **updates)

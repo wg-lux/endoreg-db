@@ -1,46 +1,53 @@
-from typing import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from django.db import models
 
 if TYPE_CHECKING:
     from ...other.emission import EmissionFactor
-    from ...other.resource import Resource
-    from ...other.unit import Unit
-    from .center import Center
 
 
 class CenterResource(models.Model):
-    name = models.CharField(max_length=255, null=True)
-    center = models.ForeignKey(
+    name: models.CharField[Any, Any] = models.CharField(
+        max_length=255,
+        null=True,
+    )
+    center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
         on_delete=models.CASCADE,
         related_name="center_resources",
     )
-    quantity = models.FloatField()
-    resource = models.ForeignKey("Resource", on_delete=models.CASCADE)
-    transport_emission_factor = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="center_resource_transport_emission_factor",
+    quantity: models.FloatField[Any, Any] = models.FloatField()
+    resource: models.ForeignKey[Any] = models.ForeignKey(
+        "Resource",
+        on_delete=models.CASCADE,
     )
-    use_emission_factor = models.ForeignKey(
-        "EmissionFactor",
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="center_resource_use_emission_factor",
+    transport_emission_factor: models.ForeignKey[EmissionFactor | None | None] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="center_resource_transport_emission_factor",
+        )
     )
-    year = models.IntegerField()
-    unit = models.ForeignKey("Unit", on_delete=models.SET_NULL, null=True)
+    use_emission_factor: models.ForeignKey[EmissionFactor | None | None] = (
+        models.ForeignKey(
+            "EmissionFactor",
+            on_delete=models.SET_NULL,
+            null=True,
+            related_name="center_resource_use_emission_factor",
+        )
+    )
+    year: models.IntegerField[Any, Any] = models.IntegerField()
+    unit: models.ForeignKey[Any] = models.ForeignKey(
+        "Unit", on_delete=models.SET_NULL, null=True
+    )
 
     if TYPE_CHECKING:
-        center: models.ForeignKey["Center"]
-        resource: models.ForeignKey["Resource"]
-        transport_emission_factor: models.ForeignKey["EmissionFactor|None"]
-        use_emission_factor: models.ForeignKey["EmissionFactor|None"]
-        unit: models.ForeignKey["Unit|None"]
+        pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"CenterResource {self.pk} - {self.name if self.name else 'No Name'}"
 
     def display_str(self) -> str:
