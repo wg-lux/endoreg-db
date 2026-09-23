@@ -44,15 +44,6 @@ from endoreg_db.utils import ensure_local_file
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
-)
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frames as ffmpeg_extract_frames,
-)
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
-)
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
@@ -72,8 +63,10 @@ from endoreg_db.utils.storage_streaming import (
     local_plaintext_path_from_name,
     maybe_local_plaintext_path,
 )
-from endoreg_db.utils.video.ffmpeg_wrapper import (
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frame_range as ffmpeg_extract_frame_range,
     extract_frames as ffmpeg_extract_frames,
+    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
     extract_selected_frames_streamed as ffmpeg_extract_selected_frames_streamed,
 )
 
@@ -1209,7 +1202,7 @@ def _extract_and_move_transcoded_frames(
         )
     tmp_dir = ensure_directory(frame_dir / f"transcode_tmp_{uuid.uuid4().hex}")
     try:
-                coordinates = _requested_frame_coordinates(video, frame_pks=frame_pks)
+        coordinates = _requested_frame_coordinates(video, frame_pks=frame_pks)
         if not coordinates.requested_frame_numbers:
             return
 

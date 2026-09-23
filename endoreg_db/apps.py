@@ -99,12 +99,13 @@ class EndoregDbConfig(AppConfig):
 
         register_celery_timing_signals()
 
-        from endoreg_db.utils.paths import ( 
-            validate_runtime_storage_contract, EndoregPathsModel)
+        from endoreg_db.utils.paths import (
+            validate_runtime_storage_contract,
+            EndoregPathsModel,
+        )
 
         EndoregPathsModel.model_rebuild()    
         
-        validate_runtime_storage_contract()
 
         executable = Path(sys.argv[0]).name if sys.argv else ""
         if (
@@ -123,6 +124,8 @@ class EndoregDbConfig(AppConfig):
         }
         if sys.argv[1] not in runtime_commands:
             return
+
+        validate_runtime_storage_contract()
 
         from endoreg_db.services.reconciliation import (
             ReconciliationService,
