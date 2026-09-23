@@ -99,9 +99,13 @@ class EndoregDbConfig(AppConfig):
 
         register_celery_timing_signals()
 
-        from endoreg_db.utils.paths import validate_runtime_storage_contract
+        from endoreg_db.utils.paths import ( 
+            validate_runtime_storage_contract, EndoregPathsModel)
 
+        EndoregPathsModel.model_rebuild()    
+        
         validate_runtime_storage_contract()
+
         executable = Path(sys.argv[0]).name if sys.argv else ""
         if (
             "pytest" in executable
