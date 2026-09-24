@@ -27,15 +27,8 @@ definition_of_done:
   required: true
   verification:
     kind: manual
-    instructions: "Run profiling unit tests and import/reimport/management command regression tests.\n\
-      Opt in from a Django shell or foreground worker execution:\n  from pathlib import Path\n  from endoreg_db.utils.profiling\
-      \ import profile_functions\n  with profile_functions(Path(\"profile/import-functions\")):\n    \
-      \  service.import_and_anonymize(source_path, center_name, processor_name)\nEach outermost decorated\
-      \ call writes a unique .prof file and cumulative-time\n.txt summary using thread CPU time, plus\
-      \ the elapsed wall duration.\nNested decorated calls appear in the parent profile. Only the current\
-      \ thread\nis traced; Celery workers need their own scope. External FFmpeg and Rust\nworker internals\
-      \ require native profiling tools. Profiling write failures\nare logged without changing the function\
-      \ result or original exception."
+    instructions: See docs/profiling.md for usage. Run profiling unit tests and import/reimport/management
+      command regression tests.
     timeout_seconds: 300
   assessment:
     status: verified
@@ -46,11 +39,15 @@ definition_of_done:
     - kind: command
       reference: 'Full Pyright: 0 errors/6 existing warnings. Final profiling module/tests typing: 0 errors/0
         warnings. Ruff and git diff HEAD --check passed.'
-    note: Nine large import/reimport/publication functions now support scoped opt-in thread CPU profiles.
-      Shared cProfile core preserves existing management options, writes stats atomically, and logs function-profile
-      output failures without replacing outcomes. Disabled by default; no production profiling performed.
+    - kind: command
+      reference: 'Documentation-only verification: docs/profiling.md links and Python example syntax passed;
+        README.md and docs/README.md link to the guide; no profiling YAML guide remains; tracker validation
+        and git diff --check passed.'
+    note: Profiling implementation and prior regression evidence unchanged. Concise Markdown guide is
+      canonical for usage and linked from both README entry points; feature YAML retains verification
+      tracking only.
     assessed_by: codex-overview-20260924-a
-    assessed_at: '2026-09-24T11:54:01.557234Z'
+    assessed_at: '2026-09-24T12:08:15.548565Z'
 - id: reimport_outcome_parity
   category: functionality
   title: Inline and worker reimports share typed completion decisions

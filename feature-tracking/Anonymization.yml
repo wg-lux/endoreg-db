@@ -394,6 +394,9 @@ definition_of_done:
   category: security
   title: Online secret rotation preserves readable media and stable clinical links
   acceptance:
+  - Der Identitätsmigrationsbefehl rollt einen unvollständigen Apply-Lauf standardmäßig vollständig zurück;
+    nur --apply --allow-partial erlaubt bewusstes Speichern unabhängig geprüfter Gruppen. Regressionstests
+    prüfen Patienten-, Untersuchungs- und Metadatenhashes sowie applied/rolled_back im Ergebnis.
   - Native Einzel- und Batch-Hashleser erhalten denselben validierten Schlüssel-Snapshot wie Python; aktive
     und auslaufende 16-, 24- und 32-Byte-Schlüssel sind getestet. Ein explizit leerer Salt-Snapshot bleibt
     innerhalb einer Operation stabil; Produktionssettings erzeugen keinen Ersatz-Signaturschlüssel.
@@ -443,46 +446,27 @@ definition_of_done:
     - kind: test
       reference: tests/rust_backend/test_encrypted_contract.py; tests/environment/test_secret_resolution.py
         (zweite Secret-Runde, gemeinsame native Header- und Schlüsselverträge)
-    note: '2026-09-21: Online-Rotation implementiert: private atomar austauschbare Schlüsselmanifeste,
-      explizite Lesegenerationen, frische Dateischlüssel, vollständige Authentifizierung und Klartextprüfung
-      vor atomarer Veröffentlichung, Medien-Leases und wiederholbare Kommandos. HLS-Rotation regeneriert
-      Inhaltsschlüssel und Segmente. Salzrotation unterstützt default_salt ausschließlich als explizite
-      Altgeneration, prüft alle verknüpften Metadaten und erhält Patienten-/Untersuchungs-IDs; gelöschte
-      Quelldaten benötigen geprüfte Zuordnungen. Additive Migration 0082 ergänzt Untersucher-Fingerprints.
-      Django-Signaturschlüssel bleiben getrennt; der Settings-Adapter benötigt bei abweichenden Host-Settings
-      explizite Einbindung. Verifikation: voller Pyright-Lauf 0 Fehler, 5 bestehende Warnungen; nachfolgende
-      gezielte Typprüfungen 0 Fehler/0 Warnungen. PostgreSQL-Integrationslauf über 13 Testdateien: 189
-      bestanden, 2 Warnungen, einschließlich echter FFmpeg-HLS-Neugenerierung, Import, Streaming, Produktionssettings
-      und frischer Migration. Nach abschließender Verschärfung der Gruppenintegrität: 20 Identitäts-/Import-/Parallelitätstests
-      bestanden, 2 Warnungen. Ruff und git diff --check bestanden. Keine Produktionsdaten, Dienste oder
-      Geheimnisse geändert. Produktionsähnliche Rotation, Leser-/Schreiber-Rollout, Altbestandszuordnung,
-      LUKS-/Backup-/Replikatprüfung und dokumentierte Schlüsselstilllegung bleiben offen. Neue Zugriffe
-      auf ein exklusiv verarbeitetes Video können zurückgestellt werden; kein globales Wartungsfenster.
-      Keine Produktionsfreigabe aus lokalen Tests abgeleitet. Abschließender Schema-Abgleich gegen den
-      isolierten PostgreSQL-Cluster: makemigrations --check --dry-run meldet No changes detected. Tracker-Validierung:
-      36 endoreg-db- und 52 lx-annotate-Definitionen gültig; Bereitschaftsprüfungen bleiben erwartungsgemäß
-      nicht produktionsreif.
-
-      2026-09-24: Einheitlicher Rust-Magic-Header-Probe ohne Python-Fallback; gemeinsame private Dateileser
-      und Validatoren für Salz, Master-Keys und Django-Signaturschlüssel. Health-Fingerprint verwendet
-      den geladenen Schlüssel. Radon load_keyring 22 -> 10, load_identity_salt 11 -> 7. Vollständiger
-      Pyright-Lauf: 0 Fehler, 6 bestehende Warnungen. Integrationslane: 133 bestanden; abschließende Native-/Import-/Range-Lane:
-      39 bestanden; jeweils 3 Warnungen. Zwei Rust-Unit-Tests bestanden mit explizitem libpython-Link.
-      Ruff, cargo fmt und git diff --check bestanden. Native Keyring-/24-Byte-Schlüssel-Divergenz und
-      Headerparser-Unterschiede bleiben in docs/secret_rotation.yml dokumentiert. Keine Produktionsfreigabe.
-
-      2026-09-24, zweite Secret-Runde: Gemeinsamer Rust-Headervertrag für Python-, Range- und Hashleser;
-      native Einzel-/Batch-Hashleser erhalten einen validierten aktiven/auslaufenden Schlüssel-Snapshot
-      und laden keine Secrets selbst. 16/24/32-Byte-Schlüssel, Header-Typen und Größen, abgeschnittene
-      Chunk-Längen, kurze Reads sowie leere verschlüsselte Dateien geprüft. Leere Salt-Snapshots bleiben
-      stabil; mehrdeutige YAML-Felder und coercierte Kontrollwerte werden abgewiesen; kein Ersatz-Signaturschlüssel
-      in Produktionssettings unter pytest. Master-Key-Auflösung Radon B/6 -> A/1, gemeinsamer Resolver
-      A/5; Chunk-Index A/5 -> A/4. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen. Cargo: 19
-      Tests bestanden mit explizitem libpython-Link. Python-Integration über 17 Dateien: 228 bestanden,
-      1 übersprungen, 3 Warnungen in 82.63 Sekunden. Der PostgreSQL-Advisory-Lock-Test wurde unter SQLite
-      übersprungen; daraus folgt kein PostgreSQL-Parallelitätsnachweis. Ruff, cargo fmt, git diff --check
-      und Tracker-Validierung bestanden. Keine Produktionsdaten oder Deployments geändert. LXENC01 benötigt
-      gegen den Verlust vollständiger letzter Chunks weiterhin einen unabhängigen Soll-Hash; Details in
-      docs/secret_rotation.yml. Produktionsabnahme und PostgreSQL-Nachweis bleiben erforderlich.'
-    assessed_by: codex-secret-reliability-20260924
-    assessed_at: '2026-09-24T09:26:01.704694Z'
+    - kind: command
+      reference: 'gc-02 installed lx-annotate 1.3.5/endoreg-db 1.3.8; preflight 4 migratable groups,16
+        blocked,5 pending examiners; applied independently verified groups and one uniquely hash-authenticated
+        examiner. Snapshot: recovery/identity-salvage-eb19f30c64214603b4532c5738cf6d3c.json in encrypted
+        application storage.'
+    - kind: document
+      reference: docs/key_rotation.md
+    - kind: command
+      reference: 'gc-02 Recovery-Nachprüfung: vollständiger Pyright 0 Fehler/6 Warnungen; fokussierter
+        Pyright 0/0. pytest tests/services/test_identity_salt_rotation.py tests/services/test_secret_rotation.py
+        tests/import_files/test_sensitive_identity_guards.py tests/environment/test_identity_hashing.py
+        -q --tb=short: 53 passed, 2 skipped, 1 warning. Default-Rollback, explizite Teilmigration, Preview
+        und ausstehende Untersucher geprüft. Radon: Command.handle A/5, _migrate D/21.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors/6 existing warnings; focused final Pyright: 0 errors/0 warnings;
+        Ruff passed. Wheel dist/endoreg_db-1.3.9-cp312-cp312-linux_x86_64.whl, SHA256 d755ca4a0a4a65c4bdd4a74f5879a4a827570290e65ff484ad471eb8c685cc08;
+        packaged source verified.'
+    - kind: test
+      reference: 'Hotfix integration: 103 passed,1 skipped and one obsolete error-message assertion; corrected
+        assertion rerun: all 11 sensitive identity guard tests passed. Total 104 distinct passing tests,1
+        skipped across identity guards, rotation, report anonymization and report import service. No production
+        migration performed by hotfix.'
+    assessed_by: codex-overview-20260924-a
+    assessed_at: '2026-09-24T13:48:09.655608Z'

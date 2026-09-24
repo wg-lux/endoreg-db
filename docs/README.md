@@ -12,6 +12,7 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 ## Start Here
 
 - [Repository setup and package overview](../README.md)
+- [CPU profiling quick start: imports and reimports](profiling.md)
 - [New setup overview](wiki/new_setup_overview.md)
 - [General operating model](wiki/new_setup_general_purpose.md)
 - [Feature readiness tracker](../feature-tracking/README.md)
@@ -29,6 +30,8 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 - [Code quality and maintainability boundaries](code_quality.md)
 
 ## API, Access, and Security
+
+- [Key rotation and recovery](key_rotation.md)
 
 - [API route test matrix](api_route_test_matrix.md)
 - [Center access operations](center_access_operations.md)

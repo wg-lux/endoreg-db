@@ -9,6 +9,7 @@ from hashlib import sha256
 from typing import TYPE_CHECKING, Mapping, Optional, Protocol, Type, cast
 
 from django.db import connection, transaction
+from django.db.models import Q
 from django.utils import timezone
 from endoreg_db.config.identity_hashing import current_identity_keyring
 from endoreg_db.services.secret_rotation.identity import (
@@ -107,20 +108,26 @@ def _guard_patient_hash_identity(instance: "SensitiveMeta") -> None:
             .exclude(patient_hash__isnull=True)
             .exclude(patient_hash="")
         )
-        reference = next(
-            (row for row in legacy.iterator() if _has_patient_identity(row)), None
+        # Old imports created hashes from provisional OCR/default values before
+        # verification. Those rows cannot establish global salt provenance.
+        # Retain strict checks for verified/erased identities and the row being
+        # updated; an unrelated provisional row must not block a new import.
+        evidence = legacy.filter(
+            Q(state__names_verified=True, state__dob_verified=True)
+            | Q(direct_identifiers_cleared_at__isnull=False)
+            | Q(pk=instance.pk)
         )
-        if reference is not None:
+        for reference in evidence.iterator():
+            if not _has_patient_identity(reference):
+                raise ValueError(
+                    "Legacy identities lack source evidence for salt enrollment; explicit review required"
+                )
             if calculate_patient_hash(
                 reference
             ) != reference.patient_hash and not legacy_source_matches_ring(reference):
                 raise ValueError(
                     "Configured identity salt does not match legacy patient hashes"
                 )
-        elif legacy.exists():
-            raise ValueError(
-                "Legacy identities lack source evidence for salt enrollment; explicit review required"
-            )
     instance.identity_salt_fingerprint = salt_fingerprint
     dob = instance.patient_dob
     dob = _identity_date(dob) if isinstance(dob, date) else dob

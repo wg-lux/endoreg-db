@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import nullcontext
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.db import transaction
 
 from endoreg_db.config.secret_keyring import (
     configured_identity_keyring,
@@ -38,12 +40,25 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--apply", action="store_true")
         parser.add_argument(
+            "--allow-partial",
+            action="store_true",
+            help="With --apply, commit independently verified groups even if other records remain blocked.",
+        )
+        parser.add_argument(
             "--review-file",
             type=Path,
             help="Private YAML with reviewed original identities for erased records.",
         )
 
     def handle(self, *args: object, **options: object) -> None:
+        apply = options.get("apply") is True
+        allow_partial = options.get("allow_partial") is True
+        if allow_partial and not apply:
+            raise CommandError("--allow-partial requires --apply")
+        with transaction.atomic() if apply and not allow_partial else nullcontext():
+            self._migrate(options)
+
+    def _migrate(self, options: dict[str, object]) -> None:
         ring = configured_identity_keyring()
         if ring is None:
             raise CommandError(
@@ -119,20 +134,27 @@ class Command(BaseCommand):
         pending_examiners = Examiner.objects.exclude(
             identity_salt_fingerprint=active
         ).count()
+        incomplete = bool(blocked or examiner_failures or pending_examiners)
+        rollback = (
+            options.get("apply") is True
+            and options.get("allow_partial") is not True
+            and incomplete
+        )
         self.stdout.write(
             json.dumps(
                 {
                     "patient_groups": migrated,
                     "metadata_rows": rows,
                     "blocked_groups": blocked,
-                    "applied": options.get("apply") is True,
+                    "applied": options.get("apply") is True and not rollback,
+                    "rolled_back": rollback,
                     "pending_examiners": pending_examiners,
                     "examiner_failures": examiner_failures,
                 },
                 sort_keys=True,
             )
         )
-        if blocked or examiner_failures or pending_examiners:
+        if incomplete:
             raise CommandError(
                 "Migration incomplete: review missing identities, collisions and linked examination evidence"
             )

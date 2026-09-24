@@ -107,8 +107,8 @@ def persist_report_anonymization_result(
     return report
 
 
-def _processed_report_dir() -> Path:
-    return get_runtime_paths().anonym_report
+def _report_staging_dir() -> Path:
+    return get_runtime_paths().import_anonymized_report
 
 
 def _validate_report_result(
@@ -195,7 +195,7 @@ class ReportAnonymizer:
             )
         else:
             # Setup anonymized directory
-            anonymized_dir = ensure_directory(_processed_report_dir())
+            anonymized_dir = ensure_directory(_report_staging_dir())
             report_reader = self._instantiate_report_reader(report_model)
             use_llm = report_reader.llm_available
             emit_structured_event(

@@ -116,7 +116,7 @@ def test_report_anonymizer_uses_canonical_attempt_contract(
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
     reader = _CanonicalReader(llm_available=llm_available)
     anonymizer = object.__new__(ReportAnonymizer)
-    monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
+    monkeypatch.setattr(module, "_report_staging_dir", lambda: tmp_path / "processed")
 
     def fake_reader(
         self: ReportAnonymizer,
@@ -196,7 +196,7 @@ def test_report_anonymizer_fails_when_canonical_method_is_missing(
     source.write_bytes(b"%PDF-1.4\nsource\n%%EOF\n")
     reader = _ReaderWithoutCanonicalContract()
     anonymizer = object.__new__(ReportAnonymizer)
-    monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
+    monkeypatch.setattr(module, "_report_staging_dir", lambda: tmp_path / "processed")
 
     def fake_reader(
         self: ReportAnonymizer,
@@ -303,7 +303,7 @@ def test_report_anonymizer_rejects_untrusted_result_before_mutation(
     report = _create_report_for_tests(text="before", anonymized_text="before-anon")
     reader = UntrustedReader(llm_available=False)
     anonymizer = object.__new__(ReportAnonymizer)
-    monkeypatch.setattr(module, "_processed_report_dir", lambda: tmp_path / "processed")
+    monkeypatch.setattr(module, "_report_staging_dir", lambda: tmp_path / "processed")
 
     def make_reader(self: ReportAnonymizer, report: RawPdfFile) -> UntrustedReader:
         return reader
@@ -528,3 +528,47 @@ def test_report_pseudonym_resolver_rejects_identity_conflicts(
     resolver = ReportAnonymizer._patient_pseudonym_resolver(report)  # pyright: ignore[reportPrivateUsage]
     with pytest.raises(ValueError, match=message):
         resolver(candidate)
+
+
+@pytest.mark.django_db
+def test_report_persistence_failure_uses_cleanable_staging(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    base_db_data: bool,
+) -> None:
+    import endoreg_db.import_files.processing.report_processing.report_anonymization as module
+    from endoreg_db.import_files.file_storage.cleanup import cleanup_staging_files
+    from endoreg_db.utils.paths import get_runtime_paths
+    from endoreg_db.utils.file_operations import atomic_write_file
+
+    source = tmp_path / "source.pdf"
+    atomic_write_file(destination=source, content=[b"%PDF-1.4\nsource\n%%EOF\n"])
+    reader = _CanonicalReader(llm_available=False)
+    anonymizer = object.__new__(ReportAnonymizer)
+
+    def make_reader(self: ReportAnonymizer, report: RawPdfFile) -> _CanonicalReader:
+        return reader
+
+    def reject_identity(**kwargs: object) -> NoReturn:
+        raise ValueError(
+            "Configured identity salt does not match legacy patient hashes"
+        )
+
+    monkeypatch.setattr(ReportAnonymizer, "_instantiate_report_reader", make_reader)
+    monkeypatch.setattr(module, "persist_report_anonymization_result", reject_identity)
+    ctx = ImportContext(
+        file_path=source,
+        center_name="dummy-center",
+        file_type="report",
+        file_hash="b" * 64,
+        current_report=_create_report_for_tests(),
+    )
+    with pytest.raises(ValueError, match="does not match legacy"):
+        anonymizer.anonymize_report(ctx)
+    artifact = ctx.anonymized_path
+    assert artifact is not None and artifact.exists()
+    assert artifact.is_relative_to(get_runtime_paths().import_anonymized_report)
+    assert not artifact.is_relative_to(get_runtime_paths().anonym_report)
+    cleanup_staging_files((artifact,), label="failed import staging")
+    assert not artifact.exists()
+    assert source.exists()

@@ -5,6 +5,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from io import StringIO
+import json
 
 import pytest
 from django.test import override_settings
@@ -13,6 +14,7 @@ from django.db import connection, connections
 from django.core.management import call_command, CommandError
 
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.administration.person.examiner.examiner import Examiner
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
@@ -209,6 +211,95 @@ def test_identity_command_reports_blocked_erased_group_without_disclosing_source
     assert "Ada" not in output.getvalue() and "Lovelace" not in output.getvalue()
     original.refresh_from_db()
     assert original.patient_hash == old_hash
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("allow_partial", [False, True])
+def test_identity_command_requires_explicit_partial_commit(
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    allow_partial: bool,
+) -> None:
+    old, new = b"old-test-identity-salt", b"new-test-identity-salt"
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+        blocked = SensitiveMeta.objects.create(
+            center=original.center,
+            patient_first_name="Grace",
+            patient_last_name="Hopper",
+            patient_dob=original.patient_dob,
+            examination_date=original.examination_date,
+        )
+    old_hash = original.patient_hash
+    old_exam_hash = original.examination_hash
+    blocked_hash = blocked.patient_hash
+    SensitiveMeta.objects.filter(pk=blocked.pk).update(
+        patient_first_name=None, direct_identifiers_cleared_at=timezone.now()
+    )
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    output = StringIO()
+    with pytest.raises(CommandError, match="incomplete"):
+        call_command(
+            "rotate_identity_salt",
+            apply=True,
+            allow_partial=allow_partial,
+            stdout=output,
+        )
+    summary = json.loads(output.getvalue())
+    assert summary["patient_groups"] == 1
+    assert summary["blocked_groups"] == 1
+    assert summary["applied"] is allow_partial
+    assert summary["rolled_back"] is not allow_partial
+    original.refresh_from_db()
+    blocked.refresh_from_db()
+    patient = Patient.objects.get(pk=original.pseudo_patient_id)
+    examination = PatientExamination.objects.get(pk=original.pseudo_examination_id)
+    assert (original.patient_hash != old_hash) is allow_partial
+    assert patient.patient_hash == original.patient_hash
+    assert (examination.hash != old_exam_hash) is allow_partial
+    assert examination.hash == original.examination_hash
+    assert blocked.patient_hash == blocked_hash
+
+
+def test_identity_command_rejects_partial_preview() -> None:
+    with pytest.raises(CommandError, match="requires --apply"):
+        call_command("rotate_identity_salt", allow_partial=True)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("pending_examiner", [False, True])
+def test_identity_command_complete_run_commits_only_when_requested(
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    apply: bool,
+    pending_examiner: bool,
+) -> None:
+    old, new = b"old-test-identity-salt", b"new-test-identity-salt"
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+    assert Examiner.objects.exists()
+    if not pending_examiner:
+        # Model creation seeds a default examiner; represent completed examiner
+        # enrollment explicitly when exercising a fully eligible command run.
+        Examiner.objects.update(identity_salt_fingerprint=salt_fingerprint(new))
+    old_hash = original.patient_hash
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    output = StringIO()
+    if pending_examiner:
+        with pytest.raises(CommandError, match="incomplete"):
+            call_command("rotate_identity_salt", apply=apply, stdout=output)
+    else:
+        call_command("rotate_identity_salt", apply=apply, stdout=output)
+    summary = json.loads(output.getvalue().splitlines()[0])
+    assert summary["applied"] is (apply and not pending_examiner)
+    assert summary["rolled_back"] is (apply and pending_examiner)
+    original.refresh_from_db()
+    assert (original.patient_hash != old_hash) is (apply and not pending_examiner)
 
 
 @pytest.mark.django_db

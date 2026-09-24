@@ -67,7 +67,7 @@ def test_erased_legacy_identity_requires_explicit_enrollment_review(
         identity_fingerprint="",
         identity_salt_fingerprint="",
     )
-    with pytest.raises(ValueError, match="lack source evidence"):
+    with pytest.raises(ValueError, match="requires explicit review"):
         SensitiveMeta.objects.create(
             center=center,
             patient_first_name="Ada",
@@ -173,3 +173,77 @@ def test_missing_examination_date_never_creates_an_examination(
     assert meta.examination_date is None
     assert meta.examination_hash is None
     assert meta.pseudo_examination_id is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("verified", [False, True])
+def test_provisional_legacy_hash_is_not_global_salt_evidence(
+    base_db_data: bool,
+    verified: bool,
+) -> None:
+    center = Center.objects.create(name=f"provisional-{uuid4().hex}")
+    old = SensitiveMeta.objects.create(
+        center=center,
+        patient_first_name="Legacy",
+        patient_last_name="Source",
+        patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
+        examination_date=date(2026, 9, 21),
+    )
+    links = (old.patient_hash, old.pseudo_patient_id, old.pseudo_examination_id)
+    # Reproduce old imports whose OCR fields changed after provisional hashing.
+    SensitiveMeta.objects.filter(pk=old.pk).update(
+        patient_first_name="Unverified OCR",
+        identity_fingerprint="",
+        identity_salt_fingerprint="",
+    )
+    state = old.get_or_create_state()
+    state.names_verified = state.dob_verified = verified
+    state.save()
+
+    def import_new() -> SensitiveMeta:
+        return SensitiveMeta.objects.create(
+            center=center,
+            patient_first_name="New",
+            patient_last_name="Patient",
+            patient_dob=timezone.make_aware(datetime(1990, 2, 3)),
+        )
+
+    if verified:
+        with pytest.raises(ValueError, match="does not match legacy"):
+            import_new()
+    else:
+        new = import_new()
+        assert new.patient_hash
+        assert new.pseudo_patient_id != old.pseudo_patient_id
+    old.refresh_from_db()
+    assert (old.patient_hash, old.pseudo_patient_id, old.pseudo_examination_id) == links
+
+
+@pytest.mark.django_db
+def test_every_verified_legacy_identity_is_checked(base_db_data: bool) -> None:
+    center = Center.objects.create(name=f"all-evidence-{uuid4().hex}")
+    rows = [
+        SensitiveMeta.objects.create(
+            center=center,
+            patient_first_name=name,
+            patient_last_name="Patient",
+            patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
+        )
+        for name in ("First", "Second")
+    ]
+    for row in rows:
+        state = row.get_or_create_state()
+        state.names_verified = state.dob_verified = True
+        state.save()
+    SensitiveMeta.objects.filter(pk__in=[row.pk for row in rows]).update(
+        identity_fingerprint="",
+        identity_salt_fingerprint="",
+    )
+    SensitiveMeta.objects.filter(pk=rows[1].pk).update(patient_first_name="Changed")
+    with pytest.raises(ValueError, match="does not match legacy"):
+        SensitiveMeta.objects.create(
+            center=center,
+            patient_first_name="Third",
+            patient_last_name="Patient",
+            patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
+        )

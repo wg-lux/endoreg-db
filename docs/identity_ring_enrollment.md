@@ -1,8 +1,10 @@
 # Setting up an Identity Keyring on gc-02 and gc-10
 
+Read [Key rotation and recovery](key_rotation.md) before provisioning or migrating.
+
 An identity keyring links a new Django salt with explicitly allowed older Django salt generations. This enables compatible applications to recognize existing patients and create new identities using the new Django salt.
 
-This setup specifically affects identity hashes. The separate rotation of media files and Django signature keys is described in [secret_rotation.yml](https://www.google.com/search?q=secret_rotation.yml&utm_source=gemini). Host verifications and open shares are documented exclusively in [Anonymization.yml, criterion online_secret_rotation](https://www.google.com/search?q=../feature-tracking/Anonymization.yml&utm_source=gemini).
+This setup specifically affects identity hashes. The separate rotation of media files and Django signature keys is described in [secret_rotation.yml](secret_rotation.yml). Host verifications and open shares are documented exclusively in [Anonymization.yml, criterion online_secret_rotation](../feature-tracking/Anonymization.yml).
 
 ## 1. Verify the Correct Machine and Existing Django Salt Inventory
 
@@ -98,7 +100,7 @@ python -m django rotate_identity_salt
 
 ```
 
-Blocked groups require review. For previously deleted identifiers, a private, verified source file is required; the format is defined in [secret_rotation.yml](https://www.google.com/search?q=secret_rotation.yml&utm_source=gemini). Once the dry run preview is resolved, apply the migration within the same service context:
+Blocked groups require review. For previously deleted identifiers, a private, verified source file is required; the format is defined in [secret_rotation.yml](secret_rotation.yml). Once the dry run preview is resolved, apply the migration within the same service context:
 
 ```bash
 python -m django rotate_identity_salt --apply
@@ -112,3 +114,26 @@ Never execute these commands against production data using test settings or from
 The old Django salt remains in the keyring until inventory migration, examiner assignments, and all dependent writers are verified. Always provision additional generations in new private files and swap only the manifest atomically. Do not overwrite active Django salt files or replace them using `regenerate`.
 
 In the event of an error, preserve the existing manifest and its Django salt files. Resolve the first failing startup step; do not generate a new Django salt to bypass validation. Rolling back to an older application without keyring support is not a safe fallback strategy once new write operations have occurred.
+
+## Import fails with a legacy patient-hash mismatch
+
+`Configured identity salt does not match legacy patient hashes` means the
+configured salt cannot reproduce the selected legacy identity from its stored
+source fields, and no configured keyring reader matches it. This is separate
+from the media encryption master key. Possible causes include a missing previous
+salt generation or changed legacy source fields; the exception alone does not
+prove which occurred.
+
+Preserve the existing salts and identity rows. Verify that the web, import workers
+and maintenance commands use the same identity keyring. Restore the known previous
+salt as an explicitly configured retiring generation, then run the migration
+preview above. Use default-salt enrollment only when that legacy salt is verified.
+Unmatched or incomplete identities require review before applying migration.
+Do not clear hashes, disable the guard, or generate a replacement salt to retry.
+
+A subsequent `failed import staging` / `rejected_outside_roots` message is a
+separate report staging defect in older endoreg_db releases. Report anonymizer
+output belongs in `get_runtime_paths().import_anonymized_report` until encrypted
+publication succeeds, not in `anonym_report`. Update the backend before retrying;
+do not add final storage directories to the staging cleanup allowlist. Existing
+rejected artifacts need ownership and publication-reference review before cleanup.

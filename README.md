@@ -11,6 +11,8 @@ This infrastructure was originally designed for clinical research studies and is
 - Clinical product and treatment data,
   and more.
 
+Developer guides: [Documentation index](docs/README.md) · [CPU profiling quick start](docs/profiling.md)
+
 ## Ingress contract
 
 The package supports two first-class ingest boundaries:
