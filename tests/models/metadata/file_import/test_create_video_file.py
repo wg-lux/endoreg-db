@@ -370,7 +370,9 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
     assert ctx.current_video is video
 
 
-def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
+@pytest.mark.parametrize("history_success", [False, True])
+def test_create_or_retrieve_history_missing_video_imports_fresh(
+    history_success: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -398,7 +400,7 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
 
     def fake_has_history_for_hash(*, file_hash: str, success: bool) -> bool:
         assert file_hash == ctx.file_hash
-        return success is False
+        return success is history_success
 
     def fake_get_video_by_content_hash(file_hash: str) -> NoReturn:
         assert file_hash == ctx.file_hash
@@ -479,7 +481,9 @@ def test_create_or_retrieve_failure_history_missing_video_imports_fresh(
     assert ctx.current_video is created_video
     assert captured_file_paths == [sensitive_path]
     assert captured_video_hashes == [ctx.file_hash]
-    assert captured_history == [{"file_hash": ctx.file_hash, "success": False}]
+    assert captured_history == (
+        [] if history_success else [{"file_hash": ctx.file_hash, "success": False}]
+    )
     assert processed is False
     assert needs_processing is True
 

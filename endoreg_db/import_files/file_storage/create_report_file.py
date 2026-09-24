@@ -5,13 +5,14 @@ from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
-from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,
 )
-from endoreg_db.services.raw_pdf_files.queries import (
-    get_raw_pdf_by_content_hash,
+from endoreg_db.services.raw_pdf_files.integrity import (
+    ProcessedReportIntegrityError,
+    require_usable_completed_report,
 )
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -60,22 +61,19 @@ def create_or_retrieve_report_file(
         file_hash=ctx.file_hash,
         success=False,
     )
-    if has_success_history:
-        logger.info(
-            "RawPdfFile pk= already has successful processing history (file_hash=%s) - short-circuiting",
-            ctx.file_hash,
-        )
+    if ctx.current_report is None:
+        ctx.current_report = RawPdfFile.objects.filter(pdf_hash=ctx.file_hash).first()
+    if has_success_history and ctx.current_report is not None:
+        try:
+            require_usable_completed_report(
+                ctx.current_report, source_sha256=ctx.file_hash, require_artifact=False
+            )
+        except ProcessedReportIntegrityError:
+            logger.info("Completed report is unusable; continuing import for repair.")
+        else:
+            return ctx.current_report, True, False
+    elif has_failure_history and ctx.current_report is not None:
         processed = True
-        needs_processing = False
-        if not isinstance(ctx.current_report, RawPdfFile):
-            ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
-        report = ctx.current_report
-        return report, processed, needs_processing
-    elif has_failure_history:
-        if not isinstance(ctx.current_report, RawPdfFile):
-            ctx.current_report = get_raw_pdf_by_content_hash(ctx.file_hash)
-        processed = True
-        needs_processing = True
 
     # Determine the RawPdfFile instance to work with
     if ctx.current_report is not None:

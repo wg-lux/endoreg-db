@@ -13,6 +13,7 @@ from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import RawPdfFile
 from endoreg_db.services.raw_pdf_files import (
     ProcessedReportIntegrityError,
+    require_usable_completed_report,
     validate_report_metadata_annotation,
     verify_and_persist_processed_report_sha256,
 )
@@ -106,3 +107,30 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert report.state is not None
     assert report.state.anonymization_validated is True
     assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
+
+
+@pytest.mark.parametrize(
+    "missing", [None, "anonymized_text", "patient_hash", "examination_hash"]
+)
+def test_completed_record_survives_pdf_cleanup(
+    base_db_data: object, missing: str | None
+) -> None:
+    report = _completed_report()
+    report.file.delete(save=False)
+    report.processed_file.delete(save=False)
+    report.save(update_fields=["file", "processed_file"])
+    meta = report.sensitive_meta
+    assert meta is not None
+    meta.patient_hash = "c" * 64
+    meta.examination_hash = "d" * 64
+    if missing == "anonymized_text":
+        report.anonymized_text = " "
+    elif missing is not None:
+        setattr(meta, missing, "")
+    if missing in (None, "examination_hash"):
+        assert require_usable_completed_report(report, require_artifact=False) == ""
+    else:
+        with pytest.raises(ProcessedReportIntegrityError):
+            require_usable_completed_report(report, require_artifact=False)
+    with pytest.raises(ProcessedReportIntegrityError):
+        require_usable_completed_report(report)

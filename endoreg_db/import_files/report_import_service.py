@@ -196,7 +196,7 @@ class ReportImportService:
                                 )
                                 get_or_create_raw_pdf_state(ctx.current_report)
 
-                            if processed or retry:
+                            if (processed and needs_processing) or retry:
                                 ctx.retry = True
 
                             if not needs_processing and not ctx.retry:
@@ -492,6 +492,7 @@ class ReportImportService:
             require_usable_completed_report(
                 existing_report,
                 source_sha256=file_hash,
+                require_artifact=False,
             )
         except ProcessedReportIntegrityError as exc:
             ctx.current_report = existing_report

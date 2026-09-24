@@ -114,12 +114,30 @@ def verify_and_persist_processed_report_sha256(report: "RawPdfFile") -> str:
     return actual_sha256
 
 
+def has_completed_report_record(report: "RawPdfFile") -> bool:
+    """Retained anonymized text and clinical identity survive PDF cleanup."""
+    state = report.state
+    meta = report.sensitive_meta
+    return bool(
+        report.pk
+        and state
+        and state.anonymized
+        and state.sensitive_meta_processed
+        and not state.processing_error
+        and report.anonymized_text
+        and report.anonymized_text.strip()
+        and meta
+        and meta.patient_hash
+    )
+
+
 def require_usable_completed_report(
     report: "RawPdfFile",
     *,
     source_sha256: str | None = None,
+    require_artifact: bool = True,
 ) -> str:
-    """Require the state and artifact contract used by completed report imports."""
+    """Validate completion; record reuse returns the retained digest, possibly empty."""
     expected_source_sha256 = _normalized_sha256(source_sha256)
     report_source_sha256 = str(getattr(report, "pdf_hash", "") or "").strip().lower()
     if expected_source_sha256 and report_source_sha256 != expected_source_sha256:
@@ -149,6 +167,12 @@ def require_usable_completed_report(
             "Completed report import has no sensitive metadata record."
         )
 
+    if not require_artifact:
+        if not has_completed_report_record(report):
+            raise ProcessedReportIntegrityError(
+                "Completed report lacks anonymized text or patient identity hash."
+            )
+        return _normalized_sha256(state.processed_file_sha256)
     return verify_and_persist_processed_report_sha256(report)
 
 

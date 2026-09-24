@@ -629,7 +629,9 @@ class TestCompletedReportLookup:
 
         # Assert
         assert result is existing
-        require_usable.assert_called_once_with(existing, source_sha256=CONTENT_HASH)
+        require_usable.assert_called_once_with(
+            existing, source_sha256=CONTENT_HASH, require_artifact=False
+        )
 
     @staticmethod
     def _patch_success_history(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -678,6 +680,7 @@ class TestDuplicateCleanup:
         (True, False, True, False, None),
         (False, True, True, False, None),
         (False, False, False, False, None),
+        (True, False, False, False, None),
         (False, False, True, True, None),
         (False, False, True, False, RuntimeError("anonymization failed")),
         (False, False, True, False, StaleReportImportAttemptError("stale attempt")),

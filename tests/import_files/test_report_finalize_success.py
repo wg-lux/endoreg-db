@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import transaction
+from django.db import models, transaction
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
@@ -137,3 +137,33 @@ def test_publication_preserves_previous_generation_across_failures(
         assert state.anonymization_validated
         with report.processed_file.open("rb") as stored:
             assert stored.read() == previous
+
+
+@pytest.mark.django_db
+def test_long_report_text_and_generation_paths_round_trip() -> None:
+    from uuid import uuid4
+    from endoreg_db.utils.paths import get_runtime_paths
+
+    paths = get_runtime_paths()
+    name = canonical_media_name("d" * 64, ".pdf", generation=uuid4().hex)
+    report = RawPdfFile(
+        pdf_hash=uuid4().hex,
+        file=str(Path("sensitive_reports") / name),
+        processed_file=str(Path("processed_reports_final") / name),
+        text="Long clinical report. " * 10000,
+        anonymized_text="Long anonymized report. " * 10000,
+    )
+    assert paths.anonym_report.name == "processed_reports_final"
+    for field_name in ("file", "processed_file"):
+        value = getattr(report, field_name)
+        assert len(value.name) > 100
+        # SQLite does not enforce varchar sizes; validate the model contract too.
+        field = report._meta.get_field(field_name)
+        assert isinstance(field, models.FileField)
+        field.clean(value, report)
+    report.save()
+    saved = RawPdfFile.objects.get(pk=report.pk)
+    assert saved.text == report.text
+    assert saved.anonymized_text == report.anonymized_text
+    assert saved.file.name == report.file.name
+    assert saved.processed_file.name == report.processed_file.name

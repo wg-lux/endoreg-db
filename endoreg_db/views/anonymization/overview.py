@@ -46,6 +46,7 @@ from endoreg_db.serializers.misc.file_overview import (
     CrossCenterProcessedOverviewSerializer,
     FileOverviewSerializer,
     overview_upload_job_summary,
+    overview_upload_job_is_superseded,
     overview_upload_job_retry_summary,
     safe_upload_job_original_filename,
 )
@@ -245,9 +246,24 @@ class AnonymizationOverviewView(APIView):
         if allowed_center_ids is not None:
             retry_jobs = retry_jobs.filter(source_center_id__in=allowed_center_ids)
 
+        by_source = {
+            (item.center_id, _overview_content_hash(item)): item
+            for item in items
+            if _overview_content_hash(item)
+        }
         used_ids = {int(item.pk) for item in items}
         rows: list[dict[str, object]] = []
         for upload_job in retry_jobs:
+            existing = by_source.get(
+                (
+                    cast(_OverviewUploadJobLike, upload_job).source_center_id,
+                    upload_job.content_hash,
+                )
+            )
+            if existing is not None and overview_upload_job_is_superseded(
+                upload_job, existing
+            ):
+                continue
             synthetic_id = -(upload_job.id.int % 2_000_000_000 + 1)
             while synthetic_id in used_ids:
                 synthetic_id -= 1

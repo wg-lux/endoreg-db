@@ -510,6 +510,7 @@ def _run_report_llm_reimport_job(job_id: str) -> bool:
         processed_file_sha256 = require_usable_completed_report(
             cast(RawPdfFile, pdf),
             source_sha256=pdf.pdf_hash,
+            require_artifact=False,
         )
         anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
         result: JsonObject = cast(
@@ -597,6 +598,7 @@ def _run_report_llm_import_job(job_id: str) -> bool:
         processed_file_sha256 = require_usable_completed_report(
             report,
             source_sha256=typed_report.pdf_hash,
+            require_artifact=False,
         )
         sensitive_meta = typed_report.sensitive_meta
         job.pdf = report

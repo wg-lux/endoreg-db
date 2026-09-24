@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Protocol
+from unittest.mock import Mock
 
 import pytest
 
@@ -52,7 +53,9 @@ def _write_minimal_pdf(path: Path) -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("history", [None, False, True])
 def test_create_from_file_happy_path(
+    history: bool | None,
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
     base_db_data: object,
@@ -81,6 +84,11 @@ def test_create_from_file_happy_path(
         processor_name=processor_name,
         original_path=Path(src_file),
     )
+
+    if history is not None:
+        ProcessingHistory.get_or_create_for_hash(
+            file_hash=get_file_hash(src_file), success=history
+        )
 
     report, processed, needs_processing = (
         create_from_file_module.create_or_retrieve_report_file(ctx)
@@ -150,7 +158,10 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("completed", [False, True])
 def test_create_from_file_duplicate_with_existing_file(
+    completed: bool,
+    monkeypatch: pytest.MonkeyPatch,
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
     base_db_data: object,
@@ -199,25 +210,27 @@ def test_create_from_file_duplicate_with_existing_file(
         center_name=center_name,
         processor_name=processor_name,
     )
+    if completed:
+        monkeypatch.setattr(
+            create_from_file_module, "require_usable_completed_report", Mock()
+        )
     r2, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)
     )
 
-    assert processed2 is True
-    assert needs_processing2 is False
+    assert processed2 is completed
+    assert needs_processing2 is not completed
     assert r2.pk == r1.pk
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_short_circuits_when_success_history_exists(
+def test_create_from_file_duplicate_with_missing_file_requires_processing(
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
     base_db_data: object,
 ) -> None:
     """
-    Successful ProcessingHistory wins over orphan detection in the current
-    implementation, so a missing raw file still short-circuits to the existing
-    report instance.
+    History alone cannot establish success; keep the existing record for repair.
     """
     _storage_root, _sensitive_dir = _configure_storage_layout(mock_storage)
 
@@ -268,7 +281,7 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
         create_from_file_module.create_or_retrieve_report_file(ctx2)
     )
 
-    assert processed2 is True
-    assert needs_processing2 is False
+    assert processed2 is False
+    assert needs_processing2 is True
     assert reused_report.pk == orphan_pk
     assert reused_report.get_raw_file_path() is None

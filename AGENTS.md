@@ -174,6 +174,12 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
+## Mandatory Report Rules For All Agents
+
+Reports are used to describe imported report Texts that can come from PDF, TXT or CSV and FHIR exports from Databases like SAP or Meona. They can also describe LXDM structured reports built through a report template using lx_dtypes reporting.
+
+We need to recognize, if a patient already has a report in the system. We do this by checking the content hash of the document first and later Sensitive Meta Hash, a anonymous Identifier derived from First Name, Last Name and Date Of Birth.
+
 ## Mandatory Video Rules For All Agents
 
 These rules apply to every change involving video import, reimport,

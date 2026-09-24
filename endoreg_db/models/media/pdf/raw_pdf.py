@@ -80,11 +80,13 @@ class RawPdfFile(models.Model):
         processed_file: ReportArtifactFieldFile
     else:
         file: models.FileField = models.FileField(
+            max_length=500,
             upload_to=get_runtime_paths().sensitive_report.name,
             storage=LazyEncryptedStorage(),
             validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         )
         processed_file: models.FileField = models.FileField(
+            max_length=500,
             upload_to=get_runtime_paths().anonym_report.name,
             storage=LazyEncryptedStorage(),
             validators=[FileExtensionValidator(allowed_extensions=["pdf"])],

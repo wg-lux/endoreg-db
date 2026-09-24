@@ -17,6 +17,7 @@ from lx_dtypes.models.contracts.anonymization_overview import (
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.services.raw_pdf_files.integrity import has_completed_report_record
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services.hls_media import hls_artifact_matches_current_source_metadata
@@ -33,6 +34,34 @@ from endoreg_db.services.video_segment_validation_workflow import (
 )
 
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
+
+
+def overview_upload_job_is_superseded(
+    upload_job: UploadJob | _FileOverviewUploadJobLike, instance: VideoFile | RawPdfFile
+) -> bool:
+    """A failed duplicate attempt does not replace published media state."""
+    state = getattr(instance, "state", None)
+    return (
+        upload_job.status in {"error", "lost"}
+        and getattr(upload_job, "source_center_id", None) == instance.center_id
+        and getattr(upload_job, "content_hash", "")
+        == (
+            instance.raw_video_hash
+            if isinstance(instance, VideoFile)
+            else instance.pdf_hash
+        )
+        and getattr(state, "anonymization_status", None)
+        in {
+            AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+            AnonymizationState.ANONYMIZED,
+            AnonymizationState.VALIDATED,
+        }
+        and (
+            has_completed_report_record(instance)
+            if isinstance(instance, RawPdfFile)
+            else bool(instance.processed_file and instance.processed_video_hash)
+        )
+    )
 
 
 def safe_upload_job_original_filename(upload_job: _FileOverviewUploadJobLike) -> str:
@@ -271,7 +300,10 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         self, instance: object
     ) -> OverviewUploadJobMonitoringData | None:
         upload_job = self._overview_upload_job(instance)
-        if upload_job is None:
+        if upload_job is None or (
+            isinstance(instance, (VideoFile, RawPdfFile))
+            and overview_upload_job_is_superseded(upload_job, instance)
+        ):
             return None
         return overview_upload_job_summary(upload_job)
 

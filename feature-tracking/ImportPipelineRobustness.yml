@@ -67,6 +67,11 @@ definition_of_done:
     Inhaltshash wie der Importkontext besitzen. Abweichungen brechen vor der Datensatzerstellung ab; die
     Eingangsquelle bleibt erhalten. Gespeicherte Dateien liefern nur dann einen Hash, wenn die vollständig
     gelesene Klartextmenge der vor und nach dem Lesen bestätigten Größe entspricht.
+  - Verwaiste Erfolgs- oder Fehlerhistorie ohne Mediendatensatz blockiert keinen erneuten Report- oder
+    Videoimport. Reportwiederverwendung akzeptiert nach PDF-Löschung den erfolgreichen Datensatz mit anonymisiertem
+    Text und Patientenhash der sensiblen Metadaten. Video benötigt weiterhin die bestehenden Integritätsprüfungen;
+    fehlgeschlagene Duplikatversuche überlagern in der Übersicht keine erfolgreich veröffentlichten Medien
+    desselben Zentrums und Quellhashs.
   - Persist the immutable incoming plaintext source SHA-256 (Secure Hash Algorithm, 256-bit) before anonymization,
     normalization, remuxing or encryption. Keep this identity distinct from the anonymized master hash
     and each derivative generation hash; transformed output hashes must never overwrite the original import
@@ -187,8 +192,27 @@ definition_of_done:
         50 Fehler in fremden Report-Modellen/Views, 6 Warnungen. Ruff und Formatprüfung bestanden. Staging-Hashabweichungen
         und unvollständige/größenveränderte Klartextstreams werden abgewiesen; keine neuen Typhelfer oder
         Änderungen an Laufzeitpfaden. Keine PostgreSQL- oder Produktionsfreigabe.'
-    assessed_by: codex-import-integrity-20260923
-    assessed_at: '2026-09-23T07:37:10.171917Z'
+    - kind: command
+      reference: '2026-09-24: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest tests/models/metadata/file_import/test_create_report_file.py tests/models/metadata/file_import/test_create_video_file.py
+        tests/views/anonymization/test_anonymization_overview.py tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py tests/services/test_report_artifact_integrity.py
+        tests/services/test_report_llm_jobs.py -q --tb=short: 244 passed, 4 neue Fixturefehler. Nach Korrektur
+        des Fehlercodes aktiver Testjobs: 12 Overview-Regressionsfälle bestanden. Abschließender Report-Nachlauf
+        nach Präzisierung auf Patientenhash: 82 passed. Damit alle 248 Fälle über Gesamtlauf und Nachläufe
+        bestanden. Gesamt-Pyright: 0 Fehler, 6 bestehende Warnungen; finale Änderungen fokussiert ohne
+        Fehler/Warnungen. Ruff und Formatprüfung bestanden. Keine PostgreSQL- oder Deployment-Verifikation.'
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/create_report_file.py; endoreg_db/import_files/report_import_service.py;
+        endoreg_db/services/raw_pdf_files/integrity.py; endoreg_db/services/jobs/report_llm_jobs.py; endoreg_db/serializers/misc/file_overview.py;
+        endoreg_db/views/anonymization/overview.py
+    note: 'Begrenzter Duplikatfix innerhalb bestehender Pipelines: verwaiste Historie blockiert keinen
+      frischen Import; erfolgreiche Reportdatensätze mit anonymisiertem Text und Patientenhash bleiben
+      nach PDF-Löschung wiederverwendbar. Fehlgeschlagene Uploadversuche verdecken in der Übersicht keine
+      fertigen Medien derselben Quelle und desselben Zentrums. Aktive Versuche und unvollständige Medien
+      bleiben sichtbar; Jobs werden nicht gelöscht. Weitere Abnahme des Gesamt-Kriteriums bleibt offen.'
+    assessed_by: codex-import-20260924-a
+    assessed_at: '2026-09-24T15:02:14.569292Z'
 - id: report_spacy_fallback_without_llm
   category: functionality
   title: Reportimporte wählen ein erreichbares LLM zur Laufzeit oder fallen explizit auf spaCy und Regex

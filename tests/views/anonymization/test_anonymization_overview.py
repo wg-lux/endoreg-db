@@ -22,6 +22,7 @@ from endoreg_db.models import (
     UploadJob,
     VideoHlsArtifact,
     PortalUserInfo,
+    SensitiveMeta,
 )
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.models.state.video_segment_validation import SegmentAnnotationStatus
@@ -586,3 +587,72 @@ def test_central_hub_centerless_user_discovers_processed_videos_only() -> None:
 
     assert video in items
     assert report not in items
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("media_type", ["video", "pdf"])
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("job_status", ["error", "lost", "processing"])
+def test_failed_duplicates_do_not_overlay_completed_media(
+    media_type: str, completed: bool, job_status: str
+) -> None:
+    center = Center.objects.create(name="duplicate-overview")
+    source_hash = "a" * 64
+    if media_type == "video":
+        item = VideoFile.objects.create(
+            center=center,
+            raw_video_hash=source_hash,
+            processed_file="processed/video.mp4",
+            processed_video_hash="b" * 64,
+            state=VideoState.objects.create(
+                anonymized=completed, sensitive_meta_processed=completed
+            ),
+        )
+    else:
+        item = RawPdfFile.objects.create(
+            center=center,
+            pdf_hash=source_hash,
+            processed_file="processed/report.pdf",
+            state=RawPdfState.objects.create(
+                anonymized=completed,
+                sensitive_meta_processed=completed,
+                processed_file_sha256="b" * 64,
+            ),
+        )
+    if isinstance(item, RawPdfFile):
+        from endoreg_db.import_files.context.default_sensitive_meta import (
+            default_sensitive_meta,
+        )
+
+        meta = default_sensitive_meta(item)
+        assert meta is not None
+        SensitiveMeta.objects.filter(pk=meta.pk).update(
+            patient_hash="c" * 64, examination_hash="d" * 64
+        )
+        item.anonymized_text = "Retained anonymized report"
+        item.processed_file.name = ""
+        item.save(update_fields=["anonymized_text", "processed_file"])
+    jobs = [
+        UploadJob.objects.create(
+            source_center=center,
+            content_hash=source_hash,
+            status=job_status,
+            error_code="" if job_status == "processing" else "processing_failed",
+            content_type="video/mp4" if media_type == "video" else "application/pdf",
+        )
+        for _ in range(1 if job_status == "processing" else 2)
+    ]
+    user = User.objects.create_user(username="duplicate-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    assert response.status_code == 200
+    rows = json.loads(response.content)
+    media_row = next(row for row in rows if row["id"] == item.pk)
+    superseded = completed and job_status in {"error", "lost"}
+    assert (media_row["upload_job"] is None) is superseded
+    assert len(rows) == (1 if superseded else len(jobs))
+    assert UploadJob.objects.filter(pk__in=[job.pk for job in jobs]).count() == len(
+        jobs
+    )
