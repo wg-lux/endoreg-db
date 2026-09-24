@@ -705,7 +705,7 @@ class TestRemainingDependencyBoundaries:
         ctx = _context(tmp_path / "input.mp4")
 
         # Act
-        sut._require_execution_ownership(ctx)
+        ctx.require_execution_ownership()
 
         # Assert
         assert ctx.execution_guard is None
@@ -1349,8 +1349,12 @@ class TestCompletedLookupAndDuplicateCleanup:
             original_path=source_path,
             sensitive_path=sensitive_path,
         )
-        cleanup = Mock()
-        monkeypatch.setattr(sut, "safe_cleanup_staging_file", cleanup)
+        from endoreg_db.import_files.file_storage import cleanup
+        from endoreg_db.utils.file_operations import atomic_write_file
+
+        atomic_write_file(destination=source_path, content=[b"source"])
+        atomic_write_file(destination=sensitive_path, content=[b"snapshot"])
+        monkeypatch.setattr(cleanup, "staging_cleanup_roots", lambda: (tmp_path,))
         monkeypatch.setattr(sut, "_video_import_dir", lambda: import_dir)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         service = sut.VideoImportService(anonymizer=Mock())
@@ -1359,19 +1363,32 @@ class TestCompletedLookupAndDuplicateCleanup:
         service._cleanup_duplicate_staging(ctx)
 
         # Assert
-        expected = [
-            call(
-                sensitive_path,
-                label="duplicate video sensitive copy",
-                missing_ok=False,
-            )
-        ]
-        if source_in_import_directory:
-            expected.append(
-                call(
-                    source_path,
-                    label="duplicate video import source",
-                    missing_ok=False,
-                )
-            )
-        assert cleanup.call_args_list == expected
+        assert not sensitive_path.exists()
+        assert source_path.exists() is not source_in_import_directory
+
+
+@pytest.mark.parametrize("field", ["execution_guard", "mutation_guard"])
+@pytest.mark.parametrize("value", ["invalid", False, 42])
+def test_import_context_rejects_non_callable_guards(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(ValidationError, match="callable"):
+        _context(tmp_path / "input.mp4", **{field: value})
+    ctx = _context(tmp_path / "input.mp4")
+    with pytest.raises(ValidationError, match="callable"):
+        setattr(ctx, field, value)
+    assert getattr(ctx, field) is None
+
+
+def test_import_context_validates_callback_reassignment(tmp_path: Path) -> None:
+    ctx = _context(tmp_path / "input.mp4")
+    guard = Mock()
+    ctx.execution_guard = guard
+    ctx.require_execution_ownership()
+    guard.assert_called_once_with()
+    ctx.mutation_guard = nullcontext
+    with ctx.mutation_guard():
+        pass
+    ctx.execution_guard = None
+    ctx.require_execution_ownership()
+    guard.assert_called_once_with()

@@ -3,30 +3,37 @@
 from __future__ import annotations
 
 import os
-import stat
+from pathlib import Path
 from contextvars import ContextVar
 
-from endoreg_db.config.secret_keyring import SecretKeyring, configured_identity_keyring
+from endoreg_db.config.secret_keyring import (
+    SecretKeyring,
+    configured_identity_keyring,
+    read_secret_line,
+    validate_salt_material,
+)
 
 from django.core.exceptions import ImproperlyConfigured
 
 identity_keyring_snapshot: ContextVar[SecretKeyring | None] = ContextVar(
-    "identity_keyring_snapshot", default=None
+    "identity_keyring_snapshot"
 )
 
 
 def current_identity_keyring() -> SecretKeyring | None:
-    return identity_keyring_snapshot.get() or configured_identity_keyring()
+    try:
+        return identity_keyring_snapshot.get()
+    except LookupError:
+        return configured_identity_keyring()
 
 
 def validate_identity_salt(value: object) -> str:
-    if not isinstance(value, str) or not value or value == "default_salt":
+    if not isinstance(value, str):
         raise ImproperlyConfigured("A non-default identity salt is required")
-    if value != value.strip() or "\n" in value or "\r" in value:
-        raise ImproperlyConfigured(
-            "Identity salt must be a single nonblank line without surrounding whitespace"
-        )
-    return value
+    try:
+        return validate_salt_material(value)
+    except ValueError as exc:
+        raise ImproperlyConfigured(str(exc)) from None
 
 
 def load_identity_salt(*, required: bool = False, allow_inline: bool = True) -> str:
@@ -41,26 +48,10 @@ def load_identity_salt(*, required: bool = False, allow_inline: bool = True) -> 
     path = os.environ.get("DJANGO_SALT_FILE", "")
     if path:
         try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(descriptor, "rb") as secret_file:
-                info = os.fstat(secret_file.fileno())
-                if (
-                    not stat.S_ISREG(info.st_mode)
-                    or info.st_mode & 0o077
-                    or info.st_uid not in {0, os.geteuid()}
-                ):
-                    raise ImproperlyConfigured(
-                        "Identity salt file must be private and owned by the service user or root"
-                    )
-                raw = secret_file.read(4097)
-            if len(raw) > 4096:
-                raise ImproperlyConfigured(
-                    "Identity salt file exceeds the supported size"
-                )
-            value = raw.decode("utf-8").removesuffix("\n").removesuffix("\r")
-        except (OSError, UnicodeError):
+            value = read_secret_line(Path(path))
+        except ValueError:
             raise ImproperlyConfigured(
-                "Unable to read the configured identity salt file"
+                "Unable to read a valid private identity salt file"
             ) from None
         return validate_identity_salt(value)
     inline = os.environ.get("DJANGO_SALT", "") if allow_inline else ""

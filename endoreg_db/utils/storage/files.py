@@ -30,7 +30,6 @@ from endoreg_db.utils.paths import (
     resolve_existing_protected_media_path,
 )
 from django.db.models.fields.files import FieldFile
-from endoreg_db.utils.encryption.encryption import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.rust_backend import (
     is_lx_encrypted_file,
 )
@@ -94,13 +93,7 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
     path = resolve_existing_protected_media_path(name)
     if path is None:
         return None
-    rust_result = is_lx_encrypted_file(path)
-    if rust_result is None:
-        with path.open("rb") as handle:
-            is_encrypted = handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-    else:
-        is_encrypted = rust_result
-    if is_encrypted:
+    if is_lx_encrypted_file(path):
         raise IOError(f"{name} is encrypted but storage has no decrypting reader")
     return path
 

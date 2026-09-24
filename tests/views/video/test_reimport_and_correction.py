@@ -1,6 +1,4 @@
-import importlib.util
-import sys
-import types
+from importlib import import_module
 from contextlib import contextmanager
 from collections.abc import Generator
 from pathlib import Path
@@ -16,26 +14,7 @@ from lx_dtypes.models.contracts.video_correction import VideoCorrectionSegmentUp
 
 
 def _load_video_view_module(module_name: str) -> Any:
-    """Load a single video view module without importing the package __init__."""
-    base = Path(__file__).resolve().parents[3] / "endoreg_db" / "views"
-
-    views_pkg = types.ModuleType("endoreg_db.views")
-    views_pkg.__path__ = [str(base)]
-    sys.modules.setdefault("endoreg_db.views", views_pkg)
-
-    video_pkg = types.ModuleType("endoreg_db.views.video")
-    video_pkg.__path__ = [str(base / "video")]
-    sys.modules.setdefault("endoreg_db.views.video", video_pkg)
-
-    full_name = f"endoreg_db.views.video.{module_name}"
-    module_path = base / "video" / f"{module_name}.py"
-    spec = importlib.util.spec_from_file_location(full_name, module_path)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[full_name] = module
-    assert spec is not None and spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    return import_module(f"endoreg_db.views.video.{module_name}")
 
 
 @contextmanager
@@ -466,12 +445,14 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
         raising=True,
     )
 
+    from endoreg_db.services.jobs import video_reimport_jobs
+
     def _dispatch_prediction_mock(target_video: Any, payload: Any) -> dict[str, Any]:
         prediction_calls.append((target_video, payload))
         return {"status": "queued", "queued": True, "history_id": 123}
 
     monkeypatch.setattr(
-        reimport_orchestrator,
+        video_reimport_jobs,
         "_dispatch_prediction_refresh",
         _dispatch_prediction_mock,
         raising=True,

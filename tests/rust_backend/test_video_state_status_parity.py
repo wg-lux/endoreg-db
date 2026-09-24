@@ -1,116 +1,111 @@
 from __future__ import annotations
 
+# pyright: reportPrivateUsage=false
+import json
+from itertools import product
+
 import pytest
+from django.db.models import Value
+from rest_framework.renderers import JSONRenderer
 
 from endoreg_db.models.state.anonymization import (
     AnonymizationState,
-    derive_report_anonymization_state,
-    derive_video_anonymization_state,
+    anonymization_status_case,
 )
-from endoreg_db.utils.rust_backend import (
-    derive_anonymization_status,
-    derive_report_anonymization_status,
-)
+from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.models.state.video import VideoState
+from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
+from endoreg_db.services.anonymization import _state_anonymization_status
+from endoreg_db.utils import rust_backend
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("report", [False, True])
+def test_all_state_flags_match_native_sql_transfer_and_polling(report: bool) -> None:
+    fields = [
+        "processing_error",
+        "anonymization_validated",
+        "sensitive_meta_processed",
+        "anonymized",
+        "processing_started",
+    ]
+    if not report:
+        fields += ["frames_extracted", "was_created"]
+    anchor = RawPdfState.objects.create()
+    for values in product((False, True), repeat=len(fields)):
+        flags = dict(zip(fields, values, strict=True))
+        state = RawPdfState(**flags) if report else VideoState(**flags)
+        # Project incoming flags so contradictory snapshots are checked without
+        # bypassing the persisted VideoState consistency constraints.
+        sql_status = (
+            RawPdfState.objects.filter(pk=anchor.pk)
+            .annotate(
+                **{f"flags__{field}": Value(value) for field, value in flags.items()},
+            )
+            .annotate(
+                status_value=anonymization_status_case(
+                    report=report,
+                    relation_prefix="flags",
+                )
+            )
+            .values_list("status_value", flat=True)
+            .get()
+        )
+        transfer_status = (
+            TransferJobCreateSerializer._resolve_report_anonymization_status(
+                dict(flags)
+            )
+            if report
+            else TransferJobCreateSerializer._resolve_video_anonymization_status(
+                dict(flags)
+            )
+        )
+        native_status = state.anonymization_status
+        assert sql_status == native_status.value == transfer_status.value
+        assert _state_anonymization_status(state) == native_status.value
+        assert str(native_status) == native_status.value
+        assert json.loads(JSONRenderer().render({"status": native_status})) == {
+            "status": native_status.value
+        }
+        if flags["processing_error"]:
+            assert native_status is AnonymizationState.FAILED
+        if (
+            flags["processing_started"]
+            and not any(
+                flags[f]
+                for f in (
+                    "processing_error",
+                    "anonymization_validated",
+                    "sensitive_meta_processed",
+                    "anonymized",
+                )
+            )
+            and (report or flags["frames_extracted"])
+        ):
+            assert native_status.value == "processing_anonymization"
 
 
 @pytest.mark.parametrize(
-    ("flags", "expected_status"),
+    "binding",
     [
-        (
-            {"processing_error": True, "anonymization_validated": True},
-            AnonymizationState.FAILED,
-        ),
-        ({"anonymization_validated": True}, AnonymizationState.VALIDATED),
-        (
-            {"sensitive_meta_processed": True},
-            AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
-        ),
-        (
-            {"frames_extracted": True, "anonymized": False},
-            AnonymizationState.PROCESSING_ANONYMIZING,
-        ),
-        (
-            {"was_created": True, "frames_extracted": False},
-            AnonymizationState.EXTRACTING_FRAMES,
-        ),
-        (
-            {"was_created": False, "processing_started": True},
-            AnonymizationState.STARTED,
-        ),
-        ({"was_created": False, "anonymized": True}, AnonymizationState.ANONYMIZED),
-        ({"was_created": False}, AnonymizationState.NOT_STARTED),
+        "_derive_anonymization_status",
+        "_derive_report_anonymization_status",
+        "_anonymization_status_rules",
     ],
 )
-def test_derive_anonymization_status_matches_python_status_tokens(
-    flags: dict[str, bool],
-    expected_status: AnonymizationState,
+def test_native_status_unavailable_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, binding: str
 ) -> None:
-    defaults = {
-        "processing_error": False,
-        "anonymization_validated": False,
-        "sensitive_meta_processed": False,
-        "frames_extracted": False,
-        "anonymized": False,
-        "was_created": True,
-        "processing_started": False,
-    }
-    defaults.update(flags)
-
-    status = derive_anonymization_status(**defaults)
-
-    if status is None:
-        pytest.skip("Rust backend is not available in this environment.")
-    assert status == expected_status.value
-    assert derive_video_anonymization_state(**defaults) == expected_status
+    monkeypatch.setattr(rust_backend, binding, None)
+    with pytest.raises(RuntimeError, match="unavailable"):
+        if binding == "_anonymization_status_rules":
+            anonymization_status_case()
+        elif binding == "_derive_report_anonymization_status":
+            _ = RawPdfState().anonymization_status
+        else:
+            _ = VideoState().anonymization_status
 
 
-@pytest.mark.parametrize(
-    ("flags", "expected_status"),
-    [
-        (
-            {"anonymization_validated": True, "processing_error": True},
-            AnonymizationState.FAILED,
-        ),
-        (
-            {"sensitive_meta_processed": True, "processing_error": True},
-            AnonymizationState.FAILED,
-        ),
-        (
-            {"processing_started": True, "anonymized": False},
-            AnonymizationState.PROCESSING_ANONYMIZING,
-        ),
-        (
-            {
-                "processing_started": True,
-                "processing_error": True,
-                "anonymized": False,
-            },
-            AnonymizationState.FAILED,
-        ),
-        (
-            {"processing_started": True, "anonymized": True},
-            AnonymizationState.STARTED,
-        ),
-        ({"anonymized": True}, AnonymizationState.ANONYMIZED),
-        ({}, AnonymizationState.NOT_STARTED),
-    ],
-)
-def test_derive_report_anonymization_status_matches_python_status_tokens(
-    flags: dict[str, bool],
-    expected_status: AnonymizationState,
-) -> None:
-    defaults = {
-        "processing_error": False,
-        "anonymization_validated": False,
-        "sensitive_meta_processed": False,
-        "anonymized": False,
-        "processing_started": False,
-    }
-    defaults.update(flags)
-
-    status = derive_report_anonymization_status(**defaults)
-
-    if status is None:
-        pytest.skip("Rust backend is not available in this environment.")
-    assert status == expected_status.value
-    assert derive_report_anonymization_state(**defaults) == expected_status
+def test_unknown_anonymization_status_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        AnonymizationState("AnonymizationState.PROCESSING_ANONYMIZING")

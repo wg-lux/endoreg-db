@@ -28,13 +28,14 @@ from .encryption import (
     DEFAULT_CHUNK_SIZE,
     DecryptedStream,
     EncryptedFileLayout,
-    MAGIC,
+    MAGIC as MAGIC,
     encrypt_stream,
     inspect_encrypted_file_layout,
     iter_decrypted_byte_range,
     load_master_key,
     read_header,
     select_file_master_key,
+    unwrap_file_dek,
 )
 
 
@@ -142,11 +143,7 @@ class EncryptedStorage(FileSystemStorage):
 
     def is_encrypted(self, name: str) -> bool:
         full_path = Path(self.path(name))
-        rust_result = is_lx_encrypted_file(full_path)
-        if rust_result is not None:
-            return rust_result
-        with self.open_encrypted(name) as source:
-            return source.read(len(MAGIC)) == MAGIC
+        return is_lx_encrypted_file(full_path)
 
     def _get_cached_index(self, name: str) -> IndexCacheValue:
         full_path = Path(self.path(name))
@@ -170,7 +167,12 @@ class EncryptedStorage(FileSystemStorage):
         return index_payload
 
     def get_plaintext_size(self, name: str) -> int:
-        return self._get_cached_index(name).plaintext_size
+        layout = self._get_cached_index(name)
+        if self._explicit_master_key is None:
+            select_file_master_key(layout.header)
+        else:
+            unwrap_file_dek(layout.header, self._explicit_master_key)
+        return layout.plaintext_size
 
     def iter_decrypted_range(
         self,

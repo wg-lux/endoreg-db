@@ -349,7 +349,8 @@ class TestPublicImportEntryPoint:
     ) -> None:
         # Arrange
         validate = Mock()
-        pipeline = Mock(return_value=None)
+        report = RawPdfFile()
+        pipeline = Mock(return_value=report)
         monkeypatch.setattr(service, "_validate_pdf_document", validate)
         monkeypatch.setattr(service, "_process_import_pipeline", pipeline)
 
@@ -357,7 +358,7 @@ class TestPublicImportEntryPoint:
         result = service.import_and_anonymize(pdf_path, CENTER_NAME, retry=True)
 
         # Assert
-        assert result is None
+        assert result is report
         validate.assert_called_once_with(pdf_path)
 
     def test_txt_conversion_is_cleaned_when_pipeline_fails(
@@ -443,7 +444,11 @@ class TestFailureFinalization:
         )
 
         # Act
-        service._finalize_owned_failure(context, fence)
+        if finalize_error is not None:
+            with pytest.raises(RuntimeError, match="database unavailable"):
+                service._finalize_owned_failure(context, fence)
+        else:
+            service._finalize_owned_failure(context, fence)
 
         # Assert
         finalize.assert_called_once_with(context)
@@ -844,7 +849,7 @@ def test_invalid_runtime_or_superseded_import_cannot_create_or_reset_report(
     monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
     monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
     monkeypatch.setattr(report_import_module, "finalize_failure", reset)
-    monkeypatch.setattr(report_import_module, "safe_cleanup_staging_file", Mock())
+    monkeypatch.setattr(report_import_module, "cleanup_staging_files", Mock())
     guards: list[object] = [nullcontext()] * (rejected_mutation - 1)
     guards.append(StaleReportImportAttemptError("replaced owner"))
     monkeypatch.setattr(

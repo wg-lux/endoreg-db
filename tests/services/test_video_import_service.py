@@ -1376,6 +1376,7 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     tmp_path: Path,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
+    from endoreg_db.utils.file_operations import atomic_write_file
 
     monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
 
@@ -1385,6 +1386,9 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
 
     events: list[tuple[object, ...]] = []
     sensitive_path = tmp_path / "managed" / "sensitive_videos" / source_path.name
+    canonical_raw = tmp_path / "canonical" / "video-hash.mp4"
+    atomic_write_file(destination=canonical_raw, content=[b"canonical"])
+    _allow_staging_cleanup_roots(monkeypatch, sensitive_path.parent)
 
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
@@ -1406,8 +1410,7 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         ctx: ImportContext,
     ) -> Path:
         events.append(("create_sensitive_copy", Path(src)))
-        sensitive_path.parent.mkdir(parents=True, exist_ok=True)
-        sensitive_path.write_bytes(src.read_bytes())
+        atomic_write_file(destination=sensitive_path, content=[src.read_bytes()])
         return sensitive_path
 
     class DummyVideo:
@@ -1421,11 +1424,11 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
             return self.state
 
         def get_raw_file_path(self) -> Path:
-            return sensitive_path
+            return canonical_raw
 
         @property
         def raw_file(self) -> Path:
-            return sensitive_path
+            return canonical_raw
 
     def fake_create_or_retrieve(ctx: ImportContext) -> tuple[DummyVideo, bool, bool]:
         events.append(("create_or_retrieve", ctx.file_hash))
@@ -1457,6 +1460,10 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     assert events[1][0] == "hash_lock_enter"
     assert events[2] == ("create_sensitive_copy", source_path)
     assert events[3][0] == "create_or_retrieve"
+
+    assert canonical_raw.read_bytes() == b"canonical"
+    assert source_path.exists()
+    assert not sensitive_path.exists()
 
 
 @pytest.mark.unit
@@ -1591,8 +1598,14 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
 
     hls_ready_calls: list[int] = []
 
-    def ensure_hls_ready(video: VideoFile, *, force: bool = False) -> None:
+    def ensure_hls_ready(
+        video: VideoFile,
+        *,
+        force: bool = False,
+        execution_guard: Callable[[], None] | None = None,
+    ) -> None:
         assert force is False
+        assert execution_guard is None
         hls_ready_calls.append(int(video.pk))
 
     monkeypatch.setattr(

@@ -186,7 +186,10 @@ class ReportHistoryContextTests(TestCase):
             patient=self.patient, date_start=date(2026, 1, 1)
         )
         for is_real_person, center in ((True, self.center), (False, None)):
-            with self.subTest(is_real_person=is_real_person, center=center):
+            with self.subTest(
+                is_real_person=is_real_person,
+                center_id=center.pk if center is not None else None,
+            ):
                 self.patient.is_real_person = is_real_person
                 self.patient.center = center
                 self.patient.save(update_fields=["is_real_person", "center"])

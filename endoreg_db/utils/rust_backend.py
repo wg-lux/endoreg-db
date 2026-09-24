@@ -5,6 +5,11 @@ from importlib import import_module
 from pathlib import Path
 from typing import Callable, Literal, Protocol, Sequence, cast
 
+from endoreg_db.config.secret_keyring import configured_master_keys
+
+# Native header values have already passed the shared format validator.
+type ParsedEncryptedHeader = tuple[int, str, int, bytes, bytes, bytes]
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,6 +21,7 @@ class NativeBatchProcessor(Protocol):
         self,
         paths: list[Path],
         chunk_size: int = 1024 * 1024,
+        master_keys: list[bytes] = ...,
     ) -> list[tuple[int, int, str]]: ...
 
 
@@ -28,12 +34,15 @@ _parse_extracted_frame_numbers: Callable[[list[str]], list[int]] | None
 _build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | None
 _build_frame_records: Callable[..., list[tuple[int, str]]] | None
 _render_single_page_pdf: Callable[[str], bytes] | None
-_stable_file_identity: Callable[[Path, int], tuple[int, int, str]] | None
+_stable_file_identity: Callable[[Path, int, list[bytes]], tuple[int, int, str]] | None
+_parse_encrypted_header: Callable[[bytes], ParsedEncryptedHeader] | None
 _native_capabilities: Callable[[], list[tuple[str, str, str]]] | None
 _encryption_status: Callable[[Path], str] | None
-_is_lx_encrypted_file: Callable[[Path], bool] | None
 _decrypt_encrypted_file_range: Callable[[Path, bytes, int, int], bytes] | None
 _copy_file_descriptor_to_path: Callable[[int, Path, int], int] | None
+_anonymization_status_rules: (
+    Callable[[bool], list[tuple[str, list[tuple[str, bool]]]]] | None
+)
 _derive_anonymization_status: (
     Callable[[bool, bool, bool, bool, bool, bool, bool], str] | None
 )
@@ -66,6 +75,9 @@ try:
         rust_backend, "parse_extracted_frame_numbers", None
     )
     _render_single_page_pdf = getattr(rust_backend, "render_single_page_pdf", None)
+    _anonymization_status_rules = getattr(
+        rust_backend, "anonymization_status_rules", None
+    )
     _derive_anonymization_status = getattr(
         rust_backend, "derive_anonymization_status", None
     )
@@ -100,9 +112,9 @@ try:
         rust_backend, "normalize_frame_sampling_strategy_token", None
     )
     _stable_file_identity = getattr(rust_backend, "stable_file_identity", None)
+    _parse_encrypted_header = getattr(rust_backend, "parse_encrypted_header", None)
     _native_capabilities = getattr(rust_backend, "native_capabilities", None)
     _encryption_status = getattr(rust_backend, "encryption_status", None)
-    _is_lx_encrypted_file = getattr(rust_backend, "is_lx_encrypted_file", None)
     _decrypt_encrypted_file_range = getattr(
         rust_backend,
         "decrypt_encrypted_file_range",
@@ -124,11 +136,12 @@ except Exception as exc:
     _parse_extracted_frame_numbers = None
     _render_single_page_pdf = None
     _stable_file_identity = None
+    _parse_encrypted_header = None
     _native_capabilities = None
     _encryption_status = None
-    _is_lx_encrypted_file = None
     _decrypt_encrypted_file_range = None
     _copy_file_descriptor_to_path = None
+    _anonymization_status_rules = None
     _derive_anonymization_status = None
     _derive_report_anonymization_status = None
     _derive_hls_reservation_action = None
@@ -187,9 +200,10 @@ def stable_file_identity(
     """Return a stable native file snapshot, or ``None`` without native support."""
     if _stable_file_identity is None:
         return None
+    ring = configured_master_keys()
     try:
         size_bytes, modified_time_ns, sha256 = _stable_file_identity(
-            Path(path), chunk_size
+            Path(path), chunk_size, list(ring.readers) if ring is not None else []
         )
     except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(
@@ -220,11 +234,13 @@ def stable_file_identities(
             "sequential file-identity path."
         )
         return None
+    ring = configured_master_keys()
     try:
         processor = _batch_processor_factory(worker_count)
         rows = processor.stable_file_identities(
             [Path(path) for path in paths],
             chunk_size,
+            list(ring.readers) if ring is not None else [],
         )
     except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
         raise RuntimeError(f"Rust batch stable file identity failed: {exc}") from exc
@@ -234,27 +250,30 @@ def stable_file_identities(
     )
 
 
-def encryption_status(path: Path) -> str | None:
-    if _encryption_status is None:
-        return None
-    try:
-        status = _encryption_status(Path(path))
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning("Rust encryption_status failed, falling back to Python: %s", exc)
-        return None
-    return status if status in {"encrypted", "plaintext"} else None
-
-
-def is_lx_encrypted_file(path: Path) -> bool | None:
-    if _is_lx_encrypted_file is None:
-        return None
-    try:
-        return bool(_is_lx_encrypted_file(Path(path)))
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust is_lx_encrypted_file failed, falling back to Python: %s", exc
+def parse_encrypted_header(data: bytes) -> ParsedEncryptedHeader:
+    if _parse_encrypted_header is None:
+        raise RuntimeError(
+            "Rust parse_encrypted_header is required for encrypted media"
         )
-        return None
+    return _parse_encrypted_header(data)
+
+
+def encryption_status(path: Path) -> Literal["encrypted", "plaintext"]:
+    """Probe the format through Rust; unreadable is never treated as plaintext."""
+    if _encryption_status is None:
+        raise RuntimeError(
+            "Rust encryption_status is required for encrypted media probes"
+        )
+    status = _encryption_status(path)
+    if status == "encrypted":
+        return "encrypted"
+    if status == "plaintext":
+        return "plaintext"
+    raise ValueError("Rust encryption_status returned an unsupported status")
+
+
+def is_lx_encrypted_file(path: Path) -> bool:
+    return encryption_status(path) == "encrypted"
 
 
 def decrypt_encrypted_file_range(
@@ -369,6 +388,14 @@ def build_expected_frame_records(
         return None
 
 
+def anonymization_status_rules(
+    *, report: bool
+) -> list[tuple[str, list[tuple[str, bool]]]]:
+    if _anonymization_status_rules is None:
+        raise RuntimeError("Rust anonymization status rules are unavailable.")
+    return _anonymization_status_rules(report)
+
+
 def derive_anonymization_status(
     *,
     processing_error: bool,
@@ -378,25 +405,18 @@ def derive_anonymization_status(
     anonymized: bool,
     was_created: bool,
     processing_started: bool,
-) -> str | None:
+) -> str:
     if _derive_anonymization_status is None:
-        return None
-    try:
-        return _derive_anonymization_status(
-            processing_error,
-            anonymization_validated,
-            sensitive_meta_processed,
-            frames_extracted,
-            anonymized,
-            was_created,
-            processing_started,
-        )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust derive_anonymization_status failed, falling back to Python: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError("Rust derive_anonymization_status is unavailable.")
+    return _derive_anonymization_status(
+        processing_error,
+        anonymization_validated,
+        sensitive_meta_processed,
+        frames_extracted,
+        anonymized,
+        was_created,
+        processing_started,
+    )
 
 
 def derive_report_anonymization_status(
@@ -406,23 +426,16 @@ def derive_report_anonymization_status(
     sensitive_meta_processed: bool,
     anonymized: bool,
     processing_started: bool,
-) -> str | None:
+) -> str:
     if _derive_report_anonymization_status is None:
-        return None
-    try:
-        return _derive_report_anonymization_status(
-            processing_error,
-            anonymization_validated,
-            sensitive_meta_processed,
-            anonymized,
-            processing_started,
-        )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust derive_report_anonymization_status failed, falling back to Python: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError("Rust derive_report_anonymization_status is unavailable.")
+    return _derive_report_anonymization_status(
+        processing_error,
+        anonymization_validated,
+        sensitive_meta_processed,
+        anonymized,
+        processing_started,
+    )
 
 
 HlsReservationAction = Literal[

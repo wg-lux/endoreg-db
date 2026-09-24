@@ -47,7 +47,7 @@ Generate the distribution packages.
 ```bash
 make pypi-clean
 make pypi-build-check
-.devenv/state/venv/bin/twine check dist/*
+twine check dist/*
 
 ```
 

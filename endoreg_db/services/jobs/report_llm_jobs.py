@@ -593,8 +593,6 @@ def _run_report_llm_import_job(job_id: str) -> bool:
                 center_name=center.name,
                 retry=config.retry,
             )
-        if not isinstance(report, RawPdfFile):
-            raise RuntimeError("Report import completed without a RawPdfFile result.")
         typed_report = cast(_RawPdfLike, report)
         processed_file_sha256 = require_usable_completed_report(
             report,

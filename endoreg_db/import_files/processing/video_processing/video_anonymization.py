@@ -808,8 +808,7 @@ class VideoAnonymizer:
             temp_result_path,
         )
 
-        if ctx.execution_guard is not None:
-            ctx.execution_guard()
+        ctx.require_execution_ownership()
         self._persist_anonymizer_metadata(ctx, extracted_metadata)
         return ctx
 

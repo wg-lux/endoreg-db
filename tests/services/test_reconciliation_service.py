@@ -80,44 +80,6 @@ class _DummyVideo:
             self.saved.append(tuple(update_fields))
 
 
-class _VideoFileRef:
-    raw_video_hash: str
-    pk: int
-
-    def __init__(self, raw_video_hash: str, pk: int = 11) -> None:
-        self.raw_video_hash = raw_video_hash
-        self.pk = pk
-
-
-class _PdfFileRef:
-    pdf_hash: str
-    pk: int
-
-    def __init__(self, pdf_hash: str, pk: int = 22) -> None:
-        self.pdf_hash = pdf_hash
-        self.pk = pk
-
-
-class _DummyVideoState:
-    video_file: _VideoFileRef
-
-    def __init__(self, raw_video_hash: str) -> None:
-        self.video_file = _VideoFileRef(raw_video_hash)
-
-    def mark_processing_not_started(self) -> None:
-        return None
-
-
-class _DummyPdfState:
-    raw_pdf_file: _PdfFileRef
-
-    def __init__(self, pdf_hash: str) -> None:
-        self.raw_pdf_file = _PdfFileRef(pdf_hash)
-
-    def mark_processing_not_started(self) -> None:
-        return None
-
-
 class _FakeAtomic:
     def __enter__(self) -> "_FakeAtomic":
         return self
@@ -807,38 +769,27 @@ def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
     assert matches == {"target": [good]}
 
 
-@pytest.mark.unit
+@pytest.mark.django_db
 def test_reconciliation_retains_incomplete_states_without_generation_link(
-    monkeypatch: MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    from endoreg_db.models.state.video import VideoState
+    from endoreg_db.models.state.raw_pdf import RawPdfState
 
-    events: list[tuple[str, str]] = []
-
-    class DummyVideoState(_DummyVideoState):
-        def mark_processing_not_started(self) -> None:
-            events.append(("video_reset", self.video_file.raw_video_hash))
-
-    class DummyPdfState(_DummyPdfState):
-        def mark_processing_not_started(self) -> None:
-            events.append(("pdf_reset", self.raw_pdf_file.pdf_hash))
-
-    monkeypatch.setattr(
-        reconciliation_module.VideoState,
-        "objects",
-        _FakeManager([DummyVideoState("video-1")]),
-        raising=True,
+    video = VideoState.objects.create(processing_started=True, was_created=False)
+    report = RawPdfState.objects.create(processing_started=True)
+    failed_report = RawPdfState.objects.create(
+        processing_error=True, processing_started=True
     )
-    monkeypatch.setattr(
-        reconciliation_module.RawPdfState,
-        "objects",
-        _FakeManager([DummyPdfState("pdf-1")]),
-        raising=True,
+    before = (list(VideoState.objects.values()), list(RawPdfState.objects.values()))
+    assert ReconciliationService().reset_incomplete_processing_states() == 0
+    assert before == (
+        list(VideoState.objects.values()),
+        list(RawPdfState.objects.values()),
     )
-    reset = ReconciliationService().reset_incomplete_processing_states()
-
-    assert reset == 0
-    assert events == []
+    assert f"state_id={video.pk} status=started" in caplog.text
+    assert f"state_id={report.pk} status=processing_anonymization" in caplog.text
+    assert f"state_id={failed_report.pk} status=failed" not in caplog.text
 
 
 @pytest.mark.django_db

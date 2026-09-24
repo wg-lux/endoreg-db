@@ -68,9 +68,6 @@ with stage_lifecycle(
         center_name=job.center_name,
         retry=job.retry,
     )
-    if report is None:
-        raise RuntimeError("Report import completed without a persisted RawPdfFile.")
-
     published_content_sha256 = str(report.pdf_hash or "")
     if not published_content_sha256:
         raise RuntimeError("Report import completed without a content hash.")

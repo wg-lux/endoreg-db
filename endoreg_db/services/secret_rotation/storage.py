@@ -20,7 +20,7 @@ from endoreg_db.services.media_operation_gate import (
     video_artifact_publication,
 )
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage, LazyEncryptedStorage
-from endoreg_db.utils.encryption.encryption import MAGIC
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.encryption.rotation import rotate_encrypted_file
 from endoreg_db.utils.paths import protected_media_root
 from endoreg_db.utils.structured_logging import emit_structured_event, path_reference
@@ -111,8 +111,7 @@ def rotate_storage(
             continue
         report.scanned += 1
         try:
-            with path.open("rb") as source:
-                encrypted = source.read(len(MAGIC)) == MAGIC
+            encrypted = is_lx_encrypted_file(path)
             if not encrypted:
                 report.outside_application_encryption += 1
                 continue

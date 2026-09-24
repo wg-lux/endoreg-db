@@ -614,8 +614,13 @@ def seeded_base_db_data(
 
 
 @pytest.fixture(scope="function")
-def base_db_data(seeded_base_db_data: bool) -> bool:
-    return seeded_base_db_data
+def base_db_data(
+    seeded_base_db_data: bool,
+    db: object,
+    cache: CacheManager,
+) -> bool:
+    """Restore seed data after transaction tests have flushed the database."""
+    return _load_base_db_data_impl(cache)
 
 
 # ==========================================

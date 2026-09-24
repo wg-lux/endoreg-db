@@ -85,7 +85,9 @@ def test_stable_file_identity_normalizes_native_values(
     test_file = tmp_path / "video.mp4"
     test_file.write_bytes(b"video")
 
-    def native_identity(path: Path, chunk_size: int) -> tuple[int, int, str]:
+    def native_identity(
+        path: Path, chunk_size: int, master_keys: list[bytes]
+    ) -> tuple[int, int, str]:
         return 5, 123, "a" * 64
 
     monkeypatch.setattr(
@@ -110,7 +112,9 @@ def test_stable_file_identity_fails_loudly_on_native_error(
     test_file = tmp_path / "video.mp4"
     test_file.write_bytes(b"video")
 
-    def raise_changed_file(path: Path, chunk_size: int) -> NoReturn:
+    def raise_changed_file(
+        path: Path, chunk_size: int, master_keys: list[bytes]
+    ) -> NoReturn:
         raise OSError("file changed")
 
     monkeypatch.setattr(
@@ -141,6 +145,7 @@ def test_batch_stable_file_identities_use_bounded_processor(
             self,
             paths: list[Path],
             chunk_size: int,
+            master_keys: list[bytes],
         ) -> list[tuple[int, int, str]]:
             assert paths == [first, second]
             assert chunk_size == 4096
@@ -176,6 +181,7 @@ def test_batch_stable_file_identities_fails_loudly_on_native_error(
             self,
             paths: list[Path],
             chunk_size: int,
+            master_keys: list[bytes],
         ) -> list[tuple[int, int, str]]:
             raise OSError("source changed")
 

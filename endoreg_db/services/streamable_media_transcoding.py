@@ -12,7 +12,7 @@ from endoreg_db.services.streamable_media_types import (
     StreamableTranscodeProfile,
 )
 from endoreg_db.utils import ffmpeg_wrapper
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.utils.encryption.encryption import MAGIC
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
@@ -20,13 +20,12 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
+# Compatibility export; file-format probes are implemented exclusively in Rust.
+LX_ENCRYPTED_MAGIC = MAGIC
+
 
 def is_encrypted_file(path: Path) -> bool:
-    rust_result = is_lx_encrypted_file(path)
-    if rust_result is not None:
-        return rust_result
-    with path.open("rb") as handle:
-        return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+    return is_lx_encrypted_file(path)
 
 
 def _first_atom_offset(path: Path, atom: bytes, *, scan_bytes: int = 64 * 1024) -> int:

@@ -21,8 +21,11 @@ def _audio_only_stream_info(path: Path) -> dict[str, list[dict[str, str]]]:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("denied", [False, True])
 def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_fields(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    denied: bool,
 ) -> None:
     center = Center.objects.create(
         name="state-storage-center",
@@ -55,6 +58,17 @@ def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_f
     )
     ctx.current_video = video
 
+    if denied:
+
+        def deny(*args: object, **kwargs: object) -> NoReturn:
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(state_management, "safe_unlink_file", deny)
+        with pytest.raises(PermissionError):
+            state_management.delete_associated_files(ctx)
+        video.refresh_from_db()
+        assert video.raw_streamable_relative_path and raw_stream.exists()
+        return
     state_management.delete_associated_files(ctx)
 
     video.refresh_from_db()
@@ -252,3 +266,153 @@ def test_verify_final_video_output_rejects_missing_or_non_video_stream(
                 raising=True,
             )
             state_management._verify_final_video_output(existing)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("report", [False, True])
+def test_import_failure_and_owned_retry_share_state_contract(
+    tmp_path: Path, report: bool
+) -> None:
+    from django.core.files.base import ContentFile
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    from endoreg_db.models.state.anonymization import AnonymizationState
+    from endoreg_db.utils.file_operations import atomic_write_file
+
+    center = Center.objects.create(name="import-state-contract")
+    source = tmp_path / ("source.pdf" if report else "source.mp4")
+    atomic_write_file(destination=source, content=[b"source"])
+    instance = (
+        RawPdfFile.objects.create(center=center, pdf_hash="a" * 64)
+        if report
+        else VideoFile.objects.create(center=center, raw_video_hash="a" * 64)
+    )
+    if isinstance(instance, VideoFile):
+        instance.raw_file.save("source.mp4", ContentFile(b"source"))
+    state = instance.get_or_create_state()
+    state.anonymization_validated = True
+    state.sensitive_meta_processed = True
+    state.anonymized = True
+    state.save()
+    ctx = ImportContext(
+        file_path=source,
+        original_path=source,
+        file_hash="a" * 64,
+        center_name=center.name,
+        file_type="report" if report else "video",
+        retry=True,
+    )
+    if isinstance(instance, RawPdfFile):
+        ctx.current_report = instance
+    else:
+        ctx.current_video = instance
+    state_management.finalize_failure(ctx, preserve_existing_video_artifacts=True)
+    state.refresh_from_db()
+    assert state.anonymization_status == AnonymizationState.FAILED
+    assert not state.processing_started
+    state_management.mark_instance_processing_started(instance, ctx)
+    state.refresh_from_db()
+    assert state.processing_started and not state.processing_error
+    assert not state.anonymization_validated and not state.sensitive_meta_processed
+    assert state.anonymization_status in (
+        AnonymizationState.STARTED,
+        AnonymizationState.PROCESSING_ANONYMIZING,
+    )
+
+
+@pytest.mark.django_db
+def test_failure_state_save_error_propagates_before_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from endoreg_db.models.state.video import VideoState
+    from endoreg_db.models.state.processing_history.processing_history import (
+        ProcessingHistory,
+    )
+
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="failure-save"), raw_video_hash="b" * 64
+    )
+    video.get_or_create_state()
+    ctx = ImportContext(
+        file_path=tmp_path / "source.mp4",
+        file_hash="b" * 64,
+        center_name=video.center.name,
+        file_type="video",
+        current_video=video,
+    )
+
+    def reject_save(self: VideoState, *, save: bool = True) -> None:
+        raise RuntimeError("state persistence unavailable")
+
+    monkeypatch.setattr(VideoState, "mark_processing_failed", reject_save)
+    monkeypatch.setattr(
+        state_management, "delete_associated_files", _deny_nuke_transcoding_dir
+    )
+    with pytest.raises(RuntimeError, match="state persistence unavailable"):
+        state_management.finalize_failure(ctx)
+    assert not ProcessingHistory.objects.filter(file_hash="b" * 64).exists()
+
+
+@pytest.mark.parametrize("unsaved", [False, True])
+def test_video_finalization_rejects_invalid_instance(
+    tmp_path: Path, unsaved: bool
+) -> None:
+    ctx = ImportContext(
+        file_path=tmp_path / "source.mp4", center_name="finalization", file_type="video"
+    )
+    if unsaved:
+        ctx.current_video = VideoFile()
+    with pytest.raises(RuntimeError, match="Cannot finalize video import"):
+        state_management.finalize_video_success(ctx)
+
+
+@pytest.mark.parametrize("failure", ["unlink", "outside", "symlink"])
+def test_failed_staging_cleanup_retains_context_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from endoreg_db.import_files.file_storage import cleanup
+    from endoreg_db.utils.file_operations import atomic_write_file
+
+    path = tmp_path / "staging.pdf"
+    atomic_write_file(destination=path, content=[b"staging"])
+    ctx = ImportContext(file_path=path, center_name="test", file_type="report")
+    ctx.anonymized_path = ctx.sensitive_path = path
+    monkeypatch.setattr(
+        cleanup,
+        "staging_cleanup_roots",
+        lambda: () if failure == "outside" else (tmp_path,),
+    )
+    if failure == "unlink":
+
+        def deny(*args: object, **kwargs: object) -> NoReturn:
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(cleanup, "safe_unlink_file", deny)
+    elif failure == "symlink":
+
+        def is_symlink(candidate: Path) -> bool:
+            return candidate == path
+
+        monkeypatch.setattr(Path, "is_symlink", is_symlink)
+    with pytest.raises((OSError, cleanup.StagingCleanupError)):
+        state_management.delete_associated_files(ctx)
+    assert ctx.anonymized_path == ctx.sensitive_path == path
+    assert path.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("rollback", [False, True])
+def test_staging_cleanup_waits_for_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, rollback: bool
+) -> None:
+    from django.db import transaction
+    from endoreg_db.import_files.file_storage import cleanup
+    from endoreg_db.utils.file_operations import atomic_write_file
+
+    path = tmp_path / "staging.pdf"
+    atomic_write_file(destination=path, content=[b"staging"])
+    monkeypatch.setattr(cleanup, "staging_cleanup_roots", lambda: (tmp_path,))
+    with transaction.atomic():
+        cleanup.cleanup_staging_after_commit((path, path, None), label="test")
+        assert path.exists()
+        transaction.set_rollback(rollback)
+    assert path.exists() is rollback

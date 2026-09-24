@@ -377,7 +377,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
         patch.object(state_management, "_store_existing_final_file", side_effect=store),
         patch.object(state_management, "ensure_video_hls", side_effect=ensure_hls),
         patch.object(state_management, "_record_successful_video_processing_history"),
-        patch.object(state_management, "safe_cleanup_staging_file"),
+        patch.object(state_management, "cleanup_staging_after_commit"),
         patch.object(
             state_management,
             "schedule_processed_generation_cleanup",

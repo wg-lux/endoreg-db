@@ -87,11 +87,12 @@ definition_of_done:
     - kind: test
       reference: '2026-09-15, codex-api-overview-20260914: project-venv pytest -q tests/migrations/test_canonical_graph.py
         => 1 passed in 43.20s, one existing pytest plugin warning. The expected endpoint now comes from
-        max_migration.txt (0081_video_optimized_playback), independently of the loaded graph. Exactly one
-        matching leaf, no conflicts and no unapplied migrations remain required. Focused Pyright and Ruff passed.'
+        max_migration.txt (0081_video_optimized_playback), independently of the loaded graph. Exactly
+        one matching leaf, no conflicts and no unapplied migrations remain required. Focused Pyright and
+        Ruff passed.'
     note: The declared endpoint in max_migration.txt is the only conflict-free Endoreg leaf; an isolated
-      fresh SQLite installation applies the complete graph with no unapplied migrations. Numbered
-      migration files were not modified by the assertion correction.
+      fresh SQLite installation applies the complete graph with no unapplied migrations. Numbered migration
+      files were not modified by the assertion correction.
     assessed_by: codex-state-machine-tracker
     assessed_at: '2026-09-02T15:09:26.442727Z'
 - id: fresh_install
@@ -99,6 +100,8 @@ definition_of_done:
   title: A fresh database can apply the canonical migration graph
   acceptance:
   - The canonical graph applies from zero without application-owned migration modules.
+  - Der Subprozess initialisiert seine isolierten Runtime-Verzeichnisse über get_runtime_paths vor dem
+    Django-Startup; Startup- und Migrationsfehler bleiben mit stderr sichtbar.
   required: true
   verification:
     kind: command
@@ -125,12 +128,22 @@ definition_of_done:
       reference: '.devenv/state/venv/bin/pytest -q tests/migrations/test_canonical_graph.py: 1 passed
         in 52.30s'
     - kind: test
-      reference: '2026-09-15, codex-api-overview-20260914: isolated fresh-install test through
-        0081_video_optimized_playback passed in 43.20s with no conflicts or unapplied migrations.'
-    note: An isolated fresh SQLite installation applied the complete Endoreg migration graph through
-      0081_video_optimized_playback without conflicts; no unapplied migrations remained.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:09:56.011434Z'
+      reference: '2026-09-15, codex-api-overview-20260914: isolated fresh-install test through 0081_video_optimized_playback
+        passed in 43.20s with no conflicts or unapplied migrations.'
+    - kind: test
+      reference: 'SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true .devenv/state/venv/bin/pytest
+        tests/environment/test_base_db_data.py tests/models/metadata/file_import/test_create_report_file.py
+        tests/services/test_preanonymized_external_identity.py tests/services/test_report_history.py tests/services/test_report_import_concurrency.py
+        tests/views/report/test_pdf_redaction.py tests/views/media/test_pdf_media_text_visibility.py tests/migrations/test_canonical_graph.py
+        -q -n 2 --dist=loadscope --tb=short: 37 passed, 9 subtests passed, 7 warnings in 94.08s.'
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 6 bestehende Warnungen.'
+    note: Neuinstallation mit isolierter SQLite-Datenbank und eigenem Runtime-Root erfolgreich. Verzeichnisse
+      werden vor django.setup über get_runtime_paths initialisiert; stderr bleibt bei Fehlern sichtbar.
+      Deklarierter Leaf, Konfliktfreiheit, vollständig angewendete Migrationen und entfernte optimized_playback-Spalten
+      geprüft. Keine nummerierte Migration verändert.
+    assessed_by: codex-tests-20260924-a
+    assessed_at: '2026-09-24T09:23:45.438160Z'
 - id: safe_boundary
   category: security
   title: Migration verification does not weaken storage or cryptographic boundaries
@@ -186,7 +199,8 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/migrations/0076_operation_ownership_ledgers.py; endoreg_db/migrations/max_migration.txt
     note: max_migration.txt and the source graph have been advanced to 0076; a new publishable wheel and
-      source-distribution artifact containing this leaf was not built in this task and remains a release gate.
+      source-distribution artifact containing this leaf was not built in this task and remains a release
+      gate.
     assessed_by: codex-state-machine-tracker
     assessed_at: '2026-09-02T15:10:06.260607Z'
 - id: cross_repository_guidance
@@ -203,12 +217,12 @@ definition_of_done:
     status: verified
     evidence:
     - kind: document
-      reference: /dev/lx-annotate/feature-tracking/CanonicalMigrationCutover.yml assigns the
-        consuming application its historical/canonical cutover checks
+      reference: /dev/lx-annotate/feature-tracking/CanonicalMigrationCutover.yml assigns the consuming
+        application its historical/canonical cutover checks
     - kind: document
-      reference: /dev/lx-annotate/docs/guides/deployment-strategy.md states that installed
-        endoreg_db owns the shipped canonical migrations while lx-annotate owns runtime history repair
-        and deployment gating
+      reference: /dev/lx-annotate/docs/guides/deployment-strategy.md states that installed endoreg_db
+        owns the shipped canonical migrations while lx-annotate owns runtime history repair and deployment
+        gating
     note: Dependency and consuming-application ownership are explicitly separated in both trackers and
       the deployment guide.
     assessed_by: codex-release-readiness

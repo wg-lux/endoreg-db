@@ -15,7 +15,6 @@ from endoreg_db.utils.paths import (
     get_runtime_paths,
     resolve_existing_protected_media_path,
 )
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.file_operations import safe_unlink_file
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import delete_field_file
@@ -45,15 +44,8 @@ def streamable_path_is_safe_plaintext(path: Path) -> bool:
         )
         return False
 
-    rust_result = is_lx_encrypted_file(path)
     try:
-        if rust_result is None:
-            with path.open("rb") as handle:
-                starts_with_magic = (
-                    handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-                )
-        else:
-            starts_with_magic = rust_result
+        starts_with_magic = is_lx_encrypted_file(path)
     except OSError as exc:
         logger.warning(
             "Refusing unreadable streamable video artifact: path=%s error=%s",

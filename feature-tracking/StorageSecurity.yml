@@ -21,6 +21,10 @@ definition_of_done:
   category: requirements
   title: Schutz- und Storagevertrag ist über endoreg_db, lx-annotate und LuxNix einheitlich
   acceptance:
+  - Python-, native Range- und native Hashleser verwenden denselben strikten Headervertrag; ungültige
+    Typen, Längen, Nonces sowie abgeschnittene und inkonsistente Chunks werden abgewiesen.
+  - Dateiformat-Probes verwenden ausschließlich den Rust-Magic-Header-Probe über einen typisierten Python-Adapter;
+    fehlendes Backend und Lesefehler werden nicht als Klartext oder Python-Fallback behandelt.
   - Video, Bericht, Sidecar, Manifest und temporäres Artefakt haben einen eindeutigen Schutzmodus.
   - Operatorseitiges encryption-off ist kein unterstützter Produktionszustand.
   - storage_mode verwendet ausschließlich typisierte, exhaustive Routingentscheidungen.
@@ -32,8 +36,37 @@ definition_of_done:
     instructions: Cross-Repository-Vertrag gegen Settings, Storage-Backends und Deploymentprofile prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/environment/test_secret_resolution.py; tests/rust_backend/test_encryption_status.py;
+        rust/endoreg_rust_backend/src/encryption_state.rs
+    - kind: test
+      reference: tests/rust_backend/test_encrypted_contract.py; tests/environment/test_secret_resolution.py
+        (zweite Secret-Runde, gemeinsame native Header- und Schlüsselverträge)
+    note: '2026-09-24: Einheitlicher Rust-Magic-Header-Probe ohne Python-Fallback; gemeinsame private
+      Dateileser und Validatoren für Salz, Master-Keys und Django-Signaturschlüssel. Health-Fingerprint
+      verwendet den geladenen Schlüssel. Radon load_keyring 22 -> 10, load_identity_salt 11 -> 7. Vollständiger
+      Pyright-Lauf: 0 Fehler, 6 bestehende Warnungen. Integrationslane: 133 bestanden; abschließende Native-/Import-/Range-Lane:
+      39 bestanden; jeweils 3 Warnungen. Zwei Rust-Unit-Tests bestanden mit explizitem libpython-Link.
+      Ruff, cargo fmt und git diff --check bestanden. Native Keyring-/24-Byte-Schlüssel-Divergenz und
+      Headerparser-Unterschiede bleiben in docs/secret_rotation.yml dokumentiert. Keine Produktionsfreigabe.
+
+      2026-09-24, zweite Secret-Runde: Gemeinsamer Rust-Headervertrag für Python-, Range- und Hashleser;
+      native Einzel-/Batch-Hashleser erhalten einen validierten aktiven/auslaufenden Schlüssel-Snapshot
+      und laden keine Secrets selbst. 16/24/32-Byte-Schlüssel, Header-Typen und Größen, abgeschnittene
+      Chunk-Längen, kurze Reads sowie leere verschlüsselte Dateien geprüft. Leere Salt-Snapshots bleiben
+      stabil; mehrdeutige YAML-Felder und coercierte Kontrollwerte werden abgewiesen; kein Ersatz-Signaturschlüssel
+      in Produktionssettings unter pytest. Master-Key-Auflösung Radon B/6 -> A/1, gemeinsamer Resolver
+      A/5; Chunk-Index A/5 -> A/4. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen. Cargo: 19
+      Tests bestanden mit explizitem libpython-Link. Python-Integration über 17 Dateien: 228 bestanden,
+      1 übersprungen, 3 Warnungen in 82.63 Sekunden. Der PostgreSQL-Advisory-Lock-Test wurde unter SQLite
+      übersprungen; daraus folgt kein PostgreSQL-Parallelitätsnachweis. Ruff, cargo fmt, git diff --check
+      und Tracker-Validierung bestanden. Keine Produktionsdaten oder Deployments geändert. LXENC01 benötigt
+      gegen den Verlust vollständiger letzter Chunks weiterhin einen unabhängigen Soll-Hash; Details in
+      docs/secret_rotation.yml. Produktionsabnahme und PostgreSQL-Nachweis bleiben erforderlich.'
+    assessed_by: codex-secret-reliability-20260924
+    assessed_at: '2026-09-24T09:26:04.932090Z'
 - id: encrypted_at_rest
   category: security
   title: Physischer Datenträgerzugriff ermöglicht keinen Klartextzugriff

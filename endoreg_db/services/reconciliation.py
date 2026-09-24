@@ -11,6 +11,10 @@ from django.db import OperationalError, ProgrammingError, transaction
 from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    anonymization_status_case,
+)
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.media_integrity import reconcile_media_integrity
@@ -248,24 +252,37 @@ class ReconciliationService:
         proved current in the same database transaction.
         """
 
-        video_states = VideoState.objects.select_related("video_file").filter(
-            processing_started=True,
-            sensitive_meta_processed=False,
+        active_statuses = (
+            AnonymizationState.STARTED,
+            AnonymizationState.EXTRACTING_FRAMES,
+            AnonymizationState.PROCESSING_ANONYMIZING,
+        )
+        video_states = (
+            VideoState.objects.select_related("video_file")
+            .annotate(
+                import_status=anonymization_status_case(),
+            )
+            .filter(import_status__in=active_statuses)
         )
         for state in video_states:
             logger.warning(
-                "Retaining incomplete video processing state for fenced recovery: %s",
-                getattr(getattr(state, "video_file", None), "raw_video_hash", None),
+                "Retaining incomplete video processing state for fenced recovery: state_id=%s status=%s",
+                state.pk,
+                state.anonymization_status.value,
             )
 
-        pdf_states = RawPdfState.objects.select_related("raw_pdf_file").filter(
-            processing_started=True,
-            sensitive_meta_processed=False,
+        pdf_states = (
+            RawPdfState.objects.select_related("raw_pdf_file")
+            .annotate(
+                import_status=anonymization_status_case(report=True),
+            )
+            .filter(import_status__in=active_statuses)
         )
         for state in pdf_states:
             logger.warning(
-                "Retaining incomplete report processing state for fenced recovery: %s",
-                getattr(getattr(state, "raw_pdf_file", None), "pdf_hash", None),
+                "Retaining incomplete report processing state for fenced recovery: state_id=%s status=%s",
+                state.pk,
+                state.anonymization_status.value,
             )
         return 0
 

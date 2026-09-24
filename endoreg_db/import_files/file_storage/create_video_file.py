@@ -108,6 +108,7 @@ def _handle_failure_history(ctx: ImportContext, file_hash: str) -> None:
             file_hash,
         )
         return
+    ctx.retry = True
     finalize_failure(ctx)
 
 

@@ -10,7 +10,6 @@ from django.contrib.auth.models import AnonymousUser
 from django.db.models import (
     Avg,
     Case,
-    CharField,
     Count,
     F,
     Max,
@@ -18,8 +17,6 @@ from django.db.models import (
     Q,
     Sum,
     Subquery,
-    Value,
-    When,
     Window,
 )
 from django.db.models.query import QuerySet
@@ -48,7 +45,10 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    anonymization_status_case,
+)
 
 MediaType = Literal["video", "pdf"]
 ValidationMetricQuerySet = QuerySet[AnonymizationValidationMetric]
@@ -420,39 +420,10 @@ def _merge_status_counts(
 
 
 def _pdf_status_case() -> Case:
-    return Case(
-        When(
-            state__isnull=True,
-            then=Value(AnonymizationState.NOT_STARTED.value),
-        ),
-        When(
-            state__anonymization_validated=True,
-            then=Value(AnonymizationState.VALIDATED.value),
-        ),
-        When(
-            state__sensitive_meta_processed=True,
-            then=Value(AnonymizationState.DONE_PROCESSING_ANONYMIZATION.value),
-        ),
-        When(
-            state__processing_started=True,
-            state__processing_error=False,
-            state__anonymized=False,
-            then=Value(AnonymizationState.PROCESSING_ANONYMIZING.value),
-        ),
-        When(
-            state__processing_error=True,
-            then=Value(AnonymizationState.FAILED.value),
-        ),
-        When(
-            state__processing_started=True,
-            then=Value(AnonymizationState.STARTED.value),
-        ),
-        When(
-            state__anonymized=True,
-            then=Value(AnonymizationState.ANONYMIZED.value),
-        ),
-        default=Value(AnonymizationState.NOT_STARTED.value),
-        output_field=CharField(),
+    return anonymization_status_case(
+        report=True,
+        relation_prefix="state",
+        include_missing_relation=True,
     )
 
 

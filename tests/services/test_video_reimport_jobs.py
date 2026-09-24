@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,8 +43,9 @@ def _context_path(path: Path) -> Any:
     yield path
 
 
+@pytest.mark.parametrize("prediction_status", ["skipped", "not_queued", "failed"])
 def test_async_reimport_uses_in_place_reanonymization(
-    monkeypatch: MonkeyPatch, tmp_path: Path
+    monkeypatch: MonkeyPatch, tmp_path: Path, prediction_status: str
 ) -> None:
     import endoreg_db.services.jobs.video_reimport_jobs as module
 
@@ -109,7 +111,7 @@ def test_async_reimport_uses_in_place_reanonymization(
     def fake_run_prediction_refresh(
         *, video: object, config: object
     ) -> dict[str, object]:
-        return {"status": "skipped", "queued": False}
+        return {"status": prediction_status, "queued": False}
 
     def fake_regenerate_hls(target_video: object) -> dict[str, object]:
         hls_calls.append(target_video)
@@ -252,3 +254,68 @@ def test_async_reimport_fails_if_hls_regeneration_fails(
         module._run_video_reimport_job(1)  # pyright: ignore[reportPrivateUsage]
 
     assert ("mark_error", video, "hls regeneration failed") in events
+
+
+@pytest.mark.parametrize(
+    "failure,expected",
+    [
+        (ValueError("invalid prediction config"), "not_queued"),
+        (RuntimeError("broker unavailable"), "failed"),
+    ],
+)
+def test_prediction_failure_has_same_outcome_inline_and_worker(
+    monkeypatch: MonkeyPatch, failure: Exception, expected: str
+) -> None:
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.jobs import video_reimport_jobs as jobs
+    from endoreg_db.services.video_reimport_orchestrator import (
+        VideoReimportOrchestrator,
+    )
+
+    video = VideoFile(id=17, raw_video_hash="prediction-parity")
+
+    def fail_dispatch(video: VideoFile, payload: object) -> dict[str, object]:
+        raise failure
+
+    monkeypatch.setattr(jobs, "_dispatch_prediction_refresh", fail_dispatch)
+    config = jobs._config_from_payload({}, queue="pipeline")
+    worker = jobs._run_prediction_refresh(video=video, config=config)
+    inline = VideoReimportOrchestrator(
+        video=video, video_id=17, payload={}
+    )._maybe_dispatch_prediction_refresh()
+    assert (
+        inline == worker == {"status": expected, "queued": False, "error": str(failure)}
+    )
+
+
+@pytest.mark.parametrize(
+    "hls_status",
+    ["materialized", "already_ready", "ready", "queued", "materializing", "failed"],
+)
+def test_reimport_requires_ready_hls(monkeypatch: MonkeyPatch, hls_status: str) -> None:
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services import hls_media
+    from endoreg_db.services.jobs import video_reimport_jobs as jobs
+
+    result = hls_media.HlsMaterializationResult(
+        video_id=17,
+        artifact_kind="processed",
+        status=hls_status,
+        key_id="",
+        playlist_relative_path="",
+        segment_directory_relative_path="",
+        segment_count=0,
+    )
+
+    def materialize(
+        *args: object, **kwargs: object
+    ) -> hls_media.HlsMaterializationResult:
+        return result
+
+    monkeypatch.setattr(hls_media, "materialize_video_hls", materialize)
+    video = VideoFile(id=17)
+    if hls_status in {"materialized", "already_ready"}:
+        assert jobs._regenerate_reimport_hls_artifacts(video)["status"] == hls_status
+    else:
+        with pytest.raises(RuntimeError, match="HLS is not ready"):
+            jobs._regenerate_reimport_hls_artifacts(video)

@@ -41,7 +41,9 @@ settings.configure(
 )
 
 import django
+from endoreg_db.utils.paths import get_runtime_paths
 
+get_runtime_paths().ensure_directories()
 django.setup()
 
 from django.core.management import call_command
@@ -69,14 +71,16 @@ print(json.dumps({"conflicts": conflicts, "leaf_names": leaf_names, "unapplied":
 """
     result = subprocess.run(
         [sys.executable, "-c", script],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         env={
             **os.environ,
             "CANONICAL_MIGRATION_TEST_DB": str(database_path),
+            "LX_RUNTIME_ROOT": str(tmp_path / "runtime"),
         },
     )
+    assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout.strip().splitlines()[-1])
 
     assert payload == {

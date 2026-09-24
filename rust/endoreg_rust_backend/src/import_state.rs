@@ -38,81 +38,99 @@ struct AnonymizationStateFlags {
     processing_started: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ReportAnonymizationStateFlags {
-    processing_error: bool,
-    anonymization_validated: bool,
-    sensitive_meta_processed: bool,
-    anonymized: bool,
-    processing_started: bool,
+#[derive(Clone, Copy)]
+enum Flag {
+    ProcessingError,
+    AnonymizationValidated,
+    SensitiveMetaProcessed,
+    FramesExtracted,
+    Anonymized,
+    WasCreated,
+    ProcessingStarted,
 }
 
-fn resolve_anonymization_status(state: AnonymizationStateFlags) -> AnonymizationStatus {
-    match state {
-        AnonymizationStateFlags {
-            processing_error: true,
-            ..
-        } => AnonymizationStatus::Failed,
-        AnonymizationStateFlags {
-            anonymization_validated: true,
-            ..
-        } => AnonymizationStatus::Validated,
-        AnonymizationStateFlags {
-            sensitive_meta_processed: true,
-            ..
-        } => AnonymizationStatus::DoneProcessingAnonymization,
-        AnonymizationStateFlags {
-            frames_extracted: true,
-            anonymized: false,
-            ..
-        } => AnonymizationStatus::ProcessingAnonymization,
-        AnonymizationStateFlags {
-            was_created: true,
-            frames_extracted: false,
-            ..
-        } => AnonymizationStatus::ExtractingFrames,
-        AnonymizationStateFlags {
-            processing_started: true,
-            ..
-        } => AnonymizationStatus::Started,
-        AnonymizationStateFlags {
-            anonymized: true, ..
-        } => AnonymizationStatus::Anonymized,
-        _ => AnonymizationStatus::NotStarted,
-    }
+use Flag::*;
+type StatusRule = (AnonymizationStatus, &'static [(Flag, bool)]);
+const FLAG_NAMES: [&str; 7] = [
+    "processing_error",
+    "anonymization_validated",
+    "sensitive_meta_processed",
+    "frames_extracted",
+    "anonymized",
+    "was_created",
+    "processing_started",
+];
+const COMMON_RULES: &[StatusRule] = &[
+    (AnonymizationStatus::Failed, &[(ProcessingError, true)]),
+    (
+        AnonymizationStatus::Validated,
+        &[(AnonymizationValidated, true)],
+    ),
+    (
+        AnonymizationStatus::DoneProcessingAnonymization,
+        &[(SensitiveMetaProcessed, true)],
+    ),
+];
+const VIDEO_RULES: &[StatusRule] = &[
+    (
+        AnonymizationStatus::ProcessingAnonymization,
+        &[(FramesExtracted, true), (Anonymized, false)],
+    ),
+    (
+        AnonymizationStatus::ExtractingFrames,
+        &[(WasCreated, true), (FramesExtracted, false)],
+    ),
+];
+const REPORT_RULES: &[StatusRule] = &[(
+    AnonymizationStatus::ProcessingAnonymization,
+    &[(ProcessingStarted, true), (Anonymized, false)],
+)];
+const FINAL_RULES: &[StatusRule] = &[
+    (AnonymizationStatus::Started, &[(ProcessingStarted, true)]),
+    (AnonymizationStatus::Anonymized, &[(Anonymized, true)]),
+];
+
+fn rules(report: bool) -> impl Iterator<Item = &'static StatusRule> {
+    COMMON_RULES
+        .iter()
+        .chain(if report { REPORT_RULES } else { VIDEO_RULES })
+        .chain(FINAL_RULES)
 }
 
-fn resolve_report_anonymization_status(
-    state: ReportAnonymizationStateFlags,
-) -> AnonymizationStatus {
-    match state {
-        ReportAnonymizationStateFlags {
-            processing_error: true,
-            ..
-        } => AnonymizationStatus::Failed,
-        ReportAnonymizationStateFlags {
-            anonymization_validated: true,
-            ..
-        } => AnonymizationStatus::Validated,
-        ReportAnonymizationStateFlags {
-            sensitive_meta_processed: true,
-            ..
-        } => AnonymizationStatus::DoneProcessingAnonymization,
-        ReportAnonymizationStateFlags {
-            processing_started: true,
-            processing_error: false,
-            anonymized: false,
-            ..
-        } => AnonymizationStatus::ProcessingAnonymization,
-        ReportAnonymizationStateFlags {
-            processing_started: true,
-            ..
-        } => AnonymizationStatus::Started,
-        ReportAnonymizationStateFlags {
-            anonymized: true, ..
-        } => AnonymizationStatus::Anonymized,
-        _ => AnonymizationStatus::NotStarted,
-    }
+fn resolve_status(state: AnonymizationStateFlags, report: bool) -> AnonymizationStatus {
+    rules(report)
+        .find(|(_, conditions)| {
+            conditions.iter().all(|&(flag, value)| {
+                let actual = match flag {
+                    ProcessingError => state.processing_error,
+                    AnonymizationValidated => state.anonymization_validated,
+                    SensitiveMetaProcessed => state.sensitive_meta_processed,
+                    FramesExtracted => state.frames_extracted,
+                    Anonymized => state.anonymized,
+                    WasCreated => state.was_created,
+                    ProcessingStarted => state.processing_started,
+                };
+                actual == value
+            })
+        })
+        .map_or(AnonymizationStatus::NotStarted, |&(status, _)| status)
+}
+
+#[pyfunction]
+pub(crate) fn anonymization_status_rules(
+    report: bool,
+) -> Vec<(&'static str, Vec<(&'static str, bool)>)> {
+    rules(report)
+        .map(|(status, conditions)| {
+            (
+                status.as_str(),
+                conditions
+                    .iter()
+                    .map(|&(flag, value)| (FLAG_NAMES[flag as usize], value))
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 #[pyfunction]
@@ -134,7 +152,7 @@ pub(crate) fn derive_anonymization_status(
         was_created,
         processing_started,
     };
-    resolve_anonymization_status(state).as_str()
+    resolve_status(state, false).as_str()
 }
 
 #[pyfunction]
@@ -145,22 +163,21 @@ pub(crate) fn derive_report_anonymization_status(
     anonymized: bool,
     processing_started: bool,
 ) -> &'static str {
-    let state = ReportAnonymizationStateFlags {
+    let state = AnonymizationStateFlags {
+        frames_extracted: false,
+        was_created: false,
         processing_error,
         anonymization_validated,
         sensitive_meta_processed,
         anonymized,
         processing_started,
     };
-    resolve_report_anonymization_status(state).as_str()
+    resolve_status(state, true).as_str()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        resolve_anonymization_status, resolve_report_anonymization_status, AnonymizationStateFlags,
-        AnonymizationStatus, ReportAnonymizationStateFlags,
-    };
+    use super::{resolve_status, AnonymizationStateFlags, AnonymizationStatus};
 
     const EMPTY_STATE: AnonymizationStateFlags = AnonymizationStateFlags {
         processing_error: false,
@@ -169,14 +186,6 @@ mod tests {
         frames_extracted: false,
         anonymized: false,
         was_created: false,
-        processing_started: false,
-    };
-
-    const EMPTY_REPORT_STATE: ReportAnonymizationStateFlags = ReportAnonymizationStateFlags {
-        processing_error: false,
-        anonymization_validated: false,
-        sensitive_meta_processed: false,
-        anonymized: false,
         processing_started: false,
     };
 
@@ -241,7 +250,7 @@ mod tests {
         ];
 
         for (state, expected_status) in cases {
-            assert_eq!(resolve_anonymization_status(state), expected_status);
+            assert_eq!(resolve_status(state, false), expected_status);
         }
     }
 
@@ -249,58 +258,58 @@ mod tests {
     fn resolves_report_anonymization_status_from_immutable_state_flags() {
         let cases = [
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     anonymization_validated: true,
                     processing_error: true,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::Failed,
             ),
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     sensitive_meta_processed: true,
                     processing_error: true,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::Failed,
             ),
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     processing_started: true,
                     anonymized: false,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::ProcessingAnonymization,
             ),
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     processing_started: true,
                     processing_error: true,
                     anonymized: false,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::Failed,
             ),
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     processing_started: true,
                     anonymized: true,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::Started,
             ),
             (
-                ReportAnonymizationStateFlags {
+                AnonymizationStateFlags {
                     anonymized: true,
-                    ..EMPTY_REPORT_STATE
+                    ..EMPTY_STATE
                 },
                 AnonymizationStatus::Anonymized,
             ),
-            (EMPTY_REPORT_STATE, AnonymizationStatus::NotStarted),
+            (EMPTY_STATE, AnonymizationStatus::NotStarted),
         ];
 
         for (state, expected_status) in cases {
-            assert_eq!(resolve_report_anonymization_status(state), expected_status);
+            assert_eq!(resolve_status(state, true), expected_status);
         }
     }
 }

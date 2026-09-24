@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.config.env import (
     FFMPEG_TRANSCODE_QUALITY_MODES,
     get_ffmpeg_transcode_quality_mode,
@@ -26,7 +27,11 @@ from endoreg_db.import_files.context.import_context import (
     SourceStreamData,
 )
 from endoreg_db.import_files.context.validate_directories import validate_directories
-from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.import_files.file_storage.cleanup import (
+    cleanup_duplicate_import_staging,
+    cleanup_staging_files,
+    StagingCleanupError,
+)
 from endoreg_db.import_files.file_storage.create_video_file import (
     create_or_retrieve_video_file,
 )
@@ -295,11 +300,6 @@ def _configured_reimport_transcode_quality_mode() -> str:
     return quality_mode
 
 
-def _require_execution_ownership(ctx: ImportContext) -> None:
-    if ctx.execution_guard is not None:
-        ctx.execution_guard()
-
-
 @contextmanager
 def cleanup_cancelled_import_staging(ctx: ImportContext) -> Generator[None]:
     from endoreg_db.services.hub.upload_job_cancellation import (
@@ -310,38 +310,14 @@ def cleanup_cancelled_import_staging(ctx: ImportContext) -> Generator[None]:
     try:
         yield
     except UploadJobImportCancelled:
-        staging_root = get_runtime_paths().transcoding
         try:
-            for candidate in (ctx.anonymized_path, ctx.sensitive_path):
-                if candidate is None:
-                    continue
-                if candidate.resolve() == ctx.file_path.resolve() or (
-                    ctx.original_path is not None
-                    and candidate.resolve() == ctx.original_path.resolve()
-                ):
-                    raise UploadJobCancellationCleanupFailed(
-                        "Cancellation staging overlaps its source"
-                    )
-                if candidate.is_symlink():
-                    raise UploadJobCancellationCleanupFailed(
-                        "Cancellation staging is a symbolic link"
-                    )
-                if not candidate.exists():
-                    continue
-                if not safe_cleanup_staging_file(
-                    candidate,
-                    label="cancelled video import staging",
-                    allowed_roots=(staging_root,),
-                    missing_ok=False,
-                ):
-                    raise UploadJobCancellationCleanupFailed(
-                        "Cancellation staging cleanup rejected"
-                    )
-                if candidate.exists():
-                    raise UploadJobCancellationCleanupFailed(
-                        "Cancellation staging remains after cleanup"
-                    )
-        except (OSError, UploadJobCancellationCleanupFailed) as exc:
+            cleanup_staging_files(
+                (ctx.anonymized_path, ctx.sensitive_path),
+                label="cancelled video import staging",
+                allowed_roots=(get_runtime_paths().transcoding,),
+                protected_paths=(ctx.file_path, ctx.original_path),
+            )
+        except (OSError, StagingCleanupError) as exc:
             raise UploadJobCancellationCleanupFailed(
                 "Video import staging cleanup failed"
             ) from exc
@@ -353,7 +329,7 @@ def _finalize_video_failure_if_owned(
     *,
     preserve_existing_video_artifacts: bool = False,
 ) -> None:
-    _require_execution_ownership(ctx)
+    ctx.require_execution_ownership()
     finalize_failure(
         ctx, preserve_existing_video_artifacts=preserve_existing_video_artifacts
     )
@@ -430,7 +406,7 @@ class VideoImportService:
         center_name: str,
         processor_name: str,
         retry: bool = False,
-    ) -> VideoFile | None:
+    ) -> VideoFile:
         return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
@@ -447,7 +423,7 @@ class VideoImportService:
         *,
         execution_fence: VideoImportExecutionFence,
         retry: bool = False,
-    ) -> VideoFile | None:
+    ) -> VideoFile:
         return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
@@ -464,7 +440,7 @@ class VideoImportService:
         processor_name: str,
         retry: bool,
         execution_fence: VideoImportExecutionFence | None,
-    ) -> VideoFile | None:
+    ) -> VideoFile:
         started_at = start_workload_timing()
         outcome_token = _video_import_outcome.set(WorkloadOutcome.FAILED)
         try:
@@ -477,6 +453,8 @@ class VideoImportService:
                 retry=retry,
                 execution_fence=execution_fence,
             )
+            if result is None:
+                raise RuntimeError("Video import returned no media instance.")
             if _video_import_outcome.get() is WorkloadOutcome.FAILED:
                 _set_video_import_outcome(WorkloadOutcome.COMPLETED)
             return result
@@ -498,6 +476,7 @@ class VideoImportService:
             finally:
                 _video_import_outcome.reset(outcome_token)
 
+    @profiled_function
     def _import_and_anonymize(
         self,
         *,
@@ -540,7 +519,7 @@ class VideoImportService:
                 if existing_video is not None:
                     if not retry:
                         ctx.current_video = existing_video
-                        _require_execution_ownership(ctx)
+                        ctx.require_execution_ownership()
                         self._ensure_duplicate_streaming(ctx, existing_video)
                         if existing_video.raw_file:
                             self._cleanup_duplicate_staging(ctx)
@@ -549,17 +528,17 @@ class VideoImportService:
                     require_reusable_video_raw_source(existing_video)
 
                 # 2. Stage sensitive copy & obtain VideoFile instance
-                _require_execution_ownership(ctx)
+                ctx.require_execution_ownership()
                 self._ensure_pipeline_storage_budget(ctx.file_path)
                 ctx.sensitive_path = create_sensitive_copy(
                     ctx.file_path, _sensitive_video_dir(), ctx
                 )
 
-                _require_execution_ownership(ctx)
+                ctx.require_execution_ownership()
                 ctx.current_video, _, needs_processing = create_or_retrieve_video_file(
                     ctx
                 )
-                _require_execution_ownership(ctx)
+                ctx.require_execution_ownership()
 
                 state = get_or_create_video_state(ctx.current_video)
                 current_video = cast(_LocalRawVideo, ctx.current_video)
@@ -572,7 +551,7 @@ class VideoImportService:
                     )
 
                 if not needs_processing and not retry:
-                    _require_execution_ownership(ctx)
+                    ctx.require_execution_ownership()
                     self._ensure_duplicate_streaming(ctx, ctx.current_video)
                     if ctx.current_video.raw_file:
                         self._cleanup_duplicate_staging(ctx)
@@ -581,7 +560,7 @@ class VideoImportService:
 
                 # 4. Anonymize, normalize, and finalize success
                 try:
-                    _require_execution_ownership(ctx)
+                    ctx.require_execution_ownership()
                     mark_instance_processing_started(ctx.current_video, ctx)
                     logger.info(
                         "Persisted video state as processing before anonymization: video=%s",
@@ -591,7 +570,7 @@ class VideoImportService:
                         ctx = self.anonymizer.anonymize_video(ctx)
                         _normalize_reimport_video_quality(ctx)
 
-                    _require_execution_ownership(ctx)
+                    ctx.require_execution_ownership()
                     logger.info(
                         "Video anonymization succeeded for content hash %s",
                         ctx.file_hash,
@@ -657,6 +636,7 @@ class VideoImportService:
             finally:
                 ctx.local_source_path = previous_local_source
 
+    @profiled_function
     def reanonymize_existing_video(
         self,
         video: VideoFile,
@@ -797,22 +777,4 @@ class VideoImportService:
             )
 
     def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
-        _require_execution_ownership(ctx)
-        safe_cleanup_staging_file(
-            ctx.sensitive_path,
-            label="duplicate video sensitive copy",
-            missing_ok=False,
-        )
-        original_path = (
-            ctx.original_path if isinstance(ctx.original_path, Path) else None
-        )
-        if (
-            isinstance(original_path, Path)
-            and original_path.parent.resolve() == _video_import_dir().resolve()
-        ):
-            _require_execution_ownership(ctx)
-            safe_cleanup_staging_file(
-                original_path,
-                label="duplicate video import source",
-                missing_ok=False,
-            )
+        cleanup_duplicate_import_staging(ctx, import_root=_video_import_dir())

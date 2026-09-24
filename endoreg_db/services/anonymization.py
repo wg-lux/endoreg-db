@@ -16,6 +16,7 @@ from lx_dtypes.models.contracts.anonymization import (
     dump_anonymization_status_payload,
 )
 
+from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
@@ -58,9 +59,7 @@ def _related_text(instance: object, relation_name: str, field_name: str) -> str 
 def _state_anonymization_status(state: object | None) -> str:
     if state is None:
         return "not_started"
-    return _required_text(
-        getattr(state, "anonymization_status", None), fallback="not_started"
-    )
+    return AnonymizationState(getattr(state, "anonymization_status")).value
 
 
 def _state_is_anonymized(state: object | None) -> bool:
@@ -185,7 +184,7 @@ class AnonymizationService:
                 return dump_anonymization_status_payload(
                     AnonymizationStatusPayload(
                         media_type="pdf",
-                        anonymization_status=str(anonymization_status),
+                        anonymization_status=anonymization_status,
                         file_exists=file_exists(pdf.file),
                         hash=_optional_text(getattr(pdf, "pdf_hash", None)),
                     )

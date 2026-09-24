@@ -101,8 +101,7 @@ def test_publication_preserves_previous_generation_across_failures(
         )
     elif failure == "cleanup":
         monkeypatch.setattr(
-            state_management,
-            "safe_cleanup_staging_file",
+            "endoreg_db.import_files.file_storage.cleanup.safe_cleanup_staging_file",
             Mock(side_effect=OSError("cleanup unavailable")),
         )
     elif failure == "history":

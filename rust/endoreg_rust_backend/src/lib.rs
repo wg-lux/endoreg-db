@@ -1,4 +1,5 @@
 mod capabilities;
+mod encrypted_format;
 mod encrypted_range;
 mod encryption_state;
 mod errors;
@@ -20,6 +21,10 @@ pub use stubs::stub_info;
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<file_identity::BatchProcessor>()?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::parse_encrypted_header,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
     module.add_function(wrap_pyfunction!(
         encryption_state::encryption_status,
@@ -61,6 +66,10 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     module.add_function(wrap_pyfunction!(frames::build_frame_records, module)?)?;
     module.add_function(wrap_pyfunction!(
         frames::build_expected_frame_records,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        import_state::anonymization_status_rules,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(

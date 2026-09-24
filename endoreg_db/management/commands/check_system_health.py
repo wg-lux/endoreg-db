@@ -73,12 +73,7 @@ class _UploadSourceCleanupStats(TypedDict):
 
 
 def _secret_key_fingerprint() -> str:
-    secret_key_file = os.environ.get("DJANGO_SECRET_KEY_FILE", "").strip()
-    if secret_key_file:
-        content = Path(secret_key_file).read_text(encoding="utf-8").strip()
-    else:
-        content = str(settings.SECRET_KEY)
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).hexdigest()
 
 
 def _path_within(root: Path, candidate: Path) -> bool:

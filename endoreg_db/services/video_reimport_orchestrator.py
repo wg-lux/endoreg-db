@@ -2,23 +2,22 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import cast
 
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
 from lx_dtypes.models.contracts.video_reimport import (
     VideoReimportRequestData,
-    video_reimport_json_safe_dict,
+    VideoReimportJsonValue,
 )
 from rest_framework import status
 
-from endoreg_db.models.administration.ai.ai_model import AiModel
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.jobs.video_reimport_jobs import (
-    _as_bool,
-    _dispatch_prediction_refresh,
+    _config_from_payload,
+    _run_prediction_refresh,
     dispatch_video_reimport,
     get_video_reimport_job_mode,
     _mark_upload_jobs_anonymized,
@@ -29,14 +28,12 @@ from endoreg_db.services.jobs.video_reimport_jobs import (
     _video_has_integrity_loss,
 )
 from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.services.video_temporal_inference import (
-    TemporalInferenceConfigError,
-)
+from endoreg_db.config.env import get_celery_ffmpeg_media_queue
 from endoreg_db.utils.storage import ensure_local_file
 
 logger = logging.getLogger(__name__)
 
-VideoReimportResponse = tuple[dict[str, Any], int]
+VideoReimportResponse = tuple[dict[str, VideoReimportJsonValue], int]
 
 
 def _video_hash(video: VideoFile) -> str:
@@ -118,6 +115,7 @@ class VideoReimportOrchestrator:
             return self._run_inline()
         return self._run_dispatched()
 
+    @profiled_function
     def _run_dispatched(self) -> VideoReimportResponse:
         try:
             dispatch_result = dispatch_video_reimport(
@@ -142,7 +140,7 @@ class VideoReimportOrchestrator:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        response_payload: dict[str, Any] = {
+        response_payload: dict[str, VideoReimportJsonValue] = {
             **dispatch_result.to_dict(),
             "video_id": self.video_id,
             "uuid": self.raw_video_hash,
@@ -209,6 +207,7 @@ class VideoReimportOrchestrator:
             status.HTTP_202_ACCEPTED,
         )
 
+    @profiled_function
     def _run_inline(self) -> VideoReimportResponse:
         try:
             logger.info(
@@ -359,46 +358,11 @@ class VideoReimportOrchestrator:
             )
         return reset_upload_jobs
 
-    def _maybe_dispatch_prediction_refresh(self) -> dict[str, Any]:
-        if not _as_bool(self.payload.get("refresh_predictions"), default=True):
-            return {
-                "status": "skipped",
-                "queued": False,
-                "reason": "disabled",
-            }
-
-        try:
-            return video_reimport_json_safe_dict(
-                _dispatch_prediction_refresh(self.video, dict(self.payload))
-            )
-        except (
-            AiModel.DoesNotExist,
-            ModelMeta.DoesNotExist,
-            TemporalInferenceConfigError,
-            ValueError,
-        ) as exc:
-            logger.warning(
-                "Video re-import completed but prediction refresh was not queued "
-                "for video %s: %s",
-                self.raw_video_hash,
-                exc,
-            )
-            return {
-                "status": "not_queued",
-                "queued": False,
-                "error": str(exc),
-            }
-        except Exception as exc:
-            logger.exception(
-                "Video re-import completed but prediction refresh dispatch failed "
-                "for video %s.",
-                self.raw_video_hash,
-            )
-            return {
-                "status": "failed",
-                "queued": False,
-                "error": str(exc),
-            }
+    def _maybe_dispatch_prediction_refresh(self) -> dict[str, VideoReimportJsonValue]:
+        config = _config_from_payload(
+            self.payload, queue=get_celery_ffmpeg_media_queue()
+        )
+        return _run_prediction_refresh(video=self.video, config=config)
 
 
 __all__ = ["VideoReimportOrchestrator", "VideoReimportResponse"]

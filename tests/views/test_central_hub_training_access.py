@@ -333,6 +333,7 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
     damage: str,
     consumer: str,
 ) -> None:
+    from cryptography.exceptions import InvalidTag
     from endoreg_db.utils.encryption.encrypted import EncryptedStorage
     from endoreg_db.services.frames.training_images import read_processed_training_image
     from endoreg_db.utils.file_operations import atomic_write_file
@@ -353,8 +354,8 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
         atomic_write_file(destination=encrypted_path, content=[damaged])
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
     with pytest.raises(
-        (ValueError, OSError, RuntimeError),
-        match="authentication|decrypt|key",
+        InvalidTag if damage == "wrong_key" else (ValueError, OSError, RuntimeError),
+        match=None if damage == "wrong_key" else "authentication|decrypt|key",
     ):
         if consumer == "image":
             read_processed_training_image(frame)

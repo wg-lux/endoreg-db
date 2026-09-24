@@ -89,9 +89,6 @@ with stage_lifecycle(
         processor_name=job.processor_name,
         retry=job.retry,
     )
-    if video is None:
-        raise RuntimeError("Video import completed without a persisted VideoFile.")
-
     published_content_sha256 = str(video.raw_video_hash or "")
     if not published_content_sha256:
         raise RuntimeError("Video import completed without a content hash.")

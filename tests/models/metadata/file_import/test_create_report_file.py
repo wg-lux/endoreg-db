@@ -1,9 +1,7 @@
-import shutil
 from pathlib import Path
 from typing import Protocol
 
 import pytest
-from pytest import MonkeyPatch
 
 # report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
@@ -11,6 +9,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
+from endoreg_db.services.report_import import ReportImportService
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -24,16 +23,6 @@ from endoreg_db.utils.file_operations import (
 class _MockStorageLayout(Protocol):
     storage: Path
     sensitive_report: Path
-
-
-@pytest.fixture(autouse=True)
-def cleanup_temp_files() -> object:
-    # Setup: do nothing
-    yield
-    # Teardown: Scan for any leftover .tmp files and delete them
-    # although tmp_path handles this, this is good for extra safety
-    for tmp_file in Path().glob("**/*.tmp.*"):
-        safe_unlink_file(tmp_file, missing_ok=True)
 
 
 def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Path]:
@@ -50,10 +39,10 @@ def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Pat
 
 
 def _write_minimal_pdf(path: Path) -> None:
-    """
-    Write a tiny valid-ish report (enough to be treated as a report file on disk).
-    """
-    content = b"%report-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
+    """Write a parseable report with the existing PDF renderer."""
+    content = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
+        "Report import fixture"
+    )
     ensure_directory(path.parent)
     atomic_write_file(
         destination=path,
@@ -164,7 +153,6 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
 def test_create_from_file_duplicate_with_existing_file(
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
-    monkeypatch: MonkeyPatch,
     base_db_data: object,
 ) -> None:
     """
@@ -224,7 +212,6 @@ def test_create_from_file_duplicate_with_existing_file(
 def test_create_from_file_duplicate_with_missing_file_short_circuits_when_success_history_exists(
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
-    monkeypatch: MonkeyPatch,
     base_db_data: object,
 ) -> None:
     """
@@ -285,30 +272,3 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
     assert needs_processing2 is False
     assert reused_report.pk == orphan_pk
     assert reused_report.get_raw_file_path() is None
-
-
-def test_check_storage_capacity_raises_on_insufficient_space(
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """
-    Unit-test check_storage_capacity in isolation by faking disk_usage.
-    """
-    src_file = tmp_path / "report.pdf"
-    _write_minimal_pdf(src_file)
-
-    class FakeUsage:
-        def __init__(self, free: int) -> None:
-            self.total = 10 * 1024
-            self.used = 0
-            self.free = free
-
-    def fake_disk_usage(path: str | Path) -> FakeUsage:
-        return FakeUsage(free=100)
-
-    monkeypatch.setattr(
-        shutil,
-        "disk_usage",
-        fake_disk_usage,
-        raising=True,
-    )

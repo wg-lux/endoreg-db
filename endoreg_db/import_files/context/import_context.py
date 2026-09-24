@@ -87,13 +87,13 @@ class ImportContext(BaseModel):
     anonymized_path: Path | None = None
     storage_normalization_evidence: VideoStorageNormalizationEvidence | None = None
     attempt_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    execution_guard: SkipValidation[Callable[[], None] | None] = Field(
+    execution_guard: Callable[[], None] | None = Field(
         default=None,
         exclude=True,
     )
-    mutation_guard: SkipValidation[
-        Callable[[], AbstractContextManager[None]] | None
-    ] = Field(default=None, exclude=True)
+    mutation_guard: Callable[[], AbstractContextManager[None]] | None = Field(
+        default=None, exclude=True
+    )
 
     current_report: SkipValidation[RawPdfFile | None] = None
     current_video: SkipValidation[VideoFile | None] = None
@@ -107,6 +107,12 @@ class ImportContext(BaseModel):
     original_text: str | None = None
     anonymized_text: str | None = None
     extracted_metadata: LxSensitiveMeta = Field(default_factory=LxSensitiveMeta)
+
+    def require_execution_ownership(self) -> None:
+        """Reject a superseded attempt before an import side effect."""
+        guard = self.execution_guard
+        if guard is not None:
+            guard()
 
     @model_validator(mode="after")
     def _validate_file_type_matches_path(self) -> Self:

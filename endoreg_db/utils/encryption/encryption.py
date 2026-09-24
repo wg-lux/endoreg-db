@@ -6,13 +6,15 @@ import json
 import os
 import struct
 from dataclasses import dataclass
-from pathlib import Path
 from typing import BinaryIO, Iterator
 from collections.abc import Buffer
 from cryptography.exceptions import InvalidTag
+from endoreg_db.utils.rust_backend import parse_encrypted_header
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from endoreg_db.config.secret_keyring import configured_master_keyring
+from endoreg_db.config.secret_keyring import (
+    configured_master_keys,
+)
 
 MAGIC = b"LXENC01\n"
 HEADER_LENGTH_STRUCT = struct.Struct(">I")
@@ -41,45 +43,18 @@ def _b64encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii")
 
 
-def _b64decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value.encode("ascii"))
-
-
-def _read_key_from_file(path: str) -> str:
-    return Path(path).read_text(encoding="utf-8").strip()
+def load_master_read_keys() -> tuple[bytes, ...]:
+    try:
+        ring = configured_master_keys()
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from None
+    if ring is None:
+        raise RuntimeError("A configured master key is required for encrypted storage")
+    return ring.readers
 
 
 def load_master_key() -> bytes:
-    ring = configured_master_keyring()
-    if ring is not None:
-        return ring.active
-    key_text = os.getenv("LX_ANNOTATE_MASTER_KEY", "").strip()
-    key_file = os.getenv("LX_ANNOTATE_MASTER_KEY_FILE", "").strip()
-    if not key_text and key_file:
-        key_text = _read_key_from_file(key_file)
-    if not key_text:
-        raise RuntimeError(
-            "LX_ANNOTATE_MASTER_KEY or LX_ANNOTATE_MASTER_KEY_FILE must be set when "
-            "encrypted storage is enabled."
-        )
-
-    try:
-        key_bytes = _b64decode(key_text)
-    except Exception as exc:
-        raise RuntimeError(
-            "LX_ANNOTATE_MASTER_KEY must be urlsafe-base64 encoded raw key material."
-        ) from exc
-
-    if len(key_bytes) not in {16, 24, 32}:
-        raise RuntimeError(
-            "LX_ANNOTATE_MASTER_KEY must decode to 16, 24, or 32 bytes for AES-GCM."
-        )
-    return key_bytes
-
-
-def load_master_read_keys() -> tuple[bytes, ...]:
-    ring = configured_master_keyring()
-    return ring.readers if ring is not None else (load_master_key(),)
+    return load_master_read_keys()[0]
 
 
 def decrypt_wrapped_key(nonce: bytes, ciphertext: bytes, aad: bytes) -> bytes:
@@ -112,9 +87,16 @@ class EncryptedFileHeader:
     nonce_prefix: bytes
 
     def __post_init__(self) -> None:
-        if self.version != 1 or self.algorithm != "AESGCM-chunked-v1":
+        if (
+            type(self.version) is not int
+            or self.version != 1
+            or self.algorithm != "AESGCM-chunked-v1"
+        ):
             raise ValueError("Unsupported encrypted file header version or algorithm")
-        if not 0 < self.chunk_size <= MAX_CHUNK_SIZE:
+        if (
+            type(self.chunk_size) is not int
+            or not 0 < self.chunk_size <= MAX_CHUNK_SIZE
+        ):
             raise ValueError(
                 "Encrypted chunk size exceeds the bounded streaming contract"
             )
@@ -140,14 +122,11 @@ class EncryptedFileHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "EncryptedFileHeader":
-        payload = json.loads(data.decode("utf-8"))
+        version, algorithm, chunk_size, wrapped_dek, wrap_nonce, nonce_prefix = (
+            parse_encrypted_header(data)
+        )
         return cls(
-            version=int(payload["version"]),
-            algorithm=str(payload["algorithm"]),
-            chunk_size=int(payload["chunk_size"]),
-            wrapped_dek=_b64decode(payload["wrapped_dek"]),
-            wrap_nonce=_b64decode(payload["wrap_nonce"]),
-            nonce_prefix=_b64decode(payload["nonce_prefix"]),
+            version, algorithm, chunk_size, wrapped_dek, wrap_nonce, nonce_prefix
         )
 
 
@@ -203,17 +182,28 @@ def write_header(stream: BinaryIO, header: EncryptedFileHeader) -> bytes:
     return encoded
 
 
+def _read_up_to(source: BinaryIO, size: int) -> bytes:
+    """Fill bounded records even when a stream returns short reads."""
+    parts = bytearray()
+    while len(parts) < size:
+        chunk = source.read(size - len(parts))
+        if not chunk:
+            break
+        parts.extend(chunk)
+    return bytes(parts)
+
+
 def read_header(stream: BinaryIO) -> tuple[EncryptedFileHeader, bytes]:
-    magic = stream.read(len(MAGIC))
+    magic = _read_up_to(stream, len(MAGIC))
     if magic != MAGIC:
         raise ValueError("Unsupported encrypted file format")
-    header_length_bytes = stream.read(HEADER_LENGTH_STRUCT.size)
+    header_length_bytes = _read_up_to(stream, HEADER_LENGTH_STRUCT.size)
     if len(header_length_bytes) != HEADER_LENGTH_STRUCT.size:
         raise ValueError("Encrypted file header length is truncated")
     (header_length,) = HEADER_LENGTH_STRUCT.unpack(header_length_bytes)
     if not 0 < header_length <= MAX_HEADER_SIZE:
         raise ValueError("Encrypted file header exceeds its size limit")
-    encoded = stream.read(header_length)
+    encoded = _read_up_to(stream, header_length)
     if len(encoded) != header_length:
         raise ValueError("Encrypted file header is truncated")
     return EncryptedFileHeader.from_bytes(encoded), encoded
@@ -234,7 +224,7 @@ def encrypt_stream(
     counter = 0
 
     while True:
-        chunk = source.read(chunk_size)
+        chunk = _read_up_to(source, chunk_size)
         if not chunk:
             break
         nonce = header.nonce_prefix + counter.to_bytes(CHUNK_COUNTER_SIZE, "big")
@@ -256,17 +246,19 @@ def iter_decrypted_chunks(
     dek = unwrap_file_dek(header, master_key)
     cipher = AESGCM(dek)
     counter = 0
+    final_chunk_seen = False
 
     while True:
-        chunk_length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
+        chunk_length_bytes = _read_up_to(source, CHUNK_LENGTH_STRUCT.size)
         if not chunk_length_bytes:
             return
         if len(chunk_length_bytes) != CHUNK_LENGTH_STRUCT.size:
             raise ValueError("Encrypted chunk length is truncated")
         (chunk_length,) = CHUNK_LENGTH_STRUCT.unpack(chunk_length_bytes)
-        if not 16 < chunk_length <= header.chunk_size + 16:
+        if final_chunk_seen or not 16 < chunk_length <= header.chunk_size + 16:
             raise ValueError("Encrypted chunk length exceeds its declared size")
-        ciphertext = source.read(chunk_length)
+        final_chunk_seen = chunk_length < header.chunk_size + 16
+        ciphertext = _read_up_to(source, chunk_length)
         if len(ciphertext) != chunk_length:
             raise ValueError("Encrypted chunk payload is truncated")
         nonce = header.nonce_prefix + counter.to_bytes(CHUNK_COUNTER_SIZE, "big")
@@ -277,34 +269,32 @@ def iter_decrypted_chunks(
 def build_chunk_index(
     source: BinaryIO,
 ) -> tuple[EncryptedFileHeader, bytes, list[EncryptedChunkIndexEntry], int]:
-    header, header_bytes = read_header(source)
+    layout = inspect_encrypted_file_layout(source)
+    header = layout.header
     index: list[EncryptedChunkIndexEntry] = []
-    plaintext_offset = 0
-    counter = 0
-
-    while True:
-        chunk_length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
-        if not chunk_length_bytes:
-            return header, header_bytes, index, plaintext_offset
-        if len(chunk_length_bytes) != CHUNK_LENGTH_STRUCT.size:
+    full_record_size = CHUNK_LENGTH_STRUCT.size + header.chunk_size + 16
+    for counter in range(layout.chunk_count):
+        plaintext_offset = counter * header.chunk_size
+        plaintext_length = min(
+            header.chunk_size, layout.plaintext_size - plaintext_offset
+        )
+        source.seek(layout.data_offset + counter * full_record_size)
+        length = _read_up_to(source, CHUNK_LENGTH_STRUCT.size)
+        if len(length) != CHUNK_LENGTH_STRUCT.size:
             raise ValueError("Encrypted chunk length is truncated")
-        (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(chunk_length_bytes)
-        ciphertext_offset = source.tell()
-        plaintext_length = ciphertext_length - 16  # AES-GCM tag length
-        if plaintext_length < 0:
-            raise ValueError("Encrypted chunk payload is invalid")
+        (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(length)
+        if ciphertext_length != plaintext_length + 16:
+            raise ValueError("Encrypted chunk length does not match chunk geometry")
         index.append(
             EncryptedChunkIndexEntry(
-                counter=counter,
-                ciphertext_offset=ciphertext_offset,
-                ciphertext_length=ciphertext_length,
-                plaintext_offset=plaintext_offset,
-                plaintext_length=plaintext_length,
+                counter,
+                source.tell(),
+                ciphertext_length,
+                plaintext_offset,
+                plaintext_length,
             )
         )
-        source.seek(ciphertext_length, io.SEEK_CUR)
-        plaintext_offset += plaintext_length
-        counter += 1
+    return header, layout.header_bytes, index, layout.plaintext_size
 
 
 def inspect_encrypted_file_layout(source: BinaryIO) -> EncryptedFileLayout:
@@ -337,11 +327,11 @@ def inspect_encrypted_file_layout(source: BinaryIO) -> EncryptedFileLayout:
 
     if final_record_size:
         minimum_record_size = CHUNK_LENGTH_STRUCT.size + authentication_tag_size
-        if final_record_size < minimum_record_size:
+        if final_record_size <= minimum_record_size:
             raise ValueError("Encrypted final chunk record is truncated")
         final_record_offset = data_offset + full_chunk_count * full_record_size
         source.seek(final_record_offset)
-        length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
+        length_bytes = _read_up_to(source, CHUNK_LENGTH_STRUCT.size)
         if len(length_bytes) != CHUNK_LENGTH_STRUCT.size:
             raise ValueError("Encrypted final chunk length is truncated")
         (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(length_bytes)
@@ -404,13 +394,13 @@ def iter_decrypted_byte_range(
         expected_ciphertext_length = plaintext_length + authentication_tag_size
         record_offset = file_layout.data_offset + counter * full_record_size
         source.seek(record_offset)
-        length_bytes = source.read(CHUNK_LENGTH_STRUCT.size)
+        length_bytes = _read_up_to(source, CHUNK_LENGTH_STRUCT.size)
         if len(length_bytes) != CHUNK_LENGTH_STRUCT.size:
             raise ValueError("Encrypted chunk length is truncated")
         (ciphertext_length,) = CHUNK_LENGTH_STRUCT.unpack(length_bytes)
         if ciphertext_length != expected_ciphertext_length:
             raise ValueError("Encrypted chunk length does not match chunk geometry")
-        ciphertext = source.read(ciphertext_length)
+        ciphertext = _read_up_to(source, ciphertext_length)
         if len(ciphertext) != ciphertext_length:
             raise ValueError("Encrypted chunk payload is truncated")
         nonce = header.nonce_prefix + counter.to_bytes(CHUNK_COUNTER_SIZE, "big")

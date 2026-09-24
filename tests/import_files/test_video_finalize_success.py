@@ -8,6 +8,7 @@ from typing import NoReturn, cast
 
 import pytest
 from pytest import MonkeyPatch
+from django.test import TestCase
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.state_management import finalize_video_success
@@ -425,7 +426,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         return {"streams": [{"codec_type": "video"}]}
 
     def fake_staging_cleanup_roots() -> tuple[Path, ...]:
-        return (sensitive_dir,)
+        return (sensitive_dir, temp_anonymized.parent)
 
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
@@ -505,7 +506,8 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     ctx.anonymized_path = temp_anonymized
     ctx.storage_normalization_evidence = _normalization_evidence()
 
-    finalize_video_success(ctx)
+    with TestCase.captureOnCommitCallbacks(execute=True):
+        finalize_video_success(ctx)
 
     final_anonymized = _runtime_storage_root() / video.processed_file.name
     assert final_anonymized.parent == anonym_dir

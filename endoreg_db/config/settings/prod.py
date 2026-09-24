@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
 from endoreg_db.config.identity_hashing import load_identity_salt
-from endoreg_db.config.secret_keyring import configured_signing_keys, read_private_file
+from endoreg_db.config.secret_keyring import (
+    configured_signing_keys,
+)
 
 from .base import *  # noqa: F401,F403
 from .base import (
@@ -46,23 +48,9 @@ if WATCHER_CELERY_INLINE_FALLBACK_ENABLED:
     )
 
 _signing_keys = configured_signing_keys()
-_secret_key_file = env_str("DJANGO_SECRET_KEY_FILE")
-_secret_key = (
-    _signing_keys[0]
-    if _signing_keys is not None
-    else read_private_file(Path(_secret_key_file), limit=4096).decode("utf-8").strip()
-    if _secret_key_file
-    else env_str("DJANGO_SECRET_KEY")
-)
-if not _secret_key:
-    if pytest_active:
-        _secret_key = "test-secret-key"
-    else:
-        raise ValueError(
-            "DJANGO_SECRET_KEY environment variable must be set in production"
-        )
-SECRET_KEY = _secret_key
-SECRET_KEY_FALLBACKS = _signing_keys[1] if _signing_keys is not None else []
+if _signing_keys is None:
+    raise ValueError("A configured Django signing key is required in production")
+SECRET_KEY, SECRET_KEY_FALLBACKS = _signing_keys
 
 _allowed_hosts = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 if not _allowed_hosts:

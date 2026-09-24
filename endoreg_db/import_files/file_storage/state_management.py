@@ -1,11 +1,12 @@
 import logging
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.utils.storage.files import canonical_media_name
 import os
 import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Literal
 
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
@@ -13,7 +14,10 @@ from lx_dtypes.models.contracts.media_streaming import validate_ffmpeg_stream_in
 from endoreg_db.config.env import get_ffmpeg_transcode_timeout_seconds
 
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.import_files.file_storage.cleanup import (
+    cleanup_staging_files,
+    cleanup_staging_after_commit,
+)
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -28,6 +32,7 @@ from endoreg_db.services.hls_media import (
 )
 from endoreg_db.services.hub.media_integrity import (
     has_verified_processed_video_transfer,
+    require_reusable_video_raw_source,
 )
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_processed_report_artifact,
@@ -59,31 +64,6 @@ from endoreg_db.utils.storage import save_local_file
 logger = logging.getLogger(__name__)
 
 
-class _ProcessableState(Protocol):
-    processing_started: bool
-
-    def mark_processing_started(self) -> None: ...
-
-    def mark_processing_not_started(self) -> None: ...
-
-    def mark_processing_failed(self) -> None: ...
-
-    def mark_anonymized(self) -> None: ...
-
-    def mark_sensitive_meta_processed(self) -> None: ...
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _StatefulImportInstance(Protocol):
-    pk: int
-    state: RawPdfState | VideoState | None
-
-    def get_or_create_state(self) -> RawPdfState | VideoState: ...
-
-    def save(self, *args: object, **kwargs: object) -> None: ...
-
-
 def _processed_report_dir() -> Path:
     return get_runtime_paths().anonym_report
 
@@ -104,15 +84,9 @@ def _verify_final_video_output(path: Path) -> None:
         raise RuntimeError(f"Final anonymized video has no video stream: {path}")
 
 
-def _require_execution_ownership(ctx: ImportContext) -> None:
-    """Reject a superseded import attempt at a durable publication boundary."""
-    if ctx.execution_guard is not None:
-        ctx.execution_guard()
-
-
 def _record_successful_video_processing_history(ctx: ImportContext) -> None:
     """Persist the success receipt while the current attempt still owns execution."""
-    _require_execution_ownership(ctx)
+    ctx.require_execution_ownership()
     with transaction.atomic():
         if not isinstance(ctx.file_hash, str):
             ctx.file_hash = get_file_hash(ctx.file_path)
@@ -254,36 +228,32 @@ def ensure_processed_video_hls(
 
 def _ensure_instance_state(
     instance: VideoFile | RawPdfFile,
-) -> RawPdfState | VideoState | None:
-    """
-    Helper: ensure instance.state exists and return it.
-    Mirrors PdfImportService._ensure_state.
-    """
-    stateful_instance = cast(_StatefulImportInstance, instance)
-    state = stateful_instance.state
-
-    if state is not None:
-        return state
-
-    state = stateful_instance.get_or_create_state()
-    stateful_instance.save()
-    return state
+) -> RawPdfState | VideoState:
+    return instance.get_or_create_state()
 
 
 def mark_instance_processing_started(
     instance: RawPdfFile | VideoFile,
     ctx: ImportContext,
 ) -> None:
-    state = _ensure_instance_state(instance)
-
+    ctx.require_execution_ownership()
     with transaction.atomic():
-        if state is not None:
-            processable_state = cast(_ProcessableState, state)
-            # In the old code, processing_started was set earlier; we guard here
-            if not processable_state.processing_started:
-                processable_state.mark_processing_started()
+        state = _ensure_instance_state(instance)
+        if (
+            isinstance(instance, VideoFile)
+            and instance.meta is not None
+            and instance.meta.get("integrity_status") == "lost"
+        ):
+            raise RuntimeError("Video is marked lost and cannot be re-imported.")
+        if ctx.retry:
+            if isinstance(instance, VideoFile):
+                require_reusable_video_raw_source(instance)
+            state.processing_error = False
+            state.mark_processing_not_started()
+        state.mark_processing_started()
 
 
+@profiled_function
 def finalize_report_success(
     ctx: ImportContext,
 ) -> None:
@@ -343,16 +313,9 @@ def finalize_report_success(
             ProcessingHistory.get_or_create_for_hash(
                 obj=instance, file_hash=ctx.file_hash, success=True
             )
-            staging_paths = (src, ctx.sensitive_path)
-
-            def cleanup_committed_staging() -> None:
-                for path in staging_paths:
-                    safe_cleanup_staging_file(
-                        path, label="committed report staging output", missing_ok=True
-                    )
-
-            # Cleanup failure must not turn committed publication into failure.
-            transaction.on_commit(cleanup_committed_staging, robust=True)
+            cleanup_staging_after_commit(
+                (src, ctx.sensitive_path), label="committed report staging output"
+            )
     except Exception:
         instance.processed_file.name = previous_name
         raise
@@ -364,20 +327,19 @@ def finalize_video_success(
     """Validate and publish one versioned processed-video generation."""
     instance = ctx.current_video
     if not isinstance(instance, VideoFile):
-        logger.warning("finalize_video_success called with non-VideoFile instance")
-        return
+        raise RuntimeError("Cannot finalize video import without a VideoFile instance.")
     if not instance.pk:
-        logger.warning("finalize_video_success called with unsaved instance")
-        return
+        raise RuntimeError("Cannot finalize video import with an unsaved VideoFile.")
 
     from endoreg_db.services.media_operation_gate import video_artifact_mutation
 
     with video_artifact_mutation(video_id=int(instance.pk)):
-        _require_execution_ownership(ctx)
+        ctx.require_execution_ownership()
         reconcile_previous_processed_cleanup(instance)
         _finalize_video_success_owned(ctx, instance)
 
 
+@profiled_function
 def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> None:
     if ctx.anonymized_path is None:
         raise RuntimeError(
@@ -411,7 +373,7 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
     cleanup_pending = False
 
     try:
-        _require_execution_ownership(ctx)
+        ctx.require_execution_ownership()
         saved_name = _store_existing_final_file(
             instance.processed_file,
             src,
@@ -427,24 +389,22 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
         record_processed_replacement(
             instance, previous_name=previous_name, previous_hash=previous_hash
         )
-        cast(_StatefulImportInstance, instance).save()
-        _require_execution_ownership(ctx)
+        instance.save()
+        ctx.require_execution_ownership()
         ensure_video_hls(instance, force=True, execution_guard=ctx.execution_guard)
-        _require_execution_ownership(ctx)
+        ctx.require_execution_ownership()
 
         state = _ensure_instance_state(instance)
         with transaction.atomic():
-            _require_execution_ownership(ctx)
+            ctx.require_execution_ownership()
             _record_successful_video_processing_history(ctx)
-            if state is not None:
-                processable_state = cast(_ProcessableState, state)
-                if not processable_state.processing_started:
-                    processable_state.mark_processing_started()
-                processable_state.mark_anonymized()
-                processable_state.mark_sensitive_meta_processed()
-                processable_state.save()
+            if not state.processing_started:
+                state.mark_processing_started()
+            state.mark_anonymized()
+            state.mark_sensitive_meta_processed()
+            state.save()
             cleanup_pending = commit_processed_replacements(instance)
-            cast(_StatefulImportInstance, instance).save()
+            instance.save()
     except Exception:
         candidate_field = instance.processed_file
         candidate_field.name = candidate_name
@@ -453,7 +413,7 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
         candidate_field.name = previous_name
         instance.processed_video_hash = previous_hash
         instance.meta = previous_meta
-        cast(_StatefulImportInstance, instance).save(
+        instance.save(
             update_fields=[
                 "processed_file",
                 "processed_video_hash",
@@ -465,17 +425,9 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
 
     if cleanup_pending:
         schedule_processed_generation_cleanup(instance.pk)
-    safe_cleanup_staging_file(
-        src,
-        label="processed video staging output",
-        missing_ok=True,
+    cleanup_staging_after_commit(
+        (src, ctx.sensitive_path), label="committed video staging output"
     )
-    if isinstance(ctx.sensitive_path, Path):
-        safe_cleanup_staging_file(
-            ctx.sensitive_path,
-            label="video sensitive staging copy after success",
-            missing_ok=False,
-        )
 
 
 def finalize_failure(
@@ -487,7 +439,7 @@ def finalize_failure(
     """
     Finalize a failed instance import/anonymization.
 
-    - Reset RawPdfState flags to "not processed"
+    - Persist the failed state and revoke export readiness for both media types
     - Mark ProcessingHistory.success = False
     - Delete all associated files, unless an in-place video re-import failed
       before committing its staged replacement
@@ -503,49 +455,22 @@ def finalize_failure(
         else:
             raise Exception
 
-    # History entry with success=False
-    if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = get_file_hash(ctx.file_path)
-    ProcessingHistory.get_or_create_for_hash(
-        file_hash=ctx.file_hash,
-        success=False,
+    ctx.require_execution_ownership()
+    with transaction.atomic():
+        state = _ensure_instance_state(ctx.instance)
+        state.mark_processing_failed()
+        if not isinstance(ctx.file_hash, str):
+            ctx.file_hash = get_file_hash(ctx.file_path)
+        ProcessingHistory.get_or_create_for_hash(file_hash=ctx.file_hash, success=False)
+
+    delete_associated_files(
+        ctx,
+        preserve_existing_video_artifacts=preserve_existing_video_artifacts,
+        preserve_sensitive_staging=preserve_sensitive_staging,
     )
-
-    # Reset state flags similar to _mark_processing_incomplete / _cleanup_on_error
-    state = _ensure_instance_state(ctx.instance)
-
-    if state is not None:
-        try:
-            processable_state = cast(_ProcessableState, state)
-            if isinstance(ctx.instance, RawPdfFile):
-                processable_state.mark_processing_failed()
-            else:
-                processable_state.mark_processing_not_started()
-
-            processable_state.save()
-            logger.info(
-                "Reset instance state for failed processing (instance pk=%s)",
-                ctx.instance.pk,
-            )
-        except Exception as e:
-            logger.warning(
-                "Failed to reset State for instance %s: %s",
-                ctx.instance.pk,
-                e,
-            )
-
-    try:
-        delete_associated_files(
-            ctx,
-            preserve_existing_video_artifacts=preserve_existing_video_artifacts,
-            preserve_sensitive_staging=preserve_sensitive_staging,
-        )
-    except Exception as e:
-        logger.warning(f"There might be files remaining. {e}")
-
     logger.error(
-        "File processing failed for %s - state reset, ready for retry.",
-        ctx.file_path,
+        "File processing failed; failure state persisted for instance %s",
+        ctx.instance.pk,
     )
 
 
@@ -555,58 +480,19 @@ def delete_associated_files(
     preserve_existing_video_artifacts: bool = False,
     preserve_sensitive_staging: bool = False,
 ) -> None:
-    """
-    Best-effort cleanup of anonymized, sensitive and transcoding artefacts.
-
-    - Ensure ctx.original_path points to an existing import file; if not, try to restore
-      from ctx.sensitive_path into the appropriate IMPORT_*_DIR.
-    - Delete anonymized file (if any).
-    - Delete known transient paths recorded on the import context.
-    - Delete sensitive file (if any), unless it is the explicitly preserved
-      input snapshot for the current retry attempt.
-
-    This function should *not* raise on non-critical cleanup errors; it logs instead.
-    Only restoration of the original import file is treated as critical.
-    """
-
+    """Remove transient artifacts, retaining context references on cleanup failure."""
     if not preserve_existing_video_artifacts:
         _delete_video_streamable_artifacts(ctx)
-
-    # --- Delete anonymized file (best-effort) ---
-    if isinstance(ctx.anonymized_path, Path):
-        try:
-            safe_cleanup_staging_file(
-                ctx.anonymized_path,
-                label="failed anonymized staging output",
-                missing_ok=False,
-            )
-        except Exception as e:
-            logger.error(
-                "Error when unlinking anonymized path %s: %s",
-                ctx.anonymized_path,
-                e,
-                exc_info=True,
-            )
-        finally:
-            ctx.anonymized_path = None
-
-    # --- Delete sensitive file (best-effort) ---
-    if not preserve_sensitive_staging and isinstance(ctx.sensitive_path, Path):
-        try:
-            safe_cleanup_staging_file(
-                ctx.sensitive_path,
-                label="failed sensitive staging copy",
-                missing_ok=False,
-            )
-        except Exception as e:
-            logger.error(
-                "Error when unlinking sensitive path %s: %s",
-                ctx.sensitive_path,
-                e,
-                exc_info=True,
-            )
-        finally:
-            ctx.sensitive_path = None
+    cleanup_staging_files(
+        (
+            ctx.anonymized_path,
+            None if preserve_sensitive_staging else ctx.sensitive_path,
+        ),
+        label="failed import staging",
+    )
+    ctx.anonymized_path = None
+    if not preserve_sensitive_staging:
+        ctx.sensitive_path = None
 
 
 def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
@@ -625,22 +511,13 @@ def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
 
         artifact_path = resolve_existing_protected_media_path(relative_path)
         if artifact_path is not None:
-            try:
-                safe_unlink_file(artifact_path, missing_ok=False)
-                logger.info("Deleted streamable video artifact %s", artifact_path)
-            except Exception as exc:
-                logger.error(
-                    "Error when unlinking streamable video artifact %s: %s",
-                    artifact_path,
-                    exc,
-                    exc_info=True,
-                )
+            safe_unlink_file(artifact_path, missing_ok=True)
 
         setattr(video, field_name, "")
         update_fields.append(field_name)
 
     if update_fields and video.pk:
-        cast(_StatefulImportInstance, video).save(update_fields=update_fields)
+        video.save(update_fields=update_fields)
 
 
 def nuke_transcoding_dir(transcoding_dir: str | Path | None = None) -> bool:

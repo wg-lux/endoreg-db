@@ -4,6 +4,21 @@ use pyo3_stub_gen::{
     TypeInfo,
 };
 
+fn stub_type_status_rules() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, list[tuple[str, bool]]]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "anonymization_status_rules",
+        args: &[ArgInfo { name: "report", r#type: stub_type_bool }],
+        r#return: stub_type_status_rules,
+        doc: "Ordered rules shared by native state derivation and SQL aggregation.",
+        signature: Some("report: bool"),
+        module: None,
+    }
+}
+
 fn stub_type_bytes() -> TypeInfo {
     TypeInfo::builtin("bytes")
 }
@@ -112,22 +127,20 @@ inventory::submit! {
     }
 }
 
-
-
 inventory::submit! {
     PyFunctionInfo {
         name: "stable_file_identity",
         args: &[
             ArgInfo { name: "path", r#type: stub_type_path },
             ArgInfo { name: "chunk_size", r#type: stub_type_int },
+            ArgInfo { name: "master_keys", r#type: stub_type_list_bytes },
         ],
         r#return: stub_type_file_identity,
         doc: "",
-        signature: Some("path: pathlib.Path, chunk_size: int = ..."),
+        signature: Some("path: pathlib.Path, chunk_size: int = ..., master_keys: list[bytes] = ..."),
         module: None,
     }
 }
-
 
 inventory::submit! {
     PyFunctionInfo {
@@ -356,3 +369,20 @@ inventory::submit! {
 }
 
 define_stub_info_gatherer!(stub_info);
+
+fn stub_type_list_bytes() -> TypeInfo {
+    TypeInfo::builtin("list[bytes]")
+}
+fn stub_type_header() -> TypeInfo {
+    TypeInfo::builtin("tuple[int, str, int, bytes, bytes, bytes]")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "parse_encrypted_header",
+        args: &[ArgInfo { name: "data", r#type: stub_type_bytes }],
+        r#return: stub_type_header,
+        doc: "Validate the shared encrypted header contract.",
+        signature: Some("data: bytes"),
+        module: None,
+    }
+}

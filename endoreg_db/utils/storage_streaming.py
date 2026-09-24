@@ -12,7 +12,6 @@ from lx_dtypes.models.contracts.media_streaming import (
     ByteRange,
     MediaStreamDisposition,
 )
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.paths import (
     ensure_within_storage_root,
     resolve_existing_protected_media_path,
@@ -171,14 +170,7 @@ def iter_file_path_bytes(
 
 
 def _path_starts_with_encryption_magic(path: Path) -> bool:
-    rust_result = is_lx_encrypted_file(path)
-    if rust_result is not None:
-        return rust_result
-    try:
-        with path.open("rb") as handle:
-            return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-    except OSError:
-        return False
+    return is_lx_encrypted_file(path)
 
 
 def field_file_has_decrypting_storage(field_file: object) -> bool:

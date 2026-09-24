@@ -148,9 +148,14 @@ class RawPdfState(models.Model):
         self.processing_started = True
         # An explicit retry starts a new attempt after a previous failure.
         self.processing_error = False
-        self.save(
-            update_fields=["processing_started", "processing_error", "date_modified"]
-        )
+        if save:
+            self.save(
+                update_fields=[
+                    "processing_started",
+                    "processing_error",
+                    "date_modified",
+                ]
+            )
 
     def mark_processing_failed(self, *, save: bool = True) -> None:
         """Record failure and revoke readiness derived from the removed artifact."""

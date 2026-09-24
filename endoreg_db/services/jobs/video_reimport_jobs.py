@@ -21,6 +21,7 @@ from lx_dtypes.models.contracts.video_reimport import (
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
 
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.config.env import (
     env_choice,
     env_int,
@@ -119,7 +120,9 @@ def _as_bool(value: Any, *, default: bool) -> bool:
     return default
 
 
-def _config_from_payload(payload: Any, *, queue: str) -> VideoReimportHistoryConfig:
+def _config_from_payload(
+    payload: Mapping[str, VideoReimportJsonValue], *, queue: str
+) -> VideoReimportHistoryConfig:
     request_payload = validate_video_reimport_request_payload(payload)
     safe_payload = dump_video_reimport_request_payload(request_payload)
     return VideoReimportHistoryConfig(
@@ -459,7 +462,7 @@ def _processor_name(video: VideoFile) -> str:
 
 def _prediction_refresh_payload(
     *,
-    status: str,
+    status: Literal["skipped", "not_queued", "failed"],
     queued: bool,
     **extra: VideoReimportJsonValue,
 ) -> dict[str, VideoReimportJsonValue]:
@@ -479,8 +482,32 @@ def _run_prediction_refresh(
             queued=False,
             reason="disabled",
         )
-    raw_result = _dispatch_prediction_refresh(video, dict(config.prediction_payload))
-    return video_reimport_json_safe_dict(raw_result)
+    try:
+        raw_result = _dispatch_prediction_refresh(
+            video, dict(config.prediction_payload)
+        )
+        return video_reimport_json_safe_dict(raw_result)
+    except (
+        AiModel.DoesNotExist,
+        ModelMeta.DoesNotExist,
+        TemporalInferenceConfigError,
+        ValueError,
+    ) as exc:
+        logger.warning(
+            "Video re-import completed but prediction refresh was not queued: video=%s",
+            video.pk,
+        )
+        return _prediction_refresh_payload(
+            status="not_queued", queued=False, error=str(exc)
+        )
+    except Exception as exc:
+        logger.exception(
+            "Video re-import completed but prediction dispatch failed: video=%s",
+            video.pk,
+        )
+        return _prediction_refresh_payload(
+            status="failed", queued=False, error=str(exc)
+        )
 
 
 def _regenerate_reimport_hls_artifacts(
@@ -498,7 +525,10 @@ def _regenerate_reimport_hls_artifacts(
         raise ValueError("Cannot regenerate HLS for an unsaved video.") from exc
 
     try:
-        from endoreg_db.services.hls_media import materialize_video_hls
+        from endoreg_db.services.hls_media import (
+            hls_result_is_ready,
+            materialize_video_hls,
+        )
 
         result = materialize_video_hls(
             video_id,
@@ -510,6 +540,10 @@ def _regenerate_reimport_hls_artifacts(
             "Processed HLS source is missing after video re-import."
         ) from exc
 
+    if not hls_result_is_ready(result.status):
+        raise RuntimeError(
+            f"Processed HLS is not ready after video re-import: {result.status}"
+        )
     payload = video_reimport_json_safe_dict(
         cast(Mapping[str, JsonValue], result.as_dict())
     )
@@ -522,6 +556,7 @@ def _regenerate_reimport_hls_artifacts(
     return payload
 
 
+@profiled_function
 def _run_video_reimport_job(
     video_id: int,
     *,
@@ -606,6 +641,7 @@ def _run_video_reimport_job(
         raise
 
 
+@profiled_function
 def dispatch_video_reimport(
     *,
     video_id: int,

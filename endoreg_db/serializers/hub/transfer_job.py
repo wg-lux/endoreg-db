@@ -7,7 +7,11 @@ from rest_framework import serializers
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    derive_video_anonymization_state,
+    derive_report_anonymization_state,
+)
 from endoreg_db.schemas import (
     validate_transfer_processing_snapshot,
     validate_transfer_resource_rows,
@@ -457,51 +461,35 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
     def _resolve_video_anonymization_status(
         video_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not video_state_payload:
-            return AnonymizationState.NOT_STARTED
-        if bool(video_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
-        if bool(video_state_payload.get("anonymization_validated")):
-            return AnonymizationState.VALIDATED
-        if bool(video_state_payload.get("sensitive_meta_processed")):
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-        if bool(video_state_payload.get("frames_extracted")) and not bool(
-            video_state_payload.get("anonymized")
-        ):
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if bool(video_state_payload.get("was_created")) and not bool(
-            video_state_payload.get("frames_extracted")
-        ):
-            return AnonymizationState.EXTRACTING_FRAMES
-        if bool(video_state_payload.get("processing_started")):
-            return AnonymizationState.STARTED
-        if bool(video_state_payload.get("anonymized")):
-            return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        return derive_video_anonymization_state(
+            processing_error=bool(video_state_payload.get("processing_error")),
+            anonymization_validated=bool(
+                video_state_payload.get("anonymization_validated")
+            ),
+            sensitive_meta_processed=bool(
+                video_state_payload.get("sensitive_meta_processed")
+            ),
+            frames_extracted=bool(video_state_payload.get("frames_extracted")),
+            anonymized=bool(video_state_payload.get("anonymized")),
+            was_created=bool(video_state_payload.get("was_created")),
+            processing_started=bool(video_state_payload.get("processing_started")),
+        )
 
     @staticmethod
     def _resolve_report_anonymization_status(
         report_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not report_state_payload:
-            return AnonymizationState.NOT_STARTED
-        if bool(report_state_payload.get("anonymization_validated")):
-            return AnonymizationState.VALIDATED
-        if bool(report_state_payload.get("sensitive_meta_processed")):
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-        if (
-            bool(report_state_payload.get("processing_started"))
-            and not bool(report_state_payload.get("processing_error"))
-            and not bool(report_state_payload.get("anonymized"))
-        ):
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if bool(report_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
-        if bool(report_state_payload.get("processing_started")):
-            return AnonymizationState.STARTED
-        if bool(report_state_payload.get("anonymized")):
-            return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        return derive_report_anonymization_state(
+            processing_error=bool(report_state_payload.get("processing_error")),
+            anonymization_validated=bool(
+                report_state_payload.get("anonymization_validated")
+            ),
+            sensitive_meta_processed=bool(
+                report_state_payload.get("sensitive_meta_processed")
+            ),
+            anonymized=bool(report_state_payload.get("anonymized")),
+            processing_started=bool(report_state_payload.get("processing_started")),
+        )
 
     def _validate_sensitive_meta_linkage(
         self, resource_rows: dict[str, object]

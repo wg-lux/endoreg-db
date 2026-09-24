@@ -209,8 +209,7 @@ class ReportAnonymizer:
                 selected_backend="configured_llm" if use_llm else "spacy_regex",
             )
 
-            if ctx.execution_guard is not None:
-                ctx.execution_guard()
+            ctx.require_execution_ownership()
 
             attempt_directory = ensure_directory(
                 anonymized_dir / f"attempt-{uuid4().hex}"
@@ -244,8 +243,7 @@ class ReportAnonymizer:
                     "Report anonymization did not produce a readable anonymized PDF."
                 )
 
-        if ctx.execution_guard is not None:
-            ctx.execution_guard()
+        ctx.require_execution_ownership()
         mutation_guard = ctx.mutation_guard
         with mutation_guard() if mutation_guard is not None else nullcontext():
             report = persist_report_anonymization_result(

@@ -120,3 +120,22 @@ def test_report_import_failure_emits_once_without_exception_payload(
     assert payloads[0]["phase"] == "total"
     assert str(source_path) not in caplog.text
     assert "protected patient detail" not in caplog.text
+
+
+def test_report_import_missing_result_is_failed(
+    caplog: LogCaptureFixture, tmp_path: Path
+) -> None:
+    service = object.__new__(ReportImportService)
+    service.logger = logging.getLogger("tests.report_import")
+    setattr(service, "_validate_pdf_document", Mock())
+    source = tmp_path / "report.pdf"
+    source.touch()
+    setattr(service, "_process_import_pipeline", Mock(return_value=None))
+    with (
+        caplog.at_level(logging.INFO, logger="endoreg_db.workload_timing"),
+        pytest.raises(RuntimeError, match="returned no media instance"),
+    ):
+        service.import_and_anonymize(source, "test-center")
+    payloads = _structured_timing_payloads(caplog)
+    assert len(payloads) == 1
+    assert payloads[0]["outcome"] == "failed"

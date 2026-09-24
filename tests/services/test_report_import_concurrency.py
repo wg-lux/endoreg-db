@@ -154,7 +154,7 @@ def test_advisory_lock_releases_after_process_exit(tmp_path: Path) -> None:
 import sys
 from pathlib import Path
 
-from endoreg_db.utils.filesystem.file_operations import advisory_file_lock
+from endoreg_db.utils.file_operations import advisory_file_lock
 
 with advisory_file_lock(lock_path=Path(sys.argv[1])):
     print("locked", flush=True)

@@ -11,13 +11,17 @@ from uuid import uuid4
 
 import pymupdf
 
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.import_files.context.file_lock import (
     content_hash_lock,
     file_lock,
 )
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.validate_directories import validate_directories
-from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.import_files.file_storage.cleanup import (
+    cleanup_staging_files,
+    cleanup_duplicate_import_staging,
+)
 from endoreg_db.import_files.file_storage.create_report_file import (
     create_or_retrieve_report_file,
 )
@@ -101,7 +105,7 @@ class ReportImportService:
         file_path: Path | str,
         center_name: str,
         retry: bool = False,
-    ) -> RawPdfFile | None:
+    ) -> RawPdfFile:
         started_at = start_workload_timing()
         outcome_token = _report_import_outcome.set(WorkloadOutcome.FAILED)
         temp_pdf_path: Path | None = None
@@ -116,6 +120,8 @@ class ReportImportService:
                 self._validate_pdf_document(ctx.file_path)
 
             result = self._process_import_pipeline(ctx, retry)
+            if result is None:
+                raise RuntimeError("Report import returned no media instance.")
             if _report_import_outcome.get() is WorkloadOutcome.FAILED:
                 _set_report_import_outcome(WorkloadOutcome.COMPLETED)
             return result
@@ -124,10 +130,9 @@ class ReportImportService:
             raise
         finally:
             if temp_pdf_path is not None:
-                safe_cleanup_staging_file(
-                    temp_pdf_path,
+                cleanup_staging_files(
+                    (temp_pdf_path,),
                     label="Cleaned temporary txt-converted pdf",
-                    missing_ok=True,
                 )
             outcome = _report_import_outcome.get() or WorkloadOutcome.FAILED
             try:
@@ -143,6 +148,7 @@ class ReportImportService:
             finally:
                 _report_import_outcome.reset(outcome_token)
 
+    @profiled_function
     def _process_import_pipeline(
         self,
         ctx: ImportContext,
@@ -255,11 +261,10 @@ class ReportImportService:
                         ctx.execution_guard = None
                         ctx.mutation_guard = None
             except Exception:
-                safe_cleanup_staging_file(
-                    ctx.sensitive_path,
+                cleanup_staging_files(
+                    (ctx.sensitive_path,),
                     label="failed report sensitive snapshot",
                     allowed_roots=[get_runtime_paths().sensitive_report.resolve()],
-                    missing_ok=True,
                 )
                 raise
 
@@ -303,7 +308,7 @@ class ReportImportService:
                 f"txt_sha256:{snapshot.sha256}\n{txt_content}"
             )
         finally:
-            safe_cleanup_staging_file(snapshot.path, label="TXT conversion snapshot")
+            cleanup_staging_files((snapshot.path,), label="TXT conversion snapshot")
         destination = (
             get_runtime_paths().sensitive_report / f"txt-conversion-{uuid4().hex}.pdf"
         )
@@ -459,6 +464,7 @@ class ReportImportService:
                 fence.content_hash,
                 fence.fencing_token,
             )
+            raise
         finally:
             mark_report_import_fence_failed(fence)
 
@@ -505,25 +511,9 @@ class ReportImportService:
         return existing_report
 
     def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
-        import_report_dir = get_runtime_paths().import_report.resolve()
-        sensitive_report_dir = get_runtime_paths().sensitive_report.resolve()
-        safe_cleanup_staging_file(
-            ctx.sensitive_path,
-            label="duplicate report sensitive copy",
-            allowed_roots=[sensitive_report_dir],
-            missing_ok=False,
+        paths = get_runtime_paths()
+        cleanup_duplicate_import_staging(
+            ctx,
+            import_root=paths.import_report,
+            sensitive_roots=(paths.sensitive_report,),
         )
-
-        original_path = (
-            ctx.original_path if isinstance(ctx.original_path, Path) else None
-        )
-        if (
-            isinstance(original_path, Path)
-            and original_path.parent.resolve() == import_report_dir
-        ):
-            safe_cleanup_staging_file(
-                original_path,
-                label="duplicate report import source",
-                allowed_roots=[import_report_dir],
-                missing_ok=False,
-            )

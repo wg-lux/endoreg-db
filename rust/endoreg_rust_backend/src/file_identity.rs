@@ -1,10 +1,8 @@
-use crate::errors::map_io_error;
-use aes_gcm::{
-    aead::{Aead, KeyInit, Payload},
-    Aes128Gcm, Aes256Gcm, Key, Nonce,
+use crate::encrypted_format::{
+    decrypt_aes_gcm, invalid_data, read_header, unwrap_data_key, MAX_CHUNK_BYTES,
 };
-use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
-use base64::Engine;
+use crate::encryption_state::has_encryption_magic;
+use crate::errors::map_io_error;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
@@ -18,82 +16,6 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 
 const DEFAULT_CHUNK_SIZE: usize = 1024 * 1024;
-const MAGIC: &[u8; 8] = b"LXENC01\n";
-const WRAP_AAD: &[u8] = b"lx-annotate:dek-wrap:v1";
-
-#[derive(serde::Deserialize)]
-struct EncryptedHeaderPayload {
-    wrapped_dek: String,
-    wrap_nonce: String,
-    nonce_prefix: String,
-}
-
-enum DynamicGcm {
-    Aes128(Aes128Gcm),
-    Aes256(Aes256Gcm),
-}
-
-impl DynamicGcm {
-    fn new(key: &[u8]) -> std::io::Result<Self> {
-        match key.len() {
-            16 => Ok(Self::Aes128(Aes128Gcm::new(Key::<Aes128Gcm>::from_slice(key)))),
-            32 => Ok(Self::Aes256(Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key)))),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Unsupported AES key length: {} bytes", key.len()),
-            )),
-        }
-    }
-
-    fn decrypt(&self, nonce: &[u8], payload: Payload) -> std::io::Result<Vec<u8>> {
-        let res = match self {
-            Self::Aes128(c) => c.decrypt(Nonce::from_slice(nonce), payload),
-            Self::Aes256(c) => c.decrypt(Nonce::from_slice(nonce), payload),
-        };
-        res.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-    }
-}
-
-fn base64_decode(s: &str) -> std::io::Result<Vec<u8>> {
-    let trimmed = s.trim();
-    URL_SAFE
-        .decode(trimmed)
-        .or_else(|_| URL_SAFE_NO_PAD.decode(trimmed))
-        .or_else(|_| STANDARD.decode(trimmed))
-        .or_else(|_| STANDARD_NO_PAD.decode(trimmed))
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Base64 decode error: {e}"),
-            )
-        })
-}
-
-fn load_master_key() -> std::io::Result<Vec<u8>> {
-    let key_text = if let Ok(val) = std::env::var("LX_ANNOTATE_MASTER_KEY") {
-        val.trim().to_string()
-    } else if let Ok(file_path) = std::env::var("LX_ANNOTATE_MASTER_KEY_FILE") {
-        std::fs::read_to_string(file_path.trim())?.trim().to_string()
-    } else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "LX_ANNOTATE_MASTER_KEY or LX_ANNOTATE_MASTER_KEY_FILE environment variable not set",
-        ));
-    };
-
-    let key_bytes = base64_decode(&key_text)?;
-    if !matches!(key_bytes.len(), 16 | 24 | 32) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!(
-                "Master key must decode to 16, 24, or 32 bytes; got {}",
-                key_bytes.len()
-            ),
-        ));
-    }
-    Ok(key_bytes)
-}
-
 #[gen_stub_pyclass]
 #[pyclass(frozen)]
 pub(crate) struct BatchProcessor {
@@ -119,9 +41,7 @@ impl BatchProcessor {
             .thread_name(|index| format!("endoreg-batch-{index}"))
             .build()
             .map_err(|error| {
-                PyRuntimeError::new_err(format!(
-                    "failed to create Rayon batch processor: {error}"
-                ))
+                PyRuntimeError::new_err(format!("failed to create Rayon batch processor: {error}"))
             })?;
         Ok(Self { worker_count, pool })
     }
@@ -131,14 +51,15 @@ impl BatchProcessor {
         self.worker_count
     }
 
-    #[pyo3(signature = (paths, chunk_size=DEFAULT_CHUNK_SIZE))]
+    #[pyo3(signature = (paths, chunk_size=DEFAULT_CHUNK_SIZE, master_keys=Vec::new()))]
     pub(crate) fn stable_file_identities(
         &self,
         py: Python<'_>,
         paths: Vec<PathBuf>,
         chunk_size: usize,
+        master_keys: Vec<Vec<u8>>,
     ) -> PyResult<Vec<(u64, i128, String)>> {
-        if chunk_size == 0 {
+        if chunk_size == 0 || chunk_size as u64 > MAX_CHUNK_BYTES {
             return Err(PyValueError::new_err(
                 "chunk_size must be greater than zero",
             ));
@@ -148,7 +69,7 @@ impl BatchProcessor {
             self.pool.install(|| {
                 paths
                     .into_par_iter()
-                    .map(|path| stable_file_identity_impl(path, chunk_size))
+                    .map(|path| stable_file_identity_impl(path, chunk_size, &master_keys))
                     .collect::<Result<Vec<_>, _>>()
             })
         })
@@ -189,6 +110,7 @@ fn changed_during_read_error(path: &PathBuf) -> std::io::Error {
 fn stable_file_identity_impl(
     path: PathBuf,
     chunk_size: usize,
+    master_keys: &[Vec<u8>],
 ) -> Result<(u64, i128, String), std::io::Error> {
     let file = OpenOptions::new()
         .read(true)
@@ -207,78 +129,37 @@ fn stable_file_identity_impl(
     let mut reader = BufReader::with_capacity(chunk_size, file);
     let mut hasher = Sha256::new();
 
-    // Check for LXENC01 header
-    let mut magic_buf = [0_u8; 8];
-    let bytes_read = reader.read(&mut magic_buf)?;
-
-    if bytes_read == 8 && &magic_buf == MAGIC {
-        // --- LXENC01 Encrypted Stream Path ---
-        let master_key = load_master_key()?;
-
-        let mut len_buf = [0_u8; 4];
-        reader.read_exact(&mut len_buf)?;
-        let header_len = u32::from_be_bytes(len_buf) as usize;
-
-        let mut header_bytes = vec![0_u8; header_len];
-        reader.read_exact(&mut header_bytes)?;
-
-        let header: EncryptedHeaderPayload = serde_json::from_slice(&header_bytes).map_err(
-            |e| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Invalid LXENC01 header JSON: {e}"),
-                )
-            },
-        )?;
-
-        let wrapped_dek = base64_decode(&header.wrapped_dek)?;
-        let wrap_nonce = base64_decode(&header.wrap_nonce)?;
-        let nonce_prefix = base64_decode(&header.nonce_prefix)?;
-
-        let master_cipher = DynamicGcm::new(&master_key)?;
-        let dek = master_cipher.decrypt(
-            &wrap_nonce,
-            Payload {
-                msg: &wrapped_dek,
-                aad: WRAP_AAD,
-            },
-        )?;
-
-        let dek_cipher = DynamicGcm::new(&dek)?;
-        let mut counter: u32 = 0;
-
+    if has_encryption_magic(&mut reader)? {
+        let (header, header_bytes) = read_header(&mut reader)?;
+        let dek = unwrap_data_key(&header, master_keys)?;
+        let mut counter: u64 = 0;
+        let mut final_chunk_seen = false;
         loop {
-            let mut chunk_len_buf = [0_u8; 4];
-            match reader.read_exact(&mut chunk_len_buf) {
+            let mut length = [0_u8; 4];
+            match reader.read_exact(&mut length[..1]) {
                 Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e),
+                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(error) => return Err(error),
             }
-
-            let chunk_len = u32::from_be_bytes(chunk_len_buf) as usize;
-            let mut cipher_buf = vec![0_u8; chunk_len];
-            reader.read_exact(&mut cipher_buf)?;
-
-            let mut nonce = Vec::with_capacity(12);
-            nonce.extend_from_slice(&nonce_prefix);
-            nonce.extend_from_slice(&counter.to_be_bytes());
-
-            let plaintext = dek_cipher.decrypt(
-                &nonce,
-                Payload {
-                    msg: &cipher_buf,
-                    aad: &header_bytes,
-                },
-            )?;
-
-            hasher.update(&plaintext);
+            reader.read_exact(&mut length[1..])?;
+            let size = u32::from_be_bytes(length) as usize;
+            if final_chunk_seen || size <= 16 || size as u64 > header.chunk_size + 16 {
+                return Err(invalid_data(
+                    "encrypted chunk length does not match chunk geometry",
+                ));
+            }
+            final_chunk_seen = (size as u64) < header.chunk_size + 16;
+            let mut ciphertext = vec![0_u8; size];
+            reader.read_exact(&mut ciphertext)?;
+            let sequence = u32::try_from(counter)
+                .map_err(|_| invalid_data("encrypted chunk counter overflowed"))?;
+            let mut nonce = header.nonce_prefix.to_vec();
+            nonce.extend_from_slice(&sequence.to_be_bytes());
+            hasher.update(decrypt_aes_gcm(&dek, &nonce, &ciphertext, &header_bytes)?);
             counter += 1;
         }
     } else {
         // --- Plaintext / Raw File Path ---
-        if bytes_read > 0 {
-            hasher.update(&magic_buf[..bytes_read]);
-        }
         let mut buffer = vec![0_u8; chunk_size];
         loop {
             let read_count = reader.read(&mut buffer)?;
@@ -307,18 +188,19 @@ fn stable_file_identity_impl(
 }
 
 #[pyfunction]
-#[pyo3(signature = (path, chunk_size=DEFAULT_CHUNK_SIZE))]
+#[pyo3(signature = (path, chunk_size=DEFAULT_CHUNK_SIZE, master_keys=Vec::new()))]
 pub(crate) fn stable_file_identity(
     py: Python<'_>,
     path: PathBuf,
     chunk_size: usize,
+    master_keys: Vec<Vec<u8>>,
 ) -> PyResult<(u64, i128, String)> {
-    if chunk_size == 0 {
+    if chunk_size == 0 || chunk_size as u64 > MAX_CHUNK_BYTES {
         return Err(PyValueError::new_err(
             "chunk_size must be greater than zero",
         ));
     }
 
-    py.allow_threads(move || stable_file_identity_impl(path, chunk_size))
+    py.allow_threads(move || stable_file_identity_impl(path, chunk_size, &master_keys))
         .map_err(map_io_error)
 }

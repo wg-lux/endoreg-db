@@ -4,6 +4,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 import json
+from typing import cast
+
+import pymupdf
 from django.contrib.auth.models import User
 from django.test import TestCase
 from lx_dtypes.models import SensitiveMeta
@@ -14,41 +17,13 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
 )
 from endoreg_db.models import RawPdfFile
 from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.raw_pdf_files.types import PdfDocument
+from endoreg_db.utils.hashs import get_file_hash
 from tests.helpers.default_objects import DEFAULT_CENTER_NAME
 
-MINIMAL_PDF_BYTES = b"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
-endobj
-4 0 obj
-<< /Length 44 >>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(Sample PDF) Tj
-ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f
-0000000010 00000 n
-0000000060 00000 n
-0000000110 00000 n
-0000000210 00000 n
-trailer
-<< /Size 5 /Root 1 0 R >>
-startxref
-310
-%%EOF
-"""
+MINIMAL_PDF_BYTES = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
+    "Sample PDF"
+)
 
 
 class PdfMediaTextVisibilityTests(TestCase):
@@ -79,7 +54,22 @@ class PdfMediaTextVisibilityTests(TestCase):
             )
             try:
                 self.assertEqual(converted_path.suffix, ".pdf")
-                self.assertTrue(converted_path.read_bytes().startswith(b"%PDF-1.4"))
+                document = cast(PdfDocument, pymupdf.open(filename=str(converted_path)))
+                try:
+                    self.assertFalse(document.is_repaired)
+                    self.assertFalse(document.needs_pass)
+                    self.assertGreater(document.page_count, 0)
+                    rendered_text = " ".join(
+                        document[index].get_text()
+                        for index in range(document.page_count)
+                    )
+                    self.assertEqual(
+                        " ".join(rendered_text.split()),
+                        f"txt_sha256:{get_file_hash(txt_path)} "
+                        + " ".join(txt_content.split()),
+                    )
+                finally:
+                    document.close()
             finally:
                 converted_path.unlink(missing_ok=True)
         finally:

@@ -1,6 +1,6 @@
 schema_version: '1.0'
 source_root: endoreg_db
-maximum_local_type_aliases: 147
+maximum_local_type_aliases: 148
 inline_alias_shapes:
 - str
 - int

@@ -106,7 +106,7 @@ from endoreg_db.utils.file_operations import (
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
-from endoreg_db.utils.encryption.encryption import MAGIC
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.permissions import is_debug_mode
 from endoreg_db.utils.structured_logging import (
@@ -770,8 +770,7 @@ def _ensure_upload_job_local_file(
         fallback_path = _safe_existing_media_root_path(job.file.name)
         if fallback_path is None:
             raise FileNotFoundError("Upload source is unavailable")
-        with fallback_path.open("rb") as source:
-            encrypted = source.read(len(MAGIC)) == MAGIC
+        encrypted = is_lx_encrypted_file(fallback_path)
         if encrypted:
             storage = EncryptedStorage(location=fallback_path.parent)
             plaintext_size = storage.get_plaintext_size(fallback_path.name)
@@ -2634,10 +2633,8 @@ def _run_watcher_upload_job_inline(
             center_name=source_center.name,
             retry=False,
         )
-        imported_media = report if isinstance(report, RawPdfFile) else None
-        sensitive_meta = (
-            report.sensitive_meta if isinstance(report, RawPdfFile) else None
-        )
+        imported_media = report
+        sensitive_meta = report.sensitive_meta
     elif normalized_type == "video":
         if not processor_name:
             raise ObjectDoesNotExist("No default EndoscopyProcessor is configured")
