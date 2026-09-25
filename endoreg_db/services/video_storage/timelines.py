@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal
 
 from django.db import transaction
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
@@ -122,6 +123,9 @@ def persist_video_source_timeline(
     | None = None,
 ) -> None:
     """Persist a versioned source timeline and per-frame presentation times."""
+    from endoreg_db.models.label.annotation.video_segmentation_annotation import (
+        VideoSegmentationAnnotation,
+    )
     from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.video_files.frames import initialize_video_frames
@@ -134,7 +138,11 @@ def persist_video_source_timeline(
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
         video.meta = current.meta
         video.frame_count = current.frame_count
-        rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
+        rows = list(
+            Frame.objects.select_for_update()
+            .filter(video=video)
+            .order_by("frame_number")
+        )
         if not rows and not exact_timestamps:
             raise VideoStorageNormalizationError(
                 "Source timeline initialization requires decoded presentation timestamps"
@@ -147,7 +155,32 @@ def persist_video_source_timeline(
             exact_timestamps=exact_timestamps,
             probe_frame_pts=probe_frame_pts,
         )
-        if not rows:
+        # Older imports created estimated placeholders before decoding. Only
+        # extend a pristine prefix; never delete or renumber persisted frames.
+        extend_placeholders = (
+            bool(rows)
+            and exact_timestamps is not None
+            and len(rows) < len(timestamps)
+            and not current.processed_file
+            and not (current.meta or {}).get("source_timeline")
+            and all(
+                row.frame_number == index
+                and not row.is_extracted
+                and row.timestamp is None
+                and row.presentation_timestamp is None
+                for index, row in enumerate(rows)
+            )
+            and not Frame.objects.filter(
+                video=video, box_annotations__isnull=False
+            ).exists()
+            and not Frame.objects.filter(
+                video=video, image_classification_annotations__isnull=False
+            ).exists()
+            and not VideoSegmentationAnnotation.objects.filter(
+                video_file=video
+            ).exists()
+        )
+        if not rows or extend_placeholders:
             if video.label_video_segments.exists():
                 raise VideoStorageNormalizationError(
                     "Cannot initialize a source timeline after segments were persisted"
@@ -169,7 +202,7 @@ def persist_video_source_timeline(
             source=source,
             timestamp_mapping=mapping,
         )
-        meta = dict(video.meta or {})
+        meta: VideoFileMetaJsonObject = dict(video.meta or {})
         meta["source_timeline"] = evidence_as_json(evidence)
         video.meta = meta
         video.save(update_fields=["meta", "frame_count", "date_modified"])

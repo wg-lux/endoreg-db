@@ -16,6 +16,25 @@ source_documents:
   disposition: reference
   note: Configuration of the artificial intelligence components in use.
 definition_of_done:
+- id: approved_report_artifact_retention
+  category: functionality
+  title: Explicit report approval retains the verified processed PDF
+  acceptance:
+  - Approval verifies the existing processed PDF and its persisted digest before marking the report validated or scheduling raw cleanup.
+  - Manual correction PDFs are retained byte-for-byte after explicit acceptance; no rendering from text or raw-document export fallback is permitted.
+  - Missing, unreadable or mismatched processed PDFs reject approval with an actionable conflict response and preserve the source and validation state.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/anonymization/test_validate_view.py
+    - tests/services/test_report_artifact_integrity.py
+    - tests/views/report/test_pdf_redaction.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
 - id: documented_scope
   category: requirements
   title: Protection scope and approval boundaries are clearly defined

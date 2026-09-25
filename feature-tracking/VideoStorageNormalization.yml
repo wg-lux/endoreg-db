@@ -211,6 +211,10 @@ definition_of_done:
   - Beim ersten Import bestimmt die dekodierte Präsentationszeitstempelfolge die Frameanzahl vor Anlage
     von Framezeilen. Metadatenschätzungen dürfen keine falschen Koordinaten vorab persistieren. Bereits
     vorhandene Frames oder Segmente werden bei Abweichungen nicht umnummeriert oder gelöscht.
+  - Ein Reimport darf ausschließlich einen lückenlosen Präfix unextrahierter, nicht annotierter Frame-Platzhalter
+    ohne Zeitstempel, veröffentlichte Generation oder Timeline-Beleg um fehlende dekodierte Frames ergänzen.
+    Vorhandene Primärschlüssel bleiben erhalten; Überzählige, Segmente und klinische Koordinaten bleiben
+    geschützt.
   - Zurückgestellte Transcode-Bereinigung protokolliert ihren typisierten Grund ohne Medienpfade; die
     veröffentlichte Generation und der Bereinigungsbeleg bleiben erhalten.
   - Neuimport, Reimport und Reanonymisierung durchlaufen denselben typisierten Normalisierungsschritt;
@@ -281,12 +285,19 @@ definition_of_done:
         mit bestätigten bestehenden Zeilen: 8 passed, 60 deselected, 2 warnings in 58.03s. Gesamt-Pyright
         0 Fehler/6 bestehende Warnungen; finale geänderte Dateien fokussiert 0 Fehler/0 Warnungen; Ruff/Format
         bestanden.'
-    note: Beobachtete Ursache neuer Importfehler behoben und sicherere Cleanup-Diagnostik ergänzt. Bestehende
-      inkonsistente Framezeilen bleiben absichtlich unverändert und benötigen vor einem produktiven Wiederanlauf
-      eine geprüfte Reconciliation. Der historische konkrete Cleanup-Grund ist mit vorhandenen Logs nicht
-      beweisbar. Produktionsprüfung und Deployment offen.
+    - kind: command
+      reference: '2026-09-25: Vollständiges Pyright: 0 Fehler, 6 bestehende Warnungen; abschließendes
+        gezieltes Pyright: 0 Fehler/0 Warnungen. SQLite: 107 Tests in test_video_storage_normalization.py,
+        test_video_reimport_jobs.py, test_reimport_async_view.py und test_reimport_and_correction.py bestanden.
+        Reimport ergänzt ausschließlich geschützte, ungenutzte Frame-Präfixe; produktive Daten nicht verändert.'
+    - kind: command
+      reference: '2026-09-25: Abschließender PostgreSQL-Test in isolierter Instanz: test_video_storage_normalization.py
+        -k persist_video_source_timeline, 22 bestanden/60 abgewählt; konstante und variable Bildraten,
+        Erhalt der Frame-IDs, Abbruch bei vorhandenen Zeitstempeln, Annotationen, Segmenten, extrahierten
+        Frames, veröffentlichter Generation, Lücken und überzähligen Frames. Testinstanz anschließend
+        gestoppt.'
     assessed_by: codex-import-20260924-a
-    assessed_at: '2026-09-25T06:07:07.477811Z'
+    assessed_at: '2026-09-25T06:42:42.742319Z'
 - id: concurrent_import_ownership
   category: functionality
   title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte

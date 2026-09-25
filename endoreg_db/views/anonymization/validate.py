@@ -34,7 +34,10 @@ from endoreg_db.services.report_materialization import (
     ensure_document_types,
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
+from endoreg_db.services.raw_pdf_files import (
+    ProcessedReportIntegrityError,
+    validate_report_metadata_annotation,
+)
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
 )
@@ -741,7 +744,20 @@ def _run_pdf_metadata_validation(
         ok = validate_report_metadata_annotation(
             pdf,
             prepared_payload,
-            enforce_processed_artifact=False,
+            enforce_processed_artifact=True,
+        )
+    except ProcessedReportIntegrityError:
+        transaction.set_rollback(True)
+        logger.warning(
+            "report approval rejected: processed artifact verification failed, id=%s",
+            file_id,
+        )
+        return Response(
+            {
+                "error": "The processed report PDF is missing, unreadable or inconsistent. Save and review the PDF in the correction view before approving it.",
+                "error_code": "processed_report_artifact_unavailable",
+            },
+            status=status.HTTP_409_CONFLICT,
         )
     except Exception:  # pragma: no cover - defensive safety net
         transaction.set_rollback(True)

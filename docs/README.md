@@ -11,12 +11,26 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 
 ## Start Here
 
-- [Repository setup and package overview](../README.md)
+- [Repository overview and quick start](../README.md)
+- [Project capabilities and deployment roles](project_overview.md)
+- [Configuration and deployment settings](../setup/CONFIGURATION_GUIDE.md)
+- [Data privacy and protected storage](../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
+- [AI model setup](../setup/AI_MODEL_SETUP.md)
 - [CPU profiling quick start: imports and reimports](profiling.md)
-- [New setup overview](wiki/new_setup_overview.md)
-- [General operating model](wiki/new_setup_general_purpose.md)
 - [Feature readiness tracker](../feature-tracking/README.md)
 - [Model layer map for agents and maintainers](model_layer_map_for_agents.md)
+- [Interactive Django shell examples](developer_examples.md)
+- [Database backup and recovery](backup_recovery.md)
+- [Optional companion tools](companion_tools.md)
+
+## Browse by task
+
+- [Install, configure, or deploy](#deployment-and-operations)
+- [Understand data models and domain contracts](#architecture-and-domain-contracts)
+- [Integrate through APIs or manage access](#api-access-and-security)
+- [Load seed data or configure reports and AI](#data-loading-and-reporting)
+- [Import, store, stream, or annotate media](#media-and-annotation)
+- [Find historical design context](#historical-and-migrated-planning-documents)
 
 ## Architecture and Domain Contracts
 
@@ -31,16 +45,20 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 
 ## API, Access, and Security
 
+- [Data privacy and storage overview](../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
 - [Key rotation and recovery](key_rotation.md)
-
 - [API route test matrix](api_route_test_matrix.md)
 - [Center access operations](center_access_operations.md)
 - [Anonymization and release contract](anonymization_contract.md)
 - [Assisted-reporting API integration](assisted_reporting_api_integration.md)
 - [Hub contract deployment note](deployment_note_hub_contract.md)
+- [Hub transfer typed contract](hub_transfer_typed_contract.md)
+- [Audit ledger operations](audit_ledger_operations.md)
 
 ## Data Loading and Reporting
 
+- [Configuration guide](../setup/CONFIGURATION_GUIDE.md)
+- [AI model setup](../setup/AI_MODEL_SETUP.md)
 - [Dataloader YAML authoring](wiki/dataloader_yaml_authoring.md)
 - [Dataloader layers and naming](wiki/dataloader_layers_and_naming.md)
 - [Supported tabular import formats](supported_formats_csv.md)
@@ -65,9 +83,21 @@ video import, storage, transcoding, publication, or cleanup behavior.
 
 ## Deployment and Operations
 
+- [Configuration and deployment settings](../setup/CONFIGURATION_GUIDE.md)
 - [Local study server deployment](local_study_server_deployment.md)
 - [Hub ingest operations](hub_ingest_operations.md)
 - [Current hub ingest behavior](wiki/hub_ingest_current_state.md)
+- [Video format reconciliation](ops/nixos/video_format_reconciliation.md)
+
+## Reference and Supporting Material
+
+- [API and endpoint test matrix](api_route_test_matrix.md)
+- [Profiling imports and reimports](profiling.md)
+- [Supported tabular import formats](supported_formats_csv.md)
+- [Dataloader setup overview](wiki/new_setup_overview.md)
+- [General data-loading operating model](wiki/new_setup_general_purpose.md)
+- [Sphinx API reference entry point](source/index.rst)
+- [Historical GitHub Wiki references](legacy_wiki_index.md)
 
 ## Generated References
 
@@ -95,6 +125,9 @@ linked feature definition for current status and evidence.
   [`TypeSafety.yml`](../feature-tracking/TypeSafety.yml)
 - [Hub ingest gap-closure plan](wiki/hub_ingest_gap_closure.md) →
   [`HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
+
+- [Report import concurrency implementation notes](report_import_concurrency_implementation.md) describe design and implementation context; current scope and readiness belong to [`Reporting.yml`](../feature-tracking/Reporting.yml).
+- [Video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.yml) is dated investigation evidence; current scope belongs to [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
 
 ## Authoring Rules
 

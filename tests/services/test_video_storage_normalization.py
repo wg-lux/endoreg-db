@@ -8,7 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, Frame, VideoFile, LabelVideoSegment
+from endoreg_db.models import (
+    Center,
+    Frame,
+    VideoFile,
+    LabelVideoSegment,
+    Label,
+    ImageClassificationAnnotation,
+)
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
     HlsSegmentBoundary,
@@ -1198,12 +1205,26 @@ def test_probe_video_frame_timestamps_rejects_empty_frame_list(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    "existing_frames,has_segments", [(0, False), (0, True), (3, False), (4, False)]
+    "existing_frames,has_segments,protected",
+    [
+        (0, False, ""),
+        (0, True, ""),
+        (3, False, ""),
+        (4, False, ""),
+        (2, False, ""),
+        (2, True, ""),
+        (2, False, "timestamp"),
+        (2, False, "extracted"),
+        (2, False, "published"),
+        (2, False, "gap"),
+        (2, False, "annotation"),
+    ],
 )
 @pytest.mark.parametrize("variable_frame_rate", [False, True])
 def test_persist_video_source_timeline_uses_decoded_frame_count(
     existing_frames: int,
     has_segments: bool,
+    protected: str,
     variable_frame_rate: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1226,6 +1247,22 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
         LabelVideoSegment.objects.create(
             video_file=video, start_frame_number=0, end_frame_number=1
         )
+    if protected == "timestamp":
+        video.frames.update(timestamp=0.0)
+    elif protected == "extracted":
+        video.frames.update(is_extracted=True)
+    elif protected == "published":
+        video.processed_file.name = "processed.mp4"
+        video.save(update_fields=["processed_file"])
+    elif protected == "gap":
+        video.frames.filter(frame_number=1).update(frame_number=2)
+    elif protected == "annotation":
+        ImageClassificationAnnotation.objects.create(
+            frame=video.frames.get(frame_number=0),
+            label=Label.objects.create(name="protected-frame"),
+            value=True,
+        )
+    original_rows = list(video.frames.values_list("pk", "frame_number", "timestamp"))
     source_probe = _probe(
         timeline=_timeline(
             duration_seconds=0.2,
@@ -1276,13 +1313,21 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
         fake_probe_video_frame_timestamps,
     )
 
-    if has_segments or existing_frames == 4:
+    if has_segments or existing_frames == 4 or protected:
         with pytest.raises(normalization.VideoStorageNormalizationError):
             normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
         video.refresh_from_db()
         assert video.frame_count == 4
         assert video.frames.count() == existing_frames
-        assert not video.frames.filter(timestamp__isnull=False).exists()
+        assert (
+            list(video.frames.values_list("pk", "frame_number", "timestamp"))
+            == original_rows
+        )
+        if protected == "annotation":
+            assert (
+                ImageClassificationAnnotation.objects.filter(frame__video=video).count()
+                == 1
+            )
         return
 
     normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
@@ -1294,6 +1339,9 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
     )
     video.refresh_from_db()
     assert video.frame_count == 3
+    assert list(video.frames.values_list("pk", "frame_number"))[:existing_frames] == [
+        (pk, number) for pk, number, _ in original_rows
+    ]
     assert timestamps == [0.0, 0.033, 0.091]
     assert list(
         Frame.objects.filter(video=video)

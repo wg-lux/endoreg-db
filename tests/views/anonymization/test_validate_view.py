@@ -39,6 +39,7 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.tag import Tag
+from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -427,6 +428,38 @@ class TestAnonymizationValidateView:
             assert response.status_code == status.HTTP_400_BAD_REQUEST
             assert "Video validation failed" in error_text
 
+    def test_validate_pdf_rejects_unusable_transfer_artifact(
+        self, factory: APIRequestFactory, user: User, pdf_file: _MediaFileFixture
+    ) -> None:
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "patient_gender": "männlich",
+            "casenumber": "",
+            "examination_date": "15.02.2024",
+            "file_type": "pdf",
+            "document_type": "report_final",
+        }
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            side_effect=ProcessedReportIntegrityError("missing artifact"),
+        ) as validate:
+            request = self._post_request(
+                factory, f"/api/anonymization/{pdf_file.id}/validate/", data
+            )
+            self._force_authenticate(request, user)
+            response = self._call_view(
+                self._validate_view(), request, file_id=pdf_file.id
+            )
+            response_payload = cast(Mapping[str, object], response.data)
+            assert response.status_code == status.HTTP_409_CONFLICT, response_payload
+            assert (
+                response_payload["error_code"]
+                == "processed_report_artifact_unavailable"
+            )
+            assert validate.call_args.kwargs["enforce_processed_artifact"] is True
+
     def test_validate_pdf_with_german_dates(
         self, factory: APIRequestFactory, user: User, pdf_file: _MediaFileFixture
     ) -> None:
@@ -700,7 +733,7 @@ class TestAnonymizationValidateView:
             *,
             enforce_processed_artifact: bool,
         ) -> bool:
-            assert enforce_processed_artifact is False
+            assert enforce_processed_artifact is True
             sensitive_meta = instance.sensitive_meta
             assert sensitive_meta is not None
             sensitive_meta.patient_first_name = "Mutated"

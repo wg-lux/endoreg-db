@@ -85,6 +85,7 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
 ) -> None:
     report = _completed_report()
     processed_name = report.processed_file.name
+    processed_digest = get_file_hash(report.processed_file)
 
     with django_capture_on_commit_callbacks(execute=True):
         validated = validate_report_metadata_annotation(
@@ -104,9 +105,37 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert not report.file
     assert report.processed_file.name == processed_name
     assert file_exists(report.processed_file)
+    assert get_file_hash(report.processed_file) == processed_digest
     assert report.state is not None
     assert report.state.anonymization_validated is True
     assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
+
+
+@pytest.mark.parametrize("failure", ["missing", "digest_mismatch"])
+def test_rejected_approval_preserves_raw_and_validation_state(
+    base_db_data: object,
+    django_capture_on_commit_callbacks: Callable[..., Any],
+    failure: str,
+) -> None:
+    report = _completed_report()
+    state = report.state
+    assert state is not None
+    if failure == "missing":
+        report.processed_file.name = ""
+        report.save(update_fields=["processed_file"])
+    else:
+        state.processed_file_sha256 = "0" * 64
+        state.save(update_fields=["processed_file_sha256", "date_modified"])
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        with pytest.raises(ProcessedReportIntegrityError):
+            validate_report_metadata_annotation(
+                report,
+                {"patient_first_name": "Max", "patient_last_name": "Mustermann"},
+            )
+    state.refresh_from_db()
+    assert state.anonymization_validated is False
+    assert file_exists(report.file)
+    assert callbacks == []
 
 
 @pytest.mark.parametrize(

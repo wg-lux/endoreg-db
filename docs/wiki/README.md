@@ -1,9 +1,12 @@
-# Setup and Workflow Pages
+# Wiki and Workflow Selection
 
 ## Purpose
-This folder contains setup and workflow pages that may be selected for a future
-generated GitHub Wiki. Repository Markdown remains the source of truth. Feature
-status and readiness evidence live in [`feature-tracking/`](../../feature-tracking/).
+This folder contains workflow guides that may be selected for a future generated
+GitHub Wiki. It is a topic selection, not the full documentation catalog. Start
+at the central [documentation index](../README.md) for maintained contracts,
+runbooks, API references, and setup guides. Repository Markdown remains the
+source of truth; feature scope and readiness evidence live in
+[`feature-tracking/`](../../feature-tracking/).
 
 ## Pages
 - [New setup overview](new_setup_overview.md)
@@ -14,6 +17,17 @@ status and readiness evidence live in [`feature-tracking/`](../../feature-tracki
 - [Annotation export](../annotation_export_guide.md)
 - [Video frame extraction contract](../video_frame_extraction_contract.md)
 - [Current hub ingest behavior](hub_ingest_current_state.md)
+
+## Canonical companion guides
+
+These maintained pages complement the workflow material and are catalogued in
+the [documentation index](../README.md):
+
+- [Configuration and environment](../../setup/CONFIGURATION_GUIDE.md)
+- [Data privacy](../../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
+- [AI model setup](../../setup/AI_MODEL_SETUP.md)
+- [Video storage normalization](../video_storage_normalization.md)
+- [Hub ingest operations](../hub_ingest_operations.md)
 
 ## Historical Planning Context
 
