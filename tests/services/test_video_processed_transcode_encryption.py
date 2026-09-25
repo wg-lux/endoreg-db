@@ -19,6 +19,7 @@ from endoreg_db.services import (
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
+    ProcessedGenerationCleanupResult,
 )
 from endoreg_db.services.hls_media import HlsMaterializationResult
 from endoreg_db.services.video_files.queries import (
@@ -371,3 +372,20 @@ def test_failed_attempt_cleanup_blocks_another_attempt_directory(
             service.transcode_processed_video_for_storage_pressure(video, apply=True)
     encoder.assert_not_called()
     assert set(root.rglob("*")) == existing
+
+
+def test_pending_cleanup_logs_safe_reason_without_discarding_receipt(
+    video: VideoFile, caplog: pytest.LogCaptureFixture
+) -> None:
+    result = ProcessedGenerationCleanupResult(
+        video_id=video.pk, pending=1, reason="active_media_lease"
+    )
+    with patch.object(
+        service, "cleanup_processed_video_generations", return_value=result
+    ):
+        with pytest.raises(service.ProcessedVideoTranscodeCleanupError):
+            service._cleanup_committed_processed_assets(video_id=video.pk)  # pyright: ignore[reportPrivateUsage]
+    assert '"reason": "active_media_lease"' in caplog.text
+    assert '"pending": 1' in caplog.text
+    assert str(video.processed_file.name) not in caplog.text
+    assert Path(video.processed_file.path).exists()

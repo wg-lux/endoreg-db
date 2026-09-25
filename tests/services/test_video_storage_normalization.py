@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, Frame, VideoFile
+from endoreg_db.models import Center, Frame, VideoFile, LabelVideoSegment
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
     HlsSegmentBoundary,
@@ -1197,7 +1197,14 @@ def test_probe_video_frame_timestamps_rejects_empty_frame_list(
 
 
 @pytest.mark.django_db
-def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
+@pytest.mark.parametrize(
+    "existing_frames,has_segments", [(0, False), (0, True), (3, False), (4, False)]
+)
+@pytest.mark.parametrize("variable_frame_rate", [False, True])
+def test_persist_video_source_timeline_uses_decoded_frame_count(
+    existing_frames: int,
+    has_segments: bool,
+    variable_frame_rate: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1207,20 +1214,23 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         raw_video_hash="pts-video",
         fps=25.0,
         duration=0.2,
-        frame_count=3,
+        frame_count=4,
     )
     Frame.objects.bulk_create(
         [
-            Frame(video=video, frame_number=0, relative_path="0.jpg"),
-            Frame(video=video, frame_number=1, relative_path="1.jpg"),
-            Frame(video=video, frame_number=2, relative_path="2.jpg"),
+            Frame(video=video, frame_number=index, relative_path=f"{index}.jpg")
+            for index in range(existing_frames)
         ]
     )
+    if has_segments:
+        LabelVideoSegment.objects.create(
+            video_file=video, start_frame_number=0, end_frame_number=1
+        )
     source_probe = _probe(
         timeline=_timeline(
             duration_seconds=0.2,
-            frame_count=3,
-            variable_frame_rate=True,
+            frame_count=4,
+            variable_frame_rate=variable_frame_rate,
             time_base_num=1,
             time_base_den=90_000,
         )
@@ -1266,6 +1276,15 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         fake_probe_video_frame_timestamps,
     )
 
+    if has_segments or existing_frames == 4:
+        with pytest.raises(normalization.VideoStorageNormalizationError):
+            normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
+        video.refresh_from_db()
+        assert video.frame_count == 4
+        assert video.frames.count() == existing_frames
+        assert not video.frames.filter(timestamp__isnull=False).exists()
+        return
+
     normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
 
     timestamps = list(
@@ -1274,6 +1293,7 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         .values_list("timestamp", flat=True)
     )
     video.refresh_from_db()
+    assert video.frame_count == 3
     assert timestamps == [0.0, 0.033, 0.091]
     assert list(
         Frame.objects.filter(video=video)
@@ -1283,6 +1303,7 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
     meta = video.meta
     assert isinstance(meta, dict)
     evidence = VideoSourceTimelineEvidence.model_validate(meta["source_timeline"])
+    assert evidence.source.timeline.frame_count == 3
     assert evidence.timeline_version == "pts_v1"
     assert evidence.timestamp_mapping == "ffprobe_pts"
 

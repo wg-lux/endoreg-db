@@ -189,6 +189,14 @@ def _cleanup_committed_processed_assets(*, video_id: int) -> None:
     try:
         result = cleanup_processed_video_generations(video_id, apply=True)
         if result.pending:
+            emit_structured_event(
+                logger,
+                "processed_video_transcode_cleanup_pending",
+                level=logging.WARNING,
+                video_id=video_id,
+                reason=result.reason,
+                pending=result.pending,
+            )
             raise RuntimeError(f"Processed cleanup is pending: {result.reason}")
     except Exception as exc:
         _raise_cleanup_error(video_id=video_id, phase="published_generation", cause=exc)

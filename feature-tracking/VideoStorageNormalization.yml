@@ -208,6 +208,11 @@ definition_of_done:
   category: functionality
   title: Jeder erfolgreiche Import erzeugt ein begrenztes kanonisches Video
   acceptance:
+  - Beim ersten Import bestimmt die dekodierte Präsentationszeitstempelfolge die Frameanzahl vor Anlage
+    von Framezeilen. Metadatenschätzungen dürfen keine falschen Koordinaten vorab persistieren. Bereits
+    vorhandene Frames oder Segmente werden bei Abweichungen nicht umnummeriert oder gelöscht.
+  - Zurückgestellte Transcode-Bereinigung protokolliert ihren typisierten Grund ohne Medienpfade; die
+    veröffentlichte Generation und der Bereinigungsbeleg bleiben erhalten.
   - Neuimport, Reimport und Reanonymisierung durchlaufen denselben typisierten Normalisierungsschritt;
     Duplicate- und Existing-Video-Pfade umgehen ihn nicht unbemerkt.
   - Vor jedem Neuimport sowie nach jedem Reimport und jeder Reanonymisierung wird das konkrete Kandidatenartefakt
@@ -239,7 +244,7 @@ definition_of_done:
       -q
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py
@@ -255,12 +260,33 @@ definition_of_done:
       reference: devenv shell -- cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml (8 passed);
         .devenv/state/venv/bin/pyright (0 errors); devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py
         tests/rust_backend/test_rust_backend_fallbacks.py -q (28 passed)
-    note: Neuimport, Reimport und Reanonymisierung verwenden den gemeinsamen Profilcheck. Die Content-Hash-Sperre
-      wird unter der pfadbasierten Sperre aus einer stabilen, GIL-freien Rust-Dateiidentität abgeleitet;
-      Quelländerungen während des Hashings brechen laut ab. Rust-, Typ- und fokussierte Importtests sind
-      erfolgreich.
-    assessed_by: Codex
-    assessed_at: '2026-07-27T06:12:03.245922Z'
+    - kind: review
+      reference: '2026-09-25 gc-02, site-client: lx-annotate-Journal ab 24.09.2026 17:30 Europe/Berlin.
+        Ein Videoimport scheiterte viermal (15:56:54, 16:49:24, 16:51:00, 16:54:00 UTC) nach Anlage von
+        283 geschätzten Framezeilen an abweichender dekodierter Präsentationszeitstempelanzahl. Eine Transcode-Bereinigung
+        scheiterte nach Veröffentlichung um 15:55:16 UTC; bisheriges Log enthält nur RuntimeError und
+        published_generation, keinen belastbaren konkreten Bereinigungsgrund. Kein Löschen, Reimport,
+        Deployment oder Zugriff auf Produktions-Mediendateien vorgenommen.'
+    - kind: code
+      reference: 'endoreg_db/services/video_files/imports.py; endoreg_db/services/video_storage/timelines.py:
+        Erstinitialisierung verwendet die dekodierte Zeitstempelanzahl vor Frameanlage, unter Video-Zeilensperre
+        und gemeinsamer Transaktion. Bestehende Frame-/Segmentkoordinaten werden bei Anzahlkonflikten
+        bewahrt. services/video_processed_transcode.py protokolliert typisierten pending-Grund ohne Pfade;
+        Bereinigungsblockade bleibt wirksam.'
+    - kind: command
+      reference: '2026-09-25: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+        .devenv/state/venv/bin/pytest tests/import_files/test_video_import_normalization.py tests/services/test_video_storage_normalization.py
+        tests/services/test_video_processed_transcode_encryption.py tests/services/test_video_import_service_unit.py
+        -q --tb=short: 150 passed, 2 warnings in 45.74s. Finaler Nachlauf nach Abgleich des Metadaten-Framecounts
+        mit bestätigten bestehenden Zeilen: 8 passed, 60 deselected, 2 warnings in 58.03s. Gesamt-Pyright
+        0 Fehler/6 bestehende Warnungen; finale geänderte Dateien fokussiert 0 Fehler/0 Warnungen; Ruff/Format
+        bestanden.'
+    note: Beobachtete Ursache neuer Importfehler behoben und sicherere Cleanup-Diagnostik ergänzt. Bestehende
+      inkonsistente Framezeilen bleiben absichtlich unverändert und benötigen vor einem produktiven Wiederanlauf
+      eine geprüfte Reconciliation. Der historische konkrete Cleanup-Grund ist mit vorhandenen Logs nicht
+      beweisbar. Produktionsprüfung und Deployment offen.
+    assessed_by: codex-import-20260924-a
+    assessed_at: '2026-09-25T06:07:07.477811Z'
 - id: concurrent_import_ownership
   category: functionality
   title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte

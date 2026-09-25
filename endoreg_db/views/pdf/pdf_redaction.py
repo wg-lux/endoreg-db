@@ -238,7 +238,7 @@ def _persist_redaction(
     with transaction.atomic():
         pdf = (
             RawPdfFile.objects.select_related("state")
-            .select_for_update()
+            .select_for_update(of=("self",))
             .filter(pk=pk)
             .first()
         )

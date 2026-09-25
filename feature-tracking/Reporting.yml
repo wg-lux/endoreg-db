@@ -35,6 +35,8 @@ definition_of_done:
   category: functionality
   title: Import bis Streaming funktioniert deterministisch und idempotent
   acceptance:
+  - PDF-Schwärzungen sperren unter PostgreSQL den Reportdatensatz gezielt, auch wenn der optionale Zustand
+    fehlt; nullable Join-Zeilen verursachen keinen FOR-UPDATE-Fehler.
   - Finalisierung verlangt Untersuchung und Dokumenttyp.
   - Materialisierung und Reimport erzeugen nachvollziehbare Versionen ohne stille Duplikate.
   required: true
@@ -105,8 +107,27 @@ definition_of_done:
       reference: '2026-09-21: vollständige tests/views/report/test_patient_examination_report_ninja_api.py
         im fokussierten 111-passed-Lauf bestanden; fehlende, unlesbare und fehlerhafte Registry liefern
         503, unbekannte Module weiterhin 422. Pyright report_persistence.py: 0 errors, 0 warnings.'
-    assessed_by: codex-frame-standardization-20260921
-    assessed_at: '2026-09-21T11:46:02.468158Z'
+    - kind: review
+      reference: '2026-09-25 gc-02, Profil site-client, Wheel-Runtime: systemctl list-units lx-annotate*
+        --all --no-pager --plain; journalctl --namespace=lx-annotate --since "2026-09-24 15:30:00 UTC"
+        --no-pager -o json. Beginn entspricht 24.09.2026 17:30 Europe/Berlin. 83477 Einträge bis 25.09.2026
+        05:52:57 UTC nach Severity und eingebetteten Exceptions gruppiert; 1786 weitere Einträge ab 05:53
+        UTC ohne zusätzliche Fehler. Eine Report-Schwärzung scheiterte um 15:31:47 UTC an PostgreSQL FOR
+        UPDATE auf nullable Outer-Join-Seite. Web- und relevante Worker-Units laufen. Keine Produktionsdaten,
+        Dienste oder Deployment geändert.'
+    - kind: command
+      reference: '2026-09-25: tests/views/report/test_pdf_redaction.py auf isoliertem PostgreSQL 16.15
+        mit privatem Unix-Socket: 6 passed, 2 dependency/plugin warnings in 164.13s. Optionale Report-State-Relation
+        sowohl vorhanden als auch fehlend abgedeckt. Temporären PostgreSQL-Server anschließend gestoppt.
+        Gesamt-Pyright 0 Fehler, 6 bestehende Warnungen; Ruff/Format bestanden.'
+    - kind: code
+      reference: 'endoreg_db/views/pdf/pdf_redaction.py::_persist_redaction: select_for_update(of=("self",))
+        sperrt ausschließlich den Reportdatensatz.'
+    note: Gezielter Fix des auf gc-02 beobachteten PostgreSQL-Lockfehlers; echte PostgreSQL-Regression
+      bestanden. Keine Produktionsmigration und kein Deployment. Weitere Abnahme des Reporting-Gesamtworkflows
+      bleibt offen.
+    assessed_by: codex-import-20260924-a
+    assessed_at: '2026-09-25T06:06:37.607588Z'
 - id: report_draft_persistence_contract
   category: data_integrity
   title: Berichtsentwürfe werden repositoryübergreifend strikt und kanonisch persistiert

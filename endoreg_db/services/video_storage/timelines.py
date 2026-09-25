@@ -6,6 +6,8 @@ from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal
 
+from django.db import transaction
+
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
     SegmentTimelineReference,
@@ -121,39 +123,56 @@ def persist_video_source_timeline(
 ) -> None:
     """Persist a versioned source timeline and per-frame presentation times."""
     from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.video_files.frames import initialize_video_frames
 
     source = probe_artifact(path)
-    rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
-    if not rows:
-        raise VideoStorageNormalizationError("Source timeline has no persisted frames")
     exact_timestamps = (
         probe_frame_timestamps(path) if probe_frame_timestamps is not None else None
     )
-    source, timestamps, mapping = _resolve_source_timestamps(
-        video=video,
-        path=path,
-        source=source,
-        rows=rows,
-        exact_timestamps=exact_timestamps,
-        probe_frame_pts=probe_frame_pts,
-    )
-    _validate_timestamp_counts(
-        rows=rows,
-        timestamps=timestamps,
-        exact_timestamps=exact_timestamps,
-    )
-    source = _source_with_probed_frame_count(source, len(timestamps))
-    update_fields = _apply_frame_timestamps(rows, timestamps, exact_timestamps)
-    Frame.objects.bulk_update(rows, update_fields, batch_size=2000)
-    evidence = VideoSourceTimelineEvidence(
-        persisted_at=datetime.now(UTC),
-        source=source,
-        timestamp_mapping=mapping,
-    )
-    meta = dict(video.meta or {})
-    meta["source_timeline"] = evidence_as_json(evidence)
-    video.meta = meta
-    video.save(update_fields=["meta", "date_modified"])
+    with transaction.atomic():
+        current = VideoFile.objects.select_for_update().get(pk=video.pk)
+        video.meta = current.meta
+        video.frame_count = current.frame_count
+        rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
+        if not rows and not exact_timestamps:
+            raise VideoStorageNormalizationError(
+                "Source timeline initialization requires decoded presentation timestamps"
+            )
+        source, timestamps, mapping = _resolve_source_timestamps(
+            video=video,
+            path=path,
+            source=source,
+            rows=rows,
+            exact_timestamps=exact_timestamps,
+            probe_frame_pts=probe_frame_pts,
+        )
+        if not rows:
+            if video.label_video_segments.exists():
+                raise VideoStorageNormalizationError(
+                    "Cannot initialize a source timeline after segments were persisted"
+                )
+            video.frame_count = len(timestamps)
+            initialize_video_frames(video)
+            rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
+        _validate_timestamp_counts(
+            rows=rows,
+            timestamps=timestamps,
+            exact_timestamps=exact_timestamps,
+        )
+        video.frame_count = len(timestamps)
+        source = _source_with_probed_frame_count(source, len(timestamps))
+        update_fields = _apply_frame_timestamps(rows, timestamps, exact_timestamps)
+        Frame.objects.bulk_update(rows, update_fields, batch_size=2000)
+        evidence = VideoSourceTimelineEvidence(
+            persisted_at=datetime.now(UTC),
+            source=source,
+            timestamp_mapping=mapping,
+        )
+        meta = dict(video.meta or {})
+        meta["source_timeline"] = evidence_as_json(evidence)
+        video.meta = meta
+        video.save(update_fields=["meta", "frame_count", "date_modified"])
 
 
 def _resolve_source_timestamps(
@@ -249,8 +268,6 @@ def _source_with_probed_frame_count(
     source: VideoArtifactProbe,
     frame_count: int,
 ) -> VideoArtifactProbe:
-    if not source.timeline.variable_frame_rate:
-        return source
     timeline = source.timeline.model_copy(update={"frame_count": frame_count})
     return source.model_copy(update={"timeline": timeline})
 

@@ -82,7 +82,7 @@ def _video_with_pts() -> VideoFile:
     return video
 
 
-def test_initialize_video_file_persists_timeline_after_frame_rows_exist(
+def test_initialize_video_file_delegates_frame_creation_to_source_timeline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -129,7 +129,7 @@ def test_initialize_video_file_persists_timeline_after_frame_rows_exist(
     assert (
         video_imports.initialize_video_file(video, local_raw_path=source_path) == video
     )
-    assert events == ["frames", "timeline"]
+    assert events == ["timeline"]
 
 
 @override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="quality")

@@ -78,9 +78,15 @@ class TestPdfRedactionEndpoints:
         with ensure_local_file(pdf.file) as local_path:
             return get_file_hash(local_path)
 
-    def test_apply_redactions_persists_processed_file_and_history(self):
+    @pytest.mark.parametrize("has_state", [False, True])
+    def test_apply_redactions_persists_processed_file_and_history(
+        self, has_state: bool
+    ):
         client = DjangoClient()
         pdf = self._create_pdf()
+        if not has_state:
+            pdf.state = None
+            pdf.save(update_fields=["state"])
         source_sha256 = self._source_sha256(pdf)
 
         redacted_file = SimpleUploadedFile(
