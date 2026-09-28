@@ -4,12 +4,12 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Any, Literal, cast
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
-from django.utils import timezone
 from lx_dtypes.models.contracts.video_reimport import (
     VideoReimportDispatchResult,
     VideoReimportHistoryConfig,
@@ -21,6 +21,12 @@ from lx_dtypes.models.contracts.video_reimport import (
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
 
+from endoreg_db.services.jobs.timeouts import is_processing_timeout
+from endoreg_db.services.jobs.video_reimport_budget import (
+    MAX_REIMPORT_SOFT_SECONDS,
+    REIMPORT_CLEANUP_SECONDS,
+    video_reimport_budget,
+)
 from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.config.env import (
     env_choice,
@@ -44,7 +50,7 @@ from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
 from endoreg_db.services.hub.upload_job_state_machine import (
-    validate_upload_job_status_transition,
+    transition_reimport_upload_jobs,
 )
 from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_import import VideoImportService
@@ -219,23 +225,19 @@ def _select_reimport_upload_jobs(video: VideoFile) -> list[UploadJob]:
     return selected_jobs
 
 
-def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
-    target_status = updates.get("status")
-    if not isinstance(target_status, str):
-        raise ValueError("video re-import UploadJob update requires a status")
+def _update_reimport_upload_jobs(
+    video: VideoFile,
+    *,
+    status: UploadJob.Status,
+    error_detail: str = "",
+    sensitive_meta_id: int | None = None,
+) -> int:
     with transaction.atomic():
-        selected_jobs = _select_reimport_upload_jobs(video)
-        if not selected_jobs:
-            return 0
-        for upload_job in selected_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=target_status,
-            )
-        selected_ids = [upload_job.pk for upload_job in selected_jobs]
-        return UploadJob.objects.filter(pk__in=selected_ids).update(
-            **updates,
-            updated_at=timezone.now(),
+        return transition_reimport_upload_jobs(
+            _select_reimport_upload_jobs(video),
+            status=status,
+            error_detail=error_detail,
+            sensitive_meta_id=sensitive_meta_id,
         )
 
 
@@ -384,6 +386,12 @@ def _reserve_reimport_history(
                 if recover_stale_video_processing_history(
                     history,
                     job_name="video re-import",
+                    protect_running=True,
+                    stale_timeout=timedelta(
+                        seconds=MAX_REIMPORT_SOFT_SECONDS
+                        + REIMPORT_CLEANUP_SECONDS
+                        + 3600
+                    ),
                 ):
                     continue
                 return history, RESERVATION_ALREADY_QUEUED
@@ -629,7 +637,7 @@ def _run_video_reimport_job(
         )
         raise
     except Exception as exc:
-        error_detail = str(exc)
+        error_detail = "processing_timeout" if is_processing_timeout(exc) else str(exc)
         if video is not None:
             _mark_upload_jobs_error(video, error_detail)
         _mark_history_failure(history, error_detail)
@@ -719,6 +727,7 @@ def dispatch_video_reimport(
     try:
         from endoreg_db.tasks import run_video_reimport_task
 
+        budget = video_reimport_budget(video.frame_count)
         ensure_secure_transport_for_job_kind(HeavyJobKind.VIDEO_REIMPORT)
         async_result = run_video_reimport_task.apply_async(
             args=(int(video_id),),
@@ -726,6 +735,8 @@ def dispatch_video_reimport(
             queue=ffmpeg_media_queue,
             routing_key=ffmpeg_media_queue,
             countdown=get_video_reimport_dispatch_delay_seconds(),
+            soft_time_limit=budget.soft_seconds,
+            time_limit=budget.hard_seconds,
         )
         _set_history_task_id(history, str(async_result.id))
         return _job_dispatch_result(

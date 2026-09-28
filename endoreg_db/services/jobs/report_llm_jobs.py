@@ -32,7 +32,7 @@ from endoreg_db.services.hub.upload_job_state_machine import (
     mark_upload_job_error,
     mark_upload_job_integrity_lost,
     mark_upload_job_processing,
-    validate_upload_job_status_transition,
+    transition_reimport_upload_jobs,
 )
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -163,84 +163,34 @@ def _report_upload_jobs(pdf: _RawPdfLike):
 
 
 def _mark_report_upload_jobs_processing(pdf: _RawPdfLike) -> int:
-    with transaction.atomic():
-        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
-        for upload_job in upload_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=UploadJob.Status.PROCESSING.value,
-            )
-        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
-        return (
-            _report_upload_jobs(pdf)
-            .filter(pk__in=upload_job_ids)
-            .update(
-                status=UploadJob.Status.PROCESSING,
-                error_detail="",
-                updated_at=timezone.now(),
-            )
-        )
+    return transition_reimport_upload_jobs(
+        _report_upload_jobs(pdf).select_for_update(),
+        status=UploadJob.Status.PROCESSING,
+    )
 
 
 def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
-    with transaction.atomic():
-        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
-        for upload_job in upload_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=UploadJob.Status.ANONYMIZED.value,
-            )
-        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
-        return (
-            _report_upload_jobs(pdf)
-            .filter(pk__in=upload_job_ids)
-            .update(
-                status=UploadJob.Status.ANONYMIZED,
-                error_detail="",
-                sensitive_meta_id=pdf.sensitive_meta_id,
-                updated_at=timezone.now(),
-            )
-        )
+    return transition_reimport_upload_jobs(
+        _report_upload_jobs(pdf).select_for_update(),
+        status=UploadJob.Status.ANONYMIZED,
+        sensitive_meta_id=pdf.sensitive_meta_id,
+    )
 
 
 def _mark_report_upload_jobs_error(pdf: _RawPdfLike, error_detail: str) -> int:
-    with transaction.atomic():
-        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
-        for upload_job in upload_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=UploadJob.Status.ERROR.value,
-            )
-        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
-        return (
-            _report_upload_jobs(pdf)
-            .filter(pk__in=upload_job_ids)
-            .update(
-                status=UploadJob.Status.ERROR,
-                error_detail=error_detail,
-                updated_at=timezone.now(),
-            )
-        )
+    return transition_reimport_upload_jobs(
+        _report_upload_jobs(pdf).select_for_update(),
+        status=UploadJob.Status.ERROR,
+        error_detail=error_detail,
+    )
 
 
 def _mark_report_upload_jobs_lost(pdf: _RawPdfLike, error_detail: str) -> int:
-    with transaction.atomic():
-        upload_jobs = tuple(_report_upload_jobs(pdf).select_for_update())
-        for upload_job in upload_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=UploadJob.Status.LOST.value,
-            )
-        upload_job_ids = tuple(upload_job.pk for upload_job in upload_jobs)
-        return (
-            _report_upload_jobs(pdf)
-            .filter(pk__in=upload_job_ids)
-            .update(
-                status=UploadJob.Status.LOST,
-                error_detail=error_detail,
-                updated_at=timezone.now(),
-            )
-        )
+    return transition_reimport_upload_jobs(
+        _report_upload_jobs(pdf).select_for_update(),
+        status=UploadJob.Status.LOST,
+        error_detail=error_detail,
+    )
 
 
 def _config_from_payload(

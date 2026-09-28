@@ -430,7 +430,7 @@ class UploadJob(models.Model):
     )
 
     if TYPE_CHECKING:
-        pass
+        sensitive_meta_id: int | None
 
     class Meta:
         ordering = ["-created_at"]
@@ -496,6 +496,21 @@ class UploadJob(models.Model):
                     & models.Q(retryable=False, next_retry_at__isnull=True)
                 ),
                 name="upload_job_retry_state_consistent",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status__in=[
+                            "retrying",
+                            "error",
+                            "lost",
+                            "cancel_requested",
+                            "cancelled",
+                        ]
+                    )
+                    | models.Q(error_code="", error_detail="")
+                ),
+                name="upload_job_current_error_state",
             ),
             models.CheckConstraint(
                 condition=(

@@ -28,6 +28,7 @@ def _make_source_record(center: Center) -> VideoFile:
     )
     return VideoFile.objects.create(
         center=center,
+        frame_count=1,
         state=state,
         raw_video_hash=f"reimport-view-{token}",
         original_file_name=f"reimport-view-{token}.mp4",

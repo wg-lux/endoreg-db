@@ -319,3 +319,87 @@ def test_reimport_requires_ready_hls(monkeypatch: MonkeyPatch, hls_status: str) 
     else:
         with pytest.raises(RuntimeError, match="HLS is not ready"):
             jobs._regenerate_reimport_hls_artifacts(video)
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_reimport_timeout_persists_safe_failure_without_hls_or_retry(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    wrapped: bool,
+) -> None:
+    from unittest.mock import Mock
+    from billiard.exceptions import SoftTimeLimitExceeded
+    import endoreg_db.services.jobs.video_reimport_jobs as jobs
+
+    video = Mock()
+    video.raw_file = "raw.mp4"
+    history = Mock(status="running")
+    error = SoftTimeLimitExceeded()
+    failure = RuntimeError("wrapped vendor error")
+    failure.__cause__ = error
+    service = Mock()
+    service.reanonymize_existing_video.side_effect = failure if wrapped else error
+    manager = Mock()
+    manager.select_related.return_value.get.return_value = video
+    monkeypatch.setattr(jobs.VideoFile, "objects", manager)
+    monkeypatch.setattr(jobs, "_get_processing_history", Mock(return_value=history))
+    monkeypatch.setattr(jobs, "defer_if_video_media_busy", Mock())
+    monkeypatch.setattr(jobs, "_config_from_history", Mock(return_value=object()))
+
+    def source_context(_: object) -> Any:
+        return _context_path(tmp_path / "raw.mp4")
+
+    monkeypatch.setattr(jobs, "ensure_local_file", source_context)
+    monkeypatch.setattr(jobs.transaction, "atomic", lambda: _context_path(tmp_path))
+    monkeypatch.setattr(jobs, "_reset_reimport_state", Mock(return_value=0))
+    monkeypatch.setattr(jobs, "VideoImportService", Mock(return_value=service))
+    upload_failure = Mock()
+    history_failure = Mock()
+    publish = Mock()
+    monkeypatch.setattr(jobs, "_mark_upload_jobs_error", upload_failure)
+    monkeypatch.setattr(jobs, "_mark_history_failure", history_failure)
+    monkeypatch.setattr(jobs, "_regenerate_reimport_hls_artifacts", publish)
+    with pytest.raises((SoftTimeLimitExceeded, RuntimeError)):
+        jobs._run_video_reimport_job(15)
+    upload_failure.assert_called_once_with(video, "processing_timeout")
+    history_failure.assert_called_once_with(history, "processing_timeout")
+    publish.assert_not_called()
+    history.mark_success.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "frame_count,expected_status",
+    [(105307, "queued"), (None, "failed"), (1000000, "failed")],
+)
+def test_dispatch_supplies_bounded_limits_or_rejects(
+    monkeypatch: MonkeyPatch,
+    frame_count: int | None,
+    expected_status: str,
+) -> None:
+    from unittest.mock import Mock
+    import endoreg_db.services.jobs.video_reimport_jobs as jobs
+    from endoreg_db.tasks import run_video_reimport_task
+
+    video = Mock(pk=15, frame_count=frame_count)
+    history = Mock(pk=1)
+    manager = Mock()
+    manager.get.return_value = video
+    monkeypatch.setattr(jobs.VideoFile, "objects", manager)
+    monkeypatch.setattr(
+        jobs, "get_video_reimport_job_mode", Mock(return_value="celery")
+    )
+    monkeypatch.setattr(
+        jobs, "_reserve_reimport_history", Mock(return_value=(history, "new"))
+    )
+    monkeypatch.setattr(jobs, "ensure_secure_transport_for_job_kind", Mock())
+    monkeypatch.setattr(jobs, "_set_history_task_id", Mock())
+    enqueue = Mock(return_value=SimpleNamespace(id="opaque-test-task"))
+    monkeypatch.setattr(run_video_reimport_task, "apply_async", enqueue)
+    result = jobs.dispatch_video_reimport(video_id=15)
+    assert result.status == expected_status
+    if expected_status == "queued":
+        assert enqueue.call_args.kwargs["soft_time_limit"] == 35193
+        assert enqueue.call_args.kwargs["time_limit"] == 35493
+    else:
+        enqueue.assert_not_called()
+        history.mark_failure.assert_called_once()

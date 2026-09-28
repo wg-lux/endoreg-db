@@ -21,19 +21,22 @@ def recover_stale_video_processing_history(
     history: VideoProcessingHistory,
     *,
     job_name: str,
+    stale_timeout: timedelta = VIDEO_PROCESSING_STALE_TIMEOUT,
+    protect_running: bool = False,
 ) -> bool:
-    """Fail an active history that outlived the worker's six-hour limit."""
+    """Fail an active history only after its workflow runtime allowance."""
     if history.status not in {
         VideoProcessingHistory.STATUS_PENDING,
         VideoProcessingHistory.STATUS_RUNNING,
     }:
         return False
-    if history.created_at > timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT:
+    # Creation time includes queue wait and cannot prove a running worker dead.
+    if protect_running and history.status == VideoProcessingHistory.STATUS_RUNNING:
+        return False
+    if history.created_at > timezone.now() - stale_timeout:
         return False
 
-    reason = (
-        f"Recovered stale {job_name} history after {VIDEO_PROCESSING_STALE_TIMEOUT}."
-    )
+    reason = f"Recovered stale {job_name} history after {stale_timeout}."
     history.mark_failure(reason)
     logger.warning(
         "Recovered stale video processing history: history=%s video=%s job=%s",

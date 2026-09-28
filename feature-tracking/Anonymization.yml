@@ -16,17 +16,71 @@ source_documents:
   disposition: reference
   note: Configuration of the artificial intelligence components in use.
 definition_of_done:
+- id: bounded_video_reimport
+  category: functionality
+  title: Video re-import has bounded workload budgets and actionable timeout failures
+  acceptance:
+  - Frame-count budgets include throughput margin, finalization time and cleanup grace; invalid or oversized
+    requests are rejected before dispatch.
+  - Direct and wrapped Celery soft timeouts persist processing_timeout without automatic retry or publication.
+  - Stale recovery cannot reclaim a re-import within its maximum runtime.
+  - OCR telemetry and atomic metadata validation preserve exhaustive coverage and omit clinical values.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused budget, reimport, observability and paired anonymizer tests; benchmark a
+      representative long video before deployment.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3 SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py
+        tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py
+        -q: 71 passed'
+    - kind: test
+      reference: 2026-09-28 focused backend regression 71 passed and paired anonymizer regression 111
+        passed
+    note: Backend regression 71 passed; paired anonymizer regression 111 passed. Benchmark and frame observation
+      capacity above 100000 remain deployment blockers.
+    assessed_by: codex-gc02-import-20260928
+    assessed_at: '2026-09-28T07:40:42.056770Z'
+- id: typed_media_deletion
+  category: data_integrity
+  title: Explicit media identity controls individual deletion
+  acceptance:
+  - Individual deletion requires video or pdf in the route and rejects untyped or invalid requests.
+  - Equal numeric IDs never select the other media type, including when the requested type is missing.
+  - Existing model storage cleanup and upload-job provenance retention remain authoritative.
+  - Missing or multiple upload jobs do not cause a post-deletion lookup failure.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused media-management endpoint tests and Pyright; verify frontend typed callers.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence: []
+    assessed_by: codex-video16-20260925
+    assessed_at: '2026-09-25T08:19:02Z'
 - id: approved_report_artifact_retention
   category: functionality
   title: Explicit report approval retains the verified processed PDF
   acceptance:
-  - Approval verifies the existing processed PDF and its persisted digest before marking the report validated or scheduling raw cleanup.
-  - Manual correction PDFs are retained byte-for-byte after explicit acceptance; no rendering from text or raw-document export fallback is permitted.
-  - Missing, unreadable or mismatched processed PDFs reject approval with an actionable conflict response and preserve the source and validation state.
+  - Approval verifies the existing processed PDF and its persisted digest before marking the report validated
+    or scheduling raw cleanup.
+  - Manual correction PDFs are retained byte-for-byte after explicit acceptance; no rendering from text
+    or raw-document export fallback is permitted.
+  - Missing, unreadable or mismatched processed PDFs reject approval with an actionable conflict response
+    and preserve the source and validation state.
   required: true
   verification:
     kind: command
     command:
+    - env
+    - TEST_DB_ENGINE=django.db.backends.sqlite3
+    - SKIP_EXPENSIVE_TESTS=false
     - .devenv/state/venv/bin/pytest
     - tests/views/anonymization/test_validate_view.py
     - tests/services/test_report_artifact_integrity.py
@@ -34,7 +88,18 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: not_assessed
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-09-25: focused Pyright zero errors/warnings; SQLite with SKIP_EXPENSIVE_TESTS=false:
+        validation view, artifact integrity and redaction suites 33 passed, 12 video tests skipped. Ruff
+        passed. lx-annotate hub integration confirms correction bytes and filename retained, raw-only
+        cleanup, and hub eligibility; 28 hub tests passed against source backend.'
+    note: All three acceptance bullets reviewed. Approval verifies before state mutation; accepted bytes
+      are retained; unusable artifacts return 409 and preserve raw/validation state. Source change not
+      packaged or deployed.
+    assessed_by: codex-patient-kanban-20260925
+    assessed_at: '2026-09-25T07:33:05.647296Z'
 - id: documented_scope
   category: requirements
   title: Protection scope and approval boundaries are clearly defined

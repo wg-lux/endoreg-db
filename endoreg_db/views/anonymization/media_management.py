@@ -14,7 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
-from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.schemas.case_documents import CaseDocumentMediaType
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
@@ -37,14 +37,6 @@ class _VideoRecord(Protocol):
     original_file_name: str | None
     uploaded_at: datetime
     raw_video_hash: str
-
-    def delete(self) -> None: ...
-
-
-class _PdfRecord(Protocol):
-    id: int
-    file: object
-    pdf_hash: str
 
     def delete(self) -> None: ...
 
@@ -346,38 +338,36 @@ class MediaManagementView(APIView):
 
 @api_view(["DELETE"])
 @permission_classes(DEBUG_PERMISSIONS)
-def force_remove_media(request: Request, file_id: int) -> Response:
+def force_remove_media(
+    request: Request, file_id: int, media_type: str | None = None
+) -> Response:
     try:
-        try:
-            video = cast(_VideoRecord, VideoFile.objects.get(id=file_id))
-            filename = video.original_file_name
-            video.delete()
-            job = UploadJob.objects.get(content_hash=video.raw_video_hash)
-            job.delete()
-            payload = MediaManagementForceRemoveResponsePayload(
-                detail=f"Video file '{filename}' (ID: {file_id}) removed successfully",
-                file_type="video",
-                file_id=file_id,
-            )
-            return Response(payload.model_dump(mode="python"))
-        except VideoFile.DoesNotExist:
-            pass
+        kind = CaseDocumentMediaType(media_type)
+    except ValueError:
+        return Response(
+            {
+                "detail": "An explicit media type (video or pdf) is required in the deletion URL"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-        try:
-            pdf = cast(_PdfRecord, RawPdfFile.objects.get(id=file_id))
-            filename = getattr(pdf.file, "name", "Unknown")
-            pdf.delete()
-            job = UploadJob.objects.get(content_hash=pdf.pdf_hash)
-            job.delete()
-            payload = MediaManagementForceRemoveResponsePayload(
-                detail=f"report file '{filename}' (ID: {file_id}) removed successfully",
-                file_type="pdf",
-                file_id=file_id,
-            )
-            return Response(payload.model_dump(mode="python"))
-        except RawPdfFile.DoesNotExist:
-            pass
-
+    try:
+        match kind:
+            case CaseDocumentMediaType.VIDEO:
+                media = VideoFile.objects.get(pk=file_id)
+                file_type = "video"
+            case CaseDocumentMediaType.PDF:
+                media = RawPdfFile.objects.get(pk=file_id)
+                file_type = "pdf"
+        # Model deletion owns storage cleanup and signals retain upload provenance.
+        media.delete()
+        payload = MediaManagementForceRemoveResponsePayload(
+            detail=f"{file_type} file (ID: {file_id}) removed successfully",
+            file_type=file_type,
+            file_id=file_id,
+        )
+        return Response(payload.model_dump(mode="python"))
+    except (VideoFile.DoesNotExist, RawPdfFile.DoesNotExist):
         return Response(
             {"detail": "File not found"},
             status=status.HTTP_404_NOT_FOUND,

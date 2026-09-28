@@ -17,8 +17,16 @@ def _mark_upload_jobs_lost_for_deleted_media(
     content_hash: str,
     media_kind: str,
 ) -> None:
+    from endoreg_db.services.hub.upload_job_state_machine import (
+        mark_upload_job_integrity_lost,
+    )
+
     active_jobs = UploadJob.objects.filter(content_hash=content_hash).exclude(
-        status__in=[UploadJob.Status.ERROR, UploadJob.Status.LOST]
+        status__in=[
+            UploadJob.Status.ERROR,
+            UploadJob.Status.LOST,
+            UploadJob.Status.CANCELLED,
+        ]
     )
     lost_count = 0
     error_detail = (
@@ -40,12 +48,13 @@ def _mark_upload_jobs_lost_for_deleted_media(
             **provenance,
             **provenance_update,
         }
-        upload_job.status = UploadJob.Status.LOST
-        upload_job.error_detail = error_detail
+        mark_upload_job_integrity_lost(
+            upload_job,
+            error_detail,
+            error_code=UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED,
+        )
         upload_job.save(
             update_fields=[
-                "status",
-                "error_detail",
                 "processing_provenance",
                 "updated_at",
             ]

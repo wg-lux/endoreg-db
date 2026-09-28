@@ -325,7 +325,7 @@ class PdfMediaView(APIView):
         )
 
     def delete(self, request: Request, pk: int) -> Response:
-        force_remove_path = endoreg_api_path(f"media-management/force-remove/{pk}/")
+        force_remove_path = endoreg_api_path(f"media-management/force-remove/pdf/{pk}/")
         return Response(
             {
                 "error": "report deletion not yet implemented",

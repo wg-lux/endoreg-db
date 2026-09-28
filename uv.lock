@@ -775,7 +775,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.3.10"
+version = "1.3.14"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -916,7 +916,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.0.3" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.0.4" },
     { name = "lx-dtypes", specifier = ">=0.3.7" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1603,7 +1603,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.0.3"
+version = "1.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1637,9 +1637,9 @@ dependencies = [
     { name = "verovio" },
     { name = "ziglang" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/df/84/a6c75b792abc4cddae809239683375dc41dd9b44421a61023dc0e506c9c3/lx_anonymizer-1.0.3.tar.gz", hash = "sha256:908a874e388971da46ad842e00c5ed95473f3ded8692c55f0283aee4c6e6551e", size = 16228127, upload-time = "2026-09-23T11:51:26.191Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/94/8489e65dc5a1957758beac0271f26a334a2554690421bd74a6a233495c43/lx_anonymizer-1.0.4.tar.gz", hash = "sha256:e0e006a34db723c88f80fe1ef45b74226673298bd779eec16a4fd0e73cba7a60", size = 16230758, upload-time = "2026-09-28T07:47:24.985Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e7/3a/d2f4eae256d9d0d53ab95414f88214aafb6dbb8a126693349d9f34c5d8fd/lx_anonymizer-1.0.3-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:e7955e49510a5a31d0ba61e76e4c2c086a0c0640876e0e4c3b3d5ca9bef85cac", size = 16176056, upload-time = "2026-09-23T11:51:00.832Z" },
+    { url = "https://files.pythonhosted.org/packages/74/1b/d42e0166fd9733cae403c28156a347400ac6b92b7514562186e80cffe731/lx_anonymizer-1.0.4-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:4ffb3685444510c8cb8b66086daa8d653dc989597d8f40e7d81b0eac94cd6e33", size = 16176944, upload-time = "2026-09-28T07:47:20.126Z" },
 ]
 
 [package.optional-dependencies]

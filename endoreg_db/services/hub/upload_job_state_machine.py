@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+
+from django.db import transaction
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
 from endoreg_db.services.lifecycle_state_machine import (
@@ -225,3 +227,38 @@ def schedule_upload_job_retry(
         delay_seconds=delay_seconds,
         max_retries=max_retries,
     )
+
+
+@transaction.atomic
+def transition_reimport_upload_jobs(
+    jobs: Iterable[UploadJob],
+    *,
+    status: UploadJob.Status,
+    error_detail: str = "",
+    sensitive_meta_id: int | None = None,
+) -> int:
+    """Transition locked reimport jobs through the canonical model operations."""
+    if status not in {
+        UploadJob.Status.PROCESSING,
+        UploadJob.Status.ANONYMIZED,
+        UploadJob.Status.ERROR,
+        UploadJob.Status.LOST,
+    }:
+        raise ValueError("Unsupported reimport upload job transition")
+    selected = tuple(jobs)
+    for job in selected:
+        validate_upload_job_status_transition(
+            current_status=job.status,
+            target_status=status.value,
+        )
+    for job in selected:
+        if status == UploadJob.Status.PROCESSING:
+            job.mark_processing()
+        elif status == UploadJob.Status.ANONYMIZED:
+            job.sensitive_meta_id = sensitive_meta_id
+            job.mark_completed()
+        elif status == UploadJob.Status.ERROR:
+            job.mark_error(error_detail)
+        else:
+            job.mark_lost(error_detail)
+    return len(selected)

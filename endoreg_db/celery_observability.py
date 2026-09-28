@@ -5,6 +5,8 @@ import threading
 from collections.abc import Mapping
 from typing import Literal, cast
 
+from endoreg_db.services.jobs.timeouts import is_processing_timeout
+
 from celery.signals import task_failure, task_postrun, task_prerun
 
 from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
@@ -121,7 +123,7 @@ def _failure_classification(
 ]:
     # Only fixed categories are public: exception names and messages can carry
     # clinical input, including names synthesized by third-party integrations.
-    if isinstance(exception, TimeoutError):
+    if is_processing_timeout(exception):
         return "timeout"
     if isinstance(exception, ConnectionError):
         return "connection"

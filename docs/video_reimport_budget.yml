@@ -1,0 +1,56 @@
+schema_version: 1
+feature: ../feature-tracking/Anonymization.yml
+scope: Celery video re-import dispatch; existing direct task calls retain their task defaults.
+budget:
+  formula: ceil(frame_count / frames_per_second * margin + finalization_seconds)
+  inputs:
+    VIDEO_REIMPORT_FRAMES_PER_SECOND:
+      default: 5.0
+      meaning: Conservative planning estimate; replace with measured throughput for the selected worker and representative exhaustive workloads.
+    VIDEO_REIMPORT_TIME_MARGIN:
+      default: 1.5
+      minimum: 1.0
+    VIDEO_REIMPORT_FINALIZATION_SECONDS:
+      default: 3600
+      meaning: Allowance for materialization, encoding, HLS generation and other non-OCR work; calibrate alongside throughput.
+    VIDEO_REIMPORT_MAX_SECONDS:
+      default: 86400
+      maximum: 86400
+  hard_limit: soft_limit + 300 seconds of cleanup grace
+  missing_frame_count: Reject before enqueueing; restore verified source metadata through the existing metadata workflow.
+  oversized_work: Reject explicitly; never clamp the estimate or reduce OCR coverage.
+  example:
+    frames: 105307
+    soft_seconds: 35193
+    hard_seconds: 35493
+    note: Planning example only; completion within this budget has not been benchmarked.
+failures:
+  metadata: Frame observations validate atomically. Gender tokens use word boundaries and the shared male/female literals; invalid observations propagate with redacted field-level validation codes.
+  timeout: Direct or causally wrapped Celery timeouts persist processing_timeout in processing history and upload-job error detail.
+  retries: No automatic timeout retry; review resource capacity and calibration before an authorized retry.
+  stale_recovery: Pending histories use a 25-hour-plus-cleanup bound. Running reimports are not reclaimed by creation age; reconcile abandoned running jobs only after verifying worker termination.
+telemetry:
+  component: lx-anonymizer FrameOCR
+  event: ocr.progress
+  frequency: First inference, at most once per minute during work, and inference failure.
+  fields: [inference_calls_completed, full_frame_calls_completed, failures, inference_seconds, detection_seconds, classification_seconds, recognition_seconds, stage_timing_calls, session_providers]
+  limits: Per-instance aggregates; exact-frame cache hits do not invoke OCR. Provider lists describe configured sessions, not proof that every operation ran on a GPU. Stage times are available only when supplied by the backend.
+validation:
+  - Run Pyright and focused budget, dispatch, timeout, metadata, OCR and exhaustive-coverage tests.
+  - Benchmark representative long videos in an isolated encrypted test runtime before deployment; measure whole-task throughput and finalization overhead.
+  - Verify frame observation capacity separately; increasing a time budget does not increase that independent bound.
+  - Publish compatible endoreg-db and lx-anonymizer releases and deploy through the normal reviewed workflow.
+
+verification_results:
+  backend_tests:
+    command: RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3 SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py -q
+    result: 71 passed
+  anonymizer_tests:
+    command: devenv shell -- .devenv/state/venv/bin/pytest tests/test_frame_metadata_extractor_dates.py tests/test_sensitive_meta_interface.py tests/test_ocr_frame_rapidocr.py tests/test_exhaustive_video_metadata.py tests/test_frame_report_helper_logic.py -q
+    result: 111 passed
+  static_checks:
+    - Full Pyright passed with zero errors in both repositories (6 backend warnings and 8 anonymizer warnings); focused changed-file checks had zero warnings.
+    - Backend focused Ruff passed; anonymizer touched-file Ruff has 91 findings compared with 101 in HEAD, with no increased rule counts.
+    - Backend feature definitions validate; anonymization readiness remains nonzero (6 of 12 criteria verified).
+    - Anonymizer YAML and added criteria validate; full backend tracker validation is not compatible with that repository's existing feature format and missing policy.yml.
+  not_run: Representative long-video benchmark, deployed-runtime acceptance, and production re-import.
