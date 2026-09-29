@@ -84,6 +84,12 @@ For an existing installation, set `adopt_existing: true` explicitly only after
 reviewing the plan. Adoption retains equivalent rows and their primary keys;
 different fields or relationships remain conflicts. The default is `false`.
 
+The known seven-indication colorectal upgrade has a separate
+[one-time reconciliation command](reference_catalog_migration.yml). It creates the
+missing intervention dependencies, updates the seven indication relationships, and
+verifies the complete catalogue in one transaction. An optional `--dry-run` previews
+the changes; no review file is required. Strict adoption and startup behavior remain unchanged.
+
 The site's `center_key` is immutable. Applying the setup creates or reuses the
 matching center and explicitly selects it through `ApplicationSettings.center`
 for local intake. A conflicting existing key/name is an error. This selection

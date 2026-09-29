@@ -384,9 +384,18 @@ definition_of_done:
   category: data_integrity
   title: Phase 5 - Replace clinical fixture loading without breaking installed databases
   acceptance:
+  - Provide a single explicit reconciliation command for the seven colorectal indication expected_interventions
+    changes in endoreg_reference@1.0.0 and their eight intervention plus histology_sampling dependencies.
+    Optional dry-run leaves the database and registry unchanged; apply requires no review file or reviewer
+    argument, checks exact catalogue content and current relationships under the catalogue writer lock,
+    rejects unrelated drift, preserves existing row identities and patient references, and commits dependency
+    creation, relationship changes and reconciliation together. Strict legacy adoption remains unchanged.
   - Keep load_base_db_data as a compatibility orchestrator initially; delegate clinical reference provisioning
     to the dtypes service and retain necessary host-owned operational provisioning identified in phase
     1.
+  - LuxNix may explicitly enable bounded reconciliation through load_base_db_data --reconcile-legacy;
+    fresh installs, equivalent legacy catalogues and repeated runs succeed without duplicate rows or receipts.
+    Dry-run remains read-only and unexpected conflicts still fail before database mutation.
   - Replace the legacy YAML plus hybrid indication overlay after parity is established; never silently
     fall back to stale clinical fixtures when a selected bundle cannot load.
   - Provide a dry-run reconciliation of existing rows, names, relations, duplicate identities, and unresolved
@@ -429,6 +438,22 @@ definition_of_done:
       reference: docs/wiki/dataloader_yaml_authoring.md
     - kind: test
       reference: tests/migrations/test_reference_catalog_upgrade.py
+    - kind: code
+      reference: endoreg_db/services/reference_catalog_migration.py
+    - kind: document
+      reference: docs/wiki/reference_catalog_migration.yml
+    - kind: command
+      reference: '.devenv/state/venv/bin/pytest tests/services/test_reference_catalog_migration.py -q
+        --tb=short -x: 11 passed (2026-09-29)'
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 6 existing warnings. pytest tests/services/test_reference_catalog.py
+        tests/services/test_deployment_setup.py -q --tb=short: 27 passed, 1 failed; existing test_activation_is_explicit_and_retry_preserves_database
+        hardcodes coloreg@0.2.0 while shared config.yaml declares 0.3.0. Migration-specific tests: 11
+        passed. No live database or service mutations.'
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright && .devenv/state/venv/bin/pytest tests/services/test_reference_catalog_migration.py
+        tests/services/test_reference_catalog.py -q --tb=short: 0 type errors, 24 tests passed (2026-09-29
+        simplified command).'
     note: 'Klinische Loader-Umstellung einschließlich vom Nutzer freigegebener Green-Endoscopy- und Personal-/Schichtreferenzen
       implementiert: 865 Datensätze (673 Bootstrap, 153 Green Endoscopy, 39 Workforce), 68 gemeinsame
       Typverträge, 27 kompatible Teilkommandos plus load_base_db_data. Generische utils/dataloader.py,
@@ -457,9 +482,20 @@ definition_of_done:
       wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad korrigiert. Anschließender Paket-/Integrationslauf:
       74 bestanden, 2 Warnungen in 81.51s, einschließlich des korrigierten Tests. Insgesamt 297 unterschiedliche
       Tests erfolgreich. Keine Produktivdaten oder Deployments geändert; PostgreSQL-/Produktivprobe bleibt
-      offen.'
-    assessed_by: codex-stash-review-20260929
-    assessed_at: '2026-09-29T10:01:00.274932Z'
+      offen.
+
+
+      2026-09-29 simplification requested by user: replaced the persisted review-file, target-fingerprint
+      and reviewer workflow with one explicit migrate_reference_catalog command and optional --dry-run.
+      Retained pinned scope, strict adoption, row locks, atomic dependency creation/relationship updates/full
+      reconciliation, immutable receipts and structured commit logging. No model fields or catalogue records
+      deleted. Patient indication links and existing row identities verified. Full Pyright: 0 errors,
+      6 existing warnings. Migration and catalogue integration tests: 24 passed, 1 existing plugin rewrite
+      warning in 121.34s. Ruff, format checks, YAML parsing and git diff --check passed. The earlier deployment-setup
+      version-expectation failure is outside this simplification and was not changed. No production artifact
+      installed, database mutated or services restarted; privileged live gc-02 access remains unavailable.'
+    assessed_by: codex-study-definitions-20260929
+    assessed_at: '2026-09-29T13:29:09.347171Z'
 - id: authoring_and_access_boundaries
   category: security
   title: Researcher YAML is validated data within existing study and center permissions
