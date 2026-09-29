@@ -4,7 +4,6 @@ from endoreg_db.utils.storage.files import canonical_media_name
 
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack
 
@@ -38,10 +37,12 @@ def create_raw_pdf_file_from_path(
     center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
+    center_key: str | None = None,
     save: bool = True,
     **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     from endoreg_db.models.administration.center.center import Center
+    from endoreg_db.services.center_defaults import resolve_import_center
 
     model = model_cls or _raw_pdf_model()
     if isinstance(file_path, str):
@@ -51,17 +52,9 @@ def create_raw_pdf_file_from_path(
         logger.error("Source file does not exist: %s", file_path)
         raise FileNotFoundError(f"Source file not found: {file_path}")
 
-    if not center_name:
-        try:
-            center_name = os.environ["CENTER_NAME"]
-        except KeyError:
-            logger.error("Center name must be provided or set in CENTER_NAME env var.")
-            raise ValueError("Center name must be provided.")
-
     try:
-        center = Center.objects.get(name=center_name)
+        center = resolve_import_center(center_name, center_key=center_key)
     except Center.DoesNotExist as exc:
-        logger.error("Center '%s' not found.", center_name)
         raise ValueError(f"Center '{center_name}' not found.") from exc
 
     try:
@@ -127,12 +120,14 @@ def create_initialized_raw_pdf_file_from_path(
     center_name: str | None = None,
     *,
     model_cls: type["RawPdfFile"] | None = None,
+    center_key: str | None = None,
     **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     raw_pdf = create_raw_pdf_file_from_path(
         file_path=file_path,
         center_name=center_name,
         model_cls=model_cls,
+        center_key=center_key,
         **kwargs,
     )
     return initialize_raw_pdf_file(raw_pdf)

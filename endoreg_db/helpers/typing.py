@@ -1,13 +1,11 @@
 """Shared Django and loader typing boundaries."""
 
 from collections.abc import Iterable
-from pathlib import Path
-from typing import TYPE_CHECKING, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import TYPE_CHECKING, Protocol, TypeAlias, TypedDict, cast
 
 from django.core.files import File
-from django.db.models import Model
+from django.db.models import Model, QuerySet
 from django.db.models.base import ModelBase
-from lx_dtypes.models.contracts.video_frame_export import YamlScalar
 from rest_framework.permissions import (
     BasePermission,
     OperandHolder,
@@ -32,6 +30,13 @@ class ManyToManyAddRelation(Protocol):
     def add(self, *objs: Model) -> None: ...
 
 
+class ReferenceRelation(Protocol):
+    """Shared ORM relation boundary for graph and catalogue reference projection."""
+
+    def all(self) -> QuerySet[Model]: ...
+    def set(self, _objects: Iterable[Model], /) -> None: ...
+
+
 def m2m_add_relation(manager: object) -> ManyToManyAddRelation:
     return cast(ManyToManyAddRelation, manager)
 
@@ -46,30 +51,3 @@ class BinaryFieldFileSaver(Protocol):
     """Django's binary save contract, narrowed once at its unparameterized stub."""
 
     def save(self, name: str, content: DjangoFile, save: bool = True) -> None: ...
-
-
-YamlValue: TypeAlias = YamlScalar | list[YamlScalar]
-LoadModelDataModel: TypeAlias = type[Model]
-LoadModelDataDirectory: TypeAlias = str | Path
-
-
-class YamlEntry(TypedDict):
-    fields: dict[str, YamlValue]
-
-
-class LoadModelDataValidator(Protocol):
-    def __call__(
-        self,
-        fields: dict[str, YamlValue],
-        *,
-        entry: YamlEntry,
-        model: LoadModelDataModel,
-    ) -> None: ...
-
-
-class LoadModelDataMetadata(TypedDict):
-    dir: LoadModelDataDirectory
-    model: LoadModelDataModel
-    foreign_keys: list[str]
-    foreign_key_models: list[LoadModelDataModel]
-    validators: NotRequired[list[LoadModelDataValidator]]

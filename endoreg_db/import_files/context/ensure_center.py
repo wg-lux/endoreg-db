@@ -13,7 +13,12 @@ class _NamedCenter(Protocol):
     name: str
 
 
-def ensure_center(instance: RawPdfFile | VideoFile, center: str | None) -> Center:
+def ensure_center(
+    instance: RawPdfFile | VideoFile,
+    center: str | None,
+    *,
+    center_key: str | None = None,
+) -> Center:
     center_carrier = cast(_CenterCarrier, instance)
     instance_center = center_carrier.center
     if instance_center is None:
@@ -21,4 +26,6 @@ def ensure_center(instance: RawPdfFile | VideoFile, center: str | None) -> Cente
     named_center = cast(_NamedCenter, instance_center)
     if center is not None and named_center.name != center:
         raise AssertionError
+    if center_key is not None and instance_center.center_key != center_key:
+        raise ValueError("Imported media belongs to a different center")
     return instance_center

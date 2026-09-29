@@ -1,58 +1,36 @@
-# pyright: reportPrivateUsage=false
-from __future__ import annotations
-
-from collections.abc import Callable
-from typing import NoReturn
+from io import StringIO
+from unittest.mock import patch
 
 import pytest
-
-from endoreg_db.management.commands import load_examination_indication_data
-from endoreg_db.management.commands.load_examination_indication_data import Command
-
-
-def _empty_table_names() -> list[str]:
-    return []
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.db import OperationalError
 
 
-def _identity_warning(message: str) -> str:
-    return message
-
-
-def _raise_should_not_load(module_name: str) -> NoReturn:
-    raise AssertionError(f"should not load {module_name}")
-
-
-def test_load_from_dtypes_skips_when_required_tables_are_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    command = Command()
-    writes: list[str] = []
-
-    table_names = _empty_table_names
-    load_dtypes_knowledge_base: Callable[[str], NoReturn] = _raise_should_not_load
-
-    monkeypatch.setattr(
-        load_examination_indication_data.connection.introspection,
-        "table_names",
-        table_names,
-    )
-    monkeypatch.setattr(
-        load_examination_indication_data,
-        "_load_dtypes_knowledge_base",
-        load_dtypes_knowledge_base,
-    )
-    monkeypatch.setattr(command.stdout, "write", writes.append)
-    monkeypatch.setattr(command.style, "WARNING", _identity_warning)
-
-    command._load_from_dtypes(
-        verbose=True,
-        module_name="lx_examinations",
-        strict=False,
-    )
-
-    assert writes == [
-        "[dtypes] Skipping load because database tables are not available yet: "
-        "endoreg_db_examination, endoreg_db_examinationindication, "
-        "endoreg_db_examinationindicationclassification, "
-        "endoreg_db_findingintervention, endoreg_db_informationsource"
-    ]
+def test_missing_schema_is_a_failure_without_import() -> None:
+    with (
+        patch(
+            "endoreg_db.management.commands.import_reference_catalog.get_terminology_service"
+        ) as service,
+        patch(
+            "endoreg_db.management.commands.import_reference_catalog.catalog_snapshot"
+        ),
+        patch("endoreg_db.management.commands.import_reference_catalog.select_catalog"),
+        patch(
+            "endoreg_db.management.commands.import_reference_catalog.plan_reference_catalog",
+            side_effect=OperationalError("missing table"),
+        ),
+        patch(
+            "endoreg_db.management.commands.import_reference_catalog.import_reference_catalog"
+        ) as importer,
+    ):
+        service.return_value.load.return_value.config.name = "endoreg_reference"
+        service.return_value.load.return_value.config.version = "1.0.0"
+        with pytest.raises(CommandError, match="database migrations"):
+            call_command(
+                "import_reference_catalog",
+                module="endoreg_reference",
+                module_version="1.0.0",
+                stdout=StringIO(),
+            )
+    importer.assert_not_called()

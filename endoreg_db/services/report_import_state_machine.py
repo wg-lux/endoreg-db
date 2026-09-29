@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
 from endoreg_db.services.lifecycle_state_machine import (
+    OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,
     reduce_operation_lifecycle,
@@ -57,35 +58,16 @@ def validate_report_import_claim(
 ) -> None:
     """Validate a new fenced claim, including automatic interrupted recovery."""
     if current_status == ReportImportAttempt.STATUS_IDLE:
-        events = (
-            OperationLifecycleEvent.CLAIM,
-            OperationLifecycleEvent.START,
-        )
+        events = OperationClaimPath.INITIAL.events
     elif current_status == ReportImportAttempt.STATUS_ACTIVE and interrupted:
-        events = (
-            OperationLifecycleEvent.OWNERSHIP_LOST,
-            OperationLifecycleEvent.RECONCILE_RETRY,
-            OperationLifecycleEvent.RETRY_READY,
-            OperationLifecycleEvent.CLAIM,
-            OperationLifecycleEvent.START,
-        )
+        events = OperationClaimPath.INTERRUPTED.events
     elif current_status in {
         ReportImportAttempt.STATUS_FAILED,
         ReportImportAttempt.STATUS_SUCCEEDED,
     }:
-        events = (
-            OperationLifecycleEvent.RETRY_REQUESTED,
-            OperationLifecycleEvent.RETRY_READY,
-            OperationLifecycleEvent.CLAIM,
-            OperationLifecycleEvent.START,
-        )
+        events = OperationClaimPath.RETRY_REQUESTED.events
     elif current_status == ReportImportAttempt.STATUS_LOST:
-        events = (
-            OperationLifecycleEvent.RECONCILE_RETRY,
-            OperationLifecycleEvent.RETRY_READY,
-            OperationLifecycleEvent.CLAIM,
-            OperationLifecycleEvent.START,
-        )
+        events = OperationClaimPath.RECONCILE.events
     else:
         raise ValueError(
             "invalid ReportImportAttempt claim: "

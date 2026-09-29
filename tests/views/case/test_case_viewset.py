@@ -28,6 +28,50 @@ def _pk(instance: object) -> int:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("parameter", ["patient_id", "patient_examination_id"])
+@pytest.mark.parametrize("value", ["", "invalid", "0", "-1", "1.5"])
+def test_case_list_rejects_invalid_scope(
+    api_client: APIClient, parameter: str, value: str
+) -> None:
+    response = api_client.get("/api/cases/", {parameter: value})
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_case_list_preserves_multiple_explicit_examination_owners(
+    api_client: APIClient,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash=f"case-owner-{uuid4().hex}", first_name="Case", last_name="Owner"
+    )
+    examination = PatientExamination.objects.create(
+        patient=patient, hash=f"case-examination-{uuid4().hex}"
+    )
+    cases = [
+        Case.objects.create(patient=patient, start_date=timezone.now())
+        for _ in range(2)
+    ]
+    for patient_case in cases:
+        patient_case.patient_examinations.add(examination)
+    response = api_client.get(
+        "/api/cases/",
+        {"patient_id": _pk(patient), "patient_examination_id": _pk(examination)},
+    )
+    assert response.status_code == 200
+    assert {row["case_id"] for row in response.json()} == {
+        str(patient_case.case_id) for patient_case in cases
+    }
+    other = Patient.objects.create(patient_hash=f"other-owner-{uuid4().hex}")
+    assert (
+        api_client.get(
+            "/api/cases/",
+            {"patient_id": _pk(other), "patient_examination_id": _pk(examination)},
+        ).json()
+        == []
+    )
+
+
+@pytest.mark.django_db
 def test_case_roundtrip_persists_patient_clinical_graph(
     api_client: APIClient,
 ) -> None:

@@ -63,6 +63,7 @@ from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.lifecycle_state_machine import (
+    OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,
     reduce_operation_lifecycle,
@@ -151,6 +152,7 @@ def _claim_transfer_operation(
         now = _transfer_database_now(transfer_job_id)
         current = _transfer_operation_state(transfer_job.transfer_status)
         orphaned_candidate_name = transfer_job.operation_candidate_name
+        claim_path = OperationClaimPath.INITIAL
         if current is OperationLifecycleState.RUNNING:
             if (
                 transfer_job.operation_lease_expires_at is not None
@@ -159,30 +161,14 @@ def _claim_transfer_operation(
                 raise TransferOperationBusy(
                     "transfer operation already has a live owner"
                 )
-            current = reduce_operation_lifecycle(
-                current, (OperationLifecycleEvent.OWNERSHIP_LOST,)
-            )
-            transfer_job.transfer_status = TransferJob.TransferStatus.LOST
-            transfer_job.attempt_id = None
-            transfer_job.operation_owner = ""
-            transfer_job.operation_heartbeat_at = None
-            transfer_job.operation_lease_expires_at = None
-        if current is OperationLifecycleState.LOST:
-            current = reduce_operation_lifecycle(
-                current, (OperationLifecycleEvent.RECONCILE_RETRY,)
-            )
+            claim_path = OperationClaimPath.INTERRUPTED
+        elif current is OperationLifecycleState.LOST:
+            claim_path = OperationClaimPath.RECONCILE
         elif current is OperationLifecycleState.FAILED:
-            current = reduce_operation_lifecycle(
-                current, (OperationLifecycleEvent.RETRY_REQUESTED,)
-            )
-        if current is OperationLifecycleState.RETRY_WAIT:
-            current = reduce_operation_lifecycle(
-                current, (OperationLifecycleEvent.RETRY_READY,)
-            )
-        current = reduce_operation_lifecycle(
-            current,
-            (OperationLifecycleEvent.CLAIM, OperationLifecycleEvent.START),
-        )
+            claim_path = OperationClaimPath.RETRY_REQUESTED
+        elif current is OperationLifecycleState.RETRY_WAIT:
+            claim_path = OperationClaimPath.RETRY_READY
+        current = reduce_operation_lifecycle(current, claim_path.events)
         if current is not OperationLifecycleState.RUNNING:
             raise RuntimeError("transfer claim did not reduce to RUNNING")
         transfer_job.transfer_status = TransferJob.TransferStatus.RUNNING

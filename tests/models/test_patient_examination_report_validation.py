@@ -47,6 +47,8 @@ def test_patient_examination_report_canonicalizes_json_fields_on_direct_save() -
         ("editor_payload", ["not", "an", "object"]),
         ("patient_context_snapshot", {"captured_at": datetime.now()}),
         ("history_context_snapshot", {"history_depth": float("nan")}),
+        ("dtypes_record", {"unknown_clinical_field": "invalid"}),
+        ("dtypes_record", ["invalid"]),
     ],
 )
 def test_patient_examination_report_rejects_invalid_direct_json_writes(

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import date, datetime, time
 from uuid import uuid4
 import json
+import pymupdf
 import pytest
 from django.http import HttpResponse
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -701,6 +702,22 @@ class TestSensitiveMetadataEndpoints:
         user: User,
         pdf: RawPdfFile,
     ) -> None:
+        with pymupdf.open() as document:
+            page = document.new_page()
+            page.insert_text((72, 72), "Latest validated report text")
+            pdf.processed_file.save(
+                "validated-report.pdf",
+                SimpleUploadedFile(
+                    "validated-report.pdf",
+                    document.tobytes(),
+                    content_type="application/pdf",
+                ),
+            )
+        state = pdf.get_or_create_state()
+        state.processing_started = True
+        state.anonymized = True
+        state.sensitive_meta_processed = True
+        state.save()
         validation_payload = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -724,7 +741,7 @@ class TestSensitiveMetadataEndpoints:
 
         data = json.loads(response.content)
 
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_200_OK, data
 
         pdf.refresh_from_db()
         identity_commit = AuditLedger.objects.filter(

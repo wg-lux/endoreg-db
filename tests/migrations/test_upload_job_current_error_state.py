@@ -50,4 +50,5 @@ def test_backfill_preserves_status_and_current_failure_diagnostics() -> None:
                 error_code="processing_failed"
             )
     finally:
-        MigrationExecutor(connection).migrate(after)
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())

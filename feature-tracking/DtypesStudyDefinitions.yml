@@ -1,0 +1,635 @@
+schema_version: '1.0'
+id: dtypes_study_definitions
+name: Dtypes-driven reference data, YAML datasets, and live study cohorts
+description: 'Replace duplicated clinical base-data fixtures with validated, versioned lx_dtypes knowledge
+  bases and let researchers create lx-annotate datasets, saved study cohorts, study endpoints, and data
+  collection in YAML. Cohorts are saved definitions with live membership re-evaluated against current
+  authorized records, not fixed membership snapshots. Current relational workflows require reference rows,
+  not the load_base_db_data command itself: the compatibility command delegates to a versioned reference
+  catalogue. Clinical graph projection and optional operational catalogues use typed shared contracts
+  and immutable host import receipts. This feature makes the resolved knowledge base authoritative for
+  clinical definitions while endoreg_db owns persistence, access control, and operational provisioning.
+  Implementation proceeds through the numbered phases below; this file outlines proposed work, not completed
+  support.'
+owners:
+- endoreg_db maintainers
+- lx_dtypes maintainers
+- lx-annotate maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/dataloader_yaml_authoring.md
+  disposition: reference
+  note: Host versioned catalogue authoring, compatibility commands, dry-run reconciliation and recovery.
+- path: ../lx-data-models/docs/guides/knowledge-base-authoring.md
+  disposition: reference
+  note: Canonical versioned YAML, registry, dependency resolution, and packaging contract.
+- path: ../lx-data-models/docs/guides/knowledge-base-graph-api.md
+  disposition: reference
+  note: Existing immutable graph and examination-context projections.
+- path: docs/ai_dataset_attachment_contract.md
+  disposition: reference
+  note: Dataset annotation attachment is a separate authorized operation; creating a definition must not
+    implicitly attach all annotations.
+definition_of_done:
+- id: independent_local_center_defaults
+  category: interoperability
+  title: Local center provisioning remains independent of study and clinical fixture loading
+  acceptance:
+  - Local intake resolves its configured stable center identity without importing a study or legacy clinical
+    fixtures.
+  - Explicit study center selection is preserved; named centers supplied by reference catalogues never
+    replace runtime defaults implicitly.
+  - Authenticated hub source identity is preserved and never replaced by the receiving node's default
+    center.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the CenterAccess.yml local_center_defaults checks against empty clinical reference
+      tables and after catalogue provisioning; compare local explicit-center and authenticated hub source
+      ownership.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: yaml_dataset_and_cohort_contract
+  category: functionality
+  title: First delivery - Define YAML creation of datasets and saved live cohorts
+  acceptance:
+  - Publish a versioned strict lx_dtypes contract for YAML dataset and cohort definitions, with snake_case
+    keys and stable definition identifiers distinct from editable display names and deployment-specific
+    database IDs.
+  - Reuse AIDataSetCreateContract for name, description, dataset_type, ai_model_type, and is_active; preserve
+    its supported modality/model combinations and reject unsupported text datasets and unknown fields
+    before mutation.
+  - Reuse and consolidate the existing lx-annotate CohortDefinition and CohortFilters semantics for name,
+    hypothesis, date_from, date_to, center_key, examination_name, document_type, finding, annotation_label,
+    has_report, has_video, and limit; do not maintain divergent YAML and HTTP validators.
+  - YAML declares saved cohort definitions with live membership; patient, examination, finding, report,
+    and annotation records are not seeded or copied by definition import, and fixed membership snapshots
+    are outside this delivery.
+  - Cohorts reference datasets by stable definition identifiers; validate duplicate identifiers and dangling
+    references across the entire document, support several datasets per cohort and several cohorts per
+    dataset, and never resolve an ambiguous dataset display name by taking the first row.
+  - Owner identity and permissions come from the authenticated caller or explicit authorized CLI actor,
+    never from an author-controlled YAML owner or permission field.
+  - Provide a schema-validated .yml authoring example covering image and video dataset definitions, shared
+    dataset references, a required cohort hypothesis, false boolean filters, and quoted date strings without
+    embedding patient data, credentials, or host paths.
+  required: true
+  verification:
+    kind: manual
+    instructions: Validate the authoring .yml against the published schema and canonical existing contracts;
+      reject duplicate and unknown keys, invalid date ranges, string booleans, incompatible dataset model
+      types, missing hypotheses, duplicate identities, and dangling dataset references before any database
+      write.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/study_setup.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/utils/study_setup_yaml.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_study_setup.py
+    - kind: document
+      reference: ../lx-data-models/lx_dtypes/data/study_setup/research.yml
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/schemas/study_cohorts.py
+    note: 'Erster Vertragsschritt implementiert: versionierter StudySetupDefinition-Vertrag, gemeinsame
+      CohortDefinition/CohortFilters für YAML und lx-annotate, begrenzter SafeLoader-Parser und kommentierte
+      research.yml. Stabile Identitäten, gemeinsame Dataset-Referenzen, unbekannte Felder, Datumsbereiche,
+      boolesche Werte und Modalitätskombinationen werden geprüft. JSON Schema über StudySetupDefinition.model_json_schema().
+      Noch kein autorisierter Importer, keine Persistenz/Provenienz oder Produktivfreigabe. lx-annotate
+      benötigt bei Auslieferung die dazugehörige neue lx-dtypes-Paketversion. Verifikation: lx-data-models:
+      uv run --no-sync pyright: 0 Fehler/0 Warnungen; PYTHONPATH=/home/admin/lx-data-models .venv/bin/pytest
+      tests/unit/lx_dtypes/models/contracts/test_study_setup.py tests/unit/lx_dtypes/models/contracts/test_study_cohort.py
+      -q: 40 bestanden. Ruff format/check der vier neuen Python-Dateien bestanden. .venv/bin/sphinx-build
+      -b html docs docs/_build/html und -b linkcheck docs docs/_build/linkcheck erfolgreich, jeweils bestehende
+      terminology.md-toctree-Warnung. endoreg-db: .devenv/state/venv/bin/pyright: 0 Fehler/6 Warnungen.
+      lx-annotate-Schema: Pyright mit explizitem lx-data-models extraPaths und endoreg-db-Venv: 0 Fehler/0
+      Warnungen; Standardkonfiguration kann neuen lokalen Vertrag nicht auflösen. API-Testversuch mit
+      PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db:/home/admin/dev/lx-annotate und /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+      tests/api/test_study_cohorts.py -q vor Sammlung blockiert: django_vite fehlt. endoreg-db: PYTHONPATH=/home/admin/endoreg-db:/home/admin/lx-data-models
+      .devenv/state/venv/bin/pytest tests/services/test_study_cohort_identity.py tests/views/media/test_study_cohort.py
+      -q vor Sammlung blockiert: NumPy kann libstdc++.so.6 nicht laden. Initialer uv-pytest-Aufruf konnte
+      lx_dtypes nicht importieren; expliziter Venv-/Quellpfad-Aufruf oben erfolgreich. Hostintegration
+      bleibt ungeprüft.'
+    assessed_by: codex-dtypes-study-20260928-a
+    assessed_at: '2026-09-28T13:16:10.789613Z'
+- id: yaml_dataset_and_cohort_provisioning
+  category: functionality
+  title: First delivery - Create datasets and cohorts atomically through an authorized YAML importer
+  acceptance:
+  - Add an lx-annotate host service and management entry point for validate, dry-run, and import; expose
+    the same service through an authorized API consumed by lx-annotate without putting orchestration in
+    Django models or importing lx-annotate into endoreg_db.
+  - Persist datasets as existing endoreg_db AIDataSet rows and cohorts as existing lx_annotate StudyCohort
+    rows with their existing many-to-many relations; records appear in the current dataset dropdown and
+    saved-cohort list after reload.
+  - Persist a validated immutable mapping from author, definition identity, version, and content digest
+    to created rows; identical reimport is a no-op and altered content under the same identity/version
+    is rejected without using nonunique display names as upsert keys.
+  - Validate the whole document and referenced datasets before mutation, create dataset rows before cohort
+    links, and commit definitions, identity mappings, and all links in one transaction; an invalid final
+    cohort must leave no newly created dataset or cohort behind.
+  - Serialize concurrent imports of the same owner and identity with database-enforced uniqueness and
+    appropriate locking; two concurrent requests cannot create duplicate datasets, cohorts, or provenance
+    mappings.
+  - Dry-run returns the exact proposed additions, reused identities, links, and validation errors without
+    writes; import repeats access and identity checks inside the transaction and reports created versus
+    unchanged records without exposing patient values.
+  - Creating a dataset does not attach existing annotations, switch the application's active dataset,
+    start training, or export media; these remain separate explicitly authorized operations through existing
+    services.
+  - Keep load_base_db_data as the clinical and operational bootstrap reference; it must not automatically
+    create user-owned cohorts or import every packaged study during startup.
+  required: true
+  verification:
+    kind: manual
+    instructions: In a migrated lx-annotate database import the validated .yml, reload both existing UI
+      lists, verify dataset-cohort links, repeat import, race two imports, alter content under the same
+      identity, and inject a final-link failure; assert stable IDs, no duplicates, and full rollback.
+      Compare the dry-run plan to the committed result and confirm no annotations were attached.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: saved_cohort_live_membership
+  category: data_integrity
+  title: First delivery - Re-evaluate YAML-created cohorts against current authorized records
+  acceptance:
+  - Persist only cohort definition and dataset references; every explicit preview or membership evaluation
+    loads current saved filters and current dataset annotation links and applies current caller authorization
+    and center scope.
+  - Reuse the existing lx-annotate cohort preview semantics for unioning linked dataset examinations,
+    excluding conflicting patient identities, and applying pseudonymization and processed-media eligibility;
+    YAML-created and UI-created equivalent definitions return equivalent results.
+  - Preserve the existing empty-dataset selection semantics explicitly in the contract and UI; an empty
+    selection uses the authorized examination scope and must never bypass center restrictions or be confused
+    with an empty result.
+  - Adding or removing an eligible source record or dataset annotation link changes the next evaluation
+    without reimport; edits to saved filters are reflected after reload and cannot silently mutate immutable
+    imported-definition provenance.
+  - Preview limit remains a presentation bound and never defines persisted membership; summaries, full
+    membership operations, and export distinguish the evaluated population from the displayed subset.
+  - Re-evaluate authorization at every access, including after center access changes; importing a cohort
+    or linking a dataset does not grant access to records outside the caller's allowed scope.
+  - Preserve the existing reviewed export-snapshot contract separately from live cohort definitions; an
+    export records its evaluation time and definition provenance and cannot silently substitute a later
+    live population for a reviewed selection.
+  required: true
+  verification:
+    kind: manual
+    instructions: Compare YAML-created and UI-created cohorts; add and remove eligible dataset-linked
+      records between previews, edit saved filters, revoke center access, and exercise empty dataset selection.
+      Verify live changes without reimport, stable saved identity, unchanged source records, correct counts
+      above the preview limit, and export consistency with the reviewed selection.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: field_and_dependency_inventory
+  category: requirements
+  title: Phase 1 - Inventory every lx-data-models field and host bootstrap dependency
+  acceptance:
+  - Generate an inventory from lx_dtypes public model schemas covering knowledge-base, ledger, reporting,
+    and other shared contracts; do not limit support analysis to indications or the currently exposed
+    UI fields.
+  - For each model and field record its definition, reference dependencies, researcher configurability,
+    validation, persistence representation, API/UI consumer, export representation, and implementation
+    gap.
+  - Classify definition metadata, endpoint configuration, collected patient values, and host-owned operational
+    state separately; study YAML defines schemas and rules rather than seeding patient records or redefining
+    storage/authentication behavior.
+  - Enumerate every load_base_db_data subcommand and classify it as dtypes-owned clinical data, host-owned
+    operational data, or an explicitly justified transitional dependency.
+  - Every applicable clinical field can be selected, collected, persisted, and exported; fields outside
+    study scope have an explicit ownership reason, and unsupported requested fields fail visibly rather
+    than disappearing.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the generated inventory against public lx_dtypes schemas, host relations, loader
+      commands, and actual report/import/export call sites; verify an added field makes the completeness
+      check fail until classified.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: quality/clinical_reference_projection.yml
+    - kind: test
+      reference: tests/scripts/test_clinical_reference_inventory.py
+    note: Inventur umfasst 17 klinische Graphsammlungen mit 185 Feldern, 68 explizite Referenzverträge
+      und 27 kompatible Teilkommandos. Automatischer Schema-/Kommandoguard bestanden; zusätzliche statische
+      Prüfung verhindert Wiederaufnahme der entfernten generischen Loader-Module. Klinische Definitionen,
+      optionale Betriebsreferenzen und personenbezogene Mitarbeiterlisten bleiben getrennte Verträge.
+    assessed_by: codex-dtypes-study-20260928-a
+    assessed_at: '2026-09-28T15:43:39.873953Z'
+- id: typed_study_yaml
+  category: functionality
+  title: Phase 2 - Publish a strict reusable study definition contract in lx_dtypes
+  acceptance:
+  - Reuse the existing knowledge-base bundle and registry; introduce a versioned typed study-definition
+    contract only for semantics not already represented by lx_dtypes models.
+  - Study YAML identifies the study and definition version, exact knowledge-base module/version and dependency
+    identities, examinations, forms/templates, and endpoint definitions by stable semantic identifiers.
+  - Endpoints distinguish primary, secondary, and exploratory outcomes and specify observation level,
+    typed field or concept selector, value type, permitted choices, units, requiredness, conditional applicability,
+    and collection timepoint or follow-up window.
+  - Repeated patient visits and repeated findings have explicit instance selection and aggregation semantics;
+    categorical, numeric, boolean, date/time, and supported structured values preserve their native types.
+  - Derived endpoints specify supported declarative operations, inputs, units, population/denominator
+    where relevant, temporal selection, and missing/not-applicable/unknown handling; definitions cannot
+    execute arbitrary Python, SQL, or templates.
+  - Custom study concepts are namespaced, schema-validated extensions of canonical contracts; unknown
+    keys, invalid references, incompatible units, ambiguous selectors, and unsupported operators produce
+    actionable errors before activation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Validate synthetic YAML examples for an indication endpoint, a numeric measurement,
+      a repeated-lesion classification, and a derived follow-up endpoint; exercise each invalid case and
+      publish the machine-readable schema.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: reference_data_projection
+  category: functionality
+  title: Phase 3 - Provision host clinical reference data from the resolved dtypes graph
+  acceptance:
+  - Add a typed host service and management entry point that accept an exact bundle identity, resolve
+    its full dependency closure using lx_dtypes, and produce a reviewable dry-run change plan.
+  - Provision types, units, descriptors, choices, classifications, interventions, indications, findings,
+    examinations, and their relations according to the inventory; preserve templates, validators, provenance,
+    and other definition fields in validated versioned representations where relational tables are unnecessary.
+  - Validate the entire graph before mutation; create nodes before linking edges so cycles and dependency
+    ordering never cause skipped relationships.
+  - Import is transactional, idempotent, and serialized for concurrent imports of the same identity; required
+    missing concepts, incompatible definitions, or relation failures cause a nonzero result without a
+    partial active study.
+  - Materialize only required ORM projections and preserve every remaining supported field in typed versioned
+    payloads; do not add one Django table per dtypes class or silently store unvalidated dictionaries.
+  required: true
+  verification:
+    kind: manual
+    instructions: Import a real resolved ColoReg graph into an isolated migrated database without legacy
+      clinical fixtures; compare every required node and edge, rerun, and inject a link failure to verify
+      rollback.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/clinical_reference_data.py
+    - kind: code
+      reference: endoreg_db/services/reference_catalog.py
+    - kind: test
+      reference: tests/services/test_clinical_reference_data.py
+    - kind: test
+      reference: tests/services/test_reference_catalog.py
+    note: Klinischer Graph und vollständige Referenzkataloge werden über separate typisierte Projektionen
+      atomar importiert. 673 bisherige Bootstrapdatensätze plus 153 Green-Endoscopy- und 39 Personal-/Schichtdefinitionen;
+      vollständiger Beziehungs-Roundtrip und Bestandsübernahme mit stabilen Primärschlüsseln geprüft.
+      Globale Referenzsperre, Rollback und wiederholte/konkurrierende Importe getestet. Unvereinbare bestehende
+      Bedeutungen werden blockiert; parallele klinische Namensräume und komplette Studienaktivierung bleiben
+      separate offene Phasen.
+    assessed_by: codex-dtypes-study-20260928-a
+    assessed_at: '2026-09-28T15:43:41.680198Z'
+- id: immutable_identity_and_history
+  category: data_integrity
+  title: Phase 3 - Preserve study identity and historical meaning across versions
+  acceptance:
+  - Persist study-definition identity, exact knowledge-base and dependency identities, and content digests
+    with collected records and derived endpoint results; record evaluator/schema versions for derived
+    values.
+  - The same semantic name in different modules or versions cannot overwrite an incompatible host definition;
+    implement explicit version-aware reference identity or an equivalently lossless immutable mapping
+    before permitting coexistence.
+  - Two studies using different versions can coexist and historical records resolve against their original
+    definitions even after a different bundle becomes active.
+  - Reimporting an existing identity with different content is rejected; changing active UI preferences
+    does not migrate data or change endpoint results.
+  - Preserve relational instance IDs, report snapshots, foreign keys, and existing case/finding/media
+    associations; any historical remapping is explicit, audited, and independently verifiable.
+  required: true
+  verification:
+    kind: manual
+    instructions: Load two versions with a deliberately changed choice or unit; verify coexistence, original
+      report reconstruction, unchanged historical endpoint results, and rejection of identity reuse with
+      altered bytes.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_study_presets.py
+    note: 'Review-Korrektur: Studien-Presets verwenden dieselbe Referenztransaktion wie Katalogimporte.
+      Bestehende Untersuchungs-, Gender-, Labeltyp-, Label- und versionierte Labelset-Definitionen werden
+      nur bei äquivalenten Feldern und Beziehungen wiederverwendet; Abweichungen rollen den gesamten Import
+      zurück. Parametrisierte Regressionen erhalten klinische Instanzreferenzen und den unveränderten
+      Graph-Beleg. Verifikation am 2026-09-29: vollständiges .devenv/state/venv/bin/pyright: 0 Fehler,
+      6 bestehende Warnungen. Ruff und git diff --check bestanden. Fokussierter pytest-Lauf: 223 bestanden,
+      1 Fehler im neuen Pakettest wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad korrigiert.
+      Anschließender Paket-/Integrationslauf: 74 bestanden, 2 Warnungen in 81.51s, einschließlich des
+      korrigierten Tests. Insgesamt 297 unterschiedliche Tests erfolgreich. Keine Produktivdaten oder
+      Deployments geändert; PostgreSQL-/Produktivprobe bleibt offen.'
+    assessed_by: codex-stash-review-20260929
+    assessed_at: '2026-09-29T10:00:58.862120Z'
+- id: collection_persistence_and_export
+  category: interoperability
+  title: Phase 4 - Use one study definition from researcher authoring through export
+  acceptance:
+  - Researchers can validate, import, preview, and activate an authorized study bundle through supported
+    CLI/API and lx-annotate flows without editing host fixtures or application code for supported concepts.
+  - Reporting context and collection forms derive indications and all applicable inventoried fields from
+    the exact study definition, including nested values, repeated records, units, conditional rules, and
+    explicit missingness.
+  - Server-side persistence validates submitted values against the pinned definition and preserves all
+    supported fields through save, reload, amendment, and export; hidden or unsupported UI fields are
+    never silently discarded.
+  - Study endpoint extraction uses the existing patient/examination/finding instance graph with declared
+    visit and aggregation rules; no parallel patient or lesion persistence is introduced.
+  - Export includes endpoint identifiers, values, units, missingness, study/definition provenance, and
+    permitted source-evidence references; typed structured export is lossless and tabular flattening has
+    an explicit mapping.
+  required: true
+  verification:
+    kind: manual
+    instructions: Demonstrate an authored YAML bundle through activation, form rendering, two visits with
+      two distinct lesions, persisted reload, endpoint calculation, and export; compare typed values and
+      identities end to end.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/services/study_definitions.py
+    - kind: document
+      reference: /home/admin/dev/lx-annotate/docs/guides/study-definitions.yml
+    - kind: test
+      reference: /home/admin/dev/lx-annotate/tests/api/test_study_cohorts.py
+    - kind: command
+      reference: 'lx-annotate: .devenv/state/venv/bin/python -m pytest tests/api/test_study_cohorts.py
+        tests/api/test_study_excel_export.py tests/system/test_config_unit.py tests/system/test_secretspec_environment_contract.py
+        -q --tb=short: 68 passed (2026-09-29), local editable lx-dtypes installed, no PYTHONPATH override'
+    assessed_by: codex-study-definitions-20260929
+    assessed_at: '2026-09-29T10:47:42.951478Z'
+- id: legacy_migration
+  category: data_integrity
+  title: Phase 5 - Replace clinical fixture loading without breaking installed databases
+  acceptance:
+  - Keep load_base_db_data as a compatibility orchestrator initially; delegate clinical reference provisioning
+    to the dtypes service and retain necessary host-owned operational provisioning identified in phase
+    1.
+  - Replace the legacy YAML plus hybrid indication overlay after parity is established; never silently
+    fall back to stale clinical fixtures when a selected bundle cannot load.
+  - Provide a dry-run reconciliation of existing rows, names, relations, duplicate identities, and unresolved
+    references; preserve primary keys used by clinical records and require explicit mappings for ambiguous
+    legacy concepts.
+  - Backfill version/provenance only when supported by evidence; mark unresolved historical origin explicitly
+    and block unsafe reassignment rather than attributing old records to the current bundle.
+  - Remove duplicated clinical fixtures, including the colorectal intervention compatibility fixtures,
+    only after clean-install and upgrade checks establish equivalent required data and consumers use the
+    new path.
+  - Separate code/database migration, registry provisioning, reference-data import, and study activation;
+    rollback must preserve captured data and its immutable definitions.
+  - Migrate all remaining generic-loader consumers, including optional Green Endoscopy, professions, qualifications
+    and shift reference definitions, into versioned lx_dtypes packages; retain public management commands
+    and remove the generic YAML-to-ORM implementation, facades and stale type contracts after caller and
+    integration checks. Employee records and assignments remain outside reference packages.
+  required: true
+  verification:
+    kind: manual
+    instructions: Compare fresh installation and upgrade from a representative synthetic legacy database;
+      verify stable referenced IDs, explicit unresolved cases, parity of relationships, and rollback after
+      partial deployment failure.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/reference_catalog.py
+    - kind: test
+      reference: tests/services/test_reference_catalog.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/data/endoreg_reference/config.yaml
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/data/endoreg_workforce/config.yaml
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/data/endoreg_green_endoscopy/config.yaml
+    - kind: test
+      reference: tests/dataloader/test_reference_import_boundary.py
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: test
+      reference: tests/migrations/test_reference_catalog_upgrade.py
+    note: 'Klinische Loader-Umstellung einschließlich vom Nutzer freigegebener Green-Endoscopy- und Personal-/Schichtreferenzen
+      implementiert: 865 Datensätze (673 Bootstrap, 153 Green Endoscopy, 39 Workforce), 68 gemeinsame
+      Typverträge, 27 kompatible Teilkommandos plus load_base_db_data. Generische utils/dataloader.py,
+      Stub, yaml_model_loader-Fassade und verwaiste Typen/Exporte entfernt; keine produktiven Aufrufer
+      in endoreg-db oder den geprüften Nachbarrepos. Alte Engine-Tests durch Prüfungen der typisierten
+      Paketgrenze ersetzt; ungültige Quellen, Identitätskonflikte, FK/M2M-Parität, PK-Erhalt, Rollback
+      und Wiederholung abgedeckt. Die ursprünglich fehlerhafte Qualification-/Shift-Verzeichnisverdrahtung
+      wurde anhand der vorhandenen Definitionen migriert; NaN-Gewichte werden gemäß bestehender Domänensemantik
+      als fehlend abgebildet. Host-Integration: 154 bestanden, 70 übersprungen; lx-dtypes vollständig:
+      1091 bestanden, 1 übersprungen; isolierte Registry: 16 bestanden. Beide vollständigen Pyright-Läufe
+      fehlerfrei (Host 6 bestehende Warnungen); Report-Grenze zusätzlich fehlerfrei typgeprüft. Installiertes
+      lokales Wheel lädt alle 11 registrierten Paketversionen; Quellen und Wheel-Daten bytegleich. Keine
+      Produktivdaten verändert oder Pakete veröffentlicht. Gemeinsamer Paketrollout und PostgreSQL-/Produktivprobe
+      stehen aus. Alte Quelldateien ohne Runtime-Verbrauch und fremde gestagte Fixture-Änderungen bleiben
+      erhalten; die vollständige Fixture-Bereinigung ist daher noch kein verifiziertes DoD-Kriterium.
+
+
+      Zusätzlicher unabhängiger Upgrade-Nachweis: MigrationExecutor startet bei 0086 und erzeugt eine
+      repräsentative Kapselendoskopie aus den alten Host-YAML-Definitionen, inklusive Untersuchungsart,
+      Indikation, Patient, Untersuchungsinstanz und historischem Report. Anschließende Migration und Katalogimport
+      prüfen äquivalente Adoption, abweichende Bestandsdefinition und Rollback bei Belegfehler. Primärschlüssel,
+      Beziehungen und Berichtstext bleiben erhalten; der historische dtypes-Snapshot bleibt explizit unbekannt.
+      Dies ergänzt den Katalog-Roundtrip, ersetzt keine vollständige Bestands-/Produktivprobe. Verifikation
+      am 2026-09-29: vollständiges .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende Warnungen. Ruff
+      und git diff --check bestanden. Fokussierter pytest-Lauf: 223 bestanden, 1 Fehler im neuen Pakettest
+      wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad korrigiert. Anschließender Paket-/Integrationslauf:
+      74 bestanden, 2 Warnungen in 81.51s, einschließlich des korrigierten Tests. Insgesamt 297 unterschiedliche
+      Tests erfolgreich. Keine Produktivdaten oder Deployments geändert; PostgreSQL-/Produktivprobe bleibt
+      offen.'
+    assessed_by: codex-stash-review-20260929
+    assessed_at: '2026-09-29T10:01:00.274932Z'
+- id: authoring_and_access_boundaries
+  category: security
+  title: Researcher YAML is validated data within existing study and center permissions
+  acceptance:
+  - Bundle import, study activation, definition changes, patient-data access, and export use explicit
+    role/study/center authorization; authoring a definition never grants access to patient records.
+  - Parse YAML safely with duplicate-key rejection and bounded input size, nesting, aliases, archive expansion,
+    and dependency resolution; reject executable tags and archive path traversal.
+  - Apply the same safe YAML parser and authorization checks to dataset and saved-cohort imports, including
+    dry-run; reject inaccessible existing dataset references before writes and report definition locations
+    without logging patient values.
+  - Use existing governed registry and filesystem services; YAML cannot choose host paths, arbitrary network
+    dependencies, model imports, SQL, credentials, or permission rules.
+  - Audit definition import, activation, migration, and endpoint computation using immutable identities
+    without logging patient values or secrets.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise unauthorized import/activation/export, cross-center access, malicious YAML/archive
+      inputs, and expression injection; verify rejection before filesystem or database mutation.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: regression_and_field_coverage
+  category: testing
+  title: Every supported field and migration boundary has meaningful automated coverage
+  acceptance:
+  - Add schema-driven coverage that fails when a supported field lacks validation, persistence round-trip,
+    and export coverage; include null, absent, false, zero, empty collection, and structured/repeated
+    values where allowed.
+  - Reproduce the reported ColoReg missing-intervention warnings and prove all 14 current indications
+    resolve with all eight colorectal interventions after dtypes provisioning alone.
+  - An imported examination such as endoscopic_ultrasound is created or explicitly excluded by validated
+    scope; required missing examinations cannot be reduced to warnings followed by success.
+  - Test fresh import, dependency cycles, missing references, duplicates, rollback, idempotency, concurrent
+    imports, version collisions, historical reproducibility, and legacy upgrades.
+  - Cover YAML dataset and live-cohort creation through schema, service, CLI, API, and existing lx-annotate
+    UI consumers; include live membership changes, shared dataset links, empty dataset selection, source-record
+    preservation, access revocation, and rollback of a multi-definition import.
+  - Run focused host and lx_dtypes tests and type checks, then their complete applicable lanes for the
+    implementation; record exact commands and results before marking any criterion verified.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review executable regression coverage and captured test results in both repositories;
+      proposed tests or YAML validation alone do not establish implementation readiness.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_reference_catalog.py
+    - kind: test
+      reference: tests/services/test_clinical_reference_data.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
+    - kind: test
+      reference: ../lx-data-models/lx_dtypes/terminology/verification/test_hydration.py
+    note: 'Abschlussprüfung 2026-09-28: Host-Integrationslane 154 passed/70 skipped/1 warning; vollständige
+      shared Suite 1091 passed/1 skipped/23 warnings; isolierte Registry 16 passed/1 warning. Pyright
+      vollständig Host 0 errors/6 warnings und lx-dtypes 0 errors/0 warnings; neue Report-Eingabevalidierung
+      zusätzlich 0 errors/1 bestehende Stub-Warnung. Modellinventur 168 registrierte + 5 abstrakte Modelle
+      konsistent; Projektion 17 Sammlungen/185 Felder/27 Teilkommandos konsistent; makemigrations --check
+      ohne Änderungen; Dokumentations-Governance 0 errors/0 warnings. Ruff für geänderte Host-Dateien
+      bestanden. Bekannte unabhängige Restbefunde: Dead-Code-Guard meldet rust_backend.py:24 master_keys;
+      isoliertes shared Testdouble-conftest hat drei bestehende E402-Befunde durch absichtlich verzögerte
+      Imports. Keine Baselines oder Fehlerunterdrückungen hinzugefügt. PostgreSQL und vollständige Deployment-Rehearsals
+      nicht geprüft.'
+    assessed_by: codex-dtypes-study-20260928-a
+    assessed_at: '2026-09-28T15:48:13.484549Z'
+- id: deployment_and_observability
+  category: operations
+  title: Deployments make reference-data readiness explicit and recoverable
+  acceptance:
+  - Define startup order as schema migrations, strict registry bootstrap, validated clinical projection,
+    required host provisioning in dependency order, readiness verification, and application startup.
+  - Do not import all packaged studies automatically; deployment selects exact required identities, and
+    activation is explicit after complete import and compatibility checks.
+  - Report imported identity/digest, node and edge counts, additions/updates/no-ops, validation failures,
+    and duration; readiness fails for missing required concepts or uncommitted imports.
+  - Exercise backup/restore and rollback of database, registry, and immutable bundle artifacts together
+    in local, CI, container, and Nix/systemd deployment profiles, including gc-02 staging.
+  - Provide a strict versioned deployment manifest with explicit local center, exact reference/study package
+    identities, optional closure-digest pins, and at most one explicit registry activation. Reject duplicate
+    keys, unsafe YAML, unsupported fields and incompatible package content.
+  - Provide one setup_deployment command with template, schema, provision, validate, plan and apply actions;
+    ship minimal, ColoReg, training and Green Endoscopy templates with generated JSON Schema. Validate/plan
+    must not mutate the database or registry.
+  - Planning optionally writes an explicit lock document containing manifest and complete resolved dependency
+    hashes. Apply requires that lock, checks content and database conflicts again, and commits center/default
+    selection and all reference packages in one transaction. Registry activation follows commit with explicit
+    recoverable failure reporting, not a cross-store atomicity claim.
+  - Document v1 semantics in the canonical shared package guide and host operator guide; study package
+    selection does not imply ORM graph projection, cohort provisioning, employee import or study-record
+    creation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run a packaged clean-start and upgrade rehearsal, interrupt import, restart, and restore
+      a backup; verify nonzero failures, no partial activation, and reproducible historical endpoint values.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/management/commands/setup_deployment.py
+    - kind: code
+      reference: endoreg_db/services/deployment_setup.py
+    - kind: test
+      reference: tests/services/test_deployment_setup.py
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/deployment_setup.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_deployment_setup.py
+    - kind: command
+      reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
+        tests -q
+    note: 'DeploymentSetup v1 mit vier YAML-Vorlagen, JSON Schema und setup_deployment provision/validate/plan/apply
+      implementiert. Der geprüfte Lock bindet Manifest und tatsächlich geladene Paketabhängigkeiten; Center-Auswahl
+      und alle Referenzkataloge werden gemeinsam transaktional geschrieben. Optionale Registry-Aktivierung
+      folgt dem Datenbankcommit mit expliziter Fehler-/Wiederholungsgrenze. Dokumentationsagent hat kanonische
+      Shared-/Host-Guides gegen CLI und Schema eingefroren. Verifikation: Host-Setup 14 bestanden; kombinierter
+      Setup-/Kataloglauf 25 bestanden; Shared-Fokus 93 bestanden; isolierte Registry 16 bestanden; vollständiger
+      Shared-Lauf nach letzter Resolver-Änderung 1106 bestanden, 1 übersprungen, 23 Warnungen, Exit 0.
+      Host-Pyright 0 Fehler/6 vorhandene Warnungen; Shared-Pyright 0 Fehler/0 Warnungen. Neu gebautes
+      und isoliert installiertes Wheel: alle vier Vorlagen, Schema und Paketauflösung bestanden. Modellinventar
+      sauber (168 registrierte/5 abstrakte Modelle); Dokumentationsgovernance 0 Fehler/0 Warnungen; Sphinx
+      HTML bestanden mit 1 vorhandener Warnung; externe Linkprüfung wegen GitHub-Rate-Limit unvollständig.
+      Alle 37 Feature-Definitionen valide. Produktive Deployment-/Backup-/Restore-Proben und Freigaben
+      bleiben offen; kein produktiver Apply. Gemeinsame Release-Auslieferung von lx-dtypes und endoreg-db
+      erforderlich.
+
+
+      Paketgrenze geprüft: Workspace verlangt lx-dtypes>=0.4.0; uv.lock und installiertes Registry-Paket
+      enthalten 0.4.0, uv lock --check bestanden. Neuer Regressionstest verwendet Python -I außerhalb
+      des Checkouts und lädt DeploymentSetup, DeploymentLock, Parser und Minimalvorlage aus der installierten
+      Distribution ohne Geschwister-PYTHONPATH. Sämtliche Deployment-Tests bestanden nach Korrektur des
+      absoluten Testpfads. Verifikation am 2026-09-29: vollständiges .devenv/state/venv/bin/pyright: 0
+      Fehler, 6 bestehende Warnungen. Ruff und git diff --check bestanden. Fokussierter pytest-Lauf: 223
+      bestanden, 1 Fehler im neuen Pakettest wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad
+      korrigiert. Anschließender Paket-/Integrationslauf: 74 bestanden, 2 Warnungen in 81.51s, einschließlich
+      des korrigierten Tests. Insgesamt 297 unterschiedliche Tests erfolgreich. Keine Produktivdaten oder
+      Deployments geändert; PostgreSQL-/Produktivprobe bleibt offen.'
+    assessed_by: codex-stash-review-20260929
+    assessed_at: '2026-09-29T10:01:01.607550Z'
+- id: researcher_and_operator_guides
+  category: documentation
+  title: Publish one canonical authoring guide and one host migration runbook
+  acceptance:
+  - Extend lx-data-models knowledge-base authoring documentation with the study schema, field support
+    inventory, endpoint semantics, versioning, validation errors, and synthetic YAML examples free of
+    patient data.
+  - Extend endoreg-db dataloader documentation with clinical versus operational ownership, dry-run/import/activation
+    workflow, legacy reconciliation, readiness, and recovery commands.
+  - Document the .yml dataset/cohort authoring workflow with exact validation, dry-run, import, and UI
+    reload steps; explain live membership, owner-scoped identities, shared dataset links, empty dataset
+    selection, reimport conflicts, and the separate annotation attachment and reviewed export operations.
+  - Document that database schemas still require migrations and clinical ORM references still require
+    provisioning; researchers do not need duplicate host YAML for supported study concepts.
+  - Link this feature as the canonical readiness record and coordinate with DataLoading, LxDtypesModelStandardization,
+    CasePersistence, and AssistedReportingApiIntegration without copying their completion claims.
+  required: true
+  verification:
+    kind: manual
+    instructions: Have a researcher complete the synthetic authoring-to-export example and an operator
+      rehearse migration using only the canonical guides; run relevant documentation build and link checks.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

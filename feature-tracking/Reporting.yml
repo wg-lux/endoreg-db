@@ -17,6 +17,59 @@ source_documents:
   note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
     Vertrag mit lx-anonymizer.
 definition_of_done:
+- id: independent_report_persistence
+  category: data_integrity
+  title: Mehrere Berichte pro Patient bleiben unabhängig persistiert
+  acceptance:
+  - Mehrere Berichte derselben Untersuchung werden separat gespeichert; GET /api/patient-examination-reports/?patient_id=<id>
+    listet sie untersuchungsübergreifend und zentrumsgebunden auf.
+  - Jeder neu gespeicherte Bericht besitzt einen validierten dtypes-Snapshot; spätere Terminologieänderungen
+    verändern ältere Berichte nicht. Historisch fehlende Snapshots bleiben ausdrücklich unbekannt.
+  - DELETE /api/patient-examination-reports/<id>?expected_version=<version> löscht nur Entwürfe (204);
+    finale Berichte und Versionskonflikte liefern 409, fremde Zentren 404. Klinische Untersuchungsdaten
+    und andere Berichte bleiben erhalten; die Revision eines zugeordneten Autosave-Entwurfs steigt beim
+    Leeren.
+  - Finalisierung eines Berichts löscht keinen einem anderen Bericht zugeordneten Untersuchungsentwurf.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_persistence_service.py
+    - tests/views/report/test_patient_examination_report_ninja_api.py
+    - tests/models/test_patient_examination_report_validation.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-09-28: .devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py
+        tests/views/report/test_patient_examination_report_ninja_api.py tests/models/test_patient_examination_report_validation.py
+        -q: 85 passed, 2 dependency/plugin warnings.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 6 existing warnings; subsequent focused Pyright: 0 errors, 0
+        warnings. Focused Ruff and git diff --check passed. django makemigrations endoreg_db --check --dry-run:
+        No changes detected.'
+    - kind: code
+      reference: 'endoreg_db/migrations/0087_report_dtypes_snapshot.py: nullable historical snapshots,
+        no reconstruction from mutable current examination data.'
+    - kind: test
+      reference: '2026-09-28: .devenv/state/venv/bin/pytest tests/services/test_report_import_service_unit.py
+        tests/services/test_report_materialization_contracts.py tests/views/report/test_report_stream.py
+        tests/views/patient_examination/test_patient_examination_draft_viewset.py tests/api/test_dtypes_record_persistence.py
+        tests/migrations/test_canonical_graph.py tests/app/test_clean_layer_cohorts.py -q: 116 passed,
+        2 dependency/plugin warnings.'
+    - kind: command
+      reference: '2026-09-28 Nachprüfung: scripts/check_lx_dtypes_model_inventory.py erfolgreich; 166
+        registrierte und 5 abstrakte Modelle, 54 gemeinsame lx_dtypes-Verträge, 59 lokale Boundaries,
+        58 reine Persistenzmodelle. Die fünf zuvor gemeldeten Consumer-Abweichungen sind korrigiert.'
+    note: Alle vier Akzeptanzpunkte durch 85 fokussierte und 116 Integrationstests verifiziert. Migration
+      0087 erforderlich; historische Snapshots bleiben null. Die fünf Inventarabweichungen sind im anschließenden
+      Contract-Abgleich behoben; der globale Guard besteht. PostgreSQL-Parallelitätslauf und Deployment
+      nicht ausgeführt; keine Aussage zur gesamten Produktionsreife.
+    assessed_by: codex-report-persistence-20260928
+    assessed_at: '2026-09-28T10:15:30.926359Z'
 - id: documented_scope
   category: requirements
   title: Berichtslebenszyklus und unterstützte Dokumenttypen sind definiert

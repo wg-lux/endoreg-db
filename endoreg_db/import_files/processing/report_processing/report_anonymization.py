@@ -306,8 +306,15 @@ class ReportAnonymizer:
             _ReportReaderClass,
             getattr(rr_mod, "ReportReader"),
         )
+        from endoreg_db.services.center_employees import center_employee_overrides
+
+        resolver = self._patient_pseudonym_resolver(report)
+        center = report.center
+        if center is None:
+            raise ValueError("Report center is required for employee recognition")
         return report_reader_class(
-            patient_pseudonym_resolver=self._patient_pseudonym_resolver(report)
+            patient_pseudonym_resolver=resolver,
+            **center_employee_overrides(center),
         )
 
     def _ensure_report_reading_available(self) -> None:

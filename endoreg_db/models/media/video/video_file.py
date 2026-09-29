@@ -716,6 +716,8 @@ class VideoFile(models.Model):
         raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
+        *,
+        center_key: str | None = None,
     ) -> "VideoFile":
         """
         Creates a VideoFile instance from a given video file path.
@@ -734,6 +736,7 @@ class VideoFile(models.Model):
             save_video_file=save_video_file,
             initialize=initialize,
             model_cls=cls,
+            center_key=center_key,
         )
 
     def delete(

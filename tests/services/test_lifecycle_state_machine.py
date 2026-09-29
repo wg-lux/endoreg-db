@@ -3,14 +3,60 @@ from __future__ import annotations
 import pytest
 
 from endoreg_db.services.lifecycle_state_machine import (
+    OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,
     ServiceLifecycleEvent,
     ServiceLifecycleState,
+    reduce_operation_lifecycle,
     transition_operation_lifecycle,
     transition_service_lifecycle,
 )
 from endoreg_db.utils.rust_backend import has_native_capability
+
+
+@pytest.mark.parametrize("current_state", list(OperationLifecycleState))
+@pytest.mark.parametrize(
+    ("path", "allowed_states"),
+    [
+        (
+            OperationClaimPath.INITIAL,
+            {OperationLifecycleState.QUEUED, OperationLifecycleState.CLAIMED},
+        ),
+        (
+            OperationClaimPath.RETRY_READY,
+            {OperationLifecycleState.QUEUED, OperationLifecycleState.RETRY_WAIT},
+        ),
+        (
+            OperationClaimPath.RETRY_REQUESTED,
+            {OperationLifecycleState.FAILED, OperationLifecycleState.SUCCEEDED},
+        ),
+        (OperationClaimPath.RECONCILE, {OperationLifecycleState.LOST}),
+        (
+            OperationClaimPath.INTERRUPTED,
+            {
+                OperationLifecycleState.QUEUED,
+                OperationLifecycleState.CLAIMED,
+                OperationLifecycleState.RUNNING,
+                OperationLifecycleState.RETRY_WAIT,
+                OperationLifecycleState.LOST,
+            },
+        ),
+    ],
+)
+def test_shared_claim_paths_preserve_recovery_boundaries(
+    current_state: OperationLifecycleState,
+    path: OperationClaimPath,
+    allowed_states: set[OperationLifecycleState],
+) -> None:
+    if current_state in allowed_states:
+        assert (
+            reduce_operation_lifecycle(current_state, path.events)
+            is OperationLifecycleState.RUNNING
+        )
+    else:
+        with pytest.raises(ValueError, match="invalid operation lifecycle transition"):
+            reduce_operation_lifecycle(current_state, path.events)
 
 
 SERVICE_TRANSITIONS = {

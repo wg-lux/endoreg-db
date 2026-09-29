@@ -169,10 +169,10 @@ def build_report_reader_config(report: "RawPdfFile") -> PdfFileMetaJsonObject:
     else:
         endoscope_info_line = None
 
-    return {
+    from endoreg_db.services.center_employees import center_employee_overrides
+
+    config: PdfFileMetaJsonObject = {
         "locale": "de_DE",
-        "employee_first_names": [item.name for item in center.first_names.all()],
-        "employee_last_names": [item.name for item in center.last_names.all()],
         "text_date_format": "%d.%m.%Y",
         "flags": {
             "patient_info_line": reader_pdf_type.patient_info_line.value,
@@ -186,3 +186,6 @@ def build_report_reader_config(report: "RawPdfFile") -> PdfFileMetaJsonObject:
             ],
         },
     }
+    for key, names in center_employee_overrides(center).items():
+        config[key] = list(names)
+    return config

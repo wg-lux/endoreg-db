@@ -89,9 +89,12 @@ def create_or_retrieve_report_file(
         pdf = create_initialized_raw_pdf_file_from_path(
             file_path=file_path,
             center_name=center_name,
+            center_key=ctx.center_key,
         )
 
-        center = cast(_NamedCenter, ensure_center(pdf, ctx.center_name))
+        center = cast(
+            _NamedCenter, ensure_center(pdf, ctx.center_name, center_key=ctx.center_key)
+        )
         center_name_value = str(center.name)
         logger.info("Successfully set up report file from %s", center_name_value)
 

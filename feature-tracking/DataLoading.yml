@@ -19,6 +19,69 @@ source_documents:
   disposition: reference
   note: Contract for supported CSV import formats.
 definition_of_done:
+- id: optional_center_employees
+  category: functionality
+  title: Host-Presets und optionale Mitarbeiterlisten werden aus lx-dtypes-Paketen geladen
+  acceptance:
+  - load_center_data benötigt keine Vornamen- oder Nachnamen-Fixtures und verändert bestehende Mitarbeiterzuordnungen
+    nicht.
+  - Ein explizites lx-dtypes-Paket mit bestehenden Examiner/DataDict-Einträgen wird vollständig validiert
+    und atomar anhand des unveränderlichen center_key importiert; Wiederholung erzeugt keine Duplikate.
+  - Ohne lokale Mitarbeiterliste verwendet der aktive Report-Import die Konfiguration von lx-anonymizer;
+    importierte Namen werden als optionale Overrides übergeben.
+  - Studien-Presets werden anhand von Modul und Version aus dem gemeinsamen Terminologie-Verzeichnis geladen;
+    Zentren, Geschlechter, Labels und Untersuchungsreferenzen werden atomar und ohne lokale Host-Fixtures
+    projiziert.
+  - Mitarbeiterlisten sind optionale Paketbestandteile; fehlende klinische Referenzen oder mehrdeutige
+    Bestandsidentitäten brechen den gesamten Import ab.
+  - Ungültige oder unbekannte Zentren und leere Namenseinträge scheitern ohne Teilimporte; Mitarbeiterdaten
+    erscheinen nicht in Fehlermeldungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Typprüfung sowie Center-, Mitarbeiterimport- und Report-Anonymisierungs-Vertragstests
+      ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/study_presets.py
+    - kind: code
+      reference: endoreg_db/services/center_employees.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/knowledge_base/study_preset.py
+    - kind: test
+      reference: tests/services/test_study_presets.py
+    - kind: command
+      reference: 'endoreg-db focused pytest: 80 passed; additional test_study_presets.py including concurrent
+        imports: 7 passed'
+    - kind: command
+      reference: 'lx-data-models focused package/resolver/schema/import tests: 60 passed'
+    - kind: command
+      reference: 'Full Pyright in endoreg-db: 0 errors, 6 warnings; full Pyright in lx-data-models: 0
+        errors'
+    - kind: command
+      reference: 'lx-data-models: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest -q: 1081 passed,
+        1 skipped, 23 warnings, exit 0'
+    - kind: command
+      reference: 'endoreg-db: .devenv/state/venv/bin/pytest tests/services/test_center_employees.py tests/services/test_study_presets.py
+        tests/administration/center/test_center.py tests/administration/person/test_examiner.py tests/import_files/test_report_anonymization_contract.py
+        tests/dataloader -q: 80 passed, 1 warning; subsequent test_study_presets.py including concurrency:
+        7 passed, 1 warning'
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/test_center_employee_packages.py
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    note: 'Verifiziert für den implementierten Paket-Projektionspfad: bestehende Examiner/DataDict- und
+      Center-Verträge, Standard-KB-Pakete aus gemeinsamem Terminologie-Service, optionale Mitarbeiterlisten,
+      additive Namensimporte, stabile Host-Primärschlüssel, label_set-Identität aus Name und Version,
+      atomarer Abbruch bei fehlenden Referenzen/mehrdeutigen Bestandsnamen sowie parallele Importe. CLI-Grenzen
+      geben keine Mitarbeiterwerte aus. Klinische Gesamtprojektion und Ablösung übriger Legacy-Bootstrap-Fixtures
+      bleiben DtypesStudyDefinitions; keine Gesamt-Produktionsfreigabe. Zwei Ledger-Barrels laden Django-Adapter
+      jetzt lazy; standalone KnowledgeBase-Import ist getestet.'
+    assessed_by: codex-examiner-20260928
+    assessed_at: '2026-09-28T14:02:04.563004Z'
 - id: documented_scope
   category: requirements
   title: Engine, orchestration, and naming conventions are defined separately
@@ -130,21 +193,21 @@ definition_of_done:
     - kind: test
       reference: tests/dataloader/test_dataloader_safe_inputs.py; tests/dataloader/test_dataloader_missing_tables.py::test_load_model_data_from_yaml_rejects_unsafe_yaml_before_loading
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py
-        endoreg_db/utils/dataloader.pyi tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_safe_inputs.py
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py endoreg_db/utils/dataloader.pyi
+        tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_safe_inputs.py
         (0 errors, 0 warnings, 0 informations)
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed,
-        1 warning in 38.52s)
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed, 1 warning in
+        38.52s)
     - kind: review
-      reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data; the
-        enforced root check applies independently of the caller. No importlib, __import__, eval, exec, or
-        unsafe yaml.load call exists at the loader boundary.
+      reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data;
+        the enforced root check applies independently of the caller. No importlib, __import__, eval, exec,
+        or unsafe yaml.load call exists at the loader boundary.
     note: The shared YAML loader now enforces the packaged endoreg_db/data root before every file access,
       rejects directory and file symlinks fail-closed, and reads only regular .yaml files. PyYAML safe_load
       remains the only parser boundary; Python object tags are rejected before any ORM delegation. A repository
-      review of loader and load_*_data boundaries found no dynamic imports, eval/exec calls, or unsafe PyYAML
-      loaders.
+      review of loader and load_*_data boundaries found no dynamic imports, eval/exec calls, or unsafe
+      PyYAML loaders.
     assessed_by: codex-root-20260902
     assessed_at: '2026-09-02T12:38:06.598243Z'
 - id: operational_readiness
@@ -180,8 +243,29 @@ definition_of_done:
       reference: docs/wiki/dataloader_yaml_authoring.md
     - kind: command
       reference: './feature-tracking/tracker.py validate (OK: 34 feature definitions are valid)'
-    note: The two authoritative data-loader guides cover layers and responsibilities, canonical and legacy
-      names, the YAML schema and field conventions, references, examples, and validation and error guidance.
-      Comparison with the loader contract and YAML validation confirms that this criterion is complete.
-    assessed_by: codex-20260902-feature
-    assessed_at: '2026-09-02T12:50:21.562034Z'
+    - kind: document
+      reference: ../lx-data-models/docs/guides/dtypes-package-structure.md
+    - kind: document
+      reference: ../lx-data-models/docs/examples/dtypes_packages/training_preset/config.yaml
+    - kind: command
+      reference: 'load_knowledge_base(training_preset, version=1.0.0, input_dirs=[docs/examples/dtypes_packages]):
+        valid, 0 employee lists; optional employees selected via KnowledgeBase.create_from_config: valid,
+        1 employee list'
+    - kind: command
+      reference: 'python scripts/lint_kb_yaml.py docs/examples/dtypes_packages/training_preset/data/examinations.yml:
+        0 errors, 0 warnings'
+    - kind: command
+      reference: 'Sphinx html (isolated docs dependencies): build succeeded, 2 pre-existing terminology.md
+        warnings; Sphinx linkcheck: build succeeded'
+    - kind: command
+      reference: 'check_documentation_governance.py --repository endoreg-db --repository lx-data-models
+        --repo-root lx-data-models=/home/admin/lx-data-models: 0 errors, 0 warnings'
+    note: 'Kanonische Struktur-Dokumentation für Menschen und Agenten ergänzt: Manifest, Verzeichnisbaum,
+      flache Record-Syntax, Center/Examiner-Wiederverwendung, optionale Mitarbeiter, Identitäten/Referenzen,
+      Registry gegenüber Aktivierung/Host-Projektion und ausführbare .yml-Beispiele. Standardpaket und
+      Variante mit Mitarbeitern über den echten Resolver validiert. Klinische Beispieldatei lintet fehlerfrei;
+      bekannte Linter-Allowlist-Lücke für study_preset/center_employee_list ist ausdrücklich dokumentiert.
+      HTML-Build erfolgreich mit zwei bestehenden Warnungen in docs/guides/terminology.md; Linkcheck und
+      Dokumentations-Governance erfolgreich. Keine Laufzeit- oder Schemaänderungen in diesem Dokumentationsschritt.'
+    assessed_by: codex-examiner-20260928
+    assessed_at: '2026-09-28T14:13:31.944942Z'

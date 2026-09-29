@@ -487,9 +487,17 @@ class VideoImportService:
         execution_fence: VideoImportExecutionFence | None,
     ) -> VideoFile | None:
         """Single linear execution path for video import, staging, and anonymization."""
+        center_key: str | None = None
+        if not center_name.strip():
+            from endoreg_db.services.center_defaults import resolve_local_center
+
+            center = resolve_local_center()
+            center_name = str(center.name)
+            center_key = str(center.center_key)
         context_values: dict[str, object] = {
             "file_path": Path(file_path),
             "center_name": center_name,
+            "center_key": center_key,
             "processor_name": processor_name,
             "file_type": "video",
             "defer_video_initialization": True,
@@ -713,7 +721,11 @@ class VideoImportService:
     @staticmethod
     def _ensure_duplicate_streaming(ctx: ImportContext, video: VideoFile) -> None:
         if not video.raw_file:
-            if video.center.name != ctx.center_name:
+            if (
+                video.center.center_key != ctx.center_key
+                if ctx.center_key is not None
+                else video.center.name != ctx.center_name
+            ):
                 raise ValueError("Transferred video belongs to a different center")
             ensure_transferred_video_hls(video, execution_guard=ctx.execution_guard)
         else:

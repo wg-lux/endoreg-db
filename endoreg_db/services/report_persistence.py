@@ -659,8 +659,12 @@ def _clear_finalized_submission_draft(
     patient_examination: PatientExamination,
     *,
     report_status: str,
+    report_id: int,
 ) -> None:
     if report_status != PatientExaminationReport.Status.FINAL.value:
+        return
+    active_report_id = patient_examination.report_draft.get("active_report_id")
+    if active_report_id is not None and active_report_id != report_id:
         return
     patient_examination.report_draft = {}
     patient_examination.draft_updated_at = None
@@ -706,7 +710,7 @@ def save_report_submission(
     history_limit: int = 5,
 ) -> SaveReportSubmissionResult:
     """
-    Transactional persistence skeleton for edited report submissions.
+    Persist an edited report and its clinical snapshot in one transaction.
 
     Persists:
     - report artifact (`PatientExaminationReport`)
@@ -772,10 +776,13 @@ def save_report_submission(
         runtime_validation=runtime_validation,
     )
     _apply_submission_finalization(report_ref, user=user_ref)
+    report.dtypes_record = patient_examination.dtypes_record
+    report.dtypes_record_updated_at = patient_examination.dtypes_record_updated_at
     report_ref.save()
     _clear_finalized_submission_draft(
         patient_examination,
         report_status=report_ref.status,
+        report_id=report_ref.id,
     )
     persisted_report_artifact_id, persisted_pdf_artifact_id = (
         _persist_final_report_artifacts(
@@ -798,3 +805,32 @@ def save_report_submission(
         persisted_report_artifact_id=persisted_report_artifact_id,
         persisted_pdf_artifact_id=persisted_pdf_artifact_id,
     )
+
+
+@transaction.atomic
+def delete_report_draft(
+    *, patient_examination_id: int, report_id: int, expected_version: int
+) -> None:
+    """Delete only a draft, serialized with report saves on the examination lock."""
+    examination = _resolve_submission_examination(patient_examination_id)
+    report, _ = _resolve_submission_report(examination, report_id=report_id)
+    if report.status != PatientExaminationReport.Status.DRAFT:
+        raise ReportPersistenceValidationError(
+            {"status": "Finalized reports cannot be deleted."}
+        )
+    _validate_submission_version(
+        cast(_PatientExaminationReportLike, report),
+        created=False,
+        expected_version=expected_version,
+    )
+    if examination.report_draft.get("active_report_id") == report_id:
+        # Keep the revision monotonic so a stale autosave cannot resurrect the draft.
+        revision = examination.report_draft.get("revision", 0)
+        if not isinstance(revision, int) or isinstance(revision, bool):
+            raise ReportPersistenceValidationError(
+                {"revision": "Invalid draft revision."}
+            )
+        examination.report_draft = {"revision": revision + 1}
+        examination.draft_updated_at = timezone.now()
+        examination.save(update_fields=["report_draft", "draft_updated_at"])
+    report.delete()

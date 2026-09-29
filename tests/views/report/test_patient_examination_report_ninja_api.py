@@ -13,6 +13,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
+from django.utils import timezone
 from lx_dtypes.models.contracts.patient_examination_report import (
     ReportExportFrameDetailData,
     ReportPersistedArtifactsData,
@@ -56,6 +57,128 @@ from endoreg_db.services.study_cohort import (
 
 REPORT_API_MODULE = "endoreg_db.views.patient_report.patient_examination_report"
 API_PREFIX = "/api/patient-examination-reports"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("report_status", "expected_version", "expected_status"),
+    [
+        ("draft", 1, 204),
+        ("draft", 2, 409),
+        ("final", 1, 409),
+    ],
+)
+def test_delete_report_draft_contract(
+    center_scoped_client: Client,
+    patient_examination: PatientExamination,
+    report_status: str,
+    expected_version: int,
+    expected_status: int,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination,
+        template_name="delete-contract",
+        status=report_status,
+    )
+    response = center_scoped_client.delete(
+        f"{API_PREFIX}/{report.pk}?expected_version={expected_version}"
+    )
+    assert response.status_code == expected_status, response.content
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists() == (
+        expected_status != 204
+    )
+
+
+@pytest.mark.django_db
+def test_patient_report_listing_and_deletion_obey_center_scope(
+    center_scoped_client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    first = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="first"
+    )
+    second_examination = PatientExamination.objects.create(
+        patient=patient_examination.patient
+    )
+    second = PatientExaminationReport.objects.create(
+        patient_examination=second_examination, template_name="second"
+    )
+    other_patient = Patient.objects.create(
+        patient_hash=f"other-report-{uuid.uuid4().hex}"
+    )
+    other_exam = PatientExamination.objects.create(patient=other_patient)
+    other = PatientExaminationReport.objects.create(
+        patient_examination=other_exam, template_name="other"
+    )
+    assert patient_examination.patient_id is not None
+    response = center_scoped_client.get(
+        f"{API_PREFIX}/", {"patient_id": patient_examination.patient_id}
+    )
+    assert response.status_code == 200, response.content
+    assert {item["id"] for item in response.json()} == {first.pk, second.pk}
+    assert (
+        center_scoped_client.get(
+            f"{API_PREFIX}/", {"patient_id": other_patient.pk}
+        ).json()
+        == []
+    )
+    assert (
+        center_scoped_client.delete(
+            f"{API_PREFIX}/{other.pk}?expected_version=1"
+        ).status_code
+        == 404
+    )
+    assert PatientExaminationReport.objects.filter(pk=other.pk).exists()
+
+
+@pytest.mark.django_db
+def test_report_read_uses_own_snapshot_and_legacy_null(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="legacy"
+    )
+    patient_examination.dtypes_record_updated_at = timezone.now()
+    patient_examination.save()
+    legacy = logged_in_client.get(f"{API_PREFIX}/{report.pk}").json()
+    assert legacy["dtypes_record"] is None
+    assert legacy["dtypes_record_updated_at"] is None
+    report.dtypes_record = {}
+    report.save()
+    saved = logged_in_client.get(f"{API_PREFIX}/{report.pk}").json()
+    assert saved["dtypes_record"] == {}
+    assert saved["dtypes_record_updated_at"] is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query", ["", "?expected_version=0", "?expected_version=invalid"]
+)
+def test_draft_deletion_requires_valid_version(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    query: str,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="version-required"
+    )
+    response = logged_in_client.delete(f"{API_PREFIX}/{report.pk}{query}")
+    assert response.status_code == 422, response.content
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists()
+
+
+@pytest.mark.django_db
+def test_anonymous_cannot_delete_report_draft(
+    client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="authenticated-only"
+    )
+    response = client.delete(f"{API_PREFIX}/{report.pk}?expected_version=1")
+    assert response.status_code in {401, 403, 404}
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists()
 
 
 @pytest.mark.django_db

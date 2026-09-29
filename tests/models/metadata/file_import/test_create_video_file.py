@@ -120,11 +120,13 @@ def _patch_video_stream_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("duplicate_names", [False, True])
 def test_create_from_file_happy_path(
     mock_storage: EndoregPathsModel,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     base_db_data: None,
+    duplicate_names: bool,
 ) -> None:
     """
     Happy path: new VideoFile is created, file is stored under the configured
@@ -159,10 +161,14 @@ def test_create_from_file_happy_path(
     )
 
     center_name, processor_name = _center_and_processor_names()
+    selected_center = Center.objects.get(name=center_name)
+    if duplicate_names:
+        Center.objects.create(name=center_name, center_key="other-import-center")
 
     ctx = ImportContext(
         file_path=src_file,
         center_name=center_name,
+        center_key=str(selected_center.center_key) if duplicate_names else None,
         processor_name=processor_name,
         original_path=Path(src_file),
     )
@@ -175,6 +181,7 @@ def test_create_from_file_happy_path(
     assert needs_processing is True
     assert created is False
     assert video.pk is not None
+    assert video.center_id == selected_center.pk
     assert isinstance(video.get_raw_file_path(), Path)
     raw_path = video.get_raw_file_path()
     assert raw_path is not None
@@ -413,7 +420,10 @@ def test_create_or_retrieve_history_missing_video_imports_fresh(
         raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
+        *,
+        center_key: str | None = None,
     ) -> VideoFile:
+        assert center_key == ctx.center_key
         assert center_name == ctx.center_name
         assert processor_name == ctx.processor_name
         assert save_video_file is True
@@ -433,7 +443,10 @@ def test_create_or_retrieve_history_missing_video_imports_fresh(
     def fail_finalize_failure(_ctx: ImportContext) -> NoReturn:
         raise AssertionError("missing VideoFile failure history cannot finalize files")
 
-    def fake_ensure_center(_video: VideoFile, center_name: str) -> SimpleNamespace:
+    def fake_ensure_center(
+        _video: VideoFile, center_name: str, *, center_key: str | None = None
+    ) -> SimpleNamespace:
+        assert center_key == ctx.center_key
         return SimpleNamespace(name=center_name)
 
     monkeypatch.setattr(
@@ -826,7 +839,10 @@ def test_create_or_retrieve_prefers_sensitive_path(
         raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
+        *,
+        center_key: str | None = None,
     ) -> VideoFile:
+        assert center_key == ctx.center_key
         assert center_name == ctx.center_name
         assert processor_name == ctx.processor_name
         assert raw_video_hash == ctx.file_hash
@@ -835,7 +851,10 @@ def test_create_or_retrieve_prefers_sensitive_path(
         captured_file_paths.append(Path(file_path))
         return created_video
 
-    def fake_ensure_center(_video: VideoFile, center_name: str) -> SimpleNamespace:
+    def fake_ensure_center(
+        _video: VideoFile, center_name: str, *, center_key: str | None = None
+    ) -> SimpleNamespace:
+        assert center_key == ctx.center_key
         return SimpleNamespace(name=center_name)
 
     monkeypatch.setattr(

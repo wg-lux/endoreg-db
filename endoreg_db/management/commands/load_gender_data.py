@@ -1,49 +1,8 @@
-from __future__ import annotations
+"""Compatibility entry point for the versioned lx-dtypes catalogue."""
 
-from collections import OrderedDict
-
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from ...data import (
-    GENDER_DATA_DIR,
-)
-from endoreg_db.models.other.gender import Gender
-from ...utils import load_model_data_from_yaml
-from endoreg_db.helpers.typing import LoadModelDataMetadata
+from endoreg_db.management.reference_catalog_command import ReferenceCatalogCommand
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
-IMPORT_METADATA: OrderedDict[str, LoadModelDataMetadata] = OrderedDict(
-    {
-        Gender.__name__: {
-            "dir": GENDER_DATA_DIR,
-            "model": Gender,
-            "foreign_keys": [],
-            "foreign_key_models": [],
-        },
-    }
-)
-
-
-class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
-
-    def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
-        )
-
-    def handle(
-        self,
-        *args: str,
-        **options: object,
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
-        for model_name in IMPORT_METADATA.keys():
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+class Command(ReferenceCatalogCommand):
+    record_types = (ReferenceKind.GENDER,)

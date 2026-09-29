@@ -1,91 +1,13 @@
-from __future__ import annotations
+"""Compatibility entry point for the versioned lx-dtypes catalogue."""
 
-import os
-
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from ...data import EXAMINATION_DATA_DIR
-from endoreg_db.models.medical.examination.examination import Examination
-from endoreg_db.models.medical.examination.examination_indication import (
-    ExaminationIndication,
-)
-from endoreg_db.models.medical.examination.examination_time import ExaminationTime
-from endoreg_db.models.medical.examination.examination_time_type import (
-    ExaminationTimeType,
-)
-from endoreg_db.models.medical.examination.examination_type import ExaminationType
-from endoreg_db.models.medical.finding.finding import Finding
-from ...utils import load_model_data_from_yaml
-from endoreg_db.helpers.typing import LoadModelDataMetadata
-
-SOURCE_DIR = EXAMINATION_DATA_DIR
+from endoreg_db.management.reference_catalog_command import ReferenceCatalogCommand
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
-    "ExaminationType",
-    "ExaminationTimeType",
-    "ExaminationTime",
-    "Examination",
-]
-
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
-    "ExaminationType": {
-        "dir": os.path.join(SOURCE_DIR, "type"),
-        "model": ExaminationType,
-        "foreign_keys": [],
-        "foreign_key_models": [],
-    },
-    "Examination": {
-        "dir": os.path.join(SOURCE_DIR, "examinations"),
-        "model": Examination,
-        "foreign_keys": [
-            "findings",
-            "examination_types",
-            "examination_times",
-            "indications",
-        ],
-        "foreign_key_models": [
-            Finding,
-            ExaminationType,
-            ExaminationTime,
-            ExaminationIndication,
-        ],
-    },
-    "ExaminationTimeType": {
-        "dir": os.path.join(SOURCE_DIR, "time-type"),
-        "model": ExaminationTimeType,
-        "foreign_keys": ["examinations"],
-        "foreign_key_models": [Examination],
-    },
-    "ExaminationTime": {
-        "dir": os.path.join(SOURCE_DIR, "time"),
-        "model": ExaminationTime,
-        "foreign_keys": ["time_types"],
-        "foreign_key_models": [ExaminationTimeType],
-    },
-}
-
-
-class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
-
-    def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
-        )
-
-    def handle(
-        self,
-        *args: str,
-        **options: object,
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
-        for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+class Command(ReferenceCatalogCommand):
+    record_types = (
+        ReferenceKind.EXAMINATION_TYPE,
+        ReferenceKind.EXAMINATION_TIME_TYPE,
+        ReferenceKind.EXAMINATION_TIME,
+        ReferenceKind.EXAMINATION,
+    )

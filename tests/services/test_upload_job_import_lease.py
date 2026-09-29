@@ -158,15 +158,15 @@ def test_import_lease_fences_expired_owner() -> None:
         heartbeat_upload_job_import_lease(first)
 
     with locked_upload_job_import_lease(second) as owned_job:
-        owned_job.error_detail = "owned"
-        owned_job.save(update_fields=["error_detail", "updated_at"])
+        owned_job.source_system = "owned"
+        owned_job.save(update_fields=["source_system", "updated_at"])
 
     release_upload_job_import_lease(second)
     job.refresh_from_db()
     assert job.processing_lease_owner == ""
     assert job.processing_lease_expires_at is None
     assert job.processing_heartbeat_at is None
-    assert job.error_detail == "owned"
+    assert job.source_system == "owned"
 
 
 @pytest.mark.django_db(transaction=True)

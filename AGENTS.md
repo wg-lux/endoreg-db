@@ -334,6 +334,14 @@ If yes, reject the approach and rewrite it to comply with these invariants.
 
 Case Generator and Requirements Module:
 
+For lx-dtypes package YAML, follow the canonical
+[package structure guide](https://github.com/wg-lux/lx-data-models/blob/main/docs/guides/dtypes-package-structure.md)
+and its agent checklist (local sibling checkout:
+`../lx-data-models/docs/guides/dtypes-package-structure.md`).
+Use the existing module/version registry and shared
+terminology storage; employee records are optional. See
+[host import instructions](docs/wiki/dataloader_yaml_authoring.md#versioned-presets-from-shared-terminology-storage).
+
 - Prefer yaml config
 - Reference load_base_db_data
 

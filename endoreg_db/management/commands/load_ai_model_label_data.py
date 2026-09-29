@@ -1,73 +1,12 @@
-from __future__ import annotations
+"""Compatibility entry point for the versioned lx-dtypes catalogue."""
 
-import os
-
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from ...data import LABEL_DATA_DIR
-from endoreg_db.models.label.label import Label
-from endoreg_db.models.label.label_set import LabelSet
-from endoreg_db.models.label.label_type import LabelType
-from ...utils import load_model_data_from_yaml
-from endoreg_db.helpers.typing import LoadModelDataMetadata
-
-SOURCE_DIR = LABEL_DATA_DIR
+from endoreg_db.management.reference_catalog_command import ReferenceCatalogCommand
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
-    "LabelType",
-    "Label",
-    "LabelSet",
-]
-
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
-    # "": { # same as model name in "import models", e.g. "Intervention"
-    #     "subdir": os.path.join(SOURCE_DIR,""), # e.g. "interventions"
-    #     "model": None,
-    #     "foreign_keys": [], # e.g. ["intervention_types"]
-    #     "foreign_key_models": [] # e.g. [InterventionType]
-    # },
-    "LabelType": {
-        "dir": os.path.join(SOURCE_DIR, "label-type"),  # e.g. "interventions"
-        "model": LabelType,
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
-    },
-    "Label": {
-        "dir": os.path.join(SOURCE_DIR, "label"),  # e.g. "interventions"
-        "model": Label,
-        "foreign_keys": ["label_type"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [LabelType],  # e.g. [InterventionType]
-    },
-    "LabelSet": {
-        "dir": os.path.join(SOURCE_DIR, "label-set"),  # e.g. "interventions"
-        "model": LabelSet,
-        "foreign_keys": ["labels"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [Label],  # e.g. [InterventionType]
-    },
-}
-
-
-class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
-
-    def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
-        )
-
-    def handle(
-        self,
-        *args: str,
-        **options: object,
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
-        for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+class Command(ReferenceCatalogCommand):
+    record_types = (
+        ReferenceKind.LABEL_TYPE,
+        ReferenceKind.LABEL,
+        ReferenceKind.LABEL_SET,
+    )

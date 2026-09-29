@@ -79,6 +79,10 @@ definition_of_done:
   category: functionality
   title: Zustände, Ereignisse und Übergänge sind kanonisch und deterministisch
   acceptance:
+  - UploadJob, ReportImportAttempt und TransferJob verwenden dieselben typisierten Claim-, Retry- und
+    Recovery-Ereignispfade aus lifecycle_state_machine.py. Fachliche Retry-Freigaben, Datenbank-Leases
+    und Fencing bleiben an der jeweiligen Service-Grenze; aktive fremde Worker und abgeschlossene Transfers
+    dürfen durch die Zentralisierung nicht erneut geclaimt werden.
   - Der gemeinsame Dienstlebenszyklus unterscheidet mindestens STARTING, RUNNING, DEGRADED, STOPPING,
     STOPPED, FAILED und LOST; begrenzte Operationen verwenden getrennt QUEUED, CLAIMED, RUNNING, RETRY_WAIT,
     SUCCEEDED, FAILED, CANCELLED und LOST, soweit der jeweilige Vertrag diese Zustände benötigt.
@@ -112,13 +116,28 @@ definition_of_done:
     - kind: code
       reference: rust/endoreg_rust_backend/src/lifecycle_state.rs; endoreg_db/services/hub/upload_job_state_machine.py;
         endoreg_db/services/report_import_state_machine.py
-    note: Der kanonische Operationsvertrag lifecycle_state_v3 ergänzt RETRY_REQUESTED und erlaubt den
-      expliziten Pfad FAILED beziehungsweise SUCCEEDED -> RETRY_WAIT sowie QUEUED -> RETRY_WAIT bei einem
-      Dispatch-Fehler. UploadJob und ReportImportAttempt bilden ihre persistierten Status typisiert auf
-      denselben nativen Reducer ab; jede Reduktion wird unmittelbar vor der bestehenden Mutation validiert.
-      LOST bleibt vom wiederholbaren Retry-Pfad getrennt.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T13:30:02.736579Z'
+    - kind: code
+      reference: endoreg_db/services/lifecycle_state_machine.py::OperationClaimPath; endoreg_db/services/hub/upload_job_state_machine.py;
+        endoreg_db/services/report_import_state_machine.py; endoreg_db/services/hub/transfers.py
+    - kind: command
+      reference: '2026-09-29: Gesamt-Pyright 0 Fehler/6 bestehende Warnungen; fokussierter Pyright 0 Fehler/0
+        Warnungen; Ruff und git diff --check bestanden.'
+    - kind: command
+      reference: '2026-09-29: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py
+        tests/services/test_upload_job_state_machine.py tests/services/test_report_import_state_machine.py
+        tests/services/test_transfer_job_contract.py tests/services/test_report_import_fencing.py tests/services/test_upload_job_import_lease.py
+        tests/services/test_hub_ingest_import_job_contract.py tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py -q --tb=short -rs: 305 passed, 3 subtests passed,
+        2 warnings, 98.97s.'
+    note: UploadJob, ReportImportAttempt und TransferJob verwenden OperationClaimPath für gemeinsame Initial-,
+      Retry- und Recovery-Ereignisfolgen. Der native lifecycle_state_v3-Reducer bleibt autoritativ. Fachliche
+      Retry-Freigaben, Zeilensperren, Datenbankzeit und Fencing bleiben in den bestehenden Services; keine
+      Modell-, Storage- oder Streamingänderung. Die vollständige Matrix aller fünf Claim-Pfade gegen acht
+      Operationszustände sowie Import- und Ownership-Regressionen bestehen. SQLite ist kein Nachweis produktiver
+      PostgreSQL-Mehrprozesskonkurrenz; übergreifende Produktionsfreigaben bleiben offen.
+    assessed_by: codex-state-centralization-20260929
+    assessed_at: '2026-09-29T08:41:48.469213Z'
 - id: rust_transition_core
   category: maintainability
   title: Langlaufende Dienste verwenden bevorzugt einen versionierten nativen Rust-Zustandskern

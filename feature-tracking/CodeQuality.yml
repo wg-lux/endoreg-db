@@ -541,6 +541,10 @@ definition_of_done:
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
   acceptance:
+  - Basisdaten-Fixtures schreiben innerhalb der jeweiligen Testtransaktion; nachfolgende Frischdatenbanktests
+    bleiben leer. Migrationstests stellen im finally-Block alle aktuellen Migrationsblätter wieder her.
+    Job-Fixtures erfüllen die aktuellen Fehlerzustands-Constraints, schützen laufende Video-Jobs vor altersbasierter
+    Übernahme und verwenden für erfolgreiche PDF-Freigaben ein gültiges verarbeitetes Dokument.
   - Test-Fixtures überstehen Datenbank-Flushes zwischen Transaktionstests; PDF-Erfolgsfälle verwenden
     vollständig parsebare Dokumente und prüfen Textinhalt statt einer festen PDF-Version. Subprozess-
     und parallele Subtest-Prüfungen verwenden aktuelle Imports und serialisierbare Parameter. Tests ohne
@@ -650,16 +654,30 @@ definition_of_done:
         TEST_DB_REUSE=true .devenv/state/venv/bin/pytest -q -m "not (expensive or video or pipeline or
         ai or slow or ffmpeg)" -n 4 --dist=loadscope --tb=short: 2179 passed, 15 skipped, 16 warnings,
         896 subtests passed in 260.31s; keine Fehler.'
-    note: 'Testbereinigung abgeschlossen: elf ursprüngliche Fast-Lane-Fehler behoben, 37 gezielte Tests
-      plus neun Subtests ohne Schnelltest-Skips und abschließend 2179 Fast-Tests plus 896 Subtests bestanden.
-      Stammdaten-Fixture prüft nach Transaktions-Flush erneut; zwei parametrisierte Transaktionstests
-      sichern das ab. PDF-Erfolgsfixtures sind parsebar; TXT-Prüfung umfasst Text und Quellkennung statt
-      fester PDF-Version. Lock-Subprozess nutzt aktuellen Import, Subtest-Berichte primitive Parameter.
-      Inhaltsloser Speicherplatztest und repositoryweites temporäres Cleanup entfernt. Produktivcode unverändert.
-      Pyright 0 Fehler/6 bestehende Warnungen; fokussierter Pyright, Ruff, Format und Diff-Check grün.
-      Teure Video-/KI-/Pipeline-Lane nicht ausgeführt; Gesamt-Qualitätskriterium bleibt in_progress.'
-    assessed_by: codex-tests-20260924-a
-    assessed_at: '2026-09-24T09:31:08.677741Z'
+    - kind: command
+      reference: '2026-09-29: .devenv/state/venv/bin/pyright: 0 errors, 6 warnings, exit 0; focused Pyright
+        for seven changed test files: 0 errors, 0 warnings; scoped Ruff and git diff --check passed.'
+    - kind: command
+      reference: '2026-09-29: .devenv/state/venv/bin/pytest tests/services/test_report_artifact_integrity.py
+        tests/migrations tests/services/test_anonymization_operational_recovery.py tests/services/test_center_defaults.py
+        tests/services/test_clinical_reference_data.py tests/services/test_hub_cleanup.py tests/services/test_reference_catalog.py
+        tests/services/test_study_presets.py tests/services/test_upload_job_cancellation.py tests/services/test_upload_job_import_lease.py
+        tests/services/test_report_import_service.py tests/services/test_identity_salt_rotation.py tests/services/test_video_reimport_budget.py
+        tests/views/anonymization/test_sensitive_metadata_view.py -q --tb=short: 205 passed, 3 skipped,
+        2 warnings, exit 0.'
+    - kind: command
+      reference: '2026-09-29: SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_report_import_service.py
+        -q -rs --tb=short: 2 passed, 1 failed with SQLite database table is locked during first cold import.
+        Isolated rerun of ::TestReportImportService::test_import_and_anonymize_success: 1 passed, 2 warnings,
+        exit 0. No retries or error suppression added to application code.'
+    note: 'Regression 2026-09-29: Basisdaten innerhalb der Testtransaktion, Migrationsteardown auf aktuelle
+      Migrationsblätter und vertragskonforme Job-/PDF-Testaufbauten. Gemeinsame Regression: 205 bestanden,
+      3 übersprungen. Aktivierte Report-Importfälle über Haupt-/Nachlauf bestanden; einmaliger SQLite-Schreibkonflikt
+      bleibt als sporadischer Befund dokumentiert. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen;
+      sieben geänderte Testdateien: 0 Fehler/0 Warnungen, Ruff bestanden. Breite Fast-Lane wegen fremder
+      laufender lx-annotate-Suite nicht gestartet; keine vollständige Suite oder Produktionsfreigabe behauptet.'
+    assessed_by: codex-20260929-testfix
+    assessed_at: '2026-09-29T08:18:42.812273Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam

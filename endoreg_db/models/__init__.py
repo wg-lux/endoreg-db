@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from .other.clinical_reference_import import ClinicalReferenceImport
+from .other.reference_catalog_import import ReferenceCatalogImport
+
 ####### Administration ########
 from .administration import (
     ActiveModel,
@@ -384,6 +387,8 @@ __all__ = [
     "ModelMeta",
     "VideoPredictionMeta",
     ####### Other #######
+    "ClinicalReferenceImport",
+    "ReferenceCatalogImport",
     "Material",
     "Resource",
     "TransportRoute",

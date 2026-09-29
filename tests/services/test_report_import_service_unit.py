@@ -328,16 +328,32 @@ class TestImportContextValidation:
         with pytest.raises(ValueError, match="only accepts PDF or TXT"):
             service._create_import_context(source, CENTER_NAME)
 
-    @pytest.mark.parametrize("center_name", ["", "   ", None])
-    def test_rejects_empty_or_null_center(
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("center_name", ["", "   "])
+    def test_blank_center_uses_configured_local_default(
         self,
         service: ReportImportService,
         pdf_path: Path,
-        center_name: str | None,
+        center_name: str,
     ) -> None:
-        # Arrange / Act / Assert
+        from django.test import override_settings
+        from endoreg_db.models import Center
+
+        with override_settings(
+            LX_ANNOTATE_DEFAULT_CENTER="report-local", CENTER_NAME="Report Local"
+        ):
+            result = service._create_import_context(pdf_path, center_name)
+        assert result.center_name == "Report Local"
+        assert result.center_key == "report-local"
+        assert Center.objects.get(center_key="report-local").name == "Report Local"
+
+    def test_rejects_null_center_before_default_resolution(
+        self,
+        service: ReportImportService,
+        pdf_path: Path,
+    ) -> None:
         with pytest.raises(ValidationError):
-            service._create_import_context(pdf_path, cast(str, center_name))
+            service._create_import_context(pdf_path, cast(str, None))
 
 
 class TestPublicImportEntryPoint:

@@ -92,10 +92,8 @@ from endoreg_db.services.hub.watcher_handoff import (
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
 from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.utils.set_default_center import (
-    get_application_defaults,
-    get_default_processor,
-)
+from endoreg_db.utils.set_default_center import get_default_processor
+from endoreg_db.services.center_defaults import resolve_local_center
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
@@ -450,12 +448,7 @@ def resolve_declared_upload_center(
 
 
 def resolve_default_center() -> Center | None:
-    defaults = get_application_defaults()
-    if defaults.center_id is not None:
-        center = Center.objects.filter(pk=defaults.center_id).first()
-        if center is not None:
-            return center
-    return Center.objects.order_by("pk").first()
+    return resolve_local_center()
 
 
 def resolve_allowed_center_id(user: Any) -> int | None:

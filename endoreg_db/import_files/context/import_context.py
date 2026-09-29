@@ -63,6 +63,8 @@ class ImportContext(BaseModel):
 
     file_path: Path
     center_name: str
+    # Bind an implicitly selected local center even when display names collide.
+    center_key: str | None = Field(default=None, min_length=1, max_length=255)
     processor_name: str = "olympus-cv-500"
 
     retry: bool = False

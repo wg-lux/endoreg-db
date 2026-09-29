@@ -73,7 +73,11 @@ def _handle_success_history(ctx: ImportContext, file_hash: str) -> _HistoryDecis
     )
     if integrity_result.ok:
         if existing_video is not None and not existing_video.raw_file:
-            if existing_video.center.name != ctx.center_name:
+            if (
+                existing_video.center.center_key != ctx.center_key
+                if ctx.center_key is not None
+                else existing_video.center.name != ctx.center_name
+            ):
                 raise ValueError("Transferred video belongs to a different center")
         return _HistoryDecision(
             processed=True,
@@ -132,12 +136,15 @@ def _get_or_create_video_instance(
     video = VideoFile.create_from_file_initialized(
         file_path=file_path,
         center_name=ctx.center_name,
+        center_key=ctx.center_key,
         processor_name=ctx.processor_name,
         raw_video_hash=file_hash,
         initialize=not bool(getattr(ctx, "defer_video_initialization", False)),
     )
 
-    center = cast(_NamedCenter, ensure_center(video, ctx.center_name))
+    center = cast(
+        _NamedCenter, ensure_center(video, ctx.center_name, center_key=ctx.center_key)
+    )
     center_name = str(center.name)
     logger.info("Successfully set up video file from %s", center_name)
     return video

@@ -44,6 +44,7 @@ def test_upload_job_status_transition_uses_native_operation_reducer(
     ("current_status", "target_status"),
     [
         (UploadJob.Status.LOST.value, UploadJob.Status.ANONYMIZED.value),
+        (UploadJob.Status.LOST.value, UploadJob.Status.PROCESSING.value),
         (UploadJob.Status.PENDING.value, UploadJob.Status.ANONYMIZED.value),
     ],
 )
@@ -78,3 +79,14 @@ def test_upload_job_interrupted_retry_recovers_to_running(
     current_status: str,
 ) -> None:
     validate_upload_job_interrupted_retry(current_status=current_status)
+
+
+@pytest.mark.parametrize(
+    "current_status",
+    [UploadJob.Status.ANONYMIZED.value, UploadJob.Status.ERROR.value],
+)
+def test_upload_job_terminal_outcome_is_not_an_interrupted_attempt(
+    current_status: str,
+) -> None:
+    with pytest.raises(ValueError, match="invalid operation lifecycle transition"):
+        validate_upload_job_interrupted_retry(current_status=current_status)

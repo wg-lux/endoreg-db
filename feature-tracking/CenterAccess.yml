@@ -17,6 +17,89 @@ source_documents:
   disposition: reference
   note: Access matrix, identity-provider groups, diagnostics, and rollout and rollback procedures.
 definition_of_done:
+- id: local_center_defaults
+  category: functionality
+  title: Local center setup is independent of studies and does not block valid intake or hub transfers
+  acceptance:
+  - Local intake works on a migrated database without studies, employee lists, clinical fixtures, or a
+    preselected ApplicationSettings center; provision a meaningful Local Center lazily and idempotently.
+  - LX-Annotate exposes LX_ANNOTATE_DEFAULT_CENTER and CENTER_NAME as Django settings after environment
+    loading; direct Django settings override environment values and templates ship meaningful defaults.
+  - Explicit import or study center identity wins; otherwise the operator-selected application center
+    wins over the configured local default. No path selects a center by row order or silently replaces
+    an unknown or ambiguous explicit identity with the local default.
+  - PDF, video, watcher, upload, and SAP intake share local center resolution; no study activation or
+    clinical catalogue import is required solely to satisfy center setup.
+  - Authenticated hub transfers with no study use NetworkNode.owning_center even when the recipient has
+    no local center configured. A recipient default must never replace source provenance; conflicting
+    source identities and unauthorized transfers remain rejected.
+  - Trusted operator hub-node configuration provisions missing source centers by stable key without studies
+    or clinical fixtures; existing names and IDs are preserved, and a node configuration failure rolls
+    back new center rows together with the node rows.
+  - Center defaults grant no permissions, do not reassign historical records, and remain configurable
+    independently of studies; studies can select separately provisioned centers.
+  - Tests cover an empty center table, repeated and concurrent provisioning, settings precedence, legacy
+    name compatibility, duplicate names, explicit study centers, and hub source/recipient separation.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run center-default service tests, PDF/video import and upload regressions, hub-transfer
+      endpoint regressions, watcher integration tests, and lx-annotate environment-contract tests. Rehearse
+      simultaneous first intake and a no-study source-to-hub transfer with different local defaults. Record
+      exact results; local unit tests alone do not establish deployment readiness.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/center_defaults.py
+    - kind: test
+      reference: tests/services/test_center_defaults.py
+    - kind: document
+      reference: ../dev/lx-annotate/docs/guides/center-defaults.yml
+    - kind: test
+      reference: ../dev/lx-annotate/tests/system/test_center_node_provisioning.py
+    - kind: test
+      reference: tests/services/test_report_import_service_unit.py
+    - kind: test
+      reference: tests/models/metadata/file_import/test_create_video_file.py
+    note: 'Implemented study-independent local center resolution, operator-selection precedence, typed
+      Django settings and Local Center defaults, lazy serialized provisioning, local PDF/video/upload/SAP/watcher
+      wiring and transactional hub-node center provisioning. Explicit center names and authenticated hub
+      source ownership are preserved; blank identities, ambiguous names and derived-key collisions are
+      rejected. Verification used an isolated frozen endoreg lock/dev environment augmented with host
+      dependencies, sibling PYTHONPATH and cached Nix library paths. Backend pytest tests/services/test_center_defaults.py
+      tests/services/test_video_import_service_unit.py tests/services/test_video_import_transfer_identity.py
+      tests/views/misc/test_upload_endpoints.py -q --tb=short: 117 passed, 2 warnings in 51.39s. Final
+      expanded center suite: 13 passed in 40.02s. Normal lx-annotate settings: pytest tests/system/test_center_defaults_contract.py
+      tests/system/test_center_node_provisioning.py tests/system/test_secretspec_environment_contract.py
+      tests/ingestion/test_file_watcher_integration.py tests/ingestion/test_file_watcher_unit.py -q --tb=short:
+      56 passed in 83.04s. pytest tests/views/media/test_hub_transfer_endpoints.py -q --tb=short: 45 passed,
+      2 PostgreSQL-only nullable-row-lock tests skipped, 2 warnings in 50.53s on SQLite. Earlier registry/bootstrap
+      and model-annotation startup blockers were reported to the clinical migration owner, fixed there
+      and resolved in these reruns. Focused core Pyright: 0 errors/1 existing lx_anonymizer.ocr.tessdata
+      stub warning; host settings/watcher/node Pyright: 0 errors/0 warnings. Ruff, scoped git diff --check,
+      environment-contract tests and nix-instantiate --parse nix/runtime-environment.nix passed. PostgreSQL
+      and multi-host production rehearsal remain unverified; no production-readiness claim. Additional
+      migration integration review: report context validates string input before local-default resolution;
+      blank strings resolve the configured local center, None remains a typed validation error. Full affected
+      integration lane after this correction: 154 passed, 70 skipped, 1 existing pytest warning (96.88s);
+      focused report-boundary Pyright 0 errors, 1 existing anonymizer-stub warning. No production database
+      changed.
+
+
+      Review-Korrektur: aufgelöster center_key wird durch Report-/Video-Kontext, Fabriken und Persistenz
+      getragen. Gleichnamige Center bleiben eindeutig; unbekannte Schlüssel und widersprüchliche Namen
+      scheitern laut. Transferred-Video-Wiederverwendung prüft bei aufgelöster Identität den Schlüssel.
+      Tests prüfen Wechsel der Default-Auswahl nach Kontextaufbau und echte Persistenz bei doppelten Namen.
+      Verifikation am 2026-09-29: vollständiges .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende
+      Warnungen. Ruff und git diff --check bestanden. Fokussierter pytest-Lauf: 223 bestanden, 1 Fehler
+      im neuen Pakettest wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad korrigiert. Anschließender
+      Paket-/Integrationslauf: 74 bestanden, 2 Warnungen in 81.51s, einschließlich des korrigierten Tests.
+      Insgesamt 297 unterschiedliche Tests erfolgreich. Keine Produktivdaten oder Deployments geändert;
+      PostgreSQL-/Produktivprobe bleibt offen.'
+    assessed_by: codex-stash-review-20260929
+    assessed_at: '2026-09-29T10:00:57.553133Z'
 - id: deployment_access_matrix
   category: requirements
   title: The access contract is explicit for every deployment profile and resource class

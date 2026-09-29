@@ -19,6 +19,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.services.report_persistence import (
     ReportPersistenceValidationError,
+    delete_report_draft,
     save_report_submission,
 )
 from endoreg_db.services.report_pdf_renderer import build_report_template_pdf_payload
@@ -30,6 +31,122 @@ def _successful_runtime_validation(
     **_kwargs: object,
 ) -> dict[str, object]:
     return {"ok": True, "issues": []}
+
+
+@pytest.mark.django_db
+def test_reports_keep_independent_snapshots_after_terminology_change() -> None:
+    patient = Patient.objects.create(patient_hash="independent-report-snapshots")
+    examination = PatientExamination.objects.create(
+        patient=patient,
+        knowledge_base_module="original_module",
+        knowledge_base_version="1.0",
+        dtypes_record={
+            "patient": str(patient.pk),
+            "examination": "colonoscopy",
+            "knowledge_base_module": "original_module",
+            "knowledge_base_version": "1.0",
+        },
+    )
+    first = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="first",
+        editor_payload={"sections": [{"name": "old_terminology"}]},
+    ).report
+    examination.knowledge_base_module = "migrated_module"
+    examination.knowledge_base_version = "2.0"
+    examination.dtypes_record["knowledge_base_module"] = "migrated_module"
+    examination.dtypes_record["knowledge_base_version"] = "2.0"
+    examination.dtypes_record_updated_at = timezone.now()
+    examination.save()
+    second = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="second",
+        editor_payload={"sections": [{"name": "new_terminology"}]},
+    ).report
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.pk != second.pk
+    assert (
+        PatientExaminationReport.objects.filter(patient_examination=examination).count()
+        == 2
+    )
+    assert first.knowledge_base_module == "original_module"
+    assert second.knowledge_base_module == "migrated_module"
+    assert first.dtypes_record_updated_at is None
+    assert second.dtypes_record_updated_at == examination.dtypes_record_updated_at
+    assert first.editor_payload["sections"] == [{"name": "old_terminology"}]
+    assert first.dtypes_record is not None
+    assert second.dtypes_record is not None
+    assert first.dtypes_record["knowledge_base_module"] == "original_module"
+    assert second.dtypes_record["knowledge_base_module"] == "migrated_module"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("target_is_active", [True, False])
+def test_delete_draft_preserves_siblings_and_fences_autosave(
+    target_is_active: bool,
+) -> None:
+    patient = Patient.objects.create(patient_hash="delete-report-draft")
+    examination = PatientExamination.objects.create(patient=patient)
+    target = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="target"
+    )
+    sibling = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="sibling"
+    )
+    examination.report_draft = {
+        "active_report_id": target.pk if target_is_active else sibling.pk,
+        "revision": 7,
+    }
+    examination.save()
+    previous = examination.report_draft
+    delete_report_draft(
+        patient_examination_id=examination.pk, report_id=target.pk, expected_version=1
+    )
+    examination.refresh_from_db()
+    assert not PatientExaminationReport.objects.filter(pk=target.pk).exists()
+    assert PatientExaminationReport.objects.filter(pk=sibling.pk).exists()
+    if target_is_active:
+        assert examination.report_draft["revision"] == 8
+        assert "active_report_id" not in examination.report_draft
+        assert examination.report_draft["payload"] == {}
+    else:
+        assert examination.report_draft == previous
+
+
+@pytest.mark.django_db
+def test_finalization_preserves_draft_for_another_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = Patient.objects.create(patient_hash="finalize-other-report")
+    examination = PatientExamination.objects.create(patient=patient)
+    sibling = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="sibling"
+    )
+    examination.report_draft = {
+        "active_report_id": sibling.pk,
+        "revision": 5,
+        "rendered_text": "Keep me",
+    }
+    examination.save()
+    previous = examination.report_draft
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
+
+    def persist_test_artifacts(*_args: object, **_kwargs: object) -> tuple[None, None]:
+        return None, None
+
+    monkeypatch.setattr(
+        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        persist_test_artifacts,
+    )
+    save_report_submission(
+        patient_examination_id=examination.pk, template_name="final", status="final"
+    )
+    examination.refresh_from_db()
+    assert examination.report_draft == previous
 
 
 @pytest.mark.django_db

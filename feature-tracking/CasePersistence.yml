@@ -304,13 +304,18 @@ definition_of_done:
   category: interoperability
   title: ReportingShell verwendet den persistenten Fall statt einer Untersuchung als Fallersatz
   acceptance:
+  - Patient and examination case filters reject malformed or nonpositive identifiers instead of widening
+    the requested scope; the existing cases URLs remain registered with the patient routes.
+  - Frontend document and reporting views show multiple matching cases explicitly and never silently select
+    the first case for an examination.
   - /dev/lx-annotate/frontend/src/views/reporting/ReportingShell.vue erhält eine stabile Case-ID, Fallstatus,
     Aufnahme- und Entlasszeitpunkt sowie die Liste der zugehörigen PatientExaminations über einen typisierten
     snake_case-API-Vertrag.
   - Fallauswahl und Fall-ID-Anzeige leiten die Case-ID nicht länger aus flow.patientExaminationId ab;
     eine Untersuchung wird innerhalb des ausgewählten Falls separat gewählt und kann gewechselt werden.
-  - Medien-Preload, Berichtsentwurf, Befunde und Timeline bleiben an Fall und ausgewählte Untersuchung
-    gebunden; Berichte, Videos und Frames eines anderen Falls werden nicht angezeigt oder wiederverwendet.
+  - Report drafts and findings remain bound to the selected case and examination. Authorized media history
+    includes reports and videos from the same patient across cases and examinations without relinking
+    ownership; media from other patients must never be displayed or reused.
   - Neu laden und erneutes Öffnen stellen den gespeicherten Fallkontext einschließlich klinischer Anhänge
     wieder her, ohne nur lokalen Pinia-Zustand als Quelle zu verwenden.
   - Frontend-Tests decken einen Fall mit mehreren Untersuchungen, leere und vollständige Anhänge, fremde
@@ -332,10 +337,26 @@ definition_of_done:
     evidence:
     - kind: test
       reference: /dev/lx-annotate/frontend/src/views/reporting/__tests__/ReportingShell.mediaPreload.test.ts
-    note: ReportingShell resolves and displays the stable Case ID, selects examinations within that case,
-      and reports unanchored examinations; full cross-case media isolation and reload coverage remain.
-    assessed_by: Codex
-    assessed_at: '2026-07-22T15:27:14.216060Z'
+    - kind: test
+      reference: '2026-09-29: 159 tests passed with RUN_VIDEO_TESTS=true and SKIP_EXPENSIVE_TESTS=false
+        across case views, case authorization, media URL contracts, patient timeline, center-scoped reads,
+        report import unit and video import unit suites; 2 existing warnings.'
+    - kind: command
+      reference: 'Repository Pyright: 0 errors, 6 existing warnings; final focused Pyright: 0 errors,
+        0 warnings. Targeted Ruff and git diff --check passed.'
+    - kind: test
+      reference: '2026-09-29: 106 frontend tests passed across reporting shell, timeline API, media previews,
+        reporting store, findings and patient resource pages. Scoped ESLint, vue-tsc and production build
+        passed (existing bundle-size warning).'
+    note: Case routes are colocated with patient routes without URL changes. Case filters reject invalid
+      identifiers; the view reuses its configured serializer. Frontend board links carry case_id; document
+      labels retain all matching cases and Reporting requires a valid explicit or retained case when examinations
+      are shared. Remaining broader case-graph readiness criteria are unchanged. Reporting now resolves
+      the selected case patient and loads complete patient media history independently of the current
+      examination. Text-only reports render in full; optional file links use supplied backend URLs. Stale
+      or invalid contexts clear previews, and selecting historical media does not change ownership.
+    assessed_by: codex-patient-state-20260929
+    assessed_at: '2026-09-29T10:10:03.569465Z'
 - id: transactional_consistency
   category: functionality
   title: Mutationen am Fallgraph sind atomar, idempotent und nebenläufigkeitssicher

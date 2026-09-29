@@ -17,6 +17,7 @@ from endoreg_db.services.report_import_state_machine import (
         (ReportImportAttempt.STATUS_ACTIVE, True),
         (ReportImportAttempt.STATUS_FAILED, False),
         (ReportImportAttempt.STATUS_SUCCEEDED, False),
+        (ReportImportAttempt.STATUS_LOST, False),
     ],
 )
 def test_report_import_claim_uses_native_retry_paths(

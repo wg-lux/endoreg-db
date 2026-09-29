@@ -10,6 +10,7 @@ from typing import cast
 from uuid import uuid4
 
 import pymupdf
+from pydantic import TypeAdapter
 
 from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.import_files.context.file_lock import (
@@ -103,7 +104,7 @@ class ReportImportService:
     def import_and_anonymize(
         self,
         file_path: Path | str,
-        center_name: str,
+        center_name: str = "",
         retry: bool = False,
     ) -> RawPdfFile:
         started_at = start_workload_timing()
@@ -292,9 +293,18 @@ class ReportImportService:
             raise ValueError("Report import only accepts PDF or TXT files.")
 
         self.logger.info("validating and preparing file")
+        center_name = TypeAdapter(str).validate_python(center_name, strict=True)
+        center_key: str | None = None
+        if not center_name.strip():
+            from endoreg_db.services.center_defaults import resolve_local_center
+
+            center = resolve_local_center()
+            center_name = str(center.name)
+            center_key = str(center.center_key)
         return ImportContext(
             file_path=path,
             center_name=center_name,
+            center_key=center_key,
             file_type="report",
             original_path=path,
         )

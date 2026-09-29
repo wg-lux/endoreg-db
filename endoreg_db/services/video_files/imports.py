@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
 
@@ -33,9 +32,10 @@ def _video_file_model():
 
 def create_video_file_from_path(
     file_path: Union[str, Path],
-    center_name: str,
+    center_name: str = "",
     *,
     model_cls: type["VideoFile"] | None = None,
+    center_key: str | None = None,
     **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
     from endoreg_db.utils.file_operations import get_file_hash
@@ -44,15 +44,6 @@ def create_video_file_from_path(
 
     if isinstance(file_path, str):
         file_path = Path(file_path)
-    if not center_name:
-        try:
-            center_name = os.environ["CENTER_NAME"]
-        except KeyError:
-            logger.error(
-                "Center name must be provided to create VideoFile from file. "
-                "You can set CENTER_NAME in environment variables."
-            )
-            return None
 
     processor_name = kwargs.pop("processor_name", None)
     raw_video_hash = kwargs.pop("raw_video_hash", None)
@@ -64,6 +55,7 @@ def create_video_file_from_path(
         model_cls or _video_file_model(),
         file_path,
         center_name=center_name,
+        center_key=center_key,
         processor_name=processor_name,
         raw_video_hash=raw_video_hash,
         save=save,
@@ -79,6 +71,7 @@ def create_initialized_video_file_from_path(
     save_video_file: bool = True,
     initialize: bool = True,
     model_cls: type["VideoFile"] | None = None,
+    center_key: str | None = None,
 ) -> "VideoFile":
     from ._imports import _create_from_file
 
@@ -89,6 +82,7 @@ def create_initialized_video_file_from_path(
         model_cls or _video_file_model(),
         file_path,
         center_name=center_name,
+        center_key=center_key,
         processor_name=processor_name,
         raw_video_hash=raw_video_hash,
         save=save_video_file,

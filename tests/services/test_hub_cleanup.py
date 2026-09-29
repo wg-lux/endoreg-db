@@ -172,7 +172,9 @@ def test_failed_import_requires_matching_successful_repeat(change: str) -> None:
         updates["source_center"] = Center.objects.create(name="different-cleanup")
     elif change in {"processing", "error"}:
         updates["status"] = change
-        updates["error_code"] = UploadJob.ErrorCode.PROCESSING_FAILED
+        updates["error_code"] = (
+            UploadJob.ErrorCode.PROCESSING_FAILED if change == "error" else ""
+        )
     else:
         updates[change] = "different"
     if updates:

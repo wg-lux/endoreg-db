@@ -327,6 +327,8 @@ def _create_from_file(
     processor_name: Optional[str],
     raw_video_hash: str,
     save: bool = True,
+    *,
+    center_key: str | None = None,
 ) -> "VideoFile":
     """
     Create a VideoFile from a local source path.
@@ -371,7 +373,9 @@ def _create_from_file(
         )
 
         try:
-            center = Center.objects.get(name=center_name)
+            from endoreg_db.services.center_defaults import resolve_import_center
+
+            center = resolve_import_center(center_name, center_key=center_key)
             effective_processor_name = resolve_processor_name_for_import(processor_name)
             processor = (
                 EndoscopyProcessor.objects.get(name=effective_processor_name)

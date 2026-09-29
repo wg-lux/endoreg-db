@@ -1,6 +1,6 @@
 from django.test import TestCase
 from django.core.management import call_command
-from endoreg_db.models import Center
+from endoreg_db.models import Center, FirstName, LastName
 
 
 class CenterModelTest(TestCase):
@@ -21,5 +21,16 @@ class CenterModelTest(TestCase):
         center: Center = Center.objects.get(name="university_hospital_wuerzburg")
         fn = [str(_.name).lower() for _ in center.first_names.all()]
         ln = [str(_.name).lower() for _ in center.last_names.all()]
-        self.assertIn("thomas", fn, "Expected 'thomas' in center first names")
-        self.assertIn("lux", ln, "Expected 'lux' in center last names")
+        self.assertEqual(fn, [])
+        self.assertEqual(ln, [])
+
+    def test_reload_preserves_locally_imported_names(self):
+        call_command("load_center_data")
+        center = Center.objects.get(name="university_hospital_wuerzburg")
+        first = FirstName.objects.create(name="Local")
+        last = LastName.objects.create(name="Employee")
+        center.first_names.add(first)
+        center.last_names.add(last)
+        call_command("load_center_data")
+        self.assertEqual(list(center.first_names.all()), [first])
+        self.assertEqual(list(center.last_names.all()), [last])

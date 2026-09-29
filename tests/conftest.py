@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from collections.abc import Generator, Iterator, Mapping
-from contextlib import AbstractContextManager, ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 from unittest.mock import Mock
@@ -124,10 +124,6 @@ class _CacheNamespace(Protocol):
 
 class _Cache(Protocol):
     def namespace(self, name: str) -> _CacheNamespace: ...
-
-
-class _DjangoDbBlocker(Protocol):
-    def unblock(self) -> AbstractContextManager[None]: ...
 
 
 class _PytestDbFixture(Protocol):
@@ -433,8 +429,8 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 def _load_base_db_data_impl(cache: CacheManager) -> bool:
     """
-    Load base database data once per session using global caching.
-    This reduces repeated database loading in individual tests.
+    Load base data in the active test transaction, rechecking cached readiness
+    against the database after rollback or flush.
     """
     from endoreg_db.models import Center
     from tests.helpers.data_loader import (
@@ -470,7 +466,7 @@ def _load_base_db_data_impl(cache: CacheManager) -> bool:
     if loaded_flag and not center_available:
         db_cache.invalidate("base_data_loaded")
 
-    # Load all required base data once
+    # Reuse base data only while its rows are still present in this transaction.
     if not (loaded_flag and center_available):
         load_base_db_data()
         load_gender_data()
@@ -602,24 +598,12 @@ def _load_base_db_data_impl(cache: CacheManager) -> bool:
     return True
 
 
-@pytest.fixture(scope="session")
-def seeded_base_db_data(
-    django_db_setup: object,
-    django_db_blocker: _DjangoDbBlocker,
-    cache: CacheManager,
-) -> bool:
-    """Seed base database data once per pytest worker, outside test rollbacks."""
-    with django_db_blocker.unblock():
-        return _load_base_db_data_impl(cache)
-
-
 @pytest.fixture(scope="function")
 def base_db_data(
-    seeded_base_db_data: bool,
     db: object,
     cache: CacheManager,
 ) -> bool:
-    """Restore seed data after transaction tests have flushed the database."""
+    """Load seed data inside this test's database rollback boundary."""
     return _load_base_db_data_impl(cache)
 
 

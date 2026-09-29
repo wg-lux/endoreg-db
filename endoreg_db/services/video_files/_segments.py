@@ -9,9 +9,6 @@ from collections.abc import Mapping, Sequence
 from django.db import transaction
 from django.db.models import Q  # Import Q for complex queries
 from icecream import ic
-from lx_dtypes.models.contracts.video_segments import (
-    VideoSegmentsPayload,
-)
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -217,22 +214,6 @@ def convert_sequences_to_db_segments(
     )
 
 
-def _sequences_to_label_video_segments(
-    video: "VideoFile",
-    video_prediction_meta: "VideoPredictionMeta",
-) -> None:
-    """Converts stored sequences on the video object to LabelVideoSegments."""
-    if not video.sequences:
-        return
-
-    segments_payload = VideoSegmentsPayload.model_validate(video.sequences)
-    _convert_sequences_to_db_segments(
-        video=video,
-        sequences=segments_payload.as_dict,
-        video_prediction_meta=video_prediction_meta,
-    )
-
-
 def _get_outside_segments(
     video: "VideoFile",
     outside_label_name: str = "outside",
@@ -381,49 +362,3 @@ def _get_outside_frame_paths(
         video.raw_video_hash,
     )
     return frame_paths
-
-
-def _label_segments_to_frame_annotations(video: "VideoFile") -> None:
-    """Generates frame annotations based on existing LabelVideoSegments."""
-    logger.info(
-        "Generating frame annotations from segments for video %s", video.raw_video_hash
-    )
-    processed_count = 0
-    try:
-        # Use getattr to safely access the related manager, or fall back to the default name set
-        segments = getattr(
-            video, "label_video_segments", getattr(video, "labelvideosegment_set", None)
-        )
-
-        if segments:
-            for lvs in segments.all():
-                lvs_duration = lvs.get_segment_len_in_s()
-                if lvs_duration >= 3:
-                    try:
-                        lvs.generate_annotations()
-                        processed_count += 1
-                    except Exception as e:
-                        logger.error(
-                            "Error generating annotations for segment %s (Video %s): %s",
-                            lvs.pk,
-                            video.raw_video_hash,
-                            e,
-                        )
-        else:
-            logger.error(
-                "Could not generate frame annotations for video %s. Neither 'label_video_segments' nor 'labelvideosegment_set' related manager found.",
-                video.raw_video_hash,
-            )
-
-        logger.info(
-            "Processed %d segments for frame annotations for video %s",
-            processed_count,
-            video.raw_video_hash,
-        )
-    except Exception as e:
-        logger.error(
-            "Unexpected error generating frame annotations for video %s: %s",
-            video.raw_video_hash,
-            e,
-            exc_info=True,
-        )

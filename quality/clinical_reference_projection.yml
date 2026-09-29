@@ -1,0 +1,898 @@
+schema_version: '1.0'
+feature_id: dtypes_study_definitions
+collections:
+  classification:
+    contract: lx_dtypes.models.contracts.core_concepts.ClassificationCore
+    fields:
+    - classification_choices
+    - classification_types
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingClassification
+  classification_type:
+    contract: lx_dtypes.models.contracts.core_concepts.ClassificationTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingClassificationType
+  classification_choice:
+    contract: lx_dtypes.models.contracts.core_concepts.ClassificationChoiceCore
+    fields:
+    - classification_choice_descriptors
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingClassificationChoice
+  classification_choice_descriptor:
+    contract: lx_dtypes.models.contracts.core_concepts.ClassificationChoiceDescriptorCore
+    fields:
+    - classification_choice_descriptor_type
+    - default_value_bool
+    - default_value_num
+    - default_value_str
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - numeric_distribution
+    - numeric_distribution_params
+    - numeric_max
+    - numeric_min
+    - selection_default_options
+    - selection_multiple
+    - selection_multiple_n_max
+    - selection_multiple_n_min
+    - selection_options
+    - tags
+    - text_max_length
+    - unit
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models: []
+  examination:
+    contract: lx_dtypes.models.contracts.core_concepts.ExaminationCore
+    fields:
+    - description
+    - examination_types
+    - findings
+    - id
+    - indications
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - Examination
+  examination_type:
+    contract: lx_dtypes.models.contracts.core_concepts.KnowledgeBaseExaminationTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - ExaminationType
+  finding:
+    contract: lx_dtypes.models.contracts.core_concepts.FindingCore
+    fields:
+    - caused_by_interventions
+    - classifications
+    - description
+    - finding_types
+    - id
+    - interventions
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - Finding
+  finding_type:
+    contract: lx_dtypes.models.contracts.core_concepts.FindingTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingType
+  indication:
+    contract: lx_dtypes.models.contracts.core_concepts.IndicationCore
+    fields:
+    - classifications
+    - description
+    - id
+    - indication_types
+    - interventions
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - ExaminationIndication
+  indication_type:
+    contract: lx_dtypes.models.contracts.core_concepts.IndicationTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - ExaminationIndicationClassification
+  intervention:
+    contract: lx_dtypes.models.contracts.core_concepts.InterventionCore
+    fields:
+    - description
+    - id
+    - intervention_types
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingIntervention
+  intervention_type:
+    contract: lx_dtypes.models.contracts.core_concepts.InterventionTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - FindingInterventionType
+  unit:
+    contract: lx_dtypes.models.contracts.core_concepts.UnitCore
+    fields:
+    - abbreviation
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - unit_types
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - Unit
+  unit_type:
+    contract: lx_dtypes.models.contracts.core_concepts.UnitTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models: []
+  information_source:
+    contract: lx_dtypes.models.contracts.core_concepts.InformationSourceCore
+    fields:
+    - description
+    - id
+    - information_source_types
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models:
+    - InformationSource
+  information_source_type:
+    contract: lx_dtypes.models.contracts.core_concepts.InformationSourceTypeCore
+    fields:
+    - description
+    - id
+    - kb_module_name
+    - name
+    - name_de
+    - name_en
+    - tags
+    - uuid
+    persistence: validated_immutable_snapshot
+    relational_models: []
+  citation:
+    contract: lx_dtypes.models.contracts.core_concepts.CitationCore
+    fields:
+    - abstract
+    - authors
+    - citation_key
+    - description
+    - doi
+    - entry_type
+    - id
+    - identifiers
+    - issue
+    - journal
+    - kb_module_name
+    - keywords
+    - language
+    - name
+    - name_de
+    - name_en
+    - pages
+    - publication_month
+    - publication_year
+    - publisher
+    - tags
+    - title
+    - url
+    - uuid
+    - volume
+    persistence: validated_immutable_snapshot
+    relational_models: []
+bootstrap_commands:
+  load_tag_data:
+    owner: host_operations
+    purpose: Tags used by host records.
+    record_types:
+    - tag
+  load_information_source:
+    owner: clinical_graph
+    purpose: Clinical source catalog and host source identities.
+    record_types:
+    - information_source_type
+    - information_source
+  load_risk_data:
+    owner: clinical_catalog
+    purpose: Risk values and risk types; preserve existing clinical meanings.
+    record_types:
+    - risk_type
+    - risk
+  load_center_data:
+    owner: study_preset
+    purpose: Deployment-selected centers with immutable center keys.
+    record_types:
+    - center
+  load_endoscope_data:
+    owner: host_operations
+    purpose: Installed hardware and anonymization coordinate profiles.
+    record_types:
+    - endoscope_type
+    - endoscopy_processor
+    - endoscope
+  load_distribution_data:
+    owner: clinical_catalog
+    purpose: Distributions referenced by laboratory and synthetic case definitions.
+    record_types:
+    - numeric_value_distribution
+    - single_categorical_value_distribution
+    - multiple_categorical_value_distribution
+    - date_value_distribution
+  load_gender_data:
+    owner: study_preset
+    purpose: Shared gender reference identities.
+    record_types:
+    - gender
+  load_report_reader_flag_data:
+    owner: host_operations
+    purpose: Report parsing configuration.
+    record_types:
+    - report_reader_flag
+  load_pdf_type_data:
+    owner: host_operations
+    purpose: Report format and parsing configuration.
+    record_types:
+    - pdf_type
+  load_unit_data:
+    owner: clinical_graph
+    purpose: Units used by descriptors, laboratory values, medications and resources.
+    record_types:
+    - unit
+  load_disease_data:
+    owner: clinical_catalog
+    purpose: Diseases, classifications and choices referenced by patient records.
+    record_types:
+    - disease
+    - disease_classification
+    - disease_classification_choice
+  load_event_data:
+    owner: clinical_catalog
+    purpose: Clinical event definitions.
+    record_types:
+    - event
+  load_organ_data:
+    owner: clinical_catalog
+    purpose: Anatomical reference definitions.
+    record_types:
+    - organ
+  load_contraindication_data:
+    owner: clinical_catalog
+    purpose: Contraindication definitions.
+    record_types:
+    - contraindication
+  load_finding_data:
+    owner: clinical_graph
+    purpose: Finding, classification, choice and intervention graph.
+    record_types:
+    - finding_intervention_type
+    - finding_intervention
+    - finding_type
+    - finding_classification_choice
+    - finding_classification_type
+    - finding_classification
+    - finding
+  load_examination_indication_data:
+    owner: clinical_graph
+    purpose: Indications and required interventions.
+    record_types:
+    - examination_indication_classification_choice
+    - examination_indication_classification
+    - examination_indication
+  load_examination_data:
+    owner: clinical_graph
+    purpose: Examination graph plus legacy examination-time catalogs.
+    record_types:
+    - examination_type
+    - examination_time_type
+    - examination_time
+    - examination
+  load_lab_value_data:
+    owner: clinical_catalog
+    purpose: Laboratory value definitions, normal ranges and sample types.
+    record_types:
+    - lab_value
+    - patient_lab_sample_type
+  load_medication_data:
+    owner: clinical_catalog
+    purpose: Medication definitions, schedules and indication relationships.
+    record_types:
+    - medication
+    - medication_indication_type
+    - medication_intake_time
+    - medication_schedule
+    - medication_indication
+  load_ai_model_label_data:
+    owner: study_preset
+    purpose: Label types, labels and versioned label sets.
+    record_types:
+    - label_type
+    - label
+    - label_set
+  load_ai_model_data:
+    owner: host_operations
+    purpose: Model architecture and deployment-specific metadata.
+    record_types:
+    - model_type
+    - video_segmentation_label
+    - video_segmentation_label_set
+    - ai_model
+  load_disease_classification_data:
+    owner: clinical_catalog
+    purpose: Compatibility projection with complete relation dependency closure.
+    record_types:
+    - disease_classification
+  load_disease_classification_choices_data:
+    owner: clinical_catalog
+    purpose: Compatibility projection with complete relation dependency closure.
+    record_types:
+    - disease_classification_choice
+  load_green_endoscopy_wuerzburg_data:
+    owner: host_operations
+    purpose: Optional versioned reference package; excludes employees and assignments.
+    record_types:
+    - emission_factor
+    - resource
+    - waste
+    - material
+    - product_group
+    - transport_route
+    - product
+    - reference_product
+    - center_waste
+    - center_resource
+    - product_material
+    - product_weight
+  load_profession_data:
+    owner: host_operations
+    purpose: Optional versioned reference package; excludes employees and assignments.
+    record_types:
+    - profession
+  load_qualification_data:
+    owner: host_operations
+    purpose: Optional versioned reference package; excludes employees and assignments.
+    record_types:
+    - qualification_type
+    - qualification
+  load_shift_data:
+    owner: host_operations
+    purpose: Optional versioned reference package; excludes employees and assignments.
+    record_types:
+    - shift_type
+    - shift
+catalog_fields:
+  ai_model:
+  - description
+  - model_subtype
+  - model_type
+  - name
+  - record_type
+  - video_segmentation_labelset
+  center:
+  - center_key
+  - display_name
+  - name
+  - record_type
+  contraindication:
+  - description
+  - name
+  - record_type
+  date_value_distribution:
+  - date_max
+  - date_mean
+  - date_min
+  - date_std_dev
+  - description
+  - distribution_type
+  - mode
+  - name
+  - record_type
+  - timedelta_days_max
+  - timedelta_days_mean
+  - timedelta_days_min
+  - timedelta_days_std_dev
+  disease:
+  - name
+  - numerical_descriptors
+  - record_type
+  - subcategories
+  disease_classification:
+  - disease
+  - name
+  - record_type
+  disease_classification_choice:
+  - disease_classification
+  - name
+  - record_type
+  endoscope:
+  - center
+  - endoscope_type
+  - name
+  - record_type
+  - sn
+  endoscope_type:
+  - name
+  - record_type
+  endoscopy_processor:
+  - centers
+  - endoscope_image_height
+  - endoscope_image_width
+  - endoscope_image_x
+  - endoscope_image_y
+  - endoscope_sn_height
+  - endoscope_sn_width
+  - endoscope_sn_x
+  - endoscope_sn_y
+  - endoscope_type_height
+  - endoscope_type_width
+  - endoscope_type_x
+  - endoscope_type_y
+  - examination_date_height
+  - examination_date_width
+  - examination_date_x
+  - examination_date_y
+  - examination_time_height
+  - examination_time_width
+  - examination_time_x
+  - examination_time_y
+  - image_height
+  - image_width
+  - name
+  - patient_dob_height
+  - patient_dob_width
+  - patient_dob_x
+  - patient_dob_y
+  - patient_first_name_height
+  - patient_first_name_width
+  - patient_first_name_x
+  - patient_first_name_y
+  - patient_last_name_height
+  - patient_last_name_width
+  - patient_last_name_x
+  - patient_last_name_y
+  - record_type
+  event:
+  - description
+  - name
+  - record_type
+  examination:
+  - description
+  - examination_times
+  - examination_types
+  - findings
+  - indications
+  - information_sources
+  - name
+  - record_type
+  examination_indication:
+  - classifications
+  - description
+  - expected_interventions
+  - information_sources
+  - name
+  - record_type
+  examination_indication_classification:
+  - choices
+  - description
+  - name
+  - record_type
+  examination_indication_classification_choice:
+  - name
+  - numerical_descriptors
+  - record_type
+  - subcategories
+  examination_time:
+  - information_sources
+  - name
+  - record_type
+  - time_types
+  examination_time_type:
+  - examinations
+  - name
+  - record_type
+  examination_type:
+  - name
+  - record_type
+  finding:
+  - caused_by_interventions
+  - description
+  - finding_classifications
+  - finding_interventions
+  - finding_types
+  - information_sources
+  - name
+  - record_type
+  finding_classification:
+  - choices
+  - classification_types
+  - description
+  - finding_types
+  - information_sources
+  - name
+  - record_type
+  finding_classification_choice:
+  - description
+  - name
+  - numerical_descriptors
+  - record_type
+  - subcategories
+  finding_classification_type:
+  - description
+  - name
+  - record_type
+  finding_intervention:
+  - description
+  - information_sources
+  - intervention_types
+  - name
+  - record_type
+  finding_intervention_type:
+  - description
+  - name
+  - record_type
+  finding_type:
+  - description
+  - name
+  - record_type
+  gender:
+  - abbreviation
+  - description
+  - name
+  - record_type
+  information_source:
+  - abbreviation
+  - date
+  - description
+  - name
+  - record_type
+  - url
+  information_source_type:
+  - description
+  - information_sources
+  - name
+  - record_type
+  lab_value:
+  - abbreviation
+  - bound_adjustment_factor
+  - default_date_value_distribution
+  - default_multiple_categorical_value_distribution
+  - default_normal_range
+  - default_numerical_value_distribution
+  - default_single_categorical_value_distribution
+  - default_unit
+  - name
+  - normal_range_age_dependent
+  - normal_range_gender_dependent
+  - normal_range_special_case
+  - numeric_precision
+  - record_type
+  label:
+  - description
+  - label_type
+  - name
+  - record_type
+  label_set:
+  - description
+  - labels
+  - name
+  - record_type
+  - version
+  label_type:
+  - description
+  - name
+  - record_type
+  medication:
+  - adapt_to_age
+  - adapt_to_hepatic_function
+  - adapt_to_indication
+  - adapt_to_renal_function
+  - adapt_to_risk
+  - adapt_to_weight
+  - default_unit
+  - name
+  - record_type
+  medication_indication:
+  - disease_classification_choices
+  - diseases
+  - events
+  - indication_type
+  - medication_schedules
+  - name
+  - record_type
+  - sources
+  medication_indication_type:
+  - name
+  - record_type
+  medication_intake_time:
+  - name
+  - record_type
+  - repeats
+  - time
+  medication_schedule:
+  - description
+  - dose
+  - intake_times
+  - medication
+  - name
+  - record_type
+  - therapy_duration_d
+  - unit
+  model_type:
+  - description
+  - name
+  - record_type
+  multiple_categorical_value_distribution:
+  - categories
+  - count_distribution_type
+  - count_mean
+  - count_std_dev
+  - max_count
+  - min_count
+  - name
+  - record_type
+  numeric_value_distribution:
+  - distribution_type
+  - max_descriptor
+  - max_value
+  - mean
+  - min_descriptor
+  - min_value
+  - name
+  - record_type
+  - skewness
+  - std_dev
+  organ:
+  - description
+  - name
+  - record_type
+  patient_lab_sample_type:
+  - description
+  - name
+  - record_type
+  pdf_type:
+  - cut_off_above_lines
+  - cut_off_below_lines
+  - endoscope_info_line
+  - examiner_info_line
+  - name
+  - patient_info_line
+  - record_type
+  report_reader_flag:
+  - name
+  - record_type
+  - value
+  risk:
+  - description
+  - name
+  - name_de
+  - name_en
+  - record_type
+  - risk_type
+  - risk_value
+  risk_type:
+  - description
+  - name
+  - record_type
+  single_categorical_value_distribution:
+  - categories
+  - name
+  - record_type
+  tag:
+  - name
+  - record_type
+  unit:
+  - abbreviation
+  - description
+  - name
+  - record_type
+  video_segmentation_label:
+  - color
+  - description
+  - name
+  - order_priority
+  - record_type
+  video_segmentation_label_set:
+  - description
+  - labels
+  - name
+  - record_type
+  center_resource:
+  - center
+  - name
+  - quantity
+  - record_type
+  - resource
+  - transport_emission_factor
+  - unit
+  - use_emission_factor
+  - year
+  center_waste:
+  - center
+  - emission_factor
+  - quantity
+  - record_type
+  - unit
+  - waste
+  - year
+  emission_factor:
+  - name
+  - record_type
+  - unit
+  - value
+  material:
+  - emission_factor
+  - name
+  - record_type
+  product:
+  - name
+  - product_group
+  - record_type
+  - transport_route
+  product_group:
+  - name
+  - record_type
+  product_material:
+  - component
+  - material
+  - product
+  - quantity
+  - record_type
+  - unit
+  product_weight:
+  - manufacturer
+  - measured
+  - name
+  - product
+  - record_type
+  - unit
+  - verified
+  profession:
+  - description
+  - name
+  - record_type
+  qualification:
+  - description
+  - is_active
+  - name
+  - qualification_types
+  - record_type
+  qualification_type:
+  - description
+  - is_active
+  - name
+  - record_type
+  reference_product:
+  - emission_factor_package
+  - emission_factor_product
+  - emission_factor_total
+  - name
+  - product
+  - product_group
+  - record_type
+  resource:
+  - name
+  - record_type
+  shift:
+  - description
+  - is_active
+  - name
+  - record_type
+  - required_qualifications
+  - shift_types
+  shift_type:
+  - description
+  - is_active
+  - name
+  - record_type
+  transport_route:
+  - distance
+  - emission_factor
+  - name
+  - record_type
+  - unit
+  waste:
+  - name
+  - record_type

@@ -1,0 +1,83 @@
+# Canonical names and semantics from lx_dtypes lx_interventions/02_colonoscopy_resection.yaml.
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_cold_snare_polypectomy_colorectal
+    description: Cold snare polypectomy is a purely mechanical snare-based colorectal resection
+      technique without electrocautery. It is primarily used for diminutive and small colorectal
+      polyps and is associated with a very low risk of delayed thermal injury.
+    intervention_types:
+    - therapeutic
+    - invasive
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_hot_snare_polypectomy_colorectal
+    description: Hot snare polypectomy is a snare-based colorectal resection technique that
+      combines tissue transection with electrocautery. It is commonly used for pedunculated
+      lesions or lesions where coagulation of the resection plane is desired.
+    intervention_types:
+    - therapeutic
+    - invasive
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_cold_emr_colorectal
+    description: Cold endoscopic mucosal resection is a lift-assisted colorectal resection
+      technique that combines submucosal injection with mechanical snare transection and avoids
+      electrocautery during lesion removal.
+    intervention_types:
+    - therapeutic
+    - invasive
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_hot_emr_colorectal
+    description: Hot endoscopic mucosal resection is a lift-assisted colorectal resection
+      technique that combines submucosal injection with electrocautery-assisted snare resection.
+      It is commonly used for larger non-pedunculated colorectal lesions.
+    intervention_types:
+    - therapeutic
+    - invasive
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_esd_colorectal
+    description: Colorectal endoscopic submucosal dissection is an advanced electrosurgical
+      dissection technique that enables en bloc resection of selected lesions, including lesions
+      with suspected superficial submucosal invasion or fibrosis.
+    intervention_types:
+    - therapeutic
+    - diagnostic
+    - invasive
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_eftr_colorectal
+    description: Colorectal endoscopic full-thickness resection is a clip-assisted full-wall
+      resection technique used for selected difficult lesions, including scarred lesions and
+      some small early cancers.
+    intervention_types:
+    - therapeutic
+    - diagnostic
+    - invasive
+    - foreign_body
+    - histology_sampling
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_margin_ablation_soft_coagulation_colorectal
+    description: Margin ablation with snare-tip soft coagulation is an adjunctive thermal
+      technique applied to the visible margin after colorectal EMR to reduce residual or recurrent
+      adenoma at the resection edge.
+    intervention_types:
+    - therapeutic
+    - invasive
+- model: endoreg_db.finding_intervention
+  fields:
+    name: endoscopy_hot_avulsion_colorectal
+    description: Hot avulsion is a rescue resection technique that uses electrocautery-enabled
+      forceps to remove small residual or fibrotic colorectal tissue fragments that cannot
+      be captured adequately with a snare.
+    intervention_types:
+    - therapeutic
+    - invasive
+    - histology_sampling

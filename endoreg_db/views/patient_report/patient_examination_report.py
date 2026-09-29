@@ -64,6 +64,7 @@ from endoreg_db.services.report_history import get_patient_examination_history_c
 from endoreg_db.services.report_persistence import (
     ReportKnowledgeBaseRegistryUnavailableError,
     ReportPersistenceValidationError,
+    delete_report_draft,
     persist_report_pdf_artifact,
     save_report_submission,
 )
@@ -290,6 +291,7 @@ class PatientExaminationReportApi:
         self,
         *,
         patient_examination_id: int | None = None,
+        patient_id: int | None = None,
         status: str | None = None,
         template_name: str | None = None,
         is_active: bool | None = None,
@@ -306,10 +308,15 @@ class PatientExaminationReportApi:
 
         if patient_examination_id is not None:
             queryset = queryset.filter(patient_examination_id=patient_examination_id)
-        elif broad_list and not self._is_privileged_user(
-            getattr(self.request, "user", None)
+        elif (
+            patient_id is None
+            and broad_list
+            and not self._is_privileged_user(getattr(self.request, "user", None))
         ):
             queryset = queryset.none()
+
+        if patient_id is not None:
+            queryset = queryset.filter(patient_examination__patient_id=patient_id)
 
         if status is not None:
             queryset = queryset.filter(status=status)
@@ -956,6 +963,7 @@ class PatientExaminationReportApi:
 def list_reports(
     request: HttpRequest,
     patient_examination_id: int | None = _ninja_query(default=None),
+    patient_id: int | None = _ninja_query(default=None),
     status: str | None = _ninja_query(default=None),
     template_name: str | None = _ninja_query(default=None),
     is_active: bool | None = _ninja_query(default=None),
@@ -963,6 +971,7 @@ def list_reports(
     api = PatientExaminationReportApi(request)
     return api.get_queryset(
         patient_examination_id=patient_examination_id,
+        patient_id=patient_id,
         status=status,
         template_name=template_name,
         is_active=is_active,
@@ -1406,6 +1415,27 @@ def history_context(
             limit=max(1, min(limit, 50)),
         ),
     )
+
+
+@router.delete("/{report_id}", response={204: None})
+def delete_draft(
+    request: HttpRequest,
+    report_id: int,
+    expected_version: int = _ninja_query(..., ge=1),
+) -> tuple[int, None]:
+    api = PatientExaminationReportApi(request)
+    report = api.get_queryset().filter(pk=report_id).first()
+    if report is None:
+        raise HttpError(404, "Report not found.")
+    try:
+        delete_report_draft(
+            patient_examination_id=_patient_examination_pk(report.patient_examination),
+            report_id=report_id,
+            expected_version=expected_version,
+        )
+    except ReportPersistenceValidationError as exc:
+        raise HttpError(409, json.dumps(exc.detail)) from exc
+    return 204, None
 
 
 @router.get(

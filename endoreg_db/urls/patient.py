@@ -7,9 +7,10 @@ from endoreg_db.views import (
     PatientViewSet,
 )
 from rest_framework.routers import DefaultRouter
-from django.http import HttpResponse
 from django.urls import path, include
+from django.http import HttpResponse
 from rest_framework.viewsets import ViewSetMixin
+from endoreg_db.views.case import CaseViewSet
 
 
 class _ViewSetAsViewLike(Protocol):
@@ -18,6 +19,7 @@ class _ViewSetAsViewLike(Protocol):
 
 router = DefaultRouter()
 router.register(r"patients", PatientViewSet)
+router.register(r"cases", CaseViewSet, basename="case")
 router.register(r"centers", CenterViewSet)
 router.register(r"genders", GenderViewSet)
 

@@ -6,6 +6,7 @@ from django.db import transaction
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
 from endoreg_db.services.lifecycle_state_machine import (
+    OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,
     reduce_operation_lifecycle,
@@ -25,15 +26,14 @@ _UPLOAD_JOB_EVENTS: dict[
     tuple[OperationLifecycleState, OperationLifecycleState],
     Sequence[OperationLifecycleEvent],
 ] = {
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.RETRY_READY,
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
+    (
+        OperationLifecycleState.QUEUED,
+        OperationLifecycleState.RUNNING,
+    ): OperationClaimPath.INITIAL.events,
+    (
+        OperationLifecycleState.RETRY_WAIT,
+        OperationLifecycleState.RUNNING,
+    ): OperationClaimPath.RETRY_READY.events,
     (OperationLifecycleState.RUNNING, OperationLifecycleState.RETRY_WAIT): (
         OperationLifecycleEvent.RETRY_SCHEDULED,
     ),
@@ -43,23 +43,16 @@ _UPLOAD_JOB_EVENTS: dict[
     (OperationLifecycleState.FAILED, OperationLifecycleState.RETRY_WAIT): (
         OperationLifecycleEvent.RETRY_REQUESTED,
     ),
-    (OperationLifecycleState.FAILED, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.RETRY_REQUESTED,
-        OperationLifecycleEvent.RETRY_READY,
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
-    (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.RETRY_REQUESTED,
-        OperationLifecycleEvent.RETRY_READY,
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
+    (
+        OperationLifecycleState.FAILED,
+        OperationLifecycleState.RUNNING,
+    ): OperationClaimPath.RETRY_REQUESTED.events,
+    (
+        OperationLifecycleState.SUCCEEDED,
+        OperationLifecycleState.RUNNING,
+    ): OperationClaimPath.RETRY_REQUESTED.events,
     (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.RETRY_REQUESTED,
-        OperationLifecycleEvent.RETRY_READY,
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
+        *OperationClaimPath.RETRY_REQUESTED.events,
         OperationLifecycleEvent.FAIL,
     ),
     (OperationLifecycleState.RUNNING, OperationLifecycleState.SUCCEEDED): (
@@ -183,13 +176,7 @@ def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
         raise ValueError(f"unknown UploadJob status: {exc.args[0]}") from exc
     recovered_state = reduce_operation_lifecycle(
         current_state,
-        (
-            OperationLifecycleEvent.OWNERSHIP_LOST,
-            OperationLifecycleEvent.RECONCILE_RETRY,
-            OperationLifecycleEvent.RETRY_READY,
-            OperationLifecycleEvent.CLAIM,
-            OperationLifecycleEvent.START,
-        ),
+        OperationClaimPath.INTERRUPTED.events,
     )
     if recovered_state is not OperationLifecycleState.RUNNING:
         raise RuntimeError(

@@ -82,8 +82,8 @@ class PatientExaminationReportSchema(Schema):
     """
     Response schema for PatientExaminationReport.
 
-    This replaces the old DRF ModelSerializer and exposes the previously sourced
-    patient_examination.dtypes_record fields through Ninja resolvers.
+    The dtypes fields are the report's persisted snapshot, independent of later
+    examination edits or terminology migrations.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -127,24 +127,15 @@ class PatientExaminationReportSchema(Schema):
 
     @staticmethod
     def resolve_dtypes_record(obj: PatientExaminationReport) -> ReportJsonObject | None:
-        patient_examination = getattr(obj, "patient_examination", None)
-        if patient_examination is None:
-            return None
-        return cast(
-            ReportJsonObject | None,
-            getattr(patient_examination, "dtypes_record", None),
-        )
+        return obj.dtypes_record
 
     @staticmethod
     def resolve_dtypes_record_updated_at(
         obj: PatientExaminationReport,
     ) -> datetime | None:
-        patient_examination = getattr(obj, "patient_examination", None)
-        if patient_examination is None:
-            return None
         return cast(
             datetime | None,
-            getattr(patient_examination, "dtypes_record_updated_at", None),
+            obj.dtypes_record_updated_at,
         )
 
     @staticmethod

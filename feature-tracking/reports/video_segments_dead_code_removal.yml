@@ -1,0 +1,60 @@
+feature: code_quality
+criterion: dead_code_reduction
+revision: e00c4b3a06e8ac92dcd10bc4d13a4804c2f8fd9b
+arbeitsverzeichnis: /home/admin/endoreg-db
+assessor: codex-vulture-20260929-a
+umfang: Private Segmenthelfer; vorhandene Indexänderungen bleiben erhalten.
+scan: >-
+  .devenv/state/venv/bin/python -m vulture endoreg_db scripts --min-confidence 60
+  --sort-by-size --exclude '*/migrations/*,*/tests/*,*/settings/*,*/management/commands/*,*/apps.py,*/admin.py'
+entfernt:
+  - symbol: _sequences_to_label_video_segments
+    pfad: endoreg_db/services/video_files/_segments.py
+    zeile: 220
+    meldung: unused function '_sequences_to_label_video_segments'
+    konfidenz: 60
+    groesse: 14
+    radon: 2
+    klassifikation: confirmed_dead
+  - symbol: _label_segments_to_frame_annotations
+    pfad: endoreg_db/services/video_files/_segments.py
+    zeile: 386
+    meldung: unused function '_label_segments_to_frame_annotations'
+    konfidenz: 60
+    groesse: 44
+    radon: 6
+    klassifikation: confirmed_dead
+belege:
+  - rg in endoreg-db, lx-data-models, lx-annotate, lx-anonymizer und luxnix findet nur die Definitionen.
+  - Keine Dekoratoren, Stringregistrierung, öffentlichen Exporte oder dokumentierten Verbraucher gefunden.
+  - Aktive temporale Inferenz verwendet convert_sequences_to_db_segments; diese Funktion bleibt erhalten.
+  - VideoSegmentsPayload wurde ausschließlich vom entfernten Wrapper verwendet; Import ebenfalls entfernt.
+  - Alle 11 verbleibenden Top-Level-Definitionen sind im positionsunabhängigen Syntaxbaum identisch.
+metriken:
+  methode: radon.raw.analyze und radon.complexity.cc_visit auf dem Quelldateitext, ohne Shell-Unterprozess.
+  vorher: {loc: 429, sloc: 354, lloc: 174}
+  nachher: {loc: 364, sloc: 299, lloc: 147}
+  entfernte_produktionszeilen: 65
+beibehalten:
+  - _get_outside_frame_numbers und _get_outside_frame_paths besitzen explizite Testverbraucher.
+  - Ellipsis-Methoden der beiden unterschiedlichen Protokolle sind keine duplizierte Implementierung.
+  - Öffentliche Kompatibilitätskandidaten der bestehenden Baseline bleiben ungeklärt und unverändert.
+grenzen:
+  - Python-Scan; Rust und andere Sprachen sowie ausgeschlossene dynamische Oberflächen sind nicht vollständig erfasst.
+  - Keine Aussage über unbekannte externe Importe privater Symbole oder globale Laufzeit-Coverage.
+  - Dead-Code-Guard vorher/nachher fehlgeschlagen wegen NativeBatchProcessor.master_keys, einem Protokollparameter außerhalb dieser Kohorte.
+  - Boundary-Guard vorher 381 statt 389, nachher 379 statt 389; genau zwei tote Exception-Handler entfernt. Globale Baseline nicht neu eingefroren.
+verifikation:
+  pyright: Finaler vollständiger Lauf erfolgreich, 0 Fehler und 6 Warnungen; erster Lauf mit vorübergehendem lx_dtypes-Dateifehler.
+  ruff: check und format --check bestanden.
+  diff: git diff --check bestanden.
+  tracker_check: code_quality weiterhin nicht produktionsreif (10/16); keine Statusänderung.
+  tracker_validate: 37 gültige Feature-Definitionen; show code_quality erfolgreich.
+  pytest: 4 passed, 2 warnings, 131.90s; unveränderte Tests für gültige und ungültige Eingaben sowie Outside-Filter.
+  trace_kommando: >-
+    RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+    .devenv/state/venv/bin/python -m trace --count -C /tmp/codex-vulture-segments-trace
+    --ignore-dir '/nix/store:/home/admin/endoreg-db/.devenv:/home/admin/lx-anonymizer:/home/admin/lx-data-models:/home/admin/.cache'
+    --module pytest --ds=endoreg_db.config.settings.test tests/models/video/test_video_file_segments_unit.py -q --tb=short
+  trace_artefakt: /tmp/codex-vulture-segments-trace/endoreg_db.services.video_files._segments.cover
+  trace_befund: Materialisierung, beide Eingabefehler und Framefilter ausgeführt; kein Beweis globaler Nichtverwendung.

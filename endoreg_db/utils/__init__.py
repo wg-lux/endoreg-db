@@ -3,7 +3,6 @@
 from typing import TYPE_CHECKING
 
 # parse_and_generate_yaml
-from . import dataloader as dataloader
 
 # file_operations
 from . import file_operations as file_operations
@@ -52,7 +51,6 @@ from .storage import file_exists as storage_file_exists
 
 # validate_endo_roi
 from .validate_endo_roi import validate_endo_roi
-from .yaml_model_loader import load_model_data_from_yaml
 
 # --- Lazy-loaded Video Utilities with Type Safety ---
 
@@ -112,7 +110,6 @@ __all__ = [
     "copy_with_progress",
     "create_mock_examiner_name",
     "create_mock_patient_name",
-    "dataloader",
     "DbConfig",
     "DEBUG",
     "ensure_aware_datetime",
@@ -124,7 +121,6 @@ __all__ = [
     "get_content_hash_filename",
     "get_file_hash",
     "guess_name_gender",
-    "load_model_data_from_yaml",
     "random_day_by_month_year",
     "random_day_by_year",
     "validate_endo_roi",

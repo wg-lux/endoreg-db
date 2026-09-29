@@ -12,6 +12,7 @@ from typing import cast
 from unittest.mock import Mock, call
 
 import pytest
+from django.test import override_settings
 from pydantic import ValidationError
 
 from endoreg_db.import_files import video_import_service as sut
@@ -399,18 +400,39 @@ class TestImportInputBoundaries:
                 cast(str, None), "test-center", "test-processor"
             )
 
-    @pytest.mark.parametrize("field", ["center_name", "processor_name"])
-    def test_rejects_empty_required_names(self, field: str, tmp_path: Path) -> None:
+    def test_rejects_empty_processor_name(self, tmp_path: Path) -> None:
         # Arrange
         source_path = tmp_path / "input.mp4"
         service = sut.VideoImportService()
 
         # Act / Assert
-        with pytest.raises(ValidationError, match=field):
-            if field == "center_name":
-                service.import_and_anonymize(source_path, "  ", "test-processor")
-            else:
-                service.import_and_anonymize(source_path, "test-center", "  ")
+        with pytest.raises(ValidationError, match="processor_name"):
+            service.import_and_anonymize(source_path, "test-center", "  ")
+
+    def test_empty_center_uses_local_default_before_import(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        service = sut.VideoImportService()
+        from endoreg_db.models.administration.center.center import Center
+
+        Center.objects.create(name="Site A", center_key="other-site")
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"source")
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        captured: list[ImportContext] = []
+
+        def stop_at_lookup(ctx: ImportContext) -> None:
+            captured.append(ctx)
+            raise RuntimeError("lookup boundary")
+
+        monkeypatch.setattr(service, "_get_existing_completed_video", stop_at_lookup)
+        with override_settings(
+            LX_ANNOTATE_DEFAULT_CENTER="site-a", CENTER_NAME="Site A"
+        ):
+            with pytest.raises(RuntimeError, match="lookup boundary"):
+                service.import_and_anonymize(source, "  ", "test-processor")
+        assert captured[0].center_name == "Site A"
+        assert captured[0].center_key == "site-a"
 
     def test_fenced_entrypoint_forwards_one_complete_execution_capability(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
