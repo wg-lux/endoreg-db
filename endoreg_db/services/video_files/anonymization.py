@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     from ._anonymization import _anonymize
 
     return _anonymize(video, delete_original_raw=delete_original_raw)

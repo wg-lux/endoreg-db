@@ -126,7 +126,7 @@ def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
     return _merge_half_open_intervals(intervals)
 
 
-def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def _anonymize(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     """Acquire storage ownership before any anonymization work or transaction."""
     from endoreg_db.services.media.operation_gate import video_artifact_mutation
 
@@ -134,7 +134,7 @@ def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
         return _anonymize_owned(video, delete_original_raw=delete_original_raw)
 
 
-def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     """
     Stream a raw video through FFmpeg ROI masking instead of materializing every
     frame. File-backed frames are reserved for explicit frame workflows such as

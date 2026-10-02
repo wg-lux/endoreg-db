@@ -22,6 +22,7 @@ from lx_dtypes.models.contracts.video_reimport import (
 from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.services.jobs.timeouts import is_processing_timeout
+from endoreg_db.services.jobs.error_handling import is_insufficient_storage
 from endoreg_db.services.jobs.video_reimport_budget import (
     MAX_REIMPORT_SOFT_SECONDS,
     REIMPORT_CLEANUP_SECONDS,
@@ -37,6 +38,7 @@ from endoreg_db.config.env import (
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
@@ -61,6 +63,8 @@ from endoreg_db.services.video_files import (
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 from endoreg_db.services.video_files.temporal_inference import (
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,
@@ -310,6 +314,45 @@ def _mark_upload_jobs_lost(video: VideoFile, error_detail: str) -> int:
         status=UploadJob.Status.LOST,
         error_detail=error_detail,
     )
+
+
+def _finalize_reimport_storage_failure(
+    video: VideoFile | None,
+    history: VideoProcessingHistory | None,
+) -> None:
+    """Keep a usable published generation normal while recording failed work."""
+    with transaction.atomic():
+        if video is not None:
+            current_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+            state = get_or_create_video_state(current_video)
+            state = VideoState.objects.select_for_update().get(pk=state.pk)
+            ready = False
+            if not _video_has_integrity_loss(current_video):
+                try:
+                    get_ready_hls_artifact(video=current_video)
+                except (VideoHlsArtifact.DoesNotExist, FileNotFoundError):
+                    ready = False
+                else:
+                    ready = True
+            if ready:
+                state.processing_error = False
+                state.processing_started = False
+                state.was_created = False
+                state.anonymized = True
+                state.save(
+                    update_fields=[
+                        "processing_error",
+                        "processing_started",
+                        "was_created",
+                        "anonymized",
+                        "date_modified",
+                    ]
+                )
+                _mark_upload_jobs_anonymized(current_video)
+            else:
+                state.mark_processing_failed()
+                _mark_upload_jobs_error(current_video, "insufficient_storage")
+        _mark_history_failure(history, "insufficient_storage")
 
 
 def _video_has_integrity_loss(video: VideoFile) -> bool:
@@ -635,6 +678,16 @@ def _run_video_reimport_job(
         )
         raise
     except Exception as exc:
+        if is_insufficient_storage(exc):
+            # Source materialization and encrypted upload creation can fail
+            # before the processing service enters its failure finalizer.
+            # Persist all visible failure states together; retain valid media.
+            _finalize_reimport_storage_failure(video, history)
+            logger.exception(
+                "Insufficient storage during video re-import for video %s.",
+                video_id,
+            )
+            raise
         error_detail = "processing_timeout" if is_processing_timeout(exc) else str(exc)
         if video is not None:
             _mark_upload_jobs_error(video, error_detail)
@@ -711,7 +764,9 @@ def dispatch_video_reimport(
                 video_id=int(video_id),
                 queue=ffmpeg_media_queue,
                 history_id=history.pk,
-                reason=str(exc),
+                reason="insufficient_storage"
+                if is_insufficient_storage(exc)
+                else str(exc),
             )
         return _job_dispatch_result(
             task_id=task_id,

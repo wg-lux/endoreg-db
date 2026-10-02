@@ -612,7 +612,7 @@ class VideoFile(models.Model):
 
         return get_processed_video_file_path(self)
 
-    def anonymize(self, delete_original_raw: bool = True) -> bool:
+    def anonymize(self, delete_original_raw: bool = False) -> bool:
         from endoreg_db.services.video_files import anonymize_video_file
 
         return anonymize_video_file(self, delete_original_raw=delete_original_raw)

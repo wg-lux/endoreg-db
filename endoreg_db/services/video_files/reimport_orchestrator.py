@@ -15,6 +15,7 @@ from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.jobs.video_reimport_jobs import (
+    _finalize_reimport_storage_failure,
     _config_from_payload,
     _run_prediction_refresh,
     dispatch_video_reimport,
@@ -26,6 +27,7 @@ from endoreg_db.services.jobs.video_reimport_jobs import (
     _reset_reimport_state,
     _video_has_integrity_loss,
 )
+from endoreg_db.services.jobs.error_handling import is_insufficient_storage
 from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.config.env import get_celery_ffmpeg_media_queue
 from endoreg_db.utils.storage import ensure_local_file
@@ -244,6 +246,8 @@ class VideoReimportOrchestrator:
                     self.raw_video_hash,
                     exc,
                 )
+                if is_insufficient_storage(exc):
+                    raise
                 _mark_upload_jobs_error(self.video, str(exc))
                 return (
                     {
@@ -265,6 +269,8 @@ class VideoReimportOrchestrator:
                     self.raw_video_hash,
                     exc,
                 )
+                if is_insufficient_storage(exc):
+                    raise
                 _mark_upload_jobs_error(self.video, str(exc))
                 return (
                     {
@@ -314,13 +320,11 @@ class VideoReimportOrchestrator:
             )
 
             error_msg = str(exc)
-            if any(
-                phrase in error_msg.lower()
-                for phrase in ["insufficient storage", "no space left", "disk full"]
-            ):
+            if is_insufficient_storage(exc):
+                _finalize_reimport_storage_failure(self.video, None)
                 return (
                     {
-                        "error": f"Storage error during re-import: {error_msg}",
+                        "error": "Insufficient storage during re-import.",
                         "error_type": "storage_error",
                         "video_id": self.video_id,
                         "uuid": self.raw_video_hash,

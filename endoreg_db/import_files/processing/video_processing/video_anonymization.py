@@ -775,11 +775,6 @@ def _require_staged_anonymization_output(
 
 
 class VideoAnonymizer:
-    def __init__(self):
-        _ensure_ffmpeg_tools_on_path()
-        self._frame_cleaning_available: bool = False
-        self._ensure_frame_cleaning_available()
-
     def anonymize_video(self, ctx: ImportContext) -> ImportContext:
         _ensure_ffmpeg_tools_on_path()
         video, anonymized_output_path, temp_output_path = (
@@ -895,10 +890,6 @@ class VideoAnonymizer:
         return result_path, extracted_metadata or {}
 
     def _new_frame_cleaner(self) -> _FrameCleaner:
-        if not self._frame_cleaning_available:
-            self._ensure_frame_cleaning_available()
-        if not self._frame_cleaning_available:
-            raise RuntimeError("Frame cleaning is unavailable.")
         # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
         # A fresh instance is mandatory for every attempt.
         return cast(_FrameCleaner, FrameCleaner(quality_profile="exhaustive"))
@@ -1112,16 +1103,6 @@ class VideoAnonymizer:
         box_payload = f"{x:.3f}:{y:.3f}:{width:.3f}:{height:.3f}"
         box_hash = hashlib.sha256(box_payload.encode("utf-8")).hexdigest()[:16]
         return f"{raw_video_hash}:{frame_number}:{source}:{box_hash}"
-
-    def _ensure_frame_cleaning_available(self):
-        """
-        Ensure frame cleaning modules are available by adding lx-anonymizer to path.
-
-        Returns:
-            Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
-        """
-        assert FrameCleaner is not None
-        self._frame_cleaning_available = True
 
     def _get_processor_roi_info(
         self,

@@ -37,6 +37,40 @@ from endoreg_db.utils.paths import get_runtime_paths, to_protected_media_relativ
 logger = logging.getLogger(__name__)
 
 
+def cleanup_validated_raw_video(
+    video_id: int, *, apply: bool = False
+) -> tuple[str, ...]:
+    """Reconcile raw retention from current validation state, including backfill."""
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
+    from endoreg_db.services.video_files.io import delete_raw_file_after_validation
+    from endoreg_db.services.video_storage.workflow import raw_cleanup_blockers
+
+    video = VideoFile.objects.select_related("state").get(pk=video_id)
+    if video.state is None or not video.state.anonymization_validated:
+        return ("anonymization_not_validated",)
+    if (
+        not video.raw_file.name
+        and not video.raw_streamable_relative_path
+        and not VideoHlsArtifact.objects.filter(
+            video=video, artifact_kind="raw"
+        ).exists()
+    ):
+        return ()
+    try:
+        with video_artifact_mutation(video_id=video_id), transaction.atomic():
+            video = VideoFile.objects.select_for_update().get(pk=video_id)
+            if video.state is None or not video.state.anonymization_validated:
+                return ("anonymization_not_validated",)
+            blockers = tuple(raw_cleanup_blockers(video))
+            if blockers or not apply:
+                return blockers
+            delete_raw_file_after_validation(video)
+            return ()
+    except MediaOperationDeferred:
+        return ("active_media_operation_lease",)
+
+
 def record_processed_replacement(
     video: VideoFile,
     *,
@@ -168,7 +202,13 @@ def _old_master(
 
     relative = path.relative_to(root).as_posix()
     identity = re.escape(str(video.raw_video_hash))
-    pattern = rf"(?:{identity}\.mp4|\.generations/{identity}-[0-9a-f]{{32}}\.mp4|(?:\.generations/)?{identity}\.(?:[0-9a-f]{{32}}|[0-9a-f]{{64}})\.mp4|[0-9a-f]{{64}}\.[0-9a-f]{{32}}\.mp4)"
+    pattern = (
+        rf"(?:{identity}(?:_filtered|\.attempt-[0-9a-f]{{32}}|"
+        rf"\.post_validation\.[0-9a-f]{{64}})?\.mp4|"
+        rf"\.generations/{identity}-[0-9a-f]{{32}}\.mp4|"
+        rf"(?:\.generations/)?{identity}\.(?:[0-9a-f]{{32}}|[0-9a-f]{{64}})\.mp4|"
+        rf"[0-9a-f]{{64}}\.[0-9a-f]{{32}}\.mp4)"
+    )
     if re.fullmatch(pattern, relative) is None:
         raise ValueError("Previous file is not an owned generated processed master")
     if (

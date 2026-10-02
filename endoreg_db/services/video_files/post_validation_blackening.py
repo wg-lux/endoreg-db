@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -16,15 +17,36 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
+    video_artifact_mutation,
+    video_artifact_publication,
+)
+from endoreg_db.services.streaming.hls_media import (
+    hls_result_is_ready,
+    materialize_video_hls,
 )
 from endoreg_db.services.streaming.streamable_media import (
     sync_video_streamable_artifacts,
 )
 from endoreg_db.services.video_files.io import ensure_local_processed_video_file
+from endoreg_db.services.video_storage.generation_cleanup import (
+    commit_processed_replacements,
+    record_processed_replacement,
+    reconcile_previous_processed_cleanup,
+    schedule_processed_generation_cleanup,
+)
+from endoreg_db.services.video_storage.workflow import (
+    configured_video_storage_profile,
+    evidence_as_json,
+    probe_video_artifact,
+    segment_timeline_references,
+    validate_normalized_output,
+)
 from endoreg_db.utils.ffmpeg_wrapper import blacken_video_frame_intervals
 from endoreg_db.utils.file_operations import (
     ensure_directory,
+    atomic_create_file,
     safe_unlink_file,
+    safe_delete_field_file,
 )
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.paths import to_storage_relative, get_runtime_paths
@@ -108,6 +130,20 @@ def rebuild_processed_video_without_outside_frames(
     only_validated: bool = False,
     outside_intervals: Sequence[tuple[int, int]] | None = None,
 ) -> bool:
+    """Serialize replacement, playback publication and generation retirement."""
+    with video_artifact_mutation(video_id=int(video.pk)):
+        video.refresh_from_db()
+        return _rebuild_processed_video_owned(
+            video, only_validated=only_validated, outside_intervals=outside_intervals
+        )
+
+
+def _rebuild_processed_video_owned(
+    video: VideoFile,
+    *,
+    only_validated: bool,
+    outside_intervals: Sequence[tuple[int, int]] | None,
+) -> bool:
     """
     Rebuild the processed video by blackening frames in outside intervals.
 
@@ -117,6 +153,10 @@ def rebuild_processed_video_without_outside_frames(
     """
     staged_output_path: Path | None = None
     replace_completed = False
+    published = False
+    candidate_name = ""
+    previous_name = str(video.processed_file.name or "")
+    previous_hash = video.processed_video_hash
 
     if not video or not video.is_processed:
         logger.warning(
@@ -141,13 +181,21 @@ def rebuild_processed_video_without_outside_frames(
         return True
 
     try:
+        reconcile_previous_processed_cleanup(video)
         with ensure_local_processed_video_file(video) as processed_path:
+            if get_file_hash(processed_path) != previous_hash:
+                raise ValueError(
+                    "Processed source digest differs from its stored identity."
+                )
+            source_probe = probe_video_artifact(processed_path)
             transcoding_dir = ensure_directory(get_runtime_paths().transcoding)
             staged_output_path = (
                 transcoding_dir
-                / f"{video.raw_video_hash}.outside_frame_blackening.staged.mp4"
+                / f"{video.raw_video_hash}.outside_frame_blackening.{uuid4().hex}.mp4"
             )
-            safe_unlink_file(staged_output_path, missing_ok=True)
+            atomic_create_file(
+                destination=staged_output_path, content=(), file_mode=0o600
+            )
             rebuilt_path = blacken_video_frame_intervals(
                 processed_path,
                 staged_output_path,
@@ -156,6 +204,14 @@ def rebuild_processed_video_without_outside_frames(
             if rebuilt_path is None:
                 raise AssertionError("Failed to rebuild processed video with FFmpeg.")
 
+            normalization_evidence = validate_normalized_output(
+                source=source_probe,
+                output=probe_video_artifact(rebuilt_path),
+                profile=configured_video_storage_profile(),
+                segments=segment_timeline_references(
+                    video, timeline=source_probe.timeline
+                ),
+            )
             new_processed_hash = get_file_hash(rebuilt_path)
             if (
                 type(video)
@@ -169,7 +225,7 @@ def rebuild_processed_video_without_outside_frames(
 
             defer_if_video_media_busy(video_id=video.pk)
             target_path = get_runtime_paths().anonym_video / canonical_media_name(
-                video.raw_video_hash, ".mp4", generation=new_processed_hash
+                video.raw_video_hash, ".mp4", generation=uuid4().hex
             )
             target_name = to_storage_relative(target_path)
             save_local_file(
@@ -177,31 +233,52 @@ def rebuild_processed_video_without_outside_frames(
                 rebuilt_path,
                 name=target_name,
                 save=False,
-                overwrite=True,
             )
-            video.processed_video_hash = new_processed_hash
-            video.save(
-                update_fields=[
-                    "processed_file",
-                    "processed_video_hash",
-                    "date_modified",
-                ]
-            )
-            try:
-                sync_video_streamable_artifacts(
+            candidate_name = str(video.processed_file.name or "")
+            if video.processed_file.get_hash() != new_processed_hash:
+                raise ValueError("Encrypted processed candidate identity mismatch.")
+            with video_artifact_publication(video_id=int(video.pk)):
+                video.processed_video_hash = new_processed_hash
+                video.meta = {
+                    **(video.meta or {}),
+                    "storage_normalization": evidence_as_json(normalization_evidence),
+                }
+                record_processed_replacement(
                     video,
-                    include_raw=False,
-                    include_processed=True,
-                    save=True,
+                    previous_name=previous_name,
+                    previous_hash=previous_hash,
+                    strict=True,
                 )
-            except Exception as exc:
-                logger.warning(
-                    "Could not synchronize processed streamable artifact for video %s: %s",
-                    video.pk,
-                    exc,
+                video.save(
+                    update_fields=[
+                        "processed_file",
+                        "processed_video_hash",
+                        "meta",
+                        "date_modified",
+                    ]
                 )
-            replace_completed = True
-            return True
+            published = True
+        # Drop both plaintext paths before the HLS encoder materializes its source.
+        safe_unlink_file(staged_output_path, missing_ok=True)
+        result = materialize_video_hls(
+            int(video.pk), artifact_kind="processed", claim_queued=True
+        )
+        if not hls_result_is_ready(result.status):
+            raise RuntimeError(
+                f"Processed HLS materialization ended with {result.status}."
+            )
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=False,
+            include_processed=True,
+            save=True,
+        )
+        with video_artifact_publication(video_id=int(video.pk)):
+            commit_processed_replacements(video)
+            video.save(update_fields=["meta", "date_modified"])
+        schedule_processed_generation_cleanup(int(video.pk))
+        replace_completed = True
+        return True
     except AssertionError as ae:
         logger.error(
             "Assertion error while streaming outside-frame rebuild for VideoFile %s: %s",
@@ -221,6 +298,10 @@ def rebuild_processed_video_without_outside_frames(
         )
         return False
     finally:
+        if not published and candidate_name:
+            safe_delete_field_file(video.processed_file, missing_ok=True)
+            video.processed_file.name = previous_name
+            video.processed_video_hash = previous_hash
         if staged_output_path is not None:
             if replace_completed:
                 logger.info(

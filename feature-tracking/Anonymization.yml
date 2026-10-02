@@ -133,31 +133,43 @@ definition_of_done:
     category: functionality
     title: Video, frame, and report anonymization follow an explicit workflow
     acceptance:
-      - Processing is idempotent, and every transition is validated server-side.
-      - Correction and reprocessing do not overwrite unreviewed history.
-      - After validation, all extracted frames from validated outside segments are completely blacked out
-        atomically and verified before approval.
+    - Processing is idempotent, and every transition is validated server-side.
+    - Correction and reprocessing do not overwrite unreviewed history.
+    - Report and video adapters use the installed lx-anonymizer directly, propagate dependency failures,
+      and create a fresh reader or cleaner for each attempt without import-path fallbacks.
+    - After validation, all extracted frames from validated outside segments are completely blacked out
+      atomically and verified before approval.
     required: true
     verification:
       kind: command
       command:
-        - .devenv/state/venv/bin/pytest
-        - tests/import_files/test_video_anonymization.py
-        - tests/views/anonymization/test_validate_view.py
-        - tests/services/test_video_post_validation_jobs.py
-        - tests/views/video/test_segments_crud.py
-        - -q
+      - .devenv/state/venv/bin/pytest
+      - tests/import_files/test_video_anonymization.py
+      - tests/views/anonymization/test_validate_view.py
+      - tests/services/test_video_post_validation_jobs.py
+      - tests/views/video/test_segments_crud.py
+      - -q
       timeout_seconds: 900
     assessment:
-      status: verified
+      status: in_progress
       evidence:
-        - kind: command
-          reference:
-            .devenv/state/venv/bin/pytest tests/import_files/test_video_anonymization.py tests/views/anonymization/test_validate_view.py
-            tests/services/test_video_post_validation_jobs.py tests/views/video/test_segments_crud.py -q
-          note: Exit code 0
-      assessed_by: Codex
-      assessed_at: "2026-07-17T13:02:02.649207Z"
+      - kind: command
+        reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_anonymization.py tests/views/anonymization/test_validate_view.py
+          tests/services/test_video_post_validation_jobs.py tests/views/video/test_segments_crud.py -q
+        note: Exit code 0
+      - kind: command
+        reference: '2026-10-02: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+          tests/import_files/test_video_anonymization.py tests/import_files/test_report_anonymization_contract.py
+          tests/services/test_center_employees.py tests/services/test_report_import_service_unit.py tests/services/test_video_import_service_unit.py
+          tests/views/media/test_pdf_media_text_visibility.py -q: 189 passed, 2 warnings in 263.38s; .devenv/state/venv/bin/pyright:
+          0 errors, 9 warnings.'
+      note: 'lx-anonymizer wird direkt aus dem installierten Paket geladen; Importpfad-Fallback und redundante
+        Verfügbarkeitsflags entfernt. Strenger Gesamt-Pyright: 0 Fehler, 9 bestehende Warnungen außerhalb
+        der Änderungen. Fokussierte Regression: 189 bestanden, 2 Warnungen; Ruff, Format- und Diff-Prüfung
+        bestanden. Bestehende Workflow-Evidenz bleibt erhalten; umfassende Produktionsabnahme wurde nicht
+        erneut durchgeführt.'
+      assessed_by: codex-anonymizer-20261002
+      assessed_at: '2026-10-02T11:06:56.472461Z'
   - id: automated_tests
     category: testing
     title: Anonymization, validation, and quality metrics are regression-tested

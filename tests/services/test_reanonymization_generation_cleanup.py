@@ -102,7 +102,7 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
     for attempt in range(3):
         previous_name = str(video.processed_file.name)
         video.meta = {**(video.meta or {}), "clinical_review": {"attempt": attempt}}
-        assert video.anonymize(delete_original_raw=False)
+        assert video.anonymize()
         video.refresh_from_db()
         assert video.processed_file.name != previous_name
         assert Path(str(video.processed_file.name)).name.startswith(

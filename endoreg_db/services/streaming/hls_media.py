@@ -2693,6 +2693,12 @@ def materialize_video_hls(
         outcome = WorkloadOutcome.FAILED
         raise
     else:
+        if hls_result_is_ready(result.status) and result.artifact_kind == "processed":
+            from endoreg_db.services.video_storage.generation_cleanup import (
+                cleanup_validated_raw_video,
+            )
+
+            cleanup_validated_raw_video(int(video_id), apply=True)
         if result.status == "already_ready":
             outcome = WorkloadOutcome.REUSED
         elif result.status == "already_materializing":

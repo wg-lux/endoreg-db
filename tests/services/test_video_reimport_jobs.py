@@ -1,5 +1,6 @@
 # pyright: reportPrivateUsage=false
 from collections.abc import Callable
+import errno
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +10,171 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.config.env import EnvironmentValueError
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("storage_error", ["operating_system", "budget"])
+def test_storage_failure_classification(wrapped: bool, storage_error: str) -> None:
+    from endoreg_db.exceptions import InsufficientStorageError
+    from endoreg_db.services.jobs.error_handling import is_insufficient_storage
+
+    error = (
+        OSError(errno.ENOSPC, "No space left on device", "/protected/source")
+        if storage_error == "operating_system"
+        else InsufficientStorageError("Insufficient pipeline storage")
+    )
+    wrapper = RuntimeError("Storage operation failed")
+    wrapper.__cause__ = error
+    assert is_insufficient_storage(wrapper if wrapped else error)
+
+
+def test_storage_failure_classification_rejects_unrelated_or_hidden_errors() -> None:
+    from endoreg_db.services.jobs.error_handling import is_insufficient_storage
+
+    assert not is_insufficient_storage(OSError(errno.EACCES, "Permission denied"))
+    assert not is_insufficient_storage(RuntimeError("No space left on device"))
+    hidden = RuntimeError("Unrelated failure")
+    hidden.__context__ = OSError(errno.ENOSPC, "No space left on device")
+    hidden.__suppress_context__ = True
+    assert not is_insufficient_storage(hidden)
+    cycle = RuntimeError("Cycle")
+    cycle.__cause__ = cycle
+    assert not is_insufficient_storage(cycle)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("ready", [False, True])
+@pytest.mark.parametrize("phase", ["source", "upload", "processing", "hls"])
+def test_reimport_disk_exhaustion_preserves_usable_generation_or_fails(
+    monkeypatch: MonkeyPatch, tmp_path: Path, ready: bool, phase: str
+) -> None:
+    from unittest.mock import Mock
+    from uuid import uuid4
+
+    from endoreg_db.models import Center, UploadJob, VideoFile
+    from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+    from endoreg_db.models.state.anonymization import AnonymizationState
+    from endoreg_db.models.state.video import VideoState
+    from endoreg_db.services.jobs import video_reimport_jobs as jobs
+
+    state = VideoState.objects.create(
+        was_created=False, anonymized=True, processing_started=False
+    )
+    center = Center.objects.create(name=f"storage-failure-{uuid4().hex}")
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash=uuid4().hex,
+        raw_file="sensitive_videos/source.mp4",
+        processed_file="processed_videos_final/current.mp4",
+        state=state,
+    )
+    upload = UploadJob.objects.create(
+        source_center=center,
+        content_hash=video.raw_video_hash,
+        content_type="video/mp4",
+        file="upload_jobs/source.mp4",
+        status=UploadJob.Status.ANONYMIZED,
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        config={"queue": "ffmpeg_media", "refresh_predictions": False},
+    )
+    failure = OSError(errno.ENOSPC, "No space left on device", "/protected/source")
+
+    @contextmanager
+    def source_context(_: object) -> Any:
+        if phase == "source":
+            raise failure
+        yield tmp_path / "raw.mp4"
+
+    def reset(target: VideoFile) -> int:
+        target.state.mark_processing_not_started()
+        return jobs._update_reimport_upload_jobs(
+            target, status=UploadJob.Status.PROCESSING
+        )
+
+    def process(
+        target: VideoFile, *, source_path: Path, prepare: Callable[[], None]
+    ) -> VideoFile:
+        if phase == "upload":
+            raise failure
+        prepare()
+        target.state.mark_processing_started()
+        if phase == "processing":
+            raise failure
+        return target
+
+    def require_ready(*, video: VideoFile) -> object:
+        if not ready:
+            raise FileNotFoundError("No usable current generation")
+        return object()
+
+    service = Mock()
+    service.reanonymize_existing_video.side_effect = process
+    monkeypatch.setattr(jobs, "VideoImportService", Mock(return_value=service))
+    monkeypatch.setattr(jobs, "ensure_local_file", source_context)
+    monkeypatch.setattr(jobs, "_reset_reimport_state", reset)
+    monkeypatch.setattr(jobs, "defer_if_video_media_busy", Mock())
+    monkeypatch.setattr(jobs, "get_ready_hls_artifact", require_ready)
+    publish = Mock(side_effect=failure)
+    monkeypatch.setattr(jobs, "_regenerate_reimport_hls_artifacts", publish)
+
+    with pytest.raises(OSError) as caught:
+        jobs._run_video_reimport_job(video.pk, history_id=history.pk)
+    assert caught.value is failure
+    state.refresh_from_db()
+    upload.refresh_from_db()
+    history.refresh_from_db()
+    video.refresh_from_db()
+    assert state.processing_error is (not ready)
+    assert not state.processing_started
+    assert not state.ready_for_export
+    assert not state.anonymization_validated
+    assert state.anonymization_status == (
+        AnonymizationState.ANONYMIZED if ready else AnonymizationState.FAILED
+    )
+    assert upload.status == (
+        UploadJob.Status.ANONYMIZED if ready else UploadJob.Status.ERROR
+    )
+    assert upload.error_detail == ("" if ready else "insufficient_storage")
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert history.details == "insufficient_storage"
+    assert video.raw_file.name == "sensitive_videos/source.mp4"
+    assert video.processed_file.name == "processed_videos_final/current.mp4"
+    if phase != "hls":
+        publish.assert_not_called()
+
+
+@pytest.mark.parametrize("phase", ["processing", "hls"])
+def test_inline_reimport_uses_shared_storage_failure_recovery(
+    monkeypatch: MonkeyPatch, phase: str
+) -> None:
+    from unittest.mock import Mock
+    from endoreg_db.models import VideoFile
+    from endoreg_db.services.video_files import reimport_orchestrator as module
+
+    video = VideoFile(id=17, raw_file="sensitive_videos/source.mp4")
+    orchestrator = module.VideoReimportOrchestrator(
+        video=video, video_id=17, payload={}
+    )
+    failure = OSError(errno.ENOSPC, "No space left on device", "/protected/source")
+    monkeypatch.setattr(
+        orchestrator,
+        "_run_video_import_service",
+        Mock(side_effect=failure if phase == "processing" else None, return_value=0),
+    )
+    monkeypatch.setattr(video, "refresh_from_db", Mock())
+    monkeypatch.setattr(
+        module, "_regenerate_reimport_hls_artifacts", Mock(side_effect=failure)
+    )
+    finalize = Mock()
+    monkeypatch.setattr(module, "_finalize_reimport_storage_failure", finalize)
+    payload, status_code = orchestrator._run_inline()
+    assert status_code == 507
+    assert payload["error_type"] == "storage_error"
+    assert "/protected/source" not in str(payload)
+    finalize.assert_called_once_with(video, None)
 
 
 def test_video_reimport_job_mode_rejects_unsupported_value(

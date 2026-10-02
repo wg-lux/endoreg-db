@@ -75,12 +75,9 @@ def test_active_report_reader_receives_only_optional_overrides(
         import_center_employees(employee_package("clinic"))
     report = RawPdfFile(center=center)
     reader_class = Mock()
-    with (
-        patch.object(ReportAnonymizer, "_ensure_report_reading_available"),
-        patch(
-            "endoreg_db.import_files.processing.report_processing.report_anonymization.importlib.import_module",
-            return_value=Mock(ReportReader=reader_class),
-        ),
+    with patch(
+        "lx_anonymizer.report_reader.ReportReader",
+        reader_class,
     ):
         anonymizer = ReportAnonymizer()
         anonymizer._instantiate_report_reader(report)  # pyright: ignore[reportPrivateUsage]
@@ -90,8 +87,8 @@ def test_active_report_reader_receives_only_optional_overrides(
         assert kwargs["employee_first_names"] == ["Test"]
         assert kwargs["employee_last_names"] == ["Employee"]
     else:
-        assert "employee_first_names" not in kwargs
-        assert "employee_last_names" not in kwargs
+        assert kwargs["employee_first_names"] is None
+        assert kwargs["employee_last_names"] is None
 
 
 def test_command_uses_exact_package_identity() -> None:

@@ -20,10 +20,11 @@ def validate_video_metadata_annotation(
     video: "VideoFile",
     extracted_data_dict: VideoTextMetaPayload | None = None,
 ) -> bool:
-    from .io import delete_raw_file_after_validation
     from .metadata import update_video_text_metadata
     from .state import get_or_create_video_state
-    from endoreg_db.services.video_storage.workflow import raw_cleanup_blockers
+    from endoreg_db.services.video_storage.generation_cleanup import (
+        cleanup_validated_raw_video,
+    )
 
     state = get_or_create_video_state(video)
     meta = video.meta if video.meta is not None else {}
@@ -78,20 +79,14 @@ def validate_video_metadata_annotation(
 
     get_or_create_video_state(video).mark_anonymization_validated(save=True)
     video.save()
-    blockers = raw_cleanup_blockers(video)
+    blockers = cleanup_validated_raw_video(int(video.pk), apply=True)
     if blockers:
         logger.warning(
             "Raw cleanup deferred for validated video %s: %s",
             video.raw_video_hash,
             ",".join(blockers),
         )
-    elif delete_raw_file_after_validation(video):
-        logger.info(
-            "Raw video deleted for %s. Anonymized video preserved.",
-            video.raw_video_hash,
-        )
-    else:
-        logger.info("No raw video artifacts remained for %s.", video.raw_video_hash)
+    video.refresh_from_db()
     logger.info(
         "Metadata annotation validated and saved for video %s.", video.raw_video_hash
     )

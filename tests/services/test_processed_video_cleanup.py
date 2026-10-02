@@ -129,6 +129,34 @@ def test_dry_run_then_apply_is_idempotent(replacement: Replacement) -> None:
 
 
 @pytest.mark.parametrize(
+    "suffix", ["_filtered", ".attempt-" + "a" * 32, ".post_validation." + "b" * 64]
+)
+def test_retirement_accepts_only_owned_historical_generation_names(
+    replacement: Replacement,
+    suffix: str,
+) -> None:
+    video = replacement.video
+    old_name = video.processed_file.storage.save(
+        to_storage_relative(
+            get_runtime_paths().anonym_video / f"{video.raw_video_hash}{suffix}.mp4"
+        ),
+        ContentFile(b"historical processed"),
+    )
+    cleanup.record_processed_replacement(
+        video,
+        previous_name=old_name,
+        previous_hash=sha256(b"historical processed").hexdigest(),
+        strict=True,
+    )
+    cleanup.commit_processed_replacements(video)
+    video.save(update_fields=["meta"])
+    result = cleanup.cleanup_processed_video_generations(video.pk, apply=True)
+    assert result.cleaned == 2
+    assert not video.processed_file.storage.exists(old_name)
+    assert video.processed_file.exists()
+
+
+@pytest.mark.parametrize(
     "blocker",
     [
         "lease",

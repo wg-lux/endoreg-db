@@ -253,9 +253,20 @@ class Command(BaseVideoCommand):
         queue: str,
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
+        if run_options.apply_changes:
+            from endoreg_db.services.video_storage.generation_cleanup import (
+                cleanup_validated_raw_video,
+            )
+
+            for video in videos:
+                cleanup_validated_raw_video(int(video.pk), apply=True)
+                video.refresh_from_db()
         # Finish the selected processed pass before starting any raw artifact.
         for artifact_kind in run_options.artifact_kinds:
             for video in videos:
+                # A preceding processed pass may have completed validation cleanup.
+                if run_options.apply_changes:
+                    video.refresh_from_db()
                 if not self._video_has_source(video, artifact_kind=artifact_kind):
                     continue
                 result, stop = self._process_artifact(

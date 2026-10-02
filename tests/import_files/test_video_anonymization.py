@@ -658,7 +658,6 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
@@ -746,7 +745,6 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     )
     ctx.retry = True
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
@@ -855,7 +853,6 @@ def test_anonymize_video_uses_local_source_path_override(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
@@ -875,7 +872,7 @@ def test_anonymize_video_uses_local_source_path_override(
 
 
 @pytest.mark.django_db
-def test_anonymizer_reuses_initialized_frame_cleaner(
+def test_anonymizer_creates_fresh_frame_cleaner_per_attempt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -941,6 +938,17 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
     anonymizer.anonymize_video(ctx)
 
     assert len(frame_cleaner_instances) == 1
+    next_ctx = _create_import_context(
+        file_path=source_video,
+        center=center,
+        video=video,
+        processor_name=processor.name,
+    )
+    anonymizer.anonymize_video(next_ctx)
+
+    assert len(frame_cleaner_instances) == 2
+    assert frame_cleaner_instances[0] is not frame_cleaner_instances[1]
+    assert ctx.anonymized_path != next_ctx.anonymized_path
 
 
 @pytest.mark.django_db
@@ -1006,7 +1014,6 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     anonymizer.anonymize_video(ctx)
 

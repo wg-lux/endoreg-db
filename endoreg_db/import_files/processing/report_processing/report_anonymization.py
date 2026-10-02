@@ -1,9 +1,6 @@
 import hashlib
-import importlib
 import logging
-import os
 import stat
-import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol, cast
@@ -42,12 +39,8 @@ class _ReportReader(Protocol):
     ) -> ReportAnonymizationResult: ...
 
 
-class _ReportReaderClass(Protocol):
-    def __call__(self, **kwargs: object) -> _ReportReader: ...
-
-
 class _PatientPseudonymResolver(Protocol):
-    def __call__(self, candidate: LxSensitiveMeta) -> tuple[str, str]: ...
+    def __call__(self, sensitive_meta: LxSensitiveMeta) -> tuple[str, str]: ...
 
 
 class _NamedCenter(Protocol):
@@ -169,12 +162,6 @@ def _validate_report_result(
 
 
 class ReportAnonymizer:
-    _report_reader_class: _ReportReaderClass | None
-
-    def __init__(self) -> None:
-        self._report_reader_class = None
-        self._ensure_report_reading_available()
-
     @staticmethod
     def _is_txt_input(ctx: ImportContext) -> bool:
         source_path = ctx.original_path if isinstance(ctx.original_path, Path) else None
@@ -264,7 +251,8 @@ class ReportAnonymizer:
                 "Report center is required for canonical pseudonym resolution"
             )
 
-        def resolve(candidate: LxSensitiveMeta) -> tuple[str, str]:
+        def resolve(sensitive_meta: LxSensitiveMeta) -> tuple[str, str]:
+            candidate = sensitive_meta
             if candidate.dob is None:
                 has_patient_name = any(
                     value.strip().casefold() not in {"", "unknown"}
@@ -301,63 +289,20 @@ class ReportAnonymizer:
         report: RawPdfFile,
     ) -> _ReportReader:
         """Instantiate the canonical report reader."""
-        rr_mod = importlib.import_module("lx_anonymizer.report_reader")
-        report_reader_class = self._report_reader_class or cast(
-            _ReportReaderClass,
-            getattr(rr_mod, "ReportReader"),
-        )
+        from lx_anonymizer.report_reader import ReportReader  # pyright: ignore[reportMissingTypeStubs]
+
         from endoreg_db.services.centers.employees import center_employee_overrides
 
         resolver = self._patient_pseudonym_resolver(report)
         center = report.center
         if center is None:
             raise ValueError("Report center is required for employee recognition")
-        return report_reader_class(
-            patient_pseudonym_resolver=resolver,
-            **center_employee_overrides(center),
+        employee_overrides = center_employee_overrides(center)
+        return cast(
+            _ReportReader,
+            ReportReader(
+                patient_pseudonym_resolver=resolver,
+                employee_first_names=employee_overrides.get("employee_first_names"),
+                employee_last_names=employee_overrides.get("employee_last_names"),
+            ),
         )
-
-    def _ensure_report_reading_available(self) -> None:
-        """
-        Ensure report reading modules are available by adding lx-anonymizer to path.
-
-        Returns:
-            Tuple of (availability_flag, ReportReader_class)
-        """
-
-        try:
-            # Try direct import first
-            module = importlib.import_module("lx_anonymizer")
-            report_reader_class = cast(
-                _ReportReaderClass,
-                getattr(module, "ReportReader"),
-            )
-
-            logger.info("Successfully imported lx_anonymizer ReportReader module")
-            self._report_reader_class = report_reader_class
-            return
-
-        except (AttributeError, ImportError):
-            # Optional: honor LX_ANONYMIZER_PATH=/abs/path/to/src
-            extra = os.getenv("LX_ANONYMIZER_PATH")
-            if extra and extra not in sys.path and Path(extra).exists():
-                sys.path.insert(0, extra)
-                try:
-                    mod = importlib.import_module("lx_anonymizer")
-                    ReportReader = cast(
-                        _ReportReaderClass,
-                        getattr(mod, "ReportReader"),
-                    )
-                    logger.info(
-                        "Imported lx_anonymizer.ReportReader via LX_ANONYMIZER_PATH"
-                    )
-                    self._report_reader_class = ReportReader
-                    return
-                except Exception as e:
-                    logger.warning(
-                        "Failed importing lx_anonymizer via LX_ANONYMIZER_PATH: %s", e
-                    )
-
-                    return
-
-        self._report_reader_class = None
