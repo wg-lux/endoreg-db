@@ -1,0 +1,188 @@
+schema_version: '1.0'
+assessor: codex-dataset-audit-20261002
+date: '2026-10-02'
+host: gc-02
+database: endoregDbLocal
+postgresql_version: '16.15'
+repository: /home/admin/endoreg-db
+git_revision: 3b464317cbdadce343dc80815c55be02b7a59dbd
+related_features:
+  - real_video_anonymization_dataset
+  - import_pipeline_robustness
+  - import_monitoring
+  - /home/admin/dev/lx-annotate/feature-tracking/AiDatasetSplits.yml
+scope:
+  - Read-only local PostgreSQL inspection using psql and the configured service secret handle.
+  - Read-only worker journal inspection for the latest video failure.
+  - Database-backed Arrange-Act-Assert tests against isolated pytest PostgreSQL.
+  - No application database writes, migrations, retries, media deletion or deployment.
+credentials:
+  note: The user-provided file is the sudo password, not the PostgreSQL password.
+  handling: Secrets were consumed in memory and are not included in this report.
+rating_scale:
+  1: Inventory only; no usable attached training labels.
+  2: Exploratory dataset with substantial labels but unresolved release blockers.
+  3: Reviewed development dataset with adequate cohort coverage and patient-safe splits.
+  4: Reproducible independently validated release candidate.
+  5: Clinically approved, monitored dataset release with external validation.
+  note: Qualitative engineering assessment; not a validated statistical quality score.
+datasets:
+  - id: 1
+    name: Coloreg
+    rating_out_of_5: 2
+    dataset_type: image
+    ai_model_type: image_multilabel_classification
+    frame_annotation_rows: 376607
+    distinct_annotated_frames: 246048
+    segment_memberships: 264
+    annotated_videos: 6
+    directly_joined_videos: 0
+    explicit_negative_annotations: 66
+    missing_annotator_annotations: 288700
+    conflicting_frame_label_values: 0
+    state_gate_eligible:
+      videos: 3
+      frame_annotation_rows: 278571
+      distinct_annotated_frames: 172895
+      patient_linked_videos: 0
+      note: SQL state-gate inventory, not an actual training manifest or verified media inventory.
+    strengths:
+      - Substantial persisted annotation inventory and no contradictory boolean values per frame/label.
+      - Existing labels, source relations and explicit attachment helpers can support curation.
+    blockers:
+      - Hundreds of thousands of frames come from only six videos at one center.
+      - Almost all annotations are positive; absence cannot safely establish a negative label.
+      - Missing reviewer identity prevents reliable attribution and agreement analysis.
+      - Every currently state-eligible video lacks a patient association.
+      - Unconfirmed prediction segments coexist with manual/corrected segment memberships.
+  - id: 2
+    name: default-joined-video-dataset-v1
+    rating_out_of_5: 1
+    dataset_type: image
+    ai_model_type: image_multilabel_classification
+    directly_joined_videos: 7
+    frame_annotation_rows: 0
+    segment_memberships: 0
+    explanation: Automatic video membership does not attach annotations or establish training eligibility.
+global_inventory:
+  videos: 7
+  centers: 1
+  distinct_direct_patients: 2
+  videos_without_patient_or_examination: 5
+  anonymization_accepted_videos: 6
+  segment_validated_and_export_ready_videos: 3
+  processed_file_reference_missing: 1
+  frame_rows: 760710
+  frames_with_presentation_timestamps: 222121
+  videos_with_frame_presentation_timestamps: 2
+  saved_split_plans: 0
+  video_ids_by_state:
+    state_gate_eligible: [2, 3, 5]
+    pending_segment_review: [4, 6, 13]
+    failed_processing: [15]
+  storage:
+    filesystem: /dev/mapper/cryptroot
+    used_percent: 99
+    available_approximately_gib: 9.2
+    note: df -h observation; free space changes during active processing.
+recent_video_import_failures:
+  inventory:
+    successful_jobs: 2
+    error_jobs: 9
+    lost_jobs: 2
+    note: Historical jobs are attempts, not an independent-video denominator or current import success rate.
+  latest:
+    upload_job_id: 23c9940d-d589-4f6d-a0c2-656e75f13250
+    video_id: 15
+    task_id: 56585322-2ffe-4acf-9995-9878d2b81226
+    task: endoreg_db.video_reimport
+    worker: lx-annotate-celery-ffmpeg-worker.service
+    failed_at_utc: '2026-10-01T16:32:54Z'
+    error_detail: processing_timeout
+    error_code: processing_failed
+    retry_count: 1
+    max_retries: 3
+    automatic_retry_enabled: false
+    soft_limit_seconds: 35193
+    observed_task_seconds: 35197.675565654004
+    root_observation: SoftTimeLimitExceeded during RapidOCR ONNX session inference, wrapped in ONNXRuntimeError.
+    evidence: journalctl --namespace=lx-annotate -u lx-annotate-celery-ffmpeg-worker.service --since '2026-10-01 16:20:00 UTC' --until '2026-10-01 16:40:00 UTC'
+    interpretation: The configured planning throughput is not demonstrated by this full processing attempt.
+    safe_next_step: Measure per-stage OCR throughput, provider selection and resource contention on the declared worker before calibrating bounded admission budgets or explicitly retrying.
+  previous:
+    upload_job_id: b1db44f4-e864-4d4f-a0a7-8fbd3cf88f5f
+    failed_at_utc: '2026-09-25T09:01:54Z'
+    status: lost
+    error_code: media_integrity_failed
+    reason: Associated VideoFile record was deleted.
+    safe_next_step: Reconcile retained sources and deletion provenance; do not blindly recreate the deleted record.
+  older_observed_categories:
+    - Fallback source content-hash verification failed.
+    - Insufficient storage; one attempt required 11.1 GB with 8.1 GB available.
+    - Insufficient storage; another attempt required 66.7 GB with 17.0 GB available.
+    - VideoMeta update failure.
+    - Transcoding failed to produce a compliant sensitive copy.
+    - Older completed-job integrity checks failed because anonymization had not been validated.
+required_changes_in_priority_order:
+  - priority: 1
+    change: Provision sufficient encrypted working capacity and enforce bounded admission before expensive video processing.
+    acceptance: Representative imports meet measured peak storage requirements; failed imports preserve sources and never publish incomplete media.
+  - priority: 2
+    change: Profile the observed OCR bottleneck and calibrate the existing full-pipeline budget on the intended worker.
+    acceptance: A representative whole-video import finishes within its admitted soft limit, including finalization and cleanup; wrapped cancellation remains classified as timeout.
+  - priority: 3
+    change: Reconcile terminal jobs by source identity, current media generation and integrity evidence before any explicit recovery.
+    acceptance: Bounded retry is possible for an approved transient failure; LOST remains terminal and stale workers cannot mutate a replacement attempt.
+  - priority: 4
+    change: Resolve pseudonymous patient/examination linkage for every candidate and create saved patient-grouped splits.
+    acceptance: No patient or correlated recording crosses split roles; missing/conflicting associations block plan creation; saved-link drift blocks retrieval.
+    note: The current training manifest group_id is a video UUID, not a patient grouping. Existing lx-annotate split services enforce patient links; connect training to those plans before leakage-sensitive evaluation.
+  - priority: 5
+    change: Curate separate task-specific datasets through existing attachment helpers rather than treating the default video inventory as a labeled release.
+    acceptance: Repeated attachment preserves annotation IDs and adds no duplicate relation; only the intended sources and reviewed media enter the training scope.
+  - priority: 6
+    change: Complete segment review and generation-specific clinical release gates for pending candidates.
+    acceptance: Anonymization acceptance, segment review, outside-segment processing and export readiness are independently verified; attachment does not bypass them.
+  - priority: 7
+    change: Add explicit negatives, preserve unknown-label masks, recover reviewer provenance where evidence exists, and adjudicate disagreements.
+    acceptance: Per-label positive/negative/unknown counts are reported by independent patient and video; prediction-only labels do not become ground truth without confirmation.
+  - priority: 8
+    change: Verify authoritative presentation timestamps and broaden independent patient, center, device and difficult-case coverage before freezing a release.
+    acceptance: Segments map to verified source timestamps; release manifests freeze label/content versions and accepted media digests as well as membership; held-out coverage and uncertainty are documented.
+verification:
+  new_test_files:
+    - tests/ai/test_dataset_readiness_aaa.py
+    - tests/services/test_video_import_failure_recovery_aaa.py
+  environment:
+    database: Isolated PostgreSQL owned by pytest-postgresql; application database credentials were not passed to pytest.
+    library_path: LD_LIBRARY_PATH from the repository-generated devenv shell.
+    flags: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+    note: Collection marks these contract tests as video/AI tests by name, so inherited skip flags must be disabled.
+  results:
+    - command: .devenv/state/venv/bin/pyright
+      result: 0 errors, 9 warnings; one warning is the external RapidOCR module without type stubs.
+    - command: .devenv/state/venv/bin/pyright tests/ai/test_dataset_readiness_aaa.py tests/services/test_video_import_failure_recovery_aaa.py
+      result: 0 errors, 1 external missing-type-stubs warning.
+    - command: .devenv/state/venv/bin/pytest tests/ai/test_dataset_readiness_aaa.py tests/services/test_video_import_failure_recovery_aaa.py -q --tb=short --show-capture=no
+      result: 9 passed, 1 warning, no skips, 39.71 seconds.
+    - command: .devenv/state/venv/bin/pytest tests/ai/test_aidataset_training_manifest.py tests/models/test_video_joined_dataset.py tests/models/test_upload_job_lifecycle.py tests/services/test_video_reimport_budget.py -q --tb=short --show-capture=no
+      result: 42 passed, 13 subtests passed, 2 warnings, 47.93 seconds.
+    - command: Ruff check and Ruff format --check for both new Python test modules.
+      result: Passed.
+    - command: ./feature-tracking/tracker.py validate
+      result: Passed; 37 valid feature definitions.
+    - command: ./feature-tracking/tracker.py check real_video_anonymization_dataset
+      result: Exit 1; not production-ready, 0 of 11 required criteria verified.
+    - command: ./feature-tracking/tracker.py check import_pipeline_robustness
+      result: Exit 1; not production-ready, 2 of 12 required criteria verified.
+  initial_attempts:
+    - Direct pytest failed before collection because libpq was absent from the shell library path.
+    - devenv shell synchronized runtime dependencies but did not install the optional dev extra; agent:sync restored the test tools.
+    - Initial configured run skipped all nine cases because inherited video/expensive-test flags disabled them; the final run explicitly enabled collection and execution.
+  interpretation: Existing safe curation and bounded recovery mechanisms are covered; no fix to the live OCR throughput, capacity, patient linkage or dataset content is claimed.
+limitations:
+  - SQL aggregate observations were collected during an active service, not one exported repeatable-read snapshot.
+  - No encrypted media payload was decrypted, decoded or independently validated for clinical quality.
+  - Nonexistent physical sources, wrong keys and media corruption cannot be concluded from database handles alone.
+  - Test data exercises persisted contracts; it does not reproduce a multi-hour OCR run or demonstrate a production recovery.
+  - This report is evidence for existing features and does not change their approval assessments.

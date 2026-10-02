@@ -80,10 +80,6 @@ def _video_integrity_status(video: VideoFile) -> tuple[str, str]:
         return "lost", "unknown"
     integrity_status = str(payload.get("integrity_status") or "").strip()
     integrity_error = str(payload.get("integrity_error") or "").strip()
-    if not integrity_status and bool(
-        getattr(getattr(video, "state", None), "processing_error", False)
-    ):
-        integrity_status = "lost"
     return integrity_status, integrity_error
 
 
@@ -188,6 +184,9 @@ class AnonymizationService:
         Returns:
             str or None: Media type if successful, None if file not found
         """
+        if kind == "pdf":
+            kind = "report"
+
         # Try VideoFile first
         if kind == "video" or kind is None:
             video = (

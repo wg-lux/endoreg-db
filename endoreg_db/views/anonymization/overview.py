@@ -1,5 +1,6 @@
 # endoreg_db/api/views/anonymization_overview.py
 
+from collections.abc import Mapping
 from typing import Any, Protocol, cast
 from uuid import UUID
 from django.db import transaction
@@ -13,7 +14,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from endoreg_db.models.hub.upload_job import UploadJob
@@ -49,6 +50,7 @@ from endoreg_db.serializers.misc.file_overview import (
     overview_upload_job_is_superseded,
     overview_upload_job_retry_summary,
     safe_upload_job_original_filename,
+    overview_upload_job_media_type,
 )
 from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
@@ -127,34 +129,41 @@ def _attach_overview_upload_jobs(
         .order_by("-updated_at", "-created_at")
     )
 
-    by_sensitive_meta_id: dict[tuple[int | None, int], UploadJob] = {}
-    by_content_hash: dict[tuple[int | None, str], UploadJob] = {}
+    by_sensitive_meta_id: dict[tuple[int | None, str, int], list[UploadJob]] = {}
+    by_content_hash: dict[tuple[int | None, str, str], UploadJob] = {}
     for upload_job in upload_jobs:
         upload_job_like = cast(_OverviewUploadJobLike, upload_job)
         center_id = upload_job_like.source_center_id
-        if (
-            upload_job_like.sensitive_meta_id
-            and (center_id, upload_job_like.sensitive_meta_id)
-            not in by_sensitive_meta_id
-        ):
-            by_sensitive_meta_id[(center_id, upload_job_like.sensitive_meta_id)] = (
-                upload_job
-            )
+        media_type = overview_upload_job_media_type(upload_job.content_type)
+        if upload_job_like.sensitive_meta_id:
+            by_sensitive_meta_id.setdefault(
+                (center_id, media_type, upload_job_like.sensitive_meta_id), []
+            ).append(upload_job)
         if (
             upload_job_like.content_hash
-            and (center_id, upload_job_like.content_hash) not in by_content_hash
+            and (center_id, media_type, upload_job_like.content_hash)
+            not in by_content_hash
         ):
-            by_content_hash[(center_id, upload_job_like.content_hash)] = upload_job
+            by_content_hash[(center_id, media_type, upload_job_like.content_hash)] = (
+                upload_job
+            )
 
     for item in items:
         overview_item = cast(_OverviewItem, item)
         sensitive_meta_id = overview_item.sensitive_meta_id
         content_hash = _overview_content_hash(item)
-        upload_job = (
-            by_sensitive_meta_id.get((overview_item.center_id, sensitive_meta_id))
-            if sensitive_meta_id is not None
-            else None
-        ) or by_content_hash.get((overview_item.center_id, content_hash))
+        media_type = "video" if isinstance(item, VideoFile) else "pdf"
+        upload_job = by_content_hash.get(
+            (overview_item.center_id, media_type, content_hash)
+        )
+        # Patient/examination metadata alone does not identify a source document.
+        # Only legacy media without a digest may use one unambiguous typed job.
+        if not content_hash and sensitive_meta_id is not None:
+            candidates = by_sensitive_meta_id.get(
+                (overview_item.center_id, media_type, sensitive_meta_id), []
+            )
+            if len(candidates) == 1:
+                upload_job = candidates[0]
         carrier = cast(_OverviewUploadJobCarrier, item)
         setattr(carrier, "_overview_upload_job", upload_job)
 
@@ -268,7 +277,7 @@ class AnonymizationOverviewView(APIView):
             while synthetic_id in used_ids:
                 synthetic_id -= 1
             used_ids.add(synthetic_id)
-            media_type = "pdf" if "pdf" in upload_job.content_type.lower() else "video"
+            media_type = overview_upload_job_media_type(upload_job.content_type)
             filename = safe_upload_job_original_filename(cast(Any, upload_job))
             rows.append(
                 {
@@ -517,6 +526,33 @@ class UploadJobRetryView(APIView):
 
 
 # ---------- status with polling protection ------------------------------
+def _requested_anonymization_kind(request: Request, file_id: int) -> str | None:
+    payload = cast(object, request.data)
+    if not isinstance(payload, Mapping):
+        raise ValidationError({"media_type": "Expected a request object."})
+    request_payload = cast(Mapping[str, object], payload)
+    hints = [request.query_params.get("kind"), request_payload.get("media_type")]
+    kinds: set[str] = set()
+    for hint in hints:
+        if hint is None:
+            continue
+        if not isinstance(hint, str) or hint not in ("pdf", "report", "video"):
+            raise ValidationError({"media_type": "Expected video, pdf or report."})
+        kinds.add("report" if hint == "pdf" else hint)
+    if len(kinds) > 1:
+        raise ValidationError({"media_type": "Conflicting media identities."})
+    if kinds:
+        return kinds.pop()
+    if (
+        VideoFile.objects.filter(pk=file_id).exists()
+        and RawPdfFile.objects.filter(pk=file_id).exists()
+    ):
+        raise ValidationError(
+            {"media_type": "This identifier is ambiguous; specify video or pdf."}
+        )
+    return None
+
+
 @api_view(["GET"])
 @permission_classes(PERMS)
 def anonymization_status(request: Request, file_id: int) -> Response:
@@ -524,7 +560,8 @@ def anonymization_status(request: Request, file_id: int) -> Response:
     Get anonymization status with polling rate limiting.
     """
     # Ermittele erst den echten Typ und Status
-    info = AnonymizationService.get_status(file_id)
+    kind = _requested_anonymization_kind(request, file_id)
+    info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -576,7 +613,8 @@ def start_anonymization(request: Request, file_id: int) -> Response:
     Start anonymization with processing lock to prevent duplicates.
     """
     # First check what type of file this is
-    info = AnonymizationService.get_status(file_id)
+    kind = _requested_anonymization_kind(request, file_id)
+    info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -613,8 +651,8 @@ def start_anonymization(request: Request, file_id: int) -> Response:
 
         # Proceed with starting anonymization
         service = AnonymizationService()
-        kind = service.start(file_id)
-        if not kind:
+        started_kind = service.start(file_id, kind=file_type)
+        if not started_kind:
             return Response(
                 {"detail": "Failed to start anonymization"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -622,7 +660,7 @@ def start_anonymization(request: Request, file_id: int) -> Response:
 
         # Re-read status AFTER starting
         try:
-            AnonymizationService.get_status(file_id)
+            AnonymizationService.get_status(file_id, kind=file_type)
         except Exception:
             logger.exception(
                 "Failed to refresh anonymization status for file %s", file_id
@@ -632,7 +670,7 @@ def start_anonymization(request: Request, file_id: int) -> Response:
         record_operation(
             request,
             action=ACTION_ANONYMIZATION_START,
-            resource_type=kind,  # 'video' or 'pdf' as returned by service.start
+            resource_type=started_kind,
             resource_id=file_id,
             status_before=STATUS_NOT_STARTED,
             status_after=STATUS_PROCESSING,
@@ -643,9 +681,9 @@ def start_anonymization(request: Request, file_id: int) -> Response:
 
         return Response(
             {
-                "detail": f"Anonymization started for {kind} file",
+                "detail": f"Anonymization started for {started_kind} file",
                 "file_id": file_id,
-                "file_type": kind,
+                "file_type": started_kind,
                 "processing_locked": True,
             }
         )

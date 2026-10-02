@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 from pytest import MonkeyPatch
+from django.db import transaction
+
+from endoreg_db.services.reports.import_lifecycle import ReportImportLifecycle
 
 from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import Center, RawPdfFile, UploadJob
@@ -43,6 +46,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     assert paths_module.resolve_existing_protected_media_path(first_drop) is None
 
     class _StubReportImportService:
+        def __init__(self, *, lifecycle: ReportImportLifecycle) -> None:
+            self.lifecycle = lifecycle
+
         def import_and_anonymize(
             self,
             *,
@@ -74,6 +80,8 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             )
             report.save()
             report.get_or_create_state().mark_anonymization_validated()
+            with transaction.atomic():
+                self.lifecycle.succeeded(report)
             return report
 
     monkeypatch.setattr(

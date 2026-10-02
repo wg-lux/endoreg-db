@@ -16,7 +16,7 @@ from typing import Literal
 import pytest
 import yaml
 
-from endoreg_db.import_files import video_import_service
+from endoreg_db.services.video_files import direct_import as video_import_service
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage import (
@@ -183,7 +183,7 @@ import django
 
 django.setup()
 
-from endoreg_db.import_files import video_import_service
+from endoreg_db.services.video_files import direct_import as video_import_service
 from endoreg_db.utils.file_operations import atomic_write_file
 
 class BlockingImportService:

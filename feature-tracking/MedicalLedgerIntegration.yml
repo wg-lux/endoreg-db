@@ -60,9 +60,9 @@ definition_of_done:
     status: verified
     evidence:
     - kind: command
-      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest
-        tests/services/test_sap_ish_clinical.py tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py
-        tests/management/commands/test_import_sap_ish_txt.py -q
+      reference: devenv shell -- env PYTHONPATH=/lx-data-models .devenv/state/venv/bin/pytest tests/services/test_sap_ish_clinical.py
+        tests/services/test_sap_ish_import.py tests/services/test_watcher_storage_import.py tests/management/commands/test_import_sap_ish_txt.py
+        -q
       note: Exit-Code 0
     note: Center-scoped PatientNr reconciliation, deterministic FallNr cases, atomic namespaced diagnosis/lab/medication
       persistence, stable Meona row replay, and patient-level handling are implemented; verifier passed
@@ -136,11 +136,11 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/contracts/test_medical_ledger_version_contract.py
         tests/app/test_lx_dtypes_import_boundary.py -q (4 passed)
     - kind: command
-      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
-        pytest lx_dtypes/models/ledger/medical/tests -q (11 passed)
+      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run pytest lx_dtypes/models/ledger/medical/tests
+        -q (11 passed)
     - kind: command
-      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
-        src/api/__tests__/patientService.medicalLedger.test.ts (5 passed)
+      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run src/api/__tests__/patientService.medicalLedger.test.ts
+        (5 passed)
     - kind: command
       reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run type-check (passed)
     - kind: document
@@ -201,11 +201,11 @@ definition_of_done:
         tests/api/test_medical_ledger_create.py::test_update_schedule_rejects_invalid_contract_before_mutation
         -q (12 passed)
     - kind: command
-      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run
-        pytest lx_dtypes/models/ledger/medical/tests/test_write_contracts.py -q (5 passed)
+      reference: cd /lx-data-models && env -u VIRTUAL_ENV -u UV_PROJECT_ENVIRONMENT uv run pytest lx_dtypes/models/ledger/medical/tests/test_write_contracts.py
+        -q (5 passed)
     - kind: command
-      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run
-        src/api/__tests__/patientService.medicalLedger.test.ts (5 passed)
+      reference: cd /dev/lx-annotate/frontend && devenv shell -- npm run test:unit -- --run src/api/__tests__/patientService.medicalLedger.test.ts
+        (5 passed)
     note: Alle von lx-annotate verwendeten Medikations- und Medikationsplan-Schreibpfade validieren Request-Daten
       vor dem Service durch die öffentlichen strict/extra-forbid lx_dtypes-Pydantic-Verträge. Zwölf API-Negativfälle
       beweisen HTTP 422 ohne Mutation für leere PATCHes, Null- und Scalar-Coercion, Unknown Fields, doppelte
@@ -545,12 +545,15 @@ definition_of_done:
       reference: devenv shell -- env ENDOREG_TEST_RUN_NAMESPACE=medical-ledger-regression PYTHONPATH=/lx-data-models
         .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/services/test_medical_ledger_roundtrip.py
         tests/api/test_medical_ledger_create.py tests/api/test_medical_ledger_read.py -q (29 passed)
-    note: The source-contract suite has 11 passing tests; the focused EndoReg medical regression lane
-      has 29 passing tests, including real parallel idempotency, exact replay, changed-payload conflict,
-      and seven-stage rollback injection; repository Pyright reports zero errors and makemigrations reports
-      no drift. Backfill, restore, full migration, OpenAPI, and published-package lanes remain open.
-    assessed_by: Codex
-    assessed_at: '2026-07-29T13:39:47.828077Z'
+    - kind: command
+      reference: '2026-10-02: devenv shell mit uv sync --extra dev --locked; .devenv/state/venv/bin/pytest
+        tests/services/test_end_to_end_topology_ingest.py tests/services/test_medical_ledger_transactions.py
+        tests/services/test_processed_video_cleanup.py tests/services/test_watcher_storage_import.py tests/workflow/test_video_batch_failure_injection.py
+        -q --tb=short: 91 passed, 2 warnings in 63.88s. Gesamt-Pyright: 0 errors, 8 bestehende warnings.
+        Receipt-Iterator wird vor Transaktionsrollback geschlossen; Regression prüft pg_cursors bei Dry-run
+        und Apply mit festgehaltener Exception.'
+    assessed_by: codex-test-inspect-20261002
+    assessed_at: '2026-10-02T08:17:16.930138Z'
 - id: observability_and_reconciliation
   category: observability
   title: Medizinische Ledger-Fehler und Persistenzabweichungen sind messbar und reparierbar

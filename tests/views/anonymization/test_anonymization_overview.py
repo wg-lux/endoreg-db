@@ -4,6 +4,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.utils import timezone
 from django.test import override_settings
@@ -29,9 +30,179 @@ from endoreg_db.models.state.video_segment_validation import SegmentAnnotationSt
 from endoreg_db.views.anonymization.overview import (
     AnonymizationOverviewView,
     UploadJobRetryView,
+    anonymization_status,
+    start_anonymization,
 )
+from endoreg_db.services.privacy.workflow import AnonymizationService
 from endoreg_db.serializers.misc.file_overview import current_overview_hls_artifacts
 from endoreg_db.services.streaming import hls_media as hls_media
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "content_type,expected",
+    [
+        ("application/pdf", "pdf"),
+        ("export/txt", "pdf"),
+        ("text/plain; charset=utf-8", "pdf"),
+        ("text/csv", "pdf"),
+        ("video/mp4", "video"),
+        ("application/octet-stream", "unknown"),
+        ("", "unknown"),
+    ],
+)
+def test_unattached_import_uses_supported_media_identity(
+    content_type: str, expected: str
+) -> None:
+    center = Center.objects.create(name="typed-import")
+    UploadJob.objects.create(source_center=center, content_type=content_type)
+    user = User.objects.create_user(username="typed-import-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    assert response.status_code == 200
+    rows = response.data
+    assert len(rows) == 1
+    assert rows[0]["media_type"] == expected
+
+
+@pytest.mark.django_db
+def test_shared_metadata_never_overrides_document_hash_or_media_type() -> None:
+    from endoreg_db.import_files.context.default_sensitive_meta import (
+        default_sensitive_meta,
+    )
+
+    center = Center.objects.create(name="shared-overview")
+    report = RawPdfFile.objects.create(center=center, pdf_hash="a" * 64)
+    meta = default_sensitive_meta(report)
+    assert meta is not None
+    video = VideoFile.objects.create(
+        center=center, sensitive_meta=meta, raw_video_hash="b" * 64
+    )
+    matching_report = UploadJob.objects.create(
+        source_center=center,
+        sensitive_meta=meta,
+        content_hash=report.pdf_hash,
+        content_type="export/txt",
+        original_filename="correct.txt",
+    )
+    matching_video = UploadJob.objects.create(
+        source_center=center,
+        sensitive_meta=meta,
+        content_hash=video.raw_video_hash,
+        content_type="video/mp4",
+        original_filename="correct.mp4",
+    )
+    UploadJob.objects.create(
+        source_center=center,
+        sensitive_meta=meta,
+        content_hash="c" * 64,
+        content_type="application/pdf",
+        original_filename="different.pdf",
+    )
+    user = User.objects.create_user(username="shared-overview-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    items = AnonymizationOverviewView().get_queryset(request_user=user)
+    attached = {
+        ("video" if isinstance(item, VideoFile) else "pdf", item.pk): getattr(
+            item, "_overview_upload_job", None
+        )
+        for item in items
+    }
+    assert attached[("pdf", report.pk)] == matching_report
+    assert attached[("video", video.pk)] == matching_video
+    RawPdfFile.objects.filter(pk=report.pk).update(pdf_hash="d" * 64)
+    report_item = next(
+        item
+        for item in AnonymizationOverviewView().get_queryset(request_user=user)
+        if isinstance(item, RawPdfFile)
+    )
+    assert getattr(report_item, "_overview_upload_job", None) is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["pdf", "report", "video", None, "invalid"])
+def test_start_disambiguates_shared_ids_and_preserves_har_integrity_gate(
+    kind: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    center = Center.objects.create(name="start-identity")
+    VideoFile.objects.create(
+        id=15,
+        center=center,
+        raw_video_hash="start-video",
+        meta={"integrity_status": "lost"},
+        state=VideoState.objects.create(),
+    )
+    RawPdfFile.objects.create(
+        id=15,
+        center=center,
+        pdf_hash="start-report",
+        state=RawPdfState.objects.create(),
+    )
+    calls: list[tuple[int, str | None]] = []
+
+    def start(
+        _self: AnonymizationService, file_id: int, kind: str | None = None
+    ) -> str:
+        calls.append((file_id, kind))
+        return "pdf"
+
+    monkeypatch.setattr(AnonymizationService, "start", start)
+    user = User.objects.create_user(username="start-reader")
+    request = APIRequestFactory().post(
+        "/api/anonymization/15/start/",
+        {} if kind is None else {"media_type": kind},
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = start_anonymization(request, file_id=15)
+    if kind in {"pdf", "report"}:
+        assert response.status_code == 200
+        assert calls == [(15, "pdf")]
+        assert response.data["file_type"] == "pdf"
+    elif kind == "video":
+        assert response.status_code == 409
+        assert response.data["integrity_status"] == "lost"
+        assert not calls
+    else:
+        assert response.status_code == 400
+        assert not calls
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["pdf", "report", "video"])
+def test_status_honors_media_identity_with_colliding_ids(kind: str) -> None:
+    cache.clear()
+    center = Center.objects.create(name="status-identity")
+    VideoFile.objects.create(
+        id=15, center=center, raw_video_hash="status-video", meta={}
+    )
+    RawPdfFile.objects.create(id=15, center=center, pdf_hash="status-report")
+    user = User.objects.create_user(username="status-reader")
+    request = APIRequestFactory().get("/api/anonymization/15/status/", {"kind": kind})
+    force_authenticate(request, user=user)
+    response = anonymization_status(request, file_id=15)
+    assert response.status_code == 200
+    assert response.data["file_type"] == ("video" if kind == "video" else "pdf")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("integrity_status", ["", "lost"])
+def test_processing_failure_is_distinct_from_durable_integrity_loss(
+    integrity_status: str,
+) -> None:
+    center = Center.objects.create(name="failure-identity")
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash="failure-source",
+        meta={"integrity_status": integrity_status} if integrity_status else {},
+        state=VideoState.objects.create(processing_error=True),
+    )
+    payload = AnonymizationService.get_status(video.pk, kind="video")
+    assert payload is not None
+    assert payload["anonymization_status"] == "failed"
+    assert (payload.get("integrity_status") or "") == integrity_status
 
 
 @pytest.mark.parametrize("replacement_status", ["failed", "queued", "materializing"])

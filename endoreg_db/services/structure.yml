@@ -7,6 +7,9 @@ rules:
   importieren.
 - Unterpakete initialisieren keine Datenbank-, Netzwerk- oder Medienoperationen.
 - Bestehende Modellfassaden und Import-Einstiegspunkte behalten ihr Verhalten.
+- Alle bisherigen direkten Service-Modulpfade bleiben über verzögert geladene Aliase
+  in __init__.py verfügbar. Legacy- und kanonischer Import verwenden dasselbe Modulobjekt.
+- Das Paket cases reicht die bisherigen Lifecycle-Symbole weiter und erhält seine Untermodule.
 domains:
   datasets:
     purpose: Trainingsauswahl, Active Learning und Datensatzexporte

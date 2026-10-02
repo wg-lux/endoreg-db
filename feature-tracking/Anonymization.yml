@@ -463,8 +463,13 @@ definition_of_done:
     category: operations
     title: Failure, correction, restart, and monitoring are operationally safe
     acceptance:
-      - Operators can identify stalled or failed processing without ad hoc database access.
-      - Restart is idempotent and preserves audit and quality data.
+    - Operators can identify stalled or failed processing without ad hoc database access.
+    - Restart is idempotent and preserves audit and quality data.
+    - Overview upload jobs match document content hashes within the same center and media workflow; shared patient
+      metadata never overrides a conflicting document hash or media type.
+    - TXT and CSV report imports retain report workflow identity; unsupported content types are unknown.
+    - Start and status honor explicit media identity; ambiguous untyped identifiers and conflicting identities
+      are rejected, and lost media remains blocked.
     required: true
     verification:
       kind: manual
@@ -473,26 +478,32 @@ definition_of_done:
     assessment:
       status: in_progress
       evidence:
-        - kind: review
-          reference: docs/local_study_server_deployment.md
-        - kind: command
-          reference:
-            devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
-            tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
-            -q
-        - kind: command
-          reference:
-            /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
-            tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
-      note:
-        The focused recovery and monitoring run demonstrates operator-visible failed/stale counters,
-        fail-closed health errors, idempotent retry reservation and state reset, and preservation of AuditLedger
-        and AnonymizationValidationMetric evidence across a successful restart. A video with integrity status
-        lost remains fail-closed. The criterion remains in_progress until the documented failure and correction
-        scenario has been performed in the production-like local_study_server deployment profile with the
-        packaged Python environment.
-      assessed_by: codex-root-20260902
-      assessed_at: "2026-09-02T11:47:24.022168Z"
+      - kind: review
+        reference: docs/local_study_server_deployment.md
+      - kind: command
+        reference: devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
+          tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
+          -q
+      - kind: command
+        reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
+          tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
+      - kind: command
+        reference: '2026-10-02: SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true .devenv/state/venv/bin/pytest
+          tests/views/anonymization/test_anonymization_overview.py tests/services/test_anonymization_operational_recovery.py
+          tests/services/test_reimport_upload_job_overview.py -q --tb=short: 90 passed, 2 warnings; isoliertes
+          PostgreSQL 18, Exit 0.'
+      - kind: command
+        reference: '2026-10-02: Vollständiger Pyright: 0 Fehler/9 bestehende Warnungen; fokussierter Pyright:
+          0 Fehler/0 Warnungen; Ruff und git diff --check bestanden.'
+      - kind: test
+        reference: '2026-10-02: lx-annotate Frontend: 62 Tests bestanden (Medienidentität, kollidierende Kennungen,
+          Wiederholung, Quarantäne, Übersicht); vue-tsc --build --force und gezielter ESLint bestanden.'
+      note: Übersicht und Wiederholungsablauf korrigiert und lokal geprüft. Allgemeine Verarbeitungsfehler werden
+        nicht mehr als Integritätsverlust ausgegeben; Wiederholung nutzt vorhandene typisierte Reimport-Endpunkte.
+        Expliziter Integritätsverlust bleibt gesperrt. Kein Deployment und keine Zustandsänderung auf gc-02;
+        HAR enthält keine ausreichende Evidenz zur Ursache des konkreten Integritätszustands.
+      assessed_by: codex-overview-diagnosis-20261002
+      assessed_at: '2026-10-02T10:02:50.113113Z'
   - id: operator_documentation
     category: documentation
     title: Protection model, quality thresholds, and operating procedures are current

@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Generator
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Mapping, cast
@@ -447,35 +449,42 @@ def backfill_medical_ledger_receipts_v1(
             .order_by("pk")
             .iterator()
         )
-        for receipt in receipts:
-            scanned += 1
-            raw_record_ids = receipt.record_ids
-            observed_version: object = None
-            if isinstance(raw_record_ids, Mapping):
-                raw_mapping = cast(Mapping[str, object], raw_record_ids)
-                observed_version = raw_mapping.get("schema_version")
-            try:
-                canonical = MedicalLedgerRecordIds.model_validate(
-                    raw_record_ids
-                ).model_dump(mode="json")
-            except PydanticValidationError as exc:
-                first_error = exc.errors(include_input=False)[0]
-                reason = str(first_error.get("type", "validation_error"))
-                raise MedicalLedgerReceiptBackfillError(
-                    receipt_id=int(receipt.pk),
-                    observed_version=observed_version,
-                    reason=reason,
-                ) from exc
+        # Django implements iterator() as a generator; narrow the stub contract
+        # so its database cursor can be closed before the savepoint rolls back.
+        if not isinstance(receipts, Generator):
+            raise TypeError("Receipt iteration requires a closeable generator")
+        with closing(
+            cast(Generator[MedicalLedgerWriteReceipt, None, None], receipts)
+        ) as receipts:
+            for receipt in receipts:
+                scanned += 1
+                raw_record_ids = receipt.record_ids
+                observed_version: object = None
+                if isinstance(raw_record_ids, Mapping):
+                    raw_mapping = cast(Mapping[str, object], raw_record_ids)
+                    observed_version = raw_mapping.get("schema_version")
+                try:
+                    canonical = MedicalLedgerRecordIds.model_validate(
+                        raw_record_ids
+                    ).model_dump(mode="json")
+                except PydanticValidationError as exc:
+                    first_error = exc.errors(include_input=False)[0]
+                    reason = str(first_error.get("type", "validation_error"))
+                    raise MedicalLedgerReceiptBackfillError(
+                        receipt_id=int(receipt.pk),
+                        observed_version=observed_version,
+                        reason=reason,
+                    ) from exc
 
-            if canonical == raw_record_ids:
-                current += 1
-                continue
-            would_update += 1
-            if apply:
-                MedicalLedgerWriteReceipt.objects.filter(pk=receipt.pk).update(
-                    record_ids=canonical
-                )
-                updated += 1
+                if canonical == raw_record_ids:
+                    current += 1
+                    continue
+                would_update += 1
+                if apply:
+                    MedicalLedgerWriteReceipt.objects.filter(pk=receipt.pk).update(
+                        record_ids=canonical
+                    )
+                    updated += 1
 
     return MedicalLedgerReceiptBackfillResult(
         applied=apply,

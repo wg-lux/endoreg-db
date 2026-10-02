@@ -491,7 +491,7 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
     assert not watched_file.exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     tmp_path: Path,
     watcher_center: Center,

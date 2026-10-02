@@ -12,7 +12,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.exceptions import ValidationError
-from django.db import close_old_connections
+from django.db import close_old_connections, connection
 
 from endoreg_db.models import (
     Disease,
@@ -285,7 +285,10 @@ def test_receipt_backfill_command_reports_then_atomically_upgrades_legacy_rows()
 
 
 @pytest.mark.django_db
-def test_receipt_backfill_aborts_atomically_with_data_minimized_error() -> None:
+@pytest.mark.parametrize("apply", [False, True])
+def test_receipt_backfill_aborts_atomically_with_data_minimized_error(
+    apply: bool,
+) -> None:
     patient = _patient("ReceiptBackfillAbort")
     legacy = MedicalLedgerWriteReceipt(
         patient=patient,
@@ -304,8 +307,18 @@ def test_receipt_backfill_aborts_atomically_with_data_minimized_error() -> None:
     )
     MedicalLedgerWriteReceipt.objects.bulk_create([legacy, invalid])
 
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT name FROM pg_cursors")
+        cursors_before = cursor.fetchall()
+
     with pytest.raises(CommandError) as caught:
-        call_command("backfill_medical_ledger_receipts_v1", "--apply")
+        call_command("backfill_medical_ledger_receipts_v1", apply=apply)
+
+    # The caught exception retains its traceback: cursor cleanup must be immediate,
+    # before rollback, rather than depending on traceback garbage collection.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT name FROM pg_cursors")
+        assert cursor.fetchall() == cursors_before
 
     message = str(caught.value)
     assert "medical_ledger_receipt_invalid" in message

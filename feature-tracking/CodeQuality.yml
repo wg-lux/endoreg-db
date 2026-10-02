@@ -420,7 +420,9 @@ definition_of_done:
   - Die Service-Wurzel enthält ausschließlich die Paketinitialisierung und eine YAML-Strukturübersicht;
     jedes Unterpaket hat eine beschriebene fachliche Zuständigkeit. Alle verschobenen Service-Module sind
     über ihren kanonischen neuen Pfad importierbar; interne Aufrufer und aktive Qualitätsinventare verwenden
-    diese Pfade. Typprüfung und Import-/Service-Regressionen werden dokumentiert.
+    diese Pfade. Die bisherigen Service-Modulpfade bleiben über zentrale, verzögert geladene Aliase importierbar;
+    Modulidentität und bestehende cases-Symbole bleiben erhalten. Typprüfung und Import-/Service-Regressionen
+    werden dokumentiert.
   - Standalone root examples and diagnostic utilities have explicit folders; their launcher references
     remain valid and relocation introduces no missing Python imports.
   - Reine Transformationen leben in typisierten, seiteneffektfreien Funktionen; Datenbank-, Dateisystem-
@@ -486,12 +488,15 @@ definition_of_done:
       reference: feature-tracking/reports/service_structure.yml
     - kind: review
       reference: endoreg_db/services/structure.yml
-    note: 'Service-Struktur innerhalb endoreg-db umgestellt und verifiziert: 99 Modulimporte, Pyright
-      0 Fehler/8 bestehende Warnungen, 596 Tests und 22 Untertests bestanden, Django-Start und Modellinventar
-      sauber. 26 lx-annotate-Dateien benötigen separate Pfadmigration; konkreter Patch vorbereitet, Erweiterung
-      des Repository-Umfangs beim Benutzer angefragt. Breiteres Qualitätskriterium nicht vollständig abgeschlossen.'
+    note: 'Legacy-Kompatibilität zentral wiederhergestellt: alle 99 alten Service-Modulpfade, Paketwurzel-
+      und Sternimporte geprüft; verzögertes Laden und kanonische Modulidentität erhalten. cases reicht
+      Lifecycle-Symbole weiter und erhält Untermodule. 201 Alias-/Strukturtests sowie 149 Import-/Layer-Regressionen
+      bestanden. Voller Pyright: 0 Fehler/8 bestehende Warnungen; fokussiert: 0 Fehler/0 Warnungen. Django-Start
+      und Modellinventar sauber. Bisherige lx-annotate-Laufzeitimports benötigen keine Pfadmigration.
+      Bestehende Evidenz feature-tracking/reports/service_structure.yml erweitert; breiteres Qualitätskriterium
+      bleibt in_progress.'
     assessed_by: codex-services-structure-20261001
-    assessed_at: '2026-10-01T16:40:55.616605Z'
+    assessed_at: '2026-10-02T07:35:03.890215Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert

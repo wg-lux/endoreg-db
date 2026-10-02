@@ -3,6 +3,7 @@ from endoreg_db.utils.paths import get_runtime_paths
 # pyright: reportPrivateUsage=false
 from dataclasses import dataclass
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -352,6 +353,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
         center_name=str(replacement.video.center.name),
         processor_name="olympus_cv_1500",
     )
+    ctx.mutation_guard = nullcontext
     ctx.current_video = replacement.video
     ctx.file_hash = str(replacement.video.raw_video_hash)
     ctx.anonymized_path = source

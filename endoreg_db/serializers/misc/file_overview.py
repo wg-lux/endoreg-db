@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
-from typing import Iterable, Protocol, TypedDict, cast
+from typing import Iterable, Literal, Protocol, TypedDict, cast
 
 from rest_framework import serializers
 
@@ -64,6 +64,18 @@ def overview_upload_job_is_superseded(
             else bool(instance.processed_file and instance.processed_video_hash)
         )
     )
+
+
+def overview_upload_job_media_type(
+    content_type: str,
+) -> Literal["pdf", "video", "unknown"]:
+    """Map supported report formats to the overview's report workflow identity."""
+    normalized = content_type.split(";", maxsplit=1)[0].strip().lower()
+    if normalized in {"application/pdf", "text/plain", "export/txt", "text/csv"}:
+        return "pdf"
+    if normalized.startswith("video/"):
+        return "video"
+    return "unknown"
 
 
 def safe_upload_job_original_filename(upload_job: _FileOverviewUploadJobLike) -> str:
