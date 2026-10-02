@@ -835,7 +835,7 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
-        from endoreg_db.services.media_operation_gate import video_file_save_guard
+        from endoreg_db.services.media.operation_gate import video_file_save_guard
 
         with video_file_save_guard(self, update_fields=kwargs.get("update_fields")):
             if self.joined_dataset_id is None:

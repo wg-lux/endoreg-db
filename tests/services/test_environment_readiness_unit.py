@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from pytest_django.fixtures import SettingsWrapper
 
-from endoreg_db.services import environment_readiness as readiness
+readiness = import_module("endoreg_db.services.runtime.environment_readiness")
 
 
 def test_native_report_snapshot_is_required_when_enabled(
@@ -69,11 +71,11 @@ def test_check_directory_access_reports_missing_and_not_dir() -> None:
     # Force "not directory" branch without touching filesystem
     with (
         patch(
-            "endoreg_db.services.environment_readiness.os.path.exists",
+            "endoreg_db.services.runtime.environment_readiness.os.path.exists",
             return_value=True,
         ),
         patch(
-            "endoreg_db.services.environment_readiness.os.path.isdir",
+            "endoreg_db.services.runtime.environment_readiness.os.path.isdir",
             return_value=False,
         ),
     ):
@@ -86,14 +88,16 @@ def test_check_directory_access_reports_missing_and_not_dir() -> None:
 def test_check_directory_access_reports_permission_denied() -> None:
     with (
         patch(
-            "endoreg_db.services.environment_readiness.os.path.exists",
+            "endoreg_db.services.runtime.environment_readiness.os.path.exists",
             return_value=True,
         ),
         patch(
-            "endoreg_db.services.environment_readiness.os.path.isdir", return_value=True
+            "endoreg_db.services.runtime.environment_readiness.os.path.isdir",
+            return_value=True,
         ),
         patch(
-            "endoreg_db.services.environment_readiness.os.access", return_value=False
+            "endoreg_db.services.runtime.environment_readiness.os.access",
+            return_value=False,
         ),
     ):
         issues = readiness._check_directory_access(

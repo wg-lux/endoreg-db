@@ -7,8 +7,8 @@ import pytest
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
-from endoreg_db.services.anonymization import AnonymizationService
-from endoreg_db.services.media_integrity import mark_video_integrity_lost
+from endoreg_db.services.privacy.workflow import AnonymizationService
+from endoreg_db.services.media.integrity import mark_video_integrity_lost
 
 
 def _video(tmp_path: Path, *, frame_count: int = 3) -> VideoFile:

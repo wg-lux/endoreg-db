@@ -672,7 +672,7 @@ def _build_dataset_target_buckets(
     target_label: Label | None,
     require_extracted_frames: bool,
 ) -> dict[str, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_target_buckets,
     )
 
@@ -688,7 +688,7 @@ def _build_dataset_label_distribution(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
 ) -> dict[int, dict[str, int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_label_distribution,
     )
 
@@ -742,7 +742,7 @@ def _build_segment_frame_buckets(
     only_prediction_segments: bool,
     require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import build_segment_frame_buckets
+    from endoreg_db.services.annotations.buckets import build_segment_frame_buckets
 
     return build_segment_frame_buckets(
         dataset=dataset,
@@ -758,7 +758,7 @@ def _build_annotation_frame_buckets(
     label_set: LabelSet | None,
     require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_annotation_frame_buckets,
     )
 
@@ -776,7 +776,7 @@ def _build_dataset_candidate_frame_ids(
     only_prediction_segments: bool,
     require_extracted_frames: bool,
 ) -> set[int] | None:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_candidate_frame_ids,
     )
 

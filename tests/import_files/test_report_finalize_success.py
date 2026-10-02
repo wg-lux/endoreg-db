@@ -157,7 +157,6 @@ def test_long_report_text_and_generation_paths_round_trip() -> None:
     for field_name in ("file", "processed_file"):
         value = getattr(report, field_name)
         assert len(value.name) > 100
-        # SQLite does not enforce varchar sizes; validate the model contract too.
         field = report._meta.get_field(field_name)
         assert isinstance(field, models.FileField)
         field.clean(value, report)

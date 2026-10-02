@@ -6,7 +6,9 @@ import pytest
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
-from endoreg_db.services import processed_video_cleanup
+from endoreg_db.services.video_storage import (
+    generation_cleanup as processed_video_cleanup,
+)
 from tests.services.test_processed_video_cleanup import (
     Replacement,
     replacement as replacement_fixture,

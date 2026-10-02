@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal, NoReturn
 
 import pytest
 from pytest import MonkeyPatch
@@ -6,6 +7,81 @@ from pytest import MonkeyPatch
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import storage
 from endoreg_db.utils.hashs import get_file_hash
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("file_type", ["video", "report"])
+def test_context_hash_uses_source_instead_of_staging(
+    tmp_path: Path, file_type: Literal["video", "report"]
+) -> None:
+    suffix = ".mp4" if file_type == "video" else ".pdf"
+    source = tmp_path / f"source{suffix}"
+    staging = tmp_path / f"staging{suffix}"
+    source.write_bytes(b"original input")
+    staging.write_bytes(b"different staged content")
+    ctx = ImportContext(
+        file_path=source,
+        sensitive_path=staging,
+        center_name="university_hospital_wuerzburg",
+        file_type=file_type,
+    )
+
+    result = storage.ensure_context_file_hash(ctx)
+
+    assert result == get_file_hash(source)
+    assert ctx.file_hash == result
+    assert result != get_file_hash(staging)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("file_type", ["video", "report"])
+def test_context_hash_preserves_established_identity_without_reading_source(
+    tmp_path: Path, file_type: Literal["video", "report"]
+) -> None:
+    suffix = ".mp4" if file_type == "video" else ".pdf"
+    source = tmp_path / f"missing{suffix}"
+    expected = "a" * 64
+    ctx = ImportContext(
+        file_path=source,
+        file_hash=expected,
+        center_name="university_hospital_wuerzburg",
+        file_type=file_type,
+    )
+
+    result = storage.ensure_context_file_hash(ctx)
+
+    assert result == expected
+    assert ctx.file_hash == expected
+    assert not source.exists()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("file_type", ["video", "report"])
+@pytest.mark.parametrize("error_type", [OSError, RuntimeError])
+def test_context_hash_failure_propagates_without_publishing_identity(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    file_type: Literal["video", "report"],
+    error_type: type[Exception],
+) -> None:
+    suffix = ".mp4" if file_type == "video" else ".pdf"
+    ctx = ImportContext(
+        file_path=tmp_path / f"source{suffix}",
+        center_name="university_hospital_wuerzburg",
+        file_type=file_type,
+    )
+    failure = error_type("source identity unavailable")
+
+    def fail_hash(_source: Path) -> NoReturn:
+        raise failure
+
+    monkeypatch.setattr(storage, "get_file_hash", fail_hash)
+
+    with pytest.raises(error_type) as caught:
+        storage.ensure_context_file_hash(ctx)
+
+    assert caught.value is failure
+    assert ctx.file_hash is None
 
 
 @pytest.mark.unit

@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import re
 
+import pytest
+
+pytestmark = pytest.mark.no_db
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEVENV_NIX = REPO_ROOT / "devenv.nix"
@@ -48,7 +51,8 @@ def test_standalone_fast_lane_retains_sync_and_shared_contract() -> None:
     assert "devenv tasks run test:sync" in body
     assert "${FAST_TEST_ENV}" in body
     assert "${FAST_TEST_PYTEST_ARGS}" in body
-    assert "-s -o log_cli=true --log-level=INFO" in body
+    assert "pytest -q ${FAST_TEST_PYTEST_ARGS}" in body
+    assert "log_cli=true" not in body
 
 
 def test_fast_lane_contract_keeps_required_markers_and_environment() -> None:
@@ -67,6 +71,17 @@ def test_fast_lane_contract_keeps_required_markers_and_environment() -> None:
     ):
         assert fast_test_environment.count(assignment) == 1
     assert (
-        "FAST_TEST_PYTEST_ARGS = \"-m '${FAST_TEST_MARKER}' -n auto --dist=loadscope\";"
+        "FAST_TEST_PYTEST_ARGS = \"-m '${FAST_TEST_MARKER}' ${TEST_PYTEST_ARGS}\";"
         in source
     )
+
+
+@pytest.mark.parametrize("task_name", ["test:heavy", "test:full"])
+def test_other_lanes_keep_quiet_output_and_duration_reporting(task_name: str) -> None:
+    source = DEVENV_NIX.read_text(encoding="utf-8")
+    body = _task_body(source, task_name)
+
+    assert "pytest -q" in body
+    assert "${TEST_PYTEST_ARGS}" in body
+    assert "log_cli=true" not in body
+    assert 'TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";' in source

@@ -1,0 +1,252 @@
+feature: code_quality
+criterion: dead_code_reduction
+revision: 4ea0712150f449efce8f7d81790655c2324e1092
+arbeitsverzeichnis: /home/admin/endoreg-db
+assessor: codex-import-audit-20261001
+datum: '2026-10-01'
+umfang:
+  Python-Scan über endoreg_db und scripts mit Schwerpunkt auf Importimplementierungen.
+  Kleine Löschkohorte im internen Modul services/video_files/_imports.py und gemeinsame
+  Quellhash-Initialisierung für Report-/Videoanlage sowie Erfolgs-/Fehlerhistorie.
+  Vorhandene fremde Änderungen und aktive Importsperren bleiben erhalten.
+vulture:
+  primaerer_guard: devenv tasks run quality:dead-code
+  explorativer_aufruf: >-
+    .devenv/state/venv/bin/python -m vulture endoreg_db scripts --min-confidence 60
+    --sort-by-size --exclude '*/migrations/*,*/tests/*,*/settings/*,*/management/commands/*,*/apps.py,*/admin.py'
+  explorative_funde: 2015
+  funde_ab_90_prozent: 35
+  ausgangsartefakt: /tmp/codex-import-audit-vulture.txt
+  ausnahmen:
+    Migrationen, Tests, Einstellungen, Management Commands sowie apps.py und admin.py
+    sind vom konfigurierten Scan ausgenommen; Verbraucher dort wurden mit rg gesucht.
+entfernt:
+  - pfad: endoreg_db/services/video_files/_imports.py
+    symbol: atomic_move_with_fallback
+    zeilen_vorher: 172-200
+    meldung: unused function 'atomic_move_with_fallback'
+    konfidenz: 60
+    groesse: 29
+    klassifikation: confirmed_dead
+    komplexitaet: 4
+    risiko: niedrig
+    beleg:
+      Keine Aufrufe, Exporte, Registrierungen, Namensstrings oder Tests im Repository
+      und den verfügbaren Consumer-Checkouts. Das interne Modul wird durch imports.py
+      ausschließlich über _create_from_file verwendet. Die aktive Veröffentlichung
+      verwendet save_local_file; atomic_move_file wurde ausschließlich im entfernten
+      Helper verwendet und sein Import ebenfalls entfernt.
+  - pfad: endoreg_db/services/video_files/_imports.py
+    symbol: _temp_media_path
+    zeilen_vorher: 71-78
+    meldung: Kein direkter Vulture-Fund wegen gleichnamiger aktiver Funktion in video_anonymization.py.
+    konfidenz: null
+    groesse: 8
+    klassifikation: confirmed_dead
+    komplexitaet: 1
+    risiko: niedrig
+    beleg:
+      Commit 258f8f2b ersetzte den Aufruf durch _attempt_temp_media_path mit eigener
+      Kennung je Versuch. Keine verbleibenden Verbraucher dieses Modulpfads;
+      die aktive gleichnamige Funktion in video_anonymization.py bleibt erhalten.
+verbraucherpruefung:
+  checkouts:
+    - /home/admin/endoreg-db
+    - /home/admin/dev/lx-annotate
+    - /home/admin/luxnix
+    - /home/admin/lx-data-models
+    - /home/admin/lx-anonymizer
+  methode:
+    rg-Symbolsuche einschließlich Tests, Dokumentation, Konfiguration und Exporten;
+    Prüfung der konkreten Aufrufkette imports.py -> _create_from_file sowie der
+    Modulhistorie. Keine dynamischen Registrierungen oder Reflection für die entfernten Helfer.
+  ast:
+    Genau zwei Definitionen entfernt; alle 14 verbleibenden Top-Level-Definitionen
+    sind gegenüber HEAD positionsunabhängig strukturell identisch.
+  grenze: Nicht verfügbare externe Consumer können durch lokale Suche nicht ausgeschlossen werden.
+beibehalten:
+  - symbol: endoreg_db.services.report_import.ReportImportService
+    klassifikation: compatibility_contract
+    beleg:
+      Aktive Verbraucher in anonymization.py, hub/ingest.py, jobs/report_llm_jobs.py,
+      Management Command und Tests. Separater Agent ersetzt die leere Unterklasse
+      durch einen kanonischen Re-Export und erhält den Importpfad; dessen Evidenz liegt
+      in reports/report_import_wrapper_removal.yml und gehört nicht zu dieser Löschkohorte.
+  - symbol: ImportContext-Validatoren, model_config, Metadatenvalidatoren
+    klassifikation: framework_contract
+    beleg: Pydantic-Registrierung; Vulture erkennt die dynamischen Aufrufe nicht.
+  - symbol: PdfDocument.layout.fontsize, xref_set_key.xref, tobytes.no_new_id
+    klassifikation: protocol_signature
+    beleg: Aktive PyMuPDF-Aufrufe im Reportimport; bereits einzeln in der Baseline bewertet.
+  - symbol: NativeBatchProcessor.stable_file_identities.master_keys
+    pfad: endoreg_db/utils/rust_backend.py
+    zeile: 24
+    konfidenz: 100
+    klassifikation: protocol_signature
+    beleg:
+      Rust-Implementierung in src/file_identity.rs konsumiert master_keys zum Entschlüsseln;
+      Python übergibt den konfigurierten Schlüsselring als drittes Argument. Keine Löschung.
+      Der neue Fund fehlt in der bestehenden Baseline; Guard bleibt sichtbar fehlgeschlagen.
+  - symbol: _processor_name
+    pfad: endoreg_db/services/jobs/video_reimport_jobs.py
+    konfidenz: 60
+    klassifikation: compatibility_contract
+    beleg: Direkte Tests in test_video_processor_resolution.py; zusätzlich fremde aktive Dateisperre.
+  - symbol: nuke_transcoding_dir
+    pfad: endoreg_db/import_files/file_storage/state_management.py
+    konfidenz: 60
+    klassifikation: compatibility_contract
+    beleg: Direkte Tests und Monkeypatch-Verträge; zusätzlich fremde aktive Dateisperre.
+ungeklaert:
+  - symbol: ensure_processed_video_hls
+    pfad: endoreg_db/import_files/file_storage/state_management.py
+    konfidenz: 60
+    klassifikation: uncertain
+    beleg: Öffentlicher Helper, bereits im Integritätsinventar offen; aktive fremde Dateisperre.
+    aktion: Dem Lock-Owner zur Prüfung gemeldet; keine parallele Bearbeitung.
+  - symbol: get_k_profile_for_instance, get_k_anonymity, build_sensitive_meta_qi_queryset
+    pfad: endoreg_db/import_files/pseudonymization/k_anonymity.py
+    konfidenz: 60
+    klassifikation: uncertain
+    beleg: Kein lokaler Aufruf gefunden; öffentliche Funktionen ohne nachgewiesenen Ablösungsvertrag.
+    aktion: Beibehalten, bis öffentliche Consumer und Deprecation geklärt sind.
+  - symbol: DEFAULT_PATIENT_DOB, DEFAULT_PATIENT_FIRST_NAME, DEFAULT_PATIENT_LAST_NAME
+    pfad: endoreg_db/import_files/context/default_sensitive_meta.py
+    klassifikation: uncertain
+    beleg: Kein lokaler Verbraucher dieser Modulkonstanten; außerhalb der internen Videohelfer-Kohorte.
+    aktion: Öffentlichen Konstantenvertrag vor einer separaten Entfernung prüfen.
+  - symbol: pdf_import
+    pfad: endoreg_db/services/__init__.py
+    klassifikation: uncertain
+    beleg: Lazy-Export und Typdeklaration vorhanden, zugehöriges Modul fehlt im aktuellen Arbeitsbaum.
+    aktion: Öffentlichen Exportvertrag und Historie vor einer separaten Bereinigung prüfen.
+metriken:
+  methode: radon.raw.analyze und radon.complexity.cc_visit direkt auf Vorher-/Nachher-Quelltext.
+  vorher: {zeilen: 463, codezeilen: 359, logische_zeilen: 204}
+  nachher: {zeilen: 421, codezeilen: 330, logische_zeilen: 182}
+  entfernte_zeilen: 42
+  verbleibende_komplexitaet: Unverändert; _create_from_file bleibt bei 11.
+konsolidierung:
+  feature: import_pipeline_robustness
+  kriterium: source_identity_deduplication_and_legacy_reconciliation
+  gemeinsamer_eigentuemer: endoreg_db/import_files/file_storage/storage.py::ensure_context_file_hash
+  entfernte_duplikate:
+    - create_video_file.py::_ensure_context_file_hash
+    - create_report_file.py::create_or_retrieve_report_file, lokale Hashinitialisierung
+    - state_management.py::_record_successful_video_processing_history, lokale Hashinitialisierung
+    - state_management.py::finalize_report_success, lokale Hashinitialisierung
+    - state_management.py::finalize_failure, lokale Hashinitialisierung
+  vertrag:
+    Vorhandenen validierten Kontext-Hash unverändert zurückgeben. Nur bei fehlendem
+    Hash ctx.file_path über den kanonischen get_file_hash-Helper lesen. Die sensitive_path
+    ersetzt diese Quelle nicht. Fehler propagieren ohne Hashzuweisung; bestehende
+    Ownership-, Transaktions- und Historiegrenzen bleiben an derselben Stelle.
+  typgrenze:
+    Der Helper liefert str. Reportanlage und Historie verwenden diesen Rückgabewert,
+    statt nach indirekter Mutation eine weiterhin optionale Kontext-Eigenschaft weiterzugeben.
+  tests:
+    Acht parametrisierte Fälle für Report und Video prüfen Quelle statt Staging,
+    vorhandene Identität ohne Dateizugriff und unveränderte Weitergabe von OSError/RuntimeError.
+  radon:
+    create_or_retrieve_report_file: '12 -> 11'
+    record_successful_video_processing_history: '2 -> 1'
+    finalize_report_success: '7 -> 6'
+    finalize_failure: '5 -> 4'
+    ensure_context_file_hash: '2; eine gemeinsame statt fünf verteilter Implementierungen'
+  koordinierung:
+    state_management.py erst nach Freigabe durch codex-import-standardization-20261001
+    unter eigenem Dateilock geändert. Direkte und Hub-Importorchestrierung behalten ihre
+    unterschiedlichen Recovery-, Cancellation- und Cleanup-Verträge.
+grenzen:
+  sprachen: Rust, Shell und Snakemake wurden nicht mit einem Dead-Code-Analyzer geprüft.
+  inventar:
+    Die 2015 explorativen Meldungen sind Kandidaten, kein vollständig einzeln klassifiziertes
+    Löschinventar. Die untersuchte Importkohorte ist oben dokumentiert.
+  laufzeit:
+    Keine Aussage über vollständige Testabdeckung, echte Codec-Verarbeitung oder globale
+    Nichtverwendung aus einzelnen Tests ableiten.
+verifikation:
+  pyright_fokussiert:
+    kommando: .devenv/state/venv/bin/pyright endoreg_db/services/video_files/_imports.py
+    ergebnis: 0 Fehler, 0 Warnungen.
+  pyright_gesamt:
+    kommando: .devenv/state/venv/bin/pyright
+    ergebnis: Abschließend 16 Fehler, 8 Warnungen außerhalb der geänderten Dateien.
+    protokoll: /tmp/codex-import-audit-pyright-complete.log
+    grenzen:
+      Ungenutzte Imports in Einstellungen und Tests, Typfehler in
+      tests/hub/test_ingest_postgresql_policy.py. Keine fremden Änderungen korrigiert.
+      Der erste Lauf hatte 19 Fehler; die drei transaction-Verweise wurden separat
+      vom Import-Owner korrigiert. Ein Zwischenlauf erfasste die noch nicht korrigierte
+      optionale Hash-Typgrenze und parallele Dataset-Arbeiten; keine Freigabe daraus abgeleitet.
+  dead_code:
+    ergebnis:
+      Guard vor und nach der Änderung fehlgeschlagen; 35 Funde, davon ein neuer
+      Protokollparameter master_keys, keine veralteten oder abgelaufenen Baseline-Einträge.
+    baseline: Unverändert; keine Unterdrückung oder automatische Freigabe neuer Funde.
+  boundaries:
+    kommando: devenv tasks run quality:boundaries
+    ergebnis: 'Abweichung: erwartet 389 broad_exception, zuerst 376, abschließend 375 bei parallelen Repository-Arbeiten.'
+    delta:
+      scan_source gegen HEAD und Arbeitsbaum liefert für die geänderte Datei exakt
+      dieselben drei Findings; diese Löschung verursacht keine Boundary-Abweichung.
+      Auch die Hashkonsolidierung ändert keine Exception-Handler oder Typunterdrückungen.
+  ruff: Ruff check für die geänderte Datei bestanden.
+  diff: git diff --check für die Änderung bestanden.
+  tracker:
+    validate: 37 gültige Feature-Definitionen.
+    show: code_quality erfolgreich gelesen.
+    check: 'code_quality bleibt nicht produktionsreif (11/17); Assessment unverändert.'
+  erster_teststart:
+    Direkter venv-Aufruf scheiterte vor Testausführung an fehlender libpq-Library.
+    Wiederholung über devenv shell lädt die benötigte Laufzeitumgebung.
+  erste_kohorte:
+    kommando: >-
+      devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+      .devenv/state/venv/bin/pytest tests/models/metadata/file_import/test_create_video_file.py
+      tests/contracts/test_media_centralization.py tests/utils/test_paths.py
+      tests/utils/test_file_operations.py tests/services/test_video_source_hash.py -q --tb=short
+    ergebnis: 121 passed, 2 warnings in 624.49s; vor der anschließenden Hashkonsolidierung.
+    protokoll: /tmp/codex-import-audit-tests-devenv.log
+  erster_trace:
+    ergebnis:
+      Zwei Setup-Fehler vor den Assertions; autouse-Fixture fordert db nach der
+      Datenbankkonfiguration an, aber lx_test existiert in diesem isolierten Lauf nicht.
+      Kein erfolgreicher Laufzeitnachweis aus diesem Versuch.
+    protokoll: /tmp/codex-import-audit-trace.log
+  konsolidierung:
+    pyright: Alle fünf geänderten Import-/Speichermodule und die neue Testkohorte ohne Fehler oder Warnungen.
+    kommando: >-
+      devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+      .devenv/state/venv/bin/pytest tests/import_files/test_file_storage.py
+      tests/import_files/test_storage_state_management.py
+      tests/import_files/test_report_finalize_success.py
+      tests/import_files/test_video_finalize_success.py
+      'tests/models/metadata/file_import/test_create_report_file.py::test_create_from_file_happy_path[None]'
+      'tests/models/metadata/file_import/test_create_video_file.py::test_create_from_file_happy_path[False]'
+      -q --tb=short
+    ergebnis: 53 passed, 2 warnings in 102.73s; acht neue Hash-Vertragsfälle eingeschlossen.
+    protokoll: /tmp/codex-import-audit-consolidation-tests.log
+    smoke:
+      devenv tasks run agent:smoke bestanden (77.2s); Django-Start, URL-Import und
+      Produktionskonfigurations-Vertrag. Protokoll /tmp/codex-import-audit-smoke.log.
+  trace:
+    kommando: >-
+      devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+      .devenv/state/venv/bin/python -m trace --count
+      -C /tmp/codex-import-audit-trace-final
+      --ignore-dir '/nix/store:/home/admin/endoreg-db/.devenv:/home/admin/lx-anonymizer:/home/admin/lx-data-models:/home/admin/.cache'
+      --module pytest
+      tests/import_files/test_storage_state_management.py::test_failure_state_save_error_propagates_before_cleanup
+      tests/import_files/test_file_storage.py
+      tests/models/metadata/file_import/test_create_video_file.py::test_verify_completed_file_rejects_non_video_payload
+      -q --tb=short
+    ergebnis: 15 passed, 2 warnings in 165.49s.
+    protokoll: /tmp/codex-import-audit-trace-final.log
+    artefakte:
+      - /tmp/codex-import-audit-trace-final/endoreg_db.services.video_files._imports.cover
+      - /tmp/codex-import-audit-trace-final/test_file_storage.cover
+    beobachtung:
+      Aktiver Video-Validierungspfad und Hash-Vertragstests ausgeführt; fehlgeschlagene
+      Zustandsspeicherung propagiert vor Cleanup. Keine vollständige Helper-Zeilenabdeckung
+      behauptet; der Trace erzeugte für storage.py selbst keine separate cover-Datei.

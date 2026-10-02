@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from endoreg_db.services import offline_batch_runner as runner
+from endoreg_db.services.runtime import offline_batch_runner as runner
 from endoreg_db.utils import rust_backend
 from endoreg_db.utils.file_operations import advisory_file_lock
 

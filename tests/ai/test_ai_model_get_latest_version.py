@@ -122,7 +122,7 @@ def test_get_latest_version_raises_for_non_default_model_without_meta():
         ),
     )
 
-    patch_target = "endoreg_db.services.model_meta_from_hf.ensure_model_meta_from_hf"
+    patch_target = "endoreg_db.services.ai.model_meta_from_hf.ensure_model_meta_from_hf"
 
     with patch(patch_target) as mock_ensure:
         with pytest.raises(ValueError, match="No model metadata found"):
@@ -153,7 +153,7 @@ def test_get_latest_version_calls_hf_service_when_default_has_no_meta():
     ensure_managed_stub_weights(fake_meta)
 
     with patch(
-        "endoreg_db.services.model_meta_from_hf.ensure_model_meta_from_hf",
+        "endoreg_db.services.ai.model_meta_from_hf.ensure_model_meta_from_hf",
         return_value=fake_meta,
     ) as mock_ensure:
         result = ai_model.get_latest_version()
@@ -197,7 +197,7 @@ def test_get_latest_version_repairs_default_active_meta_with_missing_weights():
     ensure_managed_stub_weights(fake_meta)
 
     with patch(
-        "endoreg_db.services.model_meta_from_hf.ensure_model_meta_from_hf",
+        "endoreg_db.services.ai.model_meta_from_hf.ensure_model_meta_from_hf",
         return_value=fake_meta,
     ) as mock_ensure:
         result = ai_model.get_latest_version()

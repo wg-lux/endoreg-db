@@ -12,9 +12,9 @@ Operational authoring and migration commands are documented in the
   boundaries; see the operator guide.
 - `lx_dtypes.models.interface.DataLoader` resolves standard knowledge-base YAML
   and validates shared contracts. Registry provisioning owns filesystem sources.
-- `endoreg_db.services.reference_catalog` reconciles typed reference snapshots
+- `endoreg_db.services.reference_data.catalog` reconciles typed reference snapshots
   and projects them atomically into explicitly allowed ORM models.
-- `endoreg_db.services.clinical_reference_data` projects the canonical clinical
+- `endoreg_db.services.reference_data.clinical_projection` projects the canonical clinical
   graph with its complete immutable definition snapshot.
 - `endoreg_db.management.reference_catalog_command` preserves public load-command
   names with explicit, versioned package selections and dependency closure.

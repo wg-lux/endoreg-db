@@ -775,7 +775,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.3.16"
+version = "1.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -858,6 +858,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-django" },
     { name = "pytest-env" },
+    { name = "pytest-postgresql" },
     { name = "pytest-xdist" },
     { name = "radon" },
     { name = "ruff" },
@@ -940,6 +941,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.1.1" },
     { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.11.1" },
     { name = "pytest-env", marker = "extra == 'dev'", specifier = ">=1.1.5" },
+    { name = "pytest-postgresql", marker = "extra == 'dev'", specifier = ">=9.1.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.1" },
     { name = "python-ffmpeg", specifier = ">=2.0.12" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.5.0" },
@@ -1767,6 +1769,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mirakuru"
+version = "3.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "psutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/82/70/d15022d73ed8c18977a8dc4860b3e1f83259fd8dddd8eaea0bb35c25afb9/mirakuru-3.0.3.tar.gz", hash = "sha256:70ec0b03a474fd5c29ce2d2050e15546e91f4e7d5f709d209ad45d091deaa2f6", size = 28257, upload-time = "2026-09-03T12:23:03.529Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/3e/4255fde6cd809861c677567513e767bda508a2d1264ec05d49258455ebb5/mirakuru-3.0.3-py3-none-any.whl", hash = "sha256:a506fa39a401873b12c31fe902a40249e67f54e32351e42a77fd3e94a789f6f2", size = 28433, upload-time = "2026-09-03T12:23:02.155Z" },
+]
+
+[[package]]
 name = "ml-dtypes"
 version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2412,6 +2426,15 @@ wheels = [
 ]
 
 [[package]]
+name = "port-for"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/db/cb50b1dd5ce6d1ffdfb93ff358c714c57367cc59beafe14209c21c0b3408/port_for-1.1.0.tar.gz", hash = "sha256:b9e949f0ec7101094c4b0f096fad80d0aa90818854fa69a9d750fa4fd1e7b4ba", size = 17414, upload-time = "2026-09-05T11:37:50.459Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/8b/823aec43117b17fcecd241b3c893c4e6f9156a878b139b2d684d71fe25f7/port_for-1.1.0-py3-none-any.whl", hash = "sha256:99c543583dc33942b64ae5e3b80d71c536bd2eb1c568730d533776e0d0ff9264", size = 17041, upload-time = "2026-09-05T11:37:49.335Z" },
+]
+
+[[package]]
 name = "prek"
 version = "0.5.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2488,6 +2511,18 @@ sdist = { url = "https://files.pythonhosted.org/packages/aa/c6/d1ddf4abb55e93ceb
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b5/70/5d8df3b09e25bce090399cf48e452d25c935ab72dad19406c77f4e828045/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9", size = 155560, upload-time = "2026-01-28T18:15:25.976Z" },
     { url = "https://files.pythonhosted.org/packages/04/78/0acd37ca84ce3ddffaa92ef0f571e073faa6d8ff1f0559ab1272188ea2be/psutil-7.2.2-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b58fabe35e80b264a4e3bb23e6b96f9e45a3df7fb7eed419ac0e5947c61e47cc", size = 148266, upload-time = "2026-01-28T18:15:31.597Z" },
+]
+
+[[package]]
+name = "psycopg"
+version = "3.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/26/3ea4ca5eaea1c0debcdf7ee7c1613fbe721dc27a03c461c0817ffd8a0601/psycopg-3.3.6.tar.gz", hash = "sha256:c081f2250df751a943036e42db6df4571c66cd0aabe8291a7a506512b12007d2", size = 168171, upload-time = "2026-09-18T13:22:55.152Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4e/de/748bd7609c71cae5d737f0ba9192f19329f70180ecda8fff3cac02c5abe3/psycopg-3.3.6-py3-none-any.whl", hash = "sha256:a1db9f7148b06a28606767efaca51fa6f9398c5c0a3810519be69d7000bdb631", size = 215490, upload-time = "2026-09-18T13:15:29.374Z" },
 ]
 
 [[package]]
@@ -2768,6 +2803,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ff/69/4db1c30625af0621df8dbe73797b38b6d1b04e15d021dd5d26a6d297f78c/pytest_env-1.6.0.tar.gz", hash = "sha256:ac02d6fba16af54d61e311dd70a3c61024a4e966881ea844affc3c8f0bf207d3", size = 16163, upload-time = "2026-03-12T22:39:43.78Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/16/ad52f56b96d851a2bcfdc1e754c3531341885bd7177a128c13ff2ca72ab4/pytest_env-1.6.0-py3-none-any.whl", hash = "sha256:1e7f8a62215e5885835daaed694de8657c908505b964ec8097a7ce77b403d9a3", size = 10400, upload-time = "2026-03-12T22:39:41.887Z" },
+]
+
+[[package]]
+name = "pytest-postgresql"
+version = "9.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mirakuru" },
+    { name = "packaging" },
+    { name = "port-for" },
+    { name = "psycopg" },
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/7f/75f3bddd42f8db32cd761d65a1ff78f1703437d3967af7e70ef14605391b/pytest_postgresql-9.1.0.tar.gz", hash = "sha256:d340789d6f43cac901fc14f52b15723279bd66db4db7a6506d969417c36cdf04", size = 46801, upload-time = "2026-09-04T12:22:34.831Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/69/ac/7151f908b4744672b96b2234faf485a11e7c4e485618079049f9f31dda03/pytest_postgresql-9.1.0-py3-none-any.whl", hash = "sha256:78d5b04e321c1d9b2ac86c837aa536f833f4141bd297196d54b6755a3aeba008", size = 41999, upload-time = "2026-09-04T12:22:33.362Z" },
 ]
 
 [[package]]

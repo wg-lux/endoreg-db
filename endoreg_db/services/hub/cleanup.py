@@ -23,7 +23,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.services.hls_media import get_ready_hls_artifact
+from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.hub.media_integrity import check_upload_job_media_integrity
 from endoreg_db.services.raw_pdf_files.integrity import (

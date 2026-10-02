@@ -15,7 +15,8 @@ from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 from endoreg_db.models import Center, VideoFile, SensitiveMeta
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
-from endoreg_db.services import hls_media, processed_video_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
 from endoreg_db.services.video_files import _anonymization as service
 from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.encryption.encrypted import MAGIC

@@ -154,7 +154,7 @@ class TestVideoValidationDeletionBehavior:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):
@@ -382,7 +382,7 @@ class TestActiveFileLogicWithValidation:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):
@@ -523,7 +523,7 @@ class TestValidationDeletion:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update_meta,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):

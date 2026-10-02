@@ -27,11 +27,11 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
-from endoreg_db.services.anonymization_quality_evaluation import (
+from endoreg_db.services.privacy.quality_evaluation import (
     SensitiveMetaHandlingPolicy,
     evaluate_anonymization_quality,
 )
-from endoreg_db.services.evaluation_manifest import (
+from endoreg_db.services.privacy.evaluation_manifest import (
     write_performance_evaluation_manifest,
     write_quality_evaluation_manifest,
 )

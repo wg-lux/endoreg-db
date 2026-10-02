@@ -9,7 +9,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile, VideoProcessingHistory, VideoState
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files.direct_import import VideoImportService
 
 pytestmark = pytest.mark.django_db
 

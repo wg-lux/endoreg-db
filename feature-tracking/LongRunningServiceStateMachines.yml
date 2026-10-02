@@ -79,6 +79,10 @@ definition_of_done:
   category: functionality
   title: Zustände, Ereignisse und Übergänge sind kanonisch und deterministisch
   acceptance:
+  - Report- und Upload-Import verwenden gemeinsame typisierte Datenbankzeit-, Ownership- und Heartbeat-Primitiven;
+    fachliche Claim-, Abbruch- und Abschlussregeln bleiben in ihren Adaptern.
+  - Hintergrundfehler erhalten erkannte Datenbankausfälle für Recovery; Autocommit-Zulassung und Connection-Cleanup
+    ausschließlich im Heartbeat-Thread werden regressionsgetestet.
   - UploadJob, ReportImportAttempt und TransferJob verwenden dieselben typisierten Claim-, Retry- und
     Recovery-Ereignispfade aus lifecycle_state_machine.py. Fachliche Retry-Freigaben, Datenbank-Leases
     und Fencing bleiben an der jeweiligen Service-Grenze; aktive fremde Worker und abgeschlossene Transfers
@@ -123,21 +127,24 @@ definition_of_done:
       reference: '2026-09-29: Gesamt-Pyright 0 Fehler/6 bestehende Warnungen; fokussierter Pyright 0 Fehler/0
         Warnungen; Ruff und git diff --check bestanden.'
     - kind: command
-      reference: '2026-09-29: TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true
+      reference: '2026-09-29: TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_REUSE=false RUN_VIDEO_TESTS=true
         SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py
         tests/services/test_upload_job_state_machine.py tests/services/test_report_import_state_machine.py
         tests/services/test_transfer_job_contract.py tests/services/test_report_import_fencing.py tests/services/test_upload_job_import_lease.py
         tests/services/test_hub_ingest_import_job_contract.py tests/services/test_report_import_service_unit.py
         tests/services/test_video_import_service_unit.py -q --tb=short -rs: 305 passed, 3 subtests passed,
         2 warnings, 98.97s.'
-    note: UploadJob, ReportImportAttempt und TransferJob verwenden OperationClaimPath für gemeinsame Initial-,
-      Retry- und Recovery-Ereignisfolgen. Der native lifecycle_state_v3-Reducer bleibt autoritativ. Fachliche
-      Retry-Freigaben, Zeilensperren, Datenbankzeit und Fencing bleiben in den bestehenden Services; keine
-      Modell-, Storage- oder Streamingänderung. Die vollständige Matrix aller fünf Claim-Pfade gegen acht
-      Operationszustände sowie Import- und Ownership-Regressionen bestehen. SQLite ist kein Nachweis produktiver
-      PostgreSQL-Mehrprozesskonkurrenz; übergreifende Produktionsfreigaben bleiben offen.
-    assessed_by: codex-state-centralization-20260929
-    assessed_at: '2026-09-29T08:41:48.469213Z'
+    - kind: code
+      reference: endoreg_db/services/import_lease.py; endoreg_db/services/report_import_fencing.py; endoreg_db/services/hub/upload_job_import_lease.py
+    - kind: document
+      reference: docs/endoreg_db_state_management_mindmap.md; docs/report_import_concurrency_implementation.md
+    - kind: command
+      reference: '2026-10-01: PostgreSQL-Integrationslane über devenv shell: 232 passed, 13 warnings,
+        100.40s; gemeinsame Lease-Primitiven, Report-/Upload-Fencing, echte Upload-Mehrprozesskonkurrenz,
+        Reportjobs, Video-Handoff und Finalisierung. Fokussierter Pyright: 0 Fehler, 1 vorhandene tessdata-Stubs-Warnung;
+        Gesamt-Pyright an anderweitigen Working-Tree-Fehlern blockiert. Keine Produktionsfreigabe.'
+    assessed_by: codex-import-standardization-20261001
+    assessed_at: '2026-10-01T15:05:18.699804Z'
 - id: rust_transition_core
   category: maintainability
   title: Langlaufende Dienste verwenden bevorzugt einen versionierten nativen Rust-Zustandskern
@@ -449,8 +456,8 @@ definition_of_done:
     - kind: test
       reference: tests/views/anonymization/test_upload_job_cancellation.py
     - kind: command
-      reference: 'TEST_DB_ENGINE=django.db.backends.sqlite3 TEST_DB_REUSE=false RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
-        pytest tests/services/test_upload_job_cancellation.py tests/views/anonymization/test_upload_job_cancellation.py
+      reference: 'TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_REUSE=false RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false pytest tests/services/test_upload_job_cancellation.py tests/views/anonymization/test_upload_job_cancellation.py
         tests/services/test_upload_job_import_lease.py tests/services/test_watcher_storage_import.py tests/services/test_import_monitoring.py
         tests/import_files/test_video_anonymization.py tests/import_files/test_video_finalize_success.py
         -q -rs --tb=short: 100 passed'

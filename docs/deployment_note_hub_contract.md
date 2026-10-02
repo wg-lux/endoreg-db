@@ -66,7 +66,7 @@ When role is `central_hub`:
 - API uploads must be authenticated
 - API uploads must declare `center_key`
 - API uploads do not fall back to the default center
-- SQLite is rejected in production settings
+
 - transfer API may be enabled explicitly and, when enabled, must run with secure
   transport plus mutual Transport Layer Security (mTLS)
 

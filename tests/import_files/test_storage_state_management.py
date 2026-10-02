@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NoReturn
 
+from contextlib import nullcontext
+
 import pytest
 
 from endoreg_db.import_files.context.import_context import ImportContext
@@ -52,6 +54,7 @@ def test_delete_associated_files_removes_streamable_artifacts_and_clears_video_f
     import_file = tmp_path / "import.mp4"
     import_file.write_bytes(b"import")
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name=center.name,
         file_type="video",
@@ -112,6 +115,7 @@ def test_delete_associated_files_preserves_existing_video_artifacts_for_reimport
     import_file.write_bytes(b"import")
     staged_output.write_bytes(b"staged")
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name=center.name,
         file_type="video",
@@ -157,6 +161,7 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     anonymized_path.write_bytes(b"anon")
     sensitive_path.write_bytes(b"sensitive")
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="state-storage-center",
         file_type="report",
@@ -195,6 +200,7 @@ def test_delete_associated_files_preserves_active_sensitive_snapshot(
     sensitive_path = tmp_path / "sensitive.pdf"
     sensitive_path.write_bytes(b"sensitive")
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=sensitive_path,
         center_name="state-storage-center",
         file_type="report",
@@ -294,6 +300,7 @@ def test_import_failure_and_owned_retry_share_state_contract(
     state.anonymized = True
     state.save()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=source,
         original_path=source,
         file_hash="a" * 64,
@@ -333,6 +340,7 @@ def test_failure_state_save_error_propagates_before_cleanup(
     )
     video.get_or_create_state()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=tmp_path / "source.mp4",
         file_hash="b" * 64,
         center_name=video.center.name,
@@ -357,7 +365,10 @@ def test_video_finalization_rejects_invalid_instance(
     tmp_path: Path, unsaved: bool
 ) -> None:
     ctx = ImportContext(
-        file_path=tmp_path / "source.mp4", center_name="finalization", file_type="video"
+        mutation_guard=nullcontext,
+        file_path=tmp_path / "source.mp4",
+        center_name="finalization",
+        file_type="video",
     )
     if unsaved:
         ctx.current_video = VideoFile()
@@ -374,7 +385,12 @@ def test_failed_staging_cleanup_retains_context_paths(
 
     path = tmp_path / "staging.pdf"
     atomic_write_file(destination=path, content=[b"staging"])
-    ctx = ImportContext(file_path=path, center_name="test", file_type="report")
+    ctx = ImportContext(
+        mutation_guard=nullcontext,
+        file_path=path,
+        center_name="test",
+        file_type="report",
+    )
     ctx.anonymized_path = ctx.sensitive_path = path
     monkeypatch.setattr(
         cleanup,

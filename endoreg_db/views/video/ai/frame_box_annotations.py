@@ -31,11 +31,11 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     resolve_frame_information_source_name,
 )
-from endoreg_db.services.annotation_access import (
+from endoreg_db.services.annotations.annotation_access import (
     resolve_trusted_annotation_principal,
     validate_interactive_annotation_source,
 )

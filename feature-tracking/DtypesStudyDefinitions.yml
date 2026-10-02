@@ -454,6 +454,13 @@ definition_of_done:
       reference: '.devenv/state/venv/bin/pyright && .devenv/state/venv/bin/pytest tests/services/test_reference_catalog_migration.py
         tests/services/test_reference_catalog.py -q --tb=short: 0 type errors, 24 tests passed (2026-09-29
         simplified command).'
+    - kind: test
+      reference: 'tests/services/test_reference_catalog_migration.py: 17 passed; tests/services/test_reference_catalog.py:
+        13 passed; full Pyright: 0 errors, 6 existing warnings (2026-09-29 LuxNix integration).'
+    - kind: code
+      reference: endoreg_db/management/commands/load_base_db_data.py
+    - kind: code
+      reference: ../luxnix/modules/nixos/services/lx-annotate-local/config.nix
     note: 'Klinische Loader-Umstellung einschließlich vom Nutzer freigegebener Green-Endoscopy- und Personal-/Schichtreferenzen
       implementiert: 865 Datensätze (673 Bootstrap, 153 Green Endoscopy, 39 Workforce), 68 gemeinsame
       Typverträge, 27 kompatible Teilkommandos plus load_base_db_data. Generische utils/dataloader.py,
@@ -493,9 +500,23 @@ definition_of_done:
       6 existing warnings. Migration and catalogue integration tests: 24 passed, 1 existing plugin rewrite
       warning in 121.34s. Ruff, format checks, YAML parsing and git diff --check passed. The earlier deployment-setup
       version-expectation failure is outside this simplification and was not changed. No production artifact
-      installed, database mutated or services restarted; privileged live gc-02 access remains unavailable.'
+      installed, database mutated or services restarted; privileged live gc-02 access remains unavailable.
+
+
+      2026-09-29 LuxNix startup integration: load_base_db_data --reconcile-legacy hydrates the governed
+      registry through the existing helper, validates the pinned catalogue selection, and invokes bounded
+      reconciliation. Dry-run neither hydrates nor writes. Conflict-free catalogues use the normal strict
+      importer, supporting fresh installations and exact legacy adoption; known seven-indication repair
+      and full reconciliation remain atomic and idempotent. Standard loading without the flag remains
+      strict. Full Pyright: 0 errors, 6 existing warnings. Initial migration/catalogue suite: 28 passed,
+      2 test-setup failures from duplicate registration with different metadata. CLI tests now use standard
+      hydration; final migration suite: 17 passed in 141.23s, including all six startup cases. The 13
+      unchanged catalogue-import tests passed in the combined run. LuxNix: 8 focused tests plus 2 existing
+      startup-order tests passed; application environment/config: 39 passed. gc-02 NixOS drvPath evaluation
+      and docs check passed. Both source changes require a coordinated backend release; no production
+      package installation, activation or database changes performed.'
     assessed_by: codex-study-definitions-20260929
-    assessed_at: '2026-09-29T13:29:09.347171Z'
+    assessed_at: '2026-09-29T13:46:44.463115Z'
 - id: authoring_and_access_boundaries
   category: security
   title: Researcher YAML is validated data within existing study and center permissions
@@ -555,6 +576,8 @@ definition_of_done:
       reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
     - kind: test
       reference: ../lx-data-models/lx_dtypes/terminology/verification/test_hydration.py
+    - kind: document
+      reference: feature-tracking/reports/postgresql_test_regressions.yml
     note: 'Abschlussprüfung 2026-09-28: Host-Integrationslane 154 passed/70 skipped/1 warning; vollständige
       shared Suite 1091 passed/1 skipped/23 warnings; isolierte Registry 16 passed/1 warning. Pyright
       vollständig Host 0 errors/6 warnings und lx-dtypes 0 errors/0 warnings; neue Report-Eingabevalidierung

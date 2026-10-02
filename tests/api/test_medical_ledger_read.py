@@ -18,7 +18,7 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     Unit,
 )
-from endoreg_db.services.medical_ledger import (
+from endoreg_db.services.interoperability.medical_ledger import (
     build_patient_medical_ledger_for_patient,
 )
 from endoreg_db.views.patient.patient import MedicalLedgerContractUnavailable

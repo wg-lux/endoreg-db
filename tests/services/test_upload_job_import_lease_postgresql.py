@@ -11,7 +11,7 @@ from multiprocessing.synchronize import Barrier
 from unittest.mock import patch
 
 import pytest
-from django.db import connection, connections
+from django.db import connections
 from django.db.models.functions import Now
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -129,10 +129,6 @@ def _competing_state(video_id: int, barrier: Barrier, result: Connection) -> Non
 
 @pytest.fixture
 def postgres_job(transactional_db: None) -> UploadJob:
-    if connection.vendor != "postgresql":
-        pytest.skip(
-            "Requires PostgreSQL row locking; SQLite is not concurrency evidence"
-        )
     return UploadJob.objects.create(content_type="video/mp4")
 
 

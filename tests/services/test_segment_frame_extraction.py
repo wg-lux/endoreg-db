@@ -21,7 +21,7 @@ from endoreg_db.services.video_files import (
     video_seconds_to_frame_number,
 )
 from endoreg_db.services.video_files import frames as frame_service
-from endoreg_db.services.video_storage_normalization import evidence_as_json
+from endoreg_db.services.video_storage.workflow import evidence_as_json
 
 pytestmark = pytest.mark.django_db
 

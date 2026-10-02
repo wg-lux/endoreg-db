@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -18,7 +20,8 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services import aidataset_frame_buckets as bucket_service
+
+bucket_service = import_module("endoreg_db.services.datasets.frame_buckets")
 
 
 class AIDataSetFrameBucketPureUnitTests(SimpleTestCase):

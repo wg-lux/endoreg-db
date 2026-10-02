@@ -13,7 +13,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     build_annotation_frame_buckets,
     build_dataset_candidate_frame_ids,
     build_dataset_target_buckets,
@@ -394,7 +394,7 @@ class FrameAnnotationBucketBuilderUnitTests(TestCase):
         }
 
     def test_annotation_query_count_is_independent_of_row_count(self) -> None:
-        from endoreg_db.services.frame_annotation_buckets import (
+        from endoreg_db.services.annotations.buckets import (
             build_dataset_label_distribution,
         )
 
@@ -461,7 +461,7 @@ class FrameAnnotationBucketBuilderUnitTests(TestCase):
     def test_sampler_evaluates_candidate_eligibility_once_per_batch(self) -> None:
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
-        from endoreg_db.services.frame_annotation_sampling import FrameQueueSampler
+        from endoreg_db.services.annotations.sampling import FrameQueueSampler
         from tests.models.state.test_frame_annotation import queue_spec
 
         candidate_ids = {frame.pk for frame in self.frames}

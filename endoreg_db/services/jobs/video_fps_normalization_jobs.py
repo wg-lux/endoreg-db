@@ -24,9 +24,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
 from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
+from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_files import get_video_fps, require_persisted_video_fps
-from endoreg_db.services.video_processed_transcode import (
+from endoreg_db.services.video_storage.processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )
 

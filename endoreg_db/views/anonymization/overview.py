@@ -22,12 +22,12 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
-from endoreg_db.services.anonymization import AnonymizationService
-from endoreg_db.services.polling_coordinator import (
+from endoreg_db.services.privacy.workflow import AnonymizationService
+from endoreg_db.services.runtime.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
     is_retryable_storage_failure,

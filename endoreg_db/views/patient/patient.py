@@ -65,7 +65,7 @@ def _medical_contract_module_missing(exc: ModuleNotFoundError) -> bool:
 
 def _build_patient_medical_ledger(patient: Patient) -> _MedicalLedgerPayload:
     try:
-        from endoreg_db.services.medical_ledger import (
+        from endoreg_db.services.interoperability.medical_ledger import (
             build_patient_medical_ledger_for_patient,
         )
     except ModuleNotFoundError as exc:
@@ -189,7 +189,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 from lx_dtypes.models.ledger.medical.Write import (
                     PatientMedicalLedgerCreate,
                 )
-                from endoreg_db.services.medical_ledger import (
+                from endoreg_db.services.interoperability.medical_ledger import (
                     MedicalLedgerIdempotencyConflict,
                     MedicalLedgerIdempotencyKeyInvalid,
                     MedicalLedgerReferenceConflict,
@@ -240,7 +240,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
         del pk
         try:
             from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerReferenceConflict,
                 create_patient_medication,
             )
@@ -283,7 +283,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             return _medical_resource_not_found_response()
         try:
             from lx_dtypes.models.ledger.medical.Write import PatientMedicationUpdate
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 MedicalLedgerReferenceConflict,
                 update_patient_medication,
@@ -321,7 +321,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             from lx_dtypes.models.ledger.medical.Write import (
                 PatientMedicationScheduleCreate,
             )
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 create_patient_medication_schedule,
             )
@@ -366,7 +366,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             from lx_dtypes.models.ledger.medical.Write import (
                 PatientMedicationScheduleUpdate,
             )
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 update_patient_medication_schedule,
             )
@@ -563,7 +563,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from endoreg_db.services.pseudonym_service import (
+        from endoreg_db.services.privacy.patient_pseudonyms import (
             generate_patient_pseudonym,
             validate_patient_for_pseudonym,
         )

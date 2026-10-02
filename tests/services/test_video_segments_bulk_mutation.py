@@ -11,7 +11,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.video_segments_bulk_mutation import (
+from endoreg_db.services.annotations.segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
 )

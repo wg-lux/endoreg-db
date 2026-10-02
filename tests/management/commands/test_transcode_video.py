@@ -11,7 +11,7 @@ from pytest import MonkeyPatch
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from endoreg_db.services import video_transcoding
+from endoreg_db.services.video_storage import transcoding as video_transcoding
 
 
 def _compliant_video_format(path: Path) -> SimpleNamespace:

@@ -242,7 +242,9 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
     video: VideoFile,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    from endoreg_db.services import video_post_validation_blackening
+    from endoreg_db.services.video_files import (
+        post_validation_blackening as video_post_validation_blackening,
+    )
     from endoreg_db.services.video_files import (
         _anonymization as video_file_anonymize,
     )

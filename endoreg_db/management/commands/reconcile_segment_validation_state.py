@@ -7,7 +7,7 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.jobs.video_post_validation_jobs import (
     dispatch_video_post_validation_rebuild,
 )
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
 from lx_dtypes.models.contracts.management_command import (

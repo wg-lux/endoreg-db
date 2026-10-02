@@ -1,0 +1,1 @@
+"""Falllebenszyklus, Dokumentzuordnung und Untersuchungsbeziehungen."""

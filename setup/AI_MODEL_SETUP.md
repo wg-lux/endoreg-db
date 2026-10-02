@@ -86,7 +86,7 @@ print('Weights exist:', bool(model_meta.weights and Path(model_meta.weights.path
 ```
 
 The built-in `setup_endoreg_db` table verification currently queries
-SQLite's `sqlite_master`. It is therefore not a database-independent production
+
 readiness check and will fail on PostgreSQL until the implementation uses
 Django database introspection.
 

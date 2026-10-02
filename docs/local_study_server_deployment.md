@@ -25,7 +25,6 @@ STORAGE_DIR=/var/lib/lx-annotate/encrypted/storage
 PROTECTED_MEDIA_ROOT=/var/lib/lx-annotate/encrypted/storage
 ```
 
-Startup fails if the role uses SQLite, debug mode, unauthenticated API defaults,
 or protected storage roots outside the encrypted runtime boundary.
 
 Django verifies path shape, not encryption state. The host deployment must also

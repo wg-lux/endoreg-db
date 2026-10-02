@@ -9,7 +9,9 @@ from endoreg_db.models.media.video.storage_mode import (
     VideoStorageMode,
     coerce_video_storage_mode,
 )
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.utils.media_urls import build_video_stream_path
 from endoreg_db.utils.paths import normalize_protected_media_relative_path
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file

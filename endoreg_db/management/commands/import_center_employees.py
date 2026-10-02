@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from lx_dtypes.terminology.terminology_loader import get_terminology_service
 from lx_dtypes.terminology.terminology_service import TerminologyError
 
-from endoreg_db.services.center_employees import import_center_employees
+from endoreg_db.services.centers.employees import import_center_employees
 
 
 class Command(BaseCommand):

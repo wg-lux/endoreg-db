@@ -11,17 +11,15 @@ from django.db import connection
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
-from endoreg_db.services import (
-    video_processed_transcode as service,
-    hls_media,
-    processed_video_cleanup as cleanup,
-)
+from endoreg_db.services.video_storage import processed_transcode as service
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
     ProcessedGenerationCleanupResult,
 )
-from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from endoreg_db.services.video_files.queries import (
     get_video_by_content_hash,
     video_hash_exists,

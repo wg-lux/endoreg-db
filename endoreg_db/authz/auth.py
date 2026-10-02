@@ -15,7 +15,7 @@ from rest_framework.request import Request
 
 from endoreg_db.authz.settings import ensure_keycloak_settings
 from lx_dtypes.models.contracts import validate_keycloak_claims
-from endoreg_db.services.center_access import (
+from endoreg_db.services.centers.access import (
     synchronize_user_center_groups,
     validated_center_group_paths,
 )

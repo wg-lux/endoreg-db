@@ -8,7 +8,7 @@ import pytest
 from django.core.management import call_command
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     FFMPEG_STREAM_THROTTLE_NORMAL,
     FFMPEG_STREAM_THROTTLE_STREAMING,
     create_video_stream_lease,

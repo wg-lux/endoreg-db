@@ -8,6 +8,8 @@ import uuid
 from contextlib import nullcontext
 from fractions import Fraction
 from pathlib import Path
+
+from django.db import DatabaseError
 from typing import TYPE_CHECKING, NoReturn, Protocol, cast, runtime_checkable
 
 from pydantic import ValidationError
@@ -809,7 +811,8 @@ class VideoAnonymizer:
         )
 
         ctx.require_execution_ownership()
-        self._persist_anonymizer_metadata(ctx, extracted_metadata)
+        with ctx.owned_mutation():
+            self._persist_anonymizer_metadata(ctx, extracted_metadata)
         return ctx
 
     def _prepare_anonymization_attempt(
@@ -960,6 +963,10 @@ class VideoAnonymizer:
             if not observations:
                 return 0
             return self._persist_phi_region_proposals_unchecked(video, observations)
+        except DatabaseError:
+            # A failed database write can invalidate the enclosing owned
+            # metadata transaction. Never turn that rollback into success.
+            raise
         except Exception as exc:
             logger.warning(
                 "Failed to persist lx-anonymizer PHI region proposals for video %s: %s",

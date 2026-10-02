@@ -42,7 +42,7 @@ Current role-dependent behavior:
 - `central_hub` enables hub-mode API upload policy
 - `central_hub` exposes `/api/media/hub/transfers/`
 - `standalone` and `site_node` keep the transfer endpoints disabled with `404`
-- production `central_hub` settings require a non-SQLite database
+
 - production `central_hub` settings also require secure transport plus mTLS
   configuration for transfer traffic
 

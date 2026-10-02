@@ -9,7 +9,7 @@ from django.contrib.auth.models import AnonymousUser, User
 from django.db.models.fields.related import ManyToManyField
 
 from endoreg_db.models import Center, Examiner, PortalUserInfo
-from endoreg_db.services.center_access import (
+from endoreg_db.services.centers.access import (
     CenterAccessConfigurationError,
     center_keys_from_group_paths,
     resolve_allowed_center_ids,

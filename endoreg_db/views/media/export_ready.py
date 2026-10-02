@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.export_ready import (
+from endoreg_db.services.media.export_ready import (
     ReadyForExportError,
     mark_video_ready_for_export,
 )

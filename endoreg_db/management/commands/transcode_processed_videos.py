@@ -6,7 +6,7 @@ from typing import Any
 from django.core.management.base import CommandError, CommandParser
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_processed_transcode import (
+from endoreg_db.services.video_storage.processed_transcode import (
     ProcessedVideoTranscodeResult,
     summarize_processed_video_transcode_results,
     transcode_processed_video_for_storage_pressure,

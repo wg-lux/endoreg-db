@@ -9,7 +9,7 @@ from django.core.management import call_command
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 

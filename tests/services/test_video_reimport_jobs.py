@@ -1,4 +1,5 @@
 # pyright: reportPrivateUsage=false
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -83,8 +84,14 @@ def test_async_reimport_uses_in_place_reanonymization(
 
     class _FakeService:
         def reanonymize_existing_video(
-            self, target_video: object, *, source_path: Path | None = None
+            self,
+            target_video: object,
+            *,
+            source_path: Path | None = None,
+            prepare: Callable[[], None] | None = None,
         ) -> object:
+            assert prepare is not None
+            prepare()
             service_calls.append(
                 {"target_video": target_video, "source_path": source_path}
             )
@@ -190,8 +197,14 @@ def test_async_reimport_fails_if_hls_regeneration_fails(
 
     class _FakeService:
         def reanonymize_existing_video(
-            self, target_video: object, *, source_path: Path | None = None
+            self,
+            target_video: object,
+            *,
+            source_path: Path | None = None,
+            prepare: Callable[[], None] | None = None,
         ) -> object:
+            assert prepare is not None
+            prepare()
             events.append(("reanonymize", target_video, source_path))
             return target_video
 
@@ -268,7 +281,7 @@ def test_prediction_failure_has_same_outcome_inline_and_worker(
 ) -> None:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.jobs import video_reimport_jobs as jobs
-    from endoreg_db.services.video_reimport_orchestrator import (
+    from endoreg_db.services.video_files.reimport_orchestrator import (
         VideoReimportOrchestrator,
     )
 
@@ -294,7 +307,7 @@ def test_prediction_failure_has_same_outcome_inline_and_worker(
 )
 def test_reimport_requires_ready_hls(monkeypatch: MonkeyPatch, hls_status: str) -> None:
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services import hls_media
+    from endoreg_db.services.streaming import hls_media as hls_media
     from endoreg_db.services.jobs import video_reimport_jobs as jobs
 
     result = hls_media.HlsMaterializationResult(

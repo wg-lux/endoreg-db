@@ -13,7 +13,7 @@ from django.core.management import CommandError, call_command
 from endoreg_db.management.commands import materialize_video_hls as command_module
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
 

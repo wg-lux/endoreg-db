@@ -21,6 +21,13 @@ from types import SimpleNamespace
 from typing import Any, NoReturn, Protocol
 
 import pytest
+from endoreg_db.services.imports.execution import ImportExecutionFence
+
+
+def _test_fence() -> ImportExecutionFence:
+    return ImportExecutionFence("a" * 32, lambda: None, nullcontext)
+
+
 from django.test import TestCase
 from django.test.utils import override_settings
 
@@ -32,7 +39,7 @@ from endoreg_db.schemas.video_storage import (
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services.video_import import (
+from endoreg_db.import_files.video_import_service import (
     VideoImportService,
 )
 from endoreg_db.import_files.video_import_service import local_raw_source_context
@@ -47,7 +54,11 @@ SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() ==
 
 logger = logging.getLogger(__name__)
 vis = VideoImportService()
-import_and_anonymize = vis.import_and_anonymize
+from functools import partial
+
+import_and_anonymize = partial(
+    vis.import_and_anonymize_fenced, execution_fence=_test_fence()
+)
 
 
 class _VideoImportResultLike(Protocol):
@@ -290,10 +301,11 @@ class TestVideoImportService(TestCase):
         filepath = get_random_video_path_by_examination_alias()
 
         vis_instance = VideoImportService()
-        video_file = vis_instance.import_and_anonymize(
+        video_file = vis_instance.import_and_anonymize_fenced(
             file_path=filepath,
             center_name=self.center.name,
             processor_name=self.processor.name,
+            execution_fence=_test_fence(),
         )
 
         assert isinstance(video_file, VideoFile)
@@ -425,10 +437,11 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
     service = VideoImportService()
     service.anonymizer = DummyAnonymizer()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -560,10 +573,11 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
     with pytest.raises(ValueError, match="anonymizer failed"):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("anonymize_video", source_path) in events
@@ -697,10 +711,11 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
     with pytest.raises(
         RuntimeError, match="failed to persist extracted sensitive metadata"
     ):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("anonymize_video", source_path) in events
@@ -892,10 +907,11 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     )
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         source_path,
         center_name="center",
         processor_name="processor",
+        execution_fence=_test_fence(),
     )
 
     assert result is dummy_video
@@ -1160,7 +1176,9 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
     with pytest.raises(RuntimeError, match="failed to normalize"):
-        service.reanonymize_existing_video(video, source_path=source_path)
+        service.reanonymize_existing_video_fenced(
+            video, source_path=source_path, execution_fence=_test_fence()
+        )
 
     assert failure_paths == [staged_path]
     assert canonical_path.read_bytes() == b"previous-processed-video"
@@ -1265,7 +1283,9 @@ def test_reanonymize_existing_video_skips_import_staging(
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
-    result = service.reanonymize_existing_video(video, source_path=source_path)
+    result = service.reanonymize_existing_video_fenced(
+        video, source_path=source_path, execution_fence=_test_fence()
+    )
 
     assert result is video
     assert getattr(video, "resolved_import_context") is True
@@ -1357,10 +1377,11 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
 
     service = VideoImportService()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1448,10 +1469,11 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
 
     service = VideoImportService()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1496,10 +1518,11 @@ def test_import_and_anonymize_checks_pipeline_storage_budget(
     service = VideoImportService()
 
     with pytest.raises(InsufficientStorageError):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("file_lock_enter", source_path) in events
@@ -1605,7 +1628,8 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
         assert force is False
-        assert execution_guard is None
+        assert execution_guard is not None
+        execution_guard()
         hls_ready_calls.append(int(video.pk))
 
     monkeypatch.setattr(
@@ -1616,10 +1640,11 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1714,10 +1739,11 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1810,10 +1836,11 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1985,10 +2012,11 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
     )
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is dummy_video
@@ -2160,10 +2188,11 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     service.anonymizer = DummyAnonymizer()
 
     def run_import(name: str, path: Path) -> None:
-        result = service.import_and_anonymize(
+        result = service.import_and_anonymize_fenced(
             file_path=path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
         assert result is not None
         results[name] = result

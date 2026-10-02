@@ -17,6 +17,47 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: test_suite_fixture_overhead
+  category: testing
+  title: Test-Fixtures vermeiden unnötige Datenbank-, Datei- und Ausgabearbeit
+  acceptance:
+  - Reine Namen-, Datums-, Task-Konfigurations- und Runtime-Isolationstests laufen ohne Datenbank-Fixture.
+  - Die automatische Video-Anonymizer-Fixture fordert temporäre Verzeichnisse nur für betroffene Tests
+    an.
+  - Produkt-Testdaten werden einmal pro TestCase-Klasse geladen; jede Testmethode bleibt durch Rollback
+    isoliert.
+  - Test-Tasks zeigen langsame Testphasen statt zusätzlicher Start-/Endausgaben und erlauben eine explizite
+    Worker-Begrenzung.
+  - Fokussierte Regressionen und Typprüfung werden dokumentiert; PostgreSQL-Prozessisolation und echte
+    Migrationen bleiben erhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor pytest ausführen. Namen-, Datums-, Task-, Runtime-Isolations-, Produkt-
+      und Video-Fixture-Regressionen prüfen. Laufzeiten mit --durations=30 erfassen; Worker-Vergleiche
+      nur ohne konkurrierende Tests durchführen. PYTEST_XDIST_AUTO_NUM_WORKERS begrenzt die Worker bei
+      -n auto.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/utils/test_names.py tests/utils/test_dates.py
+        tests/scripts/test_devenv_quality_tasks.py tests/environment/test_test_storage_isolation.py tests/administration/product/test_product.py
+        tests/environment/test_base_db_data.py -q --durations=30 --tb=short: 27 bestanden, 2 Warnungen
+        in 115.10 s. Einschließlich Datenbank-Flush und bedingter temporärer Verzeichnisse. Produktklasse:
+        erstes Setup 69.44 s, drei Aufrufe zusammen 0.26 s; Ausgangslauf erstes Setup 68.97 s, drei Aufrufe
+        zusammen 49.19 s; fremde parallele Last.'
+    - kind: command
+      reference: 'Pyright geänderte Python-Dateien: 0 Fehler, 1 bestehende Warnung. Gesamt-Pyright vor
+        Änderungen: 26 Fehler/8 Warnungen; danach: 16 Fehler/8 Warnungen außerhalb der geänderten Dateien.
+        Ruff, nix-instantiate --parse devenv.nix und git diff --check bestanden.'
+    note: 'Gezielter Umfang verifiziert. Keine neue Aussage zur Gesamtsuite: fremde pytest-Suite PID 381809
+      verhindert einen unbelasteten Worker-Vergleich. Temporäre PostgreSQL-Server bleiben isoliert; langlebige
+      gemeinsame Datenbank nicht eingeführt. Vorherlauf: 19 bestanden, zwei während der Task-Umstellung
+      veraltete Konfigurationsassertionen fehlgeschlagen; keine belastbare Vorher/Nachher-Gesamtquote.'
+    assessed_by: codex-testsuite-audit-20261001
+    assessed_at: '2026-10-01T15:09:12.661792Z'
 - id: import_function_profiling
   category: operations
   title: Large import and reimport functions support opt-in call profiling
@@ -376,6 +417,12 @@ definition_of_done:
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
+  - Die Service-Wurzel enthält ausschließlich die Paketinitialisierung und eine YAML-Strukturübersicht;
+    jedes Unterpaket hat eine beschriebene fachliche Zuständigkeit. Alle verschobenen Service-Module sind
+    über ihren kanonischen neuen Pfad importierbar; interne Aufrufer und aktive Qualitätsinventare verwenden
+    diese Pfade. Typprüfung und Import-/Service-Regressionen werden dokumentiert.
+  - Standalone root examples and diagnostic utilities have explicit folders; their launcher references
+    remain valid and relocation introduces no missing Python imports.
   - Reine Transformationen leben in typisierten, seiteneffektfreien Funktionen; Datenbank-, Dateisystem-
     und Netzwerkoperationen liegen an expliziten Servicegrenzen.
   - Django-Modelle enthalten Persistenz, Constraints und dünne Zustandsübergänge, aber keine neue Workflow-Orchestrierung
@@ -420,7 +467,7 @@ definition_of_done:
         lx_dtypes-Verträge bleiben führend.'
     - kind: command
       reference: '2026-09-23: vollständiger .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende Warnungen.
-        SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+        SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/pytest
         tests/views/report/test_patient_examination_report_ninja_api.py tests/views/report/test_reporting_shell_finalization_aaa.py
         tests/views/report/test_pdf_redaction.py tests/utils/test_media_urlpatterns_contract.py tests/contracts/test_media_centralization.py
         tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py tests/app/test_clean_layer_cohorts.py
@@ -430,8 +477,21 @@ definition_of_done:
         nachher 1719 LOC/1514 SLOC; zusätzlich 13 Zeilen im bestehenden Schema. Radon cc -s neuer Service:
         report_frame_candidates A(5), persist_segment_selection A(2), _save_selections A(2), auto_select_report_frames
         B(8). Ausgangsrevision e68abf11 mit bereits vorhandenen Indexänderungen, Arbeitsverzeichnis /home/admin/endoreg-db.'
-    assessed_by: codex-import-integrity-20260923
-    assessed_at: '2026-09-23T07:54:18.642021Z'
+    - kind: document
+      reference: feature-tracking/reports/repository_structure.yml
+    - kind: review
+      reference: 'Runtime-Syntaxbaumvergleich: 127 Service-Dateien ohne Abweichung nach Normalisierung
+        der Importpfade; Paketinitialisierungen separat geprüft.'
+    - kind: test
+      reference: feature-tracking/reports/service_structure.yml
+    - kind: review
+      reference: endoreg_db/services/structure.yml
+    note: 'Service-Struktur innerhalb endoreg-db umgestellt und verifiziert: 99 Modulimporte, Pyright
+      0 Fehler/8 bestehende Warnungen, 596 Tests und 22 Untertests bestanden, Django-Start und Modellinventar
+      sauber. 26 lx-annotate-Dateien benötigen separate Pfadmigration; konkreter Patch vorbereitet, Erweiterung
+      des Repository-Umfangs beim Benutzer angefragt. Breiteres Qualitätskriterium nicht vollständig abgeschlossen.'
+    assessed_by: codex-services-structure-20261001
+    assessed_at: '2026-10-01T16:40:55.616605Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert

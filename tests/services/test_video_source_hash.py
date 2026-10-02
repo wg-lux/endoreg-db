@@ -16,7 +16,7 @@ from django.db import models
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models import VideoFile
-from endoreg_db.services import video_source_hash as hashes
+from endoreg_db.services.video_files import source_hash as hashes
 from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 

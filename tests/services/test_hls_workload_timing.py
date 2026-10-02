@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from endoreg_db.exceptions import MediaOperationDeferred
-from endoreg_db.services import hls_media
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage.workflow import (
     VideoStorageNormalizationError,
 )
 from endoreg_db.utils.workload_timing import (

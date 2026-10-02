@@ -12,15 +12,17 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 from django.db import transaction
 
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.import_files.file_storage.state_management import ensure_video_hls
-from endoreg_db.services.processed_video_cleanup import (
+from endoreg_db.services.video_storage.generation_cleanup import (
     commit_processed_replacements,
     record_processed_replacement,
     reconcile_previous_processed_cleanup,
     schedule_processed_generation_cleanup,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     configured_video_storage_profile,
     assert_temporal_equivalence,
     timeline_from_video_metadata,
@@ -126,7 +128,7 @@ def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
 
 def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
     """Acquire storage ownership before any anonymization work or transaction."""
-    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
 
     with video_artifact_mutation(video_id=int(video.pk)):
         return _anonymize_owned(video, delete_original_raw=delete_original_raw)

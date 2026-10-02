@@ -126,7 +126,7 @@ class EndoregDbConfig(AppConfig):
         if sys.argv[1] not in runtime_commands:
             return
 
-        from endoreg_db.services.reconciliation import (
+        from endoreg_db.services.runtime.reconciliation import (
             ReconciliationService,
             should_run_startup_reconciliation,
         )

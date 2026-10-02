@@ -95,7 +95,7 @@ devenv tasks run quality:dead-code quality:boundaries
 ```
 
 Für die Berichtsauswahl liegt die Orchestrierung in
-`endoreg_db/services/report_frame_selection.py`. Der HTTP-Adapter liegt unter
+`endoreg_db/services/reports/frame_selection.py`. Der HTTP-Adapter liegt unter
 `endoreg_db/views/patient_report/patient_examination_report.py`, die PDF-Redaktion
 unter `endoreg_db/views/pdf/pdf_redaction.py`. Die bestehenden Testdateien bleiben
 in `tests/views/report/`; Mock-Ziele müssen die neuen Python-Modulpfade verwenden.

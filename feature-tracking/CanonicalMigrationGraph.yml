@@ -163,6 +163,8 @@ definition_of_done:
     - kind: review
       reference: migration test uses a generated SECRET_KEY and neither loads application payloads nor
         reads cryptographic material or production storage
+    - kind: document
+      reference: feature-tracking/reports/postgresql_test_regressions.yml
     note: Migration verification remains isolated from deployment data, storage and cryptographic boundaries.
     assessed_by: codex-release-readiness
     assessed_at: '2026-08-13T12:07:25.146191Z'

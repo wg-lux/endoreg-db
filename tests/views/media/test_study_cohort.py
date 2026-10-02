@@ -24,7 +24,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
-from endoreg_db.services.study_cohort import (
+from endoreg_db.services.studies.cohort import (
     StudyCohortFilters,
     build_study_cohort_payload,
 )

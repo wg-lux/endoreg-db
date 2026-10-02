@@ -90,7 +90,7 @@ tracker. Do not infer deployment on gc-10 from repository code alone.
 
 | Call site | Status and remaining work |
 | --- | --- |
-| `endoreg_db/services/video_timeline.py` | **Migrated.** Typed mapping gives presentation timestamps priority, uses the lower frame on a nearest-boundary tie, fails for variable frame rate without timestamps, and uses half-up rounding for constant frame rate. |
+| `endoreg_db/services/video_files/timeline.py` | **Migrated.** Typed mapping gives presentation timestamps priority, uses the lower frame on a nearest-boundary tie, fails for variable frame rate without timestamps, and uses half-up rounding for constant frame rate. |
 | `endoreg_db/services/video_files/_time.py`, `metadata.py` | **Migrated.** Persisted neighboring timestamps are passed to the central mapping service. Model methods are compatibility wrappers. |
 | `models/label/label_video_segment/label_video_segment.py` | **Migrated.** Segment times use the shared frame-to-timestamp resolver. |
 | `serializers/label_video_segment/label_video_segment.py` | **Migrated.** Create, update, and response use the central resolver and do not hide variable-frame-rate failures behind default FPS. |

@@ -13,7 +13,7 @@ from endoreg_db.import_files.pseudonymization.k_pseudonymity import (
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.schemas.k_pseudonymity import KPseudonymityReleaseConfig
-from endoreg_db.services.k_pseudonymity import (
+from endoreg_db.services.privacy.k_pseudonymity import (
     build_k_pseudonymous_release,
     jensen_shannon_divergence,
     wasserstein_1_distance,

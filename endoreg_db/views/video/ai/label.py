@@ -39,7 +39,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.model_meta import ModelMeta
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.temporal_inference import (
     TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,

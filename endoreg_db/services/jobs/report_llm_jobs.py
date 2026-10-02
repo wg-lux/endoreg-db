@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Literal, Protocol, cast
 
@@ -40,7 +41,12 @@ from endoreg_db.services.jobs.heavy_jobs import (
     queue_for_job_kind,
 )
 from endoreg_db.services.raw_pdf_files import require_usable_completed_report
-from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.jobs.error_handling import database_recovery_reason
+from endoreg_db.services.reports.import_fencing import (
+    ReportImportBusyError,
+    StaleReportImportAttemptError,
+)
+from endoreg_db.services.reports.import_service import ReportImportService
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.structured_logging import emit_structured_event
@@ -118,17 +124,6 @@ class _RawPdfLike(Protocol):
 
     def save(self, *args: object, **kwargs: object) -> None: ...
     def refresh_from_db(self, *args: object, **kwargs: object) -> None: ...
-
-
-class _UploadJobLike(Protocol):
-    pk: str
-    file: Any
-    source_center: _CenterLike | None
-
-    def mark_error(self, error_detail: str) -> None: ...
-    def mark_lost(self, error_detail: str) -> None: ...
-    def mark_processing(self) -> None: ...
-    def mark_completed(self, sensitive_meta: SensitiveMeta | None = None) -> None: ...
 
 
 def get_report_llm_job_mode() -> ReportLlmJobMode:
@@ -393,228 +388,208 @@ def _clear_existing_sensitive_meta(pdf: _RawPdfLike) -> int | None:
     )
     pdf.sensitive_meta = None
     pdf.save(update_fields=["sensitive_meta"])
-    try:
-        SensitiveMeta.objects.filter(pk=old_meta_id).delete()
-    except Exception as exc:
-        logger.warning(
-            "Could not delete old SensitiveMeta %s for report %s: %s",
-            old_meta_id,
-            pdf.pdf_hash,
-            exc,
-        )
+    SensitiveMeta.objects.filter(pk=old_meta_id).delete()
     return int(old_meta_id)
 
 
-def _run_report_llm_reimport_job(job_id: str) -> bool:
-    job = _get_report_llm_job(job_id)
-    if job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
-        return True
+@dataclass
+class _ReportJobLifecycle:
+    """Job writes share the report's row-locked content ownership boundary."""
 
-    job.mark_running()
-    pdf = cast(_RawPdfLike | None, cast(Any, job).pdf)
-    if pdf is None:
-        error_detail = "Report LLM job has no associated report."
-        job.mark_lost(error_detail)
-        raise RuntimeError(error_detail)
+    job: ReportLlmInferenceJob
+    reimport: bool
+    entered: bool = False
+    completed: bool = False
+    old_meta_id: int | None = None
+    processing_upload_jobs: int = 0
 
-    try:
-        config = ReportLlmJobConfig.model_validate(job.config)
-    except Exception as exc:
-        error_detail = f"Invalid report LLM job config: {exc}"
-        job.mark_failure(error_detail)
-        raise RuntimeError(error_detail) from exc
+    def validate_source(self, content_hash: str) -> None:
+        if self.reimport:
+            report = self.job.pdf
+            if report is None or report.pdf_hash != content_hash:
+                raise ValueError("Reimport source does not match the requested content")
 
-    if not pdf.file or not getattr(pdf.file, "name", None):
-        error_detail = (
-            "Raw report source is missing. Upload the original report again "
-            "before re-importing."
-        )
-        _mark_report_upload_jobs_lost(pdf, error_detail)
-        job.mark_lost(error_detail)
-        raise FileNotFoundError(error_detail)
+    def _refresh_owned_job(self, report: RawPdfFile) -> None:
+        self.job = ReportLlmInferenceJob.objects.select_for_update().get(pk=self.job.pk)
+        if self.reimport and self.job.pdf != report:
+            raise ValueError("Reimport source does not match the requested report")
+        if self.job.status == ReportLlmInferenceJob.STATUS_CANCELLED:
+            raise ReportImportBusyError("Report job was cancelled")
 
-    if not pdf.center:
-        error_detail = "Report has no associated center."
-        _mark_report_upload_jobs_error(pdf, error_detail)
-        job.mark_failure(error_detail)
-        raise RuntimeError(error_detail)
-
-    try:
-        with transaction.atomic():
-            old_meta_id = _clear_existing_sensitive_meta(pdf)
-            processing_upload_jobs = _mark_report_upload_jobs_processing(pdf)
-
-        logger.info(
-            "Starting report LLM re-import job %s for report %s",
-            job.job_key,
-            pdf.pdf_hash,
-        )
-        with ensure_local_file(pdf.file) as raw_file_path:
-            ReportImportService().import_and_anonymize(
-                file_path=raw_file_path,
-                center_name=pdf.center.name,
-                retry=config.retry,
+    def started(self, report: RawPdfFile) -> None:
+        self._refresh_owned_job(report)
+        if self.job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
+            raise ReportImportBusyError(
+                "Report job already completed by another delivery"
             )
+        self.entered = True
+        self.job.mark_running()
+        if self.reimport:
+            pdf = cast(_RawPdfLike, report)
+            self.old_meta_id = _clear_existing_sensitive_meta(pdf)
+            self.processing_upload_jobs = _mark_report_upload_jobs_processing(pdf)
+        else:
+            mark_upload_job_processing(self.upload_job())
 
-        pdf.refresh_from_db()
+    def upload_job(self) -> UploadJob:
+        upload_job = self.job.upload_job
+        if upload_job is None:
+            raise RuntimeError("Report LLM import job has no associated upload job.")
+        return upload_job
+
+    def succeeded(self, report: RawPdfFile) -> None:
+        self._refresh_owned_job(report)
+        if self.job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
+            self.completed = True
+            return
+        self.entered = True
+        if self.job.status != ReportLlmInferenceJob.STATUS_RUNNING:
+            self.job.mark_running()
+        report.refresh_from_db()
+        pdf = cast(_RawPdfLike, report)
         processed_file_sha256 = require_usable_completed_report(
-            cast(RawPdfFile, pdf),
+            report,
             source_sha256=pdf.pdf_hash,
             require_artifact=False,
         )
-        anonymized_upload_jobs = _mark_report_upload_jobs_anonymized(pdf)
-        result: JsonObject = cast(
-            JsonObject,
-            {
-                "pdf_id": int(pdf.pk),
-                "pdf_hash": str(pdf.pdf_hash),
-                "sensitive_meta_created": pdf.sensitive_meta_id is not None,
-                "sensitive_meta_id": int(pdf.sensitive_meta_id)
-                if pdf.sensitive_meta_id is not None
-                else None,
-                "text_extracted": bool(pdf.text),
-                "anonymized": bool(pdf.state and pdf.state.anonymized),
-                "processed_file_sha256": processed_file_sha256,
-                "old_sensitive_meta_id": old_meta_id,
-                "processing_upload_jobs": int(processing_upload_jobs),
-                "anonymized_upload_jobs": int(anonymized_upload_jobs),
-            },
-        )
-        job.mark_success(result=result)
-        logger.info(
-            "Report LLM re-import job %s completed for report %s",
-            job.job_key,
-            pdf.pdf_hash,
-        )
-        return True
-    except FileNotFoundError as exc:
-        error_detail = (
-            f"Raw report source could not be materialized from storage. {exc}"
-        )
-        _mark_report_upload_jobs_lost(pdf, error_detail)
-        job.mark_lost(error_detail)
-        logger.exception("Raw source missing during report LLM re-import %s.", job_id)
-        raise
-    except Exception as exc:
-        error_detail = str(exc)
-        _mark_report_upload_jobs_error(pdf, error_detail)
-        job.mark_failure(error_detail)
-        logger.exception("Report LLM re-import job %s failed: %s", job_id, exc)
-        raise
+        result: JsonObject = {
+            "pdf_id": int(pdf.pk),
+            "pdf_hash": pdf.pdf_hash,
+            "sensitive_meta_id": pdf.sensitive_meta_id,
+            "text_extracted": bool(pdf.text),
+            "anonymized": bool(pdf.state and pdf.state.anonymized),
+            "processed_file_sha256": processed_file_sha256,
+        }
+        if self.reimport:
+            if self.processing_upload_jobs == 0:
+                self.processing_upload_jobs = _mark_report_upload_jobs_processing(pdf)
+            result.update(
+                {
+                    "sensitive_meta_created": pdf.sensitive_meta_id is not None,
+                    "old_sensitive_meta_id": self.old_meta_id,
+                    "processing_upload_jobs": self.processing_upload_jobs,
+                    "anonymized_upload_jobs": _mark_report_upload_jobs_anonymized(pdf),
+                }
+            )
+        else:
+            upload_job = self.upload_job()
+            if upload_job.status != UploadJob.Status.PROCESSING:
+                mark_upload_job_processing(upload_job)
+            self.job.pdf = report
+            self.job.save(update_fields=["pdf", "updated_at"])
+            mark_upload_job_completed(upload_job, sensitive_meta=pdf.sensitive_meta)
+            result["upload_job_id"] = str(upload_job.pk)
+        self.job.mark_success(result=result)
+        self.completed = True
+
+    def failed(self, report: RawPdfFile, error: Exception) -> None:
+        self._refresh_owned_job(report)
+        if self.job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
+            raise ReportImportBusyError(
+                "Report job already completed by another delivery"
+            )
+        self.entered = True
+        detail = str(error)
+        if self.reimport:
+            pdf = cast(_RawPdfLike, report)
+            if isinstance(error, FileNotFoundError):
+                _mark_report_upload_jobs_lost(pdf, detail)
+            else:
+                _mark_report_upload_jobs_error(pdf, detail)
+        elif isinstance(error, FileNotFoundError):
+            mark_upload_job_integrity_lost(self.upload_job(), detail)
+        else:
+            mark_upload_job_error(self.upload_job(), detail)
+        if isinstance(error, FileNotFoundError):
+            self.job.mark_lost(detail)
+        else:
+            self.job.mark_failure(detail)
+
+
+def _run_report_llm_reimport_job(job_id: str) -> bool:
+    return _run_report_job(job_id, reimport=True)
 
 
 def _run_report_llm_import_job(job_id: str) -> bool:
+    return _run_report_job(job_id, reimport=False)
+
+
+def _run_report_job(job_id: str, *, reimport: bool) -> bool:
     job = _get_report_llm_job(job_id)
     if job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
         return True
-
-    job.mark_running()
-    upload_job = cast(_UploadJobLike | None, cast(Any, job).upload_job)
-    if upload_job is None:
-        error_detail = "Report LLM import job has no associated upload job."
-        job.mark_lost(error_detail)
-        raise RuntimeError(error_detail)
-
+    if job.status == ReportLlmInferenceJob.STATUS_CANCELLED:
+        return False
+    lifecycle = _ReportJobLifecycle(job, reimport=reimport)
     try:
         config = ReportLlmJobConfig.model_validate(job.config)
-    except Exception as exc:
-        error_detail = f"Invalid report LLM import job config: {exc}"
-        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
-        job.mark_failure(error_detail)
-        raise RuntimeError(error_detail) from exc
-
-    if not upload_job.file or not getattr(upload_job.file, "name", None):
-        error_detail = "Upload job has no stored report file."
-        mark_upload_job_integrity_lost(cast(UploadJob, upload_job), error_detail)
-        job.mark_lost(error_detail)
-        raise FileNotFoundError(error_detail)
-
-    center = upload_job.source_center
-    if center is None:
-        error_detail = "Upload job has no resolved source center."
-        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
-        job.mark_failure(error_detail)
-        raise RuntimeError(error_detail)
-
-    mark_upload_job_processing(cast(UploadJob, upload_job))
-    try:
-        with ensure_local_file(upload_job.file) as file_path:
-            report = ReportImportService().import_and_anonymize(
+        if reimport:
+            pdf = job.pdf
+            if pdf is None:
+                raise RuntimeError("Report LLM job has no associated report.")
+            source = pdf.file
+            center = pdf.center
+        else:
+            upload_job = lifecycle.upload_job()
+            source = upload_job.file
+            center = upload_job.source_center
+        if not source or not source.name:
+            raise FileNotFoundError("Report job has no stored source file.")
+        if center is None:
+            raise RuntimeError("Report job has no resolved source center.")
+        with ensure_local_file(source) as file_path:
+            ReportImportService(lifecycle=lifecycle).import_and_anonymize(
                 file_path=file_path,
                 center_name=center.name,
                 retry=config.retry,
             )
-        typed_report = cast(_RawPdfLike, report)
-        processed_file_sha256 = require_usable_completed_report(
-            report,
-            source_sha256=typed_report.pdf_hash,
-            require_artifact=False,
-        )
-        sensitive_meta = typed_report.sensitive_meta
-        job.pdf = report
-        job.save(update_fields=["pdf", "updated_at"])
-        mark_upload_job_completed(
-            cast(UploadJob, upload_job),
-            sensitive_meta=sensitive_meta,
-        )
-        cleanup_upload_job_source(cast(UploadJob, upload_job))
-        result: JsonObject = cast(
-            JsonObject,
-            {
-                "upload_job_id": str(upload_job.pk),
-                "pdf_id": int(typed_report.pk),
-                "pdf_hash": str(typed_report.pdf_hash),
-                "sensitive_meta_id": (
-                    int(sensitive_meta.pk) if sensitive_meta is not None else None
-                ),
-                "text_extracted": bool(getattr(typed_report, "text", "")),
-                "anonymized": bool(
-                    typed_report.state and typed_report.state.anonymized
-                ),
-                "processed_file_sha256": processed_file_sha256,
-            },
-        )
-        job.mark_success(result=result)
-        logger.info(
-            "Report LLM import job %s completed for upload job %s",
-            job.job_key,
-            upload_job.pk,
-        )
-        return True
-    except FileNotFoundError as exc:
-        error_detail = (
-            f"Stored report source could not be materialized from storage. {exc}"
-        )
-        mark_upload_job_integrity_lost(cast(UploadJob, upload_job), error_detail)
-        job.mark_lost(error_detail)
-        logger.exception("Stored source missing during report LLM import %s.", job_id)
-        raise
-    except InvalidReportDocumentError as exc:
-        typed_upload_job = cast(UploadJob, upload_job)
-        typed_upload_job.storage_class = UploadJob.StorageClass.QUARANTINE
-        typed_upload_job.save(update_fields=["storage_class", "updated_at"])
-        mark_upload_job_error(
-            typed_upload_job,
-            str(exc),
-            error_code=UploadJob.ErrorCode.INVALID_INPUT,
-        )
-        job.mark_failure(str(exc))
-        emit_structured_event(
-            logger,
-            "report_llm.invalid_document_quarantined",
-            level=logging.ERROR,
-            job_id=job.job_key,
-            content_hash=typed_upload_job.content_hash,
-            failure_class=type(exc).__name__,
-            retryable=False,
-        )
+        if not lifecycle.completed:
+            raise RuntimeError("Report service returned without fenced job completion.")
+    except (ReportImportBusyError, StaleReportImportAttemptError):
+        # The losing delivery has no authority to change the winning job.
         raise
     except Exception as exc:
-        error_detail = str(exc)
-        mark_upload_job_error(cast(UploadJob, upload_job), error_detail)
-        job.mark_failure(error_detail)
-        logger.exception("Report LLM import job %s failed: %s", job_id, exc)
+        if database_recovery_reason(exc) is not None or lifecycle.entered:
+            raise
+        # Admission failed before a content attempt existed. Only this job's
+        # input status is changed; no report metadata or related jobs are reset.
+        with transaction.atomic():
+            locked_job = ReportLlmInferenceJob.objects.select_for_update().get(
+                pk=job.pk
+            )
+            if locked_job.status != ReportLlmInferenceJob.STATUS_QUEUED:
+                raise
+            if isinstance(exc, FileNotFoundError):
+                locked_job.mark_lost(str(exc))
+            else:
+                locked_job.mark_failure(str(exc))
+            if not reimport:
+                upload_job = lifecycle.upload_job()
+                if isinstance(exc, InvalidReportDocumentError):
+                    upload_job.storage_class = UploadJob.StorageClass.QUARANTINE
+                    upload_job.save(update_fields=["storage_class", "updated_at"])
+                    mark_upload_job_error(
+                        upload_job,
+                        str(exc),
+                        error_code=UploadJob.ErrorCode.INVALID_INPUT,
+                    )
+                    emit_structured_event(
+                        logger,
+                        "report_llm.invalid_document_quarantined",
+                        level=logging.ERROR,
+                        job_id=job.job_key,
+                        content_hash=upload_job.content_hash,
+                        failure_class=type(exc).__name__,
+                        retryable=False,
+                    )
+                elif isinstance(exc, FileNotFoundError):
+                    mark_upload_job_integrity_lost(upload_job, str(exc))
+                else:
+                    mark_upload_job_error(upload_job, str(exc))
         raise
+    if not reimport:
+        cleanup_upload_job_source(lifecycle.upload_job())
+    return True
 
 
 def dispatch_report_llm_reimport(

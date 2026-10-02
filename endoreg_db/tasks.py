@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from celery import shared_task
@@ -64,7 +65,7 @@ def run_video_reimport_task(
     video_id: int,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_reimport_jobs import _run_video_reimport_job
 
@@ -121,7 +122,7 @@ def run_video_anonymization_correction_task(
     from endoreg_db.services.jobs.video_correction_jobs import (
         run_video_anonymization_correction,
     )
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
 
     try:
         return run_video_anonymization_correction(int(video_id), int(history_id))
@@ -171,7 +172,7 @@ def run_video_post_validation_rebuild_task(
     only_validated: bool = False,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
@@ -216,12 +217,12 @@ def video_hls_materialization(
     from endoreg_db.services.jobs.error_handling import retry_database_operation
 
     from endoreg_db.exceptions import MediaOperationDeferred
-    from endoreg_db.services.hls_media import (
+    from endoreg_db.services.streaming.hls_media import (
         hls_result_is_ready,
         materialize_video_hls,
     )
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
-    from endoreg_db.services.video_storage_normalization import (
+    from endoreg_db.services.video_storage.workflow import (
         VideoStorageNormalizationError,
     )
     from endoreg_db.utils.structured_logging import (
@@ -303,9 +304,11 @@ def run_segment_annotation_expansion_task(
     dispatch_post_validation_rebuild: bool = False,
     mark_complete_without_rebuild: bool = False,
 ) -> dict[str, int]:
-    from endoreg_db.services.segment_annotations import ensure_segment_annotations
+    from endoreg_db.services.annotations.segment_annotations import (
+        ensure_segment_annotations,
+    )
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.video_segment_validation_workflow import (
+    from endoreg_db.services.annotations.segment_validation_workflow import (
         mark_segment_annotations_complete_without_cleanup,
     )
     from endoreg_db.services.jobs.video_post_validation_jobs import (
@@ -366,8 +369,8 @@ def run_video_temporal_inference_task(
     n_test_frames: int = 10,
     frame_source_mode: str | None = None,
 ) -> bool:
-    from endoreg_db.services.video_temporal_inference import (
-        _run_video_temporal_inference,
+    from endoreg_db.services.video_files.temporal_inference import (
+        run_video_temporal_inference,
     )
 
     kwargs: dict[str, Any] = {
@@ -384,7 +387,7 @@ def run_video_temporal_inference_task(
     if frame_source_mode is not None:
         kwargs["frame_source_mode"] = frame_source_mode
 
-    return _run_video_temporal_inference(int(video_id), **kwargs)
+    return run_video_temporal_inference(int(video_id), **kwargs)
 
 
 @shared_task(
@@ -411,9 +414,33 @@ def run_model_training_task(
     return True
 
 
+def _run_report_task(
+    task: Task[[str], bool],
+    job_id: str,
+    run: Callable[[str], bool],
+) -> bool:
+    from django.db import DatabaseError
+    from endoreg_db.services.jobs.error_handling import retry_database_operation
+    from endoreg_db.services.reports.import_fencing import ReportImportBusyError
+
+    try:
+        return run(str(job_id))
+    except ReportImportBusyError as exc:
+        raise task.retry(exc=exc, countdown=60, max_retries=None) from exc
+    except DatabaseError as exc:
+        retry_database_operation(
+            retry=task.retry,
+            error=exc,
+            retries=task.request.retries,
+            job_name="report_import",
+            subject_id=job_id,
+        )
+
+
 @shared_task(
     name="endoreg_db.report_llm_reimport",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -423,12 +450,13 @@ def run_model_training_task(
 def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_reimport_job
 
-    return _run_report_llm_reimport_job(str(job_id))
+    return _run_report_task(_task, job_id, _run_report_llm_reimport_job)
 
 
 @shared_task(
     name="endoreg_db.report_llm_import",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -438,7 +466,7 @@ def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
 def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_import_job
 
-    return _run_report_llm_import_job(str(job_id))
+    return _run_report_task(_task, job_id, _run_report_llm_import_job)
 
 
 @shared_task(
@@ -508,7 +536,7 @@ def retry_due_model_training_runs_task(_task: Task[[], int]) -> int:
 def refresh_audit_ledger_integrity_status_task(
     _task: Task[[], dict[str, Any]],
 ) -> dict[str, Any]:
-    from endoreg_db.services.audit_integrity import (
+    from endoreg_db.services.audit.integrity import (
         refresh_audit_ledger_integrity_status_once,
     )
 

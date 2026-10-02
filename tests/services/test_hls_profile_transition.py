@@ -7,7 +7,7 @@ import pytest
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from tests.helpers.hls import FakeHlsOutputRecorder
 from tests.services.test_hls_media import _create_processed_video
 

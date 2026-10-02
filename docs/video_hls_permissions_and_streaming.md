@@ -226,12 +226,12 @@ fallback.
 | Concern | Source |
 | --- | --- |
 | OIDC user, role, and center synchronization | `endoreg_db/authz/backends.py`, `endoreg_db/authz/auth.py` |
-| Center-group validation and plural membership | `endoreg_db/services/center_access.py` |
+| Center-group validation and plural membership | `endoreg_db/services/centers/access.py` |
 | Route policy and compatibility roles | `endoreg_db/authz/policy.py`, `endoreg_db/authz/permissions.py` |
 | Object and hub center checks | `endoreg_db/views/access_control.py` |
 | HLS playlist, key, and segment views | `endoreg_db/views/video/hls_stream.py` |
 | Compatibility redirect | `endoreg_db/views/video/video_stream.py` |
-| Artifact lifecycle and transcoding | `endoreg_db/services/hls_media.py`, `VideoHlsArtifact` |
+| Artifact lifecycle and transcoding | `endoreg_db/services/streaming/hls_media.py`, `VideoHlsArtifact` |
 | Browser playback | lx-annotate `useAuthenticatedVideoStream.ts` |
 
 Changes to one layer require verification with all remaining layers enabled.

@@ -24,7 +24,7 @@ from endoreg_db.schemas.video_storage import (
     VideoTimelineContract,
 )
 from endoreg_db.services.video_files._segments import convert_sequences_to_db_segments
-from endoreg_db.services.video_storage_normalization import evidence_as_json
+from endoreg_db.services.video_storage.workflow import evidence_as_json
 from endoreg_db.views.video.segments_crud import (
     PREDICTION_CORRECTION_SOURCE_NAME,
     import_prediction_segments_to_manual,

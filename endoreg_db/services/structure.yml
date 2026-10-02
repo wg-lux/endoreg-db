@@ -1,0 +1,160 @@
+schema_version: '1.0'
+feature_definition: ../../feature-tracking/CodeQuality.yml
+criterion: helper_class_boundaries
+rules:
+- Die Wurzel enthält keine Workflow-Implementierungen.
+- Module nach fachlicher Aufgabe öffnen; konkrete Funktionen aus dem zuständigen Modul
+  importieren.
+- Unterpakete initialisieren keine Datenbank-, Netzwerk- oder Medienoperationen.
+- Bestehende Modellfassaden und Import-Einstiegspunkte behalten ihr Verhalten.
+domains:
+  datasets:
+    purpose: Trainingsauswahl, Active Learning und Datensatzexporte
+  annotations:
+    purpose: Frame- und Segmentannotation, Auswahl und Validierungsabläufe
+  privacy:
+    purpose: Anonymisierung, Pseudonymisierung und Qualitätsmessung
+  patient_identity:
+    purpose: Patientenkennungen und verifizierte sensible Metadaten
+  cases:
+    purpose: Falllebenszyklus, Dokumentzuordnung und Untersuchungsbeziehungen
+  centers:
+    purpose: Zentrumszugriff, Importzuordnung und Mitarbeiter
+  reference_data:
+    purpose: Klinische Referenzen und versionierte Referenzkataloge
+  studies:
+    purpose: Studienvorgaben und Kohortenabfragen
+  reports:
+    purpose: Berichtimport, klinischer Kontext, Persistenz und PDF-Ausgabe
+  runtime:
+    purpose: Deployment, Betriebsbereitschaft und Dienstkoordination
+  imports:
+    purpose: Gemeinsame Importausführung, Besitzprüfung und tabellarische Eingaben
+  interoperability:
+    purpose: FHIR, DICOM, SAP IS-H und Medical Ledger
+  streaming:
+    purpose: HTTP Live Streaming, streambare Medien und seekbare Eingaben
+  media:
+    purpose: Medienintegrität, Operationsleases und Exportfreigabe
+  frames:
+    purpose: Trainingsframes, Aufbewahrung und Segmentabgleich
+  video_files:
+    purpose: Videodateien, direkter Import, Reimport und Verarbeitung
+  video_storage:
+    purpose: Speicherprofile, Normalisierung, Transcoding und Generationenbereinigung
+  ai:
+    purpose: Bereitstellung von Modellgewichten
+  audit:
+    purpose: Integritätsprüfung des Audit-Ledgers
+  hub:
+    purpose: Knotenkommunikation, Transfer, Aufnahme und Speicherverteilung
+  jobs:
+    purpose: Hintergrundaufträge, Budgets, Zeitlimits und Wiederaufnahme
+  queue:
+    purpose: Warteschlange für Frame-Annotationen
+  raw_pdf_files:
+    purpose: 'Roh-PDF-Dateien: Import, Metadaten, Integrität und Zustand'
+  secret_rotation:
+    purpose: Rotation von Speicher- und Identitätsgeheimnissen
+  application_settings:
+    purpose: Anwendungseinstellungen für Datensatzexporte
+module_moves:
+  endoreg_db/services/aidataset_active_learning.py: endoreg_db/services/datasets/active_learning.py
+  endoreg_db/services/aidataset_active_learning_shortlist.py: endoreg_db/services/datasets/active_learning_shortlist.py
+  endoreg_db/services/aidataset_exports.py: endoreg_db/services/datasets/exports.py
+  endoreg_db/services/aidataset_frame_buckets.py: endoreg_db/services/datasets/frame_buckets.py
+  endoreg_db/services/aidataset_training_manifests.py: endoreg_db/services/datasets/training_manifests.py
+  endoreg_db/services/aidataset_training_selection.py: endoreg_db/services/datasets/training_selection.py
+  endoreg_db/services/annotation_access.py: endoreg_db/services/annotations/annotation_access.py
+  endoreg_db/services/frame_annotation_buckets.py: endoreg_db/services/annotations/buckets.py
+  endoreg_db/services/frame_annotation_sampling.py: endoreg_db/services/annotations/sampling.py
+  endoreg_db/services/frame_annotation_segment_identity.py: endoreg_db/services/annotations/segment_identity.py
+  endoreg_db/services/frame_annotation_workflow.py: endoreg_db/services/annotations/workflow.py
+  endoreg_db/services/segment_annotations.py: endoreg_db/services/annotations/segment_annotations.py
+  endoreg_db/services/segment_frame_annotations.py: endoreg_db/services/annotations/segment_frame_annotations.py
+  endoreg_db/services/segment_sync.py: endoreg_db/services/annotations/segment_sync.py
+  endoreg_db/services/label_video_segment_states.py: endoreg_db/services/annotations/label_video_segment_states.py
+  endoreg_db/services/video_segments_bulk_mutation.py: endoreg_db/services/annotations/segments_bulk_mutation.py
+  endoreg_db/services/video_segment_validation_workflow.py: endoreg_db/services/annotations/segment_validation_workflow.py
+  endoreg_db/services/anonymization.py: endoreg_db/services/privacy/workflow.py
+  endoreg_db/services/anonymization_metrics.py: endoreg_db/services/privacy/metrics.py
+  endoreg_db/services/anonymization_quality_evaluation.py: endoreg_db/services/privacy/quality_evaluation.py
+  endoreg_db/services/pseudonym_service.py: endoreg_db/services/privacy/patient_pseudonyms.py
+  endoreg_db/services/k_pseudonymity.py: endoreg_db/services/privacy/k_pseudonymity.py
+  endoreg_db/services/k_pseudonymity_predicate.py: endoreg_db/services/privacy/k_pseudonymity_predicate.py
+  endoreg_db/services/evaluation_manifest.py: endoreg_db/services/privacy/evaluation_manifest.py
+  endoreg_db/services/sensitive_meta_external_ids.py: endoreg_db/services/patient_identity/external_ids.py
+  endoreg_db/services/sensitive_meta_update.py: endoreg_db/services/patient_identity/update.py
+  endoreg_db/services/sensitive_meta_verification.py: endoreg_db/services/patient_identity/verification.py
+  endoreg_db/services/validated_identity.py: endoreg_db/services/patient_identity/validated_media_identity.py
+  endoreg_db/services/cases.py: endoreg_db/services/cases/lifecycle.py
+  endoreg_db/services/auto_case_resolution.py: endoreg_db/services/cases/auto_resolution.py
+  endoreg_db/services/case_documents.py: endoreg_db/services/cases/documents.py
+  endoreg_db/services/case_resolution_state.py: endoreg_db/services/cases/resolution_state.py
+  endoreg_db/services/patient_examination_links.py: endoreg_db/services/cases/examination_links.py
+  endoreg_db/services/center_access.py: endoreg_db/services/centers/access.py
+  endoreg_db/services/center_defaults.py: endoreg_db/services/centers/defaults.py
+  endoreg_db/services/center_employees.py: endoreg_db/services/centers/employees.py
+  endoreg_db/services/clinical_reference_data.py: endoreg_db/services/reference_data/clinical_projection.py
+  endoreg_db/services/reference_catalog.py: endoreg_db/services/reference_data/catalog.py
+  endoreg_db/services/reference_catalog_export.py: endoreg_db/services/reference_data/catalog_export.py
+  endoreg_db/services/reference_catalog_migration.py: endoreg_db/services/reference_data/catalog_migration.py
+  endoreg_db/services/reference_catalog_models.py: endoreg_db/services/reference_data/catalog_models.py
+  endoreg_db/services/study_cohort.py: endoreg_db/services/studies/cohort.py
+  endoreg_db/services/study_presets.py: endoreg_db/services/studies/presets.py
+  endoreg_db/services/report_finding_sync.py: endoreg_db/services/reports/finding_sync.py
+  endoreg_db/services/report_frame_export.py: endoreg_db/services/reports/frame_export.py
+  endoreg_db/services/report_frame_selection.py: endoreg_db/services/reports/frame_selection.py
+  endoreg_db/services/report_history.py: endoreg_db/services/reports/history.py
+  endoreg_db/services/report_import.py: endoreg_db/services/reports/import_service.py
+  endoreg_db/services/report_import_fencing.py: endoreg_db/services/reports/import_fencing.py
+  endoreg_db/services/report_import_lifecycle.py: endoreg_db/services/reports/import_lifecycle.py
+  endoreg_db/services/report_import_state_machine.py: endoreg_db/services/reports/import_state_machine.py
+  endoreg_db/services/report_materialization.py: endoreg_db/services/reports/materialization.py
+  endoreg_db/services/report_patient_context.py: endoreg_db/services/reports/patient_context.py
+  endoreg_db/services/report_pdf_renderer.py: endoreg_db/services/reports/pdf_renderer.py
+  endoreg_db/services/report_persistence.py: endoreg_db/services/reports/persistence.py
+  endoreg_db/services/report_runtime_validation.py: endoreg_db/services/reports/runtime_validation.py
+  endoreg_db/services/dtypes_records.py: endoreg_db/services/reports/structured_records.py
+  endoreg_db/services/deployment_setup.py: endoreg_db/services/runtime/deployment_setup.py
+  endoreg_db/services/environment_readiness.py: endoreg_db/services/runtime/environment_readiness.py
+  endoreg_db/services/runtime_wheel_staging.py: endoreg_db/services/runtime/runtime_wheel_staging.py
+  endoreg_db/services/offline_batch_runner.py: endoreg_db/services/runtime/offline_batch_runner.py
+  endoreg_db/services/polling_coordinator.py: endoreg_db/services/runtime/polling_coordinator.py
+  endoreg_db/services/reconciliation.py: endoreg_db/services/runtime/reconciliation.py
+  endoreg_db/services/lifecycle_state_machine.py: endoreg_db/services/runtime/lifecycle_state_machine.py
+  endoreg_db/services/import_execution.py: endoreg_db/services/imports/execution.py
+  endoreg_db/services/import_lease.py: endoreg_db/services/imports/lease.py
+  endoreg_db/services/tabular_import_formats.py: endoreg_db/services/imports/tabular_import_formats.py
+  endoreg_db/services/sap_ish_clinical.py: endoreg_db/services/interoperability/sap_ish_clinical.py
+  endoreg_db/services/sap_ish_import.py: endoreg_db/services/interoperability/sap_ish_import.py
+  endoreg_db/services/medical_ledger.py: endoreg_db/services/interoperability/medical_ledger.py
+  endoreg_db/services/hls_media.py: endoreg_db/services/streaming/hls_media.py
+  endoreg_db/services/hls_legacy_adoption.py: endoreg_db/services/streaming/hls_legacy_adoption.py
+  endoreg_db/services/streamable_media.py: endoreg_db/services/streaming/streamable_media.py
+  endoreg_db/services/streamable_media_state.py: endoreg_db/services/streaming/streamable_media_state.py
+  endoreg_db/services/streamable_media_transcoding.py: endoreg_db/services/streaming/streamable_media_transcoding.py
+  endoreg_db/services/streamable_media_types.py: endoreg_db/services/streaming/streamable_media_types.py
+  endoreg_db/services/seekable_media_input.py: endoreg_db/services/streaming/seekable_media_input.py
+  endoreg_db/services/media_integrity.py: endoreg_db/services/media/integrity.py
+  endoreg_db/services/media_operation_gate.py: endoreg_db/services/media/operation_gate.py
+  endoreg_db/services/export_ready.py: endoreg_db/services/media/export_ready.py
+  endoreg_db/services/export_annotated.py: endoreg_db/services/media/export_annotated.py
+  endoreg_db/services/frame_retention.py: endoreg_db/services/frames/frame_retention.py
+  endoreg_db/services/frame_segment_reconciliation.py: endoreg_db/services/frames/frame_segment_reconciliation.py
+  endoreg_db/services/video_import.py: endoreg_db/services/video_files/direct_import.py
+  endoreg_db/services/video_reimport_orchestrator.py: endoreg_db/services/video_files/reimport_orchestrator.py
+  endoreg_db/services/video_temporal_inference.py: endoreg_db/services/video_files/temporal_inference.py
+  endoreg_db/services/lx_video_contracts.py: endoreg_db/services/video_files/clinical_contracts.py
+  endoreg_db/services/video_timeline.py: endoreg_db/services/video_files/timeline.py
+  endoreg_db/services/video_source_hash.py: endoreg_db/services/video_files/source_hash.py
+  endoreg_db/services/video_post_validation_blackening.py: endoreg_db/services/video_files/post_validation_blackening.py
+  endoreg_db/services/video_segment_blackening.py: endoreg_db/services/video_files/segment_blackening.py
+  endoreg_db/services/video_transcoding.py: endoreg_db/services/video_storage/transcoding.py
+  endoreg_db/services/video_processed_transcode.py: endoreg_db/services/video_storage/processed_transcode.py
+  endoreg_db/services/video_storage_normalization.py: endoreg_db/services/video_storage/workflow.py
+  endoreg_db/services/video_dimension_backfill.py: endoreg_db/services/video_storage/dimension_backfill.py
+  endoreg_db/services/video_format_reconciliation.py: endoreg_db/services/video_storage/format_reconciliation.py
+  endoreg_db/services/processed_video_cleanup.py: endoreg_db/services/video_storage/generation_cleanup.py
+  endoreg_db/services/model_meta_from_hf.py: endoreg_db/services/ai/model_meta_from_hf.py
+  endoreg_db/services/audit_integrity.py: endoreg_db/services/audit/integrity.py

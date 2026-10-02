@@ -16,14 +16,12 @@ from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services import (
-    video_processed_transcode as service,
-    processed_video_cleanup as cleanup,
-    hls_media,
-)
+from endoreg_db.services.video_storage import processed_transcode as service
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.utils.paths import to_protected_media_relative
-from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import get_file_hash

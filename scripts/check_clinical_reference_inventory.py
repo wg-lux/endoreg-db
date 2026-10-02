@@ -33,6 +33,7 @@ class ClinicalInventory(BaseModel):
     feature_id: Literal["dtypes_study_definitions"]
     collections: dict[str, CollectionInventory]
     bootstrap_commands: dict[str, CommandInventory]
+    bootstrap_delegates: dict[str, CommandInventory]
     catalog_fields: dict[str, list[str]]
 
 
@@ -52,16 +53,25 @@ def current_collections() -> dict[str, tuple[str, list[str]]]:
 
 
 def bootstrap_commands(source: str) -> set[str]:
-    return {
-        node.args[0].value
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "call_command"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and isinstance(node.args[0].value, str)
-    }
+    commands: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        is_command = (
+            isinstance(node.func, ast.Name) and node.func.id == "call_command"
+        ) or (isinstance(node.func, ast.Attribute) and node.func.attr == "call_command")
+        if not is_command:
+            continue
+        if (
+            not node.args
+            or not isinstance(node.args[0], ast.Constant)
+            or not isinstance(node.args[0].value, str)
+        ):
+            raise ValueError(
+                "Bootstrap command ownership inventory needs a literal command"
+            )
+        commands.add(node.args[0].value)
+    return commands
 
 
 def validate_inventory(inventory: ClinicalInventory, bootstrap_source: str) -> None:
@@ -75,7 +85,7 @@ def validate_inventory(inventory: ClinicalInventory, bootstrap_source: str) -> N
         if entry.contract != contract or entry.fields != fields:
             raise ValueError(f"Clinical field inventory needs review: {name}")
     if (
-        bootstrap_commands(bootstrap_source)
+        bootstrap_commands(bootstrap_source) != set(inventory.bootstrap_delegates)
         or "ReferenceCatalogCommand" not in bootstrap_source
     ):
         raise ValueError("Bootstrap command ownership inventory needs review")

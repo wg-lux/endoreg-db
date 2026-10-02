@@ -29,7 +29,7 @@ from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.serializers.pdf.pdf_processing_history import (
     PdfProcessingHistorySerializer,
 )
-from endoreg_db.services.polling_coordinator import ProcessingLockContext
+from endoreg_db.services.runtime.polling_coordinator import ProcessingLockContext
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.raw_pdf_files.integrity import (
     verify_and_persist_processed_report_sha256,

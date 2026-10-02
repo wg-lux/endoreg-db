@@ -8,7 +8,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from endoreg_db.config.env import env_int
-from endoreg_db.services.video_format_reconciliation import (
+from endoreg_db.services.video_storage.format_reconciliation import (
     DEFAULT_MIN_FREE_BYTES,
     VIDEO_EXTENSIONS,
     VideoFormatSummary,

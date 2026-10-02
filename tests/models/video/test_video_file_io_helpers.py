@@ -102,7 +102,7 @@ def test_get_processed_stream_path_materializes_when_requested(tmp_path: Path) -
             side_effect=[None, stream_path],
         ),
         patch(
-            "endoreg_db.services.streamable_media.sync_video_streamable_artifacts",
+            "endoreg_db.services.streaming.streamable_media.sync_video_streamable_artifacts",
             Mock(),
         ) as sync_mock,
     ):
@@ -147,7 +147,7 @@ def test_delete_raw_file_after_validation_deletes_field_file_via_storage() -> No
         patch.object(video_file_io, "get_raw_video_stream_path", return_value=None),
         patch.object(video_file_io, "delete_field_file", return_value=True) as delete,
         patch(
-            "endoreg_db.services.hls_media.delete_video_hls_artifacts",
+            "endoreg_db.services.streaming.hls_media.delete_video_hls_artifacts",
             return_value=False,
         ) as delete_hls,
     ):

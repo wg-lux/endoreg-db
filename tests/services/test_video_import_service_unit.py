@@ -12,6 +12,17 @@ from typing import cast
 from unittest.mock import Mock, call
 
 import pytest
+from endoreg_db.services.imports.execution import ImportExecutionFence
+
+
+def _test_guard() -> None:
+    pass
+
+
+def _test_fence() -> ImportExecutionFence:
+    return ImportExecutionFence("a" * 32, _test_guard, nullcontext)
+
+
 from django.test import override_settings
 from pydantic import ValidationError
 
@@ -396,8 +407,11 @@ class TestImportInputBoundaries:
 
         # Act / Assert
         with pytest.raises(TypeError):
-            service.import_and_anonymize(
-                cast(str, None), "test-center", "test-processor"
+            service.import_and_anonymize_fenced(
+                cast(str, None),
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
             )
 
     def test_rejects_empty_processor_name(self, tmp_path: Path) -> None:
@@ -407,7 +421,9 @@ class TestImportInputBoundaries:
 
         # Act / Assert
         with pytest.raises(ValidationError, match="processor_name"):
-            service.import_and_anonymize(source_path, "test-center", "  ")
+            service.import_and_anonymize_fenced(
+                source_path, "test-center", "  ", execution_fence=_test_fence()
+            )
 
     def test_empty_center_uses_local_default_before_import(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -430,7 +446,9 @@ class TestImportInputBoundaries:
             LX_ANNOTATE_DEFAULT_CENTER="site-a", CENTER_NAME="Site A"
         ):
             with pytest.raises(RuntimeError, match="lookup boundary"):
-                service.import_and_anonymize(source, "  ", "test-processor")
+                service.import_and_anonymize_fenced(
+                    source, "  ", "test-processor", execution_fence=_test_fence()
+                )
         assert captured[0].center_name == "Site A"
         assert captured[0].center_key == "site-a"
 
@@ -473,9 +491,10 @@ class TestImportInputBoundaries:
             source_path,
             "test-center",
             "test-processor",
-            execution_fence=sut.VideoImportExecutionFence(
+            execution_fence=ImportExecutionFence(
                 attempt_id=attempt_id,
                 guard=lambda: guard_calls.append("guard"),
+                mutation_guard=nullcontext,
             ),
         )
 
@@ -485,8 +504,12 @@ class TestImportInputBoundaries:
         assert guard_calls == ["guard", "guard"]
 
     def test_execution_fence_rejects_an_empty_attempt_id(self) -> None:
-        with pytest.raises(ValueError, match="requires an attempt_id"):
-            sut.VideoImportExecutionFence(attempt_id="  ", guard=lambda: None)
+        with pytest.raises(
+            ValueError, match="requires a lowercase UUID hex attempt_id"
+        ):
+            ImportExecutionFence(
+                attempt_id="  ", guard=lambda: None, mutation_guard=nullcontext
+            )
 
 
 class TestStorageBudget:
@@ -618,7 +641,9 @@ class TestReanonymizationInputBoundaries:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.reanonymize_existing_video(video, source_path=missing_path)
+            service.reanonymize_existing_video_fenced(
+                video, source_path=missing_path, execution_fence=_test_fence()
+            )
 
     def test_resolves_managed_source_when_no_explicit_path_is_given(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -635,7 +660,9 @@ class TestReanonymizationInputBoundaries:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.reanonymize_existing_video(video)
+            service.reanonymize_existing_video_fenced(
+                video, execution_fence=_test_fence()
+            )
 
 
 class TestRemainingDependencyBoundaries:
@@ -904,17 +931,22 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        first = service.import_and_anonymize(source, "test-center", "test-processor")
-        second = service.import_and_anonymize(
-            second_source, "test-center", "test-processor"
+        first = service.import_and_anonymize_fenced(
+            source, "test-center", "test-processor", execution_fence=_test_fence()
+        )
+        second = service.import_and_anonymize_fenced(
+            second_source,
+            "test-center",
+            "test-processor",
+            execution_fence=_test_fence(),
         )
 
         # Assert
         assert first is second is video
         assert source.read_bytes() == second_source.read_bytes() == b"video"
         assert ensure_hls.call_args_list == [
-            call(video, execution_guard=None),
-            call(video, execution_guard=None),
+            call(video, execution_guard=_test_guard),
+            call(video, execution_guard=_test_guard),
         ]
         budget.assert_not_called()
         stage.assert_not_called()
@@ -947,7 +979,9 @@ class TestImportOrchestration:
 
         # Act
         with pytest.raises(type(error)) as raised:
-            service.import_and_anonymize(source, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source, "test-center", "test-processor", execution_fence=_test_fence()
+            )
 
         # Assert
         assert raised.value is error
@@ -955,14 +989,16 @@ class TestImportOrchestration:
         assert source.read_bytes() == b"video"
 
         # Act: redeliver after streaming becomes available.
-        result = service.import_and_anonymize(source, "test-center", "test-processor")
+        result = service.import_and_anonymize_fenced(
+            source, "test-center", "test-processor", execution_fence=_test_fence()
+        )
 
         # Assert
         assert result is video
         cleanup.assert_called_once()
         assert ensure_hls.call_args_list == [
-            call(video, execution_guard=None),
-            call(video, execution_guard=None),
+            call(video, execution_guard=_test_guard),
+            call(video, execution_guard=_test_guard),
         ]
         anonymizer.anonymize_video.assert_not_called()
 
@@ -976,7 +1012,12 @@ class TestImportOrchestration:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
 
     def test_returns_newly_anonymized_video_after_all_mutation_checkpoints(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1031,8 +1072,8 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor"
+        result = service.import_and_anonymize_fenced(
+            source_path, "test-center", "test-processor", execution_fence=_test_fence()
         )
 
         # Assert
@@ -1083,13 +1124,13 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=Mock())
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor"
+        result = service.import_and_anonymize_fenced(
+            source_path, "test-center", "test-processor", execution_fence=_test_fence()
         )
 
         # Assert
         assert result is video
-        ensure_hls.assert_called_once_with(video, execution_guard=None)
+        ensure_hls.assert_called_once_with(video, execution_guard=_test_guard)
         cleanup.assert_called_once()
 
     def test_retry_resets_invalid_processing_before_anonymizing(
@@ -1128,8 +1169,12 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor", retry=True
+        result = service.import_and_anonymize_fenced(
+            source_path,
+            "test-center",
+            "test-processor",
+            retry=True,
+            execution_fence=_test_fence(),
         )
 
         # Assert
@@ -1172,7 +1217,12 @@ class TestImportOrchestration:
 
         # Act / Assert
         with pytest.raises(ValueError, match="has no video state"):
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
 
     @pytest.mark.parametrize("ownership_lost", [False, True])
     def test_finalizes_processing_failure_or_propagates_lost_ownership(
@@ -1219,7 +1269,12 @@ class TestImportOrchestration:
         # Act / Assert
         expected = "lease lost" if ownership_lost else "processing failed"
         with pytest.raises(RuntimeError, match=expected) as exc_info:
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
         finalizer.assert_called_once()
         if ownership_lost:
             assert isinstance(exc_info.value.__cause__, RuntimeError)
@@ -1265,7 +1320,9 @@ class TestReanonymizationOrchestration:
         # Act / Assert
         if anonymization_fails:
             with pytest.raises(RuntimeError, match="anonymization failed"):
-                service.reanonymize_existing_video(video, source_path=raw_path)
+                service.reanonymize_existing_video_fenced(
+                    video, source_path=raw_path, execution_fence=_test_fence()
+                )
             failure.assert_called_once()
             assert failure.call_args.kwargs == {
                 "preserve_existing_video_artifacts": True
@@ -1273,7 +1330,9 @@ class TestReanonymizationOrchestration:
             normalize.assert_not_called()
             success.assert_not_called()
         else:
-            result = service.reanonymize_existing_video(video, source_path=raw_path)
+            result = service.reanonymize_existing_video_fenced(
+                video, source_path=raw_path, execution_fence=_test_fence()
+            )
             assert result is video
             normalize.assert_called_once()
             success.assert_called_once()
@@ -1306,7 +1365,9 @@ class TestReanonymizationOrchestration:
 
         # Act / Assert
         with pytest.raises(RuntimeError, match="changed during VideoMeta extraction"):
-            service.reanonymize_existing_video(video, source_path=raw_path)
+            service.reanonymize_existing_video_fenced(
+                video, source_path=raw_path, execution_fence=_test_fence()
+            )
         initialize.assert_called_once_with(video, local_raw_path=raw_path)
 
 

@@ -26,7 +26,7 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     Unit,
 )
-from endoreg_db.services.medical_ledger import (
+from endoreg_db.services.interoperability.medical_ledger import (
     MedicalLedgerReferenceConflict,
     build_patient_medical_ledger_for_patient,
     create_patient_medical_ledger,

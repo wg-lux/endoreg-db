@@ -6,7 +6,7 @@ import pytest
 from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.models import Examination, Patient, PatientExamination
-from endoreg_db.services.dtypes_records import (
+from endoreg_db.services.reports.structured_records import (
     persist_patient_examination_dtypes_record,
 )
 

@@ -24,7 +24,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
-import endoreg_db.services.video_segment_blackening as blackening
+import endoreg_db.services.video_files.segment_blackening as blackening
 from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.services.jobs.video_fps_normalization_jobs import (

@@ -9,6 +9,16 @@ from django.conf import settings
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.runtime_paths import build_test_run_namespace
 
+pytestmark = pytest.mark.no_db
+
+
+def test_pure_test_does_not_allocate_database_or_temporary_directory(
+    request: pytest.FixtureRequest,
+) -> None:
+    assert "db" not in request.fixturenames
+    assert "django_db_setup" not in request.fixturenames
+    assert "tmp_path" not in request.fixturenames
+
 
 @pytest.mark.parametrize(
     ("worker_id", "process_id", "expected"),
@@ -31,7 +41,10 @@ def test_test_run_namespace_rejects_invalid_process_id() -> None:
         build_test_run_namespace(None, 0)
 
 
-def test_video_and_pdf_storage_share_the_session_root() -> None:
+def test_video_and_pdf_storage_share_the_session_root(
+    request: pytest.FixtureRequest,
+) -> None:
+    assert "tmp_path" in request.fixturenames
     paths = EndoregPathsModel.from_environment()
     storage_root = Path(paths.storage).resolve()
 
@@ -45,3 +58,10 @@ def test_video_and_pdf_storage_share_the_session_root() -> None:
         paths.anonym_report,
     ):
         media_path.resolve().relative_to(storage_root)
+
+
+@pytest.mark.integration
+def test_video_integration_does_not_allocate_temporary_directory(
+    request: pytest.FixtureRequest,
+) -> None:
+    assert "tmp_path" not in request.fixturenames

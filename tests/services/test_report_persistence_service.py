@@ -17,13 +17,13 @@ from endoreg_db.models import (
     PatientExaminationIndication,
     PatientExaminationReport,
 )
-from endoreg_db.services.report_persistence import (
+from endoreg_db.services.reports.persistence import (
     ReportPersistenceValidationError,
     delete_report_draft,
     save_report_submission,
 )
-from endoreg_db.services.report_pdf_renderer import build_report_template_pdf_payload
-from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
+from endoreg_db.services.reports.pdf_renderer import build_report_template_pdf_payload
+from endoreg_db.services.reports.runtime_validation import ReportRuntimeValidationError
 
 
 def _successful_runtime_validation(
@@ -131,7 +131,7 @@ def test_finalization_preserves_draft_for_another_report(
     examination.save()
     previous = examination.report_draft
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
     )
 
@@ -139,7 +139,7 @@ def test_finalization_preserves_draft_for_another_report(
         return None, None
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
         persist_test_artifacts,
     )
     save_report_submission(
@@ -174,11 +174,11 @@ def test_save_report_submission_final_purges_patient_examination_draft(
         return 41, 42
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
         successful_materialization,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
     )
 
@@ -223,11 +223,11 @@ def test_final_submission_rolls_back_when_pdf_materialization_fails(
         raise RuntimeError("renderer unavailable")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
         fail_materialization,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
     )
 
@@ -266,7 +266,7 @@ def test_final_submission_rolls_back_when_template_requirements_fail(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         fail_runtime_validation,
     )
 

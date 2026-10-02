@@ -9,6 +9,7 @@ scope:
   reported_host: gc-02
   baseline: 657 equivalent records, nine missing dependency records, seven conflicting indication relationships.
   allowed_changes:
+    - If strict reconciliation has no conflicts, perform a normal import or adoption, including a fresh installation.
     - Create missing members of the eight named colorectal interventions and histology_sampling.
     - Add only those interventions to expected_interventions on the seven named indications.
     - Adopt equivalent reference records and write standard immutable catalogue import receipts.
@@ -57,7 +58,7 @@ workflow:
     - No restart, database mutation or production approval is implied by local tests.
 failure_handling:
   - Additional live relationship differences are checked by the command and remain unknown until it runs against the target database.
-  - Unexpected removals, generic-intervention changes, scalar-field differences or missing unrelated records remain blockers.
+  - When relationship repair is needed, unexpected removals, generic-intervention changes, scalar-field differences or missing unrelated records remain blockers.
   - Existing imported indications are immutable; this legacy-only migration cannot repair drift under prior receipts.
   - Do not add force-overwrite behavior or repeat adopt-existing against unresolved differences.
   - Preserve command output and commit logs. Database rollback after a committed clinical migration requires the approved backup/recovery procedure.

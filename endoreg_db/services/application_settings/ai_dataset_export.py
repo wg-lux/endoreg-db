@@ -18,11 +18,11 @@ from endoreg_db.schemas.aidataset_export import (
     dump_ai_dataset_export_summary,
     parse_ai_dataset_export_request_payload,
 )
-from endoreg_db.services.aidataset_exports import export_to_standardized_structure
+from endoreg_db.services.datasets.exports import export_to_standardized_structure
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
 )
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.set_default_center import get_application_settings

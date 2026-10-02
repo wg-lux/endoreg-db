@@ -160,7 +160,7 @@ class AiModel(models.Model):
                 f"Model weights for '{self.name}' are missing and no Hugging Face fallback is configured."
             )
 
-        from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+        from endoreg_db.services.ai.model_meta_from_hf import ensure_model_meta_from_hf
 
         labelset = cast(_AiModelLabelSetSource, getattr(model_meta, "labelset"))
         versioned_meta = cast(_AiModelVersionSource, model_meta)
@@ -234,7 +234,7 @@ class AiModel(models.Model):
             "attempting Hugging Face setup for %s.",
             DEFAULT_HF_MODEL_ID,
         )
-        from endoreg_db.services.model_meta_from_hf import ensure_model_meta_from_hf
+        from endoreg_db.services.ai.model_meta_from_hf import ensure_model_meta_from_hf
 
         model_meta = ensure_model_meta_from_hf(
             model_id=DEFAULT_HF_MODEL_ID,

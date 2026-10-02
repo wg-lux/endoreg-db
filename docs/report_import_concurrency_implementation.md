@@ -217,3 +217,41 @@ tests Python fallback parity, and exercises the oldest supported and current
 Implementation order and readiness remain in `Reporting.yml`. Every stage must
 remain importable, leave existing stream endpoints unchanged, and retain a safe
 rollback to the previous fully validated state.
+
+## Gemeinsame Lease-Technik und Report-Jobintegration
+
+Die lokale Implementierung verwendet mit dem Upload-Job-Adapter gemeinsame
+Primitiven in `services/import_lease.py`: typisierte Datenbankzeit,
+Owner-/Token-/Ablaufprüfung sowie Heartbeat und Fehlerweitergabe. Die
+fachlichen Zustandsübergänge bleiben im jeweiligen Service.
+`ImportExecutionFence` aus `services/import_execution.py` ist der gemeinsame
+Vertrag für Versuch, synchrone Prüfung und transaktionale Mutation. Der
+Report-Service bindet seinen Content-Owner daran; Video verlangt denselben
+Vertrag am Verarbeitungseinstieg und erhält ihn vom Upload- oder Transferadapter. Der Report-Fence
+schützt einen Inhaltshash auch ohne UploadJob; die Upload-Lease schützt einen
+Auftrag mit Queue-Handoff, Abbruch und Quellenbereinigung. Eine Zusammenlegung
+der Ownership-Ledger würde diese verschiedenen Schutzbereiche verlieren.
+
+`ReportImportLifecycle` verbindet Reportjobs mit der intern erworbenen
+Content-Lease. Der Service ruft `started` im Mutationsguard, `succeeded` im
+Abschlussguard und `failed` nur beim weiterhin eigenen Fehlerabschluss auf.
+Der Reimport entfernt alte sensible Metadaten erst im `started`-Callback.
+Fehler beim Entfernen werden weitergegeben und rollen die Transaktion zurück.
+Report- und Joberfolg werden gemeinsam unter dem Content-Fence geschrieben;
+auch ein wiederverwendetes Ergebnis benötigt für den Jobabschluss einen
+geprüften Content-Fence. Vorabfehler dürfen keinen fremden Report oder dessen
+verknüpfte Aufträge verändern.
+
+Erkannte Datenbankausfälle werden nicht als Beweis verlorener Ownership
+umklassifiziert. Ein Hintergrundfehler wird am nächsten synchronen Guard
+sichtbar. Die Heartbeat-Verbindung gehört ausschließlich ihrem Thread; der
+Aufrufer muss die Lease vor Threadstart durch Autocommit sichtbar machen.
+
+Der aktuelle Dateieinstieg akzeptiert PDF und TXT. TXT wird vollständig und
+reproduzierbar in PDF überführt. CSV, FHIR-Exporte und strukturierte LXDM-Reports
+benötigen ihre eigenen validierten Adapter und dürfen nicht allein aufgrund
+ihrer fachlichen Reportrolle an den PDF/TXT-Einstieg übergeben werden.
+Gemeinsame Übersicht: [Zustandsverwaltung](endoreg_db_state_management.md).
+Akzeptanz und Evidenz für diese Grenzen:
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml)
+und [LongRunningServiceStateMachines.yml](../feature-tracking/LongRunningServiceStateMachines.yml).

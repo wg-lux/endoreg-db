@@ -7,7 +7,7 @@ from typing import Protocol, cast
 import pytest
 
 from endoreg_db.models import VideoFile
-from endoreg_db.services import streamable_media
+from endoreg_db.services.streaming import streamable_media as streamable_media
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.storage_profile import StoragePolicy
 

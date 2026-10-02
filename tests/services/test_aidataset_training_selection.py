@@ -16,7 +16,7 @@ from endoreg_db.models import (
     LabelVideoSegmentState,
     VideoFile,
 )
-from endoreg_db.services.aidataset_training_selection import (
+from endoreg_db.services.datasets.training_selection import (
     training_annotation_querysets,
 )
 

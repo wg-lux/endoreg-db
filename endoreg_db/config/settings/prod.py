@@ -7,7 +7,7 @@ from endoreg_db.config.secret_keyring import (
 
 from .base import *  # noqa: F401,F403
 from .base import (
-    BASE_DIR,
+    BASE_DIR as BASE_DIR,
     ENDOREG_ENABLE_HUB_TRANSFERS,
     ENDOREG_DEPLOYMENT_ROLE,
     REST_FRAMEWORK,
@@ -62,36 +62,20 @@ if not _allowed_hosts:
         )
 ALLOWED_HOSTS = _allowed_hosts
 
-# Require explicit DB engine in production (no default to SQLite)
 _db_engine = env_str("DB_ENGINE")
 if not _db_engine:
     if pytest_active:
-        _db_engine = "django.db.backends.sqlite3"
+        _db_engine = "django.db.backends.postgresql"
     else:
         raise ValueError("DB_ENGINE must be set in production")
 DB_ENGINE = _db_engine
 
-# For non-sqlite engines, require DB_NAME; for sqlite, allow default to a file under BASE_DIR
-if DB_ENGINE.endswith("sqlite3"):
-    _db_name = env_str("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
-else:
-    _db_name = env_str("DB_NAME")
-    if not _db_name:
-        raise ValueError(
-            "DB_NAME must be set when using a non-sqlite database engine in production"
-        )
+
+_db_name = env_str("DB_NAME")
+if not _db_name:
+    raise ValueError("DB_NAME must be set when in production")
 DB_NAME = _db_name
 
-_ROLE_REQUIRES_PRODUCTION_DB = {"central_hub", "local_study_server"}
-
-# require production DB in central-hub and local-study-server modes
-if ENDOREG_DEPLOYMENT_ROLE in _ROLE_REQUIRES_PRODUCTION_DB and DB_ENGINE.endswith(
-    "sqlite3"
-):
-    raise ValueError(
-        f"ENDOREG_DEPLOYMENT_ROLE={ENDOREG_DEPLOYMENT_ROLE} requires a non-SQLite production database. "
-        "Use PostgreSQL or another durable multi-user database engine."
-    )
 
 # Credentials and connection params are only included when configured.
 DB_USER = env_str("DB_USER", "")
@@ -103,15 +87,14 @@ _db_config = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
-if not DB_ENGINE.endswith("sqlite3"):
-    if DB_USER:
-        _db_config["USER"] = DB_USER
-    if DB_PASSWORD:
-        _db_config["PASSWORD"] = DB_PASSWORD
-    if DB_HOST:
-        _db_config["HOST"] = DB_HOST
-    if DB_PORT:
-        _db_config["PORT"] = DB_PORT
+if DB_USER:
+    _db_config["USER"] = DB_USER
+if DB_PASSWORD:
+    _db_config["PASSWORD"] = DB_PASSWORD
+if DB_HOST:
+    _db_config["HOST"] = DB_HOST
+if DB_PORT:
+    _db_config["PORT"] = DB_PORT
 
 DATABASES = {"default": _db_config}
 

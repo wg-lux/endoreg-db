@@ -12,7 +12,7 @@ import pytest
 from _pytest.monkeypatch import MonkeyPatch
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
-from endoreg_db.services.reconciliation import ReconciliationService
+from endoreg_db.services.runtime.reconciliation import ReconciliationService
 
 T = TypeVar("T")
 
@@ -97,7 +97,7 @@ class _FakeAtomic:
 def test_reconciliation_retains_local_lock_files_regardless_of_age(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     import_video = tmp_path / "import_video"
     import_report = tmp_path / "import_report"
@@ -136,7 +136,7 @@ def test_reconciliation_retains_local_lock_files_regardless_of_age(
 def test_reconciliation_retains_artifacts_without_attempt_ownership(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
     anonym_dir = tmp_path / "processed_videos_final"
@@ -179,7 +179,7 @@ def test_reconciliation_retains_artifacts_without_attempt_ownership(
 def test_cleanup_ignores_recent_part_files(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
     anonym_dir = tmp_path / "processed_videos_final"
@@ -214,7 +214,7 @@ def test_cleanup_ignores_recent_part_files(
 def test_cleanup_retains_stale_part_files_without_attempt_ownership(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
     anonym_dir = tmp_path / "processed_videos_final"
@@ -251,7 +251,7 @@ def test_cleanup_retains_stale_part_files_without_attempt_ownership(
 def test_startup_reconciliation_delegates_recovery_to_media_integrity(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     calls: list[str] = []
 
@@ -310,7 +310,7 @@ def test_startup_reconciliation_delegates_recovery_to_media_integrity(
 def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -393,7 +393,7 @@ def test_reconciliation_relinks_broken_raw_file_to_canonical_name(
 def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -473,7 +473,7 @@ def test_reconciliation_relinks_by_content_hash_for_legacy_overwrite(
 def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -538,7 +538,7 @@ def test_reconciliation_skips_relink_when_multiple_content_hash_candidates(
 def test_relink_skips_if_canonical_taken(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -602,7 +602,7 @@ def test_relink_skips_if_canonical_taken(
 def test_relink_first_winner_for_duplicate_hash(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -677,7 +677,7 @@ def test_relink_first_winner_for_duplicate_hash(
 def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     storage_dir = tmp_path / "storage"
     sensitive_dir = storage_dir / "sensitive_videos"
@@ -740,7 +740,7 @@ def test_recovery_after_partial_success_updates_db_to_existing_canonical_path(
 def test_build_content_hash_index_skips_part_named_candidates_and_hash_errors(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
     sensitive_dir.mkdir(parents=True, exist_ok=True)
@@ -800,7 +800,7 @@ def test_reconciliation_does_not_resurrect_validated_raw_media(
     monkeypatch: MonkeyPatch, tmp_path: Path, change: str
 ) -> None:
     from endoreg_db.models import Center, VideoFile
-    import endoreg_db.services.reconciliation as module
+    import endoreg_db.services.runtime.reconciliation as module
 
     video = VideoFile.objects.create(
         center=Center.objects.create(name=f"reconciliation-{uuid.uuid4().hex}"),
@@ -862,7 +862,7 @@ def test_reconciliation_does_not_resurrect_validated_raw_media(
 def test_should_run_startup_reconciliation_skips_pytest_entrypoints(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 
@@ -883,7 +883,7 @@ def test_should_run_startup_reconciliation_skips_pytest_entrypoints(
 def test_should_run_startup_reconciliation_only_allows_runtime_commands(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
 

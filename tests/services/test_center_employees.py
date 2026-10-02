@@ -12,7 +12,7 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.names.first_name import FirstName
 from endoreg_db.models.administration.person.names.last_name import LastName
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.services.center_employees import (
+from endoreg_db.services.centers.employees import (
     center_employee_overrides,
     import_center_employees,
 )

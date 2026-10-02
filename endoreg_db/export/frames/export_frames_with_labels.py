@@ -35,7 +35,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
-from endoreg_db.services.seekable_media_input import (
+from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
 )

@@ -32,8 +32,8 @@ belege:
   - Alle 11 verbleibenden Top-Level-Definitionen sind im positionsunabhängigen Syntaxbaum identisch.
 metriken:
   methode: radon.raw.analyze und radon.complexity.cc_visit auf dem Quelldateitext, ohne Shell-Unterprozess.
-  vorher: {loc: 429, sloc: 354, lloc: 174}
-  nachher: {loc: 364, sloc: 299, lloc: 147}
+  vorher: { loc: 429, sloc: 354, lloc: 174 }
+  nachher: { loc: 364, sloc: 299, lloc: 147 }
   entfernte_produktionszeilen: 65
 beibehalten:
   - _get_outside_frame_numbers und _get_outside_frame_paths besitzen explizite Testverbraucher.
@@ -52,7 +52,7 @@ verifikation:
   tracker_validate: 37 gültige Feature-Definitionen; show code_quality erfolgreich.
   pytest: 4 passed, 2 warnings, 131.90s; unveränderte Tests für gültige und ungültige Eingaben sowie Outside-Filter.
   trace_kommando: >-
-    RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+    RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
     .devenv/state/venv/bin/python -m trace --count -C /tmp/codex-vulture-segments-trace
     --ignore-dir '/nix/store:/home/admin/endoreg-db/.devenv:/home/admin/lx-anonymizer:/home/admin/lx-data-models:/home/admin/.cache'
     --module pytest --ds=endoreg_db.config.settings.test tests/models/video/test_video_file_segments_unit.py -q --tb=short

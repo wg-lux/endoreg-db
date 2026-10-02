@@ -151,7 +151,7 @@ Inspect the effective configuration without exposing token contents:
 
 ```bash
 devenv shell -- python manage.py shell -c \
-  'from django.contrib.auth import get_user_model; from endoreg_db.services.center_access import resolve_allowed_center_ids; from endoreg_db.services.hub import get_deployment_role; u=get_user_model().objects.get(username="BENUTZER"); print({"deployment_role": get_deployment_role(), "user_id": u.pk, "center_ids": sorted(resolve_allowed_center_ids(u) or []) if resolve_allowed_center_ids(u) is not None else "global"})'
+  'from django.contrib.auth import get_user_model; from endoreg_db.services.centers.access import resolve_allowed_center_ids; from endoreg_db.services.hub import get_deployment_role; u=get_user_model().objects.get(username="BENUTZER"); print({"deployment_role": get_deployment_role(), "user_id": u.pk, "center_ids": sorted(resolve_allowed_center_ids(u) or []) if resolve_allowed_center_ids(u) is not None else "global"})'
 ```
 
 Relevant structured JavaScript Object Notation (JSON) events:

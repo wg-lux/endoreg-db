@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.import_files.file_storage.storage import ensure_context_file_hash
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -36,12 +36,6 @@ class _HistoryDecision:
 
 def _context_source_path(ctx: ImportContext) -> Path:
     return ctx.sensitive_path if isinstance(ctx.sensitive_path, Path) else ctx.file_path
-
-
-def _ensure_context_file_hash(ctx: ImportContext) -> str:
-    if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = get_file_hash(ctx.file_path)
-    return ctx.file_hash
 
 
 def _load_current_video(
@@ -178,7 +172,7 @@ def create_or_retrieve_video_file(
     """
     file_path = _context_source_path(ctx)
     file_type = ctx.file_type  # logical key for history; can be None
-    file_hash = _ensure_context_file_hash(ctx)
+    file_hash = ensure_context_file_hash(ctx)
     processed = False
     needs_processing = True
 

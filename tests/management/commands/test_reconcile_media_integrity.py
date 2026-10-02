@@ -11,7 +11,7 @@ from lx_dtypes.models.contracts.management_command import (
     ReconcileMediaIntegrityCommandOptionsPayload,
 )
 
-from endoreg_db.services.media_integrity import MediaIntegritySummary
+from endoreg_db.services.media.integrity import MediaIntegritySummary
 
 
 def _json_payload(output: StringIO) -> dict[str, Any]:

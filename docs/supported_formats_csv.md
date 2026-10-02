@@ -6,7 +6,7 @@ Canonical template registry:
 - [document_templates.yaml](../endoreg_db/data/tabular_import_format/document_templates.yaml)
 
 Resolver and normalizer:
-- [tabular_import_formats.py](../endoreg_db/services/tabular_import_formats.py)
+- [tabular_import_formats.py](../endoreg_db/services/imports/tabular_import_formats.py)
 
 The import flow is:
 1. Read the header columns.

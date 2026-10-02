@@ -563,7 +563,7 @@ class UploadStatusView(APIView):
                 "source_center",
             ).get(id=id)
 
-            from endoreg_db.services.center_access import resolve_allowed_center_ids
+            from endoreg_db.services.centers.access import resolve_allowed_center_ids
 
             allowed_center_ids = resolve_allowed_center_ids(
                 getattr(request, "user", None)

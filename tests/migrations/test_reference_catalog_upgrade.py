@@ -22,7 +22,7 @@ from endoreg_db.models.medical.examination.examination_indication import (
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
-from endoreg_db.services.reference_catalog import (
+from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,

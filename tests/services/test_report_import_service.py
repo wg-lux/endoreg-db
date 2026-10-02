@@ -17,8 +17,8 @@ from django.test import TransactionTestCase
 from django.utils import timezone
 
 from endoreg_db.models import Center, PatientExamination, RawPdfFile
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.reports.materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
 from endoreg_db.utils.file_operations import (

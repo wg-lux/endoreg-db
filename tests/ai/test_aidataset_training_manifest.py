@@ -17,7 +17,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
-from endoreg_db.services.aidataset_training_manifests import (
+from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
 )
 

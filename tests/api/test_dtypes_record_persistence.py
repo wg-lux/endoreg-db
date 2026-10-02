@@ -45,10 +45,10 @@ from endoreg_db.models.medical.patient.patient_finding_classification import (
     PatientFindingClassification,
 )
 from endoreg_db.models.other.gender import Gender
-from endoreg_db.services.dtypes_records import (
+from endoreg_db.services.reports.structured_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.reports.persistence import save_report_submission
 
 pytestmark = pytest.mark.django_db
 

@@ -135,7 +135,9 @@ def get_processed_video_stream_path(
         return path
 
     if materialize_if_missing:
-        from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+        from endoreg_db.services.streaming.streamable_media import (
+            sync_video_streamable_artifacts,
+        )
 
         sync_video_streamable_artifacts(
             video,
@@ -157,7 +159,7 @@ def delete_raw_file_after_validation(video: "VideoFile") -> bool:
     Important: delete through storage, not via guessed paths.
     Streamable derived raw copy is cleaned separately.
     """
-    from endoreg_db.services.hls_media import delete_video_hls_artifacts
+    from endoreg_db.services.streaming.hls_media import delete_video_hls_artifacts
 
     deleted = delete_video_hls_artifacts(video, artifact_kind="raw")
     raw_field = getattr(video, "raw_file", None)

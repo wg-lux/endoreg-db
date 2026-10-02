@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.db import transaction
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
-from endoreg_db.services.sensitive_meta_external_ids import (
+from endoreg_db.services.patient_identity.external_ids import (
     assign_patient_external_id,
     split_patient_external_id,
 )

@@ -18,7 +18,10 @@ import yaml
 
 from endoreg_db.import_files import video_import_service
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services import hls_media, video_processed_transcode
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import (
+    processed_transcode as video_processed_transcode,
+)
 from endoreg_db.utils.file_operations import atomic_write_file
 from workflow.scripts.import_common import (
     ImportReceipt,

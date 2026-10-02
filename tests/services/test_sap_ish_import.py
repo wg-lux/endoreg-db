@@ -7,11 +7,13 @@ from pathlib import Path
 
 import yaml
 
-from endoreg_db.services.sap_ish_import import (
+from endoreg_db.services.interoperability.sap_ish_import import (
     convert_sap_ish_txt_directory_to_preanonymized_drop,
     convert_sap_ish_zip_to_preanonymized_drop,
 )
-from endoreg_db.services.tabular_import_formats import build_preanonymized_payload
+from endoreg_db.services.imports.tabular_import_formats import (
+    build_preanonymized_payload,
+)
 from endoreg_db.utils.paths import get_runtime_paths
 
 

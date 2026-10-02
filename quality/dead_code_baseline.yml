@@ -33,7 +33,7 @@ accepted_findings:
     path: endoreg_db/helpers/typing.py
     message: "unused variable 'objs'"
   - <<: *protocol_signature
-    path: endoreg_db/services/aidataset_training_manifests.py
+    path: endoreg_db/services/datasets/training_manifests.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature
     path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
@@ -55,12 +55,12 @@ accepted_findings:
     path: endoreg_db/views/anonymization/validate.py
     message: "unused variable 'through_defaults'"
   - <<: *protocol_signature
-    path: endoreg_db/services/report_runtime_validation.py
+    path: endoreg_db/services/reports/runtime_validation.py
     message: "unused variable 'p_examination'"
     reason: Required keyword parameter in the KnowledgeBase runtime protocol; the validated ledger payload is passed under this name and consumed by the concrete implementation.
     review_after: 2026-11-13
   - <<: *protocol_signature
-    path: endoreg_db/services/hls_media.py
+    path: endoreg_db/services/streaming/hls_media.py
     message: "unused variable 'routing_key'"
     reason: _HlsTaskDispatcher.apply_async declares the Celery keyword contract; dispatch_video_hls_materialization passes routing_key=queue to the concrete task dispatcher.
     review_after: 2026-12-09
@@ -108,13 +108,13 @@ accepted_findings:
     path: endoreg_db/checks.py
     message: "unused variable 'databases'"
   - <<: *framework_contract
-    path: endoreg_db/services/polling_coordinator.py
+    path: endoreg_db/services/runtime/polling_coordinator.py
     message: "unused variable 'exc_val'"
   - <<: *framework_contract
-    path: endoreg_db/services/polling_coordinator.py
+    path: endoreg_db/services/runtime/polling_coordinator.py
     message: "unused variable 'exc_tb'"
   - <<: *framework_contract
-    path: endoreg_db/services/reconciliation.py
+    path: endoreg_db/services/runtime/reconciliation.py
     message: "unused variable 'tb'"
   - <<: *framework_contract
     path: endoreg_db/urls/patient.py

@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from contextlib import nullcontext
+from endoreg_db.services.imports.execution import ImportExecutionFence
 
 from endoreg_db.utils import profiling
 
@@ -127,8 +129,13 @@ def test_video_import_profile_records_real_entrypoint_on_failure(
     service = object.__new__(VideoImportService)
     with profiling.profile_functions(tmp_path / "profiles"):
         with pytest.raises(FileNotFoundError):
-            service.import_and_anonymize(
-                tmp_path / "missing.mp4", "test-center", "test-processor"
+            service.import_and_anonymize_fenced(
+                tmp_path / "missing.mp4",
+                "test-center",
+                "test-processor",
+                execution_fence=ImportExecutionFence(
+                    "a" * 32, lambda: None, nullcontext
+                ),
             )
     profile = next((tmp_path / "profiles").glob("*.prof"))
     assert (

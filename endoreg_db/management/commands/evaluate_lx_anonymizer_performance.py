@@ -41,11 +41,11 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.evaluation_manifest import (
+from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.privacy.evaluation_manifest import (
     write_performance_evaluation_manifest,
 )
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,

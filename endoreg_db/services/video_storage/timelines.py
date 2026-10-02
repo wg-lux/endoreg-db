@@ -20,7 +20,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     evidence_as_json,
 )
-from endoreg_db.services.video_timeline import (
+from endoreg_db.services.video_files.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,

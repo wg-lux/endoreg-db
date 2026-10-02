@@ -23,7 +23,10 @@ from endoreg_db.schemas.video_jobs import (
     VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND,
     VideoAnonymizationCorrectionJobConfig,
 )
-from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
+from endoreg_db.services.streaming.hls_media import (
+    hls_result_is_ready,
+    materialize_video_hls,
+)
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -32,8 +35,10 @@ from endoreg_db.services.jobs.heavy_jobs import (
 from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.file_operations import (
     atomic_move_file,

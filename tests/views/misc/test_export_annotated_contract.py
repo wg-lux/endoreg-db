@@ -132,7 +132,7 @@ class ExportAnnotatedContractTests(TestCase):
     def test_api_rejects_export_without_required_video_scope(self) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -151,7 +151,7 @@ class ExportAnnotatedContractTests(TestCase):
         captured: dict[str, export_config] = {}
 
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -192,7 +192,7 @@ class ExportAnnotatedContractTests(TestCase):
         captured: dict[str, export_config] = {}
 
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -209,7 +209,7 @@ class ExportAnnotatedContractTests(TestCase):
     ) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -240,7 +240,7 @@ class ExportAnnotatedContractTests(TestCase):
         captured: dict[str, export_config] = {}
 
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -275,7 +275,7 @@ class ExportAnnotatedContractTests(TestCase):
     def test_api_rejects_null_required_fields_before_client_is_created(self) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -303,7 +303,7 @@ class ExportAnnotatedContractTests(TestCase):
     def test_api_rejects_empty_required_string_fields(self) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -324,7 +324,7 @@ class ExportAnnotatedContractTests(TestCase):
     def test_api_rejects_invalid_non_positive_ids_and_limit(self) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -348,7 +348,7 @@ class ExportAnnotatedContractTests(TestCase):
     def test_api_rejects_ambiguous_center_scope(self) -> None:
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -394,7 +394,7 @@ class ExportAnnotatedContractTests(TestCase):
             )
 
             with patch(
-                "endoreg_db.services.export_annotated.annotation_exporter_client",
+                "endoreg_db.services.media.export_annotated.annotation_exporter_client",
                 return_value=_FakeExporterClient(captured),
             ):
                 response = self.client.post(
@@ -442,7 +442,7 @@ class ExportAnnotatedContractTests(TestCase):
             )
 
             with patch(
-                "endoreg_db.services.export_annotated.annotation_exporter_client",
+                "endoreg_db.services.media.export_annotated.annotation_exporter_client",
                 return_value=_FakeExporterClient(captured),
             ):
                 response = self.client.post(
@@ -486,7 +486,7 @@ class ExportAnnotatedContractTests(TestCase):
             )
 
             with patch(
-                "endoreg_db.services.export_annotated.annotation_exporter_client",
+                "endoreg_db.services.media.export_annotated.annotation_exporter_client",
                 return_value=_FakeExporterClient(captured),
             ):
                 response = self.client.post(
@@ -526,7 +526,7 @@ class ExportAnnotatedContractTests(TestCase):
 
         captured: dict[str, export_config] = {}
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(
@@ -554,7 +554,7 @@ class ExportAnnotatedContractTests(TestCase):
         captured: dict[str, export_config] = {}
 
         with patch(
-            "endoreg_db.services.export_annotated.annotation_exporter_client",
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
             return_value=_FakeExporterClient(captured),
         ):
             response = self.client.post(

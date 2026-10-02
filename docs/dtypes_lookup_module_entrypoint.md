@@ -22,7 +22,7 @@ base and the frontend.
    authenticates the request and enforces center-scoped object access.
 6. The host ledger rows are converted to the canonical
    `DtypesRecordPersistencePayload` by lx-dtypes.
-7. `endoreg_db.services.dtypes_records` verifies the URL/model examination and
+7. `endoreg_db.services.reports.structured_records` verifies the URL/model examination and
    each nested finding's examination reference, then writes the canonical JSON
    and knowledge-base identity in a transaction.
 

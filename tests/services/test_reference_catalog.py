@@ -18,14 +18,14 @@ from lx_dtypes.models.contracts.reference_catalog_snapshot import (
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
-from endoreg_db.services.reference_catalog import (
+from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,
     select_catalog,
 )
-from endoreg_db.services.reference_catalog_export import export_reference_catalog
-from endoreg_db.services.reference_catalog_models import CATALOG_MODELS
+from endoreg_db.services.reference_data.catalog_export import export_reference_catalog
+from endoreg_db.services.reference_data.catalog_models import CATALOG_MODELS
 
 pytestmark = pytest.mark.django_db
 
@@ -208,7 +208,7 @@ def test_inactive_workforce_reference_is_not_hidden_during_reconciliation() -> N
 
 
 def test_legacy_nan_weight_exports_as_absent_but_infinity_is_rejected() -> None:
-    from endoreg_db.services.reference_catalog_export import export_reference_row
+    from endoreg_db.services.reference_data.catalog_export import export_reference_row
     from pydantic import ValidationError
 
     import_reference_catalog(snapshot("endoreg_green_endoscopy"))

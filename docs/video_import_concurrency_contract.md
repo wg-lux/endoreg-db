@@ -104,8 +104,9 @@ The production call boundary deliberately has two layers:
    background heartbeat for the complete expensive operation. It owns database
    clock renewal, the lease owner and fencing token, retry classification, and
    terminal attempt state.
-2. The wrapper constructs one `VideoImportExecutionFence` containing the
-   opaque attempt identifier and a synchronous `guard` capability, then calls
+2. The wrapper constructs one shared `ImportExecutionFence` containing the
+   opaque attempt identifier, a synchronous `guard`, and a transaction-bound
+   `mutation_guard` capability, then calls
    `VideoImportService.import_and_anonymize_fenced`.
 3. The video service calls that guard before durable state changes and
    publication checkpoints. The guard verifies current database ownership and
@@ -119,14 +120,20 @@ wrapper still owns the attempt immediately before a mutation. Conversely, the
 heartbeat does not grant publication authority by itself: every durable write
 still needs a successful guard or an equivalent row-locked fencing check.
 
-`VideoImportService.import_and_anonymize` is intentionally documented as the
-unfenced compatibility path. Productive API, watcher, transfer, command, or job
-wrappers must not call it. Keeping fenced invocation as a separate method
-prevents an attempt identifier from being passed without a guard (or a guard
-without its attempt identifier), which would create misleading partial
-ownership. Migration is incomplete while any productive entrypoint still uses
-the unfenced method; such paths must remain visible in the feature tracker and
-must not be described as cluster-safe.
+The processing class in `import_files/video_import_service.py` only exposes
+fenced import and reanonymization entrypoints. The public service wrapper in
+`services/video_import.py` preserves direct-call convenience: it persists or
+reuses an encrypted upload source, acquires an `UploadJob` lease and heartbeat,
+and passes both guards to processing. The workflow script and lazy public
+export use this wrapper. Outer transactions are rejected before admission.
+Reimport preparation runs under the acquired lease; encoding runs outside its
+short mutation transactions. Upload and transfer entrypoints supply their
+existing authority directly, without acquiring a second lease.
+
+Reports bind the same `ImportExecutionFence` to their internally acquired
+content-hash lease. Deleting that ledger would remove protection for callers
+without an upload job. Shared execution authority does not merge domain state
+transitions, source cleanup rules, or media-operation admission.
 
 ## Attempt State Machine
 

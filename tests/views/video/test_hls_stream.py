@@ -13,7 +13,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.operation_lease import MediaOperationLease
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream

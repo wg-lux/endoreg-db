@@ -21,7 +21,6 @@ from endoreg_db.config.env import (
     DJANGO_SETTINGS_MODULE_ENV,
     RUNTIME_ROOT_ENV,
 )
-from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.management.commands import kcache_video_import as command_module
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.upload_job import UploadJob
@@ -324,32 +323,3 @@ def test_kcache_video_import_payload_backfills_missing_processed_video_hash(
     assert payload is not None
     assert payload["processed_video_hash"] == expected_hash
     assert video.processed_video_hash == expected_hash
-
-
-def test_test_settings_management_commands_reuse_stable_test_database() -> None:
-    env = os.environ.copy()
-    env[DJANGO_SETTINGS_MODULE_ENV] = "endoreg_db.config.settings.test"
-    env.pop("PYTEST_CURRENT_TEST", None)
-    env.pop("TEST_DB_REUSE", None)
-    env.pop("TEST_DB_FILE", None)
-    env.pop("TEST_DB_NAME", None)
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "from django.conf import settings; "
-                "print(settings.DATABASES['default']['NAME'])"
-            ),
-        ],
-        cwd=BASE_DIR,
-        env=env,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.stdout.strip() == str(
-        get_runtime_paths().test / "data/tests/db/test_db.sqlite3"
-    )

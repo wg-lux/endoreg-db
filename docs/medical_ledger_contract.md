@@ -11,7 +11,7 @@ key in an aggregate request must match the patient in the URL.
 snake-case JSON schemas, serialization, and deterministic ledger UUID
 derivation. `endoreg_db` owns Django models, foreign keys, deletion behavior,
 transactions, authorization, query planning, and migrations. Orchestration
-belongs in `endoreg_db.services.medical_ledger` and the patient API actions, not
+belongs in `endoreg_db.services.interoperability.medical_ledger` and the patient API actions, not
 in either repository's model classes.
 
 The patient medical ledger is not a second persistence store. Its

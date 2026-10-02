@@ -15,7 +15,7 @@ from endoreg_db.models.state.anonymization import (
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
-from endoreg_db.services.anonymization import _state_anonymization_status
+from endoreg_db.services.privacy.workflow import _state_anonymization_status
 from endoreg_db.utils import rust_backend
 
 

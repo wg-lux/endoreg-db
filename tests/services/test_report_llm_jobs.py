@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Direct lifecycle boundary coverage is intentional.
+# pyright: reportPrivateUsage=false
+
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import cast
@@ -20,6 +23,11 @@ from endoreg_db.services.jobs.report_llm_jobs import (
     report_llm_job_payload,
 )
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
+from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.reports.import_fencing import (
+    acquire_report_import_fence,
+    report_import_finalization_guard,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -262,7 +270,7 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     upload_job = _make_upload_job(center)
     report = RawPdfFile.objects.create(
         center=center,
-        pdf_hash=f"report-llm-import-completed-{upload_job.pk}",
+        pdf_hash="b" * 64,
         file=SimpleUploadedFile(
             name="completed-report-import.pdf",
             content=b"%PDF-1.4\n%%EOF\n",
@@ -284,7 +292,14 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
 
-    def fake_import_and_anonymize(*_args: object, **_kwargs: object) -> RawPdfFile:
+    def fake_import_and_anonymize(
+        service: ReportImportService, **_kwargs: object
+    ) -> RawPdfFile:
+        assert service.lifecycle is not None
+        with report_import_finalization_guard(
+            acquire_report_import_fence(report.pdf_hash)
+        ):
+            service.lifecycle.succeeded(report)
         return report
 
     monkeypatch.setattr(
@@ -305,7 +320,7 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
 
     result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
 
-    assert result.status == "completed"
+    assert result.status == "completed", result.reason
     assert result.report_id == report.pk
     assert (
         result.poll_url
@@ -328,7 +343,7 @@ def test_report_upload_import_does_not_publish_success_without_usable_artifact(
     upload_job = _make_upload_job(center)
     report = RawPdfFile.objects.create(
         center=center,
-        pdf_hash=f"report-llm-import-unusable-{upload_job.pk}",
+        pdf_hash="c" * 64,
         file=SimpleUploadedFile(
             name="unusable-report-import.pdf",
             content=b"%PDF-1.4\n%%EOF\n",
@@ -337,7 +352,22 @@ def test_report_upload_import_does_not_publish_success_without_usable_artifact(
     )
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
 
-    def fake_import(*_args: object, **_kwargs: object) -> RawPdfFile:
+    def fake_import(service: ReportImportService, **_kwargs: object) -> RawPdfFile:
+        from endoreg_db.services.reports.import_fencing import (
+            report_import_mutation_guard,
+        )
+
+        assert service.lifecycle is not None
+        fence = acquire_report_import_fence(report.pdf_hash)
+        with report_import_mutation_guard(fence):
+            service.lifecycle.started(report)
+        try:
+            with report_import_finalization_guard(fence):
+                service.lifecycle.succeeded(report)
+        except ProcessedReportIntegrityError as exc:
+            with report_import_mutation_guard(fence):
+                service.lifecycle.failed(report, exc)
+            raise
         return report
 
     monkeypatch.setattr(
@@ -392,3 +422,99 @@ def test_corrupted_pdf_is_quarantined_as_non_retryable_invalid_input(
     assert upload_job.next_retry_at is None
     assert upload_job.file
     assert ReportLlmInferenceJob.objects.filter(upload_job=upload_job).count() == 1
+
+
+@pytest.mark.parametrize("reimport", [True, False])
+@pytest.mark.parametrize("database_outage", [True, False])
+def test_losing_report_delivery_leaves_job_and_metadata_unchanged(
+    monkeypatch: MonkeyPatch,
+    center: Center,
+    reimport: bool,
+    database_outage: bool,
+) -> None:
+    from unittest.mock import Mock
+    from endoreg_db.services.jobs import report_llm_jobs
+    from endoreg_db.services.reports.import_fencing import ReportImportBusyError
+
+    report = _make_report(center)
+    upload = _make_upload_job(center)
+    job = ReportLlmInferenceJob.objects.create(
+        pdf=report if reimport else None,
+        upload_job=None if reimport else upload,
+        operation="reimport" if reimport else "import",
+        status=ReportLlmInferenceJob.STATUS_QUEUED,
+        config={
+            "kind": "report_llm_reimport" if reimport else "report_llm_import",
+            "queue": "pipeline",
+        },
+    )
+    before = ReportLlmInferenceJob.objects.values().get(pk=job.pk)
+    from django.db import OperationalError
+
+    error_type = OperationalError if database_outage else ReportImportBusyError
+    clear = Mock()
+    monkeypatch.setattr(report_llm_jobs, "_clear_existing_sensitive_meta", clear)
+    from contextlib import nullcontext
+    from pathlib import Path
+
+    monkeypatch.setattr(
+        report_llm_jobs,
+        "ensure_local_file",
+        Mock(return_value=nullcontext(Path("report.pdf"))),
+    )
+    monkeypatch.setattr(
+        ReportImportService,
+        "import_and_anonymize",
+        Mock(side_effect=error_type("unavailable ownership")),
+    )
+    with pytest.raises(error_type):
+        if reimport:
+            report_llm_jobs._run_report_llm_reimport_job(job.job_key)
+        else:
+            report_llm_jobs._run_report_llm_import_job(job.job_key)
+    clear.assert_not_called()
+    assert ReportLlmInferenceJob.objects.values().get(pk=job.pk) == before
+    upload.refresh_from_db()
+    assert upload.status == UploadJob.Status.PENDING
+
+
+@pytest.mark.parametrize("superseded", [False, True])
+def test_reimport_metadata_reset_is_owned_and_transactional(
+    center: Center,
+    superseded: bool,
+) -> None:
+    from endoreg_db.models import SensitiveMeta
+    from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
+    from endoreg_db.services.jobs.report_llm_jobs import _ReportJobLifecycle
+    from endoreg_db.services.reports.import_fencing import (
+        StaleReportImportAttemptError,
+        report_import_mutation_guard,
+    )
+
+    report = _make_report(center)
+    report.pdf_hash = "d" * 64
+    meta = SensitiveMeta.objects.create(center=center)
+    report.sensitive_meta = meta
+    report.save(update_fields=["pdf_hash", "sensitive_meta"])
+    job = ReportLlmInferenceJob.objects.create(
+        pdf=report,
+        operation=ReportLlmInferenceJob.OPERATION_REIMPORT,
+        config={"kind": "report_llm_reimport", "queue": "pipeline"},
+    )
+    lifecycle = _ReportJobLifecycle(job, reimport=True)
+    fence = acquire_report_import_fence(report.pdf_hash)
+    if superseded:
+        ReportImportAttempt.objects.filter(content_hash=report.pdf_hash).update(
+            lease_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        acquire_report_import_fence(report.pdf_hash)
+    with pytest.raises(StaleReportImportAttemptError if superseded else ValueError):
+        with report_import_mutation_guard(fence):
+            lifecycle.started(report)
+            assert not SensitiveMeta.objects.filter(pk=meta.pk).exists()
+            raise ValueError("later preparation failed")
+    report.refresh_from_db()
+    job.refresh_from_db()
+    assert report.sensitive_meta_id == meta.pk
+    assert SensitiveMeta.objects.filter(pk=meta.pk).exists()
+    assert job.status == ReportLlmInferenceJob.STATUS_QUEUED

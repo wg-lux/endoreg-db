@@ -23,13 +23,13 @@ from lx_dtypes.utils.deployment_setup import parse_deployment_setup, resolve_dep
 from endoreg_db.models.administration.app_settings import ApplicationSettings
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
-from endoreg_db.services.deployment_setup import (
+from endoreg_db.services.runtime.deployment_setup import (
     DeploymentActivationError,
     apply_deployment,
     plan_deployment,
     validate_deployment,
 )
-from endoreg_db.services.reference_catalog_export import export_reference_catalog
+from endoreg_db.services.reference_data.catalog_export import export_reference_catalog
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -190,7 +190,8 @@ def test_activation_is_explicit_and_retry_preserves_database(
     assert registry.active_identity() == previous
     center = ApplicationSettings.objects.get(pk=1).center
     apply_deployment(setup, resolved.lock, registry)
-    assert registry.active_identity() == ("coloreg", "0.2.0")
+    selected = setup.study_packages[0]
+    assert registry.active_identity() == (selected.module, selected.version)
     assert ApplicationSettings.objects.get(pk=1).center == center
     assert ReferenceCatalogImport.objects.count() == 1
 

@@ -5,7 +5,7 @@ from typing import cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from endoreg_db.services.runtime_wheel_staging import (
+from endoreg_db.services.runtime.runtime_wheel_staging import (
     DEFAULT_MAX_RUNTIME_ROOT_ENTRIES,
     reap_runtime_wheel_staging,
 )

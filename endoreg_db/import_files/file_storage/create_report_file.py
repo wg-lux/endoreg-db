@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.import_context import ImportContext  #
-from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.import_files.file_storage.storage import ensure_context_file_hash
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,
@@ -49,24 +49,23 @@ def create_or_retrieve_report_file(
     processed = False
     needs_processing = True
 
-    if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = get_file_hash(ctx.file_path)
+    file_hash = ensure_context_file_hash(ctx)
 
     # Check if we already have a successful history entry for this object
     has_success_history = ProcessingHistory.has_history_for_hash(
-        file_hash=ctx.file_hash,
+        file_hash=file_hash,
         success=True,
     )
     has_failure_history = ProcessingHistory.has_history_for_hash(
-        file_hash=ctx.file_hash,
+        file_hash=file_hash,
         success=False,
     )
     if ctx.current_report is None:
-        ctx.current_report = RawPdfFile.objects.filter(pdf_hash=ctx.file_hash).first()
+        ctx.current_report = RawPdfFile.objects.filter(pdf_hash=file_hash).first()
     if has_success_history and ctx.current_report is not None:
         try:
             require_usable_completed_report(
-                ctx.current_report, source_sha256=ctx.file_hash, require_artifact=False
+                ctx.current_report, source_sha256=file_hash, require_artifact=False
             )
         except ProcessedReportIntegrityError:
             logger.info("Completed report is unusable; continuing import for repair.")
@@ -101,7 +100,7 @@ def create_or_retrieve_report_file(
     # No successful history yet → ensure there is a history entry marking it as "in progress"/failed
     ProcessingHistory.get_or_create_for_hash(
         obj=pdf,
-        file_hash=ctx.file_hash,
+        file_hash=file_hash,
         success=False,
     )
 

@@ -18,7 +18,7 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.config.env import nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,
     get_ready_hls_artifact,
@@ -27,7 +27,7 @@ from endoreg_db.services.hls_media import (
     hls_segment_path,
     unwrap_hls_content_key,
 )
-from endoreg_db.services.media_operation_gate import create_video_stream_lease
+from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path

@@ -10,7 +10,8 @@ from django.utils import timezone
 
 from endoreg_db.models import Center
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services import hls_media, hls_legacy_adoption
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.streaming import hls_legacy_adoption as hls_legacy_adoption
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
 from tests.services.test_hls_media import _create_processed_video

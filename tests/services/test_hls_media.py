@@ -17,7 +17,7 @@ from django.utils import timezone
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services.video_storage import hls_encoding
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
 from endoreg_db.utils import transcode_execution
 from endoreg_db.utils.ffmpeg_wrapper import resolve_ffmpeg_executable
@@ -1119,7 +1119,7 @@ def test_online_rotation_regenerates_real_hls_content_keys_after_playback(
         StorageRotationReport,
         _rotate_hls,
     )
-    from endoreg_db.services.media_operation_gate import (
+    from endoreg_db.services.media.operation_gate import (
         create_video_stream_lease,
         release_media_operation_lease,
     )
@@ -1284,7 +1284,7 @@ def test_hls_reuses_verified_hash_and_rejects_same_name_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from unittest.mock import patch
-    from endoreg_db.services import video_source_hash
+    from endoreg_db.services.video_files import source_hash as video_source_hash
 
     video = _create_processed_video(center=hls_center, payload=b"original processed")
     video.processed_video_hash = hashlib.sha256(b"original processed").hexdigest()

@@ -6,10 +6,11 @@ from typing import Literal
 from unittest.mock import Mock
 
 import pytest
+from django.db import connection, transaction
 from django.utils import timezone
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
-from endoreg_db.services.report_import_fencing import (
+from endoreg_db.services.reports.import_fencing import (
     ReportImportBusyError,
     ReportImportFenceHeartbeat,
     StaleReportImportAttemptError,
@@ -21,6 +22,30 @@ from endoreg_db.services.report_import_fencing import (
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def test_heartbeat_rejects_outer_transaction_without_closing_caller_connection() -> (
+    None
+):
+    fence = acquire_report_import_fence("a" * 64)
+    with transaction.atomic():
+        with pytest.raises(RuntimeError, match="requires autocommit"):
+            with ReportImportFenceHeartbeat(fence):
+                pytest.fail("Heartbeat must not start inside an outer transaction")
+        assert ReportImportAttempt.objects.filter(
+            content_hash=fence.content_hash
+        ).exists()
+    assert connection.is_usable()
+
+
+def test_heartbeat_exit_preserves_caller_connection_and_original_error() -> None:
+    fence = acquire_report_import_fence("b" * 64)
+    original_connection = connection.connection
+    with pytest.raises(ValueError, match="stage failed"):
+        with ReportImportFenceHeartbeat(fence):
+            raise ValueError("stage failed")
+    assert connection.connection is original_connection
+    assert connection.is_usable()
 
 
 def test_active_attempt_blocks_second_owner() -> None:
@@ -187,7 +212,7 @@ def test_background_heartbeat_renews_during_long_running_stage(
         renewed.set()
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_import_fencing.renew_report_import_fence",
+        "endoreg_db.services.reports.import_fencing.renew_report_import_fence",
         Mock(side_effect=renew_and_signal),
     )
     with ReportImportFenceHeartbeat(fence, interval_seconds=0.01):
@@ -205,10 +230,54 @@ def test_background_heartbeat_failure_is_raised_at_guard(
         raise StaleReportImportAttemptError("superseded")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_import_fencing.renew_report_import_fence",
+        "endoreg_db.services.reports.import_fencing.renew_report_import_fence",
         reject_renewal,
     )
     with ReportImportFenceHeartbeat(fence, interval_seconds=0.01) as heartbeat:
         assert failed.wait(timeout=1)
         with pytest.raises(StaleReportImportAttemptError, match="heartbeat failed"):
             heartbeat.guard()
+
+
+@pytest.mark.parametrize("operation", ["renew", "mutate", "finalize", "fail"])
+def test_expired_owner_is_rejected_without_a_replacement(operation: str) -> None:
+    fence = acquire_report_import_fence("6" * 64)
+    ReportImportAttempt.objects.filter(content_hash=fence.content_hash).update(
+        lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    if operation == "fail":
+        assert not mark_report_import_fence_failed(fence)
+    else:
+        with pytest.raises(StaleReportImportAttemptError):
+            if operation == "renew":
+                renew_report_import_fence(fence)
+            else:
+                guard = (
+                    report_import_mutation_guard
+                    if operation == "mutate"
+                    else report_import_finalization_guard
+                )
+                with guard(fence):
+                    pytest.fail("Expired owner entered a mutation boundary")
+    assert (
+        ReportImportAttempt.objects.get(content_hash=fence.content_hash).status
+        == ReportImportAttempt.STATUS_ACTIVE
+    )
+
+
+def test_report_heartbeat_preserves_database_recovery_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from django.db import OperationalError
+
+    fence = acquire_report_import_fence("7" * 64)
+    heartbeat = ReportImportFenceHeartbeat(fence)
+    outage = OperationalError("database unavailable")
+    monkeypatch.setattr(heartbeat, "_failure", outage)
+    with pytest.raises(OperationalError) as error:
+        heartbeat.guard()
+    assert error.value is outage
+    assert (
+        ReportImportAttempt.objects.get(content_hash=fence.content_hash).owner_id
+        == fence.owner_id
+    )

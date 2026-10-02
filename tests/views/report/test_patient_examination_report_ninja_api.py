@@ -48,9 +48,9 @@ from endoreg_db.models.administration.person.user.portal_user_information import
 )
 from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
 from endoreg_db.utils.paths import protected_media_root
-from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
-from endoreg_db.services.report_persistence import save_report_submission
-from endoreg_db.services.study_cohort import (
+from endoreg_db.services.reports.runtime_validation import ReportRuntimeValidationError
+from endoreg_db.services.reports.persistence import save_report_submission
+from endoreg_db.services.studies.cohort import (
     StudyCohortFilters,
     build_study_cohort_payload,
 )
@@ -842,7 +842,7 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
         update_fields=["knowledge_base_module", "knowledge_base_version"]
     )
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
     )
     resp = logged_in_client.post(
@@ -905,7 +905,7 @@ def test_final_submission_returns_422_and_rolls_back_failed_template_validation(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         fail_validation,
     )
 
@@ -1213,7 +1213,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     monkeypatch: pytest.MonkeyPatch,
     selection_mode: str,
 ) -> None:
-    from endoreg_db.services import report_pdf_renderer as renderer_module
+    from endoreg_db.services.reports import pdf_renderer as renderer_module
     from endoreg_db.utils.frame_stream import EncodedFrameSample
 
     export_context.video.state = VideoState.objects.create(
@@ -1262,7 +1262,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg", decode
+        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg", decode
     )
     temporary_paths: list[Path] = []
 
@@ -1529,7 +1529,7 @@ def test_report_export_rejects_stale_or_foreign_frame(
         pytest.fail("Invalid selection must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
         unexpected_decode,
     )
     selected_video = export_context.video
@@ -1597,7 +1597,7 @@ def test_report_frame_candidates_filter_labels_and_paginate_without_extracting(
         pytest.fail("Browsing frame identities must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
         unexpected_decode,
     )
     url = f"{API_PREFIX}/frame-candidates"

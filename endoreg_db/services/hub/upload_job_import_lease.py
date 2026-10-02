@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.db import close_old_connections, transaction
-from django.db.models.functions import Now
+from django.db import transaction
+
+from endoreg_db.services.imports.lease import (
+    ImportLeaseHeartbeat,
+    database_now,
+    owns_live_lease,
+)
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
@@ -65,15 +69,7 @@ def _lease_duration() -> timedelta:
 
 
 def _database_now(upload_job_id: str) -> datetime:
-    value = (
-        UploadJob.objects.filter(pk=upload_job_id)
-        .annotate(database_now=Now())
-        .values_list("database_now", flat=True)
-        .get()
-    )
-    if not isinstance(value, datetime):
-        raise RuntimeError("Database did not return a typed current timestamp")
-    return value
+    return database_now(UploadJob.objects.filter(pk=upload_job_id))
 
 
 def _locked_job(upload_job_id: str) -> UploadJob:
@@ -183,11 +179,13 @@ def _verify_locked_lease(
     *,
     database_now: datetime,
 ) -> None:
-    if (
-        job.processing_lease_owner != lease.owner
-        or int(job.processing_fencing_token) != lease.fencing_epoch
-        or job.processing_lease_expires_at is None
-        or job.processing_lease_expires_at <= database_now
+    if not owns_live_lease(
+        current_owner=job.processing_lease_owner,
+        expected_owner=lease.owner,
+        current_token=int(job.processing_fencing_token),
+        expected_token=lease.fencing_epoch,
+        expires_at=job.processing_lease_expires_at,
+        now=database_now,
     ):
         emit_structured_event(
             logger,
@@ -267,72 +265,45 @@ def release_upload_job_import_lease(lease: UploadJobImportLease) -> None:
     )
 
 
-class UploadJobImportLeaseHeartbeat:
-    """Renews a lease and surfaces background renewal failure at phase guards."""
+class UploadJobImportLeaseHeartbeat(ImportLeaseHeartbeat):
+    """Upload-job renewal retains its cancellation and ownership checks."""
 
     def __init__(self, lease: UploadJobImportLease) -> None:
         self._lease = lease
-        self._stop = threading.Event()
-        self._failure: BaseException | None = None
-        interval = max(
-            10.0,
-            min(60.0, _lease_duration().total_seconds() / 3),
-        )
-        self._interval_seconds = interval
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"video-import-heartbeat-{lease.upload_job_id}",
-            daemon=True,
+        super().__init__(
+            renew=self._renew_lease,
+            lost_error=UploadJobImportLeaseLost,
+            name=f"upload-import-heartbeat-{lease.upload_job_id}",
+            interval_seconds=max(
+                10.0, min(60.0, _lease_duration().total_seconds() / 3)
+            ),
+            on_failure=self._record_failure,
         )
 
     @property
     def lease(self) -> UploadJobImportLease:
         return self._lease
 
-    def __enter__(self) -> "UploadJobImportLeaseHeartbeat":
-        self._thread.start()
-        return self
+    def _renew_lease(self) -> None:
+        self._lease = heartbeat_upload_job_import_lease(self._lease)
 
     def guard(self) -> None:
-        if self._failure is not None:
-            from endoreg_db.services.jobs.error_handling import database_recovery_reason
-
-            if database_recovery_reason(self._failure) is not None:
-                # Unavailability does not prove another worker owns the attempt.
-                # Preserve the database exception so Celery's existing recovery
-                # path redelivers after repair rather than acknowledging failure.
-                raise self._failure
-            raise UploadJobImportLeaseLost(
-                f"Upload import heartbeat failed: {self._failure}"
-            ) from self._failure
-        self._lease = heartbeat_upload_job_import_lease(self._lease)
+        super().guard()
         with locked_upload_job_import_lease(self._lease):
             pass
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> None:
-        self._stop.set()
-        self._thread.join(timeout=min(5.0, self._interval_seconds))
-        close_old_connections()
+    @contextmanager
+    def mutation_guard(self) -> Generator[None, None, None]:
+        super().guard()
+        with locked_upload_job_import_lease(self._lease):
+            yield
 
-    def _run(self) -> None:
-        close_old_connections()
-        try:
-            while not self._stop.wait(self._interval_seconds):
-                self._lease = heartbeat_upload_job_import_lease(self._lease)
-        except BaseException as exc:
-            self._failure = exc
-            emit_structured_event(
-                logger,
-                "video_import.heartbeat_failed",
-                level=logging.ERROR,
-                upload_job_id=self._lease.upload_job_id,
-                fencing_epoch=self._lease.fencing_epoch,
-                error_type=exc.__class__.__name__,
-            )
-        finally:
-            close_old_connections()
+    def _record_failure(self, error: BaseException) -> None:
+        emit_structured_event(
+            logger,
+            "video_import.heartbeat_failed",
+            level=logging.ERROR,
+            upload_job_id=self._lease.upload_job_id,
+            fencing_epoch=self._lease.fencing_epoch,
+            error_type=error.__class__.__name__,
+        )

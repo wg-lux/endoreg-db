@@ -19,6 +19,13 @@ def ensure_dir(path: Path) -> None:
     ensure_directory(path)
 
 
+def ensure_context_file_hash(ctx: ImportContext) -> str:
+    """Keep an established source identity, otherwise hash the original input."""
+    if not isinstance(ctx.file_hash, str):
+        ctx.file_hash = get_file_hash(ctx.file_path)
+    return ctx.file_hash
+
+
 def create_sensitive_copy(src: Path, sensitive_root: Path, ctx: ImportContext) -> Path:
     """
     Create a sensitive copy of `src` in `sensitive_root`.

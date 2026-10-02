@@ -169,7 +169,7 @@ def build_report_reader_config(report: "RawPdfFile") -> PdfFileMetaJsonObject:
     else:
         endoscope_info_line = None
 
-    from endoreg_db.services.center_employees import center_employee_overrides
+    from endoreg_db.services.centers.employees import center_employee_overrides
 
     config: PdfFileMetaJsonObject = {
         "locale": "de_DE",

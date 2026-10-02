@@ -14,7 +14,7 @@ from endoreg_db.services.hub.ingest import (
     resolve_default_center,
 )
 
-from endoreg_db.services.sap_ish_import import (
+from endoreg_db.services.interoperability.sap_ish_import import (
     SapIshImportResult,
     convert_sap_ish_zip_to_preanonymized_drop,
 )

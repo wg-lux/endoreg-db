@@ -12,7 +12,7 @@ from endoreg_db.models.medical.patient.patient_examination import PatientExamina
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.schemas.sensitive_meta_update import SensitiveMetaUpdateCommand
-from endoreg_db.services.sensitive_meta_update import (
+from endoreg_db.services.patient_identity.update import (
     SensitiveMetaUpdateCenterNotFoundError,
     SensitiveMetaUpdateGenderNotFoundError,
     update_sensitive_meta,

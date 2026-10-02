@@ -22,7 +22,7 @@ from endoreg_db.models import (
     VideoState,
 )
 from endoreg_db.models.state.audit_ledger import AuditLedger
-import endoreg_db.services.video_segment_blackening as blackening
+import endoreg_db.services.video_files.segment_blackening as blackening
 
 
 class VideoReadyExportEndpointTests(TestCase):

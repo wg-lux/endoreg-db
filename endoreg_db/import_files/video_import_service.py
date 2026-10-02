@@ -22,6 +22,7 @@ from endoreg_db.import_files.context import (
     content_hash_lock,
     file_lock,
 )
+from endoreg_db.services.imports.execution import ImportExecutionFence
 from endoreg_db.import_files.context.import_context import (
     ImportContext,
     SourceStreamData,
@@ -60,7 +61,7 @@ from endoreg_db.services.video_files import (
     get_video_import_context_names,
     initialize_video_file,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     normalize_video_file,
     probe_video_artifact,
     segment_timeline_references,
@@ -102,16 +103,6 @@ class _RawSourceIdentity:
     sha256: str
 
 
-@dataclass(frozen=True)
-class VideoImportExecutionFence:
-    attempt_id: str
-    guard: Callable[[], None]
-
-    def __post_init__(self) -> None:
-        if not self.attempt_id.strip():
-            raise ValueError("Video import execution fence requires an attempt_id")
-
-
 class _VideoAnonymizer(Protocol):
     def anonymize_video(self, ctx: ImportContext) -> ImportContext: ...
 
@@ -135,6 +126,434 @@ class _LocalRawSourceProvider(Protocol):
 
 
 VideoAnonymizer: type[_VideoAnonymizer] | None = None
+
+
+class VideoImportService:
+    """Video import: context -> locked source -> reuse/owned import -> publication.
+
+    The phase names match ReportImportService. Video receives execution
+    ownership at entry; reports acquire content ownership after snapshotting.
+    """
+
+    def __init__(self, anonymizer: _VideoAnonymizer | None = None) -> None:
+        self.logger = logger
+        self._anonymizer = anonymizer
+        self.processing_context: ImportContext | None = None
+        self.current_video: VideoFile | None = None
+
+        validate_directories()
+
+    @property
+    def anonymizer(self) -> _VideoAnonymizer:
+        if self._anonymizer is None:
+            self._anonymizer = _load_video_anonymizer_class()()
+        return self._anonymizer
+
+    @anonymizer.setter
+    def anonymizer(self, value: _VideoAnonymizer) -> None:
+        self._anonymizer = value
+
+    def import_and_anonymize_fenced(
+        self,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        *,
+        execution_fence: ImportExecutionFence,
+        retry: bool = False,
+    ) -> VideoFile:
+        return self._timed_import_and_anonymize(
+            file_path=file_path,
+            center_name=center_name,
+            processor_name=processor_name,
+            retry=retry,
+            execution_fence=execution_fence,
+        )
+
+    def _timed_import_and_anonymize(
+        self,
+        *,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        execution_fence: ImportExecutionFence,
+    ) -> VideoFile:
+        started_at = start_workload_timing()
+        outcome_token = _video_import_outcome.set(WorkloadOutcome.FAILED)
+        try:
+            execution_fence.guard()
+            result = self._import_and_anonymize(
+                file_path=file_path,
+                center_name=center_name,
+                processor_name=processor_name,
+                retry=retry,
+                execution_fence=execution_fence,
+            )
+            if result is None:
+                raise RuntimeError("Video import returned no media instance.")
+            if _video_import_outcome.get() is WorkloadOutcome.FAILED:
+                _set_video_import_outcome(WorkloadOutcome.COMPLETED)
+            return result
+        except Exception:
+            _set_video_import_outcome(WorkloadOutcome.FAILED)
+            raise
+        finally:
+            outcome = _video_import_outcome.get() or WorkloadOutcome.FAILED
+            try:
+                emit_workload_timing(
+                    workload_timing_logger,
+                    started_at=started_at,
+                    operation=WorkloadOperation.VIDEO_IMPORT,
+                    outcome=outcome,
+                    task_family=WorkloadTaskFamily.VIDEO_UPLOAD_IMPORT,
+                    queue=WorkloadQueue.PIPELINE,
+                    retry=retry_bucket(int(retry)),
+                )
+            finally:
+                _video_import_outcome.reset(outcome_token)
+
+    @profiled_function
+    def _import_and_anonymize(
+        self,
+        *,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        retry: bool,
+        execution_fence: ImportExecutionFence,
+    ) -> VideoFile | None:
+        """Single linear execution path for video import, staging, and anonymization."""
+        ctx = self._create_import_context(
+            file_path,
+            center_name,
+            processor_name,
+            retry=retry,
+            execution_fence=execution_fence,
+        )
+        return self._process_import_pipeline(ctx, retry)
+
+    def _create_import_context(
+        self,
+        file_path: Path | str,
+        center_name: str,
+        processor_name: str,
+        *,
+        retry: bool,
+        execution_fence: ImportExecutionFence,
+    ) -> ImportContext:
+        """Validate the source and bind the caller's authority before staging."""
+        center_key: str | None = None
+        if not center_name.strip():
+            from endoreg_db.services.centers.defaults import resolve_local_center
+
+            center = resolve_local_center()
+            center_name = str(center.name)
+            center_key = str(center.center_key)
+        context_values: dict[str, object] = {
+            "file_path": Path(file_path),
+            "center_name": center_name,
+            "center_key": center_key,
+            "processor_name": processor_name,
+            "file_type": "video",
+            "defer_video_initialization": True,
+        }
+        ctx = ImportContext.model_validate(context_values)
+        ctx.bind_execution_fence(execution_fence)
+        if not ctx.file_path.exists():
+            raise FileNotFoundError(f"Video file not found: {file_path}")
+
+        ctx.original_path = ctx.file_path
+        ctx.retry = retry
+
+        return ctx
+
+    def _process_import_pipeline(
+        self, ctx: ImportContext, retry: bool
+    ) -> VideoFile | None:
+        """Lock source/content, reuse a completed result, or enter the owned attempt."""
+        assert ctx.original_path is not None
+        with cleanup_cancelled_import_staging(ctx), file_lock(ctx.original_path):
+            logger.info("Acquired video source lock")
+            ctx.file_hash = get_file_hash(ctx.file_path)
+
+            with content_hash_lock(ctx.file_hash):
+                logger.info("Acquired content-hash lock for %s", ctx.file_hash)
+
+                existing_video = self._get_existing_completed_video(ctx)
+                if existing_video is not None:
+                    if not retry:
+                        return self._reuse_completed_import(ctx, existing_video)
+                    require_reusable_video_raw_source(existing_video)
+
+                return self._run_owned_import(ctx, retry)
+
+    def _reuse_completed_import(
+        self, ctx: ImportContext, existing_video: VideoFile
+    ) -> VideoFile:
+        """Reuse only after required streaming is ready and source cleanup is safe."""
+        ctx.current_video = existing_video
+        ctx.require_execution_ownership()
+        self._ensure_duplicate_streaming(ctx, existing_video)
+        if existing_video.raw_file:
+            self._cleanup_duplicate_staging(ctx)
+        _set_video_import_outcome(WorkloadOutcome.REUSED)
+        return existing_video
+
+    def _run_owned_import(self, ctx: ImportContext, retry: bool) -> VideoFile | None:
+        """Use the caller's fence to stage the source, prepare the row, and apply retry policy."""
+        ctx.require_execution_ownership()
+        self._ensure_pipeline_storage_budget(ctx.file_path)
+        ctx.sensitive_path = create_sensitive_copy(
+            ctx.file_path, _sensitive_video_dir(), ctx
+        )
+
+        ctx.require_execution_ownership()
+        ctx.current_video, _, needs_processing = create_or_retrieve_video_file(ctx)
+        ctx.require_execution_ownership()
+
+        with ctx.owned_mutation():
+            state = get_or_create_video_state(ctx.current_video)
+
+        if retry and needs_processing and not state.anonymization_validated:
+            _finalize_video_failure_if_owned(ctx)
+            ctx.current_video, _, needs_processing = create_or_retrieve_video_file(ctx)
+
+        if not needs_processing and not retry:
+            return self._reuse_completed_import(ctx, ctx.current_video)
+
+        return self._anonymize_and_finalize(ctx)
+
+    def _anonymize_and_finalize(self, ctx: ImportContext) -> VideoFile | None:
+        """Process the verified raw source, normalize, and publish; fence failure handling too."""
+        assert ctx.current_video is not None
+        current_video = cast(_LocalRawVideo, ctx.current_video)
+        try:
+            ctx.require_execution_ownership()
+            mark_instance_processing_started(ctx.current_video, ctx)
+            logger.info(
+                "Persisted video state as processing before anonymization: video=%s",
+                current_video.raw_video_hash,
+            )
+            with self._verified_local_raw_source(ctx):
+                ctx = self.anonymizer.anonymize_video(ctx)
+                _normalize_reimport_video_quality(ctx)
+
+            ctx.require_execution_ownership()
+            logger.info(
+                "Video anonymization succeeded for content hash %s",
+                ctx.file_hash,
+            )
+            finalize_video_success(ctx)
+            return ctx.current_video
+
+        except Exception as exc:
+            logger.exception(
+                "Video import/anonymization failed for content hash %s: %s",
+                ctx.file_hash,
+                exc,
+            )
+            try:
+                _finalize_video_failure_if_owned(ctx)
+            except Exception as ownership_exc:
+                logger.error(
+                    "Skipping video failure finalization due to invalid ownership: attempt=%s error=%s",
+                    ctx.attempt_id,
+                    ownership_exc,
+                )
+                raise ownership_exc from exc
+            raise
+
+    @contextmanager
+    def _verified_local_raw_source(
+        self,
+        ctx: ImportContext,
+        *,
+        source_path: Path | None = None,
+        initialize_metadata: bool = True,
+    ) -> Generator[None]:
+        assert ctx.current_video is not None
+
+        previous_local_source = ctx.local_source_path
+        fallback_path = Path(ctx.sensitive_path) if ctx.sensitive_path else None
+        source_context = (
+            nullcontext(source_path)
+            if source_path is not None
+            else local_raw_source_context(
+                ctx.current_video, fallback_path=fallback_path
+            )
+        )
+        with source_context as local_source_path:
+            local_source_path = Path(local_source_path)
+            before_identity = _raw_source_identity(local_source_path)
+            if initialize_metadata and _supports_video_file_initialization(
+                ctx.current_video
+            ):
+                ctx.current_video = initialize_video_file(
+                    ctx.current_video,
+                    local_raw_path=local_source_path,
+                )
+            after_identity = _raw_source_identity(local_source_path)
+            if before_identity != after_identity:
+                raise RuntimeError(
+                    "Video raw source changed during VideoMeta extraction."
+                )
+            _record_validated_raw_source(ctx, local_source_path, after_identity)
+            ctx.local_source_path = local_source_path
+            try:
+                yield
+            finally:
+                ctx.local_source_path = previous_local_source
+
+    @profiled_function
+    def reanonymize_existing_video_fenced(
+        self,
+        video: VideoFile,
+        *,
+        execution_fence: ImportExecutionFence,
+        source_path: Path | str | None = None,
+    ) -> VideoFile:
+        """Re-run anonymization for an existing VideoFile directly from its raw source."""
+        execution_fence.guard()
+        raw_video_hash = getattr(video, "raw_video_hash", None)
+        source_context = (
+            local_raw_source_context(video)
+            if source_path is None
+            else nullcontext(Path(source_path))
+        )
+
+        with source_context as local_source_path:
+            local_source_path = Path(local_source_path)
+            if not local_source_path.exists():
+                raise FileNotFoundError(f"Video file not found: {local_source_path}")
+
+            with file_lock(local_source_path):
+                logger.info(
+                    "Acquired file lock for re-anonymization: %s", raw_video_hash
+                )
+                center_name, processor_name = get_video_import_context_names(video)
+                source_identity = get_file_hash(local_source_path)
+
+                ctx = ImportContext(
+                    file_path=local_source_path,
+                    center_name=center_name,
+                    processor_name=processor_name,
+                    file_type="video",
+                    file_hash=source_identity,
+                    original_path=local_source_path,
+                    local_source_path=local_source_path,
+                    current_video=video,
+                    instance=video,
+                    retry=True,
+                )
+
+                ctx.bind_execution_fence(execution_fence)
+                with content_hash_lock(source_identity):
+                    logger.info(
+                        "Acquired content-hash lock for re-anonymization: %s",
+                        ctx.file_hash,
+                    )
+
+                    with self._verified_local_raw_source(
+                        ctx,
+                        source_path=local_source_path,
+                        initialize_metadata=_supports_reanonymization_metadata_initialization(
+                            video
+                        ),
+                    ):
+                        try:
+                            mark_instance_processing_started(video, ctx)
+                            ctx = self.anonymizer.anonymize_video(ctx)
+                            _normalize_reimport_video_quality(ctx)
+                            logger.info(
+                                "Existing video re-anonymization succeeded for %s",
+                                raw_video_hash,
+                            )
+                            finalize_video_success(ctx)
+                            return video
+                        except Exception as exc:
+                            logger.exception(
+                                "Existing video re-anonymization failed for %s: %s",
+                                raw_video_hash,
+                                exc,
+                            )
+                            finalize_failure(
+                                ctx, preserve_existing_video_artifacts=True
+                            )
+                            raise
+
+    @staticmethod
+    def _ensure_duplicate_streaming(ctx: ImportContext, video: VideoFile) -> None:
+        if not video.raw_file:
+            if (
+                video.center.center_key != ctx.center_key
+                if ctx.center_key is not None
+                else video.center.name != ctx.center_name
+            ):
+                raise ValueError("Transferred video belongs to a different center")
+            ensure_transferred_video_hls(video, execution_guard=ctx.execution_guard)
+        else:
+            ensure_video_hls(video, execution_guard=ctx.execution_guard)
+
+    def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
+        file_hash = ctx.file_hash
+        if not isinstance(file_hash, str):
+            return None
+
+        if not ProcessingHistory.has_history_for_hash(
+            file_hash=file_hash, success=True
+        ):
+            return None
+
+        try:
+            existing_video = get_video_by_content_hash(file_hash)
+        except VideoFile.DoesNotExist:
+            existing_video = None
+
+        integrity_result = check_video_media_integrity(
+            existing_video if isinstance(existing_video, VideoFile) else None,
+            content_hash=file_hash,
+        )
+        if not integrity_result.ok:
+            if isinstance(existing_video, VideoFile):
+                if not video_integrity_failure_allows_existing_video_reprocessing(
+                    integrity_result
+                ):
+                    raise MediaIntegrityError(integrity_result)
+                ctx.current_video = existing_video
+            else:
+                ctx.current_video = None
+            logger.warning(
+                "Successful processing history exists for %s but media integrity failed before staging: %s.",
+                file_hash,
+                integrity_result.reason,
+            )
+            return None
+
+        logger.info(
+            "VideoFile already has successful processing history (file_hash=%s) - short-circuiting",
+            file_hash,
+        )
+        return existing_video
+
+    def _ensure_pipeline_storage_budget(self, source_path: Path) -> None:
+        source_size = source_path.stat().st_size
+        required_space = int(source_size * PIPELINE_STORAGE_MULTIPLIER)
+        storage_dir = _storage_dir()
+        free_space = shutil.disk_usage(storage_dir).free
+        if free_space < required_space:
+            raise InsufficientStorageError(
+                (
+                    "Insufficient pipeline storage. "
+                    f"Required: {required_space / 1e9:.1f} GB, "
+                    f"Available: {free_space / 1e9:.1f} GB in {storage_dir}"
+                ),
+                required_space=required_space,
+                available_space=free_space,
+            )
+
+    def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
+        cleanup_duplicate_import_staging(ctx, import_root=_video_import_dir())
 
 
 def _load_video_anonymizer_class() -> type[_VideoAnonymizer]:
@@ -377,416 +796,3 @@ def _normalize_reimport_video_quality(ctx: ImportContext) -> None:
         quality_mode,
         source_path,
     )
-
-
-class VideoImportService:
-    """Service for importing and anonymizing video files."""
-
-    def __init__(self, anonymizer: _VideoAnonymizer | None = None) -> None:
-        self.logger = logger
-        self._anonymizer = anonymizer
-        self.processing_context: ImportContext | None = None
-        self.current_video: VideoFile | None = None
-
-        validate_directories()
-
-    @property
-    def anonymizer(self) -> _VideoAnonymizer:
-        if self._anonymizer is None:
-            self._anonymizer = _load_video_anonymizer_class()()
-        return self._anonymizer
-
-    @anonymizer.setter
-    def anonymizer(self, value: _VideoAnonymizer) -> None:
-        self._anonymizer = value
-
-    def import_and_anonymize(
-        self,
-        file_path: Path | str,
-        center_name: str,
-        processor_name: str,
-        retry: bool = False,
-    ) -> VideoFile:
-        return self._timed_import_and_anonymize(
-            file_path=file_path,
-            center_name=center_name,
-            processor_name=processor_name,
-            retry=retry,
-            execution_fence=None,
-        )
-
-    def import_and_anonymize_fenced(
-        self,
-        file_path: Path | str,
-        center_name: str,
-        processor_name: str,
-        *,
-        execution_fence: VideoImportExecutionFence,
-        retry: bool = False,
-    ) -> VideoFile:
-        return self._timed_import_and_anonymize(
-            file_path=file_path,
-            center_name=center_name,
-            processor_name=processor_name,
-            retry=retry,
-            execution_fence=execution_fence,
-        )
-
-    def _timed_import_and_anonymize(
-        self,
-        *,
-        file_path: Path | str,
-        center_name: str,
-        processor_name: str,
-        retry: bool,
-        execution_fence: VideoImportExecutionFence | None,
-    ) -> VideoFile:
-        started_at = start_workload_timing()
-        outcome_token = _video_import_outcome.set(WorkloadOutcome.FAILED)
-        try:
-            if execution_fence is not None:
-                execution_fence.guard()
-            result = self._import_and_anonymize(
-                file_path=file_path,
-                center_name=center_name,
-                processor_name=processor_name,
-                retry=retry,
-                execution_fence=execution_fence,
-            )
-            if result is None:
-                raise RuntimeError("Video import returned no media instance.")
-            if _video_import_outcome.get() is WorkloadOutcome.FAILED:
-                _set_video_import_outcome(WorkloadOutcome.COMPLETED)
-            return result
-        except Exception:
-            _set_video_import_outcome(WorkloadOutcome.FAILED)
-            raise
-        finally:
-            outcome = _video_import_outcome.get() or WorkloadOutcome.FAILED
-            try:
-                emit_workload_timing(
-                    workload_timing_logger,
-                    started_at=started_at,
-                    operation=WorkloadOperation.VIDEO_IMPORT,
-                    outcome=outcome,
-                    task_family=WorkloadTaskFamily.VIDEO_UPLOAD_IMPORT,
-                    queue=WorkloadQueue.PIPELINE,
-                    retry=retry_bucket(int(retry)),
-                )
-            finally:
-                _video_import_outcome.reset(outcome_token)
-
-    @profiled_function
-    def _import_and_anonymize(
-        self,
-        *,
-        file_path: Path | str,
-        center_name: str,
-        processor_name: str,
-        retry: bool,
-        execution_fence: VideoImportExecutionFence | None,
-    ) -> VideoFile | None:
-        """Single linear execution path for video import, staging, and anonymization."""
-        center_key: str | None = None
-        if not center_name.strip():
-            from endoreg_db.services.center_defaults import resolve_local_center
-
-            center = resolve_local_center()
-            center_name = str(center.name)
-            center_key = str(center.center_key)
-        context_values: dict[str, object] = {
-            "file_path": Path(file_path),
-            "center_name": center_name,
-            "center_key": center_key,
-            "processor_name": processor_name,
-            "file_type": "video",
-            "defer_video_initialization": True,
-            "execution_guard": (
-                execution_fence.guard if execution_fence is not None else None
-            ),
-        }
-        if execution_fence is not None:
-            context_values["attempt_id"] = execution_fence.attempt_id
-
-        ctx = ImportContext.model_validate(context_values)
-        if not ctx.file_path.exists():
-            raise FileNotFoundError(f"Video file not found: {file_path}")
-
-        ctx.original_path = ctx.file_path
-        ctx.retry = retry
-
-        with cleanup_cancelled_import_staging(ctx), file_lock(ctx.original_path):
-            logger.info("Acquired video source lock")
-            ctx.file_hash = get_file_hash(ctx.file_path)
-
-            with content_hash_lock(ctx.file_hash):
-                logger.info("Acquired content-hash lock for %s", ctx.file_hash)
-
-                # 1. Short-circuit on reusable existing completed videos
-                existing_video = self._get_existing_completed_video(ctx)
-                if existing_video is not None:
-                    if not retry:
-                        ctx.current_video = existing_video
-                        ctx.require_execution_ownership()
-                        self._ensure_duplicate_streaming(ctx, existing_video)
-                        if existing_video.raw_file:
-                            self._cleanup_duplicate_staging(ctx)
-                        _set_video_import_outcome(WorkloadOutcome.REUSED)
-                        return existing_video
-                    require_reusable_video_raw_source(existing_video)
-
-                # 2. Stage sensitive copy & obtain VideoFile instance
-                ctx.require_execution_ownership()
-                self._ensure_pipeline_storage_budget(ctx.file_path)
-                ctx.sensitive_path = create_sensitive_copy(
-                    ctx.file_path, _sensitive_video_dir(), ctx
-                )
-
-                ctx.require_execution_ownership()
-                ctx.current_video, _, needs_processing = create_or_retrieve_video_file(
-                    ctx
-                )
-                ctx.require_execution_ownership()
-
-                state = get_or_create_video_state(ctx.current_video)
-                current_video = cast(_LocalRawVideo, ctx.current_video)
-
-                # 3. Handle retry finalization reset or short-circuit if unneeded
-                if retry and needs_processing and not state.anonymization_validated:
-                    _finalize_video_failure_if_owned(ctx)
-                    ctx.current_video, _, needs_processing = (
-                        create_or_retrieve_video_file(ctx)
-                    )
-
-                if not needs_processing and not retry:
-                    ctx.require_execution_ownership()
-                    self._ensure_duplicate_streaming(ctx, ctx.current_video)
-                    if ctx.current_video.raw_file:
-                        self._cleanup_duplicate_staging(ctx)
-                    _set_video_import_outcome(WorkloadOutcome.REUSED)
-                    return ctx.current_video
-
-                # 4. Anonymize, normalize, and finalize success
-                try:
-                    ctx.require_execution_ownership()
-                    mark_instance_processing_started(ctx.current_video, ctx)
-                    logger.info(
-                        "Persisted video state as processing before anonymization: video=%s",
-                        current_video.raw_video_hash,
-                    )
-                    with self._verified_local_raw_source(ctx):
-                        ctx = self.anonymizer.anonymize_video(ctx)
-                        _normalize_reimport_video_quality(ctx)
-
-                    ctx.require_execution_ownership()
-                    logger.info(
-                        "Video anonymization succeeded for content hash %s",
-                        ctx.file_hash,
-                    )
-                    finalize_video_success(ctx)
-                    return ctx.current_video
-
-                except Exception as exc:
-                    logger.exception(
-                        "Video import/anonymization failed for content hash %s: %s",
-                        ctx.file_hash,
-                        exc,
-                    )
-                    try:
-                        _finalize_video_failure_if_owned(ctx)
-                    except Exception as ownership_exc:
-                        logger.error(
-                            "Skipping video failure finalization due to invalid ownership: attempt=%s error=%s",
-                            ctx.attempt_id,
-                            ownership_exc,
-                        )
-                        raise ownership_exc from exc
-                    raise
-
-    @contextmanager
-    def _verified_local_raw_source(
-        self,
-        ctx: ImportContext,
-        *,
-        source_path: Path | None = None,
-        initialize_metadata: bool = True,
-    ) -> Generator[None]:
-        assert ctx.current_video is not None
-
-        previous_local_source = ctx.local_source_path
-        fallback_path = Path(ctx.sensitive_path) if ctx.sensitive_path else None
-        source_context = (
-            nullcontext(source_path)
-            if source_path is not None
-            else local_raw_source_context(
-                ctx.current_video, fallback_path=fallback_path
-            )
-        )
-        with source_context as local_source_path:
-            local_source_path = Path(local_source_path)
-            before_identity = _raw_source_identity(local_source_path)
-            if initialize_metadata and _supports_video_file_initialization(
-                ctx.current_video
-            ):
-                ctx.current_video = initialize_video_file(
-                    ctx.current_video,
-                    local_raw_path=local_source_path,
-                )
-            after_identity = _raw_source_identity(local_source_path)
-            if before_identity != after_identity:
-                raise RuntimeError(
-                    "Video raw source changed during VideoMeta extraction."
-                )
-            _record_validated_raw_source(ctx, local_source_path, after_identity)
-            ctx.local_source_path = local_source_path
-            try:
-                yield
-            finally:
-                ctx.local_source_path = previous_local_source
-
-    @profiled_function
-    def reanonymize_existing_video(
-        self,
-        video: VideoFile,
-        *,
-        source_path: Path | str | None = None,
-    ) -> VideoFile:
-        """Re-run anonymization for an existing VideoFile directly from its raw source."""
-        raw_video_hash = getattr(video, "raw_video_hash", None)
-        source_context = (
-            local_raw_source_context(video)
-            if source_path is None
-            else nullcontext(Path(source_path))
-        )
-
-        with source_context as local_source_path:
-            local_source_path = Path(local_source_path)
-            if not local_source_path.exists():
-                raise FileNotFoundError(f"Video file not found: {local_source_path}")
-
-            with file_lock(local_source_path):
-                logger.info(
-                    "Acquired file lock for re-anonymization: %s", raw_video_hash
-                )
-                center_name, processor_name = get_video_import_context_names(video)
-                source_identity = get_file_hash(local_source_path)
-
-                ctx = ImportContext(
-                    file_path=local_source_path,
-                    center_name=center_name,
-                    processor_name=processor_name,
-                    file_type="video",
-                    file_hash=source_identity,
-                    original_path=local_source_path,
-                    local_source_path=local_source_path,
-                    current_video=video,
-                    instance=video,
-                    retry=True,
-                )
-
-                with content_hash_lock(source_identity):
-                    logger.info(
-                        "Acquired content-hash lock for re-anonymization: %s",
-                        ctx.file_hash,
-                    )
-
-                    with self._verified_local_raw_source(
-                        ctx,
-                        source_path=local_source_path,
-                        initialize_metadata=_supports_reanonymization_metadata_initialization(
-                            video
-                        ),
-                    ):
-                        try:
-                            mark_instance_processing_started(video, ctx)
-                            ctx = self.anonymizer.anonymize_video(ctx)
-                            _normalize_reimport_video_quality(ctx)
-                            logger.info(
-                                "Existing video re-anonymization succeeded for %s",
-                                raw_video_hash,
-                            )
-                            finalize_video_success(ctx)
-                            return video
-                        except Exception as exc:
-                            logger.exception(
-                                "Existing video re-anonymization failed for %s: %s",
-                                raw_video_hash,
-                                exc,
-                            )
-                            finalize_failure(
-                                ctx, preserve_existing_video_artifacts=True
-                            )
-                            raise
-
-    @staticmethod
-    def _ensure_duplicate_streaming(ctx: ImportContext, video: VideoFile) -> None:
-        if not video.raw_file:
-            if (
-                video.center.center_key != ctx.center_key
-                if ctx.center_key is not None
-                else video.center.name != ctx.center_name
-            ):
-                raise ValueError("Transferred video belongs to a different center")
-            ensure_transferred_video_hls(video, execution_guard=ctx.execution_guard)
-        else:
-            ensure_video_hls(video, execution_guard=ctx.execution_guard)
-
-    def _get_existing_completed_video(self, ctx: ImportContext) -> VideoFile | None:
-        file_hash = ctx.file_hash
-        if not isinstance(file_hash, str):
-            return None
-
-        if not ProcessingHistory.has_history_for_hash(
-            file_hash=file_hash, success=True
-        ):
-            return None
-
-        try:
-            existing_video = get_video_by_content_hash(file_hash)
-        except VideoFile.DoesNotExist:
-            existing_video = None
-
-        integrity_result = check_video_media_integrity(
-            existing_video if isinstance(existing_video, VideoFile) else None,
-            content_hash=file_hash,
-        )
-        if not integrity_result.ok:
-            if isinstance(existing_video, VideoFile):
-                if not video_integrity_failure_allows_existing_video_reprocessing(
-                    integrity_result
-                ):
-                    raise MediaIntegrityError(integrity_result)
-                ctx.current_video = existing_video
-            else:
-                ctx.current_video = None
-            logger.warning(
-                "Successful processing history exists for %s but media integrity failed before staging: %s.",
-                file_hash,
-                integrity_result.reason,
-            )
-            return None
-
-        logger.info(
-            "VideoFile already has successful processing history (file_hash=%s) - short-circuiting",
-            file_hash,
-        )
-        return existing_video
-
-    def _ensure_pipeline_storage_budget(self, source_path: Path) -> None:
-        source_size = source_path.stat().st_size
-        required_space = int(source_size * PIPELINE_STORAGE_MULTIPLIER)
-        storage_dir = _storage_dir()
-        free_space = shutil.disk_usage(storage_dir).free
-        if free_space < required_space:
-            raise InsufficientStorageError(
-                (
-                    "Insufficient pipeline storage. "
-                    f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB in {storage_dir}"
-                ),
-                required_space=required_space,
-                available_space=free_space,
-            )
-
-    def _cleanup_duplicate_staging(self, ctx: ImportContext) -> None:
-        cleanup_duplicate_import_staging(ctx, import_root=_video_import_dir())

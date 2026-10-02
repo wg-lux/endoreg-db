@@ -11,7 +11,7 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
-from endoreg_db.services.report_finding_sync import sync_report_findings
+from endoreg_db.services.reports.finding_sync import sync_report_findings
 
 
 def _submit(

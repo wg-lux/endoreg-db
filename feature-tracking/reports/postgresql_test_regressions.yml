@@ -1,0 +1,85 @@
+assessor: codex-test-triage-20261001
+date: '2026-10-01'
+working_directory: /home/admin/endoreg-db
+scope: PostgreSQL- und lx-dtypes-Regressionen aus den 13 gemeldeten Testfehlern.
+features:
+  - case_persistence
+  - canonical_migration_graph
+  - hub_transfer
+  - hub_storage_load_balancing
+  - import_pipeline_robustness
+  - dtypes_study_definitions
+changes:
+  - path: endoreg_db/services/case_documents.py
+    result: Untersuchungs- und Medienzeilen werden ohne nullable Joins gesperrt; vorhandene SensitiveMeta-Zeilen werden separat gesperrt.
+  - path: endoreg_db/services/hub/storage_transfer.py
+    result: Cleanup sperrt Verifikationsbeleg und optionalen Transfernachweis getrennt; der Schutz der Nachweisprüfung bleibt erhalten.
+  - path: endoreg_db/migrations/0057_patientexamination_multiple_documents.py
+    result: Aufgeschobene PostgreSQL-Fremdschlüsselprüfungen werden vor RemoveField ausgeführt. Name, Abhängigkeit, Schemaoperationen und atomare Ausführung bleiben erhalten.
+  - path: tests/migrations/conftest.py
+    result: Jeder historische Migrationstest arbeitet in einem eigenen PostgreSQL-Schema ohne public-Fallback; Teardown entfernt es und prüft den unveränderten Tabellenbestand des Ausgangsschemas.
+  - path: tests/migrations/test_case_persistence.py
+    result: Fehlende, passende und widersprüchliche Altzuordnungen sowie explizite Konfliktkorrektur und ein injizierter Upgradefehler ohne Wiederherstellung des aktuellen Schemas werden geprüft.
+  - path: endoreg_db/services/report_import_fencing.py
+    result: Heartbeat verlangt Autocommit und bereinigt ausschließlich seine eigene Thread-Verbindung. Tests prüfen Transaktionsablehnung, Verbindungserhalt und Erhalt des ursprünglichen Fehlers.
+  - path: tests/views/media/test_pdf_media_text_visibility.py
+    result: TransactionTestCase mit Basiskatalog je Test ersetzt die mit unabhängigen Heartbeat-Verbindungen inkompatible äußere TestCase-Transaktion.
+  - path: tests/services/test_transfer_job_contract.py
+    result: Reale Datenbank-Constraint-Diagnostik ersetzt SQLite-spezifische simulierte Unique-Verletzungen.
+  - path: tests/services/test_transfer_registration_postgresql.py
+    result: Zwei synchronisierte PostgreSQL-Verbindungen prüfen identische und abweichende konkurrierende Registrierungen; genau ein Transfer bleibt bestehen.
+  - path: quality/clinical_reference_projection.yml
+    result: Die erlaubte Delegation an migrate_reference_catalog ist mit Ownership dokumentiert. Der Validator lehnt unbekannte, dynamische und fehlende Delegationen ab.
+  - path: tests/services/test_deployment_setup.py
+    result: Aktivierungsprüfung verwendet Modul und Version des ausgewählten lx-dtypes-Templates anstelle der veralteten Konstante coloreg@0.2.0.
+verification:
+  - command: >-
+      .devenv/state/venv/bin/pytest tests/migrations
+      tests/services/test_hub_storage_transfer.py
+      tests/services/test_report_import_service_unit.py
+      tests/services/test_report_import_concurrency.py
+      tests/services/test_deployment_setup.py
+      tests/services/test_reference_catalog_migration.py
+      -q --tb=short --show-capture=no
+    environment: direnv/devenv, PostgreSQL, uv sync --extra dev
+    result: 'Exit 0; 120 bestanden, 2 Warnungen in 1439.92 Sekunden. Einschließlich injiziertem Upgradefehler ohne Schemawiederherstellung, sämtlichen Migrationstests sowie vollständigen Reportimport-, Deployment- und Katalogregressionen der genannten Module.'
+  - command: >-
+      .devenv/state/venv/bin/pytest
+      tests/services/test_case_media_attachments.py
+      tests/services/test_hub_storage_rotation.py
+      tests/services/test_transfer_job_contract.py
+      tests/services/test_transfer_registration_postgresql.py
+      tests/views/media/test_pdf_media_text_visibility.py
+      tests/migrations/test_case_persistence.py
+      tests/services/test_deployment_setup.py::test_activation_is_explicit_and_retry_preserves_database
+      tests/services/test_hub_storage_balancing.py::test_postgresql_concurrent_exact_cancellation_has_one_receipt
+      tests/scripts/test_clinical_reference_inventory.py
+      tests/services/test_report_import_fencing.py -q --tb=short --show-capture=no
+    environment: devenv, PostgreSQL
+    result: '79 bestanden, 3 Untertests bestanden, 2 Warnungen in 408.63 Sekunden; vor Ergänzung des separaten injizierten Migrationfehlertests.'
+  - command: >-
+      .devenv/state/venv/bin/pyright
+      endoreg_db/services/case_documents.py endoreg_db/services/hub/storage_transfer.py
+      endoreg_db/services/report_import_fencing.py tests/services/test_transfer_job_contract.py
+      tests/services/test_transfer_registration_postgresql.py tests/migrations/conftest.py
+      tests/migrations/test_case_persistence.py tests/services/test_report_import_fencing.py
+      tests/views/media/test_pdf_media_text_visibility.py tests/scripts/test_clinical_reference_inventory.py
+      scripts/check_clinical_reference_inventory.py tests/services/test_deployment_setup.py
+    result: '0 Fehler, 0 Warnungen, einschließlich des zusätzlichen Migrationfehlertests.'
+  - command: .devenv/state/venv/bin/pyright
+    result: Der erste Gesamtlauf meldete 30 Fehler, davon vier in der hier geänderten Storage-Abfrage. Diese vier wurden behoben; die weiteren 26 Meldungen betrafen bereits vorhandene Änderungen außerhalb dieses Aufgabenbereichs.
+  - command: .devenv/state/venv/bin/pyright
+    result: Ein späterer Gesamtlauf während des parallelen Import-Refactorings meldete 32 Fehler und 9 Warnungen. Die sechs zusätzlich hinzugekommenen Befunde wurden an codex-import-standardization-20261001 übergeben und laut dessen gezielter Typprüfung behoben. Der repositoryweite Typcheck wird hier nicht als bestanden bewertet.
+  - command: .devenv/state/venv/bin/ruff check und format --check für die gezielt geänderten Python-Dateien
+    result: Bestanden; Formatterkorrekturen angewandt, keine Lint-Unterdrückungen ergänzt.
+  - command: git diff --check
+    result: Bestanden.
+  - command: ./feature-tracking/tracker.py validate
+    result: 37 gültige Feature-Definitionen.
+  - command: .devenv/state/venv/bin/python scripts/check_clinical_reference_inventory.py
+    result: 'Exit 0; 17 Sammlungen, 185 Felder, 27 Bootstrap-Kommandos; explizite Reconciliation-Delegation gültig.'
+boundaries:
+  - Keine Änderung an API-Formaten, Verschlüsselung, Medien-Löschfreigaben oder klinischen Ownership-Regeln.
+  - Keine Anwendung von Migrationen auf einer Deployment-Datenbank.
+  - Bestehende und parallel bearbeitete Änderungen anderer Agenten bleiben erhalten.
+  - Keine neue Aussage zur vollständigen Produktionsreife der betroffenen Features.

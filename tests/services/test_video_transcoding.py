@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pytest import MonkeyPatch
 
-from endoreg_db.services import video_transcoding
+from endoreg_db.services.video_storage import transcoding as video_transcoding
 
 
 def _fake_compliant_video_format(path: Path) -> SimpleNamespace:

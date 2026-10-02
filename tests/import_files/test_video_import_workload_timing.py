@@ -8,6 +8,8 @@ from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
+from contextlib import nullcontext
+from endoreg_db.services.imports.execution import ImportExecutionFence
 from _pytest.logging import LogCaptureFixture
 
 from endoreg_db.import_files import video_import_service as video_import_module
@@ -61,11 +63,12 @@ def test_video_import_emits_one_bounded_terminal_total_timing(
             side_effect=[10.0, 12.5],
         ),
     ):
-        actual = service.import_and_anonymize(
+        actual = service.import_and_anonymize_fenced(
             sensitive_path,
             "secret-center",
             "secret-processor",
             retry=retry,
+            execution_fence=ImportExecutionFence("a" * 32, lambda: None, nullcontext),
         )
 
     assert actual is result
@@ -105,10 +108,11 @@ def test_video_import_failure_emits_once_without_exception_payload(
         ),
         pytest.raises(RuntimeError, match="protected patient detail"),
     ):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             sensitive_path,
             "secret-center",
             "secret-processor",
+            execution_fence=ImportExecutionFence("a" * 32, lambda: None, nullcontext),
         )
 
     payloads = _structured_timing_payloads(caplog)
@@ -129,7 +133,12 @@ def test_video_import_missing_result_is_failed(
         caplog.at_level(logging.INFO, logger="endoreg_db.workload_timing"),
         pytest.raises(RuntimeError, match="returned no media instance"),
     ):
-        service.import_and_anonymize(source, "test-center", "test-processor")
+        service.import_and_anonymize_fenced(
+            source,
+            "test-center",
+            "test-processor",
+            execution_fence=ImportExecutionFence("a" * 32, lambda: None, nullcontext),
+        )
     payloads = _structured_timing_payloads(caplog)
     assert len(payloads) == 1
     assert payloads[0]["outcome"] == "failed"

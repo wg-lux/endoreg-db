@@ -18,7 +18,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from endoreg_db.export.frames.export_frames_with_labels import export_job_failed_error
-from endoreg_db.services.export_annotated import (
+from endoreg_db.services.media.export_annotated import (
     ExportAnnotatedService,
     ExportConflictError,
 )

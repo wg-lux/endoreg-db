@@ -285,6 +285,8 @@ definition_of_done:
       reference: tests/services/test_case_media_attachments.py
     - kind: test
       reference: tests/migrations/test_case_persistence.py
+    - kind: document
+      reference: feature-tracking/reports/postgresql_test_regressions.yml
     - kind: code
       reference: endoreg_db/services/case_documents.py
     - kind: code

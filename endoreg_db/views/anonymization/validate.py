@@ -23,12 +23,12 @@ from endoreg_db.models.other.tag import Tag
 from endoreg_db.serializers.anonymization import (
     SensitiveMetaValidateSerializer,
 )
-from endoreg_db.services.anonymization_metrics import (
+from endoreg_db.services.privacy.metrics import (
     capture_sensitive_meta_metric_values,
     record_validation_metrics,
 )
-from endoreg_db.services.auto_case_resolution import AutoCaseResolutionResult
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.cases.auto_resolution import AutoCaseResolutionResult
+from endoreg_db.services.reports.materialization import (
     DOCUMENT_TYPE_VALUES,
     build_report_context_from_validation,
     ensure_document_types,
@@ -41,7 +41,9 @@ from endoreg_db.services.raw_pdf_files import (
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
 )
-from endoreg_db.services.validated_identity import commit_validated_media_identity
+from endoreg_db.services.patient_identity.validated_media_identity import (
+    commit_validated_media_identity,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.views.access_control import assert_center_scope_allowed

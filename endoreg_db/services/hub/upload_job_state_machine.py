@@ -5,7 +5,7 @@ from collections.abc import Iterable, Sequence
 from django.db import transaction
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
-from endoreg_db.services.lifecycle_state_machine import (
+from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,

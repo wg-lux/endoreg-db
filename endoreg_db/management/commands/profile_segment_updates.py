@@ -24,7 +24,9 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.video_segments_bulk_mutation import bulk_mutate_video_segments
+from endoreg_db.services.annotations.segments_bulk_mutation import (
+    bulk_mutate_video_segments,
+)
 from endoreg_db.views.video.correction import update_segments_after_frame_removal
 
 type _Operation = Literal["bulk-mutation", "frame-removal", "both"]

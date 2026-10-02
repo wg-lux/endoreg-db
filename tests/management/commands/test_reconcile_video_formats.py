@@ -11,7 +11,7 @@ from endoreg_db.management.commands import reconcile_video_formats as command_mo
 from lx_dtypes.models.contracts.management_command import (
     ReconcileVideoFormatsCommandOptionsPayload,
 )
-from endoreg_db.services.video_format_reconciliation import VideoFormatSummary
+from endoreg_db.services.video_storage.format_reconciliation import VideoFormatSummary
 
 
 def _command_options() -> dict[str, object]:

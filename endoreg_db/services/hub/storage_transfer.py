@@ -433,10 +433,16 @@ def commit_verified_storage_placement(
                     "Placement commit idempotency key is bound to different evidence.",
                 )
             return replay
-        placement = (
-            StorageArtifactPlacement.objects.select_for_update()
-            .select_related("reservation")
-            .get(pk=request.placement_id)
+        placement = StorageArtifactPlacement.objects.select_for_update(
+            of=("self",)
+        ).get(pk=request.placement_id)
+
+        reservation = (
+            StorageReservation.objects.select_for_update(of=("self",)).get(
+                pk=placement.reservation_id
+            )
+            if placement.reservation_id is not None
+            else None
         )
         evidence = (
             StorageTransferEvidence.objects.select_for_update()
@@ -449,7 +455,6 @@ def commit_verified_storage_placement(
             )
             .first()
         )
-        reservation = placement.reservation
         if (
             evidence is None
             or placement.state != StorageArtifactPlacement.State.RESERVED
@@ -577,7 +582,9 @@ def record_deleted_transfer_evidence(
                 .get(pk=authorization.rotation_id)
             )
             verification = (
-                StorageRotationVerificationReceipt.objects.select_for_update()
+                StorageRotationVerificationReceipt.objects.select_for_update(
+                    of=("self",)
+                )
                 .select_related("transfer_evidence")
                 .get(pk=authorization.verification_receipt_id)
             )
@@ -592,6 +599,12 @@ def record_deleted_transfer_evidence(
                 .first()
             )
             target_evidence = verification.transfer_evidence
+            if target_evidence is not None:
+                target_evidence = (
+                    StorageTransferEvidence.objects.select_for_update().get(
+                        pk=target_evidence.pk
+                    )
+                )
             lease_aware_kinds = {
                 StorageArtifactKind.ANONYMIZED_VIDEO,
                 StorageArtifactKind.VIDEO_HLS,

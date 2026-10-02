@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from endoreg_db.services import video_temporal_inference as jobs
+from endoreg_db.services.video_files import temporal_inference as jobs
 
 
 def test_extract_temporal_options_accepts_reimport_request_envelope() -> None:

@@ -40,7 +40,9 @@ from endoreg_db.import_files.file_storage.cleanup import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import (
@@ -1212,7 +1214,7 @@ class Command(BaseCommand):
         with ExitStack() as stack:
             if apply:
                 if record_plan.object_kind == "video":
-                    from endoreg_db.services.media_operation_gate import (
+                    from endoreg_db.services.media.operation_gate import (
                         video_artifact_mutation,
                     )
 

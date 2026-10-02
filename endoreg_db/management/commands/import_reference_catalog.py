@@ -9,7 +9,7 @@ from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 from pydantic import TypeAdapter
 import yaml
 
-from endoreg_db.services.reference_catalog import (
+from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,

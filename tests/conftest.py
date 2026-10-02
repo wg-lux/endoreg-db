@@ -49,13 +49,10 @@ os.environ["DJANGO_SETTINGS_MODULE"] = "endoreg_db.config.settings.test"
 _configure_test_runtime_env(get_runtime_paths().runtime_root)
 
 import pytest
-from _pytest.reports import TestReport
-from django.db.backends.signals import connection_created
 from django.core.files.storage import Storage
 from django.test import Client as DjangoClient
 from django.test import override_settings
-from pluggy import Result
-from pytest import FixtureRequest
+from pytest_postgresql.executors import PostgreSQLExecutor
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS, RUNTIME_ROOT_ENV, env_bool
 from endoreg_db.import_files.context import ImportContext
@@ -67,7 +64,6 @@ from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
     safe_rmtree,
-    safe_unlink_file,
 )
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
@@ -85,6 +81,42 @@ if TYPE_CHECKING:
     from endoreg_db.models import AiModel, LabelSet, VideoFile
 
 LOGGER = logging.getLogger(__name__)
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings(
+    postgresql_proc: PostgreSQLExecutor,
+    django_db_modify_db_settings_parallel_suffix: None,
+) -> None:
+    """Connect Django to pytest-postgresql's temporary server.
+
+    pytest-postgresql owns the server process.
+    pytest-django still owns database creation, migrations, and teardown.
+    """
+    from django.conf import settings
+    from django.db import connections
+
+    database = settings.DATABASES["default"]
+
+    if database["ENGINE"] != "django.db.backends.postgresql":
+        raise RuntimeError(
+            "The temporary PostgreSQL fixture requires PostgreSQL test settings."
+        )
+
+    # Avoid keeping a connection opened with earlier configuration.
+    connections.close_all()
+
+    # Update the existing dictionary in place. Do not replace TEST["NAME"]:
+    # pytest-django's parallel-suffix fixture may already have adjusted it.
+    database.update(
+        {
+            "NAME": "lx_test",
+            "USER": postgresql_proc.user,
+            "PASSWORD": postgresql_proc.password or "",
+            "HOST": postgresql_proc.host,
+            "PORT": str(postgresql_proc.port),
+        }
+    )
 
 
 @pytest.fixture
@@ -140,10 +172,6 @@ class _PytestNode(Protocol):
     def iter_markers(self) -> Iterator[_PytestMark]: ...
 
 
-class _SqliteRawConnection(Protocol):
-    _endoreg_test_pragmas_applied: bool
-
-
 class _SqlCursor(Protocol):
     def execute(self, sql: str) -> object: ...
 
@@ -152,33 +180,6 @@ class _SqlCursorContext(Protocol):
     def __enter__(self) -> _SqlCursor: ...
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool: ...
-
-
-class _SqliteTestConnection(Protocol):
-    vendor: str
-    connection: _SqliteRawConnection
-
-    def cursor(self) -> _SqlCursorContext: ...
-
-
-class _SqliteConnectionReceiver(Protocol):
-    def __call__(
-        self,
-        sender: type[_SqliteTestConnection],
-        connection: _SqliteTestConnection,
-        **kwargs: JsonValue,
-    ) -> None: ...
-
-
-class _ConnectionCreatedSignal(Protocol):
-    def connect(
-        self,
-        receiver: _SqliteConnectionReceiver,
-        *,
-        dispatch_uid: str,
-    ) -> None: ...
-
-    def disconnect(self, *, dispatch_uid: str) -> bool: ...
 
 
 class _GetStreamInfoCallable(Protocol):
@@ -382,35 +383,6 @@ def client() -> DjangoClient:
             )
 
     return SafeClient()
-
-
-# ==========================================
-# Time Tracking Fixtures
-# ==========================================
-
-
-@pytest.fixture(scope="function", autouse=True)
-def testcase_result(request: FixtureRequest) -> None:
-    node = cast(pytest.Item, getattr(request, "node"))
-    print("Test '{}' STARTED".format(node.nodeid))
-
-    def fin() -> None:
-        print("Test '{}' COMPLETED".format(node.nodeid))
-        rep_call = cast(TestReport | None, getattr(node, "rep_call", None))
-        if rep_call is not None:
-            print("Test '{}' DURATION={}".format(node.nodeid, rep_call.duration))
-
-    request.addfinalizer(fin)
-
-
-@pytest.hookimpl(hookwrapper=True, tryfirst=True)
-def pytest_runtest_makereport(
-    item: pytest.Item,
-    call: pytest.CallInfo[object],
-) -> Generator[None, Result[TestReport], None]:
-    outcome = yield
-    rep = outcome.get_result()
-    setattr(item, "rep_" + rep.when, rep)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -673,7 +645,9 @@ def processed_video_file(
             pass
         return cached_video
 
-    from endoreg_db.services import video_temporal_inference
+    from endoreg_db.services.video_files import (
+        temporal_inference as video_temporal_inference,
+    )
     from tests.helpers.default_objects import get_latest_segmentation_model
     from tests.media.video.mock_video_anonym_annotation import (
         mock_video_manual_validation,
@@ -688,7 +662,7 @@ def processed_video_file(
 
         run_video_temporal_inference = getattr(
             video_temporal_inference,
-            "_run_video_temporal_inference",
+            "run_video_temporal_inference",
         )
         run_video_temporal_inference(
             video_file.pk,
@@ -842,59 +816,6 @@ def video_test_mode():
     return RUN_VIDEO_TESTS
 
 
-def _apply_sqlite_test_pragmas(db_connection: _SqliteTestConnection) -> None:
-    """
-    Configure SQLite connections once at creation time so Django's test
-    transaction wrappers inherit the settings without mutating live handles.
-    """
-    from django.db.utils import DatabaseError, InterfaceError, OperationalError
-
-    if db_connection.vendor != "sqlite":
-        return
-
-    raw_connection = db_connection.connection
-
-    if getattr(raw_connection, "_endoreg_test_pragmas_applied", False):
-        return
-
-    try:
-        with db_connection.cursor() as cursor:
-            cursor.execute("PRAGMA busy_timeout=30000;")
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            cursor.execute("PRAGMA synchronous=NORMAL;")
-            cursor.execute("PRAGMA cache_size=10000;")
-            cursor.execute("PRAGMA temp_store=MEMORY;")
-        setattr(raw_connection, "_endoreg_test_pragmas_applied", True)
-    except (AttributeError, DatabaseError, InterfaceError, OperationalError):
-        return
-
-
-def _configure_sqlite_test_connection(
-    sender: type[_SqliteTestConnection],
-    connection: _SqliteTestConnection,
-    **kwargs: JsonValue,
-) -> None:
-    _apply_sqlite_test_pragmas(connection)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def optimize_database_queries():
-    """
-    Apply SQLite pragmas to every Django test connection, including ones opened
-    lazily after pytest-django starts wrapping tests in transactions.
-    """
-    dispatch_uid = "endoreg.tests.sqlite_pragmas"
-    sqlite_connection_created = cast(_ConnectionCreatedSignal, connection_created)
-    sqlite_connection_created.connect(
-        _configure_sqlite_test_connection,
-        dispatch_uid=dispatch_uid,
-    )
-
-    yield
-
-    sqlite_connection_created.disconnect(dispatch_uid=dispatch_uid)
-
-
 @pytest.fixture(scope="session")
 def session_mocker():
     """Session-scoped mock fixture."""
@@ -909,7 +830,6 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
     """
     Set up the test environment once per session.
     """
-    from django.conf import settings
     from django.db import connections
 
     # Ensure faker logging is disabled
@@ -928,18 +848,6 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
 
     # Cleanup after all tests
     connections.close_all()
-
-    db_config = getattr(settings, "DATABASES", {}).get("default", {})
-    if (
-        db_config.get("ENGINE", "").endswith("sqlite3")
-        and os.environ.get("TEST_DB_REUSE", "false").lower() != "true"
-    ):
-        db_path = Path(db_config.get("NAME", ""))
-        for candidate in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
-            try:
-                safe_unlink_file(candidate, missing_ok=True)
-            except OSError:
-                pass
 
 
 def _apply_global_video_mocks(cache: CacheManager) -> None:
@@ -1064,10 +972,6 @@ def pytest_configure(config: pytest.Config) -> None:
     """
     Configure pytest with custom markers for performance optimization.
     """
-    test_db_engine = os.environ.get("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-    test_db_reuse = os.environ.get("TEST_DB_REUSE", "false").lower() == "true"
-    if test_db_engine.endswith("sqlite3") and not test_db_reuse:
-        config.option.reuse_db = False
 
     config.addinivalue_line(
         "markers", "expensive: marks tests as expensive/resource-intensive"
@@ -1376,7 +1280,6 @@ def auto_mock_ffmpeg_for_video_tests(
 def auto_mock_video_anonymizer_for_non_integration_video_tests(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
     """
     Prevent unit-style video tests from invoking the real lx_anonymizer/Ollama stack.
@@ -1394,6 +1297,8 @@ def auto_mock_video_anonymizer_for_non_integration_video_tests(
 
     if not is_video_test or allows_real_stack:
         return
+
+    tmp_path = cast(Path, request.getfixturevalue("tmp_path"))
 
     class DummyVideoAnonymizer:
         def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:

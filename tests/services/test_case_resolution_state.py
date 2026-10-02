@@ -7,7 +7,7 @@ import pytest
 from lx_dtypes.models.contracts import CaseResolutionRequest
 
 from endoreg_db.models import Center, RawPdfFile
-from endoreg_db.services.case_resolution_state import (
+from endoreg_db.services.cases.resolution_state import (
     CASE_RESOLUTION_META_KEY,
     persist_case_resolution_state,
 )

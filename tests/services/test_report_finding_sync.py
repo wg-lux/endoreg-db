@@ -24,8 +24,8 @@ from endoreg_db.models.medical.patient.patient_finding_intervention import (
     PatientFindingIntervention,
 )
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
-from endoreg_db.services.report_finding_sync import sync_report_findings
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.reports.finding_sync import sync_report_findings
+from endoreg_db.services.reports.persistence import save_report_submission
 
 pytestmark = pytest.mark.django_db
 

@@ -10,7 +10,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
 from endoreg_db.schemas.k_pseudonymity import KPseudonymityReleaseConfig
-from endoreg_db.services.k_pseudonymity import (
+from endoreg_db.services.privacy.k_pseudonymity import (
     KPseudonymityInputError,
     ReleaseRow,
     build_k_pseudonymous_release,

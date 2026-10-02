@@ -309,7 +309,7 @@ def test_virtual_training_frames_require_validation(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     gate: str,
 ) -> None:
-    from endoreg_db.services.aidataset_training_manifests import (
+    from endoreg_db.services.datasets.training_manifests import (
         build_frame_multilabel_training_manifest,
     )
 
@@ -360,7 +360,7 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
         if consumer == "image":
             read_processed_training_image(frame)
         elif consumer == "report":
-            from endoreg_db.services.report_frame_export import (
+            from endoreg_db.services.reports.frame_export import (
                 materialized_report_frame,
             )
 
@@ -435,7 +435,7 @@ def test_core_training_streams_encrypted_retained_frames(
 ) -> None:
     import torch
     from lx_ai_core.training import TrainingDatasetManifest
-    from endoreg_db.services.aidataset_training_manifests import (
+    from endoreg_db.services.datasets.training_manifests import (
         build_frame_multilabel_training_manifest,
     )
     from endoreg_db.services.frames.training_images import streamed_training_dataset
@@ -554,7 +554,7 @@ def test_report_frame_export_decrypts_and_cleans_up(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     renderer_fails: bool,
 ) -> None:
-    from endoreg_db.services.report_frame_export import materialized_report_frame
+    from endoreg_db.services.reports.frame_export import materialized_report_frame
 
     video, _, _, annotation_id = retained_video
     frame = ImageClassificationAnnotation.objects.get(pk=annotation_id).frame

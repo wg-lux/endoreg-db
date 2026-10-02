@@ -16,7 +16,7 @@ from endoreg_db.models.medical.patient.patient_medication_schedule import (
     PatientMedicationSchedule,
 )
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from endoreg_db.services.cases import CASE_RELATION_FIELDS, persist_case_graph
+from endoreg_db.services.cases.lifecycle import CASE_RELATION_FIELDS, persist_case_graph
 
 
 class CaseSerializer(serializers.ModelSerializer[Case]):

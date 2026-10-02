@@ -2,7 +2,8 @@ from __future__ import annotations
 
 # Direct private-method coverage is intentional in this focused unit suite.
 # pyright: reportPrivateUsage=false, reportMissingTypeStubs=false
-from contextlib import nullcontext
+from collections.abc import Generator
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock, call
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 import pymupdf
 import pytest
+from django.db import OperationalError
 from pydantic import ValidationError
 
 import endoreg_db.import_files.report_import_service as report_import_module
@@ -21,7 +23,7 @@ from endoreg_db.import_files.report_import_service import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 from endoreg_db.services.raw_pdf_files.types import PdfDocument
-from endoreg_db.services.report_import_fencing import (
+from endoreg_db.services.reports.import_fencing import (
     ReportImportFence,
     StaleReportImportAttemptError,
 )
@@ -514,7 +516,7 @@ def test_failure_cleanup_rechecks_owner_after_renewal(
     from django.utils import timezone
 
     from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
-    from endoreg_db.services.report_import_fencing import acquire_report_import_fence
+    from endoreg_db.services.reports.import_fencing import acquire_report_import_fence
 
     fence = acquire_report_import_fence(CONTENT_HASH)
     context = _context(tmp_path / "report.pdf")
@@ -700,8 +702,10 @@ class TestDuplicateCleanup:
         (False, False, True, True, None),
         (False, False, True, False, RuntimeError("anonymization failed")),
         (False, False, True, False, StaleReportImportAttemptError("stale attempt")),
+        (False, False, True, False, OperationalError("database unavailable")),
     ],
 )
+@pytest.mark.parametrize("with_lifecycle", [False, True])
 def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     service: ReportImportService,
     monkeypatch: pytest.MonkeyPatch,
@@ -711,6 +715,7 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     needs_processing: bool,
     existing: bool,
     failure: Exception | None,
+    with_lifecycle: bool,
 ) -> None:
     from endoreg_db.schemas.import_file import SourceSnapshot
 
@@ -725,6 +730,29 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         sha256=CONTENT_HASH,
     )
     context = _context(pdf_path)
+    guard_open = False
+
+    @contextmanager
+    def tracked_guard(_fence: ReportImportFence) -> Generator[None]:
+        nonlocal guard_open
+        assert not guard_open
+        guard_open = True
+        try:
+            yield
+        finally:
+            guard_open = False
+
+    def require_guard(_report: RawPdfFile) -> None:
+        assert guard_open, "Job callbacks must execute inside the content guard"
+
+    lifecycle = Mock()
+    lifecycle.started.side_effect = require_guard
+    lifecycle.succeeded.side_effect = require_guard
+    service.lifecycle = lifecycle if with_lifecycle else None
+    require_completed = Mock()
+    monkeypatch.setattr(
+        report_import_module, "require_usable_completed_report", require_completed
+    )
     report = Mock(spec=RawPdfFile)
     fence = _fence()
     calls = Mock()
@@ -758,12 +786,12 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     monkeypatch.setattr(
         report_import_module,
         "report_import_mutation_guard",
-        Mock(return_value=nullcontext()),
+        tracked_guard,
     )
     monkeypatch.setattr(
         report_import_module,
         "report_import_finalization_guard",
-        Mock(return_value=nullcontext()),
+        tracked_guard,
     )
     monkeypatch.setattr(report_import_module, "create_or_retrieve_report_file", create)
     monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
@@ -792,21 +820,29 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
             service._process_import_pipeline(context, retry)
         anonymize.assert_called_once_with(context)
         finalize.assert_not_called()
-        if isinstance(failure, StaleReportImportAttemptError):
+        if isinstance(failure, (StaleReportImportAttemptError, OperationalError)):
             failed.assert_not_called()
         else:
-            failed.assert_called_once_with(context, fence)
-        assert not snapshot_path.exists()
+            failed.assert_called_once_with(context, fence, error=failure)
+        assert snapshot_path.exists() is isinstance(failure, OperationalError)
     else:
         assert service._process_import_pipeline(context, retry) is report
         if existing or not needs_processing:
             anonymize.assert_not_called()
             finalize.assert_not_called()
             if existing:
-                acquire.assert_not_called()
+                if with_lifecycle:
+                    acquire.assert_called_once()
+                    require_completed.assert_called_once_with(
+                        report,
+                        source_sha256=CONTENT_HASH,
+                        require_artifact=False,
+                    )
+                else:
+                    acquire.assert_not_called()
                 runtime_validation.assert_not_called()
             else:
-                release.assert_called_once_with(fence)
+                release.assert_not_called()
         else:
             assert calls.mock_calls == [call.anonymize(context), call.finalize(context)]
             if processed or retry:
@@ -815,6 +851,10 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
                 retry_cleanup.assert_called_once_with(
                     context, preserve_sensitive_staging=True
                 )
+    if with_lifecycle and failure is None:
+        lifecycle.succeeded.assert_called_once_with(report)
+    if with_lifecycle and (existing or not needs_processing):
+        lifecycle.started.assert_not_called()
     assert context.file_hash == CONTENT_HASH
     assert context.file_path == snapshot_path
     assert context.execution_guard is None

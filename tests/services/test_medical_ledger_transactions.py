@@ -33,8 +33,10 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     Unit,
 )
-from endoreg_db.services import medical_ledger
-from endoreg_db.services.medical_ledger import create_patient_medical_ledger
+from endoreg_db.services.interoperability import medical_ledger as medical_ledger
+from endoreg_db.services.interoperability.medical_ledger import (
+    create_patient_medical_ledger,
+)
 from lx_dtypes.models.ledger.medical.Write import PatientMedicalLedgerCreate
 
 

@@ -8,7 +8,7 @@ from typing import cast
 
 import pymupdf
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TransactionTestCase
 from lx_dtypes.models import SensitiveMeta
 
 from endoreg_db.import_files.context.import_context import ImportContext
@@ -16,7 +16,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models import RawPdfFile
-from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.reports.import_service import ReportImportService
 from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.hashs import get_file_hash
 from tests.helpers.default_objects import DEFAULT_CENTER_NAME
@@ -26,15 +26,12 @@ MINIMAL_PDF_BYTES = ReportImportService._render_single_page_pdf(  # pyright: ign
 )
 
 
-class PdfMediaTextVisibilityTests(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
+class PdfMediaTextVisibilityTests(TransactionTestCase):
+    def setUp(self) -> None:
+        super().setUp()
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
-
-    def setUp(self) -> None:
         self.client.force_login(
             User.objects.create_user(
                 username="pdf-media-text-reader",

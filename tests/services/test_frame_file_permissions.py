@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from endoreg_db.models import Center, Frame, VideoFile
-from endoreg_db.services.report_frame_export import materialized_report_frame
+from endoreg_db.services.reports.frame_export import materialized_report_frame
 from endoreg_db.utils.frame_stream import EncodedFrameSample
 from endoreg_db.utils.paths import get_runtime_paths
 
@@ -30,7 +30,7 @@ def test_report_frame_export_is_protected_and_always_removed(
     )
     paths: list[Path] = []
     with patch(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
         return_value=sample,
     ):
         try:

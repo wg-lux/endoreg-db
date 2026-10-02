@@ -43,7 +43,6 @@ let
     libxext     # Common dependency for OpenCV
     libxrender  # Common dependency for OpenCV
     libxkbcommon     # Often required by newer Qt/OpenCV builds    
-
   ];
   runtimePackages = with pkgs; [
     ffmpeg-headless.bin
@@ -64,7 +63,7 @@ let
     graphviz        # Enables the call-graph visualization tab inside Cachegrind
     python312
     python312Packages.pyprof2calltree
-
+    postgresql
   ];
 
   
@@ -76,7 +75,10 @@ let
     export USE_STUB_MODEL_META=true
     export TEST_DB_REUSE=true
   '';
-  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' -n auto --dist=loadscope";
+  # pytest-xdist accepts PYTEST_XDIST_AUTO_NUM_WORKERS=2 (or 4) to bound
+  # worker-local PostgreSQL startup and memory costs without changing isolation.
+  TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";
+  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' ${TEST_PYTEST_ARGS}";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
   COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
@@ -227,7 +229,7 @@ in
     '';
 
     hello.package = pkgs.zsh;
-    hello.exec = "uv run python hello.py";
+    hello.exec = "uv run python scripts/diagnostics/hello.py";
     runtests.package = pkgs.zsh;
     runtests.exec = "uv run python runtests.py";
     runtests-media.exec = "uv run python runtests.py 'media'";
@@ -395,37 +397,37 @@ in
       exec = "uv sync --extra dev";
     };
     "test:fast" = {
-      description = "Run the fast PR pytest lane with live logging";
+      description = "Run the fast PR pytest lane with slow-test timings";
       exec = ''
         devenv tasks run test:sync
         ${FAST_TEST_ENV}
-        pytest -s -o log_cli=true --log-level=INFO ${FAST_TEST_PYTEST_ARGS}
+        pytest -q ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "test:heavy" = {
-      description = "Run heavy tests with live logging";
+      description = "Run heavy tests with slow-test timings";
       exec = ''
         devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -m '${HEAVY_TEST_MARKER}' -n auto --dist=loadscope
+        pytest -q -m '${HEAVY_TEST_MARKER}' ${TEST_PYTEST_ARGS}
       '';
     };
     "test:full" = {
-      description = "Run the full pytest suite with live logging";
+      description = "Run the full pytest suite with coverage and slow-test timings";
       exec = ''
         devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -n auto --dist=loadscope ${COVERAGE_ARGS}
+        pytest -q ${TEST_PYTEST_ARGS} ${COVERAGE_ARGS}
       '';
     };
     "test:clean" = {
-      description = "Remove pytest worker runtimes, temp directories, and test SQLite files";
+      description = "Remove pytest worker runtimes, temp directories, and test postgresql files";
       exec = ''
         devenv tasks run test:sync
         python - <<'PY'
@@ -437,10 +439,6 @@ in
         for path in (root / "workers", root / "tmp"):
             safe_rmtree(path, missing_ok=True)
 
-        db_root = root / "db"
-        for pattern in ("test_db*.sqlite3", "test_db*.sqlite3-wal", "test_db*.sqlite3-shm"):
-            for path in db_root.glob(pattern):
-                safe_unlink_file(path, missing_ok=True)
         PY
       '';
     };

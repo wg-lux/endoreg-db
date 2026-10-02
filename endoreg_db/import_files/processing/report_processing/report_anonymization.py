@@ -306,7 +306,7 @@ class ReportAnonymizer:
             _ReportReaderClass,
             getattr(rr_mod, "ReportReader"),
         )
-        from endoreg_db.services.center_employees import center_employee_overrides
+        from endoreg_db.services.centers.employees import center_employee_overrides
 
         resolver = self._patient_pseudonym_resolver(report)
         center = report.center

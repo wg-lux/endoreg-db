@@ -24,8 +24,8 @@ from endoreg_db.models import (
     VideoState,
     Center,
 )
-from endoreg_db.services.aidataset_exports import export_to_standardized_structure
-from endoreg_db.services.lx_video_contracts import (
+from endoreg_db.services.datasets.exports import export_to_standardized_structure
+from endoreg_db.services.video_files.clinical_contracts import (
     build_lx_p_video_segment,
     build_lx_patient_video_file,
     build_lx_sensitive_meta,

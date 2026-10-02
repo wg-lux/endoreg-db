@@ -330,6 +330,8 @@ definition_of_done:
         includes unsafe raw report text and unbounded metadata. Direct merge remains rejected; current
         lx-annotate sender emits only schema-validated anonymized_text and current receiver rejects raw
         text.'
+    - kind: document
+      reference: feature-tracking/reports/postgresql_test_regressions.yml
     note: 'Receiver, sender, operator, privacy, and UI contracts pass reproducibly. PR #312 intentionally
       remains unintegrated: it cannot be merged, violates current sender ownership, and contains an unsafe
       raw-text path. The current lx-annotate sender transfers only strictly validated anonymized payloads;

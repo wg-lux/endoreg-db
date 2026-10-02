@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from endoreg_db.services.hls_legacy_adoption import adopt_legacy_hls
+from endoreg_db.services.streaming.hls_legacy_adoption import adopt_legacy_hls
 
 
 class Command(BaseCommand):

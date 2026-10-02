@@ -171,7 +171,7 @@ definition_of_done:
     - .devenv/state/venv/bin/pyright
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pyright
@@ -184,11 +184,14 @@ definition_of_done:
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_dicom_interoperability.py
         -q (5 passed)
-    note: Repositoryweites Pyright bleibt fehlerfrei; vier neue DICOM-Manager-Ignores wurden entfernt.
-      Der versionierte Quality-Boundary-Guard friert bestehende Type-Suppressions ein und erzwingt Review
-      bei jeder Abweichung.
-    assessed_by: Codex
-    assessed_at: '2026-07-17T14:01:05.532469Z'
+    - kind: document
+      reference: feature-tracking/reports/pyright_errors.yml
+    note: Original 11 errors corrected without new diagnostic suppressions. Changed files pass focused
+      Pyright. Concurrent service reorganization under another owner introduced 70 separate errors in
+      full verification; exact diagnostics sent to that owner. Frozen isolated environment used because
+      shared venv synchronization replaced dependencies.
+    assessed_by: codex-folder-structure-20261001
+    assessed_at: '2026-10-01T16:25:40.269075Z'
 - id: safe_serialization
   category: security
   title: Serialisierung kann keine geschützten Felder oder unvalidierten Daten durchreichen

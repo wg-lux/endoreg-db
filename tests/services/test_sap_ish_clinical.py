@@ -18,8 +18,10 @@ from endoreg_db.models import (
     PatientMedication,
     PatientMedicationSchedule,
 )
-from endoreg_db.services.sap_ish_clinical import persist_sap_ish_clinical_rows
-from endoreg_db.services.sap_ish_import import (
+from endoreg_db.services.interoperability.sap_ish_clinical import (
+    persist_sap_ish_clinical_rows,
+)
+from endoreg_db.services.interoperability.sap_ish_import import (
     SapIshNormalizedRow,
     sap_ish_external_id_origin,
 )

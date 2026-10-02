@@ -13,11 +13,11 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
-from endoreg_db.services.frame_annotation_segment_identity import (
+from endoreg_db.services.annotations.segment_identity import (
     SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX,
     segment_derived_external_annotation_id,
 )
-from endoreg_db.services.frame_segment_reconciliation import (
+from endoreg_db.services.frames.frame_segment_reconciliation import (
     FrameSegmentReconciliationSpec,
     reconcile_frame_segment_annotations,
 )

@@ -7,7 +7,7 @@ from typing import Literal, Self
 from lx_dtypes.models.contracts.reference_catalog import ExaminationIndicationReference
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from endoreg_db.services.reference_catalog import CatalogPlan
+from endoreg_db.services.reference_data.catalog import CatalogPlan
 
 
 class MigrationSpec(BaseModel):

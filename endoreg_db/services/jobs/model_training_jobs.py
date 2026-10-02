@@ -29,7 +29,7 @@ from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
 )
-from endoreg_db.services.lifecycle_state_machine import (
+from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationLifecycleEvent,
     OperationLifecycleState,
     reduce_operation_lifecycle,
@@ -41,7 +41,7 @@ from endoreg_db.schemas import (
     validate_ai_model_training_request_payload,
     validate_ai_model_training_result_payload,
 )
-from endoreg_db.services.aidataset_training_selection import (
+from endoreg_db.services.datasets.training_selection import (
     training_annotation_querysets,
 )
 from endoreg_db.utils.ai.multilabel_dataset_builder import (

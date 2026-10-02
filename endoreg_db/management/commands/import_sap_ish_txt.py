@@ -12,11 +12,11 @@ from endoreg_db.services.hub.ingest import (
     resolve_declared_upload_center,
     resolve_default_center,
 )
-from endoreg_db.services.sap_ish_import import (
+from endoreg_db.services.interoperability.sap_ish_import import (
     SapIshImportResult,
     convert_sap_ish_txt_directory_to_preanonymized_drop,
 )
-from endoreg_db.services.sap_ish_clinical import (
+from endoreg_db.services.interoperability.sap_ish_clinical import (
     SapIshClinicalImportResult,
     persist_sap_ish_clinical_rows,
 )

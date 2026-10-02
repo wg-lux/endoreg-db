@@ -15,7 +15,7 @@ from endoreg_db.models import (
     PatientFindingClassification,
     PatientFindingIntervention,
 )
-from endoreg_db.services.patient_examination_links import (
+from endoreg_db.services.cases.examination_links import (
     PatientExaminationLinksNotPrefetchedError,
     build_patient_examination_links,
     load_patient_examination_for_links,

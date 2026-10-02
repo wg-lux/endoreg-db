@@ -281,6 +281,22 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: test
+      reference: '2026-10-01, assessor codex-failure-triage-20261001: PostgreSQL nullable-join regression review'
+      note: 'Reviewed the existing advance_storage_rotation and commit_verified_storage_placement
+        fixes: required placement locks remain and optional reservations are locked directly.
+        Added active/missing reservation rejection cases that preserve placement, transfer
+        evidence and counters without a commit receipt; a second-connection nowait test
+        proves the rotation reservation lock lasts until outer commit. Through devenv
+        shell with uv sync --extra dev --locked, pytest tests/services/test_hub_storage_rotation.py
+        tests/services/test_hub_storage_transfer.py tests/services/test_hub_storage_placement.py
+        tests/services/test_hub_storage_balancing.py -q --tb=short: 36 passed, 1 warning in
+        70.40s. Focused Pyright: 0 errors, 0 warnings; Ruff lint passed. Final format check
+        passed for both modules and both test files after coordinated transfer formatting.
+        From /home/admin/dev/lx-annotate with PYTHONPATH=/home/admin/endoreg-db, original
+        dataset API/storage worker/storage recovery lane: 35 passed in 75.41s. Import
+        probe confirmed this checkout. Installed LX dependency remains unchanged.
+        This evidence verifies local regressions only; production acceptance remains open.'
     - kind: command
       reference: '2026-08-11: endoreg 37 passed/1 SQLite skip; PostgreSQL concurrency 1 passed; LX 67
         passed; Lux 55 passed.'
@@ -299,11 +315,19 @@ definition_of_done:
         immutable handoff digest without reopening legacy plaintext through LazyEncryptedStorage; the
         resolver uses owning-module imports; and the reviewed inventory contains all storage control-plane
         models. These fixes have not been rerun by Codex.
-    note: Real PostgreSQL concurrent admission and focused domain failure/replay tests pass. Broader PostgreSQL
-      balancing/cleanup/lease stress, final publication/playback verification, restored-database migration,
-      and production soak remain outstanding.
-    assessed_by: codex-storage-prod-readiness
-    assessed_at: '2026-08-11T11:18:57.881646Z'
+    - kind: command
+      reference: 'PostgreSQL-Regression am 2026-10-01: Nullable transfer_evidence wird bei Cleanup getrennt
+        unter Zeilensperre gelesen; die Receipt-Sperre bleibt auf self begrenzt. Kombinierter fokussierter
+        Lauf mit test_hub_storage_rotation.py: 79 passed, 3 subtests passed, 2 warnings in 408.63s. Gezielter
+        Pyright: 0 Fehler und 0 Warnungen. Weitere Storage-Prüfungen und Evidenz werden durch codex-failure-triage-20261001
+        ergänzt; umfassende Produktionsgates bleiben offen.'
+    note: 'PostgreSQL-Regression am 2026-10-01: Nullable transfer_evidence wird bei Cleanup getrennt unter
+      Zeilensperre gelesen; die Receipt-Sperre bleibt auf self begrenzt. Kombinierter fokussierter Lauf
+      mit test_hub_storage_rotation.py: 79 passed, 3 subtests passed, 2 warnings in 408.63s. Gezielter
+      Pyright: 0 Fehler und 0 Warnungen. Weitere Storage-Prüfungen und Evidenz werden durch codex-failure-triage-20261001
+      ergänzt; umfassende Produktionsgates bleiben offen.'
+    assessed_by: codex-test-triage-20261001
+    assessed_at: '2026-10-01T14:41:38.981618Z'
 - id: reconciliation_observability_and_recovery
   category: operations
   title: Operators can detect and safely recover skew, failures, and capacity pressure

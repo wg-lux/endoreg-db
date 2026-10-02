@@ -2,7 +2,7 @@ schema_version: '1.0'
 title: Gemeinsame Auswahl der Trainingsannotationen
 feature_tracking: feature-tracking/ProfessionalProductFoundations.yml
 criterion: reviewed_active_learning
-selection_service: endoreg_db.services.aidataset_training_selection
+selection_service: endoreg_db.services.datasets.training_selection
 policy: manual_or_confirmed_v1
 rules:
   - Die Zugehoerigkeit zum ausgewaehlten AIDataSet bleibt verbindlich.

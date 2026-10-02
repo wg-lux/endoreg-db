@@ -16,13 +16,13 @@ from endoreg_db.schemas.case_documents import CaseDocumentAttachmentPayload
 from endoreg_db.schemas.case_creation import CreateCaseWithExaminationPayload
 from endoreg_db.serializers.case import CaseSerializer
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from endoreg_db.services.cases import (
+from endoreg_db.services.cases.lifecycle import (
     CaseLifecycleError,
     close_case,
     persist_case_graph,
     reopen_case,
 )
-from endoreg_db.services.case_documents import (
+from endoreg_db.services.cases.documents import (
     CaseDocumentConflict,
     CaseDocumentNotFound,
     attach_document_to_case,

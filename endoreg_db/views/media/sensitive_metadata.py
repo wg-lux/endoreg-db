@@ -34,21 +34,21 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.views.access_control import assert_center_scope_allowed
-from endoreg_db.services.case_resolution_state import (
+from endoreg_db.services.cases.resolution_state import (
     get_case_resolution_meta,
     persist_case_resolution_state,
 )
-from endoreg_db.services.auto_case_resolution import link_media_to_patient_examination
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.cases.auto_resolution import link_media_to_patient_examination
+from endoreg_db.services.reports.materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
 from endoreg_db.schemas.sensitive_meta_verification import (
     SensitiveMetaVerificationCommand,
 )
-from endoreg_db.services.sensitive_meta_verification import (
+from endoreg_db.services.patient_identity.verification import (
     update_sensitive_meta_verification,
 )
-from endoreg_db.services.sensitive_meta_update import (
+from endoreg_db.services.patient_identity.update import (
     SensitiveMetaUpdateCenterNotFoundError,
     SensitiveMetaUpdateGenderNotFoundError,
     update_sensitive_meta,

@@ -12,7 +12,7 @@ from django.core.files.base import ContentFile
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.paths import get_runtime_paths
 
-import endoreg_db.services.media_integrity as media_integrity
+import endoreg_db.services.media.integrity as media_integrity
 from endoreg_db.models import (
     AIDataSet,
     AIModelTrainingRun,
@@ -22,13 +22,13 @@ from endoreg_db.models import (
     UploadJob,
     VideoFile,
 )
-from endoreg_db.services.media_integrity import (
+from endoreg_db.services.media.integrity import (
     MediaIntegrityOptions,
     reconcile_media_integrity,
     reconcile_upload_job_integrity,
     reconcile_video_integrity,
 )
-from endoreg_db.services.streamable_media import STREAMABLE_FILE_MODE
+from endoreg_db.services.streaming.streamable_media import STREAMABLE_FILE_MODE
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
 )

@@ -5,7 +5,9 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
 
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -143,7 +145,7 @@ def initialize_video_file(
         )
 
     if local_raw_path is not None:
-        from endoreg_db.services.video_storage_normalization import (
+        from endoreg_db.services.video_storage.workflow import (
             persist_video_source_timeline,
         )
 

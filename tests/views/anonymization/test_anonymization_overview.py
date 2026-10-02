@@ -31,7 +31,7 @@ from endoreg_db.views.anonymization.overview import (
     UploadJobRetryView,
 )
 from endoreg_db.serializers.misc.file_overview import current_overview_hls_artifacts
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 
 
 @pytest.mark.parametrize("replacement_status", ["failed", "queued", "materializing"])

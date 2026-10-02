@@ -18,6 +18,7 @@ from endoreg_db.import_files.file_storage.cleanup import (
     cleanup_staging_files,
     cleanup_staging_after_commit,
 )
+from endoreg_db.import_files.file_storage.storage import ensure_context_file_hash
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
@@ -25,7 +26,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     hls_materialization_is_active,
     hls_result_is_ready,
     materialize_video_hls,
@@ -39,8 +40,8 @@ from endoreg_db.services.raw_pdf_files.integrity import (
     verify_processed_report_path,
 )
 from endoreg_db.services.raw_pdf_files.state import get_or_create_raw_pdf_state
-from endoreg_db.services.video_storage_normalization import evidence_as_json
-from endoreg_db.services.processed_video_cleanup import (
+from endoreg_db.services.video_storage.workflow import evidence_as_json
+from endoreg_db.services.video_storage.generation_cleanup import (
     reconcile_previous_processed_cleanup,
     commit_processed_replacements,
     record_processed_replacement,
@@ -87,11 +88,10 @@ def _verify_final_video_output(path: Path) -> None:
 def _record_successful_video_processing_history(ctx: ImportContext) -> None:
     """Persist the success receipt while the current attempt still owns execution."""
     ctx.require_execution_ownership()
-    with transaction.atomic():
-        if not isinstance(ctx.file_hash, str):
-            ctx.file_hash = get_file_hash(ctx.file_path)
+    with ctx.owned_mutation():
+        file_hash = ensure_context_file_hash(ctx)
         ProcessingHistory.get_or_create_for_hash(
-            file_hash=ctx.file_hash,
+            file_hash=file_hash,
             success=True,
         )
 
@@ -237,7 +237,7 @@ def mark_instance_processing_started(
     ctx: ImportContext,
 ) -> None:
     ctx.require_execution_ownership()
-    with transaction.atomic():
+    with ctx.owned_mutation():
         state = _ensure_instance_state(instance)
         if (
             isinstance(instance, VideoFile)
@@ -308,10 +308,9 @@ def finalize_report_success(
             state.mark_anonymized()
             state.mark_sensitive_meta_processed()
             state.save()
-            if not isinstance(ctx.file_hash, str):
-                ctx.file_hash = get_file_hash(ctx.file_path)
+            file_hash = ensure_context_file_hash(ctx)
             ProcessingHistory.get_or_create_for_hash(
-                obj=instance, file_hash=ctx.file_hash, success=True
+                obj=instance, file_hash=file_hash, success=True
             )
             cleanup_staging_after_commit(
                 (src, ctx.sensitive_path), label="committed report staging output"
@@ -331,7 +330,7 @@ def finalize_video_success(
     if not instance.pk:
         raise RuntimeError("Cannot finalize video import with an unsaved VideoFile.")
 
-    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
 
     with video_artifact_mutation(video_id=int(instance.pk)):
         ctx.require_execution_ownership()
@@ -386,16 +385,17 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
         )
         next_meta["processed_generation"] = saved_name
         instance.meta = next_meta
-        record_processed_replacement(
-            instance, previous_name=previous_name, previous_hash=previous_hash
-        )
-        instance.save()
+        with ctx.owned_mutation():
+            record_processed_replacement(
+                instance, previous_name=previous_name, previous_hash=previous_hash
+            )
+            instance.save()
         ctx.require_execution_ownership()
         ensure_video_hls(instance, force=True, execution_guard=ctx.execution_guard)
         ctx.require_execution_ownership()
 
-        state = _ensure_instance_state(instance)
-        with transaction.atomic():
+        with ctx.owned_mutation():
+            state = _ensure_instance_state(instance)
             ctx.require_execution_ownership()
             _record_successful_video_processing_history(ctx)
             if not state.processing_started:
@@ -406,21 +406,24 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
             cleanup_pending = commit_processed_replacements(instance)
             instance.save()
     except Exception:
-        candidate_field = instance.processed_file
-        candidate_field.name = candidate_name
-        if getattr(candidate_field, "storage", None) is not None:
-            safe_delete_field_file(candidate_field, missing_ok=True)
-        candidate_field.name = previous_name
-        instance.processed_video_hash = previous_hash
-        instance.meta = previous_meta
-        instance.save(
-            update_fields=[
-                "processed_file",
-                "processed_video_hash",
-                "meta",
-                "date_modified",
-            ]
-        )
+        # Preserve uncertain generations for reconciliation if ownership is lost.
+        ctx.require_execution_ownership()
+        with ctx.owned_mutation():
+            candidate_field = instance.processed_file
+            candidate_field.name = candidate_name
+            if getattr(candidate_field, "storage", None) is not None:
+                safe_delete_field_file(candidate_field, missing_ok=True)
+            candidate_field.name = previous_name
+            instance.processed_video_hash = previous_hash
+            instance.meta = previous_meta
+            instance.save(
+                update_fields=[
+                    "processed_file",
+                    "processed_video_hash",
+                    "meta",
+                    "date_modified",
+                ]
+            )
         raise
 
     if cleanup_pending:
@@ -456,12 +459,11 @@ def finalize_failure(
             raise Exception
 
     ctx.require_execution_ownership()
-    with transaction.atomic():
+    with ctx.owned_mutation():
         state = _ensure_instance_state(ctx.instance)
         state.mark_processing_failed()
-        if not isinstance(ctx.file_hash, str):
-            ctx.file_hash = get_file_hash(ctx.file_path)
-        ProcessingHistory.get_or_create_for_hash(file_hash=ctx.file_hash, success=False)
+        file_hash = ensure_context_file_hash(ctx)
+        ProcessingHistory.get_or_create_for_hash(file_hash=file_hash, success=False)
 
     delete_associated_files(
         ctx,

@@ -12,7 +12,7 @@ from rest_framework.request import Request
 
 from endoreg_db.models.media.video.video_file import VideoFile
 
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.hub import (
     get_deployment_role,
     hub_mode_enabled,

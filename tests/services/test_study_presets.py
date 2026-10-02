@@ -20,13 +20,13 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.administration.person.patient.patient import Patient
-from endoreg_db.services.clinical_reference_data import (
+from endoreg_db.services.reference_data.clinical_projection import (
     clinical_snapshot,
     import_clinical_references,
     plan_clinical_reference_import,
 )
-from endoreg_db.services.center_employees import center_employee_overrides
-from endoreg_db.services.study_presets import import_study_preset
+from endoreg_db.services.centers.employees import center_employee_overrides
+from endoreg_db.services.studies.presets import import_study_preset
 from endoreg_db.utils.file_operations import atomic_write_file
 
 pytestmark = pytest.mark.django_db

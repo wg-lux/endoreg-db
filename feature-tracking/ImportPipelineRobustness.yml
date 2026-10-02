@@ -46,7 +46,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: '2026-09-10: TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+      reference: '2026-09-10: TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/pytest
         --ds=endoreg_db.config.settings.test tests/administration/person/test_pseudonym_resolution.py
         tests/administration/person/test_patient.py tests/import_files/test_report_anonymization_contract.py
         tests/media/report/test_sensitive_meta_logic.py tests/services/test_report_import_service_unit.py
@@ -184,16 +184,16 @@ definition_of_done:
       reference: endoreg_db/import_files/file_storage/storage.py; endoreg_db/utils/hashs.py; tests/import_files/test_file_storage.py;
         tests/utils/test_file_hash_integrity.py
     - kind: command
-      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
-        tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py tests/utils/test_report_artifact_fields.py
-        tests/import_files/test_import_encryption.py tests/services/test_report_import_service_unit.py
+      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
+        .devenv/state/venv/bin/pytest tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py
+        tests/utils/test_report_artifact_fields.py tests/import_files/test_import_encryption.py tests/services/test_report_import_service_unit.py
         tests/services/test_video_import_service_unit.py tests/utils/test_encryption_streaming.py -q --tb=short:
         151 passed, 2 warnings in 54.75s. Fokussierter Pyright: 0 Fehler, 0 Warnungen. Gesamt-Pyright:
         50 Fehler in fremden Report-Modellen/Views, 6 Warnungen. Ruff und Formatprüfung bestanden. Staging-Hashabweichungen
         und unvollständige/größenveränderte Klartextstreams werden abgewiesen; keine neuen Typhelfer oder
         Änderungen an Laufzeitpfaden. Keine PostgreSQL- oder Produktionsfreigabe.'
     - kind: command
-      reference: '2026-09-24: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+      reference: '2026-09-24: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest tests/models/metadata/file_import/test_create_report_file.py tests/models/metadata/file_import/test_create_video_file.py
         tests/views/anonymization/test_anonymization_overview.py tests/services/test_report_import_service_unit.py
         tests/services/test_video_import_service_unit.py tests/services/test_report_artifact_integrity.py
@@ -434,16 +434,16 @@ definition_of_done:
     - kind: test
       reference: tests/import_files/test_report_finalize_success.py
     - kind: command
-      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
-        --ds=endoreg_db.config.settings.test tests/import_files/test_report_finalize_success.py tests/services/test_report_artifact_integrity.py
-        tests/import_files/test_import_encryption.py tests/services/test_report_import_service_unit.py
-        tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
-        tests/services/test_report_llm_jobs.py tests/import_files/test_report_import_workload_timing.py
+      reference: '2026-09-23: SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_report_finalize_success.py
+        tests/services/test_report_artifact_integrity.py tests/import_files/test_import_encryption.py
+        tests/services/test_report_import_service_unit.py tests/services/test_report_import_fencing.py
+        tests/services/test_report_import_concurrency.py tests/services/test_report_llm_jobs.py tests/import_files/test_report_import_workload_timing.py
         -q --tb=short -rs: 97 passed, 2 warnings, 50.52s. Fokussierter Pyright: 0 Fehler, 0 Warnungen.
         Vollständiger Pyright: 50 externe Fehler in parallel bearbeiteten Report-Modellen/Views; 4 eigene
         Test-Typfehler anschließend behoben. Ruff und Diff-Prüfung der betroffenen Dateien bestanden.'
     - kind: command
-      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_import_file_locks.py
         tests/import_files/test_report_finalize_success.py tests/services/test_report_import_service_unit.py
         tests/services/test_report_artifact_integrity.py tests/import_files/test_import_encryption.py
@@ -464,6 +464,20 @@ definition_of_done:
   category: functionality
   title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
   acceptance:
+  - Report- und Video-Orchestrierung sind in derselben Leserichtung in Kontextvorbereitung, Quellen-/Inhaltssperre,
+    Wiederverwendung, eigenen Importversuch und Anonymisierung/Publikation gegliedert. Formatabhängige
+    Ownership-, Retry- und Bereinigungsregeln bleiben unverändert und werden am jeweiligen Phasenübergang
+    benannt.
+  - Report und Video verwenden denselben typisierten Ausführungs-Fence mit Eigentumsprüfung und transaktionaler
+    Mutationssperre; Content-, UploadJob- und Transfer-Eigentümer behalten ihre fachlichen Regeln.
+  - Der Video-Verarbeitungseinstieg verlangt einen Fence. Direkte Aufrufer erwerben über den Service-Wrapper
+    eine UploadJob-Lease; lang laufende Verarbeitung hält keine äußere Datenbanktransaktion offen.
+  - Reimport-Metadatenreset und zugehörige Jobübergänge laufen innerhalb des Content-Fence; Busy- oder
+    stale-Versuche dürfen fremde Metadaten und Jobzustände nicht verändern.
+  - PDF- und TXT-Einstieg behalten denselben Report-Fence auch ohne UploadJob; weitere fachliche Reportquellen
+    werden nicht als unterstützte Dateieinstiege dargestellt.
+  - Report-Celery-Tasks wiederholen Busy-Claims und erkannte Datenbankausfälle ohne terminalen Fehlerabschluss;
+    unbekannte Datenbankfehler werden nicht blind wiederholt.
   - Die Report-Lease wird während lang laufender OCR- und Large-Language-Model-Phasen regelmäßig anhand
     der Datenbankzeit erneuert.
   - Originaltext, anonymisierter Text, SensitiveMeta und PDF-Publikation prüfen denselben monotonen Fencing-Token
@@ -508,7 +522,7 @@ definition_of_done:
         tests/services/test_report_import_fencing.py tests/services/test_report_import_concurrency.py
         -q: 18 passed, 4 dependency/plugin warnings in 70.06s; SQLite.'
     - kind: command
-      reference: 'SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3 .devenv/state/venv/bin/pytest
+      reference: 'SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/pytest
         --ds=endoreg_db.config.settings.test tests/services/test_report_import_service_unit.py tests/services/test_report_import_fencing.py
         tests/services/test_report_import_concurrency.py tests/services/test_report_llm_jobs.py tests/import_files/test_report_import_workload_timing.py
         -q --tb=short -rs: 85 passed, 2 warnings, 58.85s.'
@@ -522,16 +536,76 @@ definition_of_done:
         --namespace=lx-annotate -u lx-annotate-celery-pipeline-worker.service -n 400 --no-pager -o short-iso.
         Webdienst und Pipeline-Worker aktiv; erster Importabbruch in OCR/PDF-Schwärzung. sudo -n nicht
         verfügbar; Journal direkt lesbar.'
-    note: 'Ergänzung 2026-09-23: Bestehender Mutationsguard schützt jetzt Report-Anlage, Retry-Reset und
-      Fehlerabschluss. Eine frühe Sprachdatenprüfung verwendet lx_anonymizer.ocr.tessdata.get_tessdata_path;
-      Konfigurationsfehler werden als RuntimeError statt als verlorene PDF-Quelle weitergegeben. Erfolgreiche
-      Duplikate bleiben ohne OCR wiederverwendbar. Diagnose auf gc-02, Profil site-client/wheel: Pipeline-Journal
-      belegt am 2026-09-22 um 16:09 CEST fehlende deu+eng-Sprachdaten und fehlendes tesseract im OCR-Ersatzpfad;
-      daraus folgt der spätere Fehler ohne anonymisierte PDF-Ausgabe. Aktuelle Unit verweist auf das fehlende
-      Verzeichnis /run/current-system/sw/share/tessdata. Keine Deployment-Änderung oder erneute Produktionsverarbeitung.
-      PostgreSQL-Prozesskonkurrenz und Ende-zu-Ende-Verifikation bleiben offen.'
-    assessed_by: codex-pdf-import-20260923
-    assessed_at: '2026-09-23T06:37:33.234570Z'
+    - kind: command
+      reference: 'PostgreSQL-Regression am 2026-10-01: Report-Heartbeat verlangt Autocommit, bereinigt
+        nur die Thread-Verbindung und erhält ursprüngliche Fehler sowie die Aufruferverbindung. PDF-Integration
+        verwendet TransactionTestCase mit je Test geladenem Basiskatalog. Kombinierter fokussierter Lauf:
+        79 passed, 3 subtests passed, 2 warnings in 408.63s; enthalten sind test_report_import_fencing.py
+        und test_pdf_media_text_visibility.py. Gezielter Pyright: 0 Fehler und 0 Warnungen. Weitere bisher
+        offene End-to-End- und Prozesskonkurrenz-Gates bleiben unverändert.'
+    - kind: code
+      reference: endoreg_db/services/import_lease.py; endoreg_db/services/report_import_lifecycle.py;
+        endoreg_db/services/jobs/report_llm_jobs.py; endoreg_db/import_files/report_import_service.py;
+        endoreg_db/tasks.py
+    - kind: document
+      reference: docs/endoreg_db_state_management_mindmap.md; docs/report_import_concurrency_implementation.md
+    - kind: command
+      reference: '2026-10-01: devenv shell PostgreSQL-Import-/Video-Integrationslane 232 passed, 13 warnings
+        in 100.40s. Abschließende Report-Service-/Job-Lane nach Text-only-Reuse- und Datenbankausfall-Prüfung:
+        85 passed, 2 warnings in 92.28s. Fokussierter Pyright 0 Fehler, 1 vorhandene tessdata-Stubs-Warnung;
+        Ruff und git diff --check bestanden. Metadatenreset und Jobcallbacks unter Content-Fence; abgelaufener
+        Owner darf auch ohne Nachfolger keinen Fehlerabschluss schreiben. Keine Produktionsfreigabe.'
+    - kind: command
+      reference: '2026-10-01 final: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_report_task_recovery.py
+        -q --tb=short --show-capture=no: 6 passed, 1 plugin warning in 0.72s. Beide Reporttasks konfigurieren
+        max_retries=None; Busy/Outage werden wiederholt, unbekannte Datenbankfehler propagiert. Isolierte
+        Tests verwenden den vorhandenen no_db-Marker. Vorheriger isolierter Lauf scheiterte am automatischen
+        DB-Setup, vor Testausführung; direkte pytest-Initialisierung erforderte devenv für libpq.'
+    - kind: command
+      reference: '2026-10-01: PostgreSQL-Integration für gemeinsame Ausführungs-Fences, direkte Videoaufrufe,
+        Report- und Videodienste, Reimport, Reporttasks, Transferverträge und konkurrierende Upload-Leases:
+        397 passed, 3 subtests passed, 2 TestVideoImportService-Tests deselected, 13 warnings in 98.47s.
+        Aufruf über devenv shell mit TEST_DB_ENGINE=django.db.backends.postgresql RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false und -k ''not TestVideoImportService''.'
+    - kind: command
+      reference: '2026-10-01: Abschließende PostgreSQL-Regressionsprüfung tests/import_files/test_video_anonymization.py
+        tests/services/test_video_reimport_jobs.py tests/services/test_video_import_orchestration.py tests/views/video/test_reimport_and_correction.py
+        tests/services/test_anonymization_operational_recovery.py: 61 passed, 2 warnings in 63.80s. Fokussierter
+        Pyright und Ruff: bestanden.'
+    - kind: code
+      reference: endoreg_db/services/import_execution.py; endoreg_db/services/video_import.py; tests/services/test_import_execution.py;
+        tests/services/test_video_import_orchestration.py
+    - kind: command
+      reference: '2026-10-01: PostgreSQL tests/services/test_video_import_orchestration.py tests/services/test_center_defaults.py:
+        25 passed, 2 warnings in 59.96s. Fokussierter Pyright: 0 errors, 0 warnings. Ruff und Mindmap-Linkprüfung
+        bestanden.'
+    - kind: command
+      reference: '2026-10-01 Strukturabgleich: PostgreSQL pytest tests/services/test_report_import_service_unit.py
+        tests/services/test_video_import_service_unit.py tests/import_files/test_report_import_workload_timing.py
+        tests/import_files/test_video_import_workload_timing.py -q --tb=short: 147 passed, 2 warnings
+        in 56.37s; alle vorhandenen Assertions unverändert.'
+    - kind: command
+      reference: '2026-10-01 Strukturabgleich: PostgreSQL pytest tests/services/test_video_import_service.py
+        tests/services/test_report_import_concurrency.py tests/services/test_report_import_fencing.py
+        tests/services/test_report_llm_jobs.py tests/services/test_report_task_recovery.py tests/services/test_upload_job_import_lease_postgresql.py
+        tests/services/test_import_execution.py tests/services/test_video_import_orchestration.py tests/services/test_transfer_job_contract.py
+        tests/services/test_video_import_transfer_identity.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/import_files/test_video_finalize_success.py tests/import_files/test_report_finalize_success.py
+        tests/utils/test_profiling.py -k ''not TestVideoImportService'' -q --tb=short: 191 passed, 3 subtests
+        passed, 2 deselected, 13 warnings in 99.16s. Beide Läufe über devenv shell mit TEST_DB_ENGINE=django.db.backends.postgresql
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false.'
+    - kind: command
+      reference: '2026-10-01 Strukturabgleich: Vollständiger Pyright 16 bestehende Fehler außerhalb der
+        geänderten Kerne, 8 Warnungen. Fokussierter Pyright beider Kerne: 0 Fehler, 1 externe tessdata-Stubs-Warnung.
+        Ruff check, Ruff format --check, git diff --check und relative Mindmap-Links bestanden.'
+    note: 'Strukturabgleich 2026-10-01 nach tree-Inventur von services/ und import_files/: Beide Kerne
+      verwenden dieselbe Methodenreihenfolge _timed_import_and_anonymize, _import_and_anonymize, _create_import_context,
+      _process_import_pipeline, _reuse_completed_import, _run_owned_import und _anonymize_and_finalize.
+      Videohilfsfunktionen stehen nach der Serviceklasse. Bestehende öffentliche Signaturen, fachliche
+      Ownership und Testassertionen bleiben erhalten. Die Phasentabelle im Architekturüberblick erklärt
+      die Formatunterschiede; keine neue Vererbungshierarchie oder Schemaänderung.'
+    assessed_by: codex-import-standardization-20261001
+    assessed_at: '2026-10-01T16:04:34.046319Z'
 - id: cross_entrypoint_failure_injection
   category: testing
   title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
@@ -714,7 +788,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: command
-      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.sqlite3
+      reference: '2026-09-23: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_import_file_locks.py
         tests/import_files/test_report_finalize_success.py tests/services/test_report_import_service_unit.py
         tests/services/test_report_artifact_integrity.py tests/import_files/test_import_encryption.py

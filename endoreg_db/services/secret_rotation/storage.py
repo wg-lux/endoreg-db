@@ -14,7 +14,7 @@ from django.db.models.fields.files import FieldFile
 
 from endoreg_db.config.secret_keyring import configured_master_keyring
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     video_artifact_mutation,
     video_artifact_publication,
@@ -176,7 +176,7 @@ def rotate_storage(
 
 def _rotate_hls(report: StorageRotationReport, *, apply: bool) -> None:
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-    from endoreg_db.services.hls_media import (
+    from endoreg_db.services.streaming.hls_media import (
         hls_uses_active_master_key,
         materialize_video_hls,
     )

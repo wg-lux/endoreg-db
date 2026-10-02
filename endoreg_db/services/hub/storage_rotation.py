@@ -601,13 +601,19 @@ def advance_storage_rotation(
                 )
             return replay
         rotation = (
-            StorageRotation.objects.select_for_update()
-            .select_related(
-                "source_placement",
-                "target_placement__reservation",
+            StorageRotation.objects.select_for_update(
+                of=("self", "source_placement", "target_placement")
             )
+            .select_related("source_placement", "target_placement")
             .get(pk=rotation_id)
         )
+
+        # Lock the optional reservation directly to avoid locking a nullable join.
+        target = rotation.target_placement
+        if target.reservation_id is not None:
+            target.reservation = StorageReservation.objects.select_for_update(
+                of=("self",)
+            ).get(pk=target.reservation_id)
         concurrent_replay = StorageRotationTransition.objects.filter(
             idempotency_key=idempotency_key
         ).first()

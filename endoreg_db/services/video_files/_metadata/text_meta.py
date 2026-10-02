@@ -11,7 +11,7 @@ from endoreg_db.models.metadata.sensitive_meta_logic import (
     update_or_create_sensitive_meta_from_dict,
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.services.sensitive_meta_external_ids import (
+from endoreg_db.services.patient_identity.external_ids import (
     assign_patient_external_id,
     split_patient_external_id,
 )

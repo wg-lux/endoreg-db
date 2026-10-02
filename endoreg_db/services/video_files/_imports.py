@@ -19,12 +19,11 @@ from endoreg_db.services.hub.media_integrity import (
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     ensure_video_file_profile,
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-    atomic_move_file,
     ensure_directory,
     ensure_disk_capacity,
 )
@@ -66,16 +65,6 @@ def _verify_completed_file(path: Path) -> None:
     )
     if video_stream is None:
         raise RuntimeError(f"Expected output file has no readable video stream: {path}")
-
-
-def _temp_media_path(base_path: Path, marker: str) -> Path:
-    """
-    Keep the media suffix last so FFmpeg can infer the container.
-
-    Example:
-        abc.mp4 -> abc.part.mp4
-    """
-    return base_path.with_name(f"{base_path.stem}.{marker}{base_path.suffix}")
 
 
 def _attempt_temp_media_path(base_path: Path, marker: str) -> Path:
@@ -166,37 +155,6 @@ def atomic_copy_with_fallback(
             ) from exc
 
         logger.error("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
-        raise
-
-
-def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
-    src_path = Path(src_path)
-    dst_path = Path(dst_path)
-
-    try:
-        atomic_move_file(source=src_path, destination=dst_path)
-        logger.debug("Atomic move successful: %s -> %s", src_path, dst_path)
-        return True
-    except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_path.parent).free
-            except OSError:
-                pass
-
-            required_space = src_path.stat().st_size
-            raise InsufficientStorageError(
-                (
-                    "Insufficient space for move operation. "
-                    f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB"
-                ),
-                required_space=required_space,
-                available_space=free_space,
-            ) from exc
-
-        logger.error("Failed to move %s -> %s: %s", src_path, dst_path, exc)
         raise
 
 
@@ -373,7 +331,7 @@ def _create_from_file(
         )
 
         try:
-            from endoreg_db.services.center_defaults import resolve_import_center
+            from endoreg_db.services.centers.defaults import resolve_import_center
 
             center = resolve_import_center(center_name, center_key=center_key)
             effective_processor_name = resolve_processor_name_for_import(processor_name)

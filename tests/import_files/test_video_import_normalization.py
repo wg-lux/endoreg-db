@@ -122,7 +122,7 @@ def test_initialize_video_file_delegates_frame_creation_to_source_timeline(
         events.append("timeline")
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_storage_normalization.persist_video_source_timeline",
+        "endoreg_db.services.video_storage.workflow.persist_video_source_timeline",
         fake_persist_timeline,
     )
 

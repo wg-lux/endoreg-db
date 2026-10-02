@@ -83,9 +83,6 @@ These constraints are important when interpreting setup output:
   explicitly, the loader logs that the file is absent and uses its built-in
   defaults. Editing the bundled setup file therefore does not currently prove
   that runtime behavior changed.
-- `_verify_setup()` queries SQLite's `sqlite_master` directly. The command's
-  final verification is therefore SQLite-specific and is not production
-  readiness evidence for a PostgreSQL deployment.
 - Missing weights and Hugging Face download failures are non-fatal in this
   command. Operators must independently verify that the selected
   `AiModel.active_meta` has an accessible weight file before enabling inference.

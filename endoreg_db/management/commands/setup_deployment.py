@@ -18,7 +18,7 @@ from lx_dtypes.utils.deployment_setup import (
 )
 from lx_dtypes.utils.study_setup_yaml import MAX_SETUP_BYTES
 
-from endoreg_db.services.deployment_setup import (
+from endoreg_db.services.runtime.deployment_setup import (
     DeploymentActivationError,
     apply_deployment,
     plan_deployment,

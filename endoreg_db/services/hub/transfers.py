@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Generator, Iterable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -59,10 +60,10 @@ from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
-from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
+from endoreg_db.services.cases.auto_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.services.lifecycle_state_machine import (
+from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,
@@ -218,6 +219,16 @@ def _renew_transfer_operation(fence: TransferOperationFence) -> None:
         raise RuntimeError("transfer operation ownership fence is no longer current")
 
 
+@contextmanager
+def _transfer_import_mutation(
+    fence: TransferOperationFence,
+) -> Generator[None, None, None]:
+    with transaction.atomic():
+        TransferJob.objects.select_for_update().get(pk=fence.transfer_job_id)
+        _renew_transfer_operation(fence)
+        yield
+
+
 def _record_transfer_candidate(
     fence: TransferOperationFence,
     *,
@@ -309,10 +320,6 @@ def _is_transfer_key_unique_violation(error: IntegrityError) -> bool:
             if details.get("unique") is True and details.get("columns") == [column_name]
         }
         return constraint_name in transfer_key_constraints
-
-    if connection.vendor == "sqlite":
-        sqlite_detail = f"UNIQUE constraint failed: {table_name}.{column_name}"
-        return str(cause or error).strip() == sqlite_detail
 
     return False
 
@@ -1592,18 +1599,20 @@ def _handle_video_processing_after_raw_upload(
     operation_heartbeat.start()
     try:
         from endoreg_db.import_files.video_import_service import (
-            VideoImportExecutionFence,
             VideoImportService,
         )
+
+        from endoreg_db.services.imports.execution import ImportExecutionFence
 
         VideoImportService().import_and_anonymize_fenced(
             file_path=import_path,
             center_name=video.center.name,
             processor_name=processor_name,
             retry=True,
-            execution_fence=VideoImportExecutionFence(
+            execution_fence=ImportExecutionFence(
                 attempt_id=operation_fence.attempt_id.hex,
-                guard=lambda: _renew_transfer_operation(operation_fence),
+                guard=operation_heartbeat.guard,
+                mutation_guard=lambda: _transfer_import_mutation(operation_fence),
             ),
         )
         operation_heartbeat.guard()

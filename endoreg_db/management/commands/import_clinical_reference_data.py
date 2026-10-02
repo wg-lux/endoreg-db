@@ -6,7 +6,7 @@ from lx_dtypes.terminology.terminology_loader import get_terminology_service
 from lx_dtypes.terminology.terminology_service import TerminologyError
 import yaml
 
-from endoreg_db.services.clinical_reference_data import (
+from endoreg_db.services.reference_data.clinical_projection import (
     clinical_snapshot,
     import_clinical_references,
     plan_clinical_reference_import,

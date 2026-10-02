@@ -13,7 +13,9 @@ from lx_dtypes.models.meta.VideoMeta import (
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.lx_video_contracts import resolve_lx_anonymization_state
+from endoreg_db.services.video_files.clinical_contracts import (
+    resolve_lx_anonymization_state,
+)
 from endoreg_db.services.video_files import get_video_outside_segments
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 

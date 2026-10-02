@@ -19,6 +19,7 @@ from pydantic import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.services.imports.execution import ImportExecutionFence
 
 _SHA256_PATTERN = re.compile(r"^[0-9a-fA-F]{64}$")
 _REPORT_SUFFIXES = frozenset({".pdf", ".txt"})
@@ -115,6 +116,17 @@ class ImportContext(BaseModel):
         guard = self.execution_guard
         if guard is not None:
             guard()
+
+    def bind_execution_fence(self, fence: ImportExecutionFence) -> None:
+        self.attempt_id = fence.attempt_id
+        self.execution_guard = fence.guard
+        self.mutation_guard = fence.mutation_guard
+
+    def owned_mutation(self) -> AbstractContextManager[None]:
+        """A mutation cannot proceed without transaction-bound ownership."""
+        if self.mutation_guard is None:
+            raise RuntimeError("Import mutation requires an execution fence")
+        return self.mutation_guard()
 
     @model_validator(mode="after")
     def _validate_file_type_matches_path(self) -> Self:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from endoreg_db.services.offline_batch_runner import (
+from endoreg_db.services.runtime.offline_batch_runner import (
     OfflineBatchAlreadyRunning,
     OfflineBatchConfigurationError,
     OfflineBatchExecutionError,

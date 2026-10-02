@@ -268,7 +268,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=ValueError("Test processing error"),
             ),
         ):
@@ -308,7 +308,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=InsufficientStorageError(
                     "Insufficient pipeline storage. Required: 11.1 GB, "
                     "Available: 2.8 GB",

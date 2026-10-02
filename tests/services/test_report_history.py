@@ -20,7 +20,7 @@ from endoreg_db.models import (
     PatientFindingIntervention,
 )
 
-from endoreg_db.services import report_history
+from endoreg_db.services.reports import history as report_history
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientFindingClassificationHistoryData,
     PatientFindingInterventionHistoryData,

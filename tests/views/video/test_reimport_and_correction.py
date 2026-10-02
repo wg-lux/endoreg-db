@@ -1,4 +1,5 @@
 from importlib import import_module
+from collections.abc import Callable
 from contextlib import contextmanager
 from collections.abc import Generator
 from pathlib import Path
@@ -334,7 +335,7 @@ def test_reimport_returns_clear_error_when_raw_source_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module: Any = _load_video_view_module("reimport")
-    import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
+    import endoreg_db.services.video_files.reimport_orchestrator as reimport_orchestrator
 
     factory = APIRequestFactory()
 
@@ -378,7 +379,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
 ) -> None:
     module: Any = _load_video_view_module("reimport")
     import endoreg_db.services.jobs.video_reimport_jobs as reimport_jobs
-    import endoreg_db.services.video_reimport_orchestrator as reimport_orchestrator
+    import endoreg_db.services.video_files.reimport_orchestrator as reimport_orchestrator
 
     factory = APIRequestFactory()
 
@@ -414,8 +415,14 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
 
     class _FakeService:
         def reanonymize_existing_video(
-            self, target_video: Any, *, source_path: Any = None
+            self,
+            target_video: Any,
+            *,
+            source_path: Any = None,
+            prepare: Callable[[], None] | None = None,
         ) -> _FakeVideo:
+            assert prepare is not None
+            prepare()
             service_calls.append(
                 {"target_video": target_video, "source_path": source_path}
             )
@@ -431,9 +438,7 @@ def test_reimport_reanonymizes_existing_video_without_full_import(
         _FakeSensitiveMetaModel,
         raising=True,
     )
-    monkeypatch.setattr(
-        reimport_orchestrator.transaction, "atomic", _fake_atomic, raising=True
-    )
+    monkeypatch.setattr(reimport_jobs.transaction, "atomic", _fake_atomic, raising=True)
 
     def _ensure_local_file_mock(field_file: Any) -> Any:
         return _context_path(raw_path)

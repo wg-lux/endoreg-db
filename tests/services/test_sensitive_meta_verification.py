@@ -14,7 +14,7 @@ from endoreg_db.models.other.gender import Gender
 from endoreg_db.schemas.sensitive_meta_verification import (
     SensitiveMetaVerificationCommand,
 )
-from endoreg_db.services.sensitive_meta_verification import (
+from endoreg_db.services.patient_identity.verification import (
     update_sensitive_meta_verification,
 )
 

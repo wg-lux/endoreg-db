@@ -11,8 +11,8 @@ from django.utils import timezone
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-import endoreg_db.services.video_segment_blackening as blackening
-from endoreg_db.services.media_operation_gate import (
+import endoreg_db.services.video_files.segment_blackening as blackening
+from endoreg_db.services.media.operation_gate import (
     FFMPEG_STREAM_THROTTLE_NORMAL,
     FFMPEG_STREAM_THROTTLE_STREAMING,
     MediaOperationDeferred,

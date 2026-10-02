@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.utils import dates
+
+pytestmark = pytest.mark.no_db
 
 
 def test_random_date_helpers_honor_selected_calendar_boundaries(

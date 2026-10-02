@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
-from endoreg_db.services.report_import_state_machine import (
+from endoreg_db.services.reports.import_state_machine import (
     validate_report_import_claim,
     validate_report_import_failure,
     validate_report_import_success,

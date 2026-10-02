@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage.hls_encoding import (
     HlsEncodingProfileName,
     hls_encoding_profile_by_name,

@@ -52,8 +52,8 @@ from endoreg_db.services.jobs.stale_recovery import (
 from endoreg_db.services.hub.upload_job_state_machine import (
     transition_reimport_upload_jobs,
 )
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
+from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.services.video_files import (
     initialize_video_frames,
     initialize_video_specs as initialize_video_file_specs,
@@ -61,7 +61,7 @@ from endoreg_db.services.video_files import (
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.temporal_inference import (
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,
     extract_temporal_options,
@@ -267,15 +267,8 @@ def _reset_reimport_state(video: VideoFile) -> int:
         )
         video.sensitive_meta = None
         video.save(update_fields=["sensitive_meta"])
-        try:
-            SensitiveMeta.objects.filter(id=old_meta_id).delete()
-            logger.info("Deleted old SensitiveMeta %s", old_meta_id)
-        except Exception as exc:
-            logger.warning(
-                "Could not delete old SensitiveMeta %s: %s",
-                old_meta_id,
-                exc,
-            )
+        SensitiveMeta.objects.filter(id=old_meta_id).delete()
+        logger.info("Deleted old SensitiveMeta %s", old_meta_id)
 
     reset_count = _update_reimport_upload_jobs(
         video,
@@ -533,7 +526,7 @@ def _regenerate_reimport_hls_artifacts(
         raise ValueError("Cannot regenerate HLS for an unsaved video.") from exc
 
     try:
-        from endoreg_db.services.hls_media import (
+        from endoreg_db.services.streaming.hls_media import (
             hls_result_is_ready,
             materialize_video_hls,
         )
@@ -590,10 +583,14 @@ def _run_video_reimport_job(
         )
 
         with ensure_local_file(video.raw_file) as raw_file_path:
-            with transaction.atomic():
-                reset_upload_jobs = _reset_reimport_state(video)
+            reset_upload_jobs = 0
+            owned_video = video
 
-            video.refresh_from_db()
+            def prepare_reimport() -> None:
+                nonlocal reset_upload_jobs
+                reset_upload_jobs = _reset_reimport_state(owned_video)
+                owned_video.refresh_from_db()
+
             logger.info(
                 "Starting asynchronous VideoImportService re-anonymization for %s",
                 video.raw_video_hash,
@@ -601,6 +598,7 @@ def _run_video_reimport_job(
             VideoImportService().reanonymize_existing_video(
                 video,
                 source_path=raw_file_path,
+                prepare=prepare_reimport,
             )
 
         video.refresh_from_db()

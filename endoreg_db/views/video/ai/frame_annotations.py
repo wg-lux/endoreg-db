@@ -37,7 +37,7 @@ from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     SUPPORTED_FRAME_SAMPLING_STRATEGIES,
     SUPPORTED_FRAME_TASK_MODES,
@@ -50,14 +50,14 @@ from endoreg_db.services.frame_annotation_workflow import (
     resolve_ai_dataset_for_queue,
     resolve_frame_information_source_name,
 )
-from endoreg_db.services.annotation_access import (
+from endoreg_db.services.annotations.annotation_access import (
     resolve_trusted_annotation_principal,
     validate_interactive_annotation_source,
 )
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
 )
-from endoreg_db.services.frame_retention import (
+from endoreg_db.services.frames.frame_retention import (
     prune_unused_validated_outside_frames,
 )
 from endoreg_db.services.queue.frame_annotation_queue import (

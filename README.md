@@ -73,6 +73,7 @@ catalog for maintained guides, contracts, and runbooks.
 | `setup/` | Configuration, privacy, and AI setup guides |
 | `feature-tracking/` | Feature definitions, acceptance criteria, and readiness evidence |
 | `tests/` | Automated tests grouped by application area |
+| `scripts/` | Repository tooling and checks; GPU diagnostics in `diagnostics/` |
 | `workflow/` | Reusable workflow profiles |
 
 ## Further information

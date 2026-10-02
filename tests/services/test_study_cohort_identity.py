@@ -8,7 +8,7 @@ from datetime import date
 import pytest
 
 from endoreg_db.models import Examination, Patient, PatientExamination
-from endoreg_db.services.study_cohort import _build_case_rows, _PreviewMedia
+from endoreg_db.services.studies.cohort import _build_case_rows, _PreviewMedia
 
 
 @pytest.mark.parametrize("same_patient_record", [True, False])

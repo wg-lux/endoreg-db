@@ -19,7 +19,7 @@ from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.finding.finding_intervention import FindingIntervention
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
 from endoreg_db.schemas.clinical_reference import ClinicalReferenceReceipt
-from endoreg_db.services.clinical_reference_data import (
+from endoreg_db.services.reference_data.clinical_projection import (
     clinical_snapshot,
     import_clinical_references,
     plan_clinical_reference_import,

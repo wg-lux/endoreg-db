@@ -10,7 +10,11 @@ from rest_framework.test import APIClient
 
 from endoreg_db.models.administration.case.case import Case
 from endoreg_db.models.administration.person.patient.patient import Patient
-from endoreg_db.services.cases import CaseLifecycleError, close_case, reopen_case
+from endoreg_db.services.cases.lifecycle import (
+    CaseLifecycleError,
+    close_case,
+    reopen_case,
+)
 
 
 def _patient() -> Patient:

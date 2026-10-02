@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 import types
 import uuid
 from collections.abc import Callable, Sequence
@@ -21,14 +23,15 @@ from endoreg_db.models import (
     VideoFile,
     VideoProcessingHistory,
 )
-from endoreg_db.services import video_temporal_inference as temporal_jobs
+
+temporal_jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from endoreg_db.services.jobs import video_post_validation_jobs as jobs
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-import endoreg_db.services.video_segment_blackening as blackening
-from endoreg_db.services.video_segment_validation_workflow import (
+import endoreg_db.services.video_files.segment_blackening as blackening
+from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
 

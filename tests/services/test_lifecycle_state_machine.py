@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from endoreg_db.services.lifecycle_state_machine import (
+from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationClaimPath,
     OperationLifecycleEvent,
     OperationLifecycleState,

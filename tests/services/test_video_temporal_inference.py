@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 import types
 import uuid
 from collections.abc import Callable
@@ -28,7 +30,8 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services import video_temporal_inference as jobs
+
+jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from lx_dtypes.models.contracts.video_temporal_inference import (
     TemporalInferenceHistoryResultPayload,
     parse_temporal_inference_history_config_payload,
@@ -337,7 +340,7 @@ def test_run_job_boundary_rejects_invalid_options_before_database_access(
         jobs.TemporalInferenceConfigError,
         match="unknown temporal options: typo_threshold",
     ):
-        jobs._run_video_temporal_inference(
+        jobs.run_video_temporal_inference(
             1,
             model_meta_id=1,
             temporal_options={"typo_threshold": 0.7},
@@ -552,7 +555,7 @@ def test_running_prediction_redelivery_preserves_frames_and_owner(
     monkeypatch.setattr(jobs, "predict_video", predict)
     frame_ids = list(Frame.objects.filter(video=video).values_list("pk", flat=True))
     with pytest.raises(RuntimeError, match="already has a running execution"):
-        jobs._run_video_temporal_inference(
+        jobs.run_video_temporal_inference(
             video.pk, model_meta_id=model_meta.pk, history_id=history.pk
         )
     history.refresh_from_db()
@@ -806,7 +809,7 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
 
 
 @pytest.mark.django_db(transaction=True)
-def test_run_video_temporal_inference_redelivered_stream_success_preserves_frames(
+def testrun_video_temporal_inference_redelivered_stream_success_preserves_frames(
     tmp_path: Path,
 ):
     video = _create_video(tmp_path)
@@ -851,7 +854,7 @@ def test_run_video_temporal_inference_redelivered_stream_success_preserves_frame
         ),
     )
 
-    assert jobs._run_video_temporal_inference(
+    assert jobs.run_video_temporal_inference(
         video.pk,
         model_meta_id=model_meta.pk,
         history_id=history.pk,
@@ -897,7 +900,7 @@ def test_dispatch_video_temporal_inference_celery_failure_does_not_fallback(
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_materializes_lx_core_segments(
+def testrun_video_temporal_inference_materializes_lx_core_segments(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ):
@@ -976,7 +979,7 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
 
     monkeypatch.setattr(jobs, "_run_lx_ai_core_temporal_inference", _fake_lx_core)
 
-    assert jobs._run_video_temporal_inference(
+    assert jobs.run_video_temporal_inference(
         video.pk,
         model_meta_id=model_meta.pk,
         history_id=history.pk,
@@ -1005,7 +1008,7 @@ def test_run_video_temporal_inference_materializes_lx_core_segments(
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_fail(
+def testrun_video_temporal_inference_stream_succeeds_when_extract_frames_would_fail(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1069,7 +1072,7 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
 
     monkeypatch.setattr(jobs, "_run_lx_ai_core_temporal_inference", _fake_lx_core)
 
-    assert jobs._run_video_temporal_inference(
+    assert jobs.run_video_temporal_inference(
         video.pk,
         model_meta_id=model_meta.pk,
         history_id=history.pk,
@@ -1091,7 +1094,7 @@ def test_run_video_temporal_inference_stream_succeeds_when_extract_frames_would_
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache_state(
+def testrun_video_temporal_inference_stream_failure_does_not_create_frame_cache_state(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1115,7 +1118,7 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
     )
 
     with pytest.raises(RuntimeError, match="streaming decode failed"):
-        jobs._run_video_temporal_inference(
+        jobs.run_video_temporal_inference(
             video.pk,
             model_meta_id=model_meta.pk,
             history_id=history.pk,
@@ -1136,7 +1139,7 @@ def test_run_video_temporal_inference_stream_failure_does_not_create_frame_cache
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exists(
+def testrun_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exists(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1186,7 +1189,7 @@ def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exi
         _lx_core_empty,
     )
 
-    assert jobs._run_video_temporal_inference(
+    assert jobs.run_video_temporal_inference(
         video.pk,
         model_meta_id=model_meta.pk,
         history_id=history.pk,
@@ -1203,7 +1206,7 @@ def test_run_video_temporal_inference_auto_uses_stream_even_when_frame_cache_exi
 
 
 @pytest.mark.django_db
-def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothing(
+def testrun_video_temporal_inference_fails_when_current_meta_materializes_nothing(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ):
@@ -1280,7 +1283,7 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
     )
 
     with pytest.raises(RuntimeError, match="no LabelVideoSegment rows"):
-        jobs._run_video_temporal_inference(
+        jobs.run_video_temporal_inference(
             video.pk,
             model_meta_id=model_meta.pk,
             history_id=history.pk,
@@ -1306,7 +1309,7 @@ def test_run_video_temporal_inference_fails_when_current_meta_materializes_nothi
 
 
 @pytest.mark.django_db(transaction=True)
-def test_run_video_temporal_inference_cleans_frames_for_redelivered_success(
+def testrun_video_temporal_inference_cleans_frames_for_redelivered_success(
     tmp_path: Path,
 ):
     video = _create_video(tmp_path)
@@ -1350,7 +1353,7 @@ def test_run_video_temporal_inference_cleans_frames_for_redelivered_success(
         ),
     )
 
-    assert jobs._run_video_temporal_inference(
+    assert jobs.run_video_temporal_inference(
         video.pk,
         model_meta_id=model_meta.pk,
         history_id=history.pk,

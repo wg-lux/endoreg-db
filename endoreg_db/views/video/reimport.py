@@ -23,8 +23,10 @@ from endoreg_db.views.access_control import (
 )
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.services.video_reimport_orchestrator import VideoReimportOrchestrator
+from endoreg_db.services.video_files.direct_import import VideoImportService
+from endoreg_db.services.video_files.reimport_orchestrator import (
+    VideoReimportOrchestrator,
+)
 from endoreg_db.views.reimport_helpers import request_payload_dict
 
 logger = logging.getLogger(__name__)

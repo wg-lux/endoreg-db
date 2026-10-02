@@ -42,7 +42,7 @@ def create_raw_pdf_file_from_path(
     **kwargs: Unpack[_RawPdfFileCreateKwargs],
 ) -> "RawPdfFile":
     from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.services.center_defaults import resolve_import_center
+    from endoreg_db.services.centers.defaults import resolve_import_center
 
     model = model_cls or _raw_pdf_model()
     if isinstance(file_path, str):

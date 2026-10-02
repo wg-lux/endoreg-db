@@ -57,7 +57,7 @@ Apply these field rules:
   test.
 
 `PatientExamination` no longer exposes a `.links` model property. Load the graph
-through `endoreg_db.services.patient_examination_links.load_patient_examination_for_links`
+through `endoreg_db.services.cases.examination_links.load_patient_examination_for_links`
 and pass the result to `build_patient_examination_links`. The loader performs the
 bounded object-graph query plan; service-owned aggregation then performs zero
 additional queries and fails loudly for an incompletely loaded instance. This
@@ -167,7 +167,7 @@ The first reference execution cohort is exactly
 
 - current and canonical contract:
   `endoreg_db.schemas.medical_ledger.MedicalLedgerRecordIds`;
-- consumers: `endoreg_db.services.medical_ledger` create/replay paths and the
+- consumers: `endoreg_db.services.interoperability.medical_ledger` create/replay paths and the
   medical-ledger API;
 - migration: `0058_medicalledgerwritereceipt`, dependent on the published
   medical-ledger contract used by the service;
@@ -419,8 +419,8 @@ Primary references:
 - `endoreg_db/models/aidataset/aidataset.py:20`
 - `endoreg_db/models/label/label_video_segment/label_video_segment.py:10`
 - `endoreg_db/models/state/frame_annotation.py:83`
-- `endoreg_db/services/aidataset_exports.py:13`
-- `endoreg_db/services/aidataset_frame_buckets.py:11`
+- `endoreg_db/services/datasets/exports.py:13`
+- `endoreg_db/services/datasets/frame_buckets.py:11`
 
 The `AIDataSet` model imports neutral export and frame-bucket contracts directly
 from their owning `lx_dtypes.models.contracts` modules. Only the three retained

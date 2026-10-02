@@ -5,7 +5,7 @@ import json
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.services.media_integrity import reconcile_media_integrity
+from endoreg_db.services.media.integrity import reconcile_media_integrity
 from lx_dtypes.models.contracts.management_command import (
     ReconcileMediaIntegrityCommandOptionsPayload,
 )

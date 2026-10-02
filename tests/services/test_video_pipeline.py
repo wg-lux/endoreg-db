@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from endoreg_db.models import VideoFile
-from endoreg_db.services.video_import import VideoImportService
-from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference  # pyright: ignore[reportPrivateUsage]
+from endoreg_db.services.video_files.direct_import import VideoImportService
+from endoreg_db.services.video_files.temporal_inference import (
+    run_video_temporal_inference,
+)  # pyright: ignore[reportPrivateUsage]
 from tests.helpers.default_objects import get_latest_segmentation_model
 from tests.media.video.mock_video_anonym_annotation import mock_video_manual_validation
 
@@ -60,7 +62,7 @@ def main() -> None:
         assert video_file is not None
         model_meta = get_latest_segmentation_model()
         assert model_meta is not None
-        _run_video_temporal_inference(
+        run_video_temporal_inference(
             video_file.pk,
             model_meta_id=model_meta.pk,
             delete_frames_after=False,

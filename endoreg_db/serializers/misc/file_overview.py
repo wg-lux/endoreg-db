@@ -20,7 +20,9 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files.integrity import has_completed_report_record
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services.hls_media import hls_artifact_matches_current_source_metadata
+from endoreg_db.services.streaming.hls_media import (
+    hls_artifact_matches_current_source_metadata,
+)
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 from endoreg_db.services.hub.import_monitoring import (
@@ -28,7 +30,7 @@ from endoreg_db.services.hub.import_monitoring import (
     is_retryable_storage_failure,
 )
 from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     SegmentAnnotationStatus,
     resolve_segment_annotation_status,
 )

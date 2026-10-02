@@ -22,7 +22,8 @@ from endoreg_db.schemas.processed_video_cleanup import (
     ProcessedGenerationCleanupReceipt,
     cleanup_receipts,
 )
-from endoreg_db.services import hls_media, processed_video_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
 from endoreg_db.utils.paths import (
     EndoregPathsModel,
     to_protected_media_relative,
@@ -398,7 +399,7 @@ def test_cleanup_writer_is_visible_before_storage_transaction(
 ) -> None:
     from concurrent.futures import ThreadPoolExecutor
     from django.db import close_old_connections, connection
-    from endoreg_db.services.media_operation_gate import video_transcode_lease
+    from endoreg_db.services.media.operation_gate import video_transcode_lease
 
     real_cleanup = cleanup._cleanup_processed_video_generations_owned
     visible: list[bool] = []

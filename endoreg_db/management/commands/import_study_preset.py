@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from lx_dtypes.terminology.terminology_loader import get_terminology_service
 from lx_dtypes.terminology.terminology_service import TerminologyError
 
-from endoreg_db.services.study_presets import import_study_preset
+from endoreg_db.services.studies.presets import import_study_preset
 
 
 class Command(BaseCommand):

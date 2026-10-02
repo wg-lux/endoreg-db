@@ -15,7 +15,7 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
 from endoreg_db.authz.policy import satisfies
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
@@ -320,7 +320,7 @@ def persist_patient_examination_dtypes_record(
     patient_examination: PatientExamination,
     payload: BaseModel | Mapping[str, JsonValue],
 ) -> dict[str, Any]:
-    from endoreg_db.services.dtypes_records import (
+    from endoreg_db.services.reports.structured_records import (
         persist_patient_examination_dtypes_record as persist_record,
     )
 

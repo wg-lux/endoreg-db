@@ -20,7 +20,7 @@ from endoreg_db.config.env import (
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers.video.video_file import VideoFileSerializer
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     HLS_CONTENT_KEY_BYTES,
     hls_playlist_path,
     hls_segment_path,

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings
 from django.core.files.base import ContentFile, File
 from django.db import models
 from collections.abc import Iterable
@@ -564,7 +563,7 @@ def mock_ffmpeg():
 def mock_ai_inference():
     """Mock AI inference operations to avoid expensive model loading."""
     with patch(
-        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference"
+        "endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference"
     ) as mock_temporal_inference:
         mock_temporal_inference.return_value = True
         yield mock_temporal_inference
@@ -602,25 +601,6 @@ def _create_real_video_file_for_fixture() -> VideoFile:
 # ==========================================
 # Database Query Optimization Helpers
 # ==========================================
-
-
-def optimize_database_for_tests():
-    """
-    Apply database optimizations for test performance.
-    """
-    from django.db import connection
-
-    with connection.cursor() as cursor:
-        try:
-            # SQLite-specific optimizations
-            if "sqlite" in settings.DATABASES["default"]["ENGINE"]:
-                cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA synchronous=NORMAL;")
-                cursor.execute("PRAGMA cache_size=10000;")
-                cursor.execute("PRAGMA temp_store=MEMORY;")
-                cursor.execute("PRAGMA mmap_size=67108864;")  # 64MB
-        except Exception as e:
-            print(f"Database optimization warning: {e}")
 
 
 def batch_create_objects(

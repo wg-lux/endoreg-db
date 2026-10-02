@@ -8,7 +8,7 @@ import pytest
 from lx_dtypes.models.contracts.ffmpeg_metadata import FfmpegProbeDataPayload
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
-from endoreg_db.services import video_format_reconciliation as reconciliation
+from endoreg_db.services.video_storage import format_reconciliation as reconciliation
 
 
 def _stream_info(

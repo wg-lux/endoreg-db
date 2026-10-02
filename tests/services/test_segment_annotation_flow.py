@@ -7,7 +7,7 @@ from typing import cast
 from endoreg_db.models import VideoFile, Label, LabelVideoSegment, InformationSource
 from lx_dtypes.models.contracts.video_segments import parse_segment_annotation_input
 from lx_dtypes.models.contracts.json_types import JsonObject
-import endoreg_db.services.segment_sync as segment_sync
+import endoreg_db.services.annotations.segment_sync as segment_sync
 
 create_user_segment_from_annotation = segment_sync.create_user_segment_from_annotation
 

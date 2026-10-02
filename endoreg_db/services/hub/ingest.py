@@ -8,7 +8,6 @@ import json
 import logging
 import hashlib
 import hmac
-import time
 from collections.abc import Callable, Iterable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -21,7 +20,7 @@ from django.contrib.auth.models import AnonymousUser, User
 from django.core.files import File
 from django.core.files.uploadedfile import UploadedFile
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import IntegrityError, OperationalError, transaction
+from django.db import IntegrityError, transaction
 from kombu.exceptions import OperationalError as KombuOperationalError
 from pydantic import ValidationError
 import yaml
@@ -40,8 +39,10 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.utils.hashs import get_identity_salt
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
@@ -53,7 +54,7 @@ from endoreg_db.services.hub.cleanup import (
     cleanup_upload_job_source,
     reap_upload_job_sources,
 )
-from endoreg_db.services.auto_case_resolution import auto_resolve_media_case
+from endoreg_db.services.cases.auto_resolution import auto_resolve_media_case
 from endoreg_db.services.hub.deployment import (
     hub_mode_enabled as _deployment_hub_mode_enabled,
     local_study_server_mode_enabled,
@@ -93,7 +94,7 @@ from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.set_default_center import get_default_processor
-from endoreg_db.services.center_defaults import resolve_local_center
+from endoreg_db.services.centers.defaults import resolve_local_center
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
@@ -115,7 +116,7 @@ from endoreg_db.utils.structured_logging import (
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
-LOCK_RETRY_ATTEMPTS = 10
+UPLOAD_JOB_REUSE_ATTEMPTS = 10
 logger = logging.getLogger(__name__)
 WATCHER_CLEANUP_BATCH_LIMIT = 512
 
@@ -362,19 +363,6 @@ def _compute_uploaded_file_content_hash(uploaded_file: UploadedFile) -> str:
         digest.update(chunk)
     uploaded_file.seek(0)
     return digest.hexdigest()
-
-
-def _is_retryable_db_lock_error(exc: OperationalError) -> bool:
-    message = str(exc).lower()
-    return any(
-        marker in message
-        for marker in (
-            "database is locked",
-            "database table is locked",
-            "database schema is locked",
-            "database is busy",
-        )
-    )
 
 
 def resolve_upload_center(
@@ -910,7 +898,7 @@ class _UploadJobCreateContext:
 
 
 @dataclass(frozen=True)
-class _InvalidUploadJobReuse:
+class InvalidUploadJobReuse:
     job_id: str
     reason: str
     status: str
@@ -983,11 +971,11 @@ def _matching_active_upload_job(
 
 def _assess_active_upload_job_reuse(
     existing_job: UploadJob,
-) -> _InvalidUploadJobReuse | None:
+) -> InvalidUploadJobReuse | None:
     updated_at = getattr(existing_job, "updated_at", None)
     if updated_at and timezone.now() - updated_at <= STALE_UPLOAD_JOB_AGE:
         return None
-    return _InvalidUploadJobReuse(
+    return InvalidUploadJobReuse(
         job_id=str(existing_job.id),
         reason=(
             "Existing upload job was stale in pending/processing state. "
@@ -999,11 +987,11 @@ def _assess_active_upload_job_reuse(
 
 def _assess_completed_upload_job_reuse(
     existing_job: UploadJob,
-) -> _InvalidUploadJobReuse | None:
+) -> InvalidUploadJobReuse | None:
     integrity_result = check_upload_job_media_integrity(existing_job)
     if integrity_result.ok:
         return None
-    return _InvalidUploadJobReuse(
+    return InvalidUploadJobReuse(
         job_id=str(existing_job.id),
         reason=(
             "Completed upload job failed media integrity check: "
@@ -1016,7 +1004,7 @@ def _assess_completed_upload_job_reuse(
 
 def _assess_upload_job_reuse(
     existing_job: UploadJob,
-) -> _InvalidUploadJobReuse | None:
+) -> InvalidUploadJobReuse | None:
     if existing_job.status in {
         UploadJob.Status.CANCEL_REQUESTED,
         UploadJob.Status.CANCELLED,
@@ -1031,7 +1019,7 @@ def _assess_upload_job_reuse(
         return _assess_active_upload_job_reuse(existing_job)
     if existing_job.status == UploadJob.Status.ANONYMIZED.value:
         return _assess_completed_upload_job_reuse(existing_job)
-    return _InvalidUploadJobReuse(
+    return InvalidUploadJobReuse(
         job_id=str(existing_job.id),
         reason="Previous job was incomplete or invalid for reuse. Forcing re-ingest.",
         status=UploadJob.Status.ERROR.value,
@@ -1153,7 +1141,7 @@ def _attempt_upload_job_create_or_reuse(
     *,
     context: _UploadJobCreateContext,
     reingest_provenance_updates: JsonObject,
-) -> tuple[UploadJob, bool] | _InvalidUploadJobReuse:
+) -> tuple[UploadJob, bool] | InvalidUploadJobReuse:
     with transaction.atomic():
         existing_job = _matching_active_upload_job(context)
         if existing_job is None:
@@ -1201,7 +1189,7 @@ def _audit_upload_job_media_integrity_failure(
 def _record_invalid_upload_integrity(
     *,
     invalid_job: UploadJob,
-    invalid_reuse: _InvalidUploadJobReuse,
+    invalid_reuse: InvalidUploadJobReuse,
     created_by: object | None,
 ) -> JsonObject:
     integrity_result = invalid_reuse.integrity_result
@@ -1224,7 +1212,7 @@ def _record_invalid_upload_integrity(
 def _mark_invalid_upload_job(
     *,
     invalid_job: UploadJob,
-    invalid_reuse: _InvalidUploadJobReuse,
+    invalid_reuse: InvalidUploadJobReuse,
 ) -> None:
     if invalid_reuse.status == UploadJob.Status.LOST.value:
         mark_upload_job_integrity_lost(
@@ -1242,7 +1230,7 @@ def _mark_invalid_upload_job(
 
 def _invalidate_upload_job_for_reingest(
     *,
-    invalid_reuse: _InvalidUploadJobReuse,
+    invalid_reuse: InvalidUploadJobReuse,
     created_by: object | None,
 ) -> JsonObject:
     invalid_job = (
@@ -1263,25 +1251,6 @@ def _invalidate_upload_job_for_reingest(
     )
     _cleanup_persisted_watcher_source(invalid_job)
     return reingest_updates
-
-
-def _handle_upload_job_lock_error(
-    *,
-    exc: OperationalError,
-    attempt: int,
-    context: _UploadJobCreateContext,
-) -> None:
-    if not _is_retryable_db_lock_error(exc) or attempt == LOCK_RETRY_ATTEMPTS:
-        raise exc
-    logger.warning(
-        "UploadJob create/reuse hit a locked database for source_system=%s "
-        "idempotency_key=%s attempt=%d/%d; retrying.",
-        context.source_system,
-        context.idempotency_key,
-        attempt,
-        LOCK_RETRY_ATTEMPTS,
-    )
-    time.sleep(0.1 * attempt)
 
 
 def create_or_reuse_upload_job(
@@ -1324,25 +1293,19 @@ def create_or_reuse_upload_job(
     )
     reingest_provenance_updates: JsonObject = {}
 
-    for attempt in range(1, LOCK_RETRY_ATTEMPTS + 1):
-        try:
-            result = _attempt_upload_job_create_or_reuse(
-                context=context,
-                reingest_provenance_updates=reingest_provenance_updates,
-            )
-            if not isinstance(result, _InvalidUploadJobReuse):
-                return result
-            reingest_provenance_updates = _invalidate_upload_job_for_reingest(
-                invalid_reuse=result,
-                created_by=created_by,
-            )
-        except OperationalError as exc:
-            _handle_upload_job_lock_error(
-                exc=exc,
-                attempt=attempt,
-                context=context,
-            )
-    raise RuntimeError("UploadJob create/reuse exhausted lock retries")
+    # Reconcile unusable previous jobs; this is not a database-error retry loop.
+    for _ in range(UPLOAD_JOB_REUSE_ATTEMPTS):
+        result = _attempt_upload_job_create_or_reuse(
+            context=context,
+            reingest_provenance_updates=reingest_provenance_updates,
+        )
+        if not isinstance(result, InvalidUploadJobReuse):
+            return result
+        reingest_provenance_updates = _invalidate_upload_job_for_reingest(
+            invalid_reuse=result,
+            created_by=created_by,
+        )
+    raise RuntimeError("UploadJob create/reuse exhausted reconciliation attempts")
 
 
 def create_or_reuse_watcher_upload_job(
@@ -2274,8 +2237,8 @@ def _import_fenced_video_upload(
 ) -> VideoFile | None:
     """Adapt the wrapper-owned heartbeat into the video service capability."""
     processor_name = _required_video_upload_processor_name(provenance)
-    from endoreg_db.import_files.video_import_service import VideoImportExecutionFence
-    from endoreg_db.services.video_import import VideoImportService
+    from endoreg_db.services.imports.execution import ImportExecutionFence
+    from endoreg_db.services.video_files.direct_import import VideoImportService
 
     try:
         return VideoImportService().import_and_anonymize_fenced(
@@ -2283,9 +2246,10 @@ def _import_fenced_video_upload(
             center_name=center.name,
             processor_name=processor_name,
             retry=False,
-            execution_fence=VideoImportExecutionFence(
+            execution_fence=ImportExecutionFence(
                 attempt_id=uuid.uuid5(uuid.NAMESPACE_URL, attempt.owner).hex,
                 guard=heartbeat.guard,
+                mutation_guard=heartbeat.mutation_guard,
             ),
         )
     except (IntegrityError, InsufficientStorageError):
@@ -2316,7 +2280,7 @@ def _dispatch_video_upload_prediction(
     if not isinstance(video, VideoFile) or not prediction_model_name:
         return
     try:
-        from endoreg_db.services.video_temporal_inference import (
+        from endoreg_db.services.video_files.temporal_inference import (
             dispatch_video_temporal_inference,
         )
 
@@ -2522,9 +2486,7 @@ def _handle_video_upload_import_failure(
         return False
     if isinstance(exc, IntegrityError):
         cause = exc.__cause__
-        if getattr(cause, "sqlstate", None) == "23505" or getattr(
-            cause, "sqlite_errorcode", None
-        ) in (1555, 2067):
+        if getattr(cause, "sqlstate", None) == "23505":
             _mark_duplicate_video_upload(attempt, exc)
         else:
             _schedule_video_upload_processing_retry(attempt, exc)
@@ -2619,7 +2581,7 @@ def _run_watcher_upload_job_inline(
     imported_media: RawPdfFile | VideoFile | None = None
     sensitive_meta: SensitiveMeta | None = None
     if normalized_type == "report":
-        from endoreg_db.services.report_import import ReportImportService
+        from endoreg_db.services.reports.import_service import ReportImportService
 
         report = ReportImportService().import_and_anonymize(
             file_path=watched_path,
@@ -2650,7 +2612,7 @@ def _run_watcher_upload_job_inline(
     )
     if isinstance(imported_media, VideoFile) and prediction_model_name:
         try:
-            from endoreg_db.services.video_temporal_inference import (
+            from endoreg_db.services.video_files.temporal_inference import (
                 dispatch_video_temporal_inference,
             )
 

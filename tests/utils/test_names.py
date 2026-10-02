@@ -8,6 +8,8 @@ from pytest import MonkeyPatch
 import endoreg_db.utils.names as names_module
 from gender_guesser.detector import Detector
 
+pytestmark = pytest.mark.no_db
+
 
 type _DetectedGender = Literal[
     "unknown",

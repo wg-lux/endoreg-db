@@ -11,7 +11,7 @@ from typing import IO, Callable, Iterator, Protocol, TypedDict, cast
 import numpy as np
 
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.services.seekable_media_input import (
+from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
 )

@@ -28,6 +28,12 @@ def move_legacy_video_links(apps, schema_editor) -> None:
                 examination_id=patient_examination_id
             )
 
+    if schema_editor.connection.vendor == "postgresql":
+        # Drain deferred foreign-key triggers before RemoveField changes the
+        # referenced table's constraints in this same atomic migration.
+        schema_editor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        schema_editor.execute("SET CONSTRAINTS ALL DEFERRED")
+
 
 def restore_unambiguous_legacy_video_links(apps, schema_editor) -> None:
     PatientExamination = apps.get_model("endoreg_db", "PatientExamination")

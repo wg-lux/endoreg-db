@@ -6,13 +6,14 @@ import pytest
 from django.core.files import File
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services import hls_media, video_processed_transcode as service
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import processed_transcode as service
 from endoreg_db.services.video_files.queries import (
     get_video_by_content_hash,
     video_hash_exists,
 )
 from endoreg_db.services.video_files.frames import initialize_video_frames
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     persist_video_source_timeline,
 )
 from endoreg_db.utils import ffmpeg_wrapper, transcode_execution

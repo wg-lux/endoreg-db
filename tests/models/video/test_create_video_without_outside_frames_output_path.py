@@ -17,7 +17,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
@@ -177,7 +177,7 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
 
     captured: list[_BlackeningCall] = []
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        "endoreg_db.services.video_files.post_validation_blackening.ensure_local_processed_video_file",
         _ensure_processed_file_context(processed_path),
     )
 
@@ -201,11 +201,11 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
+        "endoreg_db.services.video_files.post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
+        "endoreg_db.services.video_files.post_validation_blackening.get_file_hash",
         _constant_video_hash("new-processed-hash"),
     )
     streamable_sync: list[tuple[VideoFile, bool, bool, bool]] = []
@@ -221,7 +221,7 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         return []
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_files.post_validation_blackening.sync_video_streamable_artifacts",
         fake_sync_video_streamable_artifacts,
     )
 
@@ -266,7 +266,7 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
     create_video_stream_lease(video, file_type="processed", ttl_seconds=120)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        "endoreg_db.services.video_files.post_validation_blackening.ensure_local_processed_video_file",
         _ensure_processed_file_context(processed_path),
     )
 
@@ -279,15 +279,15 @@ def test_create_video_without_outside_frames_defers_swap_when_stream_active(
         return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
+        "endoreg_db.services.video_files.post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
+        "endoreg_db.services.video_files.post_validation_blackening.get_file_hash",
         _constant_video_hash("new-processed-hash"),
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.save_local_file",
+        "endoreg_db.services.video_files.post_validation_blackening.save_local_file",
         _fail_active_stream_save_local_file,
     )
     with pytest.raises(MediaOperationDeferred):
@@ -325,7 +325,7 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
     )
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        "endoreg_db.services.video_files.post_validation_blackening.ensure_local_processed_video_file",
         _ensure_processed_file_context(processed_path),
     )
 
@@ -343,15 +343,15 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
+        "endoreg_db.services.video_files.post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
+        "endoreg_db.services.video_files.post_validation_blackening.get_file_hash",
         _constant_video_hash("merged-hash"),
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_files.post_validation_blackening.sync_video_streamable_artifacts",
         _sync_streamable_noop,
     )
 
@@ -372,7 +372,7 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
     video, processed_path = _create_video(tmp_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        "endoreg_db.services.video_files.post_validation_blackening.ensure_local_processed_video_file",
         _ensure_processed_file_context(processed_path),
     )
 
@@ -390,15 +390,15 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
         return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
+        "endoreg_db.services.video_files.post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
+        "endoreg_db.services.video_files.post_validation_blackening.get_file_hash",
         _constant_video_hash("supplied-interval-hash"),
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_files.post_validation_blackening.sync_video_streamable_artifacts",
         _sync_streamable_noop,
     )
 
@@ -434,7 +434,7 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
     )
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.ensure_local_processed_video_file",
+        "endoreg_db.services.video_files.post_validation_blackening.ensure_local_processed_video_file",
         _ensure_processed_file_context(processed_path),
     )
 
@@ -452,15 +452,15 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         return _write_filtered_video(output_path)
 
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.blacken_video_frame_intervals",
+        "endoreg_db.services.video_files.post_validation_blackening.blacken_video_frame_intervals",
         fake_blacken_video_frame_intervals,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.get_file_hash",
+        "endoreg_db.services.video_files.post_validation_blackening.get_file_hash",
         _constant_video_hash("annotation-hash"),
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_post_validation_blackening.sync_video_streamable_artifacts",
+        "endoreg_db.services.video_files.post_validation_blackening.sync_video_streamable_artifacts",
         _sync_streamable_noop,
     )
 

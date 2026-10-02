@@ -25,7 +25,7 @@ from endoreg_db.utils import paths as paths_module
 def dummy_video_writer_scope(monkeypatch: MonkeyPatch) -> None:
     # These unit fixtures replace VideoFile with DummyVideo and have no database.
     # Real lease admission and release are covered in test_video_artifact_writer_entry.
-    from endoreg_db.services import media_operation_gate
+    from endoreg_db.services.media import operation_gate as media_operation_gate
 
     def writer_scope(*, video_id: int) -> nullcontext[None]:
         assert video_id > 0
@@ -298,6 +298,7 @@ def test_failed_video_finalization_preserves_previous_generation(
         raising=True,
     )
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -495,6 +496,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -638,6 +640,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
 
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -743,6 +746,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
 
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",

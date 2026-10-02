@@ -20,7 +20,7 @@ from endoreg_db.views.access_control import (
     assert_center_scope_allowed,
 )
 from endoreg_db.utils.storage_streaming import add_cors_headers
-from endoreg_db.services.media_operation_gate import create_video_stream_lease
+from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.utils.cors import resolve_response_origin
 import endoreg_db.utils.frame_stream as frame_stream_utils
 from endoreg_db.utils.frame_stream import EncodedFrameSample

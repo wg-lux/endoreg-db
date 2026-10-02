@@ -18,7 +18,9 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     Unit,
 )
-from endoreg_db.services.medical_ledger import create_patient_medication
+from endoreg_db.services.interoperability.medical_ledger import (
+    create_patient_medication,
+)
 from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
 
 
@@ -394,7 +396,7 @@ def test_create_medication_rolls_back_if_relation_persistence_fails() -> None:
 
     with (
         patch(
-            "endoreg_db.services.medical_ledger._resolve_intake_times",
+            "endoreg_db.services.interoperability.medical_ledger._resolve_intake_times",
             side_effect=RuntimeError("injected relation failure"),
         ),
         pytest.raises(RuntimeError, match="injected relation failure"),

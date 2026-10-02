@@ -35,7 +35,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.frame.frame import Frame
 
-from endoreg_db.services.aidataset_training_selection import (
+from endoreg_db.services.datasets.training_selection import (
     ANNOTATION_SOURCE_SCOPE_ALL as ANNOTATION_SOURCE_SCOPE_ALL,
     ANNOTATION_SOURCE_SCOPE_FRAME_ONLY as ANNOTATION_SOURCE_SCOPE_FRAME_ONLY,
     ANNOTATION_SOURCE_SCOPE_SEGMENT_ONLY as ANNOTATION_SOURCE_SCOPE_SEGMENT_ONLY,

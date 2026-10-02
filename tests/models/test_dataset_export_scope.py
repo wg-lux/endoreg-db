@@ -7,7 +7,7 @@ from django.test.utils import override_settings
 from pydantic import ValidationError as PydanticValidationError
 
 from endoreg_db.models import AIDataSet, Center
-from endoreg_db.services.aidataset_exports import (
+from endoreg_db.services.datasets.exports import (
     AIDataSetExportPayload,
     build_export_payload,
     export_to_standardized_structure,

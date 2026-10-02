@@ -18,7 +18,7 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
+from endoreg_db.services.audit.integrity import get_audit_ledger_integrity_status
 
 logger = logging.getLogger(__name__)
 

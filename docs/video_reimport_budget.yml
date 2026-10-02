@@ -33,7 +33,18 @@ telemetry:
   component: lx-anonymizer FrameOCR
   event: ocr.progress
   frequency: First inference, at most once per minute during work, and inference failure.
-  fields: [inference_calls_completed, full_frame_calls_completed, failures, inference_seconds, detection_seconds, classification_seconds, recognition_seconds, stage_timing_calls, session_providers]
+  fields:
+    [
+      inference_calls_completed,
+      full_frame_calls_completed,
+      failures,
+      inference_seconds,
+      detection_seconds,
+      classification_seconds,
+      recognition_seconds,
+      stage_timing_calls,
+      session_providers,
+    ]
   limits: Per-instance aggregates; exact-frame cache hits do not invoke OCR. Provider lists describe configured sessions, not proof that every operation ran on a GPU. Stage times are available only when supplied by the backend.
 validation:
   - Run Pyright and focused budget, dispatch, timeout, metadata, OCR and exhaustive-coverage tests.
@@ -43,7 +54,7 @@ validation:
 
 verification_results:
   backend_tests:
-    command: RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.sqlite3 SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py -q
+    command: RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.postgresql SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py -q
     result: 71 passed
   anonymizer_tests:
     command: devenv shell -- .devenv/state/venv/bin/pytest tests/test_frame_metadata_extractor_dates.py tests/test_sensitive_meta_interface.py tests/test_ocr_frame_rapidocr.py tests/test_exhaustive_video_metadata.py tests/test_frame_report_helper_logic.py -q

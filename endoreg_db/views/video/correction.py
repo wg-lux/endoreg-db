@@ -53,18 +53,23 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 from endoreg_db.openapi import OpenApiAPIView as APIView
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
-from endoreg_db.services.hls_media import get_ready_hls_artifact, hls_playlist_path
+from endoreg_db.services.streaming.hls_media import (
+    get_ready_hls_artifact,
+    hls_playlist_path,
+)
 from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.jobs.video_correction_jobs import (
     VideoAnonymizationCorrectionJobConfig,
     apply_video_anonymization_strategy,
     dispatch_video_anonymization_correction,
 )
-from endoreg_db.services.label_video_segment_states import (
+from endoreg_db.services.annotations.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+from endoreg_db.services.annotations.segment_validation_workflow import (
     mark_segment_annotations_stale,
 )
 from endoreg_db.utils.file_operations import (

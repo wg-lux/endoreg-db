@@ -1,3 +1,4 @@
+from importlib import import_module
 from pathlib import Path
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -6,7 +7,7 @@ from typing import NoReturn
 
 import pytest
 
-from endoreg_db.services import streamable_media as sm
+sm = import_module("endoreg_db.services.streaming.streamable_media")
 from endoreg_db.utils.storage_profile import PayloadKind, StoragePolicy
 from endoreg_db.utils.paths import get_runtime_paths
 

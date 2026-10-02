@@ -225,7 +225,7 @@ def test_streaming_content_keys_remain_readable_during_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-    from endoreg_db.services.hls_media import (
+    from endoreg_db.services.streaming.hls_media import (
         HLS_KEY_WRAP_ALGORITHM,
         hls_uses_active_master_key,
         unwrap_hls_content_key,
@@ -267,7 +267,7 @@ def test_online_storage_rotation_defers_playback_and_preserves_video_hash(
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.secret_rotation import storage as service
-    from endoreg_db.services.media_operation_gate import (
+    from endoreg_db.services.media.operation_gate import (
         create_video_stream_lease,
         release_media_operation_lease,
     )

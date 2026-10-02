@@ -14,7 +14,7 @@ from endoreg_db import tasks
 from endoreg_db.exceptions import (
     MediaOperationDeferred as CentralMediaOperationDeferred,
 )
-from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+from endoreg_db.services.media.operation_gate import MediaOperationDeferred
 
 
 class _TaskLike(Protocol):
@@ -152,7 +152,7 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
         ),
         (
             tasks.video_hls_materialization,
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             ("42",),
             {
                 "artifact_kind": "processed",
@@ -228,7 +228,7 @@ def test_video_hls_materialization_task_delegates_with_normalized_args() -> None
             return {"video_id": 42, "status": "materialized"}
 
     with patch(
-        "endoreg_db.services.hls_media.materialize_video_hls",
+        "endoreg_db.services.streaming.hls_media.materialize_video_hls",
         return_value=_Result(),
     ) as runner:
         result = cast(Any, tasks.video_hls_materialization).run(
@@ -262,7 +262,7 @@ def test_database_outage_retries_import_and_hls_delivery(hls: bool) -> None:
         tasks.video_hls_materialization if hls else tasks.run_video_upload_import_task
     )
     service = (
-        "endoreg_db.services.hls_media.materialize_video_hls"
+        "endoreg_db.services.streaming.hls_media.materialize_video_hls"
         if hls
         else "endoreg_db.services.hub.ingest._run_video_upload_import_job"
     )
@@ -296,7 +296,7 @@ def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
     retry_error = RuntimeError("retry scheduled")
     with (
         patch(
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             return_value=_Result(),
         ),
         patch.object(current_task, "retry", side_effect=retry_error) as retry,
@@ -314,7 +314,7 @@ def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
 
 
 def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
-    from endoreg_db.services.video_storage_normalization import (
+    from endoreg_db.services.video_storage.workflow import (
         VideoStorageNormalizationError,
     )
 
@@ -325,7 +325,7 @@ def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
     current_task = _current_task(tasks.video_hls_materialization)
     with (
         patch(
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             side_effect=[
                 VideoStorageNormalizationError("deterministic timeline drift"),
                 _Result(),
@@ -356,7 +356,7 @@ def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
 
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:
     with patch(
-        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
+        "endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference",
         return_value=True,
     ) as runner:
         result = cast(Any, tasks.run_video_temporal_inference_task).run(
@@ -413,7 +413,7 @@ def test_refresh_audit_ledger_integrity_task_delegates_to_locked_refresh() -> No
     payload = {"status": "verified"}
 
     with patch(
-        "endoreg_db.services.audit_integrity."
+        "endoreg_db.services.audit.integrity."
         "refresh_audit_ledger_integrity_status_once",
         return_value=payload,
     ) as refresh:

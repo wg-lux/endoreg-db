@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.authz.permissions import PolicyPermission
-from endoreg_db.services.study_cohort import (
+from endoreg_db.services.studies.cohort import (
     build_study_cohort_payload,
     parse_study_cohort_filters,
 )

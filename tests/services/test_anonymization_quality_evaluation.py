@@ -17,7 +17,7 @@ from endoreg_db.models import (
     SensitiveMeta,
     VideoFile,
 )
-from endoreg_db.services.anonymization_quality_evaluation import (
+from endoreg_db.services.privacy.quality_evaluation import (
     SensitiveMetaHandlingPolicy,
     evaluate_media_object,
 )

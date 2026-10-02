@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 
 from endoreg_db.models import Patient, PatientExamination
-from endoreg_db.services.report_runtime_validation import (
+from endoreg_db.services.reports.runtime_validation import (
     ReportRuntimeValidationError,
     validate_final_report_submission,
 )
@@ -72,7 +72,7 @@ def test_final_report_runtime_validation_returns_typed_snapshot(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_runtime_validation.load_module_kb",
+        "endoreg_db.services.reports.runtime_validation.load_module_kb",
         load_successful_kb,
     )
 
@@ -102,7 +102,7 @@ def test_final_report_runtime_validation_rejects_failed_requirements(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_runtime_validation.load_module_kb",
+        "endoreg_db.services.reports.runtime_validation.load_module_kb",
         load_failing_kb,
     )
 

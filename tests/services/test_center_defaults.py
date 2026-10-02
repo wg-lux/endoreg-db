@@ -15,7 +15,7 @@ from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models import ApplicationSettings, Center, NetworkNode
 from endoreg_db.serializers.hub.transfer_job import TransferJobCreateSerializer
-from endoreg_db.services.center_defaults import (
+from endoreg_db.services.centers.defaults import (
     resolve_import_center,
     resolve_local_center,
 )

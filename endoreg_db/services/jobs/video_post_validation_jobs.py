@@ -24,31 +24,31 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     blackening_history_config,
     is_outside_frame_blackening_history,
     mark_post_validation_complete,
     mark_post_validation_incomplete,
     resolve_blackening_run_config,
 )
-from endoreg_db.services.frame_retention import (
+from endoreg_db.services.frames.frame_retention import (
     prune_unused_validated_outside_frames,
 )
 from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
 from endoreg_db.services.video_files import (
     ensure_local_processed_video_file,
 )
-from endoreg_db.services.video_post_validation_blackening import (
+from endoreg_db.services.video_files.post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
 )
-from endoreg_db.services.video_post_validation_blackening import (
+from endoreg_db.services.video_files.post_validation_blackening import (
     rebuild_processed_video_without_outside_frames,
 )
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.temporal_inference import (
     dispatch_deferred_temporal_inference_after_rebuild,
     fail_deferred_temporal_inference_for_rebuild,
 )

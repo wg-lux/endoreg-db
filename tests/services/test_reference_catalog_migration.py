@@ -25,18 +25,18 @@ from endoreg_db.models import (
 )
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
-from endoreg_db.services.reference_catalog import (
+from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,
 )
-from endoreg_db.services.reference_catalog_export import export_reference_catalog
-from endoreg_db.services.reference_catalog_migration import (
+from endoreg_db.services.reference_data.catalog_export import export_reference_catalog
+from endoreg_db.services.reference_data.catalog_migration import (
     apply_catalog_migration,
     migration_spec,
     plan_catalog_migration,
 )
-from endoreg_db.services.reference_catalog_models import CATALOG_MODELS
+from endoreg_db.services.reference_data.catalog_models import CATALOG_MODELS
 
 pytestmark = pytest.mark.django_db
 
@@ -270,18 +270,14 @@ def test_final_receipt_failure_rolls_back_dependencies_and_relationships(
 def test_cli_dry_run_and_single_command_apply(
     legacy_catalogue: ReferenceCatalogSnapshot, blocked: bool
 ) -> None:
-    from lx_dtypes.terminology.terminology_loader import get_terminology_service
-    from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+    from lx_dtypes.terminology.terminology_loader import (
+        get_terminology_service,
+        hydrate_shipped_terminology,
+    )
 
+    hydrate_shipped_terminology()
     service = get_terminology_service()
     spec = migration_spec()
-    service.register_local(
-        spec.module,
-        spec.version,
-        input_dirs=[
-            get_packaged_knowledge_base(spec.module, spec.version).installed_data_root()
-        ],
-    )
     assert catalog_snapshot(service.load(spec.module, spec.version)) == legacy_catalogue
     if blocked:
         row = ExaminationIndication.objects.get(name=spec.indications[0])

@@ -5,7 +5,7 @@ from typing import TypedDict, Unpack
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     get_ffmpeg_stream_throttle_state,
 )
 

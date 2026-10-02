@@ -28,7 +28,7 @@ from endoreg_db.schemas.video_storage import (
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services import video_storage_normalization as normalization
+from endoreg_db.services.video_storage import workflow as normalization
 from endoreg_db.services.video_storage import contracts as storage_contracts
 from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,

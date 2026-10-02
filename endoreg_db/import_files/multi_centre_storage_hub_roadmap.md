@@ -56,7 +56,6 @@ Implemented roles:
 Current production settings enforce several fail-closed checks:
 
 - production startup rejects `DJANGO_DEBUG=true`
-- `central_hub` and `local_study_server` reject SQLite
 - `central_hub` requires secure transfer transport
 - `central_hub` requires mTLS configuration for transfer traffic
 - `ENDOREG_ENABLE_HUB_TRANSFERS=true` is allowed only with
@@ -447,8 +446,6 @@ Required outcomes:
 
 ### Persistence and storage
 
-Current hub and local study roles reject SQLite in production. That foundation
-should remain.
 
 Required outcomes:
 
@@ -542,7 +539,6 @@ The hub roadmap is complete only when all of the following are true:
 Required verification scenarios:
 
 - central-hub production settings fail without mTLS configuration
-- central-hub production settings fail with SQLite
 - authenticated API upload with valid `center_key` succeeds
 - unauthenticated strict-mode API upload is rejected
 - missing strict-mode `center_key` is rejected

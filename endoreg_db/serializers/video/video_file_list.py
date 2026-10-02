@@ -12,10 +12,10 @@ else:
     _ModelSerializerMeta = object
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     validated_annotators_for_video,
 )
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,

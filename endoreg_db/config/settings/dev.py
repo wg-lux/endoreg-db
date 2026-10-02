@@ -1,4 +1,4 @@
-from .base import BASE_DIR  # noqa: F401
+from .base import BASE_DIR as BASE_DIR
 from endoreg_db.config.env import env_bool, env_str
 from . import keycloak as KEYCLOAK
 
@@ -6,29 +6,32 @@ DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "dev-insecure-key")
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
-DB_ENGINE = env_str("DEV_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = env_str("DEV_DB_NAME", str(BASE_DIR / "dev_db.sqlite3"))
-DB_USER = env_str("DEV_DB_USER", "")
-DB_PASSWORD = env_str("DEV_DB_PASSWORD", "")
-DB_HOST = env_str("DEV_DB_HOST", "")
-DB_PORT = env_str("DEV_DB_PORT", "")
 
-# Build DB config without redundant conditionals and avoid passing empty creds
-_db_config = {
-    "ENGINE": DB_ENGINE,
-    "NAME": DB_NAME,
+# -----------------------------------------------------------------------------
+# 3. DATABASE — pytest-managed PostgreSQL
+# -----------------------------------------------------------------------------
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "lx_test",
+        # Replaced by the session fixture before test-database setup.
+        "USER": "pytest_not_configured",
+        "PASSWORD": "",
+        "HOST": "127.0.0.1",
+        "PORT": "1",
+        "CONN_MAX_AGE": 0,
+        "OPTIONS": {
+            "connect_timeout": 5,
+        },
+        "TEST": {
+            "NAME": "test_lx_test",
+        },
+    }
 }
-if not DB_ENGINE.endswith("sqlite3"):
-    if DB_USER:
-        _db_config["USER"] = DB_USER
-    if DB_PASSWORD:
-        _db_config["PASSWORD"] = DB_PASSWORD
-    if DB_HOST:
-        _db_config["HOST"] = DB_HOST
-    if DB_PORT:
-        _db_config["PORT"] = DB_PORT
 
-DATABASES = {"default": _db_config}
+# Use the real migration graph.
+MIGRATION_MODULES: dict[str, str | None] = {}
 
 # ---------------------------------------------------------------------------
 # Keycloak / OIDC integration for DEVELOPMENT settings

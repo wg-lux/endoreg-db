@@ -14,7 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from endoreg_db import tasks
-from endoreg_db.import_files.video_import_service import VideoImportExecutionFence
+from endoreg_db.services.imports.execution import ImportExecutionFence
 from endoreg_db.models import Center, UploadJob
 from endoreg_db.schemas.report_llm import ReportLlmDispatchResult
 from endoreg_db.services.hub.ingest import (
@@ -387,7 +387,7 @@ class TestVideoImportJobHandoff:
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService"
+                "endoreg_db.services.video_files.direct_import.VideoImportService"
             ) as service_class,
         ):
             result = _import_fenced_video_upload(
@@ -412,9 +412,10 @@ class TestVideoImportJobHandoff:
         assert call_kwargs["processor_name"] == "processor"
         assert call_kwargs["retry"] is False
         execution_fence = call_kwargs["execution_fence"]
-        assert isinstance(execution_fence, VideoImportExecutionFence)
+        assert isinstance(execution_fence, ImportExecutionFence)
         assert execution_fence.attempt_id == expected_attempt_id
         assert execution_fence.guard == heartbeat.guard
+        assert execution_fence.mutation_guard == heartbeat.mutation_guard
 
     @pytest.mark.django_db
     def test_rechecks_video_lease_after_import_service_error(
@@ -451,7 +452,7 @@ class TestVideoImportJobHandoff:
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=RuntimeError("import failed"),
             ),
             pytest.raises(RuntimeError, match="import failed"),

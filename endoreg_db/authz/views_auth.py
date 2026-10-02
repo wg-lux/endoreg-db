@@ -12,7 +12,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from lx_dtypes.models.contracts.authz import validate_authz_route_lookup
-from endoreg_db.services.annotation_access import can_override_annotation_principal
+from endoreg_db.services.annotations.annotation_access import (
+    can_override_annotation_principal,
+)
 
 from .policy import satisfies, get_needed_role
 

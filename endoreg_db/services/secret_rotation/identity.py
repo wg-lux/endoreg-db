@@ -64,7 +64,6 @@ def identity_rotation_transaction(function: Callable[P, R]) -> Callable[P, R]:
     def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
         with transaction.atomic():
             # Serialize salt-aware resolution and rotation across worker processes.
-            # SQLite's write transaction is sufficient for isolated unit tests only.
             if connection.vendor == "postgresql":
                 with connection.cursor() as cursor:
                     cursor.execute(

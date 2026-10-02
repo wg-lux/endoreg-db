@@ -60,8 +60,8 @@ from endoreg_db.serializers.report.patient_examination_report import (
     PatientExaminationReportSchema,
     SegmentFrameSelectorResponseSchema,
 )
-from endoreg_db.services.report_history import get_patient_examination_history_context
-from endoreg_db.services.report_persistence import (
+from endoreg_db.services.reports.history import get_patient_examination_history_context
+from endoreg_db.services.reports.persistence import (
     ReportKnowledgeBaseRegistryUnavailableError,
     ReportPersistenceValidationError,
     delete_report_draft,
@@ -69,7 +69,7 @@ from endoreg_db.services.report_persistence import (
     save_report_submission,
 )
 from endoreg_db.schemas.report_persistence import ReportAutoSelectionPayload
-from endoreg_db.services.report_frame_selection import (
+from endoreg_db.services.reports.frame_selection import (
     SEGMENT_FRAME_SELECTIONS_KEY,
     auto_select_report_frames,
     persist_segment_selection,
@@ -79,8 +79,8 @@ from endoreg_db.services.report_frame_selection import (
     segment_patient_findings,
     patient_examination_segment_filter,
 )
-from endoreg_db.services.report_frame_export import materialized_report_frame
-from endoreg_db.services.report_runtime_validation import (
+from endoreg_db.services.reports.frame_export import materialized_report_frame
+from endoreg_db.services.reports.runtime_validation import (
     ReportRuntimeValidationError,
     validate_final_report_submission,
 )
@@ -250,7 +250,7 @@ class PatientExaminationReportApi:
         )
 
     def _allowed_center_ids_for_user(self, user: object | None) -> set[int] | None:
-        from endoreg_db.services.center_access import resolve_allowed_center_ids
+        from endoreg_db.services.centers.access import resolve_allowed_center_ids
 
         allowed_center_ids = resolve_allowed_center_ids(user)
         return None if allowed_center_ids is None else set(allowed_center_ids)

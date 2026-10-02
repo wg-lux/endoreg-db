@@ -39,11 +39,11 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,
 )
-from endoreg_db.services.aidataset_training_selection import AnnotationSourceScope
-from endoreg_db.services.aidataset_frame_buckets import (
+from endoreg_db.services.datasets.training_selection import AnnotationSourceScope
+from endoreg_db.services.datasets.frame_buckets import (
     build_frame_bucket_distribution,
 )
-from endoreg_db.services.aidataset_training_manifests import (
+from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
@@ -783,7 +783,7 @@ def _parse_manifest_strategies(
 def _parse_training_manifest_options(
     payload: dict[str, Any],
 ) -> tuple[_TrainingManifestOptions | None, Response | None]:
-    from endoreg_db.services.aidataset_training_selection import (
+    from endoreg_db.services.datasets.training_selection import (
         normalize_annotation_source_scope,
     )
 

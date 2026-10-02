@@ -25,8 +25,8 @@ from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
-from endoreg_db.services.environment_readiness import (
+from endoreg_db.services.audit.integrity import get_audit_ledger_integrity_status
+from endoreg_db.services.runtime.environment_readiness import (
     ReadinessIssue,
     check_environment_readiness,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from endoreg_db.services.sensitive_meta_external_ids import (
+from endoreg_db.services.patient_identity.external_ids import (
     assign_patient_external_id,
     split_patient_external_id,
 )
@@ -23,7 +23,7 @@ def validate_video_metadata_annotation(
     from .io import delete_raw_file_after_validation
     from .metadata import update_video_text_metadata
     from .state import get_or_create_video_state
-    from endoreg_db.services.video_storage_normalization import raw_cleanup_blockers
+    from endoreg_db.services.video_storage.workflow import raw_cleanup_blockers
 
     state = get_or_create_video_state(video)
     meta = video.meta if video.meta is not None else {}

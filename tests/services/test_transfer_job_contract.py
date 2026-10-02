@@ -22,7 +22,7 @@ from endoreg_db.serializers.hub.transfer_job import (
     TransferJobStatusSerializer,
 )
 from endoreg_db.services.hub import transfers
-from endoreg_db.services import media_integrity
+from endoreg_db.services.media import integrity as media_integrity
 from endoreg_db.services.hub.transfers import (
     attach_transfer_media,
     authenticate_network_node,
@@ -33,6 +33,18 @@ from endoreg_db.views.media.hub import transfers as transfer_views
 
 def _storage_exists(_name: str) -> bool:
     return True
+
+
+def _transfer_key_violation(existing: TransferJob) -> IntegrityError:
+    """Capture the real backend diagnostic without breaking the test transaction."""
+    duplicate = TransferJob.objects.get(pk=existing.pk)
+    duplicate.pk = uuid.uuid4()
+    try:
+        with transaction.atomic():
+            duplicate.save(force_insert=True)
+    except IntegrityError as error:
+        return error
+    raise AssertionError("Duplicate transfer key was accepted")
 
 
 def _save_transfer_job_state_side_effect(**kwargs: Any) -> TransferJob:
@@ -363,6 +375,7 @@ class TransferJobContractTests(TestCase):
         )
         manager = cast(Any, TransferJob.objects)
         existing_queryset = manager.filter(transfer_key=transfer_key)
+        duplicate_error = _transfer_key_violation(existing)
 
         with (
             patch.object(
@@ -373,9 +386,7 @@ class TransferJobContractTests(TestCase):
             patch.object(
                 manager,
                 "create",
-                side_effect=IntegrityError(
-                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
-                ),
+                side_effect=duplicate_error,
             ),
         ):
             reused, created = create_or_reuse_transfer_job(
@@ -406,6 +417,7 @@ class TransferJobContractTests(TestCase):
         )
         manager = cast(Any, TransferJob.objects)
         existing_queryset = manager.filter(transfer_key=transfer_key)
+        duplicate_error = _transfer_key_violation(existing)
 
         with (
             patch.object(
@@ -416,9 +428,7 @@ class TransferJobContractTests(TestCase):
             patch.object(
                 manager,
                 "create",
-                side_effect=IntegrityError(
-                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
-                ),
+                side_effect=duplicate_error,
             ),
             self.assertRaisesMessage(
                 ValueError,

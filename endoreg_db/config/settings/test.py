@@ -24,82 +24,36 @@ def _running_under_pytest() -> bool:
     )
 
 
-# Pytest uses an isolated SQLite file per process by default. Normal management
-# commands using test settings reuse a stable test DB so `migrate` and a later
-# profiled command open the same schema.
-TEST_DB_REUSE = env_bool("TEST_DB_REUSE", not _running_under_pytest())
-TEST_DB_WORKER = env_str("PYTEST_XDIST_WORKER", "main")
-REUSED_TEST_DB_NAME = (
-    f"test_db_{TEST_DB_WORKER}.sqlite3"
-    if TEST_DB_WORKER != "main"
-    else "test_db.sqlite3"
-)
-DEFAULT_TEST_DB_PATH = TEST_DB_DIR / (
-    REUSED_TEST_DB_NAME
-    if TEST_DB_REUSE
-    else f"test_db_{TEST_DB_WORKER}_{os.getpid()}.sqlite3"
-)
-LEGACY_SHARED_TEST_DB_PATH = TEST_DB_DIR / "test_db.sqlite3"
-
-raw_test_db_file = os.environ.get("TEST_DB_FILE")
-raw_test_db_name = os.environ.get("TEST_DB_NAME")
-
-
-def _normalize_test_db_path(value: str | os.PathLike[str]) -> Path:
-    candidate = Path(value)
-    if candidate.is_absolute():
-        return candidate
-    return TEST_DIR / candidate
-
-
-if raw_test_db_file:
-    resolved_test_db_path = _normalize_test_db_path(raw_test_db_file)
-elif raw_test_db_name and (
-    TEST_DB_REUSE
-    or _normalize_test_db_path(raw_test_db_name) != LEGACY_SHARED_TEST_DB_PATH
-):
-    resolved_test_db_path = _normalize_test_db_path(raw_test_db_name)
-else:
-    resolved_test_db_path = DEFAULT_TEST_DB_PATH
-
-TEST_DB_FILE = resolved_test_db_path
-TEST_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
-
 DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
 DJANGO_SALT = "test-identity-salt-not-for-production"
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
-DB_ENGINE = env_str("TEST_DB_ENGINE", "django.db.backends.sqlite3")
-DB_NAME = (
-    str(TEST_DB_FILE)
-    if DB_ENGINE.endswith("sqlite3")
-    else env_str("TEST_DB_NAME", "postgres")
-)
-DB_USER = env_str("TEST_DB_USER", "")
-DB_PASSWORD = env_str("TEST_DB_PASSWORD", "")
-DB_HOST = env_str("TEST_DB_HOST", "")
-DB_PORT = env_str("TEST_DB_PORT", "")
+# -----------------------------------------------------------------------------
+# 3. DATABASE — pytest-managed PostgreSQL
+# -----------------------------------------------------------------------------
 
-# Build DB config without redundant conditionals and avoid passing empty creds
-_db_config: dict[str, DatabaseConfigValue] = {
-    "ENGINE": DB_ENGINE,
-    "NAME": DB_NAME,
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "lx_test",
+        # Replaced by the session fixture before test-database setup.
+        "USER": "pytest_not_configured",
+        "PASSWORD": "",
+        "HOST": "127.0.0.1",
+        "PORT": "1",
+        "CONN_MAX_AGE": 0,
+        "OPTIONS": {
+            "connect_timeout": 5,
+        },
+        "TEST": {
+            "NAME": "test_lx_test",
+        },
+    }
 }
-if DB_ENGINE.endswith("sqlite3"):
-    # Reduce flaky "database is locked" failures with reused file-backed test DBs.
-    _db_config["OPTIONS"] = {"timeout": 30}
-if not DB_ENGINE.endswith("sqlite3"):
-    if DB_USER:
-        _db_config["USER"] = DB_USER
-    if DB_PASSWORD:
-        _db_config["PASSWORD"] = DB_PASSWORD
-    if DB_HOST:
-        _db_config["HOST"] = DB_HOST
-    if DB_PORT:
-        _db_config["PORT"] = DB_PORT
 
-DATABASES = {"default": _db_config}
+# Use the real migration graph.
+MIGRATION_MODULES: dict[str, str | None] = {}
 
 # Configure cache with explicit TIMEOUT for tests
 globals()["CACHES"] = {

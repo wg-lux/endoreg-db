@@ -57,10 +57,6 @@ def test_concurrent_metadata_imports_keep_one_patient_and_examination(
     media_kind: Literal["video", "pdf"],
     same_media: bool,
 ) -> None:
-    if connection.vendor != "postgresql":
-        pytest.skip(
-            "Requires PostgreSQL row locking; SQLite is not concurrency evidence"
-        )
     center = Center.objects.create(name=f"metadata-concurrency-{uuid4().hex}")
     media_ids: list[int] = []
     for _ in range(1 if same_media else 4):

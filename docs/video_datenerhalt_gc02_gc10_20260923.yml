@@ -131,7 +131,7 @@ befunde_zu_fehlenden_daten_und_ursachen:
       Keine Mediendateien zur Platzgewinnung gelöscht; vorhandene verschlüsselte
       Speicherräume weiterverwendet.
   - punkt: "Generischer Fehlerpfad kann Streaming-Schlüssel und Pfade entfernen"
-    code: "endoreg_db/services/hls_media.py::_mark_artifact_failed"
+    code: "endoreg_db/services/streaming/hls_media.py::_mark_artifact_failed"
     einordnung: >
       Im Code beobachtetes Bereinigungsverhalten; kein Beweis, dass dieser Pfad
       einen konkreten historischen Verlust verursacht hat. Bei dieser Maßnahme
@@ -159,7 +159,7 @@ grenzen_der_aussage:
 abgeleitete_backend_aenderungen:
   auftrag: "Nachprüfung der Reparaturbefunde auf notwendige Änderungen in endoreg_db."
   rohdatei_reconciliation:
-    datei: endoreg_db/services/reconciliation.py
+    datei: endoreg_db/services/runtime/reconciliation.py
     befund: >
       Die Start-Reconciliation konnte bei einer noch gesetzten Rohdateireferenz
       nach klinischer Validierung eine alte Eingangskopie erneut zuordnen.

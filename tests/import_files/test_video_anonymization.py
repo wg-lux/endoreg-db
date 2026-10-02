@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
 import pytest
+from django.db import IntegrityError, OperationalError
 from lx_dtypes.models import SensitiveMeta
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -106,6 +107,7 @@ def _create_import_context(
     processor_name: str,
 ) -> ImportContext:
     return ImportContext(
+        mutation_guard=nullcontext,
         file_path=file_path,
         center_name=center.name,
         current_video=video,
@@ -537,6 +539,7 @@ def test_verify_anonymizer_source_aborts_on_validated_hash_mismatch(
     source_video.write_bytes(b"changed-source")
     stat_result = source_video.stat()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=source_video,
         center_name="hash-mismatch-center",
         validated_raw_source_path=source_video,
@@ -839,6 +842,7 @@ def test_anonymize_video_uses_local_source_path_override(
 
     local_source_stat = local_source.stat()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=fallback_source,
         center_name=center.name,
         current_video=video,
@@ -1022,3 +1026,24 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         "width": 67,
         "height": 18,
     }
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("error_type", [OperationalError, IntegrityError])
+def test_phi_proposal_database_failure_aborts_owned_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[OperationalError] | type[IntegrityError],
+) -> None:
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    error = error_type("database write failed")
+
+    def fail(video: VideoFile, observations: list[JsonObject]) -> NoReturn:
+        raise error
+
+    monkeypatch.setattr(anonymizer, "_persist_phi_region_proposals_unchecked", fail)
+    with pytest.raises(error_type) as caught:
+        anonymizer._persist_phi_region_proposals(
+            VideoFile(),
+            {"frame_observations": [_phi_observation()]},
+        )
+    assert caught.value is error

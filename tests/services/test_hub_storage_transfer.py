@@ -11,6 +11,7 @@ from endoreg_db.models import (
     StorageArtifactKind,
     StorageArtifactPlacement,
     StorageNodeState,
+    StoragePlacementCommitReceipt,
     StorageReservation,
     StorageRotation,
     StorageTransferEvidence,
@@ -290,7 +291,13 @@ def test_recipient_key_replacement_atomically_retires_prior_envelope() -> None:
 
 
 @pytest.mark.django_db
-def test_initial_placement_commit_requires_consumed_reservation_and_evidence() -> None:
+@pytest.mark.parametrize(
+    "reservation_status",
+    [StorageReservation.Status.CONSUMED, StorageReservation.Status.ACTIVE, None],
+)
+def test_initial_placement_commit_requires_consumed_reservation_and_evidence(
+    reservation_status: StorageReservation.Status | None,
+) -> None:
     import hashlib
 
     node = NetworkNode.objects.create(
@@ -317,14 +324,14 @@ def test_initial_placement_commit_requires_consumed_reservation_and_evidence() -
         policy_version="placement-v1",
         idempotency_key="ingest-reservation-0001",
         request_fingerprint="f" * 64,
-        status=StorageReservation.Status.CONSUMED,
+        status=reservation_status or StorageReservation.Status.CONSUMED,
         expires_at=timezone.now(),
     )
     placement = StorageArtifactPlacement.objects.create(
         artifact_key=reservation.artifact_key,
         artifact_kind=reservation.artifact_kind,
         storage_node=state,
-        reservation=reservation,
+        reservation=reservation if reservation_status is not None else None,
         role=StorageArtifactPlacement.Role.PRIMARY,
         state=StorageArtifactPlacement.State.RESERVED,
         generation=1,
@@ -366,6 +373,21 @@ def test_initial_placement_commit_requires_consumed_reservation_and_evidence() -
         committed_at=timezone.now(),
         idempotency_key="ingest-commit-placement-0001",
     )
+    if reservation_status != StorageReservation.Status.CONSUMED:
+        with pytest.raises(TransferEvidenceError) as rejected:
+            commit_verified_storage_placement(request=request)
+        assert rejected.value.code is TransferEvidenceErrorCode.STATE_CONFLICT
+        placement.refresh_from_db()
+        state.refresh_from_db()
+        evidence.refresh_from_db()
+        assert placement.state == StorageArtifactPlacement.State.RESERVED
+        assert state.in_flight_bytes == 100
+        assert state.committed_bytes == 0
+        assert evidence.state == StorageTransferEvidence.State.VERIFIED
+        assert not StoragePlacementCommitReceipt.objects.filter(
+            placement=placement
+        ).exists()
+        return
     receipt = commit_verified_storage_placement(request=request)
     assert commit_verified_storage_placement(request=request).pk == receipt.pk
     placement.refresh_from_db()

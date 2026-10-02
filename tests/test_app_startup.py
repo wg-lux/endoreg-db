@@ -20,7 +20,7 @@ def test_runtime_reconciliation_receiver_accepts_django_signal_kwargs(
     from django.test import override_settings
 
     import endoreg_db.apps as apps_module
-    import endoreg_db.services.reconciliation as reconciliation
+    import endoreg_db.services.runtime.reconciliation as reconciliation
     import endoreg_db.utils.paths as paths_module
 
     signal = Signal()
@@ -102,7 +102,7 @@ def test_app_ready_does_not_import_reconciliation_for_pytest(
     original_import = builtins.__import__
 
     def guarded_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "endoreg_db.services.reconciliation":
+        if name == "endoreg_db.services.runtime.reconciliation":
             raise AssertionError(
                 "reconciliation must not be imported during pytest startup"
             )

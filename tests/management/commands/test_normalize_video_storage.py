@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 from django.core.management import CommandError, call_command
 
 from endoreg_db.models import Center, VideoFile, VideoHlsArtifact
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     VideoStorageCapacityReport,
     VideoStorageNormalizationError,
 )
