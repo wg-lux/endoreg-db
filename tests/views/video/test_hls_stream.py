@@ -122,7 +122,7 @@ def test_hls_legacy_identity_is_rejected_without_hashing_source(
 
     monkeypatch.setattr(hls_media, "_source_content_hash", reject_source_read)
     with pytest.raises(FileNotFoundError, match="source identity is stale"):
-        hls_media.get_ready_hls_artifact_by_key(
+        hls_media.get_ready_hls_artifact(
             video=hls_artifact.video,
             key_id=hls_artifact.key_id,
         )

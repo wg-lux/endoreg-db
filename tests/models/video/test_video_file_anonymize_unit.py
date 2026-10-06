@@ -24,6 +24,9 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.video_files import _anonymization as anonymize_module
+from endoreg_db.services.video_storage import canonical_timelines
+from endoreg_db.utils.hashs import get_file_hash
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 
 class _NameWritableField(Protocol):
@@ -105,6 +108,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     ) -> None:
         captured["saved_source_path"] = source_path
         captured["saved_name"] = name
+        captured["processed_hash"] = get_file_hash(source_path)
         field_file.name = name
 
     monkeypatch.setattr(VideoFile, "extract_frames", fail_extract_frames)
@@ -128,18 +132,18 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         fake_mask,
     )
 
-    def fake_get_file_hash(path: Path) -> str:
-        _ = path
-        return "processed-hash"
-
     monkeypatch.setattr(
-        anonymize_module,
-        "get_file_hash",
-        fake_get_file_hash,
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
     )
     monkeypatch.setattr(anonymize_module, "save_local_file", fake_save_local_file)
+
+    def stored_hash() -> str:
+        digest = captured["processed_hash"]
+        assert isinstance(digest, str)
+        return digest
+
     monkeypatch.setattr(
-        type(video.processed_file), "get_hash", Mock(return_value="processed-hash")
+        type(video.processed_file), "get_hash", Mock(side_effect=stored_hash)
     )
     from tests.services.test_video_processed_transcode_encryption import probe
 
@@ -183,7 +187,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     assert saved_name == f"processed_videos_final/{output_path.name}"
     video.refresh_from_db()
     state.refresh_from_db()
-    assert video.processed_video_hash == "processed-hash"
+    assert video.processed_video_hash == captured["processed_hash"]
     assert state.anonymized is True
     assert state.frames_extracted is False
 

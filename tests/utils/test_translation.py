@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
+
 from endoreg_db.utils.translation import build_multilingual_response
+
+pytestmark = pytest.mark.no_db
 
 
 def _empty_choices() -> list["_Source"]:

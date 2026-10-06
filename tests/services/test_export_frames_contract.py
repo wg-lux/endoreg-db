@@ -396,7 +396,7 @@ def test_export_videos_rejects_failed_lost_media() -> None:
     )
 
     with pytest.raises(ValueError, match="failed/lost"):
-        export_module._assert_video_media_export_ready(cast(VideoFile, video))
+        export_module.assert_video_media_export_ready(cast(VideoFile, video))
 
 
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
@@ -486,7 +486,7 @@ def test_local_transcode_uses_export_scoped_frame_directory(
 
     monkeypatch.setattr(
         export_module,
-        "_assert_video_media_export_ready",
+        "assert_video_media_export_ready",
         assert_video_media_export_ready,
     )
     monkeypatch.setattr(
@@ -549,7 +549,7 @@ def test_pts_transcode_uses_seekable_encrypted_processed_input(
 
     monkeypatch.setattr(
         export_module,
-        "_assert_video_media_export_ready",
+        "assert_video_media_export_ready",
         fake_ready,
     )
     monkeypatch.setattr(

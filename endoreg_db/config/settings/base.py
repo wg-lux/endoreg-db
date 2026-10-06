@@ -205,6 +205,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
     },
+    "endoreg_db.cleanup_media_sources": {
+        "queue": CELERY_MAINTENANCE_QUEUE,
+        "routing_key": CELERY_MAINTENANCE_QUEUE,
+    },
     "endoreg_db.retry_due_model_training_runs": {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
@@ -217,6 +221,15 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
+CELERY_BEAT_SCHEDULE["cleanup-media-sources"] = DjangoBeatScheduleEntryPayload(
+    task="endoreg_db.cleanup_media_sources",
+    schedule=900,
+    options=DjangoBeatScheduleOptionsPayload(
+        queue=CELERY_MAINTENANCE_QUEUE,
+        routing_key=CELERY_MAINTENANCE_QUEUE,
+        expires=850,
+    ),
+).model_dump(by_alias=True, mode="python")
 CELERY_BEAT_SCHEDULE["retry-due-upload-jobs"] = DjangoBeatScheduleEntryPayload(
     task="endoreg_db.retry_due_upload_jobs",
     schedule=60,

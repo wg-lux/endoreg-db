@@ -464,6 +464,9 @@ definition_of_done:
   category: functionality
   title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
   acceptance:
+  - Lesbarkeitsänderungen an Report-Anlage und Report-Anonymisierung erhalten öffentliche Signaturen,
+    Rückgabeflags, Validierungsreihenfolge und Mutationsgrenzen. Bestehende Tests für Neuanlage,
+    Duplikate, Reparatur und den Anonymisierungsvertrag bestehen unverändert.
   - Report- und Video-Orchestrierung sind in derselben Leserichtung in Kontextvorbereitung, Quellen-/Inhaltssperre,
     Wiederverwendung, eigenen Importversuch und Anonymisierung/Publikation gegliedert. Formatabhängige
     Ownership-, Retry- und Bereinigungsregeln bleiben unverändert und werden am jeweiligen Phasenübergang

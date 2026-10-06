@@ -40,7 +40,9 @@ from endoreg_db.services.raw_pdf_files.integrity import (
     verify_processed_report_path,
 )
 from endoreg_db.services.raw_pdf_files.state import get_or_create_raw_pdf_state
-from endoreg_db.services.video_storage.workflow import evidence_as_json
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+)
 from endoreg_db.services.video_storage.generation_cleanup import (
     reconcile_previous_processed_cleanup,
     commit_processed_replacements,
@@ -379,9 +381,16 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
             relative_name=candidate_name,
         )
         instance.processed_video_hash = get_file_hash(src)
-        next_meta = dict(previous_meta)
-        next_meta["storage_normalization"] = evidence_as_json(
-            ctx.storage_normalization_evidence
+        next_meta = append_canonical_timeline_history(
+            previous_meta,
+            ctx.storage_normalization_evidence,
+            artifact_kind="processed",
+            output_content_hash=instance.processed_video_hash,
+        )
+        next_meta["storage_normalization"] = (
+            ctx.storage_normalization_evidence.model_dump(
+                mode="json", exclude={"canonical_timestamps"}
+            )
         )
         next_meta["processed_generation"] = saved_name
         instance.meta = next_meta

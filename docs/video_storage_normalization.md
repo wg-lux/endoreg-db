@@ -181,6 +181,23 @@ described where they are introduced.
 
 ## Artifact Contract
 
+Only canonical raw and canonical processed videos are **generations**. HTTP Live
+Streaming (HLS) exists solely for optimized streaming of a canonical source
+generation. Existing HLS fields or older text using “generation” identify the
+source binding or an atomic derivative build, never an independent canonical
+video generation. Rebuilding HLS does not create a canonical generation.
+
+Canonical transformations retain both complete decoded presentation timestamp
+sequences in `VideoFile.meta.canonical_timeline_history`, with exact integer
+ticks, rational time bases, and plaintext content hashes. Each entry identifies
+the published role (`raw` or `processed`). Sequence positions are zero-based
+frame indices within that specific source or output; resampling can change their
+counts and does not imply a one-to-one correspondence. History survives later
+canonical replacements and source-file cleanup. Existing clinical frame and
+segment coordinates remain governed by `pts_v1`. Legacy entries without this
+evidence remain explicitly incomplete; original timestamps cannot be reconstructed
+from nominal frame rates. HLS rebuilds do not append canonical timestamp history.
+
 | Role | Creation | Retention | Deletion condition |
 |---|---|---|---|
 | Canonical unprocessed MP4 | Import or reimport | Until human anonymization validation and complete approval of every gate | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
@@ -323,23 +340,19 @@ production evidence that the full corpus has converged, and the tracker records
 open backfill admission and accounting defects; therefore automatic dispatch
 must not be described as completed production backfill.
 
-An operator who explicitly confirms that existing legacy media is unchanged may
-repair its missing provenance with `adopt_legacy_hls`. This is a database repair,
-not a runtime exemption and not an automatic inference from duration or visual
-similarity. Supply an exact `--artifact-id` allowlist, `--created-before` cutoff,
-`--approved-by`, `--reason`, and `--accept-unchanged-source`; preview is the
-default and `--apply` commits each artifact independently. The command reads the
-current source through authenticated encrypted storage, verifies complete HLS
-paths and the wrapped content key, and retains the original HLS files and keys.
-A changed filename additionally requires identical authenticated source bytes.
-Only blank-hash READY rows qualify. Active encoding/publication and playback
-leases defer repair. Matching queued replacements become failed stale attempts,
-so delayed deliveries cannot replace the adopted generation. Protected typed
-before/after receipts under `hls-legacy-adoption` retain the old metadata and
-operator attestation. If only a prepared receipt exists after an interruption,
-compare its before/after identities with the database before retrying or rolling
-back. A nonempty hash is never overwritten by this command. Normal playback
-checks and future source-change invalidation remain unchanged.
+HLS provenance adoption is unsupported. Incompatible artifacts must be
+regenerated through `materialize_video_hls`; the previous published derivative
+is retained until its validated replacement is published and leases permit
+cleanup. Stale queued attempts are failed, never restored as READY artifacts.
+
+`VideoFile.hls_artifacts` is the typed relation for all source-bound derivatives
+and attempts. `get_ready_hls_artifact(video=video, artifact_kind=...)` resolves
+the current playable derivative; `key_id=...` resolves its exact playback key
+through the same service. Delete a kind through
+`delete_video_hls_artifacts(video, artifact_kind=...)`, which locks the video,
+checks media activity and removes owned files before deleting related rows.
+Direct relation deletion only deletes database rows and is not a media cleanup
+operation. No second pointer or independent HLS generation is persisted.
 
 Playlist admission, materialization, and reconciliation check the playlist and
 every referenced segment. Subsequent key and segment requests check the current

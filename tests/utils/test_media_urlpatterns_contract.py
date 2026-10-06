@@ -159,6 +159,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.video_fps.VideoFpsView",
     ),
     (
+        'media/videos/<int:pk>/annotations.csv', 
+        'video-annotations-download', 
+        'endoreg_db.views.media.export_downloads.VideoExportDownloadView'
+    ),
+    (
         "media/videos/<int:pk>/apply-mask/",
         "video-apply-mask",
         "endoreg_db.views.video.correction.VideoApplyMaskView",

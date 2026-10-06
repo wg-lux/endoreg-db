@@ -14,6 +14,7 @@ from django.db import transaction
 from django.db.models import Q, QuerySet
 from django.db.models.fields.files import FieldFile
 from django.db.models.functions import Now
+from pydantic import ValidationError
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.operation_lease import MediaOperationLease
@@ -25,6 +26,7 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.schemas.hub_payloads import UploadProvenancePayload
 from endoreg_db.services.hub.media_integrity import check_upload_job_media_integrity
 from endoreg_db.services.raw_pdf_files.integrity import (
     ProcessedReportIntegrityError,
@@ -36,7 +38,7 @@ from endoreg_db.utils.paths import (
     ensure_within_storage_root,
 )
 from endoreg_db.utils.file_operations import get_file_hash
-from endoreg_db.utils.file_operations import safe_delete_field_file
+from endoreg_db.utils.file_operations import safe_delete_field_file, safe_unlink_file
 
 logger = logging.getLogger(__name__)
 
@@ -372,15 +374,91 @@ def _successful_replacement(
     return candidates.first()
 
 
-def _source_still_referenced(upload_job: UploadJob) -> bool:
-    name = str(upload_job.file.name or "")
+def _source_still_referenced(upload_job: UploadJob, name: str | None = None) -> bool:
+    name = str(upload_job.file.name or "") if name is None else name
     if not name:
         return False
     return (
         UploadJob.objects.filter(file=name).exclude(pk=upload_job.pk).exists()
         or VideoFile.objects.filter(Q(raw_file=name) | Q(processed_file=name)).exists()
         or RawPdfFile.objects.filter(Q(file=name) | Q(processed_file=name)).exists()
+        or VideoHlsArtifact.objects.filter(source_file_name=name).exists()
     )
+
+
+def additional_source_paths(
+    upload_job: UploadJob,
+) -> tuple[tuple[Path, ...], UploadSourceCleanupBlocker]:
+    """Inspect exact provenance paths; never search by filename or follow aliases."""
+    if _media_type(upload_job) != UploadSourceMediaType.VIDEO:
+        return (), UploadSourceCleanupBlocker.NONE
+    paths = get_runtime_paths()
+    roots = (
+        paths.ingest_uploads,
+        paths.import_video,
+        paths.import_preanonymized,
+        paths.import_anonymized_video,
+        paths.migration_staging,
+    )
+    try:
+        provenance = UploadProvenancePayload.model_validate(
+            upload_job.processing_provenance
+        )
+    except ValidationError:
+        return (), UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
+    copies: set[Path] = set()
+    for name in (
+        provenance.watched_path,
+        provenance.watcher_processing_path,
+        provenance.stored_upload_path,
+        provenance.legacy_source_path,
+        provenance.migrated_destination_path,
+    ):
+        if not name:
+            continue
+        path = Path(name)
+        if not path.is_absolute():
+            path = paths.storage / path
+        if ".." in path.parts or not any(path.is_relative_to(root) for root in roots):
+            return (), UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
+        if _path_has_symlink(path, paths.runtime_root):
+            return (), UploadSourceCleanupBlocker.SOURCE_SYMLINK
+        if upload_job.file.name and path == Path(upload_job.file.path):
+            continue
+        if not path.exists():
+            continue
+        if not path.is_file():
+            return (), UploadSourceCleanupBlocker.SOURCE_NOT_REGULAR
+        relative_name = (
+            path.relative_to(paths.storage).as_posix()
+            if path.is_relative_to(paths.storage)
+            else str(path)
+        )
+        aliases = {name, str(path), relative_name}
+        provenance_references = Q()
+        for field in (
+            "watched_path",
+            "watcher_processing_path",
+            "legacy_source_path",
+            "migrated_destination_path",
+            "stored_upload_path",
+        ):
+            provenance_references |= Q(
+                **{f"processing_provenance__{field}__in": list(aliases)}
+            )
+        if any(_source_still_referenced(upload_job, alias) for alias in aliases) or (
+            UploadJob.objects.exclude(pk=upload_job.pk)
+            .filter(provenance_references)
+            .exists()
+        ):
+            return (), UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
+        try:
+            if get_file_hash(path) != upload_job.content_hash:
+                return (), UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
+        except (OSError, RuntimeError, ValueError):
+            return (), UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
+        copies.add(path)
+    return tuple(sorted(copies)), UploadSourceCleanupBlocker.NONE
 
 
 def _evaluate_locked_job(
@@ -468,6 +546,15 @@ def _evaluate_locked_job(
             None,
         )
 
+    copies, copies_blocker = additional_source_paths(upload_job)
+    if copies_blocker != UploadSourceCleanupBlocker.NONE:
+        return _item(
+            upload_job,
+            database_now=database_now,
+            decision=UploadSourceCleanupDecision.BLOCKED,
+            blocker=copies_blocker,
+        ), None
+    copy_bytes = sum(path.stat().st_size for path in copies)
     snapshot, source_blocker = _source_snapshot(upload_job)
     if snapshot is None:
         if (
@@ -482,7 +569,7 @@ def _evaluate_locked_job(
                     database_now=database_now,
                     decision=UploadSourceCleanupDecision.DELETE,
                     blocker=UploadSourceCleanupBlocker.NONE,
-                    reclaimable_bytes=reclaimable,
+                    reclaimable_bytes=reclaimable + copy_bytes,
                 ),
                 None,
             )
@@ -537,7 +624,7 @@ def _evaluate_locked_job(
             database_now=database_now,
             decision=UploadSourceCleanupDecision.DELETE,
             blocker=UploadSourceCleanupBlocker.NONE,
-            reclaimable_bytes=snapshot.size_bytes,
+            reclaimable_bytes=snapshot.size_bytes + copy_bytes,
         ),
         snapshot,
     )
@@ -651,9 +738,24 @@ def _delete_and_finalize(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
             if item.decision != UploadSourceCleanupDecision.DELETE:
                 return item
 
+            copies, blocker = additional_source_paths(upload_job)
+            if blocker != UploadSourceCleanupBlocker.NONE:
+                return _item(
+                    upload_job,
+                    database_now=database_now,
+                    decision=UploadSourceCleanupDecision.BLOCKED,
+                    blocker=blocker,
+                )
+            freed_bytes = 0
+            for path in copies:
+                size = path.stat().st_size
+                safe_unlink_file(path, missing_ok=False)
+                freed_bytes += size
             deleted = False
             if snapshot is not None:
                 deleted = safe_delete_field_file(upload_job.file, missing_ok=False)
+                if deleted:
+                    freed_bytes += snapshot.size_bytes
             upload_job.file.name = ""
             upload_job.source_file_persisted = False
             upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED.value
@@ -683,7 +785,7 @@ def _delete_and_finalize(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
                 decision=UploadSourceCleanupDecision.COMPLETED,
                 blocker=UploadSourceCleanupBlocker.NONE,
                 reclaimable_bytes=item.reclaimable_bytes,
-                freed_bytes=item.reclaimable_bytes if deleted else 0,
+                freed_bytes=freed_bytes,
                 applied=True,
             )
     except (OSError, RuntimeError, ValueError):

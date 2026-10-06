@@ -4802,6 +4802,7 @@ models:
   - service:endoreg_db/services/hub/storage_reconciliation.py
   - service:endoreg_db/services/hub/storage_rotation.py
   - service:endoreg_db/services/hub/storage_transfer.py
+  - service:endoreg_db/services/video_files/deletion.py
   - service:endoreg_db/services/video_storage/generation_cleanup.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
@@ -5527,6 +5528,7 @@ models:
   - service:endoreg_db/services/hub/quarantine.py
   - service:endoreg_db/services/media/integrity.py
   - service:endoreg_db/services/privacy/metrics.py
+  - service:endoreg_db/services/video_files/deletion.py
   - service:endoreg_db/services/video_storage/generation_cleanup.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
@@ -5654,12 +5656,12 @@ models:
   - service:endoreg_db/services/privacy/workflow.py
   - service:endoreg_db/services/runtime/reconciliation.py
   - service:endoreg_db/services/secret_rotation/storage.py
-  - service:endoreg_db/services/streaming/hls_legacy_adoption.py
   - service:endoreg_db/services/streaming/hls_media.py
   - service:endoreg_db/services/studies/cohort.py
   - service:endoreg_db/services/video_files/_ai.py
   - service:endoreg_db/services/video_files/_anonymization.py
   - service:endoreg_db/services/video_files/clinical_contracts.py
+  - service:endoreg_db/services/video_files/deletion.py
   - service:endoreg_db/services/video_files/post_validation_blackening.py
   - service:endoreg_db/services/video_files/queries.py
   - service:endoreg_db/services/video_files/state.py
@@ -5751,14 +5753,15 @@ models:
   - api:endoreg_db/serializers/misc/file_overview.py
   - api:endoreg_db/views/video/correction.py
   - api:endoreg_db/views/video/hls_stream.py
+  - import:endoreg_db/services/jobs/video_reimport_jobs.py
   - job:endoreg_db/management/commands/check_production_hls_readiness.py
   - job:endoreg_db/management/commands/check_system_health.py
   - job:endoreg_db/management/commands/materialize_video_hls.py
   - job:endoreg_db/management/commands/profile_video_streaming.py
   - service:endoreg_db/services/hub/cleanup.py
   - service:endoreg_db/services/secret_rotation/storage.py
-  - service:endoreg_db/services/streaming/hls_legacy_adoption.py
   - service:endoreg_db/services/streaming/hls_media.py
+  - service:endoreg_db/services/video_files/deletion.py
   - service:endoreg_db/services/video_storage/generation_cleanup.py
   - service:endoreg_db/services/video_storage/inventory.py
   dynamic_model_references: []

@@ -34,6 +34,9 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.utils.storage import save_local_file
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 
 def _configure_storage_layout(
@@ -73,11 +76,12 @@ def _copy_profile_candidate(
     output_path: Path,
     reference_path: Path,
     quality_mode: str,
-) -> None:
+) -> VideoStorageNormalizationEvidence:
     """Stand in for profile normalization while preserving its typed call contract."""
     assert reference_path == input_path
     assert quality_mode
     shutil.copy2(input_path, output_path)
+    return normalization_evidence_fixture(input_path, output_path)
 
 
 def _center_and_processor_names() -> tuple[str, str]:
@@ -188,6 +192,12 @@ def test_create_from_file_happy_path(
     assert raw_path.exists()
     assert raw_path.is_file()
     assert video.raw_video_hash == get_file_hash(raw_path)
+    video.refresh_from_db()
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history is not None and len(history) == 1
+    assert history[0].artifact_kind == "raw"
+    assert history[0].before.content_hash == get_file_hash(src_file)
+    assert history[0].after.content_hash == get_file_hash(raw_path)
 
 
 @pytest.mark.django_db
@@ -991,7 +1001,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
         output_path: Path,
         reference_path: Path,
         quality_mode: str,
-    ) -> None:
+    ) -> VideoStorageNormalizationEvidence:
         assert reference_path == input_path
         assert quality_mode
         call_count["count"] += 1
@@ -1000,6 +1010,7 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
             output_path.write_bytes(b"partial-output")
             raise RuntimeError("first transcode attempt failed")
         shutil.copy2(input_path, output_path)
+        return normalization_evidence_fixture(input_path, output_path)
 
     monkeypatch.setattr(
         create_from_file_module,

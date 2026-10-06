@@ -1,6 +1,6 @@
+from datetime import UTC, datetime
 from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
-from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +19,8 @@ from endoreg_db.schemas.video_storage import (
     VideoTimelineContract,
 )
 from endoreg_db.utils import paths as paths_module
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 
 @pytest.fixture(autouse=True)
@@ -309,7 +311,9 @@ def test_failed_video_finalization_preserves_previous_generation(
     ctx.current_video = cast(VideoFile, video)
     ctx.anonymized_path = anonymized_path
     ctx.sensitive_path = sensitive_path
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(
+        source_path, anonymized_path
+    )
 
     with pytest.raises(RuntimeError, match=f"{failure_boundary} unavailable"):
         finalize_video_success(ctx)
@@ -506,7 +510,9 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     ctx.current_video = cast(VideoFile, video)
     ctx.sensitive_path = sensitive_working_copy
     ctx.anonymized_path = temp_anonymized
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(
+        import_file, temp_anonymized
+    )
 
     with TestCase.captureOnCommitCallbacks(execute=True):
         finalize_video_success(ctx)
@@ -522,6 +528,10 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert store_calls == [(final_anonymized, video.processed_file.name)]
     assert ownership_checks >= 5
     assert hls_calls == [1]
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history is not None and len(history) == 1
+    assert history[0].artifact_kind == "processed"
+    assert history[0].after.content_hash == video.processed_video_hash
 
 
 @pytest.mark.unit

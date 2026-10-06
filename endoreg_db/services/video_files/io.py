@@ -200,20 +200,15 @@ def delete_video_with_owned_files(
     Canonical raw/processed files are deleted through Django storage.
     Streamable/frame artifacts are path-based derived files and may be unlinked.
     """
-    try:
-        frame_delete_msg = video.delete_frames()
-        logger.info(
-            "Frame deletion result for video %s: %s",
-            video.raw_video_hash,
-            frame_delete_msg,
-        )
-    except Exception as exc:
-        logger.error(
-            "Error during frame deletion for video %s: %s",
-            video.raw_video_hash,
-            exc,
-            exc_info=True,
-        )
+    from endoreg_db.services.streaming.hls_media import delete_video_hls_artifacts
+    from endoreg_db.services.video_files.deletion import delete_recorded_video_copies
+
+    type(video).objects.select_for_update().get(pk=video.pk)
+    video.refresh_from_db()
+    delete_recorded_video_copies(video)
+    video.delete_frames()
+    for artifact_kind in ("raw", "processed"):
+        delete_video_hls_artifacts(video, artifact_kind=artifact_kind)
 
     raw_field = getattr(video, "raw_file", None)
     if raw_field and raw_field.name:

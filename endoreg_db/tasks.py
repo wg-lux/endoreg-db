@@ -508,6 +508,63 @@ def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int
 
 
 @shared_task(
+    name="endoreg_db.cleanup_media_sources",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def cleanup_media_sources_task() -> dict[str, int]:
+    """Revisit recorded cleanup work under the existing operator apply gate."""
+    import logging
+    from endoreg_db.config.env import upload_job_source_reaper_apply_enabled
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.hub.cleanup import run_upload_job_source_reaper
+    from endoreg_db.services.video_storage.generation_cleanup import (
+        cleanup_processed_video_generations,
+    )
+    from endoreg_db.utils.structured_logging import emit_structured_event
+
+    apply = upload_job_source_reaper_apply_enabled()
+    sources = run_upload_job_source_reaper(apply=apply, limit=25)
+    counts = {
+        "sources_cleaned": sources.cleaned,
+        "source_bytes_freed": sources.freed_bytes,
+        "generations_cleaned": 0,
+        "generations_pending": 0,
+        "generation_failures": 0,
+    }
+    video_ids = (
+        VideoFile.objects.filter(
+            meta__processed_generation_cleanup__isnull=False,
+        )
+        .exclude(meta__processed_generation_cleanup=[])
+        .order_by("date_modified", "pk")
+        .values_list("pk", flat=True)[:25]
+    )
+    for video_id in video_ids:
+        try:
+            result = cleanup_processed_video_generations(video_id, apply=apply)
+        except (OSError, ValueError, RuntimeError) as exc:
+            counts["generation_failures"] += 1
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_generation_cleanup_failed",
+                video_id=video_id,
+                error_type=type(exc).__name__,
+            )
+        else:
+            counts["generations_cleaned"] += result.cleaned
+            counts["generations_pending"] += result.pending
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_generation_cleanup",
+                apply=apply,
+                **result.model_dump(),
+            )
+    return counts
+
+
+@shared_task(
     name="endoreg_db.retry_due_model_training_runs",
     bind=True,
     acks_late=True,

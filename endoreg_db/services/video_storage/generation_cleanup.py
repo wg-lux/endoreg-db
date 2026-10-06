@@ -247,27 +247,48 @@ def _old_hls_paths(video: VideoFile, artifacts: list[VideoHlsArtifact]) -> list[
         directory = _owned_path(
             root / str(video.uuid) / str(artifact.key_id) / "v0", root
         )
-        if artifact.segment_directory_relative_path != to_protected_media_relative(
-            directory
-        ) or artifact.playlist_relative_path != to_protected_media_relative(
-            directory / "playlist.m3u8"
+        unmaterialized_failure = (
+            artifact.status == "failed"
+            and not artifact.segment_directory_relative_path
+            and not artifact.playlist_relative_path
+        )
+        if not unmaterialized_failure and (
+            artifact.segment_directory_relative_path
+            != to_protected_media_relative(directory)
+            or artifact.playlist_relative_path
+            != to_protected_media_relative(directory / "playlist.m3u8")
         ):
             raise ValueError("Superseded HLS paths do not match their generation owner")
         if (
             VideoHlsArtifact.objects.exclude(pk=artifact.pk)
             .filter(
                 Q(
-                    segment_directory_relative_path=artifact.segment_directory_relative_path
+                    segment_directory_relative_path=to_protected_media_relative(
+                        directory
+                    )
                 )
-                | Q(playlist_relative_path=artifact.playlist_relative_path)
+                | Q(
+                    playlist_relative_path=to_protected_media_relative(
+                        directory / "playlist.m3u8"
+                    )
+                )
             )
             .exists()
         ):
             raise ValueError("Superseded HLS paths are shared")
-        if directory.exists() and any(
-            child.is_symlink() for child in directory.rglob("*")
-        ):
-            raise ValueError("Superseded HLS contains symbolic links")
+        temporary_root = get_runtime_paths().transcoding
+        owned_directories = [directory] + [
+            _owned_path(
+                temporary_root / role / str(video.pk) / str(artifact.key_id),
+                temporary_root,
+            )
+            for role in ("hls_key_material", "hls_output", "hls_plaintext_source")
+        ]
+        for owned_directory in owned_directories:
+            if owned_directory.exists() and any(
+                child.is_symlink() for child in owned_directory.rglob("*")
+            ):
+                raise ValueError("Superseded HLS contains symbolic links")
         paths.append(directory)
     return paths
 
@@ -383,7 +404,7 @@ def _cleanup_processed_video_generations_owned(
         owned = references.filter(
             video=video,
             artifact_kind="processed",
-            status="superseded",
+            status__in=["superseded", "failed"],
             source_content_hash=receipt.source_sha256,
         )
         if references.exclude(pk__in=owned.values("pk")).exists():
@@ -400,7 +421,11 @@ def _cleanup_processed_video_generations_owned(
     result.reason = "dry_run"
     if not apply:
         return result
+    from endoreg_db.services.streaming.hls_media import cleanup_transient_hls_artifact
+
     for receipt, field, artifacts, paths in plans:
+        for artifact in artifacts:
+            cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
         for path in paths:
             safe_rmtree(path, missing_ok=True)
             if path.exists():

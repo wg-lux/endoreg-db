@@ -1,21 +1,20 @@
-# endoreg_db/import_files/storage/create_report_file.py
 import logging
 from pathlib import Path
 from typing import Protocol, cast
 
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.import_files.context.import_context import ImportContext  #
+from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.storage import ensure_context_file_hash
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.state.processing_history.processing_history import (
+    ProcessingHistory,
+)
 from endoreg_db.services.raw_pdf_files.imports import (
     create_initialized_raw_pdf_file_from_path,
 )
 from endoreg_db.services.raw_pdf_files.integrity import (
     ProcessedReportIntegrityError,
     require_usable_completed_report,
-)
-from endoreg_db.models.state.processing_history.processing_history import (
-    ProcessingHistory,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,12 +28,13 @@ def create_or_retrieve_report_file(
     ctx: ImportContext,
 ) -> tuple[RawPdfFile, bool, bool]:
     """
-    Create a new or retrieve an existing RawPdfFile for the given context.
+    Reuse a completed report or prepare a report for processing.
 
     Returns:
-        pdf             : RawPdfFile instance
-        processed       : True if there is already a successful ProcessingHistory for this file
-        needs_processing: True if the pipeline should run for this file in this call
+        A tuple of (report, processed, needs_processing). A usable completed
+        report returns (report, True, False). An existing report with only
+        failure history returns (report, True, True) to trigger retry handling.
+        New reports and unusable completed reports return (report, False, True).
     """
     file_path = ctx.file_path
     if (
@@ -43,15 +43,10 @@ def create_or_retrieve_report_file(
     ):
         file_path = ctx.sensitive_path
     center_name = ctx.center_name
-    file_type = ctx.file_type  # logical key for history; can be None
-
-    # default assumptions
     processed = False
-    needs_processing = True
 
     file_hash = ensure_context_file_hash(ctx)
 
-    # Check if we already have a successful history entry for this object
     has_success_history = ProcessingHistory.has_history_for_hash(
         file_hash=file_hash,
         success=True,
@@ -74,10 +69,9 @@ def create_or_retrieve_report_file(
     elif has_failure_history and ctx.current_report is not None:
         processed = True
 
-    # Determine the RawPdfFile instance to work with
     if ctx.current_report is not None:
-        pdf = ctx.current_report
-        logger.info("Using existing RawPdfFile from context: pk=%s", pdf.pk)
+        report = ctx.current_report
+        logger.info("Using existing RawPdfFile from context: pk=%s", report.pk)
     else:
         logger.info(
             "Creating new RawPdfFile from %s for center %s",
@@ -85,29 +79,29 @@ def create_or_retrieve_report_file(
             center_name,
         )
 
-        pdf = create_initialized_raw_pdf_file_from_path(
+        report = create_initialized_raw_pdf_file_from_path(
             file_path=file_path,
             center_name=center_name,
             center_key=ctx.center_key,
         )
 
         center = cast(
-            _NamedCenter, ensure_center(pdf, ctx.center_name, center_key=ctx.center_key)
+            _NamedCenter,
+            ensure_center(report, ctx.center_name, center_key=ctx.center_key),
         )
-        center_name_value = str(center.name)
-        logger.info("Successfully set up report file from %s", center_name_value)
+        logger.info("Successfully set up report file from %s", str(center.name))
 
-    # No successful history yet → ensure there is a history entry marking it as "in progress"/failed
+    # Retain a non-success history entry until processing completes.
     ProcessingHistory.get_or_create_for_hash(
-        obj=pdf,
+        obj=report,
         file_hash=file_hash,
         success=False,
     )
 
     logger.info(
         "Report instance ready for processing: pk=%s, file_type=%s (needs_processing=True)",
-        pdf.pk,
-        file_type,
+        report.pk,
+        ctx.file_type,
     )
 
-    return pdf, processed, needs_processing
+    return report, processed, True

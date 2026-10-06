@@ -26,10 +26,14 @@ from endoreg_db.services.video_storage.workflow import (
     configured_video_storage_profile,
     assert_temporal_equivalence,
     timeline_from_video_metadata,
-    evidence_as_json,
     probe_video_artifact,
     segment_timeline_references,
     validate_normalized_output,
+)
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+    capture_canonical_timeline,
+    with_canonical_timestamps,
 )
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
@@ -194,6 +198,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
     try:
         with cast(_LocalRawFileProvider, video).ensure_local_raw_file() as raw_path:
             source_probe = probe_video_artifact(Path(raw_path))
+            source_timestamps = capture_canonical_timeline(Path(raw_path), source_probe)
             if video.fps is None or video.duration is None or video.frame_count is None:
                 raise RuntimeError(
                     "Stored video timeline is required for reanonymization."
@@ -229,6 +234,9 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
             segments=segment_timeline_references(video, timeline=source_probe.timeline),
         )
         new_processed_hash = get_file_hash(anonymized_video_path)
+        normalization_evidence = with_canonical_timestamps(
+            normalization_evidence, source_timestamps, anonymized_video_path
+        )
         if (
             type(video)
             .objects.filter(processed_video_hash=new_processed_hash)
@@ -255,8 +263,15 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
         with transaction.atomic():
             video.processed_video_hash = new_processed_hash
             video.meta = {
-                **(video.meta or {}),
-                "storage_normalization": evidence_as_json(normalization_evidence),
+                **append_canonical_timeline_history(
+                    video.meta,
+                    normalization_evidence,
+                    artifact_kind="processed",
+                    output_content_hash=new_processed_hash,
+                ),
+                "storage_normalization": normalization_evidence.model_dump(
+                    mode="json", exclude={"canonical_timestamps"}
+                ),
             }
             if previous_name:
                 record_processed_replacement(

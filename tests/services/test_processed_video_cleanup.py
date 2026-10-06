@@ -31,6 +31,7 @@ from endoreg_db.utils.paths import (
     to_storage_relative,
 )
 from tests.import_files.test_video_finalize_success import _normalization_evidence
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 pytestmark = pytest.mark.django_db
 
@@ -194,10 +195,7 @@ def test_blockers_preserve_previous_generation(
             processed_file=replacement.old_name,
         )
     elif blocker == "hls_reference":
-        replacement.old_artifact.status = "failed"
-        replacement.old_artifact.error_code = (
-            VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
-        )
+        replacement.old_artifact.status = "materializing"
         replacement.old_artifact.save()
     else:
         video.processed_video_hash = "0" * 64
@@ -385,7 +383,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
     ctx.current_video = replacement.video
     ctx.file_hash = str(replacement.video.raw_video_hash)
     ctx.anonymized_path = source
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(source, source)
     scheduled: list[int] = []
     previous_master = str(replacement.video.processed_file.name)
 
@@ -464,3 +462,51 @@ def test_cleanup_writer_is_visible_before_storage_transaction(
     assert visible == [True]
     assert result.cleaned == 1
     assert not replacement.video.processed_file.storage.exists(replacement.old_name)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_retirement_removes_owned_temporary_hls_locations(
+    replacement: Replacement, failed: bool
+) -> None:
+    artifact = replacement.old_artifact
+    if failed:
+        artifact.status = "failed"
+        artifact.error_code = "materialization_failed"
+        artifact.playlist_relative_path = ""
+        artifact.segment_directory_relative_path = ""
+        artifact.save()
+    roots = [
+        get_runtime_paths().transcoding
+        / role
+        / str(replacement.video.pk)
+        / str(artifact.key_id)
+        for role in ("hls_key_material", "hls_plaintext_source", "hls_output")
+    ]
+    for root in roots:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "test.tmp").write_bytes(b"temporary data")
+    assert (
+        cleanup.cleanup_processed_video_generations(replacement.video.pk).reason
+        == "dry_run"
+    )
+    assert all(root.exists() for root in roots)
+    assert (
+        cleanup.cleanup_processed_video_generations(
+            replacement.video.pk, apply=True
+        ).cleaned
+        == 1
+    )
+    assert all(not root.exists() for root in roots)
+
+
+def test_temporary_hls_symlink_blocks_before_master_deletion(
+    replacement: Replacement, tmp_path: Path
+) -> None:
+    root = get_runtime_paths().transcoding / "hls_output" / str(replacement.video.pk)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / str(replacement.old_artifact.key_id)).symlink_to(
+        tmp_path, target_is_directory=True
+    )
+    with pytest.raises(ValueError, match="symbolic"):
+        cleanup.cleanup_processed_video_generations(replacement.video.pk, apply=True)
+    assert replacement.video.processed_file.storage.exists(replacement.old_name)

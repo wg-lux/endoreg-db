@@ -180,6 +180,40 @@ class VideoArtifactProbe(BaseModel):
     timeline: VideoTimelineContract
 
 
+class CanonicalFrameTimeline(BaseModel):
+    """Complete decoded frame coordinates for one concrete canonical artifact."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    time_base_num: int = Field(gt=0)
+    time_base_den: int = Field(gt=0)
+    presentation_timestamps: list[int] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> Self:
+        ticks = self.presentation_timestamps
+        if ticks[0] < 0 or any(right <= left for left, right in zip(ticks, ticks[1:])):
+            raise ValueError(
+                "Presentation timestamps must be nonnegative and strictly increasing"
+            )
+        return self
+
+
+class CanonicalTimestampTransformation(BaseModel):
+    """Separate source/output sequences, including coordinate-changing resampling."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    before: CanonicalFrameTimeline
+    after: CanonicalFrameTimeline
+
+
+class CanonicalTimelineHistoryEntry(CanonicalTimestampTransformation):
+    schema_version: Literal["1"] = "1"
+    artifact_kind: Literal["raw", "processed"]
+
+
 class VideoStorageNormalizationEvidence(BaseModel):
     """Persisted proof that a canonical output passed storage and timeline gates."""
 
@@ -195,6 +229,8 @@ class VideoStorageNormalizationEvidence(BaseModel):
     )
     temporal_equivalent: Literal[True]
     storage_compliant: Literal[True]
+    # Absent only for legacy evidence and noncanonical streaming derivatives.
+    canonical_timestamps: CanonicalTimestampTransformation | None = None
 
     @field_validator("normalized_at", mode="before")
     @classmethod

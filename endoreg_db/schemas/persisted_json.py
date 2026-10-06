@@ -28,6 +28,7 @@ from pydantic import (
 
 from .processed_video_cleanup import ProcessedGenerationCleanupReceipt
 from .video_storage import (
+    CanonicalTimelineHistoryEntry,
     ClinicalFrameQualityEvidence,
     VideoFpsResamplingEvidence,
     VideoSourceTimelineEvidence,
@@ -290,6 +291,7 @@ class VideoFileMetaPayload(BaseModel):
     examination_date: str | None = None
     case_resolution: CaseResolutionMetaPayload | None = None
     storage_normalization: VideoStorageNormalizationEvidence | None = None
+    canonical_timeline_history: list[CanonicalTimelineHistoryEntry] | None = None
     fps_normalization: VideoFpsResamplingEvidence | None = None
     source_timeline: VideoSourceTimelineEvidence | None = None
     clinical_frame_quality: ClinicalFrameQualityEvidence | None = None

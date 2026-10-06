@@ -36,10 +36,14 @@ from endoreg_db.services.video_storage.generation_cleanup import (
 )
 from endoreg_db.services.video_storage.workflow import (
     configured_video_storage_profile,
-    evidence_as_json,
     probe_video_artifact,
     segment_timeline_references,
     validate_normalized_output,
+)
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+    capture_canonical_timeline,
+    with_canonical_timestamps,
 )
 from endoreg_db.utils.ffmpeg_wrapper import blacken_video_frame_intervals
 from endoreg_db.utils.file_operations import (
@@ -188,6 +192,7 @@ def _rebuild_processed_video_owned(
                     "Processed source digest differs from its stored identity."
                 )
             source_probe = probe_video_artifact(processed_path)
+            source_timestamps = capture_canonical_timeline(processed_path, source_probe)
             transcoding_dir = ensure_directory(get_runtime_paths().transcoding)
             staged_output_path = (
                 transcoding_dir
@@ -213,6 +218,9 @@ def _rebuild_processed_video_owned(
                 ),
             )
             new_processed_hash = get_file_hash(rebuilt_path)
+            normalization_evidence = with_canonical_timestamps(
+                normalization_evidence, source_timestamps, rebuilt_path
+            )
             if (
                 type(video)
                 .objects.filter(processed_video_hash=new_processed_hash)
@@ -240,8 +248,15 @@ def _rebuild_processed_video_owned(
             with video_artifact_publication(video_id=int(video.pk)):
                 video.processed_video_hash = new_processed_hash
                 video.meta = {
-                    **(video.meta or {}),
-                    "storage_normalization": evidence_as_json(normalization_evidence),
+                    **append_canonical_timeline_history(
+                        video.meta,
+                        normalization_evidence,
+                        artifact_kind="processed",
+                        output_content_hash=new_processed_hash,
+                    ),
+                    "storage_normalization": normalization_evidence.model_dump(
+                        mode="json", exclude={"canonical_timestamps"}
+                    ),
                 }
                 record_processed_replacement(
                     video,

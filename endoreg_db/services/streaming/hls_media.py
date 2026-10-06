@@ -226,19 +226,10 @@ class HlsMaterializationResult:
 @dataclass(frozen=True)
 class _ArtifactSnapshot:
     artifact_id: int
-    status: str
     key_id: UUID
-    source_generation_id: UUID
-    encoding_profile_name: str
-    key_ciphertext: bytes | None
-    key_nonce: bytes | None
-    key_wrap_algorithm: str
-    iv_hex: str
     playlist_relative_path: str
     segment_directory_relative_path: str
-    segment_count: int
     source_file_name: str
-    source_content_hash: str
 
 
 @dataclass(frozen=True)
@@ -246,9 +237,20 @@ class _PreparedArtifact:
     artifact_id: int
     key_id: UUID
     encoding_profile_name: str
-    previous: _ArtifactSnapshot | None
     should_materialize: bool
     publish_only: bool = False
+
+    @classmethod
+    def from_artifact(
+        cls, artifact: VideoHlsArtifact, *, should_materialize: bool = False
+    ) -> _PreparedArtifact:
+        return cls(
+            artifact_id=int(artifact.pk),
+            key_id=artifact.key_id,
+            encoding_profile_name=artifact.encoding_profile_name,
+            should_materialize=should_materialize,
+            publish_only=artifact.status == VideoHlsArtifact.Status.VALIDATED.value,
+        )
 
 
 @dataclass(frozen=True)
@@ -317,20 +319,12 @@ class _HlsOutputProgress:
     latest_mtime_ns: int
 
 
-def _coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
-    if isinstance(value, VideoArtifactKind):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized == VideoArtifactKind.RAW.value:
-        return VideoArtifactKind.RAW
-    if normalized == VideoArtifactKind.PROCESSED.value:
-        return VideoArtifactKind.PROCESSED
-    raise ValueError(f"Unsupported HLS artifact kind: {value!r}")
-
-
 def coerce_hls_artifact_kind(value: object) -> VideoArtifactKind:
-    """Parse the local, authenticated HLS artifact kind."""
-    return _coerce_hls_artifact_kind(value)
+    """Parse the local, authenticated HTTP Live Streaming artifact kind."""
+    try:
+        return VideoArtifactKind(str(value).strip().lower())
+    except ValueError as exc:
+        raise ValueError(f"Unsupported HLS artifact kind: {value!r}") from exc
 
 
 def _field_file_has_name(field_file: object) -> bool:
@@ -525,7 +519,7 @@ def unwrap_hls_content_key(artifact: VideoHlsArtifact) -> bytes:
     if artifact.key_ciphertext is None or artifact.key_nonce is None:
         raise ValueError("HLS artifact has no stored content key")
 
-    artifact_kind = _coerce_hls_artifact_kind(artifact.artifact_kind)
+    artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
     plaintext = decrypt_wrapped_key(
         bytes(artifact.key_nonce),
         bytes(artifact.key_ciphertext),
@@ -550,7 +544,7 @@ def hls_uses_active_master_key(artifact: VideoHlsArtifact) -> bool:
         raise ValueError("HLS artifact has no stored content key")
     aad = _key_wrap_aad(
         video_id=int(artifact.video_id),
-        artifact_kind=_coerce_hls_artifact_kind(artifact.artifact_kind),
+        artifact_kind=coerce_hls_artifact_kind(artifact.artifact_kind),
         key_id=artifact.key_id,
     )
     try:
@@ -568,89 +562,13 @@ def hls_uses_active_master_key(artifact: VideoHlsArtifact) -> bool:
     return True
 
 
-def _artifact_snapshot(
-    artifact: VideoHlsArtifact,
-    *,
-    allow_queued_ready_artifact: bool = False,
-    allow_superseded_artifact: bool = False,
-) -> _ArtifactSnapshot | None:
-    is_ready = artifact.status == VideoHlsArtifact.Status.READY.value
-    is_queued_ready = (
-        allow_queued_ready_artifact
-        and artifact.status == VideoHlsArtifact.Status.QUEUED.value
-        and artifact.key_ciphertext is not None
-        and artifact.key_nonce is not None
-        and bool(artifact.iv_hex)
-        and _ready_artifact_paths_exist(artifact)
-    )
-    is_superseded = (
-        allow_superseded_artifact
-        and artifact.status == VideoHlsArtifact.Status.SUPERSEDED.value
-    )
-    if not is_ready and not is_queued_ready and not is_superseded:
-        return None
+def _artifact_snapshot(artifact: VideoHlsArtifact) -> _ArtifactSnapshot:
     return _ArtifactSnapshot(
         artifact_id=int(artifact.pk),
-        status=VideoHlsArtifact.Status.READY.value,
         key_id=artifact.key_id,
-        source_generation_id=artifact.source_generation_id,
-        encoding_profile_name=str(artifact.encoding_profile_name),
-        key_ciphertext=(
-            bytes(artifact.key_ciphertext)
-            if artifact.key_ciphertext is not None
-            else None
-        ),
-        key_nonce=bytes(artifact.key_nonce) if artifact.key_nonce is not None else None,
-        key_wrap_algorithm=str(artifact.key_wrap_algorithm),
-        iv_hex=str(artifact.iv_hex),
-        playlist_relative_path=str(artifact.playlist_relative_path),
-        segment_directory_relative_path=str(artifact.segment_directory_relative_path),
-        segment_count=int(artifact.segment_count),
-        source_file_name=str(artifact.source_file_name),
-        source_content_hash=str(artifact.source_content_hash),
-    )
-
-
-def _restore_artifact_snapshot(
-    artifact: VideoHlsArtifact,
-    snapshot: _ArtifactSnapshot,
-    *,
-    last_error: str,
-) -> None:
-    artifact.status = snapshot.status
-    artifact.key_id = snapshot.key_id
-    artifact.source_generation_id = snapshot.source_generation_id
-    artifact.encoding_profile_name = snapshot.encoding_profile_name
-    artifact.key_ciphertext = snapshot.key_ciphertext
-    artifact.key_nonce = snapshot.key_nonce
-    artifact.key_wrap_algorithm = snapshot.key_wrap_algorithm
-    artifact.iv_hex = snapshot.iv_hex
-    artifact.playlist_relative_path = snapshot.playlist_relative_path
-    artifact.segment_directory_relative_path = snapshot.segment_directory_relative_path
-    artifact.segment_count = snapshot.segment_count
-    artifact.source_file_name = snapshot.source_file_name
-    artifact.source_content_hash = snapshot.source_content_hash
-    artifact.last_error = last_error
-    artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
-    artifact.save(
-        update_fields=[
-            "status",
-            "key_id",
-            "source_generation_id",
-            "encoding_profile_name",
-            "key_ciphertext",
-            "key_nonce",
-            "key_wrap_algorithm",
-            "iv_hex",
-            "playlist_relative_path",
-            "segment_directory_relative_path",
-            "segment_count",
-            "source_file_name",
-            "source_content_hash",
-            "last_error",
-            "error_code",
-            "updated_at",
-        ]
+        playlist_relative_path=artifact.playlist_relative_path,
+        segment_directory_relative_path=artifact.segment_directory_relative_path,
+        source_file_name=artifact.source_file_name,
     )
 
 
@@ -658,7 +576,6 @@ def _mark_artifact_failed(
     *,
     artifact_id: int,
     error: str,
-    previous: _ArtifactSnapshot | None,
     expected_key_id: UUID | None = None,
     expected_status: str | None = None,
     error_code: str = VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
@@ -681,10 +598,6 @@ def _mark_artifact_failed(
                 artifact.status,
             )
             return False
-        if previous is not None:
-            _restore_artifact_snapshot(artifact, previous, last_error=error[:4000])
-            return True
-
         artifact.status = VideoHlsArtifact.Status.FAILED.value
         artifact.key_ciphertext = None
         artifact.key_nonce = None
@@ -739,19 +652,12 @@ def _recover_stale_in_flight_artifact(
     *,
     video_id: int,
     artifact_kind: VideoArtifactKind,
-    include_queued: bool,
 ) -> bool:
-    recoverable_statuses = {
-        VideoHlsArtifact.Status.MATERIALIZING.value,
-        VideoHlsArtifact.Status.VALIDATED.value,
-    }
-    if include_queued:
-        recoverable_statuses.add(VideoHlsArtifact.Status.QUEUED.value)
     action = derive_hls_reconciliation_action(
         status=str(artifact.status),
         is_stale=artifact.updated_at <= _materialization_stale_before(),
     )
-    if artifact.status not in recoverable_statuses or action != "fail_and_cleanup":
+    if action != "fail_and_cleanup":
         return False
 
     stale_status = str(artifact.status)
@@ -759,47 +665,12 @@ def _recover_stale_in_flight_artifact(
         f"Recovered stale HLS {stale_status} attempt after exceeding the "
         "configured FFmpeg timeout."
     )
-    if stale_status == VideoHlsArtifact.Status.QUEUED.value:
-        queued_ready_snapshot = _artifact_snapshot(
-            artifact,
-            allow_queued_ready_artifact=True,
-        )
-        if queued_ready_snapshot is not None:
-            _restore_artifact_snapshot(
-                artifact,
-                queued_ready_snapshot,
-                last_error=recovery_error,
-            )
-            logger.warning(
-                "Recovered stale queued HLS attempt to previous READY artifact: video=%s kind=%s artifact=%s",
-                video_id,
-                artifact_kind.value,
-                artifact.pk,
-            )
-            return True
-
-    artifact.status = VideoHlsArtifact.Status.FAILED.value
-    artifact.key_ciphertext = None
-    artifact.key_nonce = None
-    artifact.iv_hex = ""
-    artifact.playlist_relative_path = ""
-    artifact.segment_directory_relative_path = ""
-    artifact.segment_count = 0
-    artifact.last_error = recovery_error
-    artifact.error_code = VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value
-    artifact.save(
-        update_fields=[
-            "status",
-            "key_ciphertext",
-            "key_nonce",
-            "iv_hex",
-            "playlist_relative_path",
-            "segment_directory_relative_path",
-            "segment_count",
-            "last_error",
-            "error_code",
-            "updated_at",
-        ]
+    _mark_artifact_failed(
+        artifact_id=int(artifact.pk),
+        error=recovery_error,
+        expected_key_id=artifact.key_id,
+        expected_status=stale_status,
+        error_code=VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value,
     )
     logger.warning(
         "Recovered stale HLS attempt: video=%s kind=%s artifact=%s previous_status=%s",
@@ -811,7 +682,7 @@ def _recover_stale_in_flight_artifact(
     stale_key_id = artifact.key_id
     stale_video_id = int(video_id)
     transaction.on_commit(
-        lambda: _cleanup_transient_hls_artifact(
+        lambda: cleanup_transient_hls_artifact(
             video_id=stale_video_id,
             key_id=stale_key_id,
         )
@@ -837,8 +708,7 @@ def reserve_hls_materialization_dispatch(
     ).source_generation_id
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=int(video_id))
-        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
-            video=video,
+        artifacts = video.hls_artifacts.select_for_update().filter(
             artifact_kind=parsed_kind.value,
         )
         active = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
@@ -866,7 +736,6 @@ def reserve_hls_materialization_dispatch(
                 active,
                 video_id=int(video.pk),
                 artifact_kind=parsed_kind,
-                include_queued=True,
             )
         if action == "already_in_flight" and active is not None:
             return HlsMaterializationDispatchReservation(
@@ -913,7 +782,6 @@ def mark_hls_materialization_dispatch_failed(
         _mark_artifact_failed(
             artifact_id=artifact_id,
             error=error,
-            previous=None,
             expected_key_id=expected_key_id,
             expected_status=VideoHlsArtifact.Status.QUEUED.value,
             error_code=VideoHlsArtifact.ErrorCode.DISPATCH_FAILED.value,
@@ -1027,8 +895,7 @@ def _prepare_artifact_record(
         )
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=video_id)
-        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
-            video=video,
+        artifacts = video.hls_artifacts.select_for_update().filter(
             artifact_kind=artifact_kind.value,
         )
         ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
@@ -1049,22 +916,10 @@ def _prepare_artifact_record(
                     raise RuntimeError(
                         "Completed HLS reservation artifacts are missing"
                     )
-                return _PreparedArtifact(
-                    artifact_id=int(artifact.pk),
-                    key_id=artifact.key_id,
-                    encoding_profile_name=str(artifact.encoding_profile_name),
-                    previous=None,
-                    should_materialize=False,
-                )
+                return _PreparedArtifact.from_artifact(artifact)
             if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
                 if artifact.updated_at > _materialization_stale_before():
-                    return _PreparedArtifact(
-                        artifact_id=int(artifact.pk),
-                        key_id=artifact.key_id,
-                        encoding_profile_name=str(artifact.encoding_profile_name),
-                        previous=None,
-                        should_materialize=False,
-                    )
+                    return _PreparedArtifact.from_artifact(artifact)
                 logger.warning(
                     "Reclaiming stale HLS delivery with matching attempt identity: video=%s kind=%s artifact=%s",
                     video_id,
@@ -1077,14 +932,7 @@ def _prepare_artifact_record(
                 # of treating it as a competing active worker.
                 artifact.status = VideoHlsArtifact.Status.QUEUED.value
             if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
-                return _PreparedArtifact(
-                    artifact_id=int(artifact.pk),
-                    key_id=artifact.key_id,
-                    encoding_profile_name=str(artifact.encoding_profile_name),
-                    previous=None,
-                    should_materialize=False,
-                    publish_only=True,
-                )
+                return _PreparedArtifact.from_artifact(artifact)
             if artifact.status not in {
                 VideoHlsArtifact.Status.QUEUED.value,
                 VideoHlsArtifact.Status.MATERIALIZING.value,
@@ -1100,13 +948,7 @@ def _prepare_artifact_record(
             and ready.source_content_hash == source_content_hash
             and _has_supported_encoding_profile(ready)
         ):
-            return _PreparedArtifact(
-                artifact_id=int(ready.pk),
-                key_id=ready.key_id,
-                encoding_profile_name=str(ready.encoding_profile_name),
-                previous=None,
-                should_materialize=False,
-            )
+            return _PreparedArtifact.from_artifact(ready)
         deterministic_failure = (
             artifacts.filter(
                 status=VideoHlsArtifact.Status.FAILED.value,
@@ -1120,13 +962,7 @@ def _prepare_artifact_record(
             else None
         )
         if deterministic_failure is not None:
-            return _PreparedArtifact(
-                artifact_id=int(deterministic_failure.pk),
-                key_id=deterministic_failure.key_id,
-                encoding_profile_name=str(deterministic_failure.encoding_profile_name),
-                previous=None,
-                should_materialize=False,
-            )
+            return _PreparedArtifact.from_artifact(deterministic_failure)
         if artifact is None:
             artifact = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
         if artifact is not None and reserved_artifact_id is None:
@@ -1134,7 +970,6 @@ def _prepare_artifact_record(
                 artifact,
                 video_id=video_id,
                 artifact_kind=artifact_kind,
-                include_queued=True,
             )
             if recovered:
                 artifact = None
@@ -1144,30 +979,11 @@ def _prepare_artifact_record(
                 and reserved_artifact_id is None
                 and not claim_queued
             ):
-                return _PreparedArtifact(
-                    artifact_id=int(artifact.pk),
-                    key_id=artifact.key_id,
-                    encoding_profile_name=str(artifact.encoding_profile_name),
-                    previous=None,
-                    should_materialize=False,
-                )
+                return _PreparedArtifact.from_artifact(artifact)
             if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
-                return _PreparedArtifact(
-                    artifact_id=int(artifact.pk),
-                    key_id=artifact.key_id,
-                    encoding_profile_name=str(artifact.encoding_profile_name),
-                    previous=None,
-                    should_materialize=False,
-                )
+                return _PreparedArtifact.from_artifact(artifact)
             if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
-                return _PreparedArtifact(
-                    artifact_id=int(artifact.pk),
-                    key_id=artifact.key_id,
-                    encoding_profile_name=str(artifact.encoding_profile_name),
-                    previous=None,
-                    should_materialize=False,
-                    publish_only=True,
-                )
+                return _PreparedArtifact.from_artifact(artifact)
 
         if artifact is None:
             artifact = VideoHlsArtifact(
@@ -1182,7 +998,6 @@ def _prepare_artifact_record(
             artifact.key_id = key_id
         artifact.source_generation_id = source_generation_id
         artifact.encoding_profile_name = selected_encoding_profile_name
-        artifact.source_generation_id = source_generation_id
         artifact.key_ciphertext = key_ciphertext
         artifact.key_nonce = key_nonce
         artifact.key_wrap_algorithm = HLS_KEY_WRAP_ALGORITHM
@@ -1196,13 +1011,7 @@ def _prepare_artifact_record(
         artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
         artifact.full_clean()
         artifact.save()
-        return _PreparedArtifact(
-            artifact_id=int(artifact.pk),
-            key_id=key_id,
-            encoding_profile_name=selected_encoding_profile_name,
-            previous=None,
-            should_materialize=True,
-        )
+        return _PreparedArtifact.from_artifact(artifact, should_materialize=True)
 
 
 def _mark_artifact_validated(
@@ -1247,15 +1056,14 @@ def _publish_validated_artifact(
     expected_key_id: UUID,
     temp_output_dir: Path,
     target_dir: Path,
-) -> tuple[VideoHlsArtifact, _ArtifactSnapshot | None]:
+) -> VideoHlsArtifact:
     from endoreg_db.services.media.operation_gate import (
         video_has_active_media_operation_leases,
     )
 
     with transaction.atomic():
         video = VideoFile.objects.select_for_update().get(pk=int(video_id))
-        artifacts = VideoHlsArtifact.objects.select_for_update().filter(
-            video=video,
+        artifacts = video.hls_artifacts.select_for_update().filter(
             artifact_kind=artifact_kind.value,
         )
         artifact = artifacts.get(pk=artifact_id)
@@ -1304,7 +1112,6 @@ def _publish_validated_artifact(
                 f"expected={artifact.segment_count} actual={segment_count}"
             )
 
-        previous = _artifact_snapshot(ready) if ready is not None else None
         if ready is not None:
             ready.status = VideoHlsArtifact.Status.SUPERSEDED.value
             ready.error_code = VideoHlsArtifact.ErrorCode.NONE.value
@@ -1330,7 +1137,7 @@ def _publish_validated_artifact(
                 "updated_at",
             ]
         )
-        return artifact, previous
+        return artifact
 
 
 def _hls_root_for_kind(artifact_kind: VideoArtifactKind) -> Path:
@@ -2145,21 +1952,15 @@ def _existing_ready_result(
     if artifact is None:
         return None
 
-    source_ref = resolve_hls_source(artifact.video, artifact_kind)
-    timeline_validation = resolve_hls_timeline_validation(artifact.video, artifact_kind)
-    if artifact.source_file_name != source_ref.source_file_name:
-        return None
-    if artifact.source_content_hash != _source_content_hash(source_ref):
-        return None
-    if artifact.source_generation_id != timeline_validation.source_generation_id:
-        return None
-    if not _has_supported_encoding_profile(artifact):
+    resolve_hls_timeline_validation(artifact.video, artifact_kind)
+    if not _ready_artifact_matches_current_source(
+        video=artifact.video, artifact=artifact
+    ):
         return None
     if not _ready_artifact_paths_exist(artifact):
         _mark_artifact_failed(
             artifact_id=int(artifact.pk),
             error="HLS artifact was marked ready but playlist or segments are missing.",
-            previous=None,
             expected_key_id=artifact.key_id,
             expected_status=VideoHlsArtifact.Status.READY.value,
             error_code=VideoHlsArtifact.ErrorCode.INCONSISTENT_ARTIFACT.value,
@@ -2288,7 +2089,7 @@ def _retry_failed_hls_cleanup(
         # Retain failure diagnostics; only directories owned by these terminal
         # attempt keys are eligible. Stream records in bounded memory.
         for artifact in failed.iterator(chunk_size=100):
-            _cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
+            cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
             _cleanup_partial_output(
                 _artifact_target_dir(
                     video=video, artifact_kind=artifact_kind, key_id=artifact.key_id
@@ -2321,10 +2122,7 @@ def _retry_superseded_hls_cleanup(
             status=VideoHlsArtifact.Status.READY.value,
         ).exists():
             raise RuntimeError("HLS cleanup requires a published replacement.")
-        snapshots = [
-            _artifact_snapshot(artifact, allow_superseded_artifact=True)
-            for artifact in superseded[:100]
-        ]
+        snapshots = [_artifact_snapshot(artifact) for artifact in superseded[:100]]
         for snapshot in snapshots:
             _cleanup_replaced_artifact(snapshot)
         backlog_remaining = superseded.count() > 100
@@ -2332,7 +2130,7 @@ def _retry_superseded_hls_cleanup(
         raise RuntimeError("HLS cleanup backlog requires another bounded retry.")
 
 
-def _cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
+def cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
     temp_key_dir = _temporary_key_dir(video_id=video_id, key_id=key_id)
     safe_unlink_file(temp_key_dir / "key_info.txt", missing_ok=True)
     secure_unlink_file(temp_key_dir / "hls.key", missing_ok=True)
@@ -2366,13 +2164,11 @@ def delete_video_hls_artifacts(
         raise ValueError("Cannot delete HLS artifacts for an unsaved video.")
     from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
 
-    defer_if_video_media_busy(video_id=video_pk)
-
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     locked_video = VideoFile.objects.select_for_update().get(pk=video_pk)
+    defer_if_video_media_busy(video_id=video_pk)
     artifacts = tuple(
-        VideoHlsArtifact.objects.select_for_update().filter(
-            video=locked_video,
+        locked_video.hls_artifacts.select_for_update().filter(
             artifact_kind=parsed_kind.value,
         )
     )
@@ -2396,7 +2192,7 @@ def delete_video_hls_artifacts(
             ),
         )
         removed = removed or any(path.exists() for path in transient_paths)
-        _cleanup_transient_hls_artifact(
+        cleanup_transient_hls_artifact(
             video_id=int(locked_video.pk),
             key_id=artifact.key_id,
         )
@@ -2474,7 +2270,6 @@ def _materialize_video_hls_impl(
             _mark_artifact_failed(
                 artifact_id=int(reserved.pk),
                 error="HLS reserved source identity changed before claim",
-                previous=None,
                 expected_key_id=expected_reservation_key_id,
                 expected_status=VideoHlsArtifact.Status.QUEUED.value,
                 error_code=VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value,
@@ -2602,7 +2397,7 @@ def _materialize_video_hls_impl(
                     expected_key_id=prepared.key_id,
                     segment_count=segment_count,
                 )
-            artifact, _previous = _publish_validated_artifact(
+            artifact = _publish_validated_artifact(
                 video_id=int(video.pk),
                 artifact_kind=parsed_kind,
                 artifact_id=prepared.artifact_id,
@@ -2640,7 +2435,6 @@ def _materialize_video_hls_impl(
             _mark_artifact_failed(
                 artifact_id=prepared.artifact_id,
                 error=error_msg,
-                previous=None,
                 expected_key_id=prepared.key_id,
                 expected_status=None,
                 error_code=(
@@ -2719,46 +2513,39 @@ def materialize_video_hls(
 def get_ready_hls_artifact(
     *,
     video: VideoFile,
-    artifact_kind: object = VideoArtifactKind.PROCESSED,
+    artifact_kind: object = None,
     key_id: UUID | None = None,
 ) -> VideoHlsArtifact:
-    parsed_kind = coerce_hls_artifact_kind(artifact_kind)
-    filters: dict[str, object] = {
-        "video": video,
-        "artifact_kind": parsed_kind.value,
-        "status": VideoHlsArtifact.Status.READY.value,
-    }
+    """Resolve a published derivative by kind, or by its exact playback key.
+
+    Playlist admission checks every segment. Key-addressed requests validate
+    the directory without rescanning siblings; segment access checks its file.
+    """
+    selector: dict[str, object] = {}
     if key_id is not None:
-        filters["key_id"] = key_id
-    artifact = VideoHlsArtifact.objects.get(**filters)
+        selector["key_id"] = key_id
+    if artifact_kind is not None or key_id is None:
+        selector["artifact_kind"] = coerce_hls_artifact_kind(
+            VideoArtifactKind.PROCESSED if artifact_kind is None else artifact_kind
+        ).value
+    artifact = video.hls_artifacts.get(
+        status=VideoHlsArtifact.Status.READY.value, **selector
+    )
     if not _ready_artifact_matches_current_source(video=video, artifact=artifact):
         raise FileNotFoundError("HLS artifact source identity is stale")
-    if not _ready_artifact_paths_exist(artifact):
-        raise FileNotFoundError("HLS artifact files are missing")
-    return artifact
-
-
-def get_ready_hls_artifact_by_key(
-    *,
-    video: VideoFile,
-    key_id: UUID,
-) -> VideoHlsArtifact:
-    artifact = VideoHlsArtifact.objects.get(
-        video=video,
-        key_id=key_id,
-        status=VideoHlsArtifact.Status.READY.value,
-    )
-
-    if not _ready_artifact_matches_current_source(video=video, artifact=artifact):
-        raise FileNotFoundError("HLS artifact source identity is stale")
-    # Playlist admission checks the complete generation. Key and segment requests
-    # must not rescan every sibling while holding the video row lock; the segment
-    # boundary separately resolves and checks the requested file on every request.
-    hls_playlist_path(artifact)
-    segment_dir = resolve_existing_protected_media_path(
-        artifact.segment_directory_relative_path
-    )
-    if segment_dir is None or not segment_dir.is_dir() or artifact.segment_count <= 0:
+    if key_id is None:
+        available = _ready_artifact_paths_exist(artifact)
+    else:
+        hls_playlist_path(artifact)
+        segment_dir = resolve_existing_protected_media_path(
+            artifact.segment_directory_relative_path
+        )
+        available = bool(
+            segment_dir is not None
+            and segment_dir.is_dir()
+            and artifact.segment_count > 0
+        )
+    if not available:
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
 

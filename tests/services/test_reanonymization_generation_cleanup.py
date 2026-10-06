@@ -8,6 +8,7 @@ from uuid import uuid4
 from unittest.mock import Mock
 
 import pytest
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
@@ -22,12 +23,17 @@ from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from tests.services.test_video_processed_transcode_encryption import probe
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
 def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     center = Center.objects.create(name=f"reanonymize-{uuid4().hex}")
     sensitive = SensitiveMeta.objects.create(center=center)
     state = sensitive.get_or_create_state()
@@ -116,6 +122,10 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
         metadata = video.meta
         assert metadata is not None
         assert metadata["clinical_review"] == {"attempt": attempt}
+        history = VideoFileMetaPayload.model_validate(
+            metadata
+        ).canonical_timeline_history
+        assert history is not None and len(history) == attempt + 1
         assert video.raw_file.name == raw_name
         state = video.get_or_create_state()
         state.anonymized = False

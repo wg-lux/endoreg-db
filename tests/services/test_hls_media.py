@@ -775,7 +775,6 @@ def test_stale_hls_worker_cannot_overwrite_new_owner(
     marked_failed = cast(Any, hls_media)._mark_artifact_failed(
         artifact_id=artifact.pk,
         error="late stale worker failure",
-        previous=None,
         expected_key_id=stale_key_id,
         expected_status=VideoHlsArtifact.Status.MATERIALIZING.value,
     )
@@ -917,7 +916,7 @@ def test_repeated_hls_materialization_retires_previous_generations(
         previous = current
 
 
-def test_failed_forced_queue_attempt_restores_previous_ready_artifact(
+def test_failed_forced_queue_attempt_preserves_previous_ready_artifact(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1240,7 +1239,7 @@ def test_materialize_video_hls_encrypts_raw_for_local_authenticated_playback(
     assert hls_media.unwrap_hls_content_key(artifact) != b"raw local playback"
 
 
-def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
+def test_get_ready_hls_artifact_accepts_ready_raw_artifact(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1250,7 +1249,7 @@ def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
     hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
     artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
 
-    resolved = hls_media.get_ready_hls_artifact_by_key(
+    resolved = hls_media.get_ready_hls_artifact(
         video=video,
         key_id=artifact.key_id,
     )
@@ -1258,25 +1257,115 @@ def test_get_ready_hls_artifact_by_key_accepts_ready_raw_artifact(
     assert resolved.pk == artifact.pk
 
 
-def test_ready_hls_lookup_rejects_legacy_blank_source_hash(
+@pytest.mark.parametrize("artifact_kind", ["raw", "processed"])
+@pytest.mark.parametrize("incompatibility", ["missing_hash", "unknown_profile"])
+def test_incompatible_hls_is_regenerated_without_adoption(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
+    artifact_kind: str,
+    incompatibility: str,
 ) -> None:
-    video = _create_raw_video(center=hls_center, payload=b"legacy raw source")
+    create_video = (
+        _create_raw_video if artifact_kind == "raw" else _create_processed_video
+    )
+    video = create_video(center=hls_center)
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
-    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
-    artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
-    VideoHlsArtifact.objects.filter(pk=artifact.pk).update(source_content_hash="")
-    artifact.refresh_from_db()
+    hls_media.materialize_video_hls(video.pk, artifact_kind=artifact_kind)
+    artifact = video.hls_artifacts.get(artifact_kind=artifact_kind)
+    if incompatibility == "missing_hash":
+        artifact.source_content_hash = ""
+    else:
+        artifact.encoding_profile_name = "unsupported"
+    artifact.save()
+    old_playlist = hls_media.hls_playlist_path(artifact)
 
     with pytest.raises(FileNotFoundError, match="source identity is stale"):
-        hls_media.get_ready_hls_artifact(video=video, artifact_kind="raw")
+        hls_media.get_ready_hls_artifact(video=video, artifact_kind=artifact_kind)
     with pytest.raises(FileNotFoundError, match="source identity is stale"):
-        hls_media.get_ready_hls_artifact_by_key(
+        hls_media.get_ready_hls_artifact(
             video=video,
             key_id=artifact.key_id,
         )
+    assert old_playlist.is_file()
+    result = hls_media.materialize_video_hls(video.pk, artifact_kind=artifact_kind)
+    assert result.status == "materialized"
+    replacement = hls_media.get_ready_hls_artifact(
+        video=video, artifact_kind=artifact_kind
+    )
+    assert replacement.key_id != artifact.key_id
+    assert replacement.source_content_hash
+    assert len(fake_hls.source_payloads) == 2
+    assert not old_playlist.exists()
+    assert not video.hls_artifacts.filter(pk=artifact.pk).exists()
+    with pytest.raises(VideoHlsArtifact.DoesNotExist):
+        hls_media.get_ready_hls_artifact(video=video, key_id=artifact.key_id)
+
+
+def test_stale_queued_output_is_never_restored_as_ready(
+    hls_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _create_processed_video(center=hls_center)
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", FakeHlsOutputRecorder().run)
+    hls_media.materialize_video_hls(video.pk)
+    artifact = video.hls_artifacts.get()
+    video.hls_artifacts.filter(pk=artifact.pk).update(
+        status="queued",
+        updated_at=hls_media._materialization_stale_before() - timedelta(seconds=1),
+    )
+    reservation = hls_media.reserve_hls_materialization_dispatch(video_id=video.pk)
+    artifact.refresh_from_db()
+    assert artifact.status == "failed"
+    assert artifact.error_code == "stale_attempt"
+    assert reservation.artifact_id != artifact.pk
+    assert not video.hls_artifacts.filter(status="ready").exists()
+
+
+def test_video_hls_access_and_deletion_respect_scope_and_playback_lease(
+    hls_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import (
+        create_video_stream_lease,
+        release_media_operation_lease,
+    )
+
+    video = _create_raw_video(center=hls_center)
+    other = _create_raw_video(center=hls_center, payload=b"other source")
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", FakeHlsOutputRecorder().run)
+    hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+    artifact = video.hls_artifacts.get()
+    playlist = hls_media.hls_playlist_path(artifact)
+    for owner, kind in ((other, "raw"), (video, "processed")):
+        with pytest.raises(VideoHlsArtifact.DoesNotExist):
+            hls_media.get_ready_hls_artifact(
+                video=owner, artifact_kind=kind, key_id=artifact.key_id
+            )
+    lease = create_video_stream_lease(video, file_type="hls_raw_playlist")
+    with pytest.raises(MediaOperationDeferred):
+        hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
+    assert playlist.is_file()
+    assert video.hls_artifacts.filter(pk=artifact.pk).exists()
+    release_media_operation_lease(lease)
+    assert hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
+    assert not playlist.exists()
+    assert not video.hls_artifacts.exists()
+    assert video.raw_file.name is not None
+    assert video.raw_file.storage.exists(video.raw_file.name)
+    assert not hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
+
+
+def test_ready_reuse_still_validates_persisted_timeline(
+    hls_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic import ValidationError
+
+    video = _create_processed_video(center=hls_center)
+    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", FakeHlsOutputRecorder().run)
+    hls_media.materialize_video_hls(video.pk)
+    VideoFile.objects.filter(pk=video.pk).update(meta={"fps_normalization": {}})
+    with pytest.raises(ValidationError):
+        hls_media.materialize_video_hls(video.pk)
 
 
 def test_hls_reuses_verified_hash_and_rejects_same_name_replacement(
@@ -1537,3 +1626,32 @@ def test_hls_key_cleanup_failure_blocks_new_attempt_until_reconciled(
     assert result.status == "materialized"
     assert not key_dir.exists()
     assert len(fake_hls.source_payloads) == 2
+
+
+@pytest.mark.parametrize(
+    "status,error_code,iv_hex,valid",
+    [
+        ("ready", "", "a" * 32, True),
+        ("failed", "materialization_failed", "", True),
+        ("ready", "materialization_failed", "", False),
+        ("failed", "", "", False),
+        ("ready", "", "a" * 31, False),
+        ("ready", "", "g" * 32, False),
+    ],
+)
+def test_hls_model_rejects_invalid_failure_state_and_initialization_vector(
+    status: str, error_code: str, iv_hex: str, valid: bool
+) -> None:
+    from django.core.exceptions import ValidationError
+
+    artifact = VideoHlsArtifact(
+        status=status,
+        error_code=error_code,
+        iv_hex=iv_hex,
+        source_content_hash="a" * 64,
+    )
+    if valid:
+        artifact.clean()
+    else:
+        with pytest.raises(ValidationError):
+            artifact.clean()

@@ -48,6 +48,7 @@ from endoreg_db.utils.file_operations import get_file_hash
 
 from ..helpers.default_objects import get_default_center, get_default_processor
 from ..media.video.helper import get_random_video_path_by_examination_alias
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 # Environment-based test control
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
@@ -107,6 +108,19 @@ def _normalization_evidence() -> VideoStorageNormalizationEvidence:
         temporal_equivalent=True,
         storage_compliant=True,
     )
+
+
+@pytest.fixture
+def normalized_dummy_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model the encoder boundary only for orchestration tests using fake bytes."""
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    def normalize(
+        *, input_path: Path, reference_path: Path, **_kwargs: object
+    ) -> VideoStorageNormalizationEvidence:
+        return normalization_evidence_fixture(reference_path, input_path)
+
+    monkeypatch.setattr(vis_module, "normalize_video_file", normalize)
 
 
 def _no_existing_completed_video(
@@ -333,6 +347,7 @@ class TestVideoImportService(TestCase):
 def test_import_and_anonymize_locks_original_before_sensitive_copy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -792,6 +807,7 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(
 def test_import_and_anonymize_uses_verified_local_raw_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -1852,6 +1868,7 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
 def test_import_and_anonymize_success_history_unusable_processed_file_self_heals(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
     from endoreg_db.services.hub.media_integrity import (
@@ -2032,6 +2049,7 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
 def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 

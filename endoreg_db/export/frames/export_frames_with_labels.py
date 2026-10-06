@@ -262,7 +262,10 @@ def _config_optional_bool(value: (JsonScalar | None)) -> bool | None:
     return _config_bool(value)
 
 
-def _assert_video_media_export_ready(video: VideoFile) -> None:
+def assert_video_media_export_ready(
+    video: VideoFile, *, verify_content: bool = True
+) -> None:
+    """Check export gates; pinned, already hashed readers may compare identity only."""
     from endoreg_db.services.video_files import get_or_create_video_state
 
     state = getattr(video, "state", None)
@@ -303,7 +306,9 @@ def _assert_video_media_export_ready(video: VideoFile) -> None:
     processed_file = getattr(video, "processed_file", None)
     if not processed_file or not getattr(processed_file, "name", None):
         raise FileNotFoundError(f"processed video artifact missing for {video.pk}")
-    actual_sha = get_file_hash(processed_file)
+    actual_sha = (
+        get_file_hash(processed_file) if verify_content else video.processed_video_hash
+    )
     if actual_sha != expected_sha:
         raise ValueError(
             f"Video {video.pk} processed_file_sha256 does not match the current "
@@ -875,7 +880,7 @@ def _export_videos_from_annotations(
     for video in videos:
         try:
             try:
-                _assert_video_media_export_ready(video)
+                assert_video_media_export_ready(video)
             except (ValueError, FileNotFoundError) as exc:
                 if strict_media_validation:
                     raise
@@ -963,7 +968,7 @@ def _export_frames_from_annotations(
         frame = annotation_export.frame
         video = frame.video
         try:
-            _assert_video_media_export_ready(video)
+            assert_video_media_export_ready(video)
         except (ValueError, FileNotFoundError) as exc:
             if strict_media_validation:
                 raise
@@ -1126,7 +1131,7 @@ def _transcode_video_to_frame_dir(
             return
 
     try:
-        _assert_video_media_export_ready(video)
+        assert_video_media_export_ready(video)
         source_path = _resolve_processed_video_source_path(video)
         if source_path is None:
             processed_file = getattr(video, "processed_file", None)
@@ -1532,6 +1537,28 @@ def _build_annotations_queryset() -> QuerySet[ImageClassificationAnnotation]:
         "information_source",
         "model_meta",
     ).order_by("frame__video_id", "frame__frame_number", "label_id", "id")
+
+
+def video_annotation_download_rows(
+    video: VideoFile, *, use_export_flags: bool
+) -> list[AnnotationRow]:
+    """Reuse the strict presentation-timestamp export without filesystem output."""
+    assert_video_media_export_ready(video)
+    annotations = _apply_filters(
+        _build_annotations_queryset(),
+        video_id=int(video.pk),
+        label_id=None,
+        information_source_name=None,
+        only_true=None,
+        use_export_flags=use_export_flags,
+        center_key=video.center.center_key,
+    )
+    return _build_annotation_rows(
+        annotations,
+        export_profile="pts_dataset_v1",
+        use_frame_pk_paths=False,
+        frame_ext="jpg",
+    )
 
 
 def _apply_filters(

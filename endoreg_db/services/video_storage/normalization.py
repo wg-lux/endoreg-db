@@ -14,6 +14,10 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
 )
+from endoreg_db.services.video_storage.canonical_timelines import (
+    capture_canonical_timeline,
+    with_canonical_timestamps,
+)
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -50,6 +54,7 @@ def ensure_video_file_profile(
 ) -> VideoStorageNormalizationEvidence:
     """Publish a profile-compliant copy, transcoding only when required."""
     source_probe = probe_artifact(reference_path)
+    source_timestamps = capture_canonical_timeline(reference_path, source_probe)
     current_probe = probe_artifact(input_path)
     current_evidence: VideoStorageNormalizationEvidence | None = None
     try:
@@ -70,7 +75,9 @@ def ensure_video_file_profile(
             output_path=path_reference(output_path),
             profile_name=profile.name,
         )
-        return current_evidence
+        return with_canonical_timestamps(
+            current_evidence, source_timestamps, input_path
+        )
 
     staging_path = output_path.with_name(
         f".{output_path.stem}.storage-normalization.{uuid4().hex}.part.mp4"
@@ -107,6 +114,7 @@ def ensure_video_file_profile(
             profile=profile,
             segments=segments,
         )
+        evidence = with_canonical_timestamps(evidence, source_timestamps, staging_path)
         emit_structured_event(
             logger,
             "video_storage.normalization_candidate_validated",

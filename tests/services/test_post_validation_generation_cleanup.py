@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import pytest
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 
@@ -18,12 +19,17 @@ from endoreg_db.utils.encryption.encrypted import MAGIC, EncryptedStorage
 from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.paths import get_runtime_paths
 from tests.services.test_video_processed_transcode_encryption import probe, ready_hls
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
 def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     center = Center.objects.create(name=f"blackening-{uuid4().hex}")
     video = VideoFile.objects.create(
         center=center,
@@ -67,7 +73,7 @@ def test_repeated_rebuilds_keep_one_encrypted_master_and_no_plaintext(
         return output
 
     monkeypatch.setattr(service, "blacken_video_frame_intervals", encode)
-    for _ in range(3):
+    for attempt in range(3):
         previous_name = str(video.processed_file.name)
         assert service.rebuild_processed_video_without_outside_frames(
             video, outside_intervals=[(10, 20)]
@@ -77,6 +83,10 @@ def test_repeated_rebuilds_keep_one_encrypted_master_and_no_plaintext(
         assert Path(video.processed_file.path).read_bytes().startswith(MAGIC)
         assert not cleanup_receipts(video.meta)
         assert video.raw_file.name == raw_name
+        history = VideoFileMetaPayload.model_validate(
+            video.meta
+        ).canonical_timeline_history
+        assert history is not None and len(history) == attempt + 1
         assert all(not path.exists() for path in scoped_paths)
     assert (
         len(list(get_runtime_paths().anonym_video.glob(f"{video.raw_video_hash}*.mp4")))

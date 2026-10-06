@@ -22,7 +22,6 @@ from endoreg_db.services.streaming.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,
     get_ready_hls_artifact,
-    get_ready_hls_artifact_by_key,
     hls_playlist_path,
     hls_segment_path,
     unwrap_hls_content_key,
@@ -85,6 +84,15 @@ def _artifact_kind_from_request(request: Request) -> VideoArtifactKind:
         raise Http404(str(exc)) from exc
 
 
+def _assert_hls_scope(request: Request, video: VideoFile, artifact_kind: str) -> None:
+    authorize = (
+        assert_anonymized_center_scope_allowed
+        if artifact_kind == VideoArtifactKind.PROCESSED
+        else assert_center_scope_allowed
+    )
+    authorize(request=request, obj=video)
+
+
 def _file_response(path: Path, *, content_type: str) -> FileResponse:
     return FileResponse(path.open("rb"), content_type=content_type)
 
@@ -142,10 +150,7 @@ class HLSPlaylistView(APIView):
     ) -> HttpResponse | StreamingHttpResponse:
         video = _get_video_or_404(pk)
         artifact_kind = _artifact_kind_from_request(request)
-        if artifact_kind == VideoArtifactKind.PROCESSED:
-            assert_anonymized_center_scope_allowed(request=request, obj=video)
-        else:
-            assert_center_scope_allowed(request=request, obj=video)
+        _assert_hls_scope(request, video, artifact_kind)
         self.check_object_permissions(request, video)
         try:
             path = _ready_hls_playlist_path(
@@ -167,18 +172,12 @@ class HLSPlaylistView(APIView):
                     status="dispatch_unavailable",
                     unavailable=True,
                 )
-            if dispatch.status in {"queued", "already_queued"}:
+            if dispatch.status in {"queued", "already_queued", "dispatch_failed"}:
                 return _hls_not_ready_response(
                     request=request,
                     artifact_kind=artifact_kind,
                     status=dispatch.status,
-                )
-            if dispatch.status == "dispatch_failed":
-                return _hls_not_ready_response(
-                    request=request,
-                    artifact_kind=artifact_kind,
-                    status=dispatch.status,
-                    unavailable=True,
+                    unavailable=dispatch.status == "dispatch_failed",
                 )
             try:
                 path = _ready_hls_playlist_path(
@@ -227,17 +226,12 @@ class HLSKeyView(APIView):
         try:
             with transaction.atomic():
                 locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
-                artifact = get_ready_hls_artifact_by_key(
+                artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,
                 )
                 key = unwrap_hls_content_key(artifact)
-                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-                    assert_anonymized_center_scope_allowed(
-                        request=request, obj=locked_video
-                    )
-                else:
-                    assert_center_scope_allowed(request=request, obj=locked_video)
+                _assert_hls_scope(request, locked_video, artifact.artifact_kind)
                 create_video_stream_lease(
                     locked_video,
                     file_type=f"hls_{artifact.artifact_kind}_key",
@@ -274,17 +268,12 @@ class HLSSegmentView(APIView):
         try:
             with transaction.atomic():
                 locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
-                artifact = get_ready_hls_artifact_by_key(
+                artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,
                 )
                 path = hls_segment_path(artifact, segment_name)
-                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-                    assert_anonymized_center_scope_allowed(
-                        request=request, obj=locked_video
-                    )
-                else:
-                    assert_center_scope_allowed(request=request, obj=locked_video)
+                _assert_hls_scope(request, locked_video, artifact.artifact_kind)
                 create_video_stream_lease(
                     locked_video,
                     file_type=f"hls_{artifact.artifact_kind}_segment",

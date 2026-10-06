@@ -25,6 +25,8 @@ from endoreg_db.services.video_files import _imports as video_create_module
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 
 pytestmark = pytest.mark.django_db
@@ -95,9 +97,9 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
         input_path: Path,
         output_path: Path,
         **_kwargs: object,
-    ) -> object:
+    ) -> VideoStorageNormalizationEvidence:
         output_path.write_bytes(input_path.read_bytes())
-        return object()
+        return normalization_evidence_fixture(input_path, output_path)
 
     def fake_get_stream_info(_path: Path) -> dict[str, list[dict[str, str]]]:
         return {

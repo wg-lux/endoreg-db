@@ -201,6 +201,12 @@ use and add durable video terminology to the runbook glossary.
 
 All agents must preserve these video invariants:
 
+- Only canonical raw and canonical processed videos are generations. HTTP Live
+  Streaming (HLS) is exclusively an optimized streaming derivative bound to its
+  canonical source generation; its build/attempt identifiers are not independent
+  video generations. Preserve complete before/after presentation timestamp
+  sequences, rational time bases, and content identities for canonical transforms.
+
 - Exactly one canonical anonymized master generation is published. Raw media,
   streamable MPEG-4 Part 14 (MP4), HLS, extracted frames, and transcode staging
   files have distinct lifecycle roles and must not be treated as

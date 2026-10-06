@@ -88,6 +88,7 @@ def get_default_joined_dataset_id() -> int:
 
 
 if TYPE_CHECKING:
+    from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
     )
@@ -302,6 +303,7 @@ class VideoFile(models.Model):
 
     if TYPE_CHECKING:
         pk: int
+        hls_artifacts: models.Manager[VideoHlsArtifact]
         sensitive_meta_id: int | None
         center_id: int
         processor_id: int | None

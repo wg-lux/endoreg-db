@@ -27,6 +27,8 @@ from endoreg_db.utils.paths import to_storage_relative, get_runtime_paths
 from endoreg_db.services.video_files import post_validation_blackening as service
 from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from tests.services.test_video_processed_transcode_encryption import probe
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,9 @@ def _ensure_processed_file_context(
 
 @pytest.fixture(autouse=True)
 def validated_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     monkeypatch.setattr(service, "probe_video_artifact", Mock(return_value=probe()))
     monkeypatch.setattr(
         service,

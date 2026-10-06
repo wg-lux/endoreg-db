@@ -34,6 +34,8 @@ from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,
 )
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 
 def _timeline(
@@ -1416,9 +1418,18 @@ def test_normalize_video_file_replaces_only_after_all_gates_pass(
     input_path = tmp_path / "anonymized.mp4"
     reference_path.write_bytes(b"raw")
     input_path.write_bytes(b"unbounded")
-    reference_probe = _probe(size_bytes=2_000_000)
+    reference_probe = _probe(
+        size_bytes=2_000_000, timeline=_timeline(time_base_num=1, time_base_den=1000)
+    )
     unbounded_probe = _probe(size_bytes=20_000_000, bit_rate_bps=20_000_000)
-    bounded_probe = _probe(size_bytes=1_000_000, bit_rate_bps=800_000)
+    bounded_probe = _probe(
+        size_bytes=1_000_000,
+        bit_rate_bps=800_000,
+        timeline=_timeline(time_base_num=1, time_base_den=1000),
+    )
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
 
     def fake_probe(path: Path) -> VideoArtifactProbe:
         if path == reference_path:
@@ -1471,7 +1482,10 @@ def test_ensure_video_file_profile_copies_compliant_input_without_transcoding(
     input_path = tmp_path / "incoming.mp4"
     output_path = tmp_path / "canonical.mp4"
     input_path.write_bytes(b"already-compliant")
-    compliant_probe = _probe()
+    compliant_probe = _probe(timeline=_timeline(time_base_num=1, time_base_den=1000))
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     probed_paths: list[Path] = []
 
     def fake_probe(path: Path) -> VideoArtifactProbe:

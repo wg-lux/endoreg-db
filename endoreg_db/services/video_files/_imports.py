@@ -22,12 +22,17 @@ from endoreg_db.services.video_files.processor_resolution import (
 from endoreg_db.services.video_storage.workflow import (
     ensure_video_file_profile,
 )
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+)
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     ensure_directory,
     ensure_disk_capacity,
 )
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.storage import field_file_is_readable, save_local_file
 
 if TYPE_CHECKING:
@@ -187,7 +192,7 @@ def _prepare_import_staging(
     file_path: Path,
     raw_video_hash: str,
     original_suffix: str,
-) -> tuple[Path, Path, str]:
+) -> tuple[Path, Path, str, VideoStorageNormalizationEvidence]:
     staging_video_dir = get_runtime_paths().import_video
     ensure_directory(staging_video_dir)
     _cleanup_legacy_sensitive_part_artifacts(staging_video_dir)
@@ -208,7 +213,7 @@ def _prepare_import_staging(
 
     logger.debug("Checking transcoding requirement for %s", file_path)
     try:
-        ensure_video_file_profile(
+        normalization_evidence = ensure_video_file_profile(
             input_path=file_path,
             output_path=temp_output_path,
             reference_path=file_path,
@@ -222,7 +227,7 @@ def _prepare_import_staging(
         ) from exc
 
     logger.debug("Standardized video candidate: %s", temp_output_path)
-    return temp_output_path, temp_output_path, storage_name
+    return temp_output_path, temp_output_path, storage_name, normalization_evidence
 
 
 def _existing_readable_video(
@@ -320,10 +325,12 @@ def _create_from_file(
         if existing_video is not None:
             return existing_video
 
-        temp_output_path, transcoded_file_path, storage_name = _prepare_import_staging(
-            file_path=file_path,
-            raw_video_hash=raw_video_hash,
-            original_suffix=original_suffix,
+        temp_output_path, transcoded_file_path, storage_name, normalization_evidence = (
+            _prepare_import_staging(
+                file_path=file_path,
+                raw_video_hash=raw_video_hash,
+                original_suffix=original_suffix,
+            )
         )
         canonical_source_path = _prepare_canonical_source(
             transcoded_file_path=transcoded_file_path,
@@ -364,6 +371,12 @@ def _create_from_file(
             processed_video_hash=None,
             suffix=original_suffix,
             fps=None,
+            meta=append_canonical_timeline_history(
+                None,
+                normalization_evidence,
+                artifact_kind="raw",
+                output_content_hash=get_file_hash(canonical_source_path),
+            ),
         )
 
         _verify_completed_file(canonical_source_path)

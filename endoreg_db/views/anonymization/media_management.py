@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
 from endoreg_db.schemas.case_documents import CaseDocumentMediaType
+from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
@@ -371,6 +372,13 @@ def force_remove_media(
         return Response(
             {"detail": "File not found"},
             status=status.HTTP_404_NOT_FOUND,
+        )
+    except (ValueError, MediaOperationDeferred):
+        return Response(
+            {
+                "detail": "Media deletion is blocked by active processing or unresolved storage ownership"
+            },
+            status=status.HTTP_409_CONFLICT,
         )
     except Exception as exc:  # pragma: no cover - defensive boundary
         logger.error("Error force removing media %s: %s", file_id, exc)

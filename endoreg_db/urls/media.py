@@ -1,4 +1,5 @@
 from django.urls import URLPattern, path
+from endoreg_db.views.media.export_downloads import VideoExportDownloadView
 
 from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
@@ -234,6 +235,24 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
 ]
 
 VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/videos/<int:pk>/timestamps.csv",
+        VideoExportDownloadView.as_view(),
+        {"kind": "timestamps"},
+        name="video-timestamps-download",
+    ),
+    path(
+        "media/videos/<int:pk>/download/",
+        VideoExportDownloadView.as_view(),
+        {"kind": "video"},
+        name="video-download",
+    ),
+    path(
+        "media/videos/<int:pk>/annotations.csv",
+        VideoExportDownloadView.as_view(),
+        {"kind": "annotations"},
+        name="video-annotations-download",
+    ),
     path(
         "media/videos/export-annotated/",
         export_annotated,

@@ -133,7 +133,6 @@ module_moves:
   endoreg_db/services/sap_ish_import.py: endoreg_db/services/interoperability/sap_ish_import.py
   endoreg_db/services/medical_ledger.py: endoreg_db/services/interoperability/medical_ledger.py
   endoreg_db/services/hls_media.py: endoreg_db/services/streaming/hls_media.py
-  endoreg_db/services/hls_legacy_adoption.py: endoreg_db/services/streaming/hls_legacy_adoption.py
   endoreg_db/services/streamable_media.py: endoreg_db/services/streaming/streamable_media.py
   endoreg_db/services/streamable_media_state.py: endoreg_db/services/streaming/streamable_media_state.py
   endoreg_db/services/streamable_media_transcoding.py: endoreg_db/services/streaming/streamable_media_transcoding.py

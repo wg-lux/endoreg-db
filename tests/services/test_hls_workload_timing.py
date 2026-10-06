@@ -8,6 +8,7 @@ import pytest
 
 from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup
 from endoreg_db.services.video_storage.workflow import (
     VideoStorageNormalizationError,
 )
@@ -59,10 +60,16 @@ def test_materialize_hls_emits_one_bounded_total_outcome(
         return _result(status)
 
     monkeypatch.setattr(hls_media, "_materialize_video_hls_impl", result_with_status)
+    cleanup = Mock(return_value=())
+    monkeypatch.setattr(generation_cleanup, "cleanup_validated_raw_video", cleanup)
 
     result = hls_media.materialize_video_hls(17)
 
     assert result.status == status
+    if status in {"materialized", "already_ready"}:
+        cleanup.assert_called_once_with(17, apply=True)
+    else:
+        cleanup.assert_not_called()
     timing.assert_called_once_with(
         hls_media.logger,
         started_at=10.0,

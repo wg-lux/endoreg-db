@@ -10,6 +10,40 @@ from endoreg_db.utils import dates
 pytestmark = pytest.mark.no_db
 
 
+@pytest.mark.parametrize(
+    "year, month, last_day",
+    [(2024, 2, 29), (2023, 2, 28), (2024, 4, 30), (2024, 12, 31)],
+)
+@pytest.mark.parametrize("select_last_day", [False, True])
+def test_random_day_by_month_year_respects_month_length(
+    monkeypatch: MonkeyPatch,
+    year: int,
+    month: int,
+    last_day: int,
+    select_last_day: bool,
+) -> None:
+    def select_day(start: int, end: int) -> int:
+        assert (start, end) == (1, last_day)
+        return end if select_last_day else start
+
+    monkeypatch.setattr(dates, "randint", select_day)
+
+    result = dates.random_day_by_month_year(month, year)
+
+    assert result == date(year, month, last_day if select_last_day else 1)
+
+
+@pytest.mark.parametrize("month", [0, 13])
+def test_random_day_by_month_year_rejects_invalid_month(month: int) -> None:
+    with pytest.raises(ValueError):
+        dates.random_day_by_month_year(month, 2024)
+
+
+def test_random_day_by_age_at_date_rejects_invalid_leap_day_replacement() -> None:
+    with pytest.raises(ValueError):
+        dates.random_day_by_age_at_date(1, date(2024, 2, 29))
+
+
 def test_random_date_helpers_honor_selected_calendar_boundaries(
     monkeypatch: MonkeyPatch,
 ) -> None:

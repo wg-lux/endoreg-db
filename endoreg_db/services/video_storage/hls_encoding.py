@@ -37,7 +37,7 @@ class HlsEncodingProfile:
     def __post_init__(self) -> None:
         if not self.preset.strip():
             raise ValueError("HLS encoder preset must not be empty")
-        if self.quality < 0 or self.quality > 51:
+        if not 0 <= self.quality <= 51:
             raise ValueError("HLS encoder quality must be between 0 and 51")
         if self.encoder == HlsEncoderBackend.LIBX264:
             if self.logical_gpu_index is not None:
@@ -125,7 +125,6 @@ def _isolated_cuda_device_selector() -> str:
     if (
         not selector
         or selector in {"-1", "all", "none", "void"}
-        or "," in selector
         or _CUDA_DEVICE_SELECTOR_PATTERN.fullmatch(selector) is None
     ):
         raise VideoStorageNormalizationError(

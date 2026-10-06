@@ -47,7 +47,6 @@ _LEGACY_MODULES: dict[str, str] = {
     "frame_annotation_workflow": ".annotations.workflow",
     "frame_retention": ".frames.frame_retention",
     "frame_segment_reconciliation": ".frames.frame_segment_reconciliation",
-    "hls_legacy_adoption": ".streaming.hls_legacy_adoption",
     "hls_media": ".streaming.hls_media",
     "import_execution": ".imports.execution",
     "import_lease": ".imports.lease",
@@ -241,7 +240,6 @@ if TYPE_CHECKING:
     frame_annotation_workflow: ModuleType
     frame_retention: ModuleType
     frame_segment_reconciliation: ModuleType
-    hls_legacy_adoption: ModuleType
     hls_media: ModuleType
     import_execution: ModuleType
     import_lease: ModuleType

@@ -174,61 +174,57 @@ class ReportAnonymizer:
             raise TypeError("Report anonymization requires a persisted RawPdfFile")
         report_model = ctx.current_report
         report = cast(_ReportStorageRecord, report_model)
-        is_txt_input = self._is_txt_input(ctx)
-        if is_txt_input:
+        if self._is_txt_input(ctx):
             raise ValueError(
                 "Raw TXT report anonymization is disabled. Use a PDF or the "
                 "validated preanonymized import workflow."
             )
-        else:
-            # Setup anonymized directory
-            anonymized_dir = ensure_directory(_report_staging_dir())
-            report_reader = self._instantiate_report_reader(report_model)
-            use_llm = report_reader.llm_available
-            emit_structured_event(
-                logger,
-                (
-                    "report_anonymization.llm_ready_selected"
-                    if use_llm
-                    else "report_anonymization.spacy_fallback_selected"
-                ),
-                llm_available=use_llm,
-                selected_backend="configured_llm" if use_llm else "spacy_regex",
+
+        anonymized_dir = ensure_directory(_report_staging_dir())
+        report_reader = self._instantiate_report_reader(report_model)
+        use_llm = report_reader.llm_available
+        emit_structured_event(
+            logger,
+            (
+                "report_anonymization.llm_ready_selected"
+                if use_llm
+                else "report_anonymization.spacy_fallback_selected"
+            ),
+            llm_available=use_llm,
+            selected_backend="configured_llm" if use_llm else "spacy_regex",
+        )
+
+        ctx.require_execution_ownership()
+
+        attempt_directory = ensure_directory(
+            anonymized_dir / f"attempt-{uuid4().hex}"
+        ).resolve(strict=True)
+        if not isinstance(ctx.file_hash, str):
+            raise RuntimeError(
+                "Stable report snapshot hash is required for anonymization."
             )
+        request = ReportAnonymizationRequest(
+            attempt_id=uuid4(),
+            source_path=ctx.file_path,
+            source_sha256=ctx.file_hash,
+            source_size_bytes=ctx.file_path.stat().st_size,
+            output_directory=attempt_directory,
+            options=ReportAnonymizationOptions(use_llm=use_llm),
+        )
+        anonymization_result = _validate_report_result(
+            report_reader.process_report(request),
+            request=request,
+            output_directory=attempt_directory,
+        )
+        ctx.original_text = anonymization_result.original_text
+        ctx.anonymized_text = anonymization_result.anonymized_text
+        ctx.extracted_metadata = anonymization_result.extracted_metadata
+        ctx.anonymized_path = anonymization_result.artifact_path
 
-            ctx.require_execution_ownership()
-
-            attempt_directory = ensure_directory(
-                anonymized_dir / f"attempt-{uuid4().hex}"
-            ).resolve(strict=True)
-            if not isinstance(ctx.file_hash, str):
-                raise RuntimeError(
-                    "Stable report snapshot hash is required for anonymization."
-                )
-            request = ReportAnonymizationRequest(
-                attempt_id=uuid4(),
-                source_path=ctx.file_path,
-                source_sha256=ctx.file_hash,
-                source_size_bytes=ctx.file_path.stat().st_size,
-                output_directory=attempt_directory,
-                options=ReportAnonymizationOptions(use_llm=use_llm),
+        if not ctx.anonymized_path.exists():
+            raise RuntimeError(
+                "Report anonymization did not produce a readable anonymized PDF."
             )
-            anonymization_result = _validate_report_result(
-                report_reader.process_report(request),
-                request=request,
-                output_directory=attempt_directory,
-            )
-            ctx.original_text = anonymization_result.original_text
-            ctx.anonymized_text = anonymization_result.anonymized_text
-            ctx.extracted_metadata = anonymization_result.extracted_metadata
-            ctx.anonymized_path = anonymization_result.artifact_path
-
-            anonymized_path = ctx.anonymized_path
-
-            if not anonymized_path.exists():
-                raise RuntimeError(
-                    "Report anonymization did not produce a readable anonymized PDF."
-                )
 
         ctx.require_execution_ownership()
         mutation_guard = ctx.mutation_guard

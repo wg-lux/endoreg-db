@@ -22,6 +22,207 @@ source_documents:
   disposition: reference
   note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
 definition_of_done:
+- id: browser_video_annotation_downloads
+  category: functionality
+  title: Direkte Video- und Annotationsexporte auf der Exportseite
+  acceptance:
+  - Angemeldete berechtigte Nutzer laden ausschließlich validierte anonymisierte Videos herunter; Zentrumsscope,
+    Integritätsprüfung und aktive Medien-Leases bleiben verbindlich.
+  - Annotationen sind als CSV mit persistierten Frame-Nummern, Präsentationszeitstempeln (PTS), rationaler
+    Zeitbasis und Artefaktidentität direkt herunterladbar.
+  - Vor dem Import gespeicherte Präsentationszeitstempel sind explizit auswählbar; fehlende historische
+    Werte werden nicht aus der Bildrate rekonstruiert.
+  - Downloads schreiben keine zusätzlichen unverschlüsselten Mediendateien auf dem Server.
+  required: true
+  verification:
+    kind: manual
+    instructions: Backend-Typprüfung, Download- und Berechtigungstests sowie Frontend-Komponententests
+      ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '2026-10-06: tests/views/media/test_video_export_downloads.py: 19 passed, 2 bestehende
+        Warnungen. Reale verschlüsselte Dateien, falscher Schlüssel, manipuliertes Chiffrat, Rollen/Zentrum,
+        Hash-/Freigabeabweichung, Bytebereiche/If-Range, Lease-Erneuerung und Generationenwechsel geprüft.'
+    - kind: test
+      reference: 'Bestehende Export-/Streamingregressionen: 39 passed in tests/views/misc/test_export_annotated_contract.py,
+        tests/services/test_export_frames_contract.py und tests/utils/test_storage_streaming.py. Frühere
+        Fehler der neuen Tests behoben; abschließende Download-Suite vollständig bestanden.'
+    - kind: command
+      reference: 'Vollständiger Pyright: 0 errors, 10 bestehende Warnungen. Abschließender fokussierter
+        Pyright, Ruff und git diff --check bestanden.'
+    - kind: test
+      reference: 'lx-annotate: 9 Vitest-Tests bestanden; vue-tsc --build --force, vue-tsc --noEmit -p
+        tsconfig.vitest.json und fokussierter ESLint bestanden.'
+    - kind: document
+      reference: 'docs/annotation_export_guide.md: direkte Browser-Downloads, getrennte Original-/Processed-Zeitstempelfolgen
+        und Grenzen historischer Daten.'
+    note: Lokal implementiert und getestet. CSV enthält vorhandene Frame-Annotationen mit gespeicherten
+      Koordinaten; vollständige Original-/Processed-Zeitstempelsequenzen werden separat mit Inhalts-Hash
+      und rationaler Zeitbasis exportiert. Keine Zuordnung unterschiedlicher Generationen per Frameindex,
+      keine Rekonstruktion fehlender Originalwerte, kein Rohvideoexport. Keine Bereitstellung oder Produktionsfreigabe.
+    assessed_by: codex-export-20261006-a
+    assessed_at: '2026-10-06T09:28:21.447002Z'
+- id: periodic_generation_cleanup
+  category: operations
+  title: Periodische Bereinigung erfasst temporäre Dateien bekannter Generationen
+  acceptance:
+  - Periodische Aufträge bearbeiten begrenzte Batches vorhandener Generationenbelege, ohne aktuelle Master
+    oder unzugeordnete Dateien zu löschen.
+  - Veraltete und fehlgeschlagene Streaming-Versuche mit passendem Quellnamen und Hash werden einschließlich
+    ihrer temporären Schlüssel-, Quell- und Ausgabeverzeichnisse bereinigt.
+  - Aktive Leases, unbekannte Referenzen und ungültige Ersatzgenerationen blockieren weiterhin die Bereinigung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Generationen-Cleanup und periodische Tasks auf zulässige Bereinigung und blockierte
+      Zustände prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/video_storage/generation_cleanup.py
+    - kind: test
+      reference: tests/services/test_processed_video_cleanup.py
+    - kind: test
+      reference: tests/services/test_periodic_media_cleanup.py
+    note: 'Lokale Erweiterung implementiert. Cleanup-Integrationssuite: 119 passed; Streaming-Regressionssuite:
+      57 passed. Vollständiger Backend-Pyright: 0 Fehler, 10 bestehende Warnungen; fokussierter Pyright
+      ohne Warnungen. Bestehende Integritäts-, Timeline- und Lease-Gates erhalten. Scheduler noch nicht
+      auf gc-02 bereitgestellt; keine neue Produktionslöschung.'
+    assessed_by: codex-cleanup-20261005
+    assessed_at: '2026-10-06T08:20:35.706978Z'
+- id: explicit_video_copy_deletion
+  category: functionality
+  title: Explizite Videolöschung entfernt belegte Quellen und Generationen
+  acceptance:
+  - Die explizite Löschung verwendet bestehende UploadJob-Provenienz und Generationenbelege; Dateinamen
+    allein begründen keine Löschung.
+  - Aktive Medien- oder Importverarbeitung, fremde Referenzen, Symlinks und abweichende Inhalts-Hashes
+    verhindern die Löschung vor der ersten Dateimutation.
+  - Bekannte Eingangsdateien, aufgezeichnete Generationen und HTTP-Live-Streaming-Derivate werden entfernt;
+    bei Dateisystemfehlern bleiben Datenbankbelege für einen erneuten Versuch erhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und fokussierte Tests für explizite Videolöschung sowie bestehende Storage-Tests
+      ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '2026-10-06: tests/services/test_video_owned_deletion.py, tests/models/video/test_video_file_io_storage.py
+        und tests/services/test_processed_video_cleanup.py: 41 passed, 1 failed. Alle neuen Lösch- und
+        bestehenden Datei-I/O-Tests bestanden. Import-Finalisierungsregression scheitert vor dem Löschpfad
+        in canonical_timelines.py wegen fehlender Vorher-/Nachher-Zeitstempel.'
+    - kind: command
+      reference: 'Vollständiger Pyright: 0 errors, 10 warnings; abschließender fokussierter Pyright: 0
+        errors, 0 warnings. Ruff bestanden.'
+    - kind: command
+      reference: '2026-10-06 gc-02: explizit autorisierte Bereinigung der verbliebenen Uploadquelle des
+        bereits gelöschten Videos 15. Inhalts-Hash und fehlende Referenzen geprüft, UploadJob gesperrt,
+        4773136339 Bytes über safe_unlink_file entfernt; Quellpfad danach nicht vorhanden, Cleanup completed.
+        Strukturierte Dateisystem- und Abschlussereignisse über Syslog protokolliert. Nicht zuordenbare
+        Streaming-Verzeichnisse unverändert.'
+    assessed_by: codex-cleanup-20261005
+    assessed_at: '2026-10-06T07:48:49.519505Z'
+- id: hls_single_access_regeneration
+  category: functionality
+  title: Einheitlicher Zugriff auf HLS-Derivate ohne Legacy-Adoption
+  acceptance:
+  - VideoFile.hls_artifacts ist die typisierte Relation für HTTP-Live-Streaming-Derivate; ein gemeinsamer
+    Resolver prüft Wiedergabezugriffe nach Artefaktart oder Schlüssel.
+  - Inkompatible Derivate werden neu erzeugt; Legacy-Adoption und Wiederherstellung alter Queued-Ready-Zustände
+    entfallen.
+  - Löschen verwendet die vorhandene Relation und den Service mit Medien-Leases und Dateisystembereinigung;
+    kanonische Quellen bleiben erhalten.
+  - Zeilen und Verzweigungen werden reduziert; Importbereitschaft, Veröffentlichung, Schlüsselzugriff
+    und Löschsperren bleiben durch Regressionstests belegt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor fokussierten HLS-, Import-, Befehls- und Löschtests ausführen; Rust-Zustandsentscheidungen
+      testen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: VideoFile.hls_artifacts; get_ready_hls_artifact; delete_video_hls_artifacts; Legacy-Adoptionsservice
+        und -Befehl entfernt.
+    - kind: test
+      reference: '2026-10-06: Neun fokussierte HLS-, Profil-, Encoder-, View-, Command-, Cleanup-, Import-
+        und Servicestruktur-Suites: 345 passed, 1 failed (veraltete Timestamp-Fixture). Gemeinsame kanonische
+        Timestamp-Fixture eingesetzt; abschließender Lauf tests/services/test_hls_media.py und tests/services/test_processed_video_cleanup.py:
+        83 passed, 2 warnings, 63.29s. Einschließlich Regeneration beider Artefaktarten, inkompatibler
+        Profile, Stale-Queued-Ablehnung, Lease-Löschsperre, Schlüsselisolation, realem FFmpeg und unverändertem
+        Timeline-Gate.'
+    - kind: command
+      reference: '2026-10-06: vollständiger Pyright 0 errors, 10 warnings; nach letzter Testanpassung
+        fokussierter Pyright 0 errors, 0 warnings; cargo test hls_state::tests 4 passed; Ruff und git
+        diff --check bestanden; Modellinventar nach Aktualisierung der Consumer-Metadaten sauber (168
+        registrierte, 5 abstrakte Modelle).'
+    - kind: command
+      reference: 'Gegen HEAD: sieben angeforderte Dateien netto 424 Zeilen weniger; sechs Python-Dateien
+        4314 auf 3876 Zeilen, AST-If/IfExp/ExceptHandler-Knoten 300 auf 269. Rust-Produktionsentscheidungen
+        vereinfacht, zusätzliche Zustandsregressionen enthalten.'
+    - kind: document
+      reference: 'docs/video_storage_normalization.md: typisierte VideoFile-Relation, gemeinsamer Resolver,
+        Service-Löschung und ausschließlich Regeneration inkompatibler HLS-Derivate.'
+    note: Lokale Refaktorierung verifiziert; keine Produktionsmigration oder Bereinigung ausgeführt. Der
+      frühere Fixture-Fehler ist im abschließenden Lauf behoben. Bestehende Pyright-Warnungen bleiben
+      außerhalb dieses Umfangs.
+    assessed_by: codex-hls-consolidation-20261006-a
+    assessed_at: '2026-10-06T07:54:14.290222Z'
+- id: canonical_frame_timestamp_history
+  category: functionality
+  title: Vollständige Präsentationszeitstempel vor und nach kanonischer Transkodierung
+  acceptance:
+  - Nur kanonische Raw- und Processed-Videos sind Generationen. HTTP Live Streaming (HLS) ist ausschließlich
+    ein optimiertes Streaming-Derivat einer kanonischen Quellgeneration.
+  - Jede neue kanonische Veröffentlichung bewahrt die vollständigen dekodierten Präsentationszeitstempel
+    vor und nach der Transformation mit rationaler Zeitbasis und Inhalts-Hash. Wiederholte Transkodierung
+    und Resampling überschreiben die vorherigen Sequenzen nicht.
+  - Raw-Importnormalisierung, Processed-Import, Reimport, Reanonymisierung, Blackening und Speichertranskodierung
+    verwenden denselben typisierten Vertrag. Bei Resampling bleiben Quell- und Zielindizes getrennt; fehlende
+    historische Werte werden nicht erfunden.
+  - Fehlende oder ungültige Zeitstempel verhindern die Veröffentlichung. Bestehende klinische Frame- und
+    Segmentkoordinaten sowie Streaming- und Lease-Verträge bleiben erhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright sowie fokussierte Schema-, Import-, Transcode- und Veröffentlichungsregressionen
+      ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/video_storage/canonical_timelines.py; endoreg_db/schemas/video_storage.py;
+        endoreg_db/schemas/persisted_json.py; canonical import/transcode/anonymization/blackening publication
+        callers
+    - kind: test
+      reference: '2026-10-05: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest:
+        nine focused normalization/import/encryption/publication suites, 169 passed, 2 warnings in 502.58s.
+        Final hash-binding and persistence verification: 33 passed, 2 warnings in 79.37s; includes real
+        downsizing and 60-to-50 FPS resampling, 60 original timestamps retained and 50 output timestamps
+        matching persisted frames.'
+    - kind: command
+      reference: '2026-10-05: full .devenv/state/venv/bin/pyright: 0 errors, 10 warnings; final changed
+        tests checked separately: 0 errors. Ruff, format and git diff --check passed.'
+    - kind: document
+      reference: 'AGENTS.md; docs/video_storage_normalization.md: only canonical raw and processed are
+        generations; HLS is an optimized source-bound streaming derivative.'
+    note: Neue kanonische Veröffentlichungen speichern vollständige Vorher-/Nachher-Zeitstempelsequenzen
+      mit rationaler Zeitbasis und Inhaltsidentität; vorherige Historie bleibt erhalten. Legacy-Daten
+      bleiben lesbar, fehlende historische Werte werden nicht rekonstruiert. Kein Deployment, kein Backfill
+      und keine Freigabe anderer Produktionsgates.
+    assessed_by: codex-pts-20261005-a
+    assessed_at: '2026-10-05T16:30:42.375618Z'
 - id: storage_profile_contract
   category: requirements
   title: Rollen und Größenbudgets aller Videoartefakte sind verbindlich definiert
@@ -903,8 +1104,32 @@ definition_of_done:
       reference: .devenv/state/venv/bin/pytest tests/services/test_video_storage_normalization.py tests/services/test_video_temporal_mapping.py
         tests/management/commands/test_normalize_video_storage.py -q
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-20T10:42:49.159573Z'
+    - kind: test
+      reference: '2026-10-06: Gemeldete Regressionen und ihre Testmodule: 71 passed, 905 subtests passed,
+        1 deselected, 2 warnings (141.23s). tests/import_files/test_import_encryption.py; tests/management/commands/test_transcode_processed_videos.py;
+        tests/models/video/{test_create_video_without_outside_frames_output_path,test_validation_deletion,test_video_file_anonymize_unit}.py;
+        tests/services/{test_hls_workload_timing,test_video_import_service,test_video_storage_atomic_migration}.py;
+        tests/views/anonymization/test_media_management_endpoints.py; tests/app/test_imports.py; tests/services/test_hub_cleanup.py::test_automatic_copy_cleanup_preserves_blocked_sources[shared_relative].
+        Ausgenommen: TestVideoImportService::test_import_and_anonymize_success (vollständige Modellinferenz).'
+    - kind: test
+      reference: '2026-10-06: .devenv/state/venv/bin/pytest tests/services/test_canonical_video_timelines.py
+        tests/services/test_video_processed_transcode_integration.py tests/services/test_video_owned_deletion.py
+        tests/services/test_video_storage_normalization.py tests/services/test_video_temporal_mapping.py
+        tests/management/commands/test_normalize_video_storage.py -q: 123 passed, 2 warnings (71.09s).
+        Reale verschlüsselte Transkodierung und 60-zu-50-Bilder/s-Resampling sowie negative Timestamp-/Cleanup-Gates
+        geprüft.'
+    - kind: command
+      reference: '2026-10-06: Vollständiger .devenv/state/venv/bin/pyright: 0 errors, 10 bestehende Warnungen.
+        Abschließende API-Typprüfung: 0 errors, 0 warnings. Fokussierter Ruff und git diff --check bestanden.'
+    note: Die 28 gemeldeten Fehler sind im aktuellen gezielten Lauf nicht mehr reproduzierbar. Testdoubles
+      liefern typisierte Zeitstempelbelege mit tatsächlicher Inhaltsidentität; Raw-Cleanup-Tests persistieren
+      verschlüsselte FileField-Dateien. Medienlöschung liefert bei offenen Importen oder aktiven Wiedergabe-Leases
+      HTTP 409 statt 500, bei terminalem Import bleiben Löschung und Auftragshistorie geprüft. Schutzgates
+      unverändert. Export-Importfehler und shared_relative-Fixture waren bereits im Arbeitsstand behoben.
+      Erster Reproduktionslauf nach 13 reproduzierten Fehlern beim nicht betroffenen Modellinferenztest
+      unterbrochen. Gesamtsuite nicht erneut vollständig ausgeführt, kein Deployment und keine Produktionsfreigabe.
+    assessed_by: codex-cleanup-20261005
+    assessed_at: '2026-10-06T09:53:57.558995Z'
 - id: controlled_legacy_migration
   category: operations
   title: Bestandsvideos werden kapazitätsbegrenzt, idempotent und rollbackfähig normalisiert

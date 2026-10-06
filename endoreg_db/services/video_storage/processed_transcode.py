@@ -39,6 +39,11 @@ from endoreg_db.services.video_storage.generation_cleanup import (
     commit_processed_replacements,
     record_processed_replacement,
 )
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+    capture_canonical_timeline,
+    with_canonical_timestamps,
+)
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.services.video_storage.workflow import (
     assert_temporal_equivalence,
@@ -472,6 +477,7 @@ def _build_transcode_candidate(
     ensure_disk_capacity(destination_dir=output_path.parent, required_bytes=old_size)
     _validate_resampling_preconditions(video, resample_max_fps)
     source_probe = probe_video_artifact(source_path)
+    source_timestamps = capture_canonical_timeline(source_path, source_probe)
     segment_references = _segment_references_for_candidate(
         video,
         source_probe=source_probe,
@@ -501,6 +507,9 @@ def _build_transcode_candidate(
         new_size=new_size,
         allow_larger=allow_larger,
     )
+    normalization_evidence = with_canonical_timestamps(
+        normalization_evidence, source_timestamps, candidate_path
+    )
     return _TranscodeCandidate(
         path=candidate_path,
         old_size=old_size,
@@ -517,9 +526,16 @@ def _apply_candidate_metadata(
     video: VideoFile,
     candidate: _TranscodeCandidate,
 ) -> None:
-    existing_meta = dict(video.meta or {})
-    existing_meta["storage_normalization"] = evidence_as_json(
-        candidate.normalization_evidence
+    existing_meta = append_canonical_timeline_history(
+        video.meta,
+        candidate.normalization_evidence,
+        artifact_kind="processed",
+        output_content_hash=candidate.content_hash,
+    )
+    existing_meta["storage_normalization"] = (
+        candidate.normalization_evidence.model_dump(
+            mode="json", exclude={"canonical_timestamps"}
+        )
     )
     fps_evidence = candidate.fps_resampling_evidence
     if fps_evidence is not None:

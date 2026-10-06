@@ -40,7 +40,7 @@ The monitoring API provides exclusively approved operator messages. Absolute pat
 
 ### HLS Materialization
 
-Raw and processed HLS are displayed separately as `queued`, `materializing`, `ready`, or `failed`. Each entry contains the upload job correlation, an opaque source generation, target generation, segment count, and timestamps. `ready` is only permissible following validated, atomic publication of a complete playlist, key, and segment generation. On failure, a stable code is emitted (`dispatch_failed`, `materialization_failed`, `inconsistent_artifact`, or `stale_attempt`); a previous valid generation is restored and preserved. Playback and segment update leases, as well as atomic publication details, are defined in canonical [`video_storage_normalization.md`](https://www.google.com/search?q=video_storage_normalization.md).
+Raw and processed HLS are displayed separately as `queued`, `materializing`, `ready`, or `failed`. Each entry contains the upload job correlation, an opaque source generation, target generation, segment count, and timestamps. `ready` is only permissible following validated, atomic publication of a complete playlist, key, and segment generation. On failure, a stable code is emitted (`dispatch_failed`, `materialization_failed`, `inconsistent_artifact`, or `stale_attempt`); a previous valid generation is restored and preserved. Playback and segment update leases, as well as atomic publication details, are defined in canonical [`video_storage_normalization.md`].
 
 ### Diagnostics and Restart
 
@@ -171,8 +171,9 @@ due date on the failed job still applies. Both jobs must have no pending retry
 or active processing lease. Apply locks both records and rechecks the evidence
 before deletion, including the existing target integrity and video playback gates.
 
-Only the failed job's own persisted upload path may be removed, with no other
-upload or canonical media reference to it. The error status, error details, and
+The failed job's own persisted upload path and verified additional video-source
+copies may be removed, with no other upload or canonical media reference to them.
+The error status, error details, and
 audit record remain intact. `lost` jobs, unidentified legacy paths, quarantine,
 and arbitrary temporary directories are excluded. Missing repeat evidence yields
 `successful_replacement_missing`; shared files yield `source_still_referenced`.
@@ -181,6 +182,26 @@ and verification are tracked in
 [`UploadJobSourceReaperSafety.yml`](../feature-tracking/UploadJobSourceReaperSafety.yml).
 
 The source reaper operates in read-only mode by default. Individual selection uses the UploadJob UUID; batch runs strictly require a positive limit. Output contains only UploadJob ID, decision code, stable block reason, media type, ingest mode, age, and byte count—omitting absolute paths, content, patient data, or content hashes.
+
+For video jobs, additional copies are selected from the persisted `watched_path`,
+`watcher_processing_path`, `stored_upload_path`, `legacy_source_path`, and
+`migrated_destination_path` provenance fields. Only upload, video input,
+preanonymized input, anonymized-video input, and migration-staging directories
+under the configured runtime root are eligible. Each existing copy must match
+the source content hash and have no foreign references or symbolic links.
+Copies are deleted before the primary upload; a partial failure retains the
+cleanup receipt and primary source for retry. Quarantine and external archives
+are not additional source roots.
+
+The `endoreg_db.cleanup_media_sources` Celery task runs every fifteen minutes on
+the maintenance queue, inspecting at most 25 source jobs and 25 videos with pending
+generation receipts per invocation. It remains a dry run unless the existing
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED` gate is enabled. Generation retirement
+also removes temporary key, plaintext-source, and output directories of matching
+failed or superseded HTTP Live Streaming (HLS) attempts. Current masters,
+unmatched attempts, active leases, and unrecorded historical files remain
+protected. Scope is recorded in the source-reaper YAML above and
+[`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
 
 ```sh
 python manage.py reap_upload_job_sources --upload-job-id <uuid> --json

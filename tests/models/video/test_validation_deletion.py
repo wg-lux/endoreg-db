@@ -35,6 +35,8 @@ class _VideoFileWithMetadata(Protocol):
 
 
 class _WritableFieldFile(Protocol):
+    path: str
+
     def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
 
 
@@ -44,6 +46,14 @@ def _add_center(processor: EndoscopyProcessor, center: Center) -> None:
 
 def _field_file(field: object) -> _WritableFieldFile:
     return cast(_WritableFieldFile, field)
+
+
+def _store_video_file(field: object, source: Path) -> Path:
+    """Persist the reference used when cleanup reloads the video under its lock."""
+    stored = _field_file(field)
+    with source.open("rb") as stream:
+        stored.save(source.name, File(stream), save=True)
+    return Path(stored.path)
 
 
 @pytest.fixture(autouse=True)
@@ -138,6 +148,10 @@ class TestVideoValidationDeletionBehavior:
         # Create VideoFile instance
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-validation"
+        )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
+        processed_video_path = _store_video_file(
+            video.processed_file, processed_video_path
         )
 
         # Mock the file paths and _update_text_metadata
@@ -251,6 +265,7 @@ class TestVideoValidationDeletionBehavior:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-only-raw"
         )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
 
         with (
             patch(
@@ -368,6 +383,8 @@ class TestActiveFileLogicWithValidation:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-explicit-raw"
         )
+        raw_path = _store_video_file(video.raw_file, raw_path)
+        processed_path = _store_video_file(video.processed_file, processed_path)
 
         with (
             patch(
@@ -486,6 +503,10 @@ class TestValidationDeletion:
         # Create VideoFile instance
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-frame-order"
+        )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
+        processed_video_path = _store_video_file(
+            video.processed_file, processed_video_path
         )
 
         # Create mock state that indicates frames not yet extracted

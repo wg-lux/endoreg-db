@@ -10,6 +10,43 @@ The recommended export unit is:
 - optional copied frame images under the export directory
 - optional copied anonymized processed videos for local audit only
 
+## Direct browser downloads
+
+On the lx-annotate **Export → Videos und Annotationen** page, select a video and
+use **Direkt herunterladen**. The existing server-side training export remains
+available below it. This workflow is tracked by
+[`browser_video_annotation_downloads`](../feature-tracking/VideoStorageNormalization.yml).
+
+- **Anonymisiertes Video herunterladen** downloads the accepted canonical
+  processed MP4, with authenticated decryption, integrity verification and
+  byte-range support. The content hash is the entity tag; an `If-Range` request
+  for an older generation restarts the full download. It never selects raw media. Active media-operation leases
+  defer conflicting generation changes and are renewed during long downloads.
+- **Annotationen als CSV herunterladen** downloads existing frame classification
+  annotations, including persisted frame numbers, integer presentation timestamps
+  (PTS), rational time base, label/provenance fields and processed content identity.
+  The existing export-flags switch controls segment selection. It does not create
+  annotations or include image files; use the existing annotation-generation and
+  frame-image export actions when needed.
+- **Zeitstempel als CSV herunterladen** offers **Anonymisiertes Video** or
+  **Original vor dem Import**. Both are separate complete canonical sequences,
+  bound to the stored processed or original-source content hash. `frame_index`
+  starts at zero within that sequence; it is not a database frame identifier.
+  Original and processed sequences may differ after resampling and are never
+  joined by index. Missing or conflicting historical evidence blocks the export;
+  timestamps are never reconstructed from nominal frames per second.
+
+The read-only routes are `GET /api/media/videos/<id>/download/`,
+`GET /api/media/videos/<id>/annotations.csv?use_export_flags=false`, and
+`GET /api/media/videos/<id>/timestamps.csv?timeline=original` (or `processed`).
+Deployment uses the existing configured API prefix. Requests require a logged-in
+user, the video read role and center access. Existing local-study-server readiness
+gates remain in force. Files are returned as attachments without creating a new
+plaintext export directory. Invalid options return 400, missing videos 404,
+unavailable/unvalidated/inconsistent media or timelines 409, and invalid video
+byte ranges 416. Text cells beginning with spreadsheet formula characters are
+escaped with an apostrophe.
+
 ## Safety Boundary
 
 Export only anonymized processed media. Raw media export is prohibited.

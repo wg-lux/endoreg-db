@@ -6,6 +6,7 @@ from uuid import uuid4
 from unittest.mock import patch
 
 import pytest
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 
@@ -14,6 +15,8 @@ from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineCo
 from endoreg_db.services.video_storage import processed_transcode as service
 from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage import generation_cleanup as cleanup
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
@@ -64,7 +67,12 @@ def probe() -> VideoArtifactProbe:
         bit_rate_bps=800_000,
         size_bytes=10,
         timeline=VideoTimelineContract(
-            fps_num=25, fps_den=1, duration_seconds=10, frame_count=250
+            fps_num=25,
+            fps_den=1,
+            duration_seconds=10,
+            frame_count=250,
+            time_base_num=1,
+            time_base_den=1000,
         ),
     )
 
@@ -96,6 +104,10 @@ def ready_hls(video_id: int, **_kwargs: object) -> HlsMaterializationResult:
 
 @pytest.fixture(autouse=True)
 def validated_hls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
+
     # The encoder/HLS integration suite verifies segment encryption and playlists.
     # This suite exercises real encrypted storage and publication cleanup.
     def ready(*, video: VideoFile, artifact_kind: str) -> VideoHlsArtifact:
@@ -144,6 +156,11 @@ def test_ciphertext_source_scoped_plaintext_and_encrypted_publication(
     assert result.published
     video.refresh_from_db()
     target = video.processed_file
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history is not None
+    assert len(history) == 1
+    assert history[0].after.content_hash == video.processed_video_hash
+    assert len(history[0].before.presentation_timestamps) == 250
     assert Path(target.path).read_bytes().startswith(MAGIC)
     with target.open("rb") as plaintext:
         assert plaintext.read() == b"small copy"

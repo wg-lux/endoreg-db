@@ -19,6 +19,39 @@ source_documents:
   disposition: reference
   note: Definiert fail-closed Cleanup, Mediengenerationen, Integritätsprüfung und Lease-Schutz.
 definition_of_done:
+- id: additional_source_locations
+  category: functionality
+  title: Automatische Bereinigung erfasst belegte zusätzliche Quellkopien
+  acceptance:
+  - Gespeicherte Upload-, Watcher-, voranonymisierte Eingangs- und Migrations-Staging-Pfade werden nur
+    innerhalb freigegebener Laufzeitverzeichnisse mit passendem Inhalts-Hash bereinigt.
+  - Retention, Zielintegrität, Processing-Lease, Retry und fremde Referenzen bleiben verbindlich; Quarantäne
+    und unbekannte Dateien bleiben erhalten.
+  - Dry-Run zählt zusätzliche Bytes; Apply löscht zusätzliche Kopien vor der Hauptquelle und bleibt nach
+    Teilfehlern wiederholbar.
+  - Ein begrenzter periodischer Maintenance-Task wiederholt Quellen- und Generationenbereinigung; die
+    bestehende Apply-Freigabe bleibt erforderlich.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und Quellen-, Generationen-, Task- sowie Löschregressionen ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/cleanup.py
+    - kind: code
+      reference: endoreg_db/tasks.py
+    - kind: test
+      reference: tests/services/test_hub_cleanup.py
+    note: 'Lokale Implementierung geprüft: Cleanup-Suite 119 passed; nach zusätzlichem Schutz für absolute/relative
+      Fremdverweise 78 passed und ein Testaufbaufehler, anschließend korrigierte Blocker-Parametrisierung
+      6 passed. Streaming-Suite 57 passed. Vollständiger Backend-Pyright 0 Fehler/10 bestehende Warnungen;
+      zuletzt betroffene Dateien 0 Fehler/0 Warnungen; Ruff und diff --check erfolgreich. Keine Bereitstellung
+      oder Aktivierung auf gc-02.'
+    assessed_by: codex-cleanup-20261005
+    assessed_at: '2026-10-06T08:22:05.097953Z'
 - id: repeated_failed_import_sources
   category: functionality
   title: Fehlgeschlagene Quellen nach nachgewiesen erfolgreichem Wiederholungsimport bereinigen
@@ -29,9 +62,10 @@ definition_of_done:
   - Beide Jobs dürfen weder Retry noch aktive Processing-Lease besitzen. Die Fälligkeit des erfolgreichen
     Ersatzes und eine spätere explizite Fälligkeit der Fehlerquelle werden respektiert. Ersatz und Zielintegrität
     werden vor jeder Mutation erneut geprüft; Apply sperrt beide Jobs.
-  - Nur die eigene persistierte Upload-Datei wird entfernt. Gemeinsam referenzierte Quellen, kanonische
-    Medien, Quarantäne und unbekannte temporäre Dateien bleiben erhalten. Fehlerstatus, Fehlerdetails
-    und vorhandene Auditdaten bleiben unverändert.
+  - Als Hauptquelle wird nur die eigene persistierte Upload-Datei entfernt; zusätzliche Videokopien unterliegen
+    additional_source_locations. Gemeinsam referenzierte Quellen, kanonische Medien, Quarantäne und unbekannte
+    temporäre Dateien bleiben erhalten. Fehlerstatus, Fehlerdetails und vorhandene Auditdaten bleiben
+    unverändert.
   - Dry-Run, Batch-Auswahl, wiederholtes Apply, fehlender oder unvollständiger Ersatz, Scope-Abweichungen,
     Retention, aktive Leases und Änderungen zwischen Freigabe und Löschung sind regressionsgetestet. Bestehende
     Receipt- und Integritätsprüfungen bleiben verbindlich.

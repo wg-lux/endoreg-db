@@ -488,6 +488,12 @@ definition_of_done:
       reference: feature-tracking/reports/service_structure.yml
     - kind: review
       reference: endoreg_db/services/structure.yml
+    - kind: command
+      reference: '2026-10-02: Datumshelfer lesbarer strukturiert und Monats-/Tagesauswahl wiederverwendet;
+        bestehende Auswahl- und Fehlersemantik erhalten. Vollständiger .devenv/state/venv/bin/pyright:
+        0 Fehler, 9 Warnungen außerhalb der Änderungen. .devenv/state/venv/bin/pytest tests/utils/test_dates.py
+        -q --tb=short: 13 bestanden, 1 Plugin-Warnung. Ruff check/format und git diff --check bestanden.
+        Keine Gesamtsuite oder Produktionsfreigabe behauptet.'
     note: 'Legacy-Kompatibilität zentral wiederhergestellt: alle 99 alten Service-Modulpfade, Paketwurzel-
       und Sternimporte geprüft; verzögertes Laden und kanonische Modulidentität erhalten. cases reicht
       Lifecycle-Symbole weiter und erhält Untermodule. 201 Alias-/Strukturtests sowie 149 Import-/Layer-Regressionen
@@ -495,8 +501,8 @@ definition_of_done:
       und Modellinventar sauber. Bisherige lx-annotate-Laufzeitimports benötigen keine Pfadmigration.
       Bestehende Evidenz feature-tracking/reports/service_structure.yml erweitert; breiteres Qualitätskriterium
       bleibt in_progress.'
-    assessed_by: codex-services-structure-20261001
-    assessed_at: '2026-10-02T07:35:03.890215Z'
+    assessed_by: codex-beautify-20261002-a
+    assessed_at: '2026-10-02T12:42:51.967232Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert

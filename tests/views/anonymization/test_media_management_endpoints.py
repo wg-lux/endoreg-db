@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.test import TestCase
 
 from endoreg_db.models import Center, RawPdfFile, UploadJob, VideoFile
+from endoreg_db.services.media.operation_gate import create_video_stream_lease
 
 
 class MediaManagementEndpointTests(TestCase):
@@ -88,6 +89,17 @@ class MediaManagementEndpointTests(TestCase):
         response = self.client.delete(
             f"/api/media-management/force-remove/video/{media_id}/"
         )
+        assert response.status_code == 409, response.content
+        assert VideoFile.objects.filter(pk=media_id).exists()
+        job.refresh_from_db()
+        assert job.status == UploadJob.Status.PENDING
+
+        # Explicit deletion may proceed only once the import is terminal.
+        job.status = UploadJob.Status.ANONYMIZED
+        job.save(update_fields=["status", "updated_at"])
+        response = self.client.delete(
+            f"/api/media-management/force-remove/video/{media_id}/"
+        )
         assert response.status_code == 200, response.content
         assert response.json()["file_type"] == "video"
         assert not VideoFile.objects.filter(pk=media_id).exists()
@@ -117,6 +129,15 @@ class MediaManagementEndpointTests(TestCase):
         )
         assert response.status_code == 404, response.content
         assert RawPdfFile.objects.filter(pk=pdf.pk).exists()
+
+    def test_video_deletion_defers_during_playback(self):
+        lease = create_video_stream_lease(self.video, file_type="processed")
+        assert lease is not None
+        response = self.client.delete(
+            f"/api/media-management/force-remove/video/{self.video.pk}/"
+        )
+        assert response.status_code == 409, response.content
+        assert VideoFile.objects.filter(pk=self.video.pk).exists()
 
     def test_pdf_deletion_preserves_job_with_integrity_failure(self):
         pdf = RawPdfFile.objects.create(
