@@ -33,6 +33,7 @@ from .storage_placement import (
 from .storage_transfer import StoragePlacementCommitReceipt, StorageTransferEvidence
 from .transfer_job import TransferJob
 from .upload_job import UploadJob
+from .upload_job_file import UploadJobFile
 
 __all__ = [
     "NetworkNode",
@@ -66,4 +67,5 @@ __all__ = [
     "StoragePlacementCommitReceipt",
     "TransferJob",
     "UploadJob",
+    "UploadJobFile",
 ]

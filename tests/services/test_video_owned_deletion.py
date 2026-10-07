@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.files.base import ContentFile
+from django.test import Client
 from django.utils import timezone
 
 from endoreg_db.exceptions import MediaOperationDeferred
@@ -59,6 +60,32 @@ def test_delete_removes_upload_and_original_drop(
     assert job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
     assert not job.source_file_persisted and not job.file.name
     assert job.status == UploadJob.Status.ERROR
+
+
+@pytest.mark.parametrize("field_name", ["raw_file", "processed_file"])
+def test_force_removal_preserves_record_on_storage_failure(
+    video: VideoFile, monkeypatch: pytest.MonkeyPatch, field_name: str
+) -> None:
+    video.processed_file.save("processed.mp4", ContentFile(b"processed"))
+    field = getattr(video, field_name)
+    name = field.name
+    storage = field.storage
+    original_delete = storage.delete
+
+    def fail_selected_delete(storage_name: str) -> None:
+        if storage_name == name:
+            raise PermissionError("storage deletion denied")
+        original_delete(storage_name)
+
+    monkeypatch.setattr(storage, "delete", fail_selected_delete)
+    response = Client().delete(f"/api/media-management/force-remove/video/{video.pk}/")
+    assert response.status_code == 500
+    assert VideoFile.objects.filter(pk=video.pk).exists()
+    assert storage.exists(name)
+    monkeypatch.setattr(storage, "delete", original_delete)
+    response = Client().delete(f"/api/media-management/force-remove/video/{video.pk}/")
+    assert response.status_code == 200, response.content
+    assert not storage.exists(name)
 
 
 @pytest.mark.parametrize(

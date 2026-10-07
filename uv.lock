@@ -775,7 +775,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.4.4"
+version = "1.4.6"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -918,7 +918,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.0.5" },
-    { name = "lx-dtypes", specifier = ">=0.4.1" },
+    { name = "lx-dtypes", specifier = "==0.4.2" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -1653,7 +1653,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.4.1"
+version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1677,9 +1677,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/11/9c/f7aa83b87fd85b51e99100dd0735cfdac9def3e7cb6f76c403848cff19c5/lx_dtypes-0.4.1.tar.gz", hash = "sha256:bef55b8feafd267c06351d91d8f65095cdd0185913ceb4ac746fa3a48d8af2d8", size = 2882000, upload-time = "2026-09-29T12:19:25.616Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/3c/8daf10fb411e0fc7f14cc880f72677db97100a2bd43ef6e49e90d49bd7b8/lx_dtypes-0.4.2.tar.gz", hash = "sha256:3e5812b898dca9655222042e196747dbc96495a0ec7f333670d1fbfb049ce0cf", size = 2885069, upload-time = "2026-10-07T06:22:33.173Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/37/253be31b9a9d1b87b1c6e485e6a91f13716e973bf7d91d584db667e83288/lx_dtypes-0.4.1-py3-none-any.whl", hash = "sha256:9cc8ee13c266de340b6f525aa39cab3a0725c2aa5b270662d010c2a9471d33fe", size = 1160661, upload-time = "2026-09-29T12:19:21.729Z" },
+    { url = "https://files.pythonhosted.org/packages/94/a1/55fe5be40c7b6ee9d41bafd58b0abe49ee8fe720e8b3a8b8960d98c42d2a/lx_dtypes-0.4.2-py3-none-any.whl", hash = "sha256:5cff8daa575829fcf62484b2ab22337f63c2c317ea5260f5eb07ef39788ed5e0", size = 1163363, upload-time = "2026-10-07T06:22:29.017Z" },
 ]
 
 [[package]]

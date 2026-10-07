@@ -217,7 +217,40 @@ python manage.py reap_upload_job_sources --limit 25 --repeat-until-empty --apply
 
 ```
 
-Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, storage boundary, and file identity. File deletion occurs exclusively via audited file operation wrappers.
+Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, and storage boundary. Additional source ownership and content-identity evidence is required only for undocumented legacy files. File deletion occurs exclusively via audited file operation wrappers.
+
+### Zentrales Dateiinventar
+
+`UploadJobFile` ordnet einem UploadJob über `files` seine Quellen, Sidecars,
+Arbeitsdateien, Quarantäne und beibehaltenen Medienartefakte zu. Die Migration
+`0091_upload_job_file` muss vor dem Einsatz der neuen Worker angewandt werden.
+Das Inventar liegt getrennt von `processing_provenance`; spätere Metadatenupdates
+und wiederholte Versuche überschreiben keine früheren Dateizuordnungen.
+
+`services/hub/upload_job_files.py` ist die gemeinsame Zugriffsstelle für
+`import_files/file_storage/cleanup.py` und `services/hub/cleanup.py`.
+Registrierte Zuordnungen sind autoritativ: Für deren Bereinigung werden weder
+zusätzliche Herkunftsnachweise gesucht noch Dateiinhalte erneut gehasht.
+Nur undokumentierte Legacy-Pfade durchlaufen diese Evidenzprüfung. Bekannte
+Sidecars und Arbeitsausgaben benötigen insbesondere nicht denselben Inhalts-Hash
+wie die ursprüngliche Eingangsdatei.
+Bereits registrierte Quellen werden ohne einzelne Existenzabfragen pro Inventareintrag
+übernommen. Die Staging-Bereinigung lädt nur Arbeitsverzeichnisse, die zu den
+übergebenen Pfaden gehören, und liest das Inventar je UploadJob einmal. Scans
+explizit registrierter externer Arbeitsverzeichnisse bleiben nötig, um noch nicht
+einzeln dokumentierte Ausgaben abgebrochener Werkzeuge zu finden.
+
+Die Importausführung registriert atomare Dateischreiber, geplante temporäre
+Dateien und explizite Arbeitsverzeichnisse externer Anonymisierer. Letztere
+begrenzen die Zuordnung von Nebenprodukten auch nach einem unterbrochenen
+Versuch auf den eigenen Arbeitsbereich. Entfernte Dateien bleiben im Inventar
+nachvollziehbar. Die Registrierung allein setzt weder die Retention-Policy noch
+aktive Leases oder den Schutz beibehaltener kanonischer Medien außer Kraft.
+Gemeinsam zugeordnete Pfade, symbolische Links und Pfade außerhalb der erlaubten
+Bereinigungsgrenze werden nicht entfernt.
+
+Anforderungen und Prüfnachweise:
+[`UploadJobSourceReaperSafety.yml`](../feature-tracking/UploadJobSourceReaperSafety.yml).
 
 Recovery aligns with stable block codes:
 

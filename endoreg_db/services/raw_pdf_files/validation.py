@@ -100,7 +100,7 @@ def validate_report_metadata_annotation(
                     report_id,
                 )
 
-        transaction.on_commit(_delete_raw_after_commit, robust=True)
+        transaction.on_commit(_delete_raw_after_commit)
 
     logger.info(
         "Validated report %s with retained processed PDF sha256=%s.",

@@ -349,6 +349,7 @@ class HubTransferEndpointTests(TestCase):
                     "sensitive_meta_processed": True,
                     "anonymized": True,
                     "anonymization_validated": True,
+                    "outside_segments_removed": True,
                     "processed_file_sha256": effective_processed_video_hash,
                 },
                 "processing_history": {
@@ -455,6 +456,45 @@ class HubTransferEndpointTests(TestCase):
         assert not TransferJob.objects.filter(
             transfer_key="site-a__video__local-study-disabled"
         ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_transfer_rejects_incomplete_or_untyped_anonymization_stages(self):
+        for resource_kind in ("video", "report"):
+            fields = [
+                "anonymized",
+                "sensitive_meta_processed",
+                "anonymization_validated",
+            ]
+            if resource_kind == "video":
+                fields.append("outside_segments_removed")
+            for field in fields:
+                for value in (False, None, "true", "false", 1):
+                    with self.subTest(
+                        resource_kind=resource_kind, field=field, value=value
+                    ):
+                        if resource_kind == "video":
+                            payload = self._video_transfer_payload(
+                                transfer_key="incomplete-anonymization",
+                                raw_video_hash="incomplete",
+                            )
+                            state_key = "video_state"
+                        else:
+                            payload = self._report_transfer_payload(
+                                transfer_key="incomplete-anonymization",
+                                pdf_hash="incomplete",
+                            )
+                            state_key = "raw_pdf_state"
+                        payload["resource_rows"][state_key][field] = value
+                        response = self._secure_post(
+                            "/api/media/hub/transfers/",
+                            data=payload,
+                            content_type="application/json",
+                            headers=self._auth_headers(),
+                        )
+                        assert response.status_code == 400, response.content
+                        assert not TransferJob.objects.filter(
+                            transfer_key="incomplete-anonymization"
+                        ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfer_registration_creates_placeholder_video_and_waits_for_media(self):

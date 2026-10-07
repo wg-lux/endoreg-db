@@ -23,8 +23,15 @@ definition_of_done:
   category: functionality
   title: Automatische Bereinigung erfasst belegte zusätzliche Quellkopien
   acceptance:
+  - UploadJobs besitzen ein zentrales typisiertes Dateiinventar für Quellen, Sidecars, Arbeitskopien,
+    Quarantäne und beibehaltene Medienartefakte; beide Cleanup-Dienste verwenden dieselbe Zuordnung.
+  - Registrierung ergänzt vorhandene Einträge atomar und erhält Pfade früherer Versuche sowie gelöschter
+    Dateien. Registrierte Zuordnungen sind autoritativ; zusätzliche Herkunfts- und Hashnachweise gelten
+    nur für undokumentierte Legacy-Dateien. Kanonische Artefakte, fremde Eigentümer und aktive Jobs bleiben
+    geschützt.
   - Gespeicherte Upload-, Watcher-, voranonymisierte Eingangs- und Migrations-Staging-Pfade werden nur
-    innerhalb freigegebener Laufzeitverzeichnisse mit passendem Inhalts-Hash bereinigt.
+    innerhalb freigegebener Laufzeitverzeichnisse bereinigt; undokumentierte Legacy-Dateien benötigen
+    zusätzlich einen passenden Inhalts-Hash.
   - Retention, Zielintegrität, Processing-Lease, Retry und fremde Referenzen bleiben verbindlich; Quarantäne
     und unbekannte Dateien bleiben erhalten.
   - Dry-Run zählt zusätzliche Bytes; Apply löscht zusätzliche Kopien vor der Hauptquelle und bleibt nach
@@ -45,13 +52,34 @@ definition_of_done:
       reference: endoreg_db/tasks.py
     - kind: test
       reference: tests/services/test_hub_cleanup.py
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_files.py
+    - kind: test
+      reference: tests/services/test_upload_job_files.py
+    - kind: test
+      reference: tests/test_app_startup.py::test_upload_job_file_import_without_django_typing_patch
     note: 'Lokale Implementierung geprüft: Cleanup-Suite 119 passed; nach zusätzlichem Schutz für absolute/relative
       Fremdverweise 78 passed und ein Testaufbaufehler, anschließend korrigierte Blocker-Parametrisierung
       6 passed. Streaming-Suite 57 passed. Vollständiger Backend-Pyright 0 Fehler/10 bestehende Warnungen;
       zuletzt betroffene Dateien 0 Fehler/0 Warnungen; Ruff und diff --check erfolgreich. Keine Bereitstellung
-      oder Aktivierung auf gc-02.'
-    assessed_by: codex-cleanup-20261005
-    assessed_at: '2026-10-06T08:22:05.097953Z'
+      oder Aktivierung auf gc-02. Abschließende Inventarprüfung 2026-10-07: zentrales relationales UploadJobFile-Inventar
+      mit Migration 0091; registrierte Quellen ohne erneute Hash-/Legacy-Herkunftsprüfung, auch bei expliziter
+      Löschung. Keine einzelnen Existenzabfragen bei wiederholter Registrierung; nur zugehörige Arbeitsverzeichnisse
+      und einmaliges Inventarlesen pro Job. Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen;
+      letzter fokussierter Pyright: 0 Fehler/0 Warnungen. Integrationslauf vor Abschlussprüfung: 332 passed,
+      4 subtests passed, 2 warnings. Abschließender Lauf über Inventar, Hub-Cleanup, Report-Jobs, Sicherheitslebenszyklus,
+      Dateispeicherung und Medienverwaltungs-Endpunkte: 132 passed, 2 warnings in 71.62s. PostgreSQL-Parallelregistrierung
+      ausgeführt. Ruff und git diff --check erfolgreich. Migrationserkennung ohne Änderungen; keine produktive
+      Migration oder Bereitstellung. Betriebsfreigaben bleiben offen. Importkorrektur 2026-10-07: UploadJobFile
+      verwendet verzögerte Annotationen; Django-Feldtypen werden beim Import nicht subskribiert. Regression
+      ohne django_stubs_ext in separatem Python-Prozess: 1 passed, 1 warning. Vollständiger Pyright: 0
+      Fehler/10 bestehende Warnungen; fokussierter Pyright: 0 Fehler/0 Warnungen. LX-Annotate makemigrations
+      endoreg_db --check --dry-run mit Development-Settings und korrigiertem Quellpfad: Exit 0, keine
+      Schemaänderungen; Warnungen wegen Vite-Manifest und PostgreSQL-Zugang. Gesamte Startup-Testdatei
+      zuvor durch fehlende Testdatenbank lx_test blockiert (6 Setup-Fehler); neuer Test explizit datenbankfrei.
+      Installiertes LX-Annotate-Paket nicht ersetzt.'
+    assessed_by: codex-storage-20261006-a1
+    assessed_at: '2026-10-07T08:35:19.680565Z'
 - id: repeated_failed_import_sources
   category: functionality
   title: Fehlgeschlagene Quellen nach nachgewiesen erfolgreichem Wiederholungsimport bereinigen

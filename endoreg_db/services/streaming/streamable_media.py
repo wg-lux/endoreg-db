@@ -38,7 +38,7 @@ from endoreg_db.utils.file_operations import (
     atomic_move_file,
     atomic_write_file,
     ensure_directory,
-    secure_unlink_file,
+    safe_unlink_file,
     get_file_hash,
 )
 from endoreg_db.utils.paths import (
@@ -291,7 +291,7 @@ def _rehome_referenced_streamable_field_file(
             save=False,
             overwrite=True,
         )
-        secure_unlink_file(streamable_path, missing_ok=True)
+        safe_unlink_file(streamable_path, missing_ok=True)
 
     logger.warning(
         "Moved canonical %s FieldFile for video %s out of legacy streamable path "
@@ -319,7 +319,7 @@ def _secure_delete_legacy_streamable_path(
             relative_path,
         )
         return False
-    secure_unlink_file(streamable_path, missing_ok=True)
+    safe_unlink_file(streamable_path, missing_ok=True)
     return True
 
 
@@ -373,7 +373,7 @@ def _materialize_streamable_target(  # pyright: ignore[reportUnusedFunction]
             profile=transcode_profile,
         )
     finally:
-        secure_unlink_file(temp_source, missing_ok=True)
+        safe_unlink_file(temp_source, missing_ok=True)
 
 
 def _streamable_root_for_kind(kind: StreamableArtifactKind) -> Path:

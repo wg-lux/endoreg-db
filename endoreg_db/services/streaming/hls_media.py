@@ -78,7 +78,6 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
-    secure_unlink_file,
     set_path_mode,
 )
 from endoreg_db.utils.media_urls import (
@@ -1229,7 +1228,7 @@ def _temporary_hls_key_material(
         )
         yield key_path, key_info_path
     finally:
-        secure_unlink_file(key_path, missing_ok=True)
+        safe_unlink_file(key_path, missing_ok=True)
         safe_unlink_file(key_info_path, missing_ok=True)
         safe_rmtree(temp_key_dir, missing_ok=True)
 
@@ -1301,7 +1300,7 @@ def _cleanup_seekable_plaintext_source(
     source_path: Path | None,
 ) -> None:
     if source_path is not None:
-        secure_unlink_file(source_path, missing_ok=True)
+        safe_unlink_file(source_path, missing_ok=True)
     safe_rmtree(temp_source_dir, missing_ok=True)
 
 
@@ -2133,7 +2132,7 @@ def _retry_superseded_hls_cleanup(
 def cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
     temp_key_dir = _temporary_key_dir(video_id=video_id, key_id=key_id)
     safe_unlink_file(temp_key_dir / "key_info.txt", missing_ok=True)
-    secure_unlink_file(temp_key_dir / "hls.key", missing_ok=True)
+    safe_unlink_file(temp_key_dir / "hls.key", missing_ok=True)
     safe_rmtree(temp_key_dir, missing_ok=True)
 
     temp_source_dir = _temporary_plaintext_source_dir(
@@ -2143,7 +2142,7 @@ def cleanup_transient_hls_artifact(*, video_id: int, key_id: UUID) -> None:
     if temp_source_dir.exists():
         for source_path in temp_source_dir.rglob("*"):
             if source_path.is_file():
-                secure_unlink_file(source_path, missing_ok=True)
+                safe_unlink_file(source_path, missing_ok=True)
     safe_rmtree(temp_source_dir, missing_ok=True)
 
     safe_rmtree(

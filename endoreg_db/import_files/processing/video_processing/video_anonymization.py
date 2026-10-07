@@ -2,6 +2,7 @@ from endoreg_db.utils.storage.files import canonical_media_name
 import hashlib
 import json
 import logging
+from endoreg_db.services.hub.upload_job_files import record_working_file
 import math
 import os
 import uuid
@@ -782,6 +783,7 @@ class VideoAnonymizer:
         )
         # Register ownership before compute so interruption can remove partial output.
         ctx.anonymized_path = temp_output_path
+        record_working_file(temp_output_path)
         frame_cleaner = self._new_frame_cleaner()
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         temp_result_path, extracted_metadata = self._run_frame_cleaner(
@@ -793,6 +795,7 @@ class VideoAnonymizer:
             endoscope_roi_nested=endoscope_roi_nested,
         )
         ctx.anonymized_path = temp_result_path
+        record_working_file(temp_result_path)
         _require_staged_anonymization_output(
             temp_result_path,
             anonymized_output_path=anonymized_output_path,

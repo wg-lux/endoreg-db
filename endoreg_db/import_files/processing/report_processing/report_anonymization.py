@@ -1,5 +1,9 @@
 import hashlib
 import logging
+from endoreg_db.services.hub.upload_job_files import (
+    record_working_file,
+    track_working_directory,
+)
 import stat
 from contextlib import nullcontext
 from pathlib import Path
@@ -211,15 +215,17 @@ class ReportAnonymizer:
             output_directory=attempt_directory,
             options=ReportAnonymizationOptions(use_llm=use_llm),
         )
-        anonymization_result = _validate_report_result(
-            report_reader.process_report(request),
-            request=request,
-            output_directory=attempt_directory,
-        )
+        with track_working_directory(attempt_directory):
+            anonymization_result = _validate_report_result(
+                report_reader.process_report(request),
+                request=request,
+                output_directory=attempt_directory,
+            )
         ctx.original_text = anonymization_result.original_text
         ctx.anonymized_text = anonymization_result.anonymized_text
         ctx.extracted_metadata = anonymization_result.extracted_metadata
         ctx.anonymized_path = anonymization_result.artifact_path
+        record_working_file(ctx.anonymized_path)
 
         if not ctx.anonymized_path.exists():
             raise RuntimeError(

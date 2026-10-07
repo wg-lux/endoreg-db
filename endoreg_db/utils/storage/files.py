@@ -27,6 +27,7 @@ from django.core.files import File
 from endoreg_db.helpers.typing import DjangoFile
 from endoreg_db.utils.paths import (
     get_runtime_paths,
+    ensure_within_storage_root,
     resolve_existing_protected_media_path,
 )
 from django.db.models.fields.files import FieldFile
@@ -35,7 +36,7 @@ from endoreg_db.utils.rust_backend import (
 )
 from endoreg_db.utils.file_operations import (
     atomic_create_file,
-    secure_unlink_file,
+    safe_unlink_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,11 @@ def ensure_local_file(
     suffix = suffix or Path(field_file.name).suffix
     if Path(suffix).name != suffix:
         raise ValueError("suffix must not contain path components")
-    temp_path = get_runtime_paths().transcoding / f"{uuid4().hex}{suffix}"
+    temp_path = (
+        ensure_within_storage_root(get_runtime_paths().transcoding)
+        / f"{uuid4().hex}{suffix}"
+    )
+    created = False
     try:
         stored_file = cast(_StoredFieldFile, field_file)
         with cast(BinaryIO, stored_file.storage.open(stored_file.name, "rb")) as source:
@@ -186,9 +191,11 @@ def ensure_local_file(
                 content=iter(lambda: source.read(chunk_size), b""),
                 file_mode=0o600,
             )
+            created = True
         yield temp_path
     finally:
-        secure_unlink_file(temp_path, missing_ok=True)
+        if created:
+            safe_unlink_file(temp_path, missing_ok=True)
 
 
 def delete_field_file(

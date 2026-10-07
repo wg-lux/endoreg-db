@@ -26,6 +26,8 @@ from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
 )
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.services.video_files.source_hash import verified_video_source_hash
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
@@ -241,9 +243,15 @@ def _old_streamable(
 
 
 def _old_hls_paths(video: VideoFile, artifacts: list[VideoHlsArtifact]) -> list[Path]:
-    root = get_runtime_paths().streamable_videos_processed_media / "hls"
     paths: list[Path] = []
     for artifact in artifacts:
+        kind = VideoArtifactKind(artifact.artifact_kind)
+        runtime_paths = get_runtime_paths()
+        match kind:
+            case VideoArtifactKind.PROCESSED:
+                root = runtime_paths.streamable_videos_processed_media / "hls"
+            case VideoArtifactKind.RAW:
+                root = runtime_paths.streamable_videos_raw_media / "hls"
         directory = _owned_path(
             root / str(video.uuid) / str(artifact.key_id) / "v0", root
         )
@@ -291,6 +299,113 @@ def _old_hls_paths(video: VideoFile, artifacts: list[VideoHlsArtifact]) -> list[
                 raise ValueError("Superseded HLS contains symbolic links")
         paths.append(directory)
     return paths
+
+
+def cleanup_superseded_hls(
+    video_id: int, *, apply: bool = False
+) -> ProcessedGenerationCleanupResult:
+    """Retire terminal HTTP Live Streaming derivatives, never canonical sources.
+
+    Legacy attempts need not have a source digest: ownership comes from their
+    exact video/key paths, while regenerability requires the verified current
+    source and its available published derivative. Master receipts stay intact.
+    """
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
+
+    pending = VideoHlsArtifact.objects.filter(
+        video_id=video_id, status__in=["superseded", "failed"]
+    ).count()
+    if not pending:
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, reason="nothing_pending"
+        )
+    admitted = False
+    try:
+        with video_artifact_mutation(video_id=video_id), transaction.atomic():
+            admitted = True
+            return _cleanup_superseded_hls_owned(video_id, apply=apply)
+    except MediaOperationDeferred:
+        if admitted:
+            raise
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, reason="active_media_lease", pending=pending
+        )
+
+
+def _cleanup_superseded_hls_owned(
+    video_id: int, *, apply: bool
+) -> ProcessedGenerationCleanupResult:
+    from endoreg_db.services.streaming.hls_media import (
+        cleanup_transient_hls_artifact,
+        get_ready_hls_artifact,
+        resolve_hls_source,
+    )
+
+    video = VideoFile.objects.select_for_update().get(pk=video_id)
+    result = ProcessedGenerationCleanupResult(
+        video_id=video_id, reason="nothing_pending"
+    )
+    for kind in VideoArtifactKind:
+        candidates = (
+            VideoHlsArtifact.objects.select_for_update()
+            .filter(
+                video=video,
+                artifact_kind=kind.value,
+                status__in=["superseded", "failed"],
+            )
+            .order_by("pk")
+        )
+        artifacts = list(candidates[:100])
+        if not artifacts:
+            continue
+        result.pending += candidates.count()
+        try:
+            ready = get_ready_hls_artifact(video=video, artifact_kind=kind)
+            source = resolve_hls_source(video, kind)
+            digest = verified_video_source_hash(source.field_file)
+        except (FileNotFoundError, VideoHlsArtifact.DoesNotExist):
+            result.reason = "replacement_not_ready"
+            continue
+        if (
+            ready.source_content_hash != digest
+            or ready.source_file_name != source.source_file_name
+        ):
+            result.reason = "replacement_not_ready"
+            continue
+        paths = _old_hls_paths(video, artifacts)
+        if not apply:
+            result.reason = "dry_run"
+            continue
+        for artifact, path in zip(artifacts, paths, strict=True):
+            cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
+            safe_rmtree(path, missing_ok=True)
+            transient_root = get_runtime_paths().transcoding
+            if path.exists() or any(
+                (transient_root / role / str(video_id) / str(artifact.key_id)).exists()
+                for role in ("hls_key_material", "hls_output", "hls_plaintext_source")
+            ):
+                raise OSError("Obsolete streaming artifact cleanup is incomplete")
+            if path.parent.exists() and not any(path.parent.iterdir()):
+                safe_rmtree(path.parent, missing_ok=True)
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "obsolete_hls_files_removed",
+                        "video_id": video_id,
+                        "artifact_id": artifact.pk,
+                        "artifact_kind": kind.value,
+                        "key_id": str(artifact.key_id),
+                        "status": artifact.status,
+                    }
+                )
+            )
+            artifact.delete()
+            result.cleaned += 1
+            result.pending -= 1
+        if result.reason != "replacement_not_ready":
+            result.reason = "cleaned"
+    return result
 
 
 def _referenced(receipt: ProcessedGenerationCleanupReceipt) -> bool:
@@ -375,7 +490,7 @@ def _cleanup_processed_video_generations_owned(
 
     try:
         ready = get_ready_hls_artifact(video=video, artifact_kind="processed")
-        digest = get_file_hash(video.processed_file)
+        digest = verified_video_source_hash(video.processed_file)
     except (FileNotFoundError, VideoHlsArtifact.DoesNotExist):
         return result
     if (

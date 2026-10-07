@@ -16,7 +16,7 @@ from endoreg_db.utils.encryption.encryption import MAGIC
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_directory,
-    secure_unlink_file,
+    safe_unlink_file,
 )
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
@@ -94,4 +94,4 @@ def transcode_streamable_mp4(
             dir_mode=STREAMABLE_DIRECTORY_MODE,
         )
     finally:
-        secure_unlink_file(temp_target, missing_ok=True)
+        safe_unlink_file(temp_target, missing_ok=True)

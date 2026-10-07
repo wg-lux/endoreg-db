@@ -5,6 +5,8 @@ import io
 import os
 import errno
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +17,8 @@ from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.utils import file_operations
+from endoreg_db.utils.paths import get_runtime_paths
+
 from endoreg_db.utils.file_operations import (
     atomic_create_file,
     atomic_handoff_file,
@@ -32,6 +36,8 @@ from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from django.db.models import FileField
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.encryption.encryption import encrypt_stream
+
+pytestmark = pytest.mark.django_db
 
 
 class _StreamingStorage:
@@ -253,6 +259,109 @@ def test_atomic_create_file_never_replaces_existing_content(tmp_path: Path) -> N
     assert not tuple(tmp_path.glob("lock.json.tmp.*"))
 
 
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_private_temporary_permissions_exist_before_first_write(
+    tmp_path: Path, monkeypatch: MonkeyPatch, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    original_open = os.open
+
+    def check_open(path: str, flags: int, mode: int = 0o777) -> int:
+        descriptor = original_open(path, flags, mode)
+        if flags & os.O_CREAT:
+            assert flags & os.O_EXCL
+            assert os.fstat(descriptor).st_mode & 0o777 == 0o600
+        return descriptor
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(file_operations.os, "open", check_open)
+        writer(
+            destination=tmp_path / "private.bin", content=[b"private"], file_mode=0o600
+        )
+
+
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_temporary_collision_preserves_link_and_target(
+    tmp_path: Path, monkeypatch: MonkeyPatch, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    target = tmp_path / "other-owner.bin"
+    target.write_bytes(b"do not change")
+    occupied = tmp_path / "occupied"
+    occupied.symlink_to(target)
+    helper = (
+        "_temporary_handoff_destination"
+        if operation == "handoff"
+        else "_temporary_destination"
+    )
+
+    def occupied_path(_destination: Path) -> Path:
+        return occupied
+
+    monkeypatch.setattr(file_operations, helper, occupied_path)
+    destination = tmp_path / "candidate.bin"
+    with pytest.raises(FileExistsError):
+        writer(destination=destination, content=[b"private"], file_mode=0o600)
+    assert target.read_bytes() == b"do not change"
+    assert occupied.is_symlink()
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_concurrent_writers_use_independent_temporary_files(
+    tmp_path: Path, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    barrier = Barrier(2, timeout=10)
+    destination = tmp_path / "shared.bin"
+
+    def write(payload: bytes) -> bool:
+        def content() -> Iterable[bytes]:
+            yield payload
+            barrier.wait()
+            yield payload
+
+        try:
+            writer(destination=destination, content=content(), file_mode=0o600)
+            return True
+        except FileExistsError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(write, [b"first", b"second"]))
+    assert sum(results) == (1 if operation == "create" else 2)
+    assert destination.read_bytes() in {b"firstfirst", b"secondsecond"}
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize("link_kind", ["symbolic", "hard"])
+def test_safe_unlink_never_overwrites_linked_content(
+    tmp_path: Path, link_kind: str
+) -> None:
+    target = tmp_path / "retained.bin"
+    target.write_bytes(b"retained clinical media")
+    staged = tmp_path / "staging.bin"
+    if link_kind == "symbolic":
+        staged.symlink_to(target)
+    else:
+        staged.hardlink_to(target)
+    safe_unlink_file(staged)
+    assert not staged.exists()
+    assert target.read_bytes() == b"retained clinical media"
+
+
 @pytest.mark.unit
 def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
     caplog: LogCaptureFixture,
@@ -467,3 +576,36 @@ def test_safe_rmtree_retries_directory_not_empty_race(
     assert any(
         event["operation"] == "rmtree" and event["status"] == "ok" for event in events
     )
+
+
+@pytest.mark.parametrize("consumer_fails", [False, True])
+def test_protected_temporary_directory_owns_private_workspace(
+    consumer_fails: bool,
+) -> None:
+    workspace: Path | None = None
+    try:
+        with file_operations.protected_temporary_directory(
+            prefix="private-test-"
+        ) as directory:
+            workspace = directory
+            assert directory.parent == get_runtime_paths().transcoding.resolve()
+            assert directory.stat().st_mode & 0o777 == 0o700
+            atomic_create_file(
+                destination=directory / "input.txt",
+                content=[b"private"],
+                file_mode=0o600,
+            )
+            if consumer_fails:
+                raise ValueError("consumer failed")
+    except ValueError as exc:
+        assert consumer_fails
+        assert str(exc) == "consumer failed"
+    assert workspace is not None
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize("prefix", ["", "../outside", "/absolute", "..\\outside"])
+def test_protected_temporary_directory_rejects_unsafe_prefix(prefix: str) -> None:
+    with pytest.raises(ValueError, match="single path component"):
+        with file_operations.protected_temporary_directory(prefix=prefix):
+            pytest.fail("unsafe workspace was created")

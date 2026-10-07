@@ -13,6 +13,37 @@ source_documents:
   disposition: migrated
   note: Phasen, Backlog und Done Criteria wurden in die verbindliche DoD übernommen.
 definition_of_done:
+- id: human_validation_identity_failure
+  category: functionality
+  title: Fehlgeschlagene Metadatenkorrektur verhindert die Videofreigabe
+  acceptance:
+  - Fehler bei der Metadatenkorrektur werden weitergegeben; es gibt keinen zweiten Schreibpfad als Fallback.
+  - Ein fehlendes Metadaten-Ergebnis wird nicht als erfolgreiche Validierung behandelt.
+  - Bei fehlgeschlagener Korrektur erfolgen weder Anonymisierungsfreigabe noch Rohdatenbereinigung.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_video_metadata_validation.py
+    - tests/services/test_sensitive_meta_external_id_validation.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/video_files/validation.py
+    - kind: test
+      reference: tests/services/test_video_metadata_validation.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 Fehler, 10 Warnungen; pytest tests/services/test_video_metadata_validation.py
+        tests/services/test_sensitive_meta_external_id_validation.py tests/models/video/test_validation_deletion.py
+        -q: 14 bestanden, 2 Warnungen (126.51s)'
+    note: Nur Fehlerweitergabe und fehlendes Ergebnis des Metadatenupdates geprüft. Keine Freigabe des
+      gesamten Import-/Exportworkflows oder Änderung der Löschpolicy.
+    assessed_by: codex-workflow-validation-20261007
+    assessed_at: '2026-10-07T10:44:27.604784Z'
 - id: workflow_invariants
   category: requirements
   title: Kritische Workflowinvarianten sind explizit und zentral definiert
@@ -22,6 +53,16 @@ definition_of_done:
   - Anonymisierungsvalidierung und Segmentannotationsvalidierung sind getrennte Gates mit getrennten Zuständen
     und Freigabewirkungen.
   - Produktionspfade besitzen keine stillen Validator- oder Statusfallbacks.
+  - Der Übergangsvertrag und die Fehlermatrix in docs/human_validation_workflow.md unterscheiden Identitätsprüfung,
+    Bildanonymisierung, fachliche Annotation und Exportfreigabe.
+  - Exportierte Datenpunkte tragen die geprüfte Patientenidentität und den unveränderten Inhalts-Hash
+    der importierten Quelle; der Hash des verarbeiteten Artefakts ist davon getrennt.
+  - Korrekturen an Identität, Artefakt oder Segmenten entwerten die davon abhängigen Freigaben; konkurrierende
+    und verspätete Bestätigungen können keine neuere Revision freigeben.
+  - Löschung entfernt niemals die einzige geprüfte Arbeitskopie; die genaue Löschrolle für Bericht und
+    Video muss vor einer Änderung des bestehenden Vertrags geklärt sein.
+  - Beim Video bleibt der geprüfte geschwärzte Master für Streaming und Export erhalten; nur die supersedierte
+    Generation darf nach erfolgreicher Veröffentlichung und bestehenden Bereinigungsgates gelöscht werden.
   required: true
   verification:
     kind: manual

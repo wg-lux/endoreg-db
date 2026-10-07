@@ -11,6 +11,7 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.services.hub.upload_job_files import record_working_file
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ def create_sensitive_copy(src: Path, sensitive_root: Path, ctx: ImportContext) -
     hash_prefix = expected_hash[:16]
     staging_dir = ensure_directory(sensitive_root / f"{hash_prefix}-{uuid4().hex}")
     dest = staging_dir / src.name
+    record_working_file(dest)
     logger.info("Creating sensitive copy: %s -> %s", src, dest)
     atomic_copy_with_fallback(src, dest)
     try:
@@ -60,6 +62,7 @@ def create_snapshot(
     ensure_dir(sensitive_root)
     staging_dir = ensure_directory(sensitive_root / f"report-attempt-{uuid4().hex}")
     destination = staging_dir / src.name
+    record_working_file(destination)
     logger.info("Creating stable sensitive report snapshot: %s -> %s", src, destination)
     return atomic_report_source_snapshot(
         source=src,

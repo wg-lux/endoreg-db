@@ -3,6 +3,7 @@ import builtins
 import importlib
 from importlib.util import find_spec
 import sys
+import subprocess
 from typing import Any
 
 from django.conf import settings
@@ -10,6 +11,44 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.apps import EndoregDbConfig
+
+
+@pytest.mark.unit
+@pytest.mark.no_db
+def test_upload_job_file_import_without_django_typing_patch() -> None:
+    from endoreg_db.models.hub import upload_job_file
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import runpy
+import sys
+import django
+from django.conf import settings
+from django.db import models
+
+settings.configure(INSTALLED_APPS=["django.contrib.contenttypes"])
+django.setup()
+assert not hasattr(models.CharField, "__class_getitem__")
+# Load the actual model under an installed minimal app, without endoreg settings
+# or their django_stubs_ext monkeypatch. No database connection is needed.
+namespace = runpy.run_path(
+    sys.argv[1], run_name="django.contrib.contenttypes.inventory_regression"
+)
+model = namespace["UploadJobFile"]
+assert model._meta.get_field("path").max_length == 2048
+assert model._meta.get_field("upload_job").remote_field.model == "UploadJob"
+""",
+            str(upload_job_file.__file__),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.unit

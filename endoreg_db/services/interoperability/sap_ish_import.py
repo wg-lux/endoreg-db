@@ -3,13 +3,13 @@ from __future__ import annotations
 import csv
 import io
 import json
+import stat
 import zipfile
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from tempfile import TemporaryDirectory
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 import yaml
 
@@ -20,8 +20,11 @@ from endoreg_db.services.imports.tabular_import_formats import (
     resolve_document_template,
 )
 from endoreg_db.utils.file_operations import (
+    atomic_create_file,
     atomic_write_file,
     ensure_directory,
+    ensure_disk_capacity,
+    protected_temporary_directory,
 )
 from endoreg_db.utils.paths import ensure_within_runtime_root
 from lx_dtypes.models.contracts.sap_ish_import import (
@@ -653,10 +656,35 @@ def convert_sap_ish_zip_to_preanonymized_drop(
     if not archive_path.exists():
         raise FileNotFoundError(f"SAP IS-H zip not found: {archive_path}")
 
-    with TemporaryDirectory(prefix="sap_ish_import_") as temp_dir_name:
-        extract_dir = Path(temp_dir_name)
+    with protected_temporary_directory(prefix="sap_ish_import_") as extract_dir:
         with zipfile.ZipFile(archive_path) as archive:
-            archive.extractall(extract_dir)
+            members = archive.infolist()
+            for member in members:
+                path = PurePosixPath(member.filename)
+                if (
+                    path.is_absolute()
+                    or ".." in path.parts
+                    or "\\" in member.filename
+                    or ":" in member.filename
+                    or stat.S_ISLNK(member.external_attr >> 16)
+                ):
+                    raise ValueError("Unsafe SAP archive entry")
+            ensure_disk_capacity(
+                destination_dir=extract_dir,
+                required_bytes=sum(member.file_size for member in members),
+            )
+            for member in members:
+                destination = extract_dir / member.filename
+                if member.is_dir():
+                    ensure_directory(destination, dir_mode=0o700)
+                else:
+                    ensure_directory(destination.parent, dir_mode=0o700)
+                    with archive.open(member) as source:
+                        atomic_create_file(
+                            destination=destination,
+                            content=iter(lambda: source.read(1024 * 1024), b""),
+                            file_mode=0o600,
+                        )
         return _convert_sap_ish_directory_to_preanonymized_drop(
             source_dir=extract_dir,
             output_dir=output_dir,

@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import safe_unlink_file
+from endoreg_db.services.hub.upload_job_files import (
+    mark_inventory_file_removed,
+    registered_staging_paths,
+    validate_registered_staging_cleanup,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +86,10 @@ def safe_cleanup_staging_file(
         )
         return False
 
+    validate_registered_staging_cleanup(target)
     logger.info("%s", json.dumps({**payload, "status": "deleting"}))
     safe_unlink_file(target, missing_ok=missing_ok)
+    mark_inventory_file_removed(target)
     logger.info("%s", json.dumps({**payload, "status": "deleted"}))
     return True
 
@@ -101,7 +108,7 @@ def cleanup_staging_files(
     """Remove staging idempotently; rejected or remaining files are failures."""
     roots = tuple(staging_cleanup_roots() if allowed_roots is None else allowed_roots)
     protected = {path.resolve() for path in protected_paths if path is not None}
-    for path in dict.fromkeys(paths):
+    for path in registered_staging_paths(tuple(paths)):
         if path is None:
             continue
         if path.is_symlink() or path.resolve() in protected:

@@ -26,7 +26,14 @@ from endoreg_db.models.state.processing_history.processing_history import (
 )
 from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.schemas.hub_payloads import UploadProvenancePayload
+from endoreg_db.models.hub.upload_job_file import UploadJobFile
+from endoreg_db.services.hub.upload_job_files import (
+    DISPOSABLE_ROLES,
+    LEGACY_FILE_FIELDS,
+    has_other_file_owner,
+    mark_inventory_file_removed,
+    upload_job_file_inventory,
+)
 from endoreg_db.services.hub.media_integrity import check_upload_job_media_integrity
 from endoreg_db.services.raw_pdf_files.integrity import (
     ProcessedReportIntegrityError,
@@ -221,7 +228,12 @@ def _source_snapshot(
         return None, UploadSourceCleanupBlocker.SOURCE_NAME_MISSING
 
     media_type = _media_type(upload_job)
-    if upload_job.status == UploadJob.Status.ERROR.value:
+    registered = UploadJobFile.objects.filter(
+        upload_job=upload_job,
+        path=str(get_runtime_paths().storage / storage_name),
+        role=UploadJobFile.Role.SOURCE,
+    ).exists()
+    if not registered and upload_job.status == UploadJob.Status.ERROR.value:
         expected_name = build_upload_job_relative_path(
             tier=upload_job.storage_tier,
             filename=Path(storage_name).name,
@@ -229,7 +241,9 @@ def _source_snapshot(
         )
         if storage_name != expected_name:
             return None, UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
-    if Path(storage_name).suffix.lower() not in _expected_suffixes(media_type):
+    if not registered and Path(storage_name).suffix.lower() not in _expected_suffixes(
+        media_type
+    ):
         return None, UploadSourceCleanupBlocker.SOURCE_FILE_TYPE_UNEXPECTED
 
     try:
@@ -255,12 +269,14 @@ def _source_snapshot(
     if not stat.S_ISREG(stat_result.st_mode):
         return None, UploadSourceCleanupBlocker.SOURCE_NOT_REGULAR
 
-    try:
-        content_sha256 = get_file_hash(field_file)
-    except (FileNotFoundError, OSError, RuntimeError, ValueError):
-        return None, UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
-    if content_sha256 != str(upload_job.content_hash or "").strip().lower():
-        return None, UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
+    content_sha256 = upload_job.content_hash
+    if not registered:
+        try:
+            content_sha256 = get_file_hash(field_file)
+        except (FileNotFoundError, OSError, RuntimeError, ValueError):
+            return None, UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
+        if content_sha256 != str(upload_job.content_hash or "").strip().lower():
+            return None, UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
 
     return (
         UploadSourceSnapshot(
@@ -378,6 +394,17 @@ def _source_still_referenced(upload_job: UploadJob, name: str | None = None) -> 
     name = str(upload_job.file.name or "") if name is None else name
     if not name:
         return False
+    inventory_name = str(get_runtime_paths().storage / name)
+    own_role = (
+        UploadJobFile.objects.filter(upload_job=upload_job, path=inventory_name)
+        .values_list("role", flat=True)
+        .first()
+    )
+    if own_role is not None:
+        return own_role in {
+            UploadJobFile.Role.RETAINED,
+            UploadJobFile.Role.QUARANTINE,
+        } or has_other_file_owner(upload_job, Path(inventory_name))
     return (
         UploadJob.objects.filter(file=name).exclude(pk=upload_job.pk).exists()
         or VideoFile.objects.filter(Q(raw_file=name) | Q(processed_file=name)).exists()
@@ -390,36 +417,38 @@ def additional_source_paths(
     upload_job: UploadJob,
 ) -> tuple[tuple[Path, ...], UploadSourceCleanupBlocker]:
     """Inspect exact provenance paths; never search by filename or follow aliases."""
-    if _media_type(upload_job) != UploadSourceMediaType.VIDEO:
+    media_type = _media_type(upload_job)
+    if media_type == UploadSourceMediaType.UNKNOWN:
         return (), UploadSourceCleanupBlocker.NONE
     paths = get_runtime_paths()
     roots = (
         paths.ingest_uploads,
-        paths.import_video,
+        paths.import_video
+        if media_type == UploadSourceMediaType.VIDEO
+        else paths.import_report,
         paths.import_preanonymized,
-        paths.import_anonymized_video,
+        paths.import_anonymized_video
+        if media_type == UploadSourceMediaType.VIDEO
+        else paths.import_anonymized_report,
         paths.migration_staging,
     )
     try:
-        provenance = UploadProvenancePayload.model_validate(
-            upload_job.processing_provenance
-        )
-    except ValidationError:
+        inventory = upload_job_file_inventory(upload_job)
+    except (ValidationError, ValueError, SuspiciousFileOperation):
         return (), UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
     copies: set[Path] = set()
-    for name in (
-        provenance.watched_path,
-        provenance.watcher_processing_path,
-        provenance.stored_upload_path,
-        provenance.legacy_source_path,
-        provenance.migrated_destination_path,
-    ):
-        if not name:
+    registered_roots = (
+        *roots,
+        paths.transcoding,
+        paths.sensitive_video,
+        paths.sensitive_report,
+    )
+    for reference in inventory:
+        if reference.role not in DISPOSABLE_ROLES:
             continue
-        path = Path(name)
-        if not path.is_absolute():
-            path = paths.storage / path
-        if ".." in path.parts or not any(path.is_relative_to(root) for root in roots):
+        path = reference.path
+        allowed_roots = registered_roots if reference.registered else roots
+        if not any(path.is_relative_to(root) for root in allowed_roots):
             return (), UploadSourceCleanupBlocker.SOURCE_PATH_UNSAFE
         if _path_has_symlink(path, paths.runtime_root):
             return (), UploadSourceCleanupBlocker.SOURCE_SYMLINK
@@ -429,31 +458,38 @@ def additional_source_paths(
             continue
         if not path.is_file():
             return (), UploadSourceCleanupBlocker.SOURCE_NOT_REGULAR
+        if reference.registered:
+            if has_other_file_owner(upload_job, path):
+                return (), UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
+            copies.add(path)
+            continue
         relative_name = (
             path.relative_to(paths.storage).as_posix()
             if path.is_relative_to(paths.storage)
             else str(path)
         )
-        aliases = {name, str(path), relative_name}
+        aliases = {str(path), relative_name}
         provenance_references = Q()
-        for field in (
-            "watched_path",
-            "watcher_processing_path",
-            "legacy_source_path",
-            "migrated_destination_path",
-            "stored_upload_path",
-        ):
+        for field in LEGACY_FILE_FIELDS:
             provenance_references |= Q(
                 **{f"processing_provenance__{field}__in": list(aliases)}
             )
-        if any(_source_still_referenced(upload_job, alias) for alias in aliases) or (
-            UploadJob.objects.exclude(pk=upload_job.pk)
-            .filter(provenance_references)
-            .exists()
+        if (
+            any(_source_still_referenced(upload_job, alias) for alias in aliases)
+            or (
+                UploadJob.objects.exclude(pk=upload_job.pk)
+                .filter(provenance_references)
+                .exists()
+            )
+            or (
+                UploadJobFile.objects.exclude(upload_job=upload_job)
+                .filter(path=str(path), removed_at__isnull=True)
+                .exists()
+            )
         ):
             return (), UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
         try:
-            if get_file_hash(path) != upload_job.content_hash:
+            if not reference.sha256 or get_file_hash(path) != reference.sha256:
                 return (), UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
         except (OSError, RuntimeError, ValueError):
             return (), UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
@@ -600,7 +636,11 @@ def _evaluate_locked_job(
             assert cleanup_source_size_bytes is not None
             if cleanup_fencing_token != int(upload_job.processing_fencing_token):
                 blocker = UploadSourceCleanupBlocker.FENCING_TOKEN_CHANGED
-            elif (
+            elif not UploadJobFile.objects.filter(
+                upload_job=upload_job,
+                path=str(Path(upload_job.file.path)),
+                role=UploadJobFile.Role.SOURCE,
+            ).exists() and (
                 upload_job.cleanup_source_name_sha256 != snapshot.storage_name_sha256
                 or cleanup_source_size_bytes != snapshot.size_bytes
                 or upload_job.cleanup_source_content_sha256 != snapshot.content_sha256
@@ -750,11 +790,14 @@ def _delete_and_finalize(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
             for path in copies:
                 size = path.stat().st_size
                 safe_unlink_file(path, missing_ok=False)
+                mark_inventory_file_removed(path)
                 freed_bytes += size
             deleted = False
             if snapshot is not None:
+                source_path = Path(upload_job.file.path)
                 deleted = safe_delete_field_file(upload_job.file, missing_ok=False)
                 if deleted:
+                    mark_inventory_file_removed(source_path)
                     freed_bytes += snapshot.size_bytes
             upload_job.file.name = ""
             upload_job.source_file_persisted = False

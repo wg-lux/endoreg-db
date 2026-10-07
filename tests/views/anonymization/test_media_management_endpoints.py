@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from uuid import uuid4
+from pathlib import Path
 
 from django.test import TestCase
+from django.core.files.base import ContentFile
 
 from endoreg_db.models import Center, RawPdfFile, UploadJob, VideoFile
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
+from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 class MediaManagementEndpointTests(TestCase):
@@ -147,6 +152,7 @@ class MediaManagementEndpointTests(TestCase):
             source_center=self.center,
             content_type="application/pdf",
             content_hash=pdf.pdf_hash,
+            status=UploadJob.Status.ANONYMIZED,
         )
         response = self.client.delete(
             f"/api/media-management/force-remove/pdf/{pdf.pk}/"
@@ -159,6 +165,54 @@ class MediaManagementEndpointTests(TestCase):
         assert job.processing_provenance["media_integrity_missing_artifacts"] == [
             "raw_pdf_file"
         ]
+
+    def test_pdf_force_removal_deletes_recorded_upload_and_drop(self):
+        source = get_runtime_paths().import_report / f"{uuid4().hex}.pdf"
+        atomic_write_file(destination=source, content=[b"private report"])
+        digest = get_file_hash(source)
+        pdf = RawPdfFile.objects.create(
+            center=self.center,
+            pdf_hash=digest,
+            file=ContentFile(b"private report", name="raw.pdf"),
+            processed_file=ContentFile(b"anonymous report", name="processed.pdf"),
+        )
+        job = UploadJob.objects.create(
+            source_center=self.center,
+            content_type="application/pdf",
+            content_hash=digest,
+            file=ContentFile(b"private report", name="upload.pdf"),
+            status=UploadJob.Status.ERROR,
+            error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+            source_file_persisted=True,
+            processing_provenance={"watched_path": str(source)},
+        )
+        upload = Path(job.file.path)
+        raw_name, processed_name = pdf.file.name, pdf.processed_file.name
+        assert raw_name and processed_name
+        storage = pdf.file.storage
+        response = self.client.delete(
+            f"/api/media-management/force-remove/pdf/{pdf.pk}/"
+        )
+        assert response.status_code == 200, response.content
+        assert not source.exists() and not upload.exists()
+        assert not storage.exists(raw_name)
+        assert not pdf.processed_file.storage.exists(processed_name)
+        job.refresh_from_db()
+        assert not job.file.name and not job.source_file_persisted
+        assert job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
+
+    def test_pdf_force_removal_blocks_active_import(self):
+        pdf = RawPdfFile.objects.create(center=self.center, pdf_hash=uuid4().hex)
+        UploadJob.objects.create(
+            source_center=self.center,
+            content_type="application/pdf",
+            content_hash=pdf.pdf_hash,
+        )
+        response = self.client.delete(
+            f"/api/media-management/force-remove/pdf/{pdf.pk}/"
+        )
+        assert response.status_code == 409, response.content
+        assert RawPdfFile.objects.filter(pk=pdf.pk).exists()
 
     def test_media_management_reset_status_for_video(self):
         response = self.client.post(

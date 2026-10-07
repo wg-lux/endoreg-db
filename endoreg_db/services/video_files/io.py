@@ -166,7 +166,7 @@ def delete_raw_file_after_validation(video: "VideoFile") -> bool:
 
     if raw_field and raw_field.name:
         deleted = (
-            delete_field_file(video, "raw_file", missing_ok=True, save=True) or deleted
+            delete_field_file(video, "raw_file", missing_ok=False, save=True) or deleted
         )
     else:
         raw_path = get_raw_video_file_path(video)
@@ -212,12 +212,12 @@ def delete_video_with_owned_files(
 
     raw_field = getattr(video, "raw_file", None)
     if raw_field and raw_field.name:
-        delete_field_file(raw_field, missing_ok=True, save=False)
+        delete_field_file(raw_field, missing_ok=False, save=False)
         logger.info("Deleted raw file via storage for %s", video.raw_video_hash)
 
     processed_field = getattr(video, "processed_file", None)
     if processed_field and processed_field.name:
-        delete_field_file(processed_field, missing_ok=True, save=False)
+        delete_field_file(processed_field, missing_ok=False, save=False)
         logger.info("Deleted processed file via storage for %s", video.raw_video_hash)
 
     raw_stream_path = get_raw_video_stream_path(video)

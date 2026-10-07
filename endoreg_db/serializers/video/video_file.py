@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, TYPE_CHECKING, Protocol, cast
@@ -9,11 +8,6 @@ from rest_framework import serializers
 
 from endoreg_db.models.media.video.video_file import VideoFile
 
-cv2_mod: Any
-try:
-    cv2_mod = importlib.import_module("cv2")
-except ImportError:
-    cv2_mod = None
 from endoreg_db.services.video_files import (
     get_active_video_file,
     video_frame_number_to_seconds,
@@ -22,7 +16,6 @@ from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_hls_playlist_path,
 )
-from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage_streaming import maybe_local_plaintext_path
 
 if TYPE_CHECKING:
@@ -122,38 +115,8 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
         return {"error": "Video URL not available"}
 
     def get_duration(self, obj: _VideoFileSerializerLike) -> float | None:
-        """
-        Return the duration of the video in seconds, using the stored value if available or extracting it dynamically with OpenCV.
-
-        If the duration is not present in the database, the method opens the video file, retrieves its frame count and frames per second (FPS), and calculates the duration. Returns `None` if the video cannot be opened or FPS is zero.
-        """
-        if hasattr(obj, "duration") and obj.duration:
-            return (
-                obj.duration
-            )  # If duration is stored in the database, return it directly.
-
-        if cv2_mod is None:
-            return None
-
-        try:
-            with ensure_local_file(
-                get_active_video_file(cast(VideoFile, obj))
-            ) as video_path:
-                cap = cv2_mod.VideoCapture(str(video_path))
-                try:
-                    if not cap.isOpened():
-                        return None  # Error handling if video can't be opened
-
-                    fps = cap.get(cv2_mod.CAP_PROP_FPS)
-                    total_frames = cap.get(cv2_mod.CAP_PROP_FRAME_COUNT)
-
-                    return (
-                        round(total_frames / fps, 2) if fps > 0 else None
-                    )  # Return duration in seconds
-                finally:
-                    cap.release()
-        except Exception:
-            return None
+        """Return persisted metadata without decrypting media during API reads."""
+        return obj.duration
 
     def get_file(self, obj: _VideoFileSerializerLike) -> object:
         """

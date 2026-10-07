@@ -514,16 +514,40 @@ def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int
     track_started=True,
 )
 def cleanup_media_sources_task() -> dict[str, int]:
+    """Serialize recurring cleanup and preserve scan progress across workers."""
+    from endoreg_db.utils.file_operations import advisory_file_lock
+    from endoreg_db.utils.paths import get_runtime_paths
+
+    with advisory_file_lock(
+        lock_path=get_runtime_paths().manifest_dir / ".periodic_media_cleanup.lock",
+        timeout_seconds=0,
+    ):
+        return _cleanup_media_sources()
+
+
+def _cleanup_media_sources() -> dict[str, int]:
     """Revisit recorded cleanup work under the existing operator apply gate."""
     import logging
+    from django.db.models import Q
     from endoreg_db.config.env import upload_job_source_reaper_apply_enabled
+    from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.schemas.processed_video_cleanup import PeriodicMediaCleanupCursor
     from endoreg_db.services.hub.cleanup import run_upload_job_source_reaper
     from endoreg_db.services.video_storage.generation_cleanup import (
         cleanup_processed_video_generations,
+        cleanup_superseded_hls,
     )
     from endoreg_db.utils.structured_logging import emit_structured_event
+    from endoreg_db.utils.file_operations import atomic_write_file
+    from endoreg_db.utils.paths import get_runtime_paths
 
+    cursor_path = get_runtime_paths().manifest_dir / "periodic_media_cleanup.json"
+    cursor = (
+        PeriodicMediaCleanupCursor.model_validate_json(cursor_path.read_bytes())
+        if cursor_path.exists()
+        else PeriodicMediaCleanupCursor()
+    )
     apply = upload_job_source_reaper_apply_enabled()
     sources = run_upload_job_source_reaper(apply=apply, limit=25)
     counts = {
@@ -532,17 +556,38 @@ def cleanup_media_sources_task() -> dict[str, int]:
         "generations_cleaned": 0,
         "generations_pending": 0,
         "generation_failures": 0,
+        "hls_artifacts_cleaned": 0,
+        "hls_artifacts_pending": 0,
     }
-    video_ids = (
+    candidates = (
         VideoFile.objects.filter(
-            meta__processed_generation_cleanup__isnull=False,
+            (
+                Q(meta__processed_generation_cleanup__isnull=False)
+                & ~Q(meta__processed_generation_cleanup=[])
+            )
+            | Q(
+                pk__in=VideoHlsArtifact.objects.filter(
+                    status__in=["superseded", "failed"]
+                ).values("video_id")
+            )
         )
-        .exclude(meta__processed_generation_cleanup=[])
-        .order_by("date_modified", "pk")
-        .values_list("pk", flat=True)[:25]
+        .order_by("pk")
+        .values_list("pk", flat=True)
     )
+    # Progress survives process recycling; deletion revalidates every candidate.
+    video_ids = list(candidates.filter(pk__gt=cursor.video_id)[:25])
+    video_ids = video_ids or list(candidates[:25])
     for video_id in video_ids:
         try:
+            derivatives = cleanup_superseded_hls(video_id, apply=apply)
+            counts["hls_artifacts_cleaned"] += derivatives.cleaned
+            counts["hls_artifacts_pending"] += derivatives.pending
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_hls_cleanup",
+                apply=apply,
+                **derivatives.model_dump(),
+            )
             result = cleanup_processed_video_generations(video_id, apply=apply)
         except (OSError, ValueError, RuntimeError) as exc:
             counts["generation_failures"] += 1
@@ -561,6 +606,15 @@ def cleanup_media_sources_task() -> dict[str, int]:
                 apply=apply,
                 **result.model_dump(),
             )
+    atomic_write_file(
+        destination=cursor_path,
+        content=[
+            PeriodicMediaCleanupCursor(video_id=video_ids[-1] if video_ids else 0)
+            .model_dump_json()
+            .encode("utf-8")
+        ],
+        file_mode=0o600,
+    )
     return counts
 
 

@@ -18,17 +18,18 @@ def report_staging_path() -> Generator[Path]:
 
     from endoreg_db.utils.file_operations import (
         ensure_directory,
-        secure_unlink_file,
+        safe_unlink_file,
     )
-    from endoreg_db.utils.paths import get_runtime_paths
+    from endoreg_db.utils.paths import ensure_within_storage_root, get_runtime_paths
 
     path = (
-        ensure_directory(get_runtime_paths().transcoding) / f"report-{uuid4().hex}.pdf"
+        ensure_directory(ensure_within_storage_root(get_runtime_paths().transcoding))
+        / f"report-{uuid4().hex}.pdf"
     )
     try:
         yield path
     finally:
-        secure_unlink_file(path, missing_ok=True)
+        safe_unlink_file(path, missing_ok=True)
 
 
 class ReportArtifactFieldFile(FieldFile):

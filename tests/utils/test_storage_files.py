@@ -4,6 +4,7 @@ from typing import Any, BinaryIO, cast
 
 import io
 from pathlib import Path
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -13,6 +14,10 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.storage import files as storage_files
+from endoreg_db.utils import paths as paths_module
+from endoreg_db.utils.storage.report_fields import report_staging_path
+
+pytestmark = pytest.mark.django_db
 
 
 class _NonSeekableStream(io.BytesIO):
@@ -23,6 +28,12 @@ class _NonSeekableStream(io.BytesIO):
 class _UnsupportedSeekStream(io.BytesIO):
     def seek(self, *_args: Any, **_kwargs: Any) -> int:
         raise io.UnsupportedOperation("not seekable")
+
+
+class _CloseFailureStream(io.BytesIO):
+    def close(self) -> None:
+        super().close()
+        raise OSError("source close failed")
 
 
 class _Storage:
@@ -75,21 +86,21 @@ def test_ensure_local_file_ignores_unsupported_seek() -> None:
 
 
 @pytest.mark.unit
-def test_ensure_local_file_secure_unlinks_materialized_temp(
+def test_ensure_local_file_unlinks_materialized_temp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     field_file = _PathlessFieldFile(io.BytesIO(b"secret-video-payload"))
     unlink_calls: list[tuple[Path, bool, bool]] = []
 
-    def fake_secure_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
+    def fake_safe_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
         target = Path(path)
         unlink_calls.append((target, missing_ok, target.exists()))
         target.unlink(missing_ok=missing_ok)
 
     monkeypatch.setattr(
         storage_files,
-        "secure_unlink_file",
-        fake_secure_unlink_file,
+        "safe_unlink_file",
+        fake_safe_unlink_file,
         raising=True,
     )
 
@@ -129,3 +140,61 @@ def test_materialization_rejects_invalid_options(chunk_size: int, suffix: str) -
             cast(FieldFile, field_file), chunk_size=chunk_size, suffix=suffix
         ):
             pytest.fail("invalid materialization options were accepted")
+
+
+def test_path_materialization_collision_preserves_existing_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identifier = UUID(int=0)
+    monkeypatch.setattr(storage_files, "uuid4", lambda: identifier)
+    path = get_runtime_paths().transcoding / f"{identifier.hex}.mp4"
+    path.write_bytes(b"another owner")
+    try:
+        with pytest.raises(FileExistsError):
+            with ensure_local_file(
+                cast(FieldFile, _PathlessFieldFile(io.BytesIO(b"private")))
+            ):
+                pytest.fail("existing destination accepted")
+        assert path.read_bytes() == b"another owner"
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def test_materialization_cleans_up_when_source_close_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    identifier = uuid4()
+    monkeypatch.setattr(storage_files, "uuid4", lambda: identifier)
+    path = get_runtime_paths().transcoding / f"{identifier.hex}.mp4"
+    with pytest.raises(OSError, match="source close failed"):
+        with ensure_local_file(
+            cast(FieldFile, _PathlessFieldFile(_CloseFailureStream(b"private")))
+        ):
+            pytest.fail("source close failure was suppressed")
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("consumer", ["field_file", "report"])
+def test_staging_rejects_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, consumer: str
+) -> None:
+    paths = get_runtime_paths()
+    link = paths.storage / f"staging-escape-{uuid4().hex}"
+    link.symlink_to(tmp_path, target_is_directory=True)
+    escaped_paths = paths.model_copy(update={"transcoding": link})
+    monkeypatch.setattr(storage_files, "get_runtime_paths", lambda: escaped_paths)
+    monkeypatch.setattr(paths_module, "get_runtime_paths", lambda: escaped_paths)
+    try:
+        manager = (
+            ensure_local_file(
+                cast(FieldFile, _PathlessFieldFile(io.BytesIO(b"private")))
+            )
+            if consumer == "field_file"
+            else report_staging_path()
+        )
+        with pytest.raises(ValueError, match="outside storage root"):
+            with manager:
+                pytest.fail("unprotected staging accepted")
+        assert not list(tmp_path.iterdir())
+    finally:
+        link.unlink()

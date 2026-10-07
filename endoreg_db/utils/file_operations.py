@@ -6,16 +6,18 @@ import logging
 import os
 import shutil
 import stat
+import tempfile
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, BinaryIO, Iterable
 from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.file_inventory import observe_file_operation
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,
     path_reference,
@@ -92,6 +94,7 @@ def _emit_file_operation_event(
         payload["detail"] = detail
     payload.update(extra)
     emit_structured_event(logger, "file_operation", **payload)
+    observe_file_operation(operation, status, source, destination)
 
 
 def ensure_disk_capacity(
@@ -111,11 +114,32 @@ def ensure_disk_capacity(
 
 
 def _temporary_destination(destination: Path) -> Path:
-    return destination.with_name(f"{destination.name}.tmp.{os.getpid()}")
+    temporary = destination.with_name(
+        f"{destination.name}.tmp.{os.getpid()}.{uuid4().hex}"
+    )
+    observe_file_operation("write", "planned", destination=destination)
+    observe_file_operation("temporary", "planned", destination=temporary)
+    return temporary
 
 
 def _temporary_handoff_destination(destination: Path) -> Path:
-    return destination.with_name(f"{destination.name}.part.{os.getpid()}")
+    temporary = destination.with_name(
+        f"{destination.name}.part.{os.getpid()}.{uuid4().hex}"
+    )
+    observe_file_operation("handoff", "planned", destination=destination)
+    observe_file_operation("temporary", "planned", destination=temporary)
+    return temporary
+
+
+def _open_temporary_file(path: Path, file_mode: int | None) -> BinaryIO:
+    """Exclude existing files and apply private modes before exposing an inode."""
+    return open(
+        path,
+        "xb",
+        opener=lambda name, flags: os.open(
+            name, flags, file_mode if file_mode is not None else 0o666
+        ),
+    )
 
 
 def _fsync_directory_best_effort(directory: Path) -> None:
@@ -432,18 +456,19 @@ def atomic_write_file(
         )
     temp_destination = _temporary_destination(destination)
     bytes_written = 0
+    created = False
     try:
-        with temp_destination.open("wb") as handle:
+        with _open_temporary_file(temp_destination, file_mode) as handle:
+            created = True
             if file_mode is not None:
-                os.chmod(temp_destination, file_mode)
+                os.fchmod(handle.fileno(), file_mode)
             for chunk in content:
                 handle.write(chunk)
                 bytes_written += len(chunk)
-        if file_mode is not None:
-            os.chmod(temp_destination, file_mode)
         os.replace(temp_destination, destination)
     except Exception as exc:
-        temp_destination.unlink(missing_ok=True)
+        if created:
+            safe_unlink_file(temp_destination, missing_ok=True)
         _emit_file_operation_event(
             operation="write",
             status="error",
@@ -481,10 +506,12 @@ def atomic_create_file(
         )
     temporary_destination = _temporary_destination(destination)
     bytes_written = 0
+    created = False
     try:
-        with temporary_destination.open("xb") as handle:
+        with _open_temporary_file(temporary_destination, file_mode) as handle:
+            created = True
             if file_mode is not None:
-                os.chmod(temporary_destination, file_mode)
+                os.fchmod(handle.fileno(), file_mode)
             for chunk in content:
                 handle.write(chunk)
                 bytes_written += len(chunk)
@@ -494,7 +521,8 @@ def atomic_create_file(
         safe_unlink_file(temporary_destination)
         _fsync_directory_best_effort(destination.parent)
     except Exception as exc:
-        safe_unlink_file(temporary_destination, missing_ok=True)
+        if created:
+            safe_unlink_file(temporary_destination, missing_ok=True)
         _emit_file_operation_event(
             operation="create",
             status="error",
@@ -537,10 +565,12 @@ def atomic_handoff_file(
         )
     temp_destination = _temporary_handoff_destination(destination)
     bytes_written = 0
+    created = False
     try:
-        with temp_destination.open("wb") as handle:
+        with _open_temporary_file(temp_destination, file_mode) as handle:
+            created = True
             if file_mode is not None:
-                os.chmod(temp_destination, file_mode)
+                os.fchmod(handle.fileno(), file_mode)
             for chunk in content:
                 handle.write(chunk)
                 bytes_written += len(chunk)
@@ -554,7 +584,8 @@ def atomic_handoff_file(
         os.replace(temp_destination, destination)
         _fsync_directory_best_effort(destination.parent)
     except Exception as exc:
-        temp_destination.unlink(missing_ok=True)
+        if created:
+            safe_unlink_file(temp_destination, missing_ok=True)
         _emit_file_operation_event(
             operation="handoff",
             status="error",
@@ -695,46 +726,6 @@ def _safe_delete_field_file_contents(
     return True
 
 
-def secure_unlink_file(path: Path, *, missing_ok: bool = True) -> None:
-    target = Path(path)
-    try:
-        stat_result = target.stat()
-    except FileNotFoundError:
-        safe_unlink_file(target, missing_ok=missing_ok)
-        return
-
-    if not target.is_file():
-        safe_unlink_file(target, missing_ok=missing_ok)
-        return
-
-    try:
-        with target.open("r+b", buffering=0) as handle:
-            remaining = stat_result.st_size
-            zero_chunk = b"\x00" * min(remaining, 64 * 1024)
-            while remaining > 0:
-                chunk = zero_chunk[: min(len(zero_chunk), remaining)]
-                handle.write(chunk)
-                remaining -= len(chunk)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except Exception as exc:
-        _emit_file_operation_event(
-            operation="secure_unlink",
-            status="error",
-            source=target,
-            detail=str(exc),
-        )
-        raise
-
-    _emit_file_operation_event(
-        operation="secure_unlink",
-        status="overwritten",
-        source=target,
-        bytes=stat_result.st_size,
-    )
-    safe_unlink_file(target, missing_ok=missing_ok)
-
-
 def ensure_directory(
     path: Path,
     *,
@@ -759,6 +750,28 @@ def ensure_directory(
         destination=target,
     )
     return target
+
+
+@contextmanager
+def protected_temporary_directory(*, prefix: str) -> Generator[Path, None, None]:
+    """Own a private scratch directory within the protected storage boundary."""
+    from endoreg_db.utils.paths import ensure_within_storage_root, get_runtime_paths
+
+    if not prefix or Path(prefix).name != prefix or "\\" in prefix:
+        raise ValueError("Temporary directory prefix must be a single path component")
+    root = ensure_directory(ensure_within_storage_root(get_runtime_paths().transcoding))
+    try:
+        target = Path(tempfile.mkdtemp(prefix=prefix, dir=root))
+    except OSError as exc:
+        _emit_file_operation_event(
+            operation="mkdir", status="error", destination=root, detail=str(exc)
+        )
+        raise
+    _emit_file_operation_event(operation="mkdir", status="ok", destination=target)
+    try:
+        yield target
+    finally:
+        safe_rmtree(target)
 
 
 def set_path_mode(path: Path, mode: int) -> None:

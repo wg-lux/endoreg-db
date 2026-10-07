@@ -1,5 +1,10 @@
 # pyright: reportUnusedFunction=false, reportUnusedClass=false
 from __future__ import annotations
+from endoreg_db.services.hub.upload_job_files import (
+    record_media_files,
+    register_upload_job_sources,
+    track_upload_job_files,
+)
 
 from endoreg_db.utils.storage.files import canonical_media_name
 import os
@@ -1098,6 +1103,7 @@ def _audit_created_upload_job(
     job: UploadJob,
     context: _UploadJobCreateContext,
 ) -> None:
+    register_upload_job_sources(job)
     emit_hub_audit_event(
         "hub.upload_job_created",
         upload_job_id=str(job.id),
@@ -2324,10 +2330,13 @@ def _execute_video_upload_import_attempt(
 
     with UploadJobImportLeaseHeartbeat(attempt.lease) as heartbeat:
         attempt.job, provenance = _mark_fenced_video_upload_processing(heartbeat.lease)
-        with _ensure_upload_job_local_file(
-            attempt.job,
-            lease=heartbeat.lease,
-        ) as file_path:
+        with (
+            track_upload_job_files(attempt.job, guard=heartbeat.guard),
+            _ensure_upload_job_local_file(
+                attempt.job,
+                lease=heartbeat.lease,
+            ) as file_path,
+        ):
             attempt.source_materialized = True
             video = _import_fenced_video_upload(
                 attempt=attempt,
@@ -2339,6 +2348,8 @@ def _execute_video_upload_import_attempt(
             sensitive_meta = (
                 video.sensitive_meta if isinstance(video, VideoFile) else None
             )
+            if isinstance(video, VideoFile):
+                record_media_files(attempt.job, video)
 
         heartbeat.guard()
         attempt.job = _complete_fenced_video_upload(
@@ -2583,11 +2594,13 @@ def _run_watcher_upload_job_inline(
     if normalized_type == "report":
         from endoreg_db.services.reports.import_service import ReportImportService
 
-        report = ReportImportService().import_and_anonymize(
-            file_path=watched_path,
-            center_name=source_center.name,
-            retry=False,
-        )
+        with track_upload_job_files(upload_job):
+            report = ReportImportService().import_and_anonymize(
+                file_path=watched_path,
+                center_name=source_center.name,
+                retry=False,
+            )
+            record_media_files(upload_job, report)
         imported_media = report
         sensitive_meta = report.sensitive_meta
     elif normalized_type == "video":
@@ -3184,6 +3197,7 @@ def _finalize_preanonymized_watcher_media(
             payload=context.metadata_payload,
             delete_source=True,
         )
+        record_media_files(upload_job, report)
         return report.sensitive_meta
 
     video = _finalize_preanonymized_video(
@@ -3193,6 +3207,7 @@ def _finalize_preanonymized_watcher_media(
         payload=context.metadata_payload,
         delete_source=True,
     )
+    record_media_files(upload_job, video)
     _update_upload_provenance(
         upload_job,
         watcher_processing_path=str(watched_path),
@@ -3447,26 +3462,27 @@ def process_preanonymized_watcher_file(
         watched_path=watched_path,
     )
 
-    try:
-        sensitive_meta = _finalize_preanonymized_watcher_media(
-            context=context,
-            watched_path=watched_path,
-            upload_job=upload_job,
-            processor_name=processor_name,
-        )
-        return _complete_preanonymized_watcher_job(
-            upload_job=upload_job,
-            sensitive_meta=sensitive_meta,
-            context=context,
-            watched_path=watched_path,
-            source_system=source_system,
-        )
-    except Exception as exc:
-        _handle_preanonymized_watcher_failure(
-            upload_job=upload_job,
-            context=context,
-            watched_path=watched_path,
-            source_system=source_system,
-            exc=exc,
-        )
-        raise
+    with track_upload_job_files(upload_job):
+        try:
+            sensitive_meta = _finalize_preanonymized_watcher_media(
+                context=context,
+                watched_path=watched_path,
+                upload_job=upload_job,
+                processor_name=processor_name,
+            )
+            return _complete_preanonymized_watcher_job(
+                upload_job=upload_job,
+                sensitive_meta=sensitive_meta,
+                context=context,
+                watched_path=watched_path,
+                source_system=source_system,
+            )
+        except Exception as exc:
+            _handle_preanonymized_watcher_failure(
+                upload_job=upload_job,
+                context=context,
+                watched_path=watched_path,
+                source_system=source_system,
+                exc=exc,
+            )
+            raise

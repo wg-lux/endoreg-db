@@ -1,4 +1,5 @@
 from __future__ import annotations
+from endoreg_db.utils.file_inventory import observe_file_operation
 
 from endoreg_db.helpers.typing import DjangoFile
 import io
@@ -276,6 +277,7 @@ class EncryptedStorage(FileSystemStorage):
                 else cast(BinaryIO, content)
             )
             with os.fdopen(fd, "wb") as tmp_handle:
+                observe_file_operation("temporary", "planned", destination=tmp_path)
                 encrypt_stream(
                     source,
                     tmp_handle,
@@ -318,6 +320,7 @@ class EncryptedStorage(FileSystemStorage):
 
         try:
             with open(full_path, "rb") as source, os.fdopen(fd, "wb") as destination:
+                observe_file_operation("temporary", "planned", destination=tmp_path)
                 encrypt_stream(
                     source,
                     destination,

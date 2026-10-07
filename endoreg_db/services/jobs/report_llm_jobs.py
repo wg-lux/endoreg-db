@@ -1,4 +1,9 @@
 from __future__ import annotations
+from contextlib import nullcontext
+from endoreg_db.services.hub.upload_job_files import (
+    record_media_files,
+    track_upload_job_files,
+)
 
 import logging
 import uuid
@@ -523,12 +528,24 @@ def _run_report_job(job_id: str, *, reimport: bool) -> bool:
     lifecycle = _ReportJobLifecycle(job, reimport=reimport)
     try:
         config = ReportLlmJobConfig.model_validate(job.config)
+        inventory_job = job.upload_job
         if reimport:
             pdf = job.pdf
             if pdf is None:
                 raise RuntimeError("Report LLM job has no associated report.")
             source = pdf.file
             center = pdf.center
+            if inventory_job is None:
+                previous_import = (
+                    ReportLlmInferenceJob.objects.filter(
+                        pdf=pdf, upload_job__isnull=False
+                    )
+                    .select_related("upload_job")
+                    .order_by("created_at", "pk")
+                    .first()
+                )
+                if previous_import is not None:
+                    inventory_job = previous_import.upload_job
         else:
             upload_job = lifecycle.upload_job()
             source = upload_job.file
@@ -537,12 +554,19 @@ def _run_report_job(job_id: str, *, reimport: bool) -> bool:
             raise FileNotFoundError("Report job has no stored source file.")
         if center is None:
             raise RuntimeError("Report job has no resolved source center.")
-        with ensure_local_file(source) as file_path:
-            ReportImportService(lifecycle=lifecycle).import_and_anonymize(
+        inventory = (
+            track_upload_job_files(inventory_job)
+            if inventory_job is not None
+            else nullcontext()
+        )
+        with inventory, ensure_local_file(source) as file_path:
+            report = ReportImportService(lifecycle=lifecycle).import_and_anonymize(
                 file_path=file_path,
                 center_name=center.name,
                 retry=config.retry,
             )
+            if inventory_job is not None:
+                record_media_files(inventory_job, report)
         if not lifecycle.completed:
             raise RuntimeError("Report service returned without fenced job completion.")
     except (ReportImportBusyError, StaleReportImportAttemptError):

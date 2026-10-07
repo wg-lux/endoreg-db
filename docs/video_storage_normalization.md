@@ -37,11 +37,6 @@ matches. Existing immutable generation paths remain valid references. Sources
 are preserved unless the existing explicit deletion policy permits their removal.
 Ordinary report reads do not search import folders or guess replacement files.
 
-LuxNix retains `lx-annotate-video-streamable-migration.service` as the operational
-alias for the shared video/PDF `migrate_media_storage --apply` command. The unit
-is manually started, uses the encrypted runtime root, and does not bypass the
-feature-tracker migration gates. No deployed migration is implied by a code change.
-
 ## Import reservation and delivery recovery
 
 Source and content-hash import locks use the existing process-owned operating
@@ -122,6 +117,40 @@ runtime requires deployment of a compatible release; retries do not repair the
 schema, downgrade it, or manufacture encoding-profile defaults. These changes
 must be present in the deployed worker to protect its deliveries.
 
+## Plaintext materialization boundary
+
+Materialization creates a complete, temporary decrypted working file on entry to
+`ensure_local_file()` or `materialized_plaintext_field_file()`. The former reuses
+an existing protected plaintext source when appropriate; it does not delete that
+source on exit. Copies are created only when needed by a path-based consumer.
+Callers include report processing and integrity validation, video correction,
+reimport, post-validation blackening, transcoding, dimension backfill, explicit
+frame exports, and model-weight loading. Normal byte-range playback and the
+single-frame decoder do not need a complete plaintext copy. Video serialization
+returns persisted duration, including an unknown value, without decrypting media.
+
+Temporary copies stay under the protected transcoding root and are created
+exclusively with private permissions. Each writer owns an independent temporary
+name; creation failure does not authorize deletion of an existing file. Context
+exit removes owned copies on success or exception, and deletion failures propagate.
+Required path-based processing still needs plaintext access during execution.
+SAP ZIP imports also extract into an owned private directory under this boundary,
+reject unsafe archive paths and symbolic links, and remove the workspace on exit.
+
+`safe_unlink_file()` removes only the named directory entry, without opening or
+overwriting linked targets. It does not promise physical erasure: solid-state
+drives, copy-on-write filesystems, snapshots, and backups can retain prior bytes.
+The backing storage and its copies must remain encrypted. Likewise, abrupt process
+termination can prevent context-manager cleanup; unknown leftovers require the
+ownership-based reconciliation described below, not indiscriminate deletion by
+filename or age.
+
+Sources: [Python temporary-file lifecycle](https://docs.python.org/3/library/tempfile.html),
+[OWASP temporary-file creation](https://community.owasp.org/vulnerabilities/Insecure_Temporary_File),
+[GNU erasure limitations](https://www.gnu.org/s/coreutils/manual/html_node/shred-invocation.html).
+Security requirements and verification evidence belong to
+[`StorageSecurity.yml`](../feature-tracking/StorageSecurity.yml).
+
 ## Terms and Abbreviations
 
 Online encryption-key and identity-salt rotation is governed by
@@ -198,16 +227,16 @@ segment coordinates remain governed by `pts_v1`. Legacy entries without this
 evidence remain explicitly incomplete; original timestamps cannot be reconstructed
 from nominal frame rates. HLS rebuilds do not append canonical timestamp history.
 
-| Role | Creation | Retention | Deletion condition |
-|---|---|---|---|
-| Canonical unprocessed MP4 | Import or reimport | Until human anonymization validation and complete approval of every gate | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
-| Canonical anonymized MP4 | Import, reimport, or reanonymization | Permanent; exactly one published generation | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active |
-| Raw HLS | Successful import or reimport | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
-| Processed HLS | Successful import, reimport, or reanonymization | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
-| Legacy streamable MP4 | Historical compatibility output; no new copies are created | Retained until verified retirement | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion |
-| Extracted frame | Explicit export requiring image files | Export-scoped; annotation, inference, and local training decode in memory | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
-| Temporary transcode artifact | Normalization inside the protected transcoding directory | Only for the duration of one attempt | Through the `finally` path after success or failure; it is never marked as a valid master |
-| Quarantine artifact | Explicit fail-closed exception process | Until documented review | Only after separate quarantine approval; never through an automatic production fallback |
+| Role                         | Creation                                                   | Retention                                                                        | Deletion condition                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical unprocessed MP4    | Import or reimport                                         | Until human anonymization validation and complete approval of every gate         | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
+| Canonical anonymized MP4     | Import, reimport, or reanonymization                       | Permanent; exactly one published generation                                      | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active         |
+| Raw HLS                      | Successful import or reimport                              | Reproducible cache until raw-media release                                       | Together with the raw master, subject to the same cleanup gates and only when no media lease is active                                                          |
+| Processed HLS                | Successful import, reimport, or reanonymization            | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease                      |
+| Legacy streamable MP4        | Historical compatibility output; no new copies are created | Retained until verified retirement                                               | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion                                             |
+| Extracted frame              | Explicit export requiring image files                      | Export-scoped; annotation, inference, and local training decode in memory        | Only through the responsible frame or case lifecycle, never as a side effect of this migration command                                                          |
+| Temporary transcode artifact | Normalization inside the protected transcoding directory   | Only for the duration of one attempt                                             | Through the `finally` path after success or failure; it is never marked as a valid master                                                                       |
+| Quarantine artifact          | Explicit fail-closed exception process                     | Until documented review                                                          | Only after separate quarantine approval; never through an automatic production fallback                                                                         |
 
 HLS eviction is generation- and reference-based, not time-based. An old
 generation may be removed only after the new generation has been published
@@ -449,7 +478,6 @@ training uses the existing processed-frame stream provider. The retired `cache`
 inference option and frame-cache extraction/repair entry points fail explicitly;
 operators must select streaming or invoke an explicit export. Existing frame
 identities, timestamps, and legacy files are preserved.
-
 
 Single-frame annotation requests must not materialize the complete encrypted
 video as a temporary plaintext file. The backend resolves the requested frame
@@ -730,6 +758,33 @@ This command does not discover historical files without receipts. Scope and
 verification evidence belong to
 [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml),
 criterion `derived_artifact_lifecycle`.
+
+The recurring `endoreg_db.cleanup_media_sources` task runs every 15 minutes on
+the maintenance queue. It visits up to 25 videos per run, atomically persisting a
+typed primary-key cursor under the runtime manifest directory so worker recycling
+and blocked videos do not starve later candidates. A process-owned advisory lock
+serializes runs; cursor loss only restarts discovery and never authorizes deletion.
+Invalid cursor data fails loudly. Per video and source kind,
+up to 100 failed or superseded HTTP Live Streaming attempts are considered before
+master receipts. Their exact video/key-owned output and temporary directories
+can be removed without historical source hashes only when the current canonical
+source is content-verified and its matching published streaming derivative is
+available. Active leases, shared paths and symbolic links block removal. Database
+rows remain until all owned files have been removed; failed attempts without a
+valid current replacement remain available for diagnosis and retry suppression.
+Canonical master retirement still requires its original receipt and validation
+gates. Unreferenced files, missing-owner streaming directories and uncertain
+historical masters are inventory findings, not automatic deletion candidates.
+
+LuxNix enables this task's apply gate on every enabled host through
+`runtime.automaticMediaCleanup = true`, rendered as
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true`. Set the typed option to false for
+automatic dry-run inspection. This requires deployment of the shared module and
+the matching backend release; editing configuration does not activate hosts.
+The worker emits per-video `periodic_hls_cleanup` and
+`periodic_generation_cleanup` results and separate derivative/master counters.
+Track implementation and deployment evidence under `periodic_generation_cleanup`
+in the feature YAML linked above.
 
 ## Release Gates
 

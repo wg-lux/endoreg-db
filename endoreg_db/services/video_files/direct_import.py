@@ -31,6 +31,10 @@ from endoreg_db.services.hub.upload_job_state_machine import (
     mark_upload_job_processing,
 )
 from endoreg_db.services.imports.execution import ImportExecutionFence
+from endoreg_db.services.hub.upload_job_files import (
+    record_media_files,
+    track_upload_job_files,
+)
 from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.storage import ensure_local_file
@@ -114,7 +118,10 @@ class VideoImportService(ProcessingService):
             with UploadJobImportLeaseHeartbeat(lease) as heartbeat:
                 with locked_upload_job_import_lease(heartbeat.lease) as owned_job:
                     mark_upload_job_processing(owned_job)
-                with ensure_local_file(job.file) as local_path:
+                with (
+                    track_upload_job_files(job, guard=heartbeat.guard),
+                    ensure_local_file(job.file) as local_path,
+                ):
                     if get_file_hash(local_path) != content_hash:
                         raise RuntimeError(
                             "Persisted video source does not match its content hash"
@@ -141,6 +148,7 @@ class VideoImportService(ProcessingService):
                             source_path=local_path,
                             execution_fence=fence,
                         )
+                    record_media_files(job, video)
                 with locked_upload_job_import_lease(heartbeat.lease) as owned_job:
                     mark_upload_job_completed(
                         owned_job, sensitive_meta=video.sensitive_meta

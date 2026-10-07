@@ -68,8 +68,10 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 
 ## Media and Annotation
 
-Read [video storage normalization](video_storage_normalization.md) before changing
-video import, storage, transcoding, publication, or cleanup behavior.
+Start with [application storage and cleanup](storage_lifecycle.md) for the
+current repository-wide storage model. Read [video storage
+normalization](video_storage_normalization.md) before changing video import,
+storage, transcoding, publication, or cleanup behavior.
 
 - [Video import concurrency](video_import_concurrency_contract.md)
 - [Video timestamp and frame-rate call-site inventory](video_pts_fps_callsite_inventory.md)

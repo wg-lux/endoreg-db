@@ -135,8 +135,10 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
             )
         return attrs
 
-    def get_documents(self, instance: Case) -> list[dict[str, object]]:
-        documents: list[dict[str, object]] = []
+    def get_documents(
+        self, instance: Case
+    ) -> list[dict[str, str | int | datetime | None]]:
+        documents: list[dict[str, str | int | datetime | None]] = []
         for patient_examination in instance.patient_examinations.all():
             patient_examination_id = cast(int, patient_examination.pk)
             for pdf in patient_examination.raw_pdf_files.all():

@@ -10,6 +10,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/storage_lifecycle.md
+  disposition: reference
+  note: General current-state map of application storage ownership, protection, lifecycle, and cleanup.
 - path: docs/repo_alignment_todo.md
   disposition: migrated
   note: Cross-Repository-Divergenzen, Phasen und Erfolgskriterien sind Teil dieser DoD.
@@ -74,14 +77,73 @@ definition_of_done:
   - Managed Non-Video-Payloads nutzen anwendungsseitig verschlüsselten Storage.
   - Videos liegen innerhalb der freigegebenen verschlüsselten, streambaren Grenze.
   - Start schlägt fehl, wenn erforderliche Schlüssel- oder Storageinvarianten fehlen.
+  - Entschlüsselte Arbeitsdateien entstehen ausschließlich im geschützten Transcoding-Verzeichnis, mit
+    Dateimodus 0600 und Bereinigung auch bei Verarbeitungs- oder Lesefehlern.
+  - Validierung und explizite Medienlöschung unterdrücken keine Speicher-Löschfehler; bei fehlgeschlagener
+    expliziter Löschung bleibt der Datensatz für einen erneuten Versuch erhalten.
+  - Explizite Berichtlöschung bereinigt protokollierte Importquellen nach Eigentums- und Hashprüfung;
+    aktive oder wiederholbare Importe blockieren die Löschung.
+  - Die Transferannahme verlangt echte boolesche Freigaben aller Anonymisierungsstufen, einschließlich
+    Schwärzung außerhalb freigegebener Videosegmente.
+  - Metadatenabfragen materialisieren keine Videos; fehlende Dauer bleibt explizit unbekannt.
+  - Temporäre Schreiber verwenden exklusive, unabhängige Dateien mit Zugriffsrechten bereits bei Erstellung;
+    Kollisionen beschädigen und löschen keine fremden Dateien.
+  - Bereinigung überschreibt keine symbolischen oder harten Linkziele und behauptet keine physische Datenlöschung
+    auf Solid-State-Laufwerken oder Copy-on-Write-Dateisystemen.
+  - SAP-ZIP-Importe extrahieren ausschließlich in private geschützte Arbeitsverzeichnisse; unsichere Archivpfade
+    und Links werden abgewiesen, Arbeitskopien auch bei Fehlern entfernt.
   required: true
   verification:
     kind: manual
     instructions: Datenträger-, Settings- und Startfehlerprüfung im Produktionsprofil durchführen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'tests/services/test_media_security_lifecycle.py: 2 passed, 2 warnings in 61.72s; unabhängige
+        Prüfung durch codex-cleanup-20261005'
+    - kind: command
+      reference: '2026-10-06: vollständiger Pyright 0 errors, 10 warnings; finale gezielte Nachprüfung
+        0 errors, 0 warnings. Integration über 16 Testdateien: 361 passed, 1 failed, 40 subtests passed,
+        2 warnings in 113.30s; einzig veraltetes Mock-Ziel nach secure_unlink_file-Umstellung korrigiert,
+        Nachprüfung 1 passed, 1 warning in 33.63s. Ruff und git diff --check bestanden.'
+    - kind: command
+      reference: '2026-10-07: pytest tests/utils/test_file_operations.py tests/utils/test_storage_files.py
+        tests/utils/test_storage_materialization.py tests/serializers/video/test_video_file_serializer.py
+        tests/services/test_sap_ish_import.py -q: 68 passed; pytest Quellstream-Schließfehler, media_security_lifecycle,
+        video_processed_transcode_encryption, report_artifact_integrity, encryption_streaming, video_stream,
+        report_stream, sap_ish_import: 59 passed. Vollständiger Pyright 0 errors, 10 warnings; gezielte
+        Nachprüfung 0 errors, 0 warnings; Ruff und git diff --check bestanden.'
+    note: '2026-10-06: Atomare Klartextmaterialisierung ausschließlich unter geschütztem Transcoding-Storage,
+      Modus 0600 und Bereinigung auch bei Lesefehlern oder Consumer-Abbruch. Speicher-Löschfehler werden
+      bei Validierung und expliziter Video-Löschung nicht mehr unterdrückt. Gemeinsame Eigentums-/Hash-/Aktivitätsprüfungen
+      bereinigen explizit gelöschte Video- und Berichtquellen; der Reaper berücksichtigt protokollierte
+      Berichtkopien. Transferannahme verlangt echte boolesche Freigaben für Anonymisierung, Metadatenverarbeitung,
+      Validierung und bei Videos abgeschlossene Schwärzung außerhalb freigegebener Segmente (outside_segments_removed).
+      362 unterschiedliche Regressionstests und 40 Untertests bestanden über Integrationslauf und korrigierten
+      Einzel-Nachlauf. Zusätzlich unabhängiger Bericht-Lifecycle-Test: 2 passed; echte verschlüsselte
+      Bytes, authentifizierte Materialisierung, Raw-Löschung nach Validierung und Force-Removal samt Upload-/Importkopien.
+      Import-, Streaming-, Transcode-, Envelope- und Readiness-Regressionsprüfungen enthalten. Aktive
+      Importe/Leases und unklare Eigentumsverhältnisse blockieren destruktive Löschung weiterhin. Produktive
+      Datenträgerverschlüsselung, harte Prozessabbrüche und vollständige klinische Anonymisierungsqualität
+      sind nicht nachgewiesen; keine Produktionsfreigabe.
+
+
+      2026-10-07: Materialisierungszeitpunkt und Aufrufer recherchiert; Video-Metadatenabfragen entschlüsseln
+      keine Medien mehr. Exklusive, unabhängige temporäre Schreiber setzen private Rechte bereits bei
+      Erstellung; Kollisionen erhalten fremde Dateien. Materialisierung und Berichtstaging weisen Root-Flucht
+      ab. Bereinigung überschreibt keine Linkziele; auch Fehler beim Schließen des Quellstreams entfernen
+      eigene Klartextkopien. SAP-ZIP-Extraktion verwendet private geschützte Arbeitsverzeichnisse und
+      atomare Dateien, weist unsichere Pfade, symbolische Links und doppelte Dateien ab und bereinigt
+      Erfolg sowie Fehler. Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen; gezielte Nachprüfungen:
+      0 Fehler, 0 Warnungen. Fokussierte Lane: 68 passed, 2 warnings in 63.85s; anschließende Integration
+      inklusive Quellstream-Schließfehler: 59 passed, 2 warnings in 185.14s. Ruff und beide Diff-Prüfungen
+      bestanden. Keine zweite vollständige Suite gestartet, da fremde pytest-Suite PID 1687645 aktiv.
+      Produktive Verschlüsselung einschließlich Snapshots, Backups und Swap sowie Bereinigung nach hartem
+      Prozessabbruch bleiben unbewiesen; keine Produktionsfreigabe.'
+    assessed_by: codex-storage-20261006-a1
+    assessed_at: '2026-10-07T07:15:09.827094Z'
 - id: protected_delivery
   category: functionality
   title: Geschützte Medien werden nur autorisiert und proxygeeignet ausgeliefert

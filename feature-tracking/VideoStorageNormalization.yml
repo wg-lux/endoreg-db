@@ -74,6 +74,11 @@ definition_of_done:
   - Veraltete und fehlgeschlagene Streaming-Versuche mit passendem Quellnamen und Hash werden einschließlich
     ihrer temporären Schlüssel-, Quell- und Ausgabeverzeichnisse bereinigt.
   - Aktive Leases, unbekannte Referenzen und ungültige Ersatzgenerationen blockieren weiterhin die Bereinigung.
+  - Auf allen Hosts bereinigt der automatische Apply-Modus auch terminale rohe und verarbeitete Streaming-Derivate
+    ohne Master-Löschbeleg; ein verifizierter aktueller Quellinhalt und dessen verfügbares Streaming-Derivat
+    sind erforderlich. Fehlende historische Quell-Hashes erlauben niemals eine Master-Löschung.
+  - Streaming-Datensätze werden erst nach erfolgreicher Dateibereinigung entfernt; blockierte Videos verhindern
+    nicht die Bearbeitung späterer Batches.
   required: true
   verification:
     kind: manual
@@ -89,12 +94,21 @@ definition_of_done:
       reference: tests/services/test_processed_video_cleanup.py
     - kind: test
       reference: tests/services/test_periodic_media_cleanup.py
-    note: 'Lokale Erweiterung implementiert. Cleanup-Integrationssuite: 119 passed; Streaming-Regressionssuite:
-      57 passed. Vollständiger Backend-Pyright: 0 Fehler, 10 bestehende Warnungen; fokussierter Pyright
-      ohne Warnungen. Bestehende Integritäts-, Timeline- und Lease-Gates erhalten. Scheduler noch nicht
-      auf gc-02 bereitgestellt; keine neue Produktionslöschung.'
+    - kind: code
+      reference: endoreg_db/tasks.py
+    - kind: document
+      reference: docs/video_storage_normalization.md
+    note: 'Automatische Bereinigung terminaler HTTP-Live-Streaming-Derivate beider Quellarten implementiert;
+      aktuelle verifizierte Quelle und verfügbares Derivat bleiben Voraussetzung. Fehlende historische
+      Hashes erlauben nur Derivat-, keine Master-Löschung. Begrenzte Batches, atomar persistierter typisierter
+      Cursor und Prozess-Lock verhindern Stillstand durch blockierte Datensätze und überlappende Läufe.
+      173 Integrations-/Streaming-/Import-/Lease-/Hashcache-Tests bestanden; abschließende fokussierte
+      Suite nach Cursor- und Batch-Erweiterung: 50 passed. Vollständiger Pyright: 0 Fehler, 10 bestehende
+      Warnungen; abschließende fokussierte Pyright-Läufe: 0 Fehler/Warnungen. Ruff und diff --check bestanden.
+      LuxNix-Allhost-Apply-Konfiguration vorbereitet; kein neuer Produktionscode aktiviert und keine Produktionslöschung
+      durch diese Änderung.'
     assessed_by: codex-cleanup-20261005
-    assessed_at: '2026-10-06T08:20:35.706978Z'
+    assessed_at: '2026-10-06T13:45:29.656953Z'
 - id: explicit_video_copy_deletion
   category: functionality
   title: Explizite Videolöschung entfernt belegte Quellen und Generationen

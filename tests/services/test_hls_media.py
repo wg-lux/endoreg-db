@@ -1605,14 +1605,14 @@ def test_hls_key_cleanup_failure_blocks_new_attempt_until_reconciled(
     video = _create_processed_video(center=hls_center)
     fake_hls = FakeHlsOutputRecorder()
     monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", fake_hls.run)
-    unlink = hls_media.secure_unlink_file
+    unlink = hls_media.safe_unlink_file
 
     def fail_key_unlink(path: Path, *, missing_ok: bool = False) -> None:
         if path.name == "hls.key":
             raise OSError("HLS key cleanup denied")
         return unlink(path, missing_ok=missing_ok)
 
-    monkeypatch.setattr(hls_media, "secure_unlink_file", fail_key_unlink)
+    monkeypatch.setattr(hls_media, "safe_unlink_file", fail_key_unlink)
     with pytest.raises(OSError, match="HLS key cleanup denied"):
         hls_media.materialize_video_hls(video.pk)
     failed = VideoHlsArtifact.objects.get(video=video, status="failed")
@@ -1621,7 +1621,7 @@ def test_hls_key_cleanup_failure_blocks_new_attempt_until_reconciled(
     with pytest.raises(OSError, match="HLS key cleanup denied"):
         hls_media.materialize_video_hls(video.pk)
     assert len(fake_hls.source_payloads) == 1
-    monkeypatch.setattr(hls_media, "secure_unlink_file", unlink)
+    monkeypatch.setattr(hls_media, "safe_unlink_file", unlink)
     result = hls_media.materialize_video_hls(video.pk)
     assert result.status == "materialized"
     assert not key_dir.exists()

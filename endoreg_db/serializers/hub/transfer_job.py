@@ -299,6 +299,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         self._validate_transfer_eligible_anonymization_status(
             anonymization_status=anonymization_status,
             resource_kind="video",
+            state_payload=video_state_payload,
         )
         self._validate_processed_state_hash(
             video_state_payload,
@@ -369,6 +370,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         self._validate_transfer_eligible_anonymization_status(
             anonymization_status=anonymization_status,
             resource_kind="report",
+            state_payload=report_state_payload,
         )
         self._validate_processed_state_hash(
             report_state_payload,
@@ -445,6 +447,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         *,
         anonymization_status: AnonymizationState,
         resource_kind: str,
+        state_payload: dict[str, object],
     ) -> None:
         if anonymization_status not in self._TRANSFER_ELIGIBLE_ANONYMIZATION_STATES:
             raise serializers.ValidationError(
@@ -454,6 +457,20 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                         "data that was explicitly validated. "
                         f"Current anonymization_status={anonymization_status.value!r} is not eligible."
                     )
+                }
+            )
+
+        required_fields = [
+            "anonymized",
+            "sensitive_meta_processed",
+            "anonymization_validated",
+        ]
+        if resource_kind == "video":
+            required_fields.append("outside_segments_removed")
+        if any(state_payload.get(field) is not True for field in required_fields):
+            raise serializers.ValidationError(
+                {
+                    "resource_rows": f"{resource_kind} transfer requires completed and validated anonymization stages: {', '.join(required_fields)}"
                 }
             )
 

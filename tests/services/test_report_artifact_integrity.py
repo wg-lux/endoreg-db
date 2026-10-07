@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
 from endoreg_db.import_files.context.default_sensitive_meta import (
     default_sensitive_meta,
@@ -26,7 +27,7 @@ PDF_BYTES = ReportImportService._render_single_page_pdf("report integrity fixtur
 pytestmark = pytest.mark.django_db
 
 
-def _completed_report() -> RawPdfFile:
+def completed_report() -> RawPdfFile:
     center = get_default_center()
     report = RawPdfFile.objects.create(
         center=center,
@@ -63,7 +64,7 @@ def _completed_report() -> RawPdfFile:
 def test_processed_report_sha256_is_persisted_and_mismatch_fails(
     base_db_data: object,
 ) -> None:
-    report = _completed_report()
+    report = completed_report()
 
     digest = verify_and_persist_processed_report_sha256(report)
     state = report.state
@@ -83,7 +84,7 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     base_db_data: object,
     django_capture_on_commit_callbacks: Callable[..., Any],
 ) -> None:
-    report = _completed_report()
+    report = completed_report()
     processed_name = report.processed_file.name
     processed_digest = get_file_hash(report.processed_file)
 
@@ -111,13 +112,44 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
 
 
+def test_validation_surfaces_cleanup_failure_and_can_retry(
+    base_db_data: object,
+    django_capture_on_commit_callbacks: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = completed_report()
+    storage = report.file.storage
+    original_delete = storage.delete
+    raw_name = report.file.name
+
+    def fail_delete(name: str) -> None:
+        raise PermissionError("storage deletion denied")
+
+    payload: PdfFileMetaJsonObject = {"anonymized_text": "Anonymized report text"}
+    monkeypatch.setattr(storage, "delete", fail_delete)
+    with pytest.raises(PermissionError, match="storage deletion denied"):
+        with django_capture_on_commit_callbacks(execute=True):
+            validate_report_metadata_annotation(report, payload)
+    report.refresh_from_db()
+    assert report.file.name == raw_name
+    assert file_exists(report.file)
+    assert file_exists(report.processed_file)
+
+    monkeypatch.setattr(storage, "delete", original_delete)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert validate_report_metadata_annotation(report, payload)
+    report.refresh_from_db()
+    assert not report.file
+    assert file_exists(report.processed_file)
+
+
 @pytest.mark.parametrize("failure", ["missing", "digest_mismatch"])
 def test_rejected_approval_preserves_raw_and_validation_state(
     base_db_data: object,
     django_capture_on_commit_callbacks: Callable[..., Any],
     failure: str,
 ) -> None:
-    report = _completed_report()
+    report = completed_report()
     state = report.state
     assert state is not None
     if failure == "missing":
@@ -144,7 +176,7 @@ def test_rejected_approval_preserves_raw_and_validation_state(
 def test_completed_record_survives_pdf_cleanup(
     base_db_data: object, missing: str | None
 ) -> None:
-    report = _completed_report()
+    report = completed_report()
     report.file.delete(save=False)
     report.processed_file.delete(save=False)
     report.save(update_fields=["file", "processed_file"])

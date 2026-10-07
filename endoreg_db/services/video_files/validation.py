@@ -4,11 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from endoreg_db.services.patient_identity.external_ids import (
-    assign_patient_external_id,
-    split_patient_external_id,
-)
-
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.video_files.metadata import VideoTextMetaPayload
@@ -40,41 +35,12 @@ def validate_video_metadata_annotation(
     if extracted_data_dict is None and video.sensitive_meta is None:
         return False
 
-    metadata_updated = False
-    try:
-        updated_meta = update_video_text_metadata(
-            video,
-            extracted_data_dict,
-            overwrite=True,
-        )
-        metadata_updated = updated_meta is not None or extracted_data_dict is not None
-    except Exception as exc:
-        logger.warning(
-            "Falling back to direct SensitiveMeta update for %s after text metadata update failed: %s",
-            video.raw_video_hash,
-            exc,
-        )
-        if video.sensitive_meta is not None and extracted_data_dict is not None:
-            try:
-                update_payload, external_id_pair = split_patient_external_id(
-                    extracted_data_dict.to_dict()
-                )
-                video.sensitive_meta.update_from_dict(update_payload)
-                if external_id_pair is not None:
-                    assign_patient_external_id(
-                        sensitive_meta=video.sensitive_meta,
-                        external_id_pair=external_id_pair,
-                    )
-                metadata_updated = True
-            except Exception as update_exc:
-                logger.error(
-                    "Failed direct SensitiveMeta update for %s: %s",
-                    video.raw_video_hash,
-                    update_exc,
-                    exc_info=True,
-                )
-
-    if not metadata_updated and video.sensitive_meta is None:
+    updated_meta = update_video_text_metadata(
+        video,
+        extracted_data_dict,
+        overwrite=True,
+    )
+    if updated_meta is None:
         return False
 
     get_or_create_video_state(video).mark_anonymization_validated(save=True)

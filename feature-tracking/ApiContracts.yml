@@ -114,14 +114,26 @@ definition_of_done:
     - kind: command
       reference: '.devenv/state/venv/bin/pytest tests/utils/test_openapi_metadata.py -q: 3 passed, 2 warnings
         in 7.05s'
+    - kind: test
+      reference: 'tests/views/case/test_case_viewset.py; tests/services/test_case_media_attachments.py:
+        21 passed, 1 skipped'
     note: 'Antworttyp-Verträge verwenden HttpResponse beziehungsweise StreamingHttpResponse. Die api_view-Typgrenze
       in endoreg_db/openapi.py akzeptiert beide Antwortklassen; FileResponse-Downloads sind typkorrekt.
       Öffentliche OpenAPI-Helfer und Serializer-Metadaten bleiben erhalten. Vollständiger Pyright: 0 Fehler,
       0 Warnungen. OpenAPI-Metadatentests: 3 bestanden, 2 Warnungen; vorherige Antworttyp-Suite: 115 bestanden.
       Ruff und Formatprüfung bestanden. Bestehende Routenevidenz bleibt erhalten; keine erneute vollständige
-      Abnahme aller Akzeptanzpunkte.'
-    assessed_by: codex-response-types-20260915
-    assessed_at: '2026-09-15T09:56:42.906841Z'
+      Abnahme aller Akzeptanzpunkte. Vertragsprüfung 2026-10-07: CaseSerializer.get_documents von object
+      auf tatsächliche skalare Werte und datetime eingeschränkt; OpenAPI beschreibt Case.documents und
+      PatchedCase.documents dadurch als Objektlisten statt String. Keine Änderung der Antwortdaten, keine
+      zusätzliche Runtime-Abhängigkeit. Lokales LX-Annotate verwendet neu gebautes endoreg-db 1.4.8; Regression
+      im dortigen test_openapi_type_generation.py. Vollständige LX-Annotate-Suite: 1259 passed, 6 skipped;
+      Frontend vue-tsc/ESLint und 14 case-API-Tests bestanden. Endoreg-Pyright: 0 Fehler/10 bestehende
+      Warnungen; fokussierter Pyright: 0 Fehler. Endoreg-Fall- und Medienzuordnungstests: 21 passed, 1
+      skipped, 2 warnings in 74.32s, nach Behebung fehlender lokaler libpq-/Dev-Umgebung. Keine produktive
+      Bereitstellung; verbleibende Legacy-Schemawarnungen werden nicht als vollständig spezifizierte Verträge
+      ausgegeben.'
+    assessed_by: codex-storage-20261006-a1
+    assessed_at: '2026-10-07T10:02:37.025518Z'
 - id: route_coverage
   category: testing
   title: Every high-risk route has a robust contract test

@@ -129,6 +129,159 @@ def test_dry_run_then_apply_is_idempotent(replacement: Replacement) -> None:
     )
 
 
+@pytest.mark.parametrize("kind", ["raw", "processed"])
+@pytest.mark.parametrize("status", ["superseded", "failed"])
+def test_periodic_derivatives_retire_legacy_records_without_deleting_masters(
+    replacement: Replacement, kind: str, status: str
+) -> None:
+    video = replacement.video
+    artifact = replacement.old_artifact
+    artifact.status = status
+    if status == "failed":
+        artifact.error_code = VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
+    artifact.source_content_hash = ""
+    artifact.artifact_kind = kind
+    directory = replacement.old_hls
+    if kind == "raw":
+        video.raw_file.name = video.raw_file.storage.save(
+            to_storage_relative(
+                get_runtime_paths().sensitive_video / f"{uuid4().hex}.mp4"
+            ),
+            ContentFile(b"new processed"),
+        )
+        video.save(update_fields=["raw_file"])
+        directory = (
+            get_runtime_paths().streamable_videos_raw_media
+            / "hls"
+            / str(video.uuid)
+            / str(artifact.key_id)
+            / "v0"
+        )
+        directory.mkdir(parents=True)
+        (directory / "playlist.m3u8").write_text("#EXTM3U\nseg_00000.ts\n")
+        (directory / "seg_00000.ts").write_bytes(b"encrypted derivative")
+        artifact.segment_directory_relative_path = to_protected_media_relative(
+            directory
+        )
+        artifact.playlist_relative_path = to_protected_media_relative(
+            directory / "playlist.m3u8"
+        )
+        replacement.ready.artifact_kind = kind
+        replacement.ready.source_file_name = str(video.raw_file.name)
+        replacement.ready.save()
+    artifact.save()
+    roots = [
+        get_runtime_paths().transcoding / role / str(video.pk) / str(artifact.key_id)
+        for role in ("hls_key_material", "hls_plaintext_source", "hls_output")
+    ]
+    for root in roots:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "temporary").write_bytes(b"regenerable")
+    assert cleanup.cleanup_superseded_hls(video.pk).reason == "dry_run"
+    assert directory.exists()
+    result = cleanup.cleanup_superseded_hls(video.pk, apply=True)
+    assert result.cleaned == 1 and result.pending == 0
+    assert not directory.exists()
+    assert all(not root.exists() for root in roots)
+    assert not VideoHlsArtifact.objects.filter(pk=artifact.pk).exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.ready.pk).exists()
+    assert video.processed_file.storage.exists(replacement.old_name)
+    assert video.processed_file.storage.exists(str(video.processed_file.name))
+    video.refresh_from_db()
+    assert len(cleanup_receipts(video.meta)) == 1
+    assert (
+        cleanup.cleanup_superseded_hls(video.pk, apply=True).reason == "nothing_pending"
+    )
+
+
+@pytest.mark.parametrize(
+    "blocker", ["active_lease", "missing_source", "wrong_hash", "missing_ready"]
+)
+def test_periodic_derivatives_require_available_current_source(
+    replacement: Replacement, blocker: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = replacement.video
+    if blocker == "active_lease":
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type=MediaOperationLease.LEASE_STREAM,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+    elif blocker == "missing_source":
+        video.processed_file.storage.delete(str(video.processed_file.name))
+    elif blocker == "wrong_hash":
+        replacement.ready.source_content_hash = "0" * 64
+    else:
+
+        def unavailable(**kwargs: object) -> VideoHlsArtifact:
+            raise VideoHlsArtifact.DoesNotExist
+
+        monkeypatch.setattr(hls_media, "get_ready_hls_artifact", unavailable)
+    result = cleanup.cleanup_superseded_hls(video.pk, apply=True)
+    assert result.cleaned == 0 and result.pending == 1
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+
+
+def test_periodic_derivatives_keep_records_after_partial_cleanup_failure(
+    replacement: Replacement, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(path: Path, *, missing_ok: bool) -> None:
+        raise OSError("unavailable storage")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(cleanup, "safe_rmtree", fail)
+        with pytest.raises(OSError):
+            cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+    assert cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True).cleaned == 1
+
+
+def test_periodic_derivative_batch_reports_and_retries_remaining_records(
+    replacement: Replacement,
+) -> None:
+    VideoHlsArtifact.objects.bulk_create(
+        [
+            VideoHlsArtifact(
+                video=replacement.video,
+                artifact_kind="processed",
+                status="failed",
+                error_code=VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
+            )
+            for _ in range(100)
+        ]
+    )
+    first = cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert first.cleaned == 100 and first.pending == 1
+    second = cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert second.cleaned == 1 and second.pending == 0
+    assert VideoHlsArtifact.objects.filter(pk=replacement.ready.pk).exists()
+
+
+@pytest.mark.parametrize("alias", [False, True])
+def test_periodic_derivatives_reject_shared_or_aliased_paths(
+    replacement: Replacement, alias: bool, tmp_path: Path
+) -> None:
+    if alias:
+        outside = tmp_path / "retained"
+        outside.write_bytes(b"unrelated")
+        (replacement.old_hls / "alias").symlink_to(outside)
+    else:
+        VideoHlsArtifact.objects.create(
+            video=replacement.video,
+            artifact_kind="processed",
+            status="failed",
+            error_code=VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
+            segment_directory_relative_path=to_protected_media_relative(
+                replacement.old_hls
+            ),
+        )
+    with pytest.raises(ValueError):
+        cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+
+
 @pytest.mark.parametrize(
     "suffix", ["_filtered", ".attempt-" + "a" * 32, ".post_validation." + "b" * 64]
 )
@@ -255,7 +408,7 @@ def test_digest_mismatch_deletes_nothing(replacement: Replacement) -> None:
     with patch.object(
         cleanup,
         "get_file_hash",
-        side_effect=[replacement.video.processed_video_hash, "0" * 64],
+        return_value="0" * 64,
     ):
         with pytest.raises(ValueError, match="digest differs"):
             cleanup.cleanup_processed_video_generations(
