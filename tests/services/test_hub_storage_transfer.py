@@ -22,6 +22,7 @@ from endoreg_db.services.hub.storage_rotation import (
     request_storage_rotation,
 )
 from endoreg_db.services.hub.storage_transfer import (
+    DeletedTransferEvidenceRequest,
     PlacementCommitRequest,
     ReplacementTransferEvidenceRequest,
     StoredTransferEvidenceRequest,
@@ -32,6 +33,7 @@ from endoreg_db.services.hub.storage_transfer import (
     get_verified_transfer_evidence_for_placement,
     record_stored_transfer_evidence,
     record_failed_transfer_evidence,
+    record_deleted_transfer_evidence,
     record_verified_transfer_evidence,
     replace_verified_transfer_evidence,
 )
@@ -235,7 +237,10 @@ def test_source_lookup_fails_closed_without_verified_envelope() -> None:
 
 
 @pytest.mark.django_db
-def test_recipient_key_replacement_atomically_retires_prior_envelope() -> None:
+@pytest.mark.parametrize("replacement_matches", [True, False])
+def test_recipient_key_replacement_atomically_retires_prior_envelope(
+    replacement_matches: bool,
+) -> None:
     source, _target = _placement_pair()
     first = record_stored_transfer_evidence(
         request=replace(
@@ -288,6 +293,30 @@ def test_recipient_key_replacement_atomically_retires_prior_envelope() -> None:
     first.refresh_from_db()
     assert first.state == StorageTransferEvidence.State.RETIRED
     assert replacement.state == StorageTransferEvidence.State.VERIFIED
+
+    deletion = DeletedTransferEvidenceRequest(
+        evidence_id=first.pk,
+        ciphertext_sha256=first.ciphertext_sha256,
+        node_key=first.node_key,
+        deleted_at=timezone.now(),
+        idempotency_key="rekey-delete-prior-0001",
+    )
+    if not replacement_matches:
+        StorageTransferEvidence.objects.filter(pk=replacement.pk).update(
+            plaintext_sha256="f" * 64
+        )
+        with pytest.raises(TransferEvidenceError) as blocked:
+            record_deleted_transfer_evidence(request=deletion)
+        assert (
+            blocked.value.code
+            is TransferEvidenceErrorCode.CLEANUP_AUTHORIZATION_REQUIRED
+        )
+        first.refresh_from_db()
+        assert first.state == StorageTransferEvidence.State.RETIRED
+    else:
+        deleted = record_deleted_transfer_evidence(request=deletion)
+        assert deleted.state == StorageTransferEvidence.State.DELETED
+        assert record_deleted_transfer_evidence(request=deletion).pk == first.pk
 
 
 @pytest.mark.django_db

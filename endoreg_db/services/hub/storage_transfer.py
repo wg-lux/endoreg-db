@@ -493,6 +493,135 @@ def commit_verified_storage_placement(
         return receipt
 
 
+def _rotation_cleanup_target_matches(
+    rotation: StorageRotation,
+    source: StorageArtifactPlacement,
+    target: StorageArtifactPlacement,
+    evidence: StorageTransferEvidence | None,
+) -> bool:
+    return (
+        rotation.state
+        in {StorageRotation.State.COMMITTED, StorageRotation.State.CLEANUP_DEFERRED}
+        and rotation.source_placement_id == source.pk
+        and source.state == StorageArtifactPlacement.State.SUPERSEDED
+        and target.pk == rotation.target_placement_id
+        and evidence is not None
+        and evidence.placement_id == target.pk
+        and evidence.state == StorageTransferEvidence.State.VERIFIED
+    )
+
+
+def _validate_retired_transfer_replacement(evidence: StorageTransferEvidence) -> None:
+    placement = evidence.placement
+    replacement_exists = (
+        StorageTransferEvidence.objects.filter(
+            placement=placement,
+            state=StorageTransferEvidence.State.VERIFIED,
+            plaintext_sha256=evidence.plaintext_sha256,
+            plaintext_size=evidence.plaintext_size,
+        )
+        .exclude(pk=evidence.pk)
+        .exists()
+    )
+    if (
+        evidence.state != StorageTransferEvidence.State.RETIRED
+        or placement.state != StorageArtifactPlacement.State.COMMITTED
+        or not replacement_exists
+    ):
+        raise TransferEvidenceError(
+            TransferEvidenceErrorCode.CLEANUP_AUTHORIZATION_REQUIRED,
+            "Deleting rotation-source evidence requires exact cleanup authorization.",
+        )
+
+
+def _validate_deleted_transfer_authorization(
+    request: DeletedTransferEvidenceRequest,
+    evidence: StorageTransferEvidence,
+    *,
+    media_lease_video_id: int | None,
+) -> None:
+    placement = evidence.placement
+    if request.cleanup_authorization_id is None:
+        _validate_retired_transfer_replacement(evidence)
+    else:
+        authorization = (
+            StorageRotationCleanupReceipt.objects.select_for_update()
+            .filter(
+                pk=request.cleanup_authorization_id,
+                source_transfer_evidence=evidence,
+            )
+            .first()
+        )
+        if authorization is None:
+            raise TransferEvidenceError(
+                TransferEvidenceErrorCode.CLEANUP_AUTHORIZATION_REQUIRED,
+                "Cleanup authorization does not match the source transfer evidence.",
+            )
+        rotation = (
+            StorageRotation.objects.select_for_update()
+            .select_related("source_placement", "target_placement")
+            .get(pk=authorization.rotation_id)
+        )
+        verification = (
+            StorageRotationVerificationReceipt.objects.select_for_update(of=("self",))
+            .select_related("transfer_evidence")
+            .get(pk=authorization.verification_receipt_id)
+        )
+        canonical_target = (
+            StorageArtifactPlacement.objects.select_for_update()
+            .filter(
+                artifact_key=rotation.artifact_key,
+                artifact_kind=rotation.artifact_kind,
+                role=StorageArtifactPlacement.Role.PRIMARY,
+                state=StorageArtifactPlacement.State.COMMITTED,
+            )
+            .first()
+        )
+        target_evidence = verification.transfer_evidence
+        if target_evidence is not None:
+            target_evidence = StorageTransferEvidence.objects.select_for_update().get(
+                pk=target_evidence.pk
+            )
+        lease_aware_kinds = {
+            StorageArtifactKind.ANONYMIZED_VIDEO,
+            StorageArtifactKind.VIDEO_HLS,
+            StorageArtifactKind.STREAMABLE_VIDEO,
+        }
+        active_lease_exists = (
+            media_lease_video_id is not None
+            and MediaOperationLease.objects.select_for_update()
+            .filter(
+                video_id=media_lease_video_id,
+                expires_at__gt=timezone.now(),
+            )
+            .exists()
+        )
+        if (
+            canonical_target is None
+            or not _rotation_cleanup_target_matches(
+                rotation, placement, canonical_target, target_evidence
+            )
+            or authorization.artifact_key != placement.artifact_key
+            or authorization.artifact_kind != placement.artifact_kind
+            or authorization.source_node_key != evidence.node_key
+            or authorization.target_node_key
+            != canonical_target.storage_node.node.node_key
+            or authorization.expected_size_bytes != evidence.plaintext_size
+            or authorization.sha256 != evidence.plaintext_sha256
+            or authorization.placement_generation != canonical_target.generation
+            or request.deleted_at < authorization.created_at
+            or (
+                placement.artifact_kind in lease_aware_kinds
+                and media_lease_video_id is None
+            )
+            or active_lease_exists
+        ):
+            raise TransferEvidenceError(
+                TransferEvidenceErrorCode.CLEANUP_BLOCKED,
+                "Cleanup authorization is stale or no longer safe for source deletion.",
+            )
+
+
 def record_deleted_transfer_evidence(
     *, request: DeletedTransferEvidenceRequest
 ) -> StorageTransferEvidence:
@@ -542,115 +671,11 @@ def record_deleted_transfer_evidence(
                 "The media-operation lease subject changed during deletion validation.",
             )
 
-        if request.cleanup_authorization_id is None:
-            replacement_exists = (
-                StorageTransferEvidence.objects.filter(
-                    placement=placement,
-                    state=StorageTransferEvidence.State.VERIFIED,
-                    plaintext_sha256=evidence.plaintext_sha256,
-                    plaintext_size=evidence.plaintext_size,
-                )
-                .exclude(pk=evidence.pk)
-                .exists()
-            )
-            if (
-                evidence.state != StorageTransferEvidence.State.RETIRED
-                or placement.state != StorageArtifactPlacement.State.COMMITTED
-                or not replacement_exists
-            ):
-                raise TransferEvidenceError(
-                    TransferEvidenceErrorCode.CLEANUP_AUTHORIZATION_REQUIRED,
-                    "Deleting rotation-source evidence requires exact cleanup authorization.",
-                )
-        else:
-            authorization = (
-                StorageRotationCleanupReceipt.objects.select_for_update()
-                .filter(
-                    pk=request.cleanup_authorization_id,
-                    source_transfer_evidence=evidence,
-                )
-                .first()
-            )
-            if authorization is None:
-                raise TransferEvidenceError(
-                    TransferEvidenceErrorCode.CLEANUP_AUTHORIZATION_REQUIRED,
-                    "Cleanup authorization does not match the source transfer evidence.",
-                )
-            rotation = (
-                StorageRotation.objects.select_for_update()
-                .select_related("source_placement", "target_placement")
-                .get(pk=authorization.rotation_id)
-            )
-            verification = (
-                StorageRotationVerificationReceipt.objects.select_for_update(
-                    of=("self",)
-                )
-                .select_related("transfer_evidence")
-                .get(pk=authorization.verification_receipt_id)
-            )
-            canonical_target = (
-                StorageArtifactPlacement.objects.select_for_update()
-                .filter(
-                    artifact_key=rotation.artifact_key,
-                    artifact_kind=rotation.artifact_kind,
-                    role=StorageArtifactPlacement.Role.PRIMARY,
-                    state=StorageArtifactPlacement.State.COMMITTED,
-                )
-                .first()
-            )
-            target_evidence = verification.transfer_evidence
-            if target_evidence is not None:
-                target_evidence = (
-                    StorageTransferEvidence.objects.select_for_update().get(
-                        pk=target_evidence.pk
-                    )
-                )
-            lease_aware_kinds = {
-                StorageArtifactKind.ANONYMIZED_VIDEO,
-                StorageArtifactKind.VIDEO_HLS,
-                StorageArtifactKind.STREAMABLE_VIDEO,
-            }
-            active_lease_exists = (
-                media_lease_video_id is not None
-                and MediaOperationLease.objects.select_for_update()
-                .filter(
-                    video_id=media_lease_video_id,
-                    expires_at__gt=timezone.now(),
-                )
-                .exists()
-            )
-            if (
-                rotation.state
-                not in {
-                    StorageRotation.State.COMMITTED,
-                    StorageRotation.State.CLEANUP_DEFERRED,
-                }
-                or rotation.source_placement_id != placement.pk
-                or placement.state != StorageArtifactPlacement.State.SUPERSEDED
-                or canonical_target is None
-                or canonical_target.pk != rotation.target_placement_id
-                or target_evidence is None
-                or target_evidence.placement_id != canonical_target.pk
-                or target_evidence.state != StorageTransferEvidence.State.VERIFIED
-                or authorization.artifact_key != placement.artifact_key
-                or authorization.artifact_kind != placement.artifact_kind
-                or authorization.source_node_key != evidence.node_key
-                or authorization.target_node_key
-                != canonical_target.storage_node.node.node_key
-                or authorization.expected_size_bytes != evidence.plaintext_size
-                or authorization.sha256 != evidence.plaintext_sha256
-                or authorization.placement_generation != canonical_target.generation
-                or request.deleted_at < authorization.created_at
-                or (
-                    placement.artifact_kind in lease_aware_kinds
-                    and media_lease_video_id is None
-                )
-                or active_lease_exists
-            ):
-                raise TransferEvidenceError(
-                    TransferEvidenceErrorCode.CLEANUP_BLOCKED,
-                    "Cleanup authorization is stale or no longer safe for source deletion.",
-                )
+        _validate_deleted_transfer_authorization(
+            request,
+            evidence,
+            media_lease_video_id=media_lease_video_id,
+        )
         evidence.apply_deleted(
             idempotency_key=request.idempotency_key,
             request_fingerprint=fingerprint,

@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 from datetime import date as dt_date, datetime, time as dt_time
 from typing import Any, Protocol, TypedDict, cast
 
@@ -24,6 +25,7 @@ from endoreg_db.serializers.anonymization import (
     SensitiveMetaValidateSerializer,
 )
 from endoreg_db.services.privacy.metrics import (
+    MediaType,
     capture_sensitive_meta_metric_values,
     record_validation_metrics,
 )
@@ -131,11 +133,6 @@ class ValidationOperationMetaPayload(TypedDict):
     timestamp: str
     timestamp_source: str
     examination_date: str | None
-
-
-class VideoValidationPayload(dict[str, object]):
-    def model_dump(self, *args: object, **kwargs: object) -> dict[str, object]:
-        return dict(self)
 
 
 @api_view(["GET"])
@@ -268,12 +265,9 @@ def _apply_payload_gender(
 def _prepare_video_validation_payload(
     base_payload: PdfFileMetaJsonObject,
     file_obj: object,
-) -> VideoValidationPayload:
+) -> VideoTextMetaPayload:
     prepared = _prepare_validation_payload(base_payload, file_obj)
-    validated_payload = VideoTextMetaPayload.model_validate(
-        _video_text_meta_payload_data(prepared)
-    )
-    return VideoValidationPayload(validated_payload.model_dump(mode="python"))
+    return VideoTextMetaPayload.model_validate(_video_text_meta_payload_data(prepared))
 
 
 def _persist_pdf_validation_state(
@@ -556,12 +550,10 @@ def _run_video_metadata_validation(
     video_obj: _VideoValidationLike,
     payload: PdfFileMetaJsonObject,
     file_id: int,
-) -> VideoValidationPayload | Response:
+) -> VideoTextMetaPayload | Response:
     prepared_payload = _prepare_video_validation_payload(payload, video_obj)
     try:
-        ok = video_obj.validate_metadata_annotation(
-            cast(VideoTextMetaPayload, prepared_payload)
-        )
+        ok = video_obj.validate_metadata_annotation(prepared_payload)
     except Exception:  # pragma: no cover - defensive safety net
         transaction.set_rollback(True)
         logger.exception("Video validation crashed for id=%s", file_id)
@@ -631,22 +623,23 @@ def _finalize_video_validation(
     return resolution
 
 
-def _record_video_validation_metrics(
+def _record_media_validation_metrics(
     *,
     request: Request,
-    video: VideoFile,
-    prepared_payload: VideoValidationPayload,
+    media_obj: VideoFile | RawPdfFile,
+    media_type: MediaType,
+    prepared_payload: Mapping[str, object],
     payload: PdfFileMetaJsonObject,
     before_values: dict[str, Any],
     status_before: str | None,
     status_after: str | None,
 ) -> None:
-    metric_payload = prepared_payload.model_dump(mode="json", exclude_none=True)
+    metric_payload = dict(prepared_payload)
     metric_payload["no_more_names_confirmed"] = payload.get("no_more_names_confirmed")
     record_validation_metrics(
         request=request,
-        media_obj=video,
-        media_type="video",
+        media_obj=media_obj,
+        media_type=media_type,
         payload=metric_payload,
         before_values=before_values,
         status_before=status_before or STATUS_PROCESSING,
@@ -707,10 +700,11 @@ def _validate_video(
         status_before=status_before,
         media_type="video",
     )
-    _record_video_validation_metrics(
+    _record_media_validation_metrics(
         request=request,
-        video=video,
-        prepared_payload=prepared_payload,
+        media_obj=video,
+        media_type="video",
+        prepared_payload=prepared_payload.model_dump(mode="json"),
         payload=payload,
         before_values=before_values,
         status_before=status_before,
@@ -848,29 +842,6 @@ def _materialize_linked_pdf_report(
     )
 
 
-def _record_pdf_validation_metrics(
-    *,
-    request: Request,
-    pdf: RawPdfFile,
-    prepared_payload: PdfFileMetaJsonObject,
-    payload: PdfFileMetaJsonObject,
-    before_values: dict[str, Any],
-    status_before: str | None,
-    status_after: str | None,
-) -> None:
-    metric_payload = dict(prepared_payload)
-    metric_payload["no_more_names_confirmed"] = payload.get("no_more_names_confirmed")
-    record_validation_metrics(
-        request=request,
-        media_obj=pdf,
-        media_type="pdf",
-        payload=metric_payload,
-        before_values=before_values,
-        status_before=status_before or STATUS_PROCESSING,
-        status_after=status_after or STATUS_ANONYMIZED,
-    )
-
-
 def _pdf_success_response(
     *,
     pdf: RawPdfFile,
@@ -955,9 +926,10 @@ def _validate_pdf(
         status_before=status_before,
         media_type="pdf",
     )
-    _record_pdf_validation_metrics(
+    _record_media_validation_metrics(
         request=request,
-        pdf=pdf,
+        media_obj=pdf,
+        media_type="pdf",
         prepared_payload=prepared_payload,
         payload=payload,
         before_values=before_values,
@@ -990,50 +962,6 @@ def _pdf_by_id(file_id: int) -> RawPdfFile | None:
     return RawPdfFile.objects.select_for_update(of=("self",)).filter(pk=file_id).first()
 
 
-def _validate_video_or_not_found(
-    *,
-    request: Request,
-    file_id: int,
-    payload: PdfFileMetaJsonObject,
-    operation_meta: ValidationOperationMetaPayload,
-) -> Response:
-    video = _video_by_id(file_id)
-    if video is not None:
-        return _validate_video(
-            request=request,
-            video=video,
-            file_id=file_id,
-            payload=payload,
-            operation_meta=operation_meta,
-        )
-    return Response(
-        {"error": f"Video {file_id} not found."},
-        status=status.HTTP_404_NOT_FOUND,
-    )
-
-
-def _validate_pdf_or_not_found(
-    *,
-    request: Request,
-    file_id: int,
-    payload: PdfFileMetaJsonObject,
-    operation_meta: ValidationOperationMetaPayload,
-) -> Response:
-    pdf = _pdf_by_id(file_id)
-    if pdf is not None:
-        return _validate_pdf(
-            request=request,
-            pdf=pdf,
-            file_id=file_id,
-            payload=payload,
-            operation_meta=operation_meta,
-        )
-    return Response(
-        {"error": f"report {file_id} not found."},
-        status=status.HTTP_404_NOT_FOUND,
-    )
-
-
 def _dispatch_validation(
     *,
     request: Request,
@@ -1042,22 +970,7 @@ def _dispatch_validation(
     operation_meta: ValidationOperationMetaPayload,
 ) -> Response:
     file_type = payload.get("file_type")
-    if file_type == "video":
-        return _validate_video_or_not_found(
-            request=request,
-            file_id=file_id,
-            payload=payload,
-            operation_meta=operation_meta,
-        )
-    if file_type == "pdf":
-        return _validate_pdf_or_not_found(
-            request=request,
-            file_id=file_id,
-            payload=payload,
-            operation_meta=operation_meta,
-        )
-
-    video = _video_by_id(file_id)
+    video = _video_by_id(file_id) if file_type != "pdf" else None
     if video is not None:
         return _validate_video(
             request=request,
@@ -1066,7 +979,7 @@ def _dispatch_validation(
             payload=payload,
             operation_meta=operation_meta,
         )
-    pdf = _pdf_by_id(file_id)
+    pdf = _pdf_by_id(file_id) if file_type != "video" else None
     if pdf is not None:
         return _validate_pdf(
             request=request,
@@ -1075,8 +988,13 @@ def _dispatch_validation(
             payload=payload,
             operation_meta=operation_meta,
         )
+    error = f"Item {file_id} not found as video or pdf."
+    if file_type == "video":
+        error = f"Video {file_id} not found."
+    elif file_type == "pdf":
+        error = f"report {file_id} not found."
     return Response(
-        {"error": f"Item {file_id} not found as video or pdf."},
+        {"error": error},
         status=status.HTTP_404_NOT_FOUND,
     )
 

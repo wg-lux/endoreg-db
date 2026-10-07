@@ -497,24 +497,44 @@ def additional_source_paths(
     return tuple(sorted(copies)), UploadSourceCleanupBlocker.NONE
 
 
-def _evaluate_locked_job(
+def _has_active_processing_lease(upload_job: UploadJob, database_now: datetime) -> bool:
+    return bool(
+        upload_job.processing_lease_owner
+        and upload_job.processing_lease_expires_at is not None
+        and upload_job.processing_lease_expires_at > database_now
+    )
+
+
+def _replacement_target_blocker(
+    upload_job: UploadJob,
+    replacement: UploadJob | None,
+    *,
+    database_now: datetime,
+) -> UploadSourceCleanupBlocker:
+    if replacement is not None and (
+        replacement.retryable or replacement.next_retry_at is not None
+    ):
+        blocker = UploadSourceCleanupBlocker.RETRY_ALLOWED
+    elif replacement is not None and _has_active_processing_lease(
+        replacement, database_now
+    ):
+        blocker = UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE
+    elif _source_still_referenced(upload_job):
+        blocker = UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
+    else:
+        blocker = _target_integrity_blocker(upload_job, database_now=database_now)
+
+    return blocker
+
+
+def _cleanup_eligibility_blocker(
     upload_job: UploadJob,
     *,
     database_now: datetime,
-    allow_deleting: bool = False,
-    lock_replacement: bool = False,
-) -> tuple[UploadSourceCleanupItem, UploadSourceSnapshot | None]:
+    allow_deleting: bool,
+    lock_replacement: bool,
+) -> UploadSourceCleanupBlocker:
     media_type = _media_type(upload_job)
-    if upload_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED.value:
-        return (
-            _item(
-                upload_job,
-                database_now=database_now,
-                decision=UploadSourceCleanupDecision.COMPLETED,
-                blocker=UploadSourceCleanupBlocker.NONE,
-            ),
-            None,
-        )
     allowed_statuses = {UploadJob.CleanupStatus.ELIGIBLE.value}
     if allow_deleting:
         allowed_statuses.add(UploadJob.CleanupStatus.DELETING.value)
@@ -548,48 +568,97 @@ def _evaluate_locked_job(
         blocker = UploadSourceCleanupBlocker.CLEANUP_STATUS_BLOCKS
     elif due_at is None or due_at > database_now:
         blocker = UploadSourceCleanupBlocker.NOT_DUE
-    elif (
-        upload_job.processing_lease_owner
-        and upload_job.processing_lease_expires_at is not None
-        and upload_job.processing_lease_expires_at > database_now
-    ):
+    elif _has_active_processing_lease(upload_job, database_now):
         blocker = UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE
     elif media_type == UploadSourceMediaType.UNKNOWN:
         blocker = UploadSourceCleanupBlocker.UNSUPPORTED_MEDIA_TYPE
-    elif replacement is not None and (
-        replacement.retryable or replacement.next_retry_at is not None
-    ):
-        blocker = UploadSourceCleanupBlocker.RETRY_ALLOWED
-    elif replacement is not None and (
-        replacement.processing_lease_owner
-        and replacement.processing_lease_expires_at is not None
-        and replacement.processing_lease_expires_at > database_now
-    ):
-        blocker = UploadSourceCleanupBlocker.ACTIVE_PROCESSING_LEASE
-    elif _source_still_referenced(upload_job):
-        blocker = UploadSourceCleanupBlocker.SOURCE_STILL_REFERENCED
     else:
-        blocker = _target_integrity_blocker(upload_job, database_now=database_now)
+        blocker = _replacement_target_blocker(
+            upload_job, replacement, database_now=database_now
+        )
 
-    if blocker != UploadSourceCleanupBlocker.NONE:
+    return blocker
+
+
+def _cleanup_receipt_blocker(
+    upload_job: UploadJob,
+    snapshot: UploadSourceSnapshot,
+) -> UploadSourceCleanupBlocker:
+    cleanup_fencing_token = upload_job.cleanup_fencing_token
+    cleanup_source_size_bytes = upload_job.cleanup_source_size_bytes
+    receipt_valid = (
+        upload_job.cleanup_receipt_id is not None
+        and cleanup_fencing_token is not None
+        and upload_job.cleanup_started_at is not None
+        and bool(upload_job.cleanup_source_name_sha256)
+        and cleanup_source_size_bytes is not None
+        and bool(upload_job.cleanup_source_content_sha256)
+    )
+    if not receipt_valid:
+        blocker = UploadSourceCleanupBlocker.CLEANUP_RECEIPT_INVALID
+    else:
+        assert cleanup_fencing_token is not None
+        assert cleanup_source_size_bytes is not None
+        if cleanup_fencing_token != int(upload_job.processing_fencing_token):
+            blocker = UploadSourceCleanupBlocker.FENCING_TOKEN_CHANGED
+        elif not UploadJobFile.objects.filter(
+            upload_job=upload_job,
+            path=str(Path(upload_job.file.path)),
+            role=UploadJobFile.Role.SOURCE,
+        ).exists() and (
+            upload_job.cleanup_source_name_sha256 != snapshot.storage_name_sha256
+            or cleanup_source_size_bytes != snapshot.size_bytes
+            or upload_job.cleanup_source_content_sha256 != snapshot.content_sha256
+        ):
+            blocker = UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
+        else:
+            blocker = UploadSourceCleanupBlocker.NONE
+    return blocker
+
+
+def _blocked_cleanup_result(
+    upload_job: UploadJob,
+    database_now: datetime,
+    blocker: UploadSourceCleanupBlocker,
+) -> tuple[UploadSourceCleanupItem, None]:
+    return _item(
+        upload_job,
+        database_now=database_now,
+        decision=UploadSourceCleanupDecision.BLOCKED,
+        blocker=blocker,
+    ), None
+
+
+def _evaluate_locked_job(
+    upload_job: UploadJob,
+    *,
+    database_now: datetime,
+    allow_deleting: bool = False,
+    lock_replacement: bool = False,
+) -> tuple[UploadSourceCleanupItem, UploadSourceSnapshot | None]:
+    if upload_job.cleanup_status == UploadJob.CleanupStatus.COMPLETED.value:
         return (
             _item(
                 upload_job,
                 database_now=database_now,
-                decision=UploadSourceCleanupDecision.BLOCKED,
-                blocker=blocker,
+                decision=UploadSourceCleanupDecision.COMPLETED,
+                blocker=UploadSourceCleanupBlocker.NONE,
             ),
             None,
         )
+    blocker = _cleanup_eligibility_blocker(
+        upload_job,
+        database_now=database_now,
+        allow_deleting=allow_deleting,
+        lock_replacement=lock_replacement,
+    )
+
+    if blocker != UploadSourceCleanupBlocker.NONE:
+        return _blocked_cleanup_result(upload_job, database_now, blocker)
 
     copies, copies_blocker = additional_source_paths(upload_job)
     if copies_blocker != UploadSourceCleanupBlocker.NONE:
-        return _item(
-            upload_job,
-            database_now=database_now,
-            decision=UploadSourceCleanupDecision.BLOCKED,
-            blocker=copies_blocker,
-        ), None
+        return _blocked_cleanup_result(upload_job, database_now, copies_blocker)
     copy_bytes = sum(path.stat().st_size for path in copies)
     snapshot, source_blocker = _source_snapshot(upload_job)
     if snapshot is None:
@@ -609,55 +678,11 @@ def _evaluate_locked_job(
                 ),
                 None,
             )
-        return (
-            _item(
-                upload_job,
-                database_now=database_now,
-                decision=UploadSourceCleanupDecision.BLOCKED,
-                blocker=source_blocker,
-            ),
-            None,
-        )
+        return _blocked_cleanup_result(upload_job, database_now, source_blocker)
     if upload_job.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
-        cleanup_fencing_token = upload_job.cleanup_fencing_token
-        cleanup_source_size_bytes = upload_job.cleanup_source_size_bytes
-        receipt_valid = (
-            upload_job.cleanup_receipt_id is not None
-            and cleanup_fencing_token is not None
-            and upload_job.cleanup_started_at is not None
-            and bool(upload_job.cleanup_source_name_sha256)
-            and cleanup_source_size_bytes is not None
-            and bool(upload_job.cleanup_source_content_sha256)
-        )
-        if not receipt_valid:
-            blocker = UploadSourceCleanupBlocker.CLEANUP_RECEIPT_INVALID
-        else:
-            assert cleanup_fencing_token is not None
-            assert cleanup_source_size_bytes is not None
-            if cleanup_fencing_token != int(upload_job.processing_fencing_token):
-                blocker = UploadSourceCleanupBlocker.FENCING_TOKEN_CHANGED
-            elif not UploadJobFile.objects.filter(
-                upload_job=upload_job,
-                path=str(Path(upload_job.file.path)),
-                role=UploadJobFile.Role.SOURCE,
-            ).exists() and (
-                upload_job.cleanup_source_name_sha256 != snapshot.storage_name_sha256
-                or cleanup_source_size_bytes != snapshot.size_bytes
-                or upload_job.cleanup_source_content_sha256 != snapshot.content_sha256
-            ):
-                blocker = UploadSourceCleanupBlocker.SOURCE_IDENTITY_CHANGED
-            else:
-                blocker = UploadSourceCleanupBlocker.NONE
+        blocker = _cleanup_receipt_blocker(upload_job, snapshot)
         if blocker != UploadSourceCleanupBlocker.NONE:
-            return (
-                _item(
-                    upload_job,
-                    database_now=database_now,
-                    decision=UploadSourceCleanupDecision.BLOCKED,
-                    blocker=blocker,
-                ),
-                None,
-            )
+            return _blocked_cleanup_result(upload_job, database_now, blocker)
     return (
         _item(
             upload_job,

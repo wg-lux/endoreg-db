@@ -162,8 +162,21 @@ def test_group_failure_rolls_back_every_link(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("patient_hash", "inconsistent"),
+        ("identity_salt_fingerprint", "does not authenticate"),
+        ("identity_fingerprint", "does not authenticate"),
+        ("examination_hash", "Examination identity"),
+    ],
+)
 def test_rotation_rejects_inconsistent_metadata_link_instead_of_leaving_it_behind(
-    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    message: str,
 ) -> None:
     old = b"old-test-identity-salt"
     with override_settings(DJANGO_SALT=old.decode()):
@@ -176,16 +189,21 @@ def test_rotation_rejects_inconsistent_metadata_link_instead_of_leaving_it_behin
             examination_date=original.examination_date,
         )
     old_hash = original.patient_hash
+    old_exam_hash = original.examination_hash
     SensitiveMeta.objects.filter(pk=duplicate.pk).update(
-        patient_hash="inconsistent-reference"
+        **{field: "inconsistent-reference"}
     )
     ring = write_ring(tmp_path, b"new-test-salt", (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
-    with pytest.raises(ValueError, match="inconsistent"):
+    with pytest.raises(ValueError, match=message):
         migrate_identity_group(original)
     original.refresh_from_db()
     assert original.patient_hash == old_hash
     assert Patient.objects.get(pk=original.pseudo_patient_id).patient_hash == old_hash
+    assert (
+        PatientExamination.objects.get(pk=original.pseudo_examination_id).hash
+        == old_exam_hash
+    )
 
 
 @pytest.mark.django_db

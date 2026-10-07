@@ -1,10 +1,16 @@
 """Atomic host projection of explicitly selected terminology presets."""
 
+from collections.abc import Hashable
 from typing import cast
 
 from django.db import models
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
 from lx_dtypes.serialization import parse_str_list
+from lx_dtypes.models.knowledge_base.study_preset import (
+    PresetLabel,
+    PresetLabelSet,
+    PresetLabelType,
+)
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.label.label import Label
@@ -58,6 +64,85 @@ def _required_rows[T: models.Model](model: type[T], names: str | list[str]) -> l
     return [model._default_manager.get(name=name) for name in parse_str_list(names)]
 
 
+def _require_unique[T: Hashable](identities: list[T], kind: str) -> None:
+    if len(identities) != len(set(identities)):
+        raise ValueError(f"Preset definitions contain duplicate {kind} identities")
+
+
+def _import_preset_center(name: str) -> None:
+    matches = Center.objects.filter(center_key=name)
+    center = matches.get() if matches.exists() else None
+    if center is None:
+        legacy = Center.objects.filter(name=name)
+        if legacy.exists():
+            center = legacy.get()
+            if center.center_key != name:
+                raise ValueError(
+                    "Center preset conflicts with an existing immutable center_key"
+                )
+        else:
+            Center.objects.create(name=name, center_key=name)
+
+
+def _validate_examination_name(name: str, kind: str) -> None:
+    if not name or len(name) > 100:
+        raise ValueError(f"{kind} names must contain 1 to 100 characters")
+
+
+def _import_preset_examinations(knowledge_base: KnowledgeBase) -> None:
+    for definition in knowledge_base.examination_type.values():
+        _validate_examination_name(definition.name, "Examination type")
+        _reuse_or_create(ExaminationType, definition.name, {})
+    for definition in knowledge_base.examination.values():
+        _validate_examination_name(definition.name, "Examination")
+        findings = _required_rows(Finding, definition.findings)
+        indications = _required_rows(ExaminationIndication, definition.indications)
+        examination_types = _required_rows(
+            ExaminationType, definition.examination_types
+        )
+        _reuse_or_create(
+            Examination,
+            definition.name,
+            {"description": definition.description},
+            relations={
+                "findings": list(findings),
+                "indications": list(indications),
+                "examination_types": list(examination_types),
+            },
+        )
+
+
+def _import_preset_labels(
+    label_types: list[PresetLabelType],
+    labels: list[PresetLabel],
+    label_sets: list[PresetLabelSet],
+) -> None:
+    for label_type in label_types:
+        _reuse_or_create(
+            LabelType, label_type.name, {"description": label_type.description}
+        )
+    for label in labels:
+        label_type = (
+            LabelType.objects.get(name=label.label_type)
+            if label.label_type is not None
+            else None
+        )
+        _reuse_or_create(
+            Label,
+            label.name,
+            {"label_type": label_type, "description": label.description},
+        )
+    for label_set in label_sets:
+        set_labels = _required_rows(Label, label_set.labels)
+        _reuse_or_create(
+            LabelSet,
+            label_set.name,
+            {"description": label_set.description},
+            version=label_set.version,
+            relations={"labels": list(set_labels)},
+        )
+
+
 def import_study_preset(knowledge_base: KnowledgeBase) -> None:
     """Keep row identities and fail atomically on missing clinical dependencies.
 
@@ -76,27 +161,12 @@ def import_study_preset(knowledge_base: KnowledgeBase) -> None:
         [record.name for record in label_types],
         [record.name for record in labels],
     ):
-        if len(names) != len(set(names)):
-            raise ValueError("Preset definitions contain duplicate natural identities")
+        _require_unique(names, "natural")
     label_set_keys = [(record.name, record.version) for record in label_sets]
-    if len(label_set_keys) != len(set(label_set_keys)):
-        raise ValueError("Preset definitions contain duplicate label set identities")
+    _require_unique(label_set_keys, "label set")
     with reference_catalog_transaction():
         for definition in centers:
-            matches = Center.objects.filter(center_key=definition.name)
-            center = matches.get() if matches.exists() else None
-            if center is None:
-                legacy = Center.objects.filter(name=definition.name)
-                if legacy.exists():
-                    center = legacy.get()
-                    if center.center_key != definition.name:
-                        raise ValueError(
-                            "Center preset conflicts with an existing immutable center_key"
-                        )
-                else:
-                    Center.objects.create(
-                        name=definition.name, center_key=definition.name
-                    )
+            _import_preset_center(definition.name)
         for gender in genders:
             _reuse_or_create(
                 Gender,
@@ -106,52 +176,6 @@ def import_study_preset(knowledge_base: KnowledgeBase) -> None:
                     "description": gender.description,
                 },
             )
-        for label_type in label_types:
-            _reuse_or_create(
-                LabelType, label_type.name, {"description": label_type.description}
-            )
-        for label in labels:
-            label_type = (
-                LabelType.objects.get(name=label.label_type)
-                if label.label_type is not None
-                else None
-            )
-            _reuse_or_create(
-                Label,
-                label.name,
-                {"label_type": label_type, "description": label.description},
-            )
-        for label_set in label_sets:
-            set_labels = _required_rows(Label, label_set.labels)
-            _reuse_or_create(
-                LabelSet,
-                label_set.name,
-                {"description": label_set.description},
-                version=label_set.version,
-                relations={"labels": list(set_labels)},
-            )
-        for definition in knowledge_base.examination_type.values():
-            if not definition.name or len(definition.name) > 100:
-                raise ValueError(
-                    "Examination type names must contain 1 to 100 characters"
-                )
-            _reuse_or_create(ExaminationType, definition.name, {})
-        for definition in knowledge_base.examination.values():
-            if not definition.name or len(definition.name) > 100:
-                raise ValueError("Examination names must contain 1 to 100 characters")
-            findings = _required_rows(Finding, definition.findings)
-            indications = _required_rows(ExaminationIndication, definition.indications)
-            examination_types = _required_rows(
-                ExaminationType, definition.examination_types
-            )
-            _reuse_or_create(
-                Examination,
-                definition.name,
-                {"description": definition.description},
-                relations={
-                    "findings": list(findings),
-                    "indications": list(indications),
-                    "examination_types": list(examination_types),
-                },
-            )
+        _import_preset_labels(label_types, labels, label_sets)
+        _import_preset_examinations(knowledge_base)
         import_center_employees(knowledge_base)

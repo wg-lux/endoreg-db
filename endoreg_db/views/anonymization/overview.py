@@ -13,7 +13,6 @@ from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 
@@ -72,10 +71,6 @@ PERMS = DEBUG_PERMISSIONS  # shorten
 
 
 # ---------- overview ----------------------------------------------------
-class NoPagination(PageNumberPagination):
-    page_size = None
-
-
 class _OverviewItem(Protocol):
     sensitive_meta_id: int | None
     center_id: int | None

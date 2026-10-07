@@ -15,6 +15,7 @@ from datetime import date, datetime
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, Protocol, TypedDict, cast
 from unittest.mock import patch
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
 import pytest
 from django.contrib.auth.models import Group, User
@@ -836,8 +837,8 @@ class TestAnonymizationValidateView:
             "file_type": "video",
         }
 
-        def check_payload(payload: Mapping[str, object]) -> bool:
-            assert payload.get("is_verified") is False
+        def check_payload(payload: VideoTextMetaPayload) -> bool:
+            assert payload.root.get("is_verified") is False
             return True
 
         with patch.object(
@@ -856,22 +857,30 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
+    @pytest.mark.parametrize("patient_dob", ["21.03.1994", "1994-03-21"])
     def test_validate_video_injects_center_name_and_drops_unknown_gender(
-        self, factory: APIRequestFactory, user: User, video_file: _MediaFileFixture
+        self,
+        factory: APIRequestFactory,
+        user: User,
+        video_file: _MediaFileFixture,
+        patient_dob: str,
     ) -> None:
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
-            "patient_dob": "21.03.1994",
+            "patient_dob": patient_dob,
             "examination_date": "15.02.2024",
             "casenumber": "12345",
             "patient_gender": "not-a-gender",
             "file_type": "video",
         }
 
-        def check_payload(payload: Mapping[str, object]) -> bool:
-            assert payload.get("center_name") == "Test Center"
-            assert "patient_gender" not in payload
+        def check_payload(payload: VideoTextMetaPayload) -> bool:
+            assert isinstance(payload, VideoTextMetaPayload)
+            assert payload.root.get("center_name") == "Test Center"
+            assert "patient_gender" not in payload.root
+            assert payload.to_dict()["patient_dob"] == "1994-03-21"
+            assert payload.to_dict()["examination_date"] == "2024-02-15"
             return True
 
         with patch.object(
@@ -1039,8 +1048,8 @@ class TestAnonymizationValidateView:
             "patient_gender": "male",
         }
 
-        def check_is_verified(payload: Mapping[str, object]) -> bool:
-            assert payload.get("is_verified") is True
+        def check_is_verified(payload: VideoTextMetaPayload) -> bool:
+            assert payload.root.get("is_verified") is True
             return True
 
         with patch.object(

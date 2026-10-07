@@ -17,6 +17,38 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: anonymization_validation_helpers
+  category: maintainability
+  title: Anonymisierungsvalidierung verwendet eindeutige Helper und den kanonischen Metadatenvertrag
+  acceptance:
+  - Nicht verwendete Pagination ist nach Prüfung interner, dynamischer und bekannter externer Verbraucher
+    entfernt; aktive Typing-Verträge bleiben erhalten.
+  - Videovalidierung übergibt VideoTextMetaPayload ohne lokale Nachbildung oder verschleiernden Cast.
+  - Dispatch und Metrikvorbereitung haben jeweils eine Implementierung; explizite Medientypen, Video-Vorrang,
+    Fehlermeldungen und Metrikinhalt bleiben erhalten.
+  - Pyright, fokussierte Positiv- und Negativtests sowie Radon- und Guard-Ergebnisse sind im Kohortenbericht
+    nachvollziehbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Siehe feature-tracking/reports/anonymization_helper_consolidation.yml; Pyright vor pytest
+      ausführen und bestehende Fehler getrennt ausweisen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: feature-tracking/reports/anonymization_helper_consolidation.yml
+    - kind: test
+      reference: 'Trace: 80 Overview-/External-ID-Fälle bestanden; finaler Validierungsnachlauf: 32 bestanden,
+        2 Warnungen in 52.48s'
+    - kind: command
+      reference: 'Pyright: 0 Fehler, 10 bestehende Warnungen; Ruff check/format und git diff --check bestanden;
+        Produktion netto -87 Zeilen'
+    note: Gezielte Helper-Kohorte verifiziert. quality:dead-code bleibt durch das vorher bestehende master_keys-Protocol-Finding
+      rot; quality:boundaries meldet unveränderte, unabhängige Baseline-Drift. Keine repositoryweite Freigabe.
+    assessed_by: codex-workflow-validation-20261007
+    assessed_at: '2026-10-07T11:39:43.347262Z'
 - id: test_suite_fixture_overhead
   category: testing
   title: Test-Fixtures vermeiden unnötige Datenbank-, Datei- und Ausgabearbeit
@@ -417,6 +449,9 @@ definition_of_done:
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
+  - Die sechs Radon-E/F-Funktionen der Kohorte radon_function_consolidation erreichen höchstens C;
+    gemeinsame Entscheidungen werden zentralisiert, Transaktions- und Sperrgrenzen bleiben erhalten,
+    Pyright sowie positive, negative und konkurrierende Regressionen werden dokumentiert.
   - Die Service-Wurzel enthält ausschließlich die Paketinitialisierung und eine YAML-Strukturübersicht;
     jedes Unterpaket hat eine beschriebene fachliche Zuständigkeit. Alle verschobenen Service-Module sind
     über ihren kanonischen neuen Pfad importierbar; interne Aufrufer und aktive Qualitätsinventare verwenden

@@ -24,6 +24,9 @@ from endoreg_db.utils.structured_logging import emit_structured_event, hash_iden
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from endoreg_db.models.administration.center.center import Center
+    from endoreg_db.models.administration.person.patient.patient import Patient
+    from endoreg_db.models.medical.patient.patient_examination import PatientExamination
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 
 P = ParamSpec("P")
@@ -186,6 +189,141 @@ def legacy_source_matches_ring(instance: SensitiveMeta) -> bool:
     )
 
 
+def _validate_group_identity(
+    row: SensitiveMeta,
+    item: IdentitySource,
+    source: IdentitySource,
+    *,
+    patient: Patient,
+    center: Center,
+    old_salt: bytes,
+    active_salt: bytes,
+    new_hash: str,
+) -> None:
+    old_hash = str(patient.patient_hash)
+    if (
+        row.center_id != center.pk
+        or row.patient_hash != old_hash
+        or row.pseudo_patient_id != patient.pk
+        or row.external_id is not None
+    ):
+        raise ValueError("Identity links or ownership are inconsistent")
+    if (
+        _hash(item, center.name, old_salt) != old_hash
+        or _hash(item, center.name, active_salt) != new_hash
+        or identity_fingerprint(item, int(center.pk), active_salt)
+        != identity_fingerprint(source, int(center.pk), active_salt)
+    ):
+        raise ValueError("Legacy identity collision or incompatible source mapping")
+    if (
+        row.identity_salt_fingerprint
+        and row.identity_salt_fingerprint != salt_fingerprint(old_salt)
+    ) or (
+        row.identity_fingerprint
+        and row.identity_fingerprint
+        != identity_fingerprint(item, int(center.pk), old_salt)
+    ):
+        raise ValueError(
+            "Persisted identity evidence does not authenticate the source mapping"
+        )
+
+
+def _prepare_group_identity_updates(
+    rows: list[SensitiveMeta],
+    source: IdentitySource,
+    *,
+    patient: Patient,
+    center: Center,
+    old_salt: bytes,
+    active_salt: bytes,
+    evidence: dict[int, ReviewedIdentity],
+    new_hash: str,
+) -> tuple[list[tuple[SensitiveMeta, IdentitySource, str | None]], dict[int, str]]:
+    updates: list[tuple[SensitiveMeta, IdentitySource, str | None]] = []
+    examinations: dict[int, str] = {}
+    for row in rows:
+        item = _source(row, evidence)
+        _validate_group_identity(
+            row,
+            item,
+            source,
+            patient=patient,
+            center=center,
+            old_salt=old_salt,
+            active_salt=active_salt,
+            new_hash=new_hash,
+        )
+        new_exam: str | None = None
+        if row.examination_hash:
+            if (
+                item.examination_date is None
+                or _hash(item, center.name, old_salt, examination=True)
+                != row.examination_hash
+                or row.pseudo_examination_id is None
+            ):
+                raise ValueError(
+                    "Examination identity requires complete compatible source evidence"
+                )
+            new_exam = _hash(item, center.name, active_salt, examination=True)
+            exam_id = int(row.pseudo_examination_id)
+            if exam_id in examinations and examinations[exam_id] != new_exam:
+                raise ValueError("Conflicting examination mappings")
+            examinations[exam_id] = new_exam
+        updates.append((row, item, new_exam))
+    return updates, examinations
+
+
+def _validate_group_examinations(
+    patient: Patient,
+    updates: list[tuple[SensitiveMeta, IdentitySource, str | None]],
+    examinations: dict[int, str],
+) -> list[PatientExamination]:
+    from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+
+    linked_exams = list(
+        PatientExamination.objects.select_related(None)
+        .select_for_update(of=("self",))
+        .filter(patient_id=patient.pk)
+    )
+    if {int(exam.pk) for exam in linked_exams} != set(examinations):
+        raise ValueError("Every linked examination requires migration source evidence")
+    for exam in linked_exams:
+        if not any(
+            row.pseudo_examination_id == exam.pk and row.examination_hash == exam.hash
+            for row, _, _ in updates
+        ):
+            raise ValueError("Examination link does not match its persisted identity")
+        if (
+            PatientExamination.objects.filter(hash=examinations[int(exam.pk)])
+            .exclude(pk=exam.pk)
+            .exists()
+        ):
+            raise ValueError("New examination hash conflicts with an existing identity")
+    return linked_exams
+
+
+def _refresh_rotated_identity(
+    instance: SensitiveMeta,
+    source: IdentitySource,
+    center: Center,
+    active_salt: bytes,
+    new_hash: str,
+    updates: list[tuple[SensitiveMeta, IdentitySource, str | None]],
+) -> None:
+    # Do not reintroduce erased direct identifiers or rewrite audit history.
+    if instance.pk and any(row.pk == instance.pk for row, _, _ in updates):
+        instance.patient_hash = new_hash
+        instance.identity_salt_fingerprint = salt_fingerprint(active_salt)
+        instance.identity_fingerprint = identity_fingerprint(
+            source, int(center.pk), active_salt
+        )
+        instance.examination_hash = (
+            _hash(source, center.name, active_salt, examination=True)
+            if instance.examination_hash
+            else None
+        )
+
+
 @identity_rotation_transaction
 def migrate_identity_group(
     instance: SensitiveMeta,
@@ -232,72 +370,18 @@ def migrate_identity_group(
     )
     if not rows:
         raise ValueError("Patient identity has no source metadata for migration")
-    updates: list[tuple[SensitiveMeta, IdentitySource, str | None]] = []
-    examinations: dict[int, str] = {}
     new_hash = _hash(source, center.name, ring.active)
-    for row in rows:
-        item = _source(row, evidence)
-        if (
-            row.center_id != center.pk
-            or row.patient_hash != old_hash
-            or row.pseudo_patient_id != patient.pk
-            or row.external_id is not None
-        ):
-            raise ValueError("Identity links or ownership are inconsistent")
-        if (
-            _hash(item, center.name, old_salt) != old_hash
-            or _hash(item, center.name, ring.active) != new_hash
-            or identity_fingerprint(item, int(center.pk), ring.active)
-            != identity_fingerprint(source, int(center.pk), ring.active)
-        ):
-            raise ValueError("Legacy identity collision or incompatible source mapping")
-        if (
-            row.identity_salt_fingerprint
-            and row.identity_salt_fingerprint != salt_fingerprint(old_salt)
-        ) or (
-            row.identity_fingerprint
-            and row.identity_fingerprint
-            != identity_fingerprint(item, int(center.pk), old_salt)
-        ):
-            raise ValueError(
-                "Persisted identity evidence does not authenticate the source mapping"
-            )
-        new_exam: str | None = None
-        if row.examination_hash:
-            if (
-                item.examination_date is None
-                or _hash(item, center.name, old_salt, examination=True)
-                != row.examination_hash
-                or row.pseudo_examination_id is None
-            ):
-                raise ValueError(
-                    "Examination identity requires complete compatible source evidence"
-                )
-            new_exam = _hash(item, center.name, ring.active, examination=True)
-            exam_id = int(row.pseudo_examination_id)
-            if exam_id in examinations and examinations[exam_id] != new_exam:
-                raise ValueError("Conflicting examination mappings")
-            examinations[exam_id] = new_exam
-        updates.append((row, item, new_exam))
-    linked_exams = list(
-        PatientExamination.objects.select_related(None)
-        .select_for_update(of=("self",))
-        .filter(patient_id=patient.pk)
+    updates, examinations = _prepare_group_identity_updates(
+        rows,
+        source,
+        patient=patient,
+        center=center,
+        old_salt=old_salt,
+        active_salt=ring.active,
+        evidence=evidence,
+        new_hash=new_hash,
     )
-    if {int(exam.pk) for exam in linked_exams} != set(examinations):
-        raise ValueError("Every linked examination requires migration source evidence")
-    for exam in linked_exams:
-        if not any(
-            row.pseudo_examination_id == exam.pk and row.examination_hash == exam.hash
-            for row, _, _ in updates
-        ):
-            raise ValueError("Examination link does not match its persisted identity")
-        if (
-            PatientExamination.objects.filter(hash=examinations[int(exam.pk)])
-            .exclude(pk=exam.pk)
-            .exists()
-        ):
-            raise ValueError("New examination hash conflicts with an existing identity")
+    linked_exams = _validate_group_examinations(patient, updates, examinations)
     if apply:
         Patient.objects.filter(pk=patient.pk, patient_hash=old_hash).update(
             patient_hash=new_hash
@@ -315,18 +399,9 @@ def migrate_identity_group(
                 ),
                 identity_salt_fingerprint=salt_fingerprint(ring.active),
             )
-        # Do not reintroduce erased direct identifiers or rewrite audit history.
-        if instance.pk and any(row.pk == instance.pk for row, _, _ in updates):
-            instance.patient_hash = new_hash
-            instance.identity_salt_fingerprint = salt_fingerprint(ring.active)
-            instance.identity_fingerprint = identity_fingerprint(
-                source, int(center.pk), ring.active
-            )
-            instance.examination_hash = (
-                _hash(source, center.name, ring.active, examination=True)
-                if instance.examination_hash
-                else None
-            )
+        _refresh_rotated_identity(
+            instance, source, center, ring.active, new_hash, updates
+        )
         reviewed_refs = [
             hash_identifier(item.review_reference)
             for item in evidence.values()

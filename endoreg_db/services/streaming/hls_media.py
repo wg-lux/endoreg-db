@@ -22,6 +22,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.db import transaction
 from endoreg_db.services.jobs.error_handling import database_recovery_reason
+from django.db.models import QuerySet
 from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 
@@ -689,6 +690,21 @@ def _recover_stale_in_flight_artifact(
     return True
 
 
+def _matches_hls_source(
+    artifact: VideoHlsArtifact,
+    *,
+    source_file_name: str,
+    source_generation_id: UUID,
+    source_content_hash: str,
+) -> bool:
+    """Match the canonical source identity shared by dispatch, claim and playback."""
+    return (
+        artifact.source_file_name == source_file_name
+        and artifact.source_generation_id == source_generation_id
+        and artifact.source_content_hash == source_content_hash
+    )
+
+
 def reserve_hls_materialization_dispatch(
     *,
     video_id: int,
@@ -714,9 +730,12 @@ def reserve_hls_materialization_dispatch(
         ready = artifacts.filter(status=VideoHlsArtifact.Status.READY.value).first()
         ready_matches_source = bool(
             ready is not None
-            and ready.source_file_name == source_file_name
-            and ready.source_content_hash == source_content_hash
-            and ready.source_generation_id == source_generation_id
+            and _matches_hls_source(
+                ready,
+                source_file_name=source_file_name,
+                source_generation_id=source_generation_id,
+                source_content_hash=source_content_hash,
+            )
             and _has_supported_encoding_profile(ready)
             and _ready_artifact_paths_exist(ready)
         )
@@ -871,6 +890,90 @@ def dispatch_video_hls_materialization(
     )
 
 
+def _prepare_reserved_artifact(
+    artifact: VideoHlsArtifact | None,
+    *,
+    expected_key_id: UUID | None,
+    source_file_name: str,
+    source_generation_id: UUID,
+    source_content_hash: str,
+    requested_encoding_profile_name: str,
+    video_id: int,
+    artifact_kind: VideoArtifactKind,
+) -> _PreparedArtifact | None:
+    """Validate a fenced HTTP Live Streaming attempt before the common claim path."""
+    if artifact is None or artifact.key_id != expected_key_id:
+        raise RuntimeError("HLS task does not own the reserved attempt")
+    if (
+        not _matches_hls_source(
+            artifact,
+            source_file_name=source_file_name,
+            source_generation_id=source_generation_id,
+            source_content_hash=source_content_hash,
+        )
+        or artifact.encoding_profile_name != requested_encoding_profile_name
+    ):
+        raise RuntimeError("HLS reserved source identity changed before claim")
+    if artifact.status == VideoHlsArtifact.Status.READY.value:
+        if not _ready_artifact_paths_exist(artifact):
+            raise RuntimeError("Completed HLS reservation artifacts are missing")
+        return _PreparedArtifact.from_artifact(artifact)
+    if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
+        if artifact.updated_at > _materialization_stale_before():
+            return _PreparedArtifact.from_artifact(artifact)
+        logger.warning(
+            "Reclaiming stale HLS delivery with matching attempt identity: video=%s kind=%s artifact=%s",
+            video_id,
+            artifact_kind.value,
+            artifact.pk,
+        )
+        # The same fenced attempt may resume after its heartbeat became
+        # stale. Normalize the in-memory state so the common claim path
+        # below refreshes its wrapped key material and timestamp instead
+        # of treating it as a competing active worker.
+        artifact.status = VideoHlsArtifact.Status.QUEUED.value
+    if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
+        return _PreparedArtifact.from_artifact(artifact)
+    if artifact.status not in {
+        VideoHlsArtifact.Status.QUEUED.value,
+        VideoHlsArtifact.Status.MATERIALIZING.value,
+    }:
+        raise RuntimeError("HLS reserved attempt is no longer active")
+    return None
+
+
+def _reusable_hls_artifact(
+    artifacts: QuerySet[VideoHlsArtifact],
+    ready: VideoHlsArtifact | None,
+    *,
+    source_file_name: str,
+    source_generation_id: UUID,
+    source_content_hash: str,
+    requested_encoding_profile_name: str,
+) -> VideoHlsArtifact | None:
+    """Reuse ready output or a deterministic failure for this exact source/profile."""
+    if (
+        ready is not None
+        and _ready_artifact_paths_exist(ready)
+        and _matches_hls_source(
+            ready,
+            source_file_name=source_file_name,
+            source_generation_id=source_generation_id,
+            source_content_hash=source_content_hash,
+        )
+        and _has_supported_encoding_profile(ready)
+    ):
+        return ready
+    return artifacts.filter(
+        status=VideoHlsArtifact.Status.FAILED.value,
+        error_code=VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value,
+        source_file_name=source_file_name,
+        source_generation_id=source_generation_id,
+        source_content_hash=source_content_hash,
+        encoding_profile_name=requested_encoding_profile_name,
+    ).first()
+
+
 def _prepare_artifact_record(
     *,
     video_id: int,
@@ -901,67 +1004,29 @@ def _prepare_artifact_record(
         artifact: VideoHlsArtifact | None = None
         if reserved_artifact_id is not None:
             artifact = artifacts.filter(pk=reserved_artifact_id).first()
-            if artifact is None or artifact.key_id != expected_reservation_key_id:
-                raise RuntimeError("HLS task does not own the reserved attempt")
-            if (
-                artifact.source_file_name != source_file_name
-                or artifact.source_generation_id != source_generation_id
-                or artifact.source_content_hash != source_content_hash
-                or artifact.encoding_profile_name != requested_encoding_profile_name
-            ):
-                raise RuntimeError("HLS reserved source identity changed before claim")
-            if artifact.status == VideoHlsArtifact.Status.READY.value:
-                if not _ready_artifact_paths_exist(artifact):
-                    raise RuntimeError(
-                        "Completed HLS reservation artifacts are missing"
-                    )
-                return _PreparedArtifact.from_artifact(artifact)
-            if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
-                if artifact.updated_at > _materialization_stale_before():
-                    return _PreparedArtifact.from_artifact(artifact)
-                logger.warning(
-                    "Reclaiming stale HLS delivery with matching attempt identity: video=%s kind=%s artifact=%s",
-                    video_id,
-                    artifact_kind.value,
-                    artifact.pk,
-                )
-                # The same fenced attempt may resume after its heartbeat became
-                # stale. Normalize the in-memory state so the common claim path
-                # below refreshes its wrapped key material and timestamp instead
-                # of treating it as a competing active worker.
-                artifact.status = VideoHlsArtifact.Status.QUEUED.value
-            if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
-                return _PreparedArtifact.from_artifact(artifact)
-            if artifact.status not in {
-                VideoHlsArtifact.Status.QUEUED.value,
-                VideoHlsArtifact.Status.MATERIALIZING.value,
-            }:
-                raise RuntimeError("HLS reserved attempt is no longer active")
-        if (
-            reserved_artifact_id is None
-            and ready is not None
-            and not force
-            and _ready_artifact_paths_exist(ready)
-            and ready.source_file_name == source_file_name
-            and ready.source_generation_id == source_generation_id
-            and ready.source_content_hash == source_content_hash
-            and _has_supported_encoding_profile(ready)
-        ):
-            return _PreparedArtifact.from_artifact(ready)
-        deterministic_failure = (
-            artifacts.filter(
-                status=VideoHlsArtifact.Status.FAILED.value,
-                error_code=VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value,
+            prepared = _prepare_reserved_artifact(
+                artifact,
+                expected_key_id=expected_reservation_key_id,
                 source_file_name=source_file_name,
                 source_generation_id=source_generation_id,
                 source_content_hash=source_content_hash,
-                encoding_profile_name=requested_encoding_profile_name,
-            ).first()
-            if not force and reserved_artifact_id is None
-            else None
-        )
-        if deterministic_failure is not None:
-            return _PreparedArtifact.from_artifact(deterministic_failure)
+                requested_encoding_profile_name=requested_encoding_profile_name,
+                video_id=video_id,
+                artifact_kind=artifact_kind,
+            )
+            if prepared is not None:
+                return prepared
+        if reserved_artifact_id is None and not force:
+            cached = _reusable_hls_artifact(
+                artifacts,
+                ready,
+                source_file_name=source_file_name,
+                source_generation_id=source_generation_id,
+                source_content_hash=source_content_hash,
+                requested_encoding_profile_name=requested_encoding_profile_name,
+            )
+            if cached is not None:
+                return _PreparedArtifact.from_artifact(cached)
         if artifact is None:
             artifact = artifacts.filter(status__in=HLS_IN_FLIGHT_STATUSES).first()
         if artifact is not None and reserved_artifact_id is None:
@@ -979,9 +1044,10 @@ def _prepare_artifact_record(
                 and not claim_queued
             ):
                 return _PreparedArtifact.from_artifact(artifact)
-            if artifact.status == VideoHlsArtifact.Status.MATERIALIZING.value:
-                return _PreparedArtifact.from_artifact(artifact)
-            if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
+            if artifact.status in {
+                VideoHlsArtifact.Status.MATERIALIZING.value,
+                VideoHlsArtifact.Status.VALIDATED.value,
+            }:
                 return _PreparedArtifact.from_artifact(artifact)
 
         if artifact is None:
@@ -2571,9 +2637,12 @@ def hls_artifact_matches_current_source_metadata(
         expected_hash, generation_id = _hls_source_identity(video, kind)
 
         return bool(
-            artifact.source_content_hash == expected_hash
-            and artifact.source_file_name == source.source_file_name
-            and artifact.source_generation_id == generation_id
+            _matches_hls_source(
+                artifact,
+                source_file_name=source.source_file_name,
+                source_generation_id=generation_id,
+                source_content_hash=expected_hash,
+            )
             and _has_supported_encoding_profile(artifact)
         )
     except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
@@ -2595,9 +2664,12 @@ def _ready_artifact_matches_current_source(
         expected_hash = _source_content_hash(source)
         return bool(
             artifact.source_content_hash
-            and artifact.source_content_hash == expected_hash
-            and artifact.source_file_name == source.source_file_name
-            and artifact.source_generation_id == generation_id
+            and _matches_hls_source(
+                artifact,
+                source_file_name=source.source_file_name,
+                source_generation_id=generation_id,
+                source_content_hash=expected_hash,
+            )
             and _has_supported_encoding_profile(artifact)
         )
     except (FileNotFoundError, ValueError, VideoStorageNormalizationError):

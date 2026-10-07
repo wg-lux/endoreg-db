@@ -567,6 +567,115 @@ def record_storage_rotation_cleanup_readiness(
             ) from exc
 
 
+def _commit_rotation_placements(rotation: StorageRotation) -> None:
+    """Publish placement ownership and accounting under the caller's row locks."""
+    source = rotation.source_placement
+    target = rotation.target_placement
+    reservation = target.reservation
+    if (
+        source.state != StorageArtifactPlacement.State.COMMITTED
+        or source.role != StorageArtifactPlacement.Role.PRIMARY
+        or target.state != StorageArtifactPlacement.State.VERIFIED
+        or reservation is None
+        or reservation.status != StorageReservation.Status.CONSUMED
+    ):
+        raise RotationError(
+            RotationErrorCode.COMPARE_AND_SET_CONFLICT,
+            "Canonical placement or consumed reservation no longer matches the rotation.",
+        )
+    node_states = {
+        row.pk: row
+        for row in StorageNodeState.objects.select_for_update()
+        .filter(pk__in=[source.storage_node_id, target.storage_node_id])
+        .order_by("pk")
+    }
+    source_node = node_states[source.storage_node_id]
+    target_node = node_states[target.storage_node_id]
+    if (
+        source_node.committed_bytes < rotation.expected_size_bytes
+        or target_node.in_flight_bytes < rotation.expected_size_bytes
+    ):
+        raise RotationError(
+            RotationErrorCode.COMPARE_AND_SET_CONFLICT,
+            "Storage accounting no longer covers the committed rotation bytes.",
+        )
+    source_node.committed_bytes -= rotation.expected_size_bytes
+    source_node.cleanup_reclaimable_bytes += rotation.expected_size_bytes
+    target_node.in_flight_bytes -= rotation.expected_size_bytes
+    target_node.committed_bytes += rotation.expected_size_bytes
+    source_node.save(
+        update_fields=[
+            "committed_bytes",
+            "cleanup_reclaimable_bytes",
+            "updated_at",
+        ]
+    )
+    target_node.save(update_fields=["in_flight_bytes", "committed_bytes", "updated_at"])
+    source.apply_lifecycle_state(StorageArtifactPlacement.State.SUPERSEDED)
+    target.apply_lifecycle_state(
+        StorageArtifactPlacement.State.COMMITTED,
+        role=StorageArtifactPlacement.Role.PRIMARY,
+        committed_at=timezone.now(),
+    )
+
+
+def _matching_transition_replay(
+    transition: StorageRotationTransition,
+    fingerprint: str,
+) -> StorageRotationTransition:
+    if transition.request_fingerprint != fingerprint:
+        raise RotationError(
+            RotationErrorCode.IDEMPOTENCY_CONFLICT,
+            "Transition idempotency key is bound to changed evidence.",
+        )
+    return transition
+
+
+def _transition_receipts(
+    rotation: StorageRotation,
+    target_state: StorageRotation.State,
+    verification_receipt_id: UUID | None,
+    cleanup_receipt_id: UUID | None,
+) -> tuple[
+    StorageRotationVerificationReceipt | None, StorageRotationCleanupReceipt | None
+]:
+    verification = None
+    if target_state in {
+        StorageRotation.State.VERIFIED,
+        StorageRotation.State.COMMITTED,
+    }:
+        if verification_receipt_id is not None:
+            verification = StorageRotationVerificationReceipt.objects.filter(
+                pk=verification_receipt_id,
+                rotation=rotation,
+                target_placement=rotation.target_placement,
+                transfer_evidence__placement=rotation.target_placement,
+                transfer_evidence__rotation=rotation,
+                transfer_evidence__state=StorageTransferEvidence.State.VERIFIED,
+            ).first()
+        if verification is None:
+            raise RotationError(
+                RotationErrorCode.TARGET_NOT_VERIFIED,
+                "Transition requires persisted matching verification evidence.",
+            )
+
+    cleanup = None
+    if target_state == StorageRotation.State.CLEANED:
+        if cleanup_receipt_id is not None:
+            cleanup = StorageRotationCleanupReceipt.objects.filter(
+                pk=cleanup_receipt_id,
+                rotation=rotation,
+                source_transfer_evidence__state=StorageTransferEvidence.State.DELETED,
+            ).first()
+        if cleanup is None:
+            raise RotationError(
+                RotationErrorCode.CLEANUP_BLOCKED,
+                "Cleanup requires a persisted reconciler-produced readiness receipt.",
+            )
+
+    return verification, cleanup
+
+
 def advance_storage_rotation(
     *,
     rotation_id: UUID,
@@ -594,12 +703,7 @@ def advance_storage_rotation(
             .first()
         )
         if replay is not None:
-            if replay.request_fingerprint != transition_fingerprint:
-                raise RotationError(
-                    RotationErrorCode.IDEMPOTENCY_CONFLICT,
-                    "Transition idempotency key is bound to changed evidence.",
-                )
-            return replay
+            return _matching_transition_replay(replay, transition_fingerprint)
         rotation = (
             StorageRotation.objects.select_for_update(
                 of=("self", "source_placement", "target_placement")
@@ -618,12 +722,9 @@ def advance_storage_rotation(
             idempotency_key=idempotency_key
         ).first()
         if concurrent_replay is not None:
-            if concurrent_replay.request_fingerprint != transition_fingerprint:
-                raise RotationError(
-                    RotationErrorCode.IDEMPOTENCY_CONFLICT,
-                    "Transition idempotency key is bound to changed evidence.",
-                )
-            return concurrent_replay
+            return _matching_transition_replay(
+                concurrent_replay, transition_fingerprint
+            )
         if rotation.state != expected_state:
             raise RotationError(
                 RotationErrorCode.COMPARE_AND_SET_CONFLICT,
@@ -640,39 +741,12 @@ def advance_storage_rotation(
                 "A terminal failure requires a stable failure reason.",
             )
 
-        verification = None
-        if target_state in {
-            StorageRotation.State.VERIFIED,
-            StorageRotation.State.COMMITTED,
-        }:
-            if verification_receipt_id is not None:
-                verification = StorageRotationVerificationReceipt.objects.filter(
-                    pk=verification_receipt_id,
-                    rotation=rotation,
-                    target_placement=rotation.target_placement,
-                    transfer_evidence__placement=rotation.target_placement,
-                    transfer_evidence__rotation=rotation,
-                    transfer_evidence__state=StorageTransferEvidence.State.VERIFIED,
-                ).first()
-            if verification is None:
-                raise RotationError(
-                    RotationErrorCode.TARGET_NOT_VERIFIED,
-                    "Transition requires persisted matching verification evidence.",
-                )
-
-        cleanup = None
-        if target_state == StorageRotation.State.CLEANED:
-            if cleanup_receipt_id is not None:
-                cleanup = StorageRotationCleanupReceipt.objects.filter(
-                    pk=cleanup_receipt_id,
-                    rotation=rotation,
-                    source_transfer_evidence__state=StorageTransferEvidence.State.DELETED,
-                ).first()
-            if cleanup is None:
-                raise RotationError(
-                    RotationErrorCode.CLEANUP_BLOCKED,
-                    "Cleanup requires a persisted reconciler-produced readiness receipt.",
-                )
+        verification, cleanup = _transition_receipts(
+            rotation,
+            target_state,
+            verification_receipt_id,
+            cleanup_receipt_id,
+        )
 
         try:
             with transaction.atomic():
@@ -699,56 +773,7 @@ def advance_storage_rotation(
             ) from exc
 
         if target_state == StorageRotation.State.COMMITTED:
-            source = rotation.source_placement
-            target = rotation.target_placement
-            reservation = target.reservation
-            if (
-                source.state != StorageArtifactPlacement.State.COMMITTED
-                or source.role != StorageArtifactPlacement.Role.PRIMARY
-                or target.state != StorageArtifactPlacement.State.VERIFIED
-                or reservation is None
-                or reservation.status != StorageReservation.Status.CONSUMED
-            ):
-                raise RotationError(
-                    RotationErrorCode.COMPARE_AND_SET_CONFLICT,
-                    "Canonical placement or consumed reservation no longer matches the rotation.",
-                )
-            node_states = {
-                row.pk: row
-                for row in StorageNodeState.objects.select_for_update()
-                .filter(pk__in=[source.storage_node_id, target.storage_node_id])
-                .order_by("pk")
-            }
-            source_node = node_states[source.storage_node_id]
-            target_node = node_states[target.storage_node_id]
-            if (
-                source_node.committed_bytes < rotation.expected_size_bytes
-                or target_node.in_flight_bytes < rotation.expected_size_bytes
-            ):
-                raise RotationError(
-                    RotationErrorCode.COMPARE_AND_SET_CONFLICT,
-                    "Storage accounting no longer covers the committed rotation bytes.",
-                )
-            source_node.committed_bytes -= rotation.expected_size_bytes
-            source_node.cleanup_reclaimable_bytes += rotation.expected_size_bytes
-            target_node.in_flight_bytes -= rotation.expected_size_bytes
-            target_node.committed_bytes += rotation.expected_size_bytes
-            source_node.save(
-                update_fields=[
-                    "committed_bytes",
-                    "cleanup_reclaimable_bytes",
-                    "updated_at",
-                ]
-            )
-            target_node.save(
-                update_fields=["in_flight_bytes", "committed_bytes", "updated_at"]
-            )
-            source.apply_lifecycle_state(StorageArtifactPlacement.State.SUPERSEDED)
-            target.apply_lifecycle_state(
-                StorageArtifactPlacement.State.COMMITTED,
-                role=StorageArtifactPlacement.Role.PRIMARY,
-                committed_at=timezone.now(),
-            )
+            _commit_rotation_placements(rotation)
 
         transition_time = timezone.now()
         if target_state == StorageRotation.State.VERIFIED:

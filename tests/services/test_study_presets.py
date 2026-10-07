@@ -91,6 +91,34 @@ def test_preset_creates_reference_rows_without_host_yaml_and_preserves_ids(
     assert bool(center_employee_overrides(center)) is employees
 
 
+@pytest.mark.parametrize(
+    "collection", ["centers", "genders", "label_types", "labels", "label_sets"]
+)
+def test_duplicate_identities_across_presets_fail_before_import(
+    collection: str,
+) -> None:
+    knowledge_base = package()
+    first = knowledge_base.study_preset["setup"]
+    second = first.model_copy(
+        update={
+            "name": "second",
+            "centers": [],
+            "genders": [],
+            "label_types": [],
+            "labels": [],
+            "label_sets": [],
+            collection: getattr(first, collection),
+        }
+    )
+    knowledge_base.study_preset["second"] = second
+
+    with pytest.raises(ValueError, match="duplicate .* identities"):
+        import_study_preset(knowledge_base)
+
+    assert not Center.objects.filter(center_key="clinic").exists()
+    assert not Examination.objects.filter(name="inspection").exists()
+
+
 def test_missing_clinical_reference_rolls_back_entire_preset() -> None:
     with pytest.raises(ObjectDoesNotExist):
         import_study_preset(package(missing_finding=True))
