@@ -155,5 +155,5 @@ def test_delete_raw_file_after_validation_deletes_field_file_via_storage() -> No
 
     assert deleted is True
     delete_hls.assert_called_once_with(video, artifact_kind="raw")
-    delete.assert_called_once_with(video, "raw_file", missing_ok=True, save=True)
+    delete.assert_called_once_with(video, "raw_file", missing_ok=False, save=True)
     video.save.assert_not_called()

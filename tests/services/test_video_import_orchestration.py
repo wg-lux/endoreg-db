@@ -47,7 +47,8 @@ def test_direct_import_owns_processing_and_terminal_state(
             assert not transaction.get_autocommit()
         if outcome in errors:
             raise errors[outcome]
-        return VideoFile(center=center)
+        with execution_fence.mutation_guard():
+            return VideoFile.objects.create(center=center)
 
     monkeypatch.setattr(service, "import_and_anonymize_fenced", process)
     if outcome == "success":
@@ -91,7 +92,7 @@ def test_reimport_preparation_is_owned_and_transactional(
     source = tmp_path / "reimport.mp4"
     source.write_bytes(b"test reimport bytes")
     center = Center.objects.create(name="before", center_key="reimport")
-    video = VideoFile(center=center)
+    video = VideoFile.objects.create(center=center)
     service = sut.VideoImportService()
 
     def context_names(_video: VideoFile) -> tuple[str, str]:
@@ -174,7 +175,8 @@ def test_direct_import_preserves_implicit_center_selection(
             == selected
         )
         execution_fence.guard()
-        return VideoFile(center=selected)
+        with execution_fence.mutation_guard():
+            return VideoFile.objects.create(center=selected)
 
     monkeypatch.setattr(service, "import_and_anonymize_fenced", process)
     service.import_and_anonymize(source, "", "processor")

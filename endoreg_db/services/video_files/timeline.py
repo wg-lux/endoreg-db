@@ -22,8 +22,18 @@ class VideoTimelineMapping:
     frame_count: int | None
     duration_seconds: float | None
     requires_persisted_pts: bool
+    first_timestamp_seconds: float = 0.0
+
+    @property
+    def end_timestamp_seconds(self) -> float | None:
+        return (
+            None
+            if self.duration_seconds is None
+            else self.first_timestamp_seconds + self.duration_seconds
+        )
 
     def __post_init__(self) -> None:
+        _validated_timestamp(self.first_timestamp_seconds, field_name="Timeline origin")
         if self.fps is not None and (not math.isfinite(self.fps) or self.fps <= 0):
             raise VideoTimelineMappingError(
                 "FPS must be set, finite, and greater than zero."
@@ -58,7 +68,7 @@ def frame_number_to_seconds(
         and mapping.duration_seconds is not None
         and mapping.duration_seconds > 0
     ):
-        return mapping.duration_seconds
+        return mapping.first_timestamp_seconds + mapping.duration_seconds
 
     if mapping.requires_persisted_pts:
         raise VideoTimelineMappingError(
@@ -66,7 +76,7 @@ def frame_number_to_seconds(
         )
     if mapping.fps is None:
         raise VideoTimelineMappingError("FPS must be set and greater than zero.")
-    return frame_number / mapping.fps
+    return mapping.first_timestamp_seconds + frame_number / mapping.fps
 
 
 def seconds_to_frame_number(
@@ -81,7 +91,7 @@ def seconds_to_frame_number(
     follows the same half-up rule when no persisted boundary is available.
     """
     timestamp = validate_timestamp_seconds(timestamp_seconds)
-    duration = mapping.duration_seconds
+    duration = mapping.end_timestamp_seconds
     if (
         duration is not None
         and timestamp > duration
@@ -118,7 +128,9 @@ def seconds_to_frame_number(
         )
     if mapping.fps is None:
         raise VideoTimelineMappingError("FPS must be set and greater than zero.")
-    frame_number = math.floor(timestamp * mapping.fps + 0.5)
+    frame_number = max(
+        0, math.floor((timestamp - mapping.first_timestamp_seconds) * mapping.fps + 0.5)
+    )
     if mapping.frame_count is not None:
         return min(frame_number, mapping.frame_count)
     return frame_number

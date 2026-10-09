@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar, Unpack
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import QuerySet
@@ -54,10 +55,13 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
+    from django.contrib.auth.models import User
     from endoreg_db.models import (
         ImageClassificationAnnotation,
         LabelVideoSegment,
         VideoFile,
+        PatientExamination,
+        StudyTableImport,
     )
 
 
@@ -92,6 +96,7 @@ class AIDataSet(models.Model):
     DATASET_TYPE_CHOICES = [
         (DATASET_TYPE_IMAGE, "Image"),
         (DATASET_TYPE_VIDEO, "Video"),
+        ("clinical", "Clinical records"),
     ]
 
     AI_MODEL_TYPE_IMAGE_MULTILABEL = "image_multilabel_classification"
@@ -108,9 +113,11 @@ class AIDataSet(models.Model):
         null=True,
         help_text="Optional notes / explanation about this dataset.",
     )
-    ai_model_type: models.CharField[str, Any] = models.CharField(
+    ai_model_type: models.CharField[str | None, Any] = models.CharField(
         max_length=255,
         default=AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        null=True,
+        blank=True,
         help_text=(
             "AI model family this dataset is for, e.g. "
             '"image_multilabel_classification".'
@@ -125,6 +132,28 @@ class AIDataSet(models.Model):
             "still include both frame and video annotations attached to the dataset."
         ),
     )
+    owner: models.ForeignKey[User | None] = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="owned_datasets",
+    )
+    import_identity: models.UUIDField[uuid.UUID | None, uuid.UUID | None] = (
+        models.UUIDField(null=True, blank=True, unique=True)
+    )
+    examinations: models.ManyToManyField[PatientExamination, models.Model] = (
+        models.ManyToManyField(
+            "PatientExamination", related_name="clinical_datasets", blank=True
+        )
+    )
+    videos: models.ManyToManyField[VideoFile, models.Model] = models.ManyToManyField(
+        "VideoFile", related_name="member_datasets", blank=True
+    )
+    import_receipts: models.ManyToManyField[StudyTableImport, models.Model] = (
+        models.ManyToManyField("StudyTableImport", related_name="datasets", blank=True)
+    )
+
     image_annotations: models.ManyToManyField[
         ImageClassificationAnnotation, ImageClassificationAnnotation
     ] = models.ManyToManyField(
@@ -167,6 +196,7 @@ class AIDataSet(models.Model):
     )
 
     if TYPE_CHECKING:
+        owner_id: int | None
         id: int
 
     @staticmethod
@@ -339,7 +369,7 @@ class AIModelTrainingRun(models.Model):
     dataset_type: models.CharField[str, Any] = models.CharField(
         max_length=32, blank=True
     )
-    ai_model_type: models.CharField[str, Any] = models.CharField(
+    ai_model_type: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True
     )
     backbone_name: models.CharField[str, Any] = models.CharField(max_length=128)
@@ -523,7 +553,7 @@ class AIDataSetExportArtifact(models.Model):
     dataset_type: models.CharField[str, Any] = models.CharField(
         max_length=32, blank=True
     )
-    ai_model_type: models.CharField[str, Any] = models.CharField(
+    ai_model_type: models.CharField[str | None, Any] = models.CharField(
         max_length=255, blank=True
     )
     request_payload: models.JSONField[Any, Any] = models.JSONField(

@@ -106,8 +106,8 @@ def _update_text_metadata(
 
             # Add center info if not already present in extracted data
             extracted_data_dict = (
-                extracted_data_dict.model_copy(
-                    update={"center_name": video.center.name}
+                VideoTextMetaPayload.model_validate(
+                    {**extracted_data_dict.root, "center_name": video.center.name}
                 )
                 if "center_name" not in extracted_data_dict.root and video.center
                 else extracted_data_dict

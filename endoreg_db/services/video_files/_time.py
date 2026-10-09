@@ -165,6 +165,14 @@ def _mapping_contract_from_video(
 ) -> tuple[VideoTimelineMapping, TimelineVersion, TimestampMapping]:
     payload = VideoFileMetaPayload.model_validate(video.meta or {})
     source_timeline = payload.source_timeline
+    if (
+        source_timeline is not None
+        and source_timeline.artifact_kind == "processed"
+        and source_timeline.content_hash != video.processed_video_hash
+    ):
+        raise VideoTimelineMappingError(
+            "Processed annotation timeline belongs to another generation"
+        )
     requires_persisted_pts = bool(
         source_timeline is not None
         and source_timeline.timestamp_mapping == "ffprobe_pts"
@@ -177,6 +185,7 @@ def _mapping_contract_from_video(
                 frame_count=timeline.frame_count,
                 duration_seconds=timeline.duration_seconds,
                 requires_persisted_pts=requires_persisted_pts,
+                first_timestamp_seconds=source_timeline.first_timestamp_seconds,
             ),
             source_timeline.timeline_version,
             source_timeline.timestamp_mapping,

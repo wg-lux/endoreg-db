@@ -1,0 +1,35 @@
+# Portable mapping example; replace mapping_id when creating an independent mapping.
+# One stable record_id per examination row; no patient values belong in this file.
+schema_version: '1.0'
+mapping_id: 50da14c7-40ac-43b8-96f5-d8f36b29e579
+name: Koloskopie-Studientabelle
+knowledge_base:
+  knowledge_base_module: dgvs_reporting
+  knowledge_base_version: 0.1.0
+source:
+  delimiter: ';'
+  encoding: utf-8-sig
+  header_row: 1
+row_id: record_id
+first_name: Patient.Vorname
+last_name: Patient.Nachname
+dob:
+  columns: [Patient.Geburtsdatum]
+  date_format: '%d.%m.%Y'
+gender:
+  columns: [Patient.Geschlecht]
+  values:
+    w: female
+    m: male
+    d: diverse
+    unbekannt: unknown
+examination_date:
+  columns: [Untersuchungsdatum]
+  date_format: '%d.%m.%Y'
+examination:
+  value: colonoscopy
+finding:
+  columns: [Befund]
+  required: false
+  values:
+    Polyp: colon_polyp

@@ -75,6 +75,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     runtime_root: Path
     storage: Path
     terminology: Path
+    table_mappings: Path
 
     import_dir: Path
     export_dir: Path
@@ -165,6 +166,7 @@ class EndoregPathsModel(FilesAndDirsModel):
             "runtime_root": root,
             "storage": storage,
             "terminology": terminology,
+            "table_mappings": storage / "study_table_mappings",
             "import_dir": import_dir,
             "export_dir": export_dir,
             "import_video": import_dir / IMPORT_VIDEO_DIR_NAME,

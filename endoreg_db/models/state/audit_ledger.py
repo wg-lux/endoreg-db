@@ -127,23 +127,22 @@ class AuditLedger(models.Model):
             raise RuntimeError("AuditLedger rows are immutable")
         self.clean()
         with transaction.atomic():
-            try:
-                head = LedgerHead.lock()
-                object.__setattr__(self, "prev_hash", head.current_hash)
-                object.__setattr__(self, "hash", self._compute_hash())
-                super().save(*args, **kwargs)
+            head = LedgerHead.lock()
+            if head.last_entry is None:
+                if head.current_hash != "0" * 64 or AuditLedger.objects.exists():
+                    raise RuntimeError("Audit ledger head is inconsistent")
+            elif (
+                head.current_hash != head.last_entry.hash
+                or head.last_entry.hash != head.last_entry._compute_hash()
+            ):
+                raise RuntimeError("Audit ledger head is inconsistent")
+            object.__setattr__(self, "prev_hash", head.current_hash)
+            object.__setattr__(self, "hash", self._compute_hash())
+            super().save(*args, **kwargs)
 
-                object.__setattr__(head, "current_hash", self.hash)
-                object.__setattr__(head, "last_entry", self)
-                head.save(update_fields=["current_hash", "last_entry", "updated_at"])
-            except (OperationalError, ProgrammingError) as exc:
-                if _ledger_table_unavailable(exc):
-                    logger.warning(
-                        "AuditLedger table unavailable; skipping audit write: %s",
-                        exc,
-                    )
-                    return
-                raise
+            object.__setattr__(head, "current_hash", self.hash)
+            object.__setattr__(head, "last_entry", self)
+            head.save(update_fields=["current_hash", "last_entry", "updated_at"])
 
     def _last_hash(self) -> str:
         """
@@ -165,17 +164,26 @@ class AuditLedger(models.Model):
         """
         Verify every ledger row still matches its stored hash and previous link.
         """
-        expected_prev_hash = "0" * 64
-        for record in cls.objects.order_by("ts", "id").iterator():
-            if record.prev_hash != expected_prev_hash:
+        # Timestamp assignment precedes the append lock and is not append order.
+        # Hold the writer lock while checking the persisted predecessor links.
+        with transaction.atomic():
+            head = LedgerHead.objects.select_for_update().filter(pk=1).first()
+            records = list(cls.objects.select_related("user").all())
+            if head is None:
+                return not records
+            by_hash = {record.hash: record for record in records}
+            if len(by_hash) != len(records):
                 return False
-            if record.hash != record._compute_hash():
+            expected_hash = head.current_hash
+            last = by_hash.get(expected_hash)
+            if (last.pk if last else None) != head.last_entry_id:
                 return False
-            expected_prev_hash = record.hash
-
-        head = LedgerHead.objects.first()
-        head_hash = head.current_hash if head else "0" * 64
-        return head_hash == expected_prev_hash
+            while expected_hash != "0" * 64:
+                record = by_hash.pop(expected_hash, None)
+                if record is None or record.hash != record._compute_hash():
+                    return False
+                expected_hash = record.prev_hash
+            return not by_hash
 
     def _compute_hash(self) -> str:
         user = getattr(self, "user", None)
@@ -218,31 +226,22 @@ class AuditLedger(models.Model):
         object_type: str,
         object_pk: str,
         data: JsonObject,
-    ) -> "AuditLedger | None":
+    ) -> "AuditLedger":
         """
         Append an immutable identity commit without requiring a user context.
         """
-        try:
-            audit_user = (
-                cast(models.Model, user)
-                if getattr(user, "is_authenticated", False)
-                else None
-            )
-            return cls.objects.create(
-                user=cast(Any, audit_user),
-                object_type=object_type,
-                object_pk=object_pk,
-                action="identity_committed",
-                data=data,
-            )
-        except (OperationalError, ProgrammingError) as exc:
-            if _ledger_table_unavailable(exc):
-                logger.warning(
-                    "AuditLedger table unavailable; skipping identity commit: %s",
-                    exc,
-                )
-                return None
-            raise
+        audit_user = (
+            cast(models.Model, user)
+            if getattr(user, "is_authenticated", False)
+            else None
+        )
+        return cls.objects.create(
+            user=cast(Any, audit_user),
+            object_type=object_type,
+            object_pk=object_pk,
+            action="identity_committed",
+            data=data,
+        )
 
     @classmethod
     def _distinct(cls, object_type: str, action: str) -> int:
@@ -313,7 +312,7 @@ class LedgerHead(models.Model):
     objects: ClassVar[models.Manager["LedgerHead"]] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     if TYPE_CHECKING:
-        last_entry_id: int | None
+        last_entry_id: uuid.UUID | None
 
     class Meta:
         verbose_name = "Ledger Head"

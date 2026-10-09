@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
-from endoreg_db.config.env import get_video_default_fps
+from endoreg_db.services.video_storage.canonical_timelines import (
+    assert_canonical_timeline_equivalence,
+    capture_canonical_timeline,
+)
+from endoreg_db.services.video_storage.probes import probe_video_artifact
 from endoreg_db.services.video_storage.format_reconciliation import (
     VIDEO_EXTENSIONS,
     classify_video_format,
@@ -78,7 +82,7 @@ class VideoTranscodeSummary:
     transcoded_files: int = 0
     skipped_files: int = 0
     failed_files: int = 0
-    target_fps: float = 0.0
+    target_fps: float | None = None
     reports: list[VideoTranscodeReport] = field(
         default_factory=list[VideoTranscodeReport]
     )
@@ -200,7 +204,7 @@ def _transcode_one(
     dry_run: bool,
     force_cpu: bool,
     quality_mode: str,
-    target_fps: float,
+    target_fps: float | None,
 ) -> VideoTranscodeReport:
     bytes_before = _file_size(source)
     report = VideoTranscodeReport(
@@ -226,6 +230,11 @@ def _transcode_one(
 
     staging_path = _staging_path(destination)
     try:
+        source_timestamps = (
+            capture_canonical_timeline(source, probe_video_artifact(source))
+            if target_fps is None
+            else None
+        )
         safe_unlink_file(staging_path, missing_ok=True)
         ensure_directory(staging_path.parent)
         ensure_disk_capacity(
@@ -258,7 +267,15 @@ def _transcode_one(
 
         _verify_output_file(staging_path)
         _verify_standard_video(staging_path)
-        _verify_max_fps(staging_path, max_fps=target_fps)
+        if target_fps is not None:
+            _verify_max_fps(staging_path, max_fps=target_fps)
+        if source_timestamps is not None:
+            assert_canonical_timeline_equivalence(
+                source_timestamps,
+                capture_canonical_timeline(
+                    staging_path, probe_video_artifact(staging_path)
+                ),
+            )
 
         file_mode = source.stat().st_mode & 0o777
         atomic_move_file(
@@ -291,7 +308,7 @@ def _run_system_transcode(
     staging_path: Path,
     quality_mode: str,
     force_cpu: bool,
-    target_fps: float,
+    target_fps: float | None,
 ) -> Path | None:
     return ffmpeg_wrapper.transcode_video(
         input_path=source,
@@ -455,9 +472,9 @@ def _normalize_quality_mode(quality_mode: str) -> str:
     return normalized
 
 
-def _normalize_target_fps(target_fps: float | None) -> float:
+def _normalize_target_fps(target_fps: float | None) -> float | None:
     if target_fps is None:
-        target_fps = _default_target_fps()
+        return None
     try:
         fps = float(target_fps)
     except (TypeError, ValueError) as exc:
@@ -465,18 +482,6 @@ def _normalize_target_fps(target_fps: float | None) -> float:
     if not math.isfinite(fps) or fps <= 0:
         raise ValueError("target_fps must be a positive finite number.")
     return fps
-
-
-def _default_target_fps() -> float:
-    try:
-        from django.conf import settings
-
-        configured = getattr(settings, "VIDEO_DEFAULT_FPS", None)
-        if configured is not None:
-            return float(configured)
-    except Exception:
-        pass
-    return float(get_video_default_fps())
 
 
 def _parse_frame_rate(value: object) -> float | None:

@@ -11,6 +11,7 @@ from endoreg_db.schemas.video_storage import (
     CanonicalTimestampTransformation,
     FramePresentationTimestamp,
     VideoArtifactProbe,
+    MeasuredAverageFrameRate,
 )
 from endoreg_db.services.video_storage import canonical_timelines as service
 from endoreg_db.services.video_storage import workflow
@@ -46,6 +47,79 @@ def test_exact_irregular_and_offset_coordinates_round_trip(ticks: list[int]) -> 
         CanonicalFrameTimeline.model_validate_json(original.model_dump_json())
         == original
     )
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        snapshot([123, 163, 245]),
+        snapshot([1230, 1630, 2450], denominator=10000),
+        snapshot([12, 16, 24], denominator=100),
+    ],
+)
+def test_native_timestamp_equivalence_allows_only_time_base_rounding(
+    after: CanonicalFrameTimeline,
+) -> None:
+    service.assert_canonical_timeline_equivalence(snapshot([123, 163, 245]), after)
+
+
+@pytest.mark.parametrize(
+    "ticks", [[0, 40, 122], [123, 164, 245], [123, 245], [123, 163, 200, 245]]
+)
+def test_native_timestamp_equivalence_rejects_shift_drop_and_insertion(
+    ticks: list[int],
+) -> None:
+    with pytest.raises(service.VideoStorageNormalizationError, match="Canonical"):
+        service.assert_canonical_timeline_equivalence(
+            snapshot([123, 163, 245]), snapshot(ticks)
+        )
+
+
+@pytest.mark.parametrize("proof_kind", ["valid", "missing", "shifted", "incomplete"])
+def test_average_rate_metadata_difference_requires_complete_native_proof(
+    proof_kind: str,
+) -> None:
+    source = probe()
+    output = source.model_copy(
+        update={
+            "timeline": source.timeline.model_copy(
+                update={
+                    "measured_average_frame_rate": MeasuredAverageFrameRate(
+                        numerator=249, denominator=10
+                    ),
+                }
+            )
+        }
+    )
+    ticks = [index * 40 for index in range(250)]
+    after_ticks = list(ticks)
+    if proof_kind == "shifted":
+        after_ticks[10] += 1
+    elif proof_kind == "incomplete":
+        after_ticks.pop()
+    timestamps = (
+        None
+        if proof_kind == "missing"
+        else CanonicalTimestampTransformation(
+            before=snapshot(ticks),
+            after=snapshot(after_ticks),
+        )
+    )
+
+    def validate() -> None:
+        evidence = validate_normalized_output(
+            source=source,
+            output=output,
+            profile=configured_video_storage_profile(),
+            canonical_timestamps=timestamps,
+        )
+        assert evidence.canonical_timestamps == timestamps
+
+    if proof_kind == "valid":
+        validate()
+    else:
+        with pytest.raises(VideoStorageNormalizationError):
+            validate()
 
 
 def test_resampling_and_later_publication_preserve_both_sequences() -> None:

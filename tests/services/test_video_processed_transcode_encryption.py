@@ -10,8 +10,18 @@ from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 
-from endoreg_db.models import Center, VideoFile
-from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
+from endoreg_db.models import (
+    Center,
+    VideoFile,
+    Frame,
+    Label,
+    ImageClassificationAnnotation,
+)
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoTimelineContract,
+    FramePresentationTimestamp,
+)
 from endoreg_db.services.video_storage import processed_transcode as service
 from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage import generation_cleanup as cleanup
@@ -169,6 +179,68 @@ def test_ciphertext_source_scoped_plaintext_and_encrypted_publication(
     assert scoped_paths
     assert all(not path.exists() for path in scoped_paths)
     assert not scoped_paths[0].parent.exists()
+
+
+@pytest.mark.parametrize("failure", ["shift", "drop"])
+def test_native_timestamp_failure_preserves_master_and_annotations(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    original_name = str(video.processed_file.name)
+    frame = Frame.objects.create(video=video, frame_number=10, timestamp=0.4)
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=Label.objects.create(name="preserved-annotation"),
+        value=True,
+    )
+    annotation_before = (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+    )
+    paths: list[Path] = []
+
+    def encode(source: Path, destination: Path, **_kwargs: object) -> Path:
+        paths.extend([source, destination])
+        atomic_write_file(
+            destination=destination, content=[b"small copy"], file_mode=0o600
+        )
+        return destination
+
+    def timestamps(path: Path) -> list[FramePresentationTimestamp]:
+        rows = decoded_test_timestamps(path)
+        if path.read_bytes() == b"small copy":
+            if failure == "drop":
+                return rows[:-1]
+            rows[-1] = rows[-1].model_copy(
+                update={
+                    "presentation_timestamp": 10040,
+                    "presentation_time_seconds": 10.04,
+                }
+            )
+        return rows
+
+    monkeypatch.setattr(canonical_timelines, "probe_video_frame_timestamps", timestamps)
+    with (
+        patch.object(service, "transcode_video", side_effect=encode),
+        patch.object(service, "probe_video_artifact", return_value=probe()),
+        patch.object(service, "materialize_video_hls") as publish_hls,
+    ):
+        result = service.transcode_processed_video_for_storage_pressure(
+            video, apply=True
+        )
+    assert result.status == "failed"
+    assert not result.published
+    publish_hls.assert_not_called()
+    video.refresh_from_db()
+    frame.refresh_from_db()
+    assert str(video.processed_file.name) == original_name
+    assert Path(video.processed_file.path).read_bytes().startswith(MAGIC)
+    assert frame.frame_number == 10 and frame.timestamp == 0.4
+    assert (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+        == annotation_before
+    )
+    assert all(not path.exists() for path in paths)
 
 
 @pytest.mark.parametrize("failure", ["wrong_key", "tamper", "loader"])

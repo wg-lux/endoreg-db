@@ -622,6 +622,7 @@ def sync_report_findings(
     findings_payload: Sequence[Mapping[str, object]],
     *,
     user: AuthUser | None,
+    replace: bool = True,
 ) -> None:
     # All report and selector writers serialize on the owning examination.
     PatientExamination.objects.select_for_update().get(pk=patient_examination.pk)
@@ -684,7 +685,8 @@ def sync_report_findings(
             patient_finding = match
         matched_ids.add(cast(_IdentifiedLike, patient_finding).id)
         _sync_finding_children(patient_finding, resolved)
-    _deactivate_unmatched_findings(existing_active, matched_ids, user=user)
+    if replace:
+        _deactivate_unmatched_findings(existing_active, matched_ids, user=user)
 
 
 __all__ = ["parse_report_date", "sync_report_findings"]

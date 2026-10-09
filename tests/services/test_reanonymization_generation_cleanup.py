@@ -179,17 +179,15 @@ def test_cleanup_failure_preserves_committed_master_and_retry_reaps_receipt(
     assert video.processed_file.name == published
 
 
-def test_changed_raw_timeline_cannot_rewrite_existing_annotation_coordinates(
-    video: VideoFile, monkeypatch: pytest.MonkeyPatch
+def test_stale_fps_metadata_does_not_reject_native_decoded_timeline(
+    video: VideoFile,
 ) -> None:
     previous_name = str(video.processed_file.name)
     video.fps = 50
     video.save(update_fields=["fps"])
-    encoder = Mock()
-    monkeypatch.setattr(service, "mask_video_to_roi_and_blacken_intervals", encoder)
-    with pytest.raises(RuntimeError, match="Anonymization failed"):
-        video.anonymize(delete_original_raw=False)
-    encoder.assert_not_called()
+    assert video.anonymize(delete_original_raw=False)
     video.refresh_from_db()
-    assert video.processed_file.name == previous_name
-    assert not cleanup_receipts(video.meta)
+    assert video.processed_file.name != previous_name
+    assert video.fps == 25
+    assert video.frame_count == 250
+    assert video.frames.count() == 250

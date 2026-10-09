@@ -170,7 +170,9 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
 
         with transaction.atomic():
             examination_serializer = PatientExaminationSerializer(
-                data=payload.patient_examination.model_dump(mode="json")
+                data=payload.patient_examination.model_dump(
+                    mode="json", exclude_unset=True
+                )
             )
             examination_serializer.is_valid(raise_exception=True)
             patient_examination = examination_serializer.save()

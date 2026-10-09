@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -180,8 +181,11 @@ def test_case_rejects_relationship_from_another_patient(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("with_identity", [False, True])
 def test_case_and_patient_examination_are_created_atomically(
     api_client: APIClient,
+    packaged_registry: Path,
+    with_identity: bool,
 ) -> None:
     patient = Patient.objects.create(
         patient_hash=f"case-atomic-{uuid4().hex}",
@@ -198,6 +202,14 @@ def test_case_and_patient_examination_are_created_atomically(
                 "patient": patient.patient_hash,
                 "examination": examination.name,
                 "date_start": "2026-07-22",
+                **(
+                    {
+                        "knowledge_base_module": "coloreg",
+                        "knowledge_base_version": "0.3.0",
+                    }
+                    if with_identity
+                    else {}
+                ),
             },
         },
         format="json",
@@ -212,6 +224,52 @@ def test_case_and_patient_examination_are_created_atomically(
     assert list(persisted_case.patient_examinations.values_list("id", flat=True)) == [
         patient_examination_body["id"]
     ]
+    persisted = PatientExamination.objects.get(pk=patient_examination_body["id"])
+    expected = ("coloreg", "0.3.0") if with_identity else ("", "")
+    assert (
+        persisted.knowledge_base_module,
+        persisted.knowledge_base_version,
+    ) == expected
+    assert (
+        patient_examination_body["knowledge_base_module"],
+        patient_examination_body["knowledge_base_version"],
+    ) == expected
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "identity",
+    [
+        {"knowledge_base_module": "coloreg"},
+        {"knowledge_base_version": "0.3.0"},
+        {"knowledge_base_module": "", "knowledge_base_version": "0.3.0"},
+        {
+            "knowledge_base_module": "coloreg",
+            "knowledge_base_version": "missing-version",
+        },
+    ],
+)
+def test_case_creation_rejects_invalid_knowledge_base_without_persistence(
+    api_client: APIClient, packaged_registry: Path, identity: dict[str, str]
+) -> None:
+    patient = Patient.objects.create(patient_hash=f"case-kb-{uuid4().hex}")
+    examination = Examination.objects.create(name=f"case-kb-{uuid4().hex}")
+    before = (Case.objects.count(), PatientExamination.objects.count())
+    response = api_client.post(
+        "/api/cases/create-with-examination/",
+        data={
+            "admission_date": "2026-07-22T08:00:00Z",
+            "patient_examination": {
+                "patient": patient.patient_hash,
+                "examination": examination.name,
+                "date_start": "2026-07-22",
+                **identity,
+            },
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert (Case.objects.count(), PatientExamination.objects.count()) == before
 
 
 @pytest.mark.django_db

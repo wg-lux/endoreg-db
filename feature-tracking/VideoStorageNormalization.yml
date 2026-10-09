@@ -206,6 +206,14 @@ definition_of_done:
     historische Werte werden nicht erfunden.
   - Fehlende oder ungültige Zeitstempel verhindern die Veröffentlichung. Bestehende klinische Frame- und
     Segmentkoordinaten sowie Streaming- und Lease-Verträge bleiben erhalten.
+  - Jede neue Transkodierung speichert eine inhaltsgebundene Out-of-Band-Tabelle mit vollständigen ffprobe-Quellzeitstempeln,
+    rationaler Zeitbasis und tatsächlichem Decoder-Quellindex pro Encoder-Ausgabeframe. Resampling darf
+    keine Herkunft durch Zeitnähe schätzen; fehlende oder widersprüchliche Herkunft blockiert Erfolg.
+  - Mehrstufige Transformationen bleiben bis zur Aufnahmequelle zusammensetzbar. HLS und kompatible MP4-Derivate
+    bewahren Herkunft, ohne eigenständige kanonische Generationen zu werden.
+  - Maskierung und Frame-Entfernung verwenden die Implementierung von lx-anonymizer; typisierte, instanzgebundene
+    Hooks erfassen Encoder- und Decoder-Herkunft. Endoreg besitzt Belegpersistenz und Ausführungsgrenzen,
+    ohne eine zweite Maskierungsimplementierung oder globale Laufzeit-Patches.
   required: true
   verification:
     kind: manual
@@ -213,7 +221,7 @@ definition_of_done:
       ausführen.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: endoreg_db/services/video_storage/canonical_timelines.py; endoreg_db/schemas/video_storage.py;
@@ -231,16 +239,46 @@ definition_of_done:
     - kind: document
       reference: 'AGENTS.md; docs/video_storage_normalization.md: only canonical raw and processed are
         generations; HLS is an optimized source-bound streaming derivative.'
-    note: Neue kanonische Veröffentlichungen speichern vollständige Vorher-/Nachher-Zeitstempelsequenzen
-      mit rationaler Zeitbasis und Inhaltsidentität; vorherige Historie bleibt erhalten. Legacy-Daten
-      bleiben lesbar, fehlende historische Werte werden nicht rekonstruiert. Kein Deployment, kein Backfill
-      und keine Freigabe anderer Produktionsgates.
-    assessed_by: codex-pts-20261005-a
-    assessed_at: '2026-10-05T16:30:42.375618Z'
+    - kind: command
+      reference: '2026-10-08: vollständiger Endoreg-Pyright: 0 Fehler, 9 Warnungen; kombinierte Provenance-/HLS-/Hub-/Import-/Transcode-Lane:
+        217 passed, 35 subtests passed, 2 warnings in 108.07s; zusätzliche Import-/Korrektur-Lane: 72
+        passed, 2 warnings in 65.90s.'
+    - kind: test
+      reference: 'tests/services/test_frame_provenance.py: echte Pixel-Abstammung bei 60-zu-50-Resampling
+        und unverändertem/verschobenem Zeitursprung; echte ROI-, Detector- und Frame-Removal-Encodingpfade.'
+    - kind: code
+      reference: endoreg_db/services/video_storage/frame_provenance.py; endoreg_db/services/video_storage/provenance_cleaner.py;
+        endoreg_db/models/media/video/frame_provenance.py; endoreg_db/migrations/0092_video_frame_provenance.py
+    - kind: test
+      reference: '2026-10-09: Endoreg mit lokalem lx-anonymizer und gepinntem lx-dtypes 0.4.4: 271 passed,
+        2 warnings in 100.79s. Zehn Suiten: Frame-Provenance, Video-Anonymisierung, Korrekturjobs, Reimport/Korrektur-API,
+        Reanonymisierungsbereinigung, Processed-Timelines, Import-Orchestrierung, Hub-Provenance, Speichernormalisierung
+        und HLS. Echte Encoderpfade prüfen Maskierung, volle Bildregion, verschobenen Zeitursprung, Detector
+        und Frame-Entfernung. Fehlerfälle verhindern Herkunftsbelege. Pytest meldete zusätzlich Warnungen
+        zur Bereinigung alter temporärer Verzeichnisse.'
+    - kind: test
+      reference: '2026-10-09: lx-anonymizer: 54 passed in 9.78s über Maskierung/Crop, Detector, FrameCleaner,
+        Nebenläufigkeit, FFmpeg-Processor und Video-Anonymisierung Ende-zu-Ende. Vollständiger Pyright:
+        0 Fehler, 9 Warnungen.'
+    - kind: command
+      reference: '2026-10-09: vollständiger Endoreg-Pyright 0 Fehler, 17 Warnungen; abschließender validation.py-Pyright
+        0 Fehler, 0 Warnungen. Ruff für Provenance-Adapter, Provenance-Tests und validation.py sowie git
+        diff --check bestanden. 37 Feature-Definitionen schema-gültig.'
+    note: Maskierung und Frame-Entfernung laufen ausschließlich durch lx-anonymizer mit optionalen instanzgebundenen
+      VideoExecutionHooks. Endoreg persistiert tatsächliche Herkunft und hält die Ausführungsgrenzen.
+      Doppelter Detector-Kompatibilitätspfad entfernt; identische HLS-Zeitbasiskonvertierung vereinheitlicht.
+      Lokale Regressionen bestanden. Passende lx-anonymizer-Veröffentlichung und Migration 0092 bleiben
+      vor Deployment erforderlich; lx-dtypes 0.4.4 enthält den Vertrag bereits. Bestehende Modellinventar-Abweichungen
+      und übergreifende Produktionsfreigaben sind nicht Gegenstand dieser Änderung.
+    assessed_by: codex-sidecar-20261008-a
+    assessed_at: '2026-10-09T10:37:23.658781Z'
 - id: storage_profile_contract
   category: requirements
   title: Rollen und Größenbudgets aller Videoartefakte sind verbindlich definiert
   acceptance:
+  - Outside-frame blackening retries bitrate overshoot at most twice from the original source with strictly
+    decreasing encoder caps; every candidate must pass unchanged validation. Exhaustion preserves the
+    prior encrypted master, and unrelated validation failures are not retried.
   - Roh-Ingest, kanonisches anonymisiertes Mastervideo, HLS-Derivat, extrahierter Frame und temporäres
     Transcode-Artefakt besitzen je eine eindeutige Rolle, Aufbewahrungsfrist und Löschbedingung.
   - Ein versioniertes, typisiertes Profil definiert numerische Obergrenzen für Auflösung, Bildrate, Bitrate
@@ -282,6 +320,22 @@ definition_of_done:
     - kind: review
       reference: endoreg_db/services/video_storage/contracts.py; endoreg_db/services/video_storage/validation.py;
         docs/video_storage_normalization.md
+    - kind: test
+      reference: '2026-10-08: test_video_storage_normalization.py, test_hls_media.py, test_post_validation_generation_cleanup.py,
+        test_ffmpeg_wrapper.py and test_video_post_validation_jobs.py: 216 passed, 2 warnings. After native
+        timestamp passthrough, wrapper and encrypted blackening suites: 46 passed, 2 warnings, including
+        two real FFmpeg encodes preserving all 48 irregularly timed frames with and without an adaptive
+        bitrate cap.'
+      note: 'Assessor codex-gc10-cleanup-review-20261007. Focused Pyright: 0 errors and warnings; full
+        Pyright remains failing with 1435 errors, including missing DRF stubs. Tests used /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest
+        because the endoreg-db environment lacks pytest_postgresql. No deployment or production-readiness
+        approval.'
+    - kind: test
+      reference: '2026-10-08: final test_video_storage_normalization.py run: 88 passed, 2 warnings, including
+        irregular native presentation timestamps at container origins 0, 1.4 and 17.25 seconds, and profile-driven
+        25/50 FPS resampling proofs. Focused Pyright and Ruff passed.'
+      note: Assessor codex-gc10-cleanup-review-20261007. User selected native timestamp preservation instead
+        of one-frame tolerance and annotation shifting; telemetry joins are deferred.
     - kind: code
       reference: c3dfaf0a; 3f7084c4
     - kind: command
@@ -364,6 +418,21 @@ definition_of_done:
   category: data_integrity
   title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
   acceptance:
+  - Processed publication automatically maps segment boundaries to the nearest processed presentation
+    timestamp (ties select the earlier boundary), keeps decoded frame counts exact and preserves raw timestamp
+    history for external sensor alignment. Mapping evidence records before/after coordinates and is committed
+    atomically with frame timestamps and processed generation identity. No additional review workflow
+    is introduced; incompatible or collapsing mappings fail processing.
+  - Outside-frame blackening uses timestamp passthrough instead of imposing a fixed frame-rate cap. HLS
+    segment checks normalize boundaries relative to the source container origin, and explicit resampling
+    proofs obtain their target cadence from the typed profile.
+  - Size-reduction and masking defaults retain native frame timestamps and their container origin. Canonical
+    publication compares every decoded frame using rational time bases, rejects dropped, added or shifted
+    frames, and preserves existing annotations on rejection. Only explicit pre-annotation FPS resampling
+    may bypass this equivalence gate.
+  - Native-timestamp encoding uses the demuxer time base and refuses automatic timestamp repair. Directory
+    transcoding has no implicit frame-rate cap; processed downsizing reads the persisted typed source
+    timeline for variable-frame-rate media.
   - Vor einer Bestandsnormalisierung sind die autoritative rationale FPS, Time-Base, Dauer, Frameanzahl
     und Präsentationszeitstempel beziehungsweise deren belastbare Zuordnung zur Quell-Timeline persistiert
     und versioniert.
@@ -390,14 +459,52 @@ definition_of_done:
       tests/services/test_video_temporal_inference.py -q
     timeout_seconds: 900
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/services/test_video_temporal_mapping.py
         tests/services/test_segment_frame_extraction.py -q'
       note: Exit-Code 0
-    assessed_by: Max
-    assessed_at: '2026-07-20T10:40:56.446106Z'
+    - kind: test
+      reference: '2026-10-08: native timestamp preservation extension: 175 passed, 2 warnings in test_ffmpeg_wrapper.py,
+        test_canonical_video_timelines.py, test_video_transcoding.py, management/commands/test_transcode_video.py,
+        test_video_processed_transcode_encryption.py, test_video_processed_transcode_integration.py and
+        test_video_storage_normalization.py.'
+      note: Assessor codex-gc10-cleanup-review-20261007. Covers real encrypted variable-frame-rate downsizing
+        with a nonzero origin, unchanged segments/frame rows, intentional resampling, timestamp-drift
+        rejection retaining the encrypted master and annotations, and plaintext cleanup. Focused Pyright
+        passed after correcting a test fixture type. No production deployment.
+    - kind: test
+      reference: '2026-10-08: combined 14-suite regression run: 276 passed, 2 warnings in 94.73s. Includes
+        real CPU FFmpeg jittered PTS with nonzero origins, encrypted downsizing, unchanged segment/image
+        annotations, HLS, import, reanonymization, negative timestamp proof and cleanup. An earlier fine-precision
+        test exposed average-FPS metadata drift; fixed using complete decoded timestamp proof and verified
+        by this run.'
+    - kind: command
+      reference: 'Focused strict Pyright: 0 errors, 0 warnings. Focused Ruff and git diff --check passed.
+        Pytest used /home/admin/dev/lx-annotate/.devenv/state/venv/bin/pytest because the endoreg-db venv
+        lacks pytest_postgresql; repository-wide Pyright remains an existing reported blocker.'
+    - kind: test
+      reference: '2026-10-08 final follow-up after binding repeat downsizing to current processed-generation
+        metadata: 15 passed, 2 warnings in 55.20s across test_video_processed_transcode_integration.py
+        and test_video_processed_transcode_encryption.py. Repeated jittered-PTS downsizing preserves segment
+        rows, image annotations, frame identities and timestamps. Focused Pyright passed before this run.'
+    - kind: test
+      reference: '2026-10-08: 222 passed, 2 dependency warnings in 92.21s across 13 suites: processed
+        timelines, video timeline, encrypted real-FFmpeg processed transcoding, encrypted transcode failures,
+        blackening cleanup, reanonymization cleanup, anonymization unit, storage normalization, canonical
+        history, media exports, frame export contract, timeline view and temporal mapping. Exact decoded
+        counts, nearest processed boundaries, raw PTS retention, different raw/processed origins, stable
+        image annotations and frame identities, transactional rollback, outside-coverage guard and stale
+        FPS metadata covered.'
+    - kind: command
+      reference: 'Focused Pyright: 0 errors, 0 warnings. Ruff and git diff --check passed. tracker validate:
+        all 37 feature definitions valid. Changes remain local; no deployment or production acceptance.'
+    note: Automatic processed coordinate mapping introduces no human review gate. Stored average FPS is
+      not a substitute for decoded PTS. Processing errors preserve the existing generation. Full repository
+      type-check limitations remain as previously recorded.
+    assessed_by: codex-gc10-cleanup-review-20261007
+    assessed_at: '2026-10-08T11:37:41.985021Z'
 - id: clinical_frame_quality
   category: requirements
   title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
@@ -1135,15 +1242,22 @@ definition_of_done:
     - kind: command
       reference: '2026-10-06: Vollständiger .devenv/state/venv/bin/pyright: 0 errors, 10 bestehende Warnungen.
         Abschließende API-Typprüfung: 0 errors, 0 warnings. Fokussierter Ruff und git diff --check bestanden.'
-    note: Die 28 gemeldeten Fehler sind im aktuellen gezielten Lauf nicht mehr reproduzierbar. Testdoubles
-      liefern typisierte Zeitstempelbelege mit tatsächlicher Inhaltsidentität; Raw-Cleanup-Tests persistieren
-      verschlüsselte FileField-Dateien. Medienlöschung liefert bei offenen Importen oder aktiven Wiedergabe-Leases
-      HTTP 409 statt 500, bei terminalem Import bleiben Löschung und Auftragshistorie geprüft. Schutzgates
-      unverändert. Export-Importfehler und shared_relative-Fixture waren bereits im Arbeitsstand behoben.
-      Erster Reproduktionslauf nach 13 reproduzierten Fehlern beim nicht betroffenen Modellinferenztest
-      unterbrochen. Gesamtsuite nicht erneut vollständig ausgeführt, kein Deployment und keine Produktionsfreigabe.
-    assessed_by: codex-cleanup-20261005
-    assessed_at: '2026-10-06T09:53:57.558995Z'
+    - kind: command
+      reference: '2026-10-09: Vollständiger pytest-Lauf mit -n 2 --dist=loadscope und test:full-Coverage:
+        5091 passed, 3 failed, 1 skipped, 22 warnings, 1026 subtests passed in 3458.02s. Nach Korrekturen:
+        237 passed, 1 anschließend korrigierter timestamps.csv-Routenfehler, 3 subtests passed in 462.23s.
+        Abschließende betroffene Module: 16 passed in 155.81s. Pyright 0 errors/10 warnings; Ruff und
+        git diff --check bestanden.'
+    note: 'Die 17 gemeldeten Regressionen sind in den abschließenden fokussierten Läufen behoben. Vollständiger
+      Lauf mit passendem lokal installiertem lx-dtypes: 5091 bestanden, 1 übersprungen, 1026 Subtests
+      bestanden, 3 Fehler; zusätzliche Fehler waren parallele Subtest-Enum-Serialisierung, veraltete Routenliste
+      und temporärer OCR-Modell-Download-Timeout. Alle drei anschließend gezielt erfolgreich geprüft,
+      einschließlich echtem Import. Kein zweiter vollständiger Lauf nach den letzten Testkorrekturen;
+      parallele Study-Entwicklung bleibt separat bewertet. Deployment benötigt das passende gemeinsame
+      Provenienzpaket. Bestehende Timeline-, Qualitäts- und Cleanup-Nachweise bleiben erhalten; keine
+      Produktionsfreigabe.'
+    assessed_by: codex-sidecar-20261008-a
+    assessed_at: '2026-10-09T08:10:07.293188Z'
 - id: controlled_legacy_migration
   category: operations
   title: Bestandsvideos werden kapazitätsbegrenzt, idempotent und rollbackfähig normalisiert

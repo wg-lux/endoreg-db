@@ -111,6 +111,14 @@ def _stderr_indicates_timestamp_fault(stderr_output: str) -> bool:
 
 
 def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
+    from endoreg_db.services.video_storage.frame_provenance import (
+        run_with_frame_provenance,
+    )
+
+    return run_with_frame_provenance(command, _run_ffmpeg_process)
+
+
+def _run_ffmpeg_process(command: List[str]) -> Tuple[int, str]:
     """Run ffmpeg while preserving timeout behavior for long transcodes."""
     process = subprocess.Popen(
         command,
@@ -309,6 +317,14 @@ def transcode_video(
             logger.error("FFmpeg stderr:\n%s", stderr_output)
 
             if _stderr_indicates_timestamp_fault(stderr_output):
+                if "-copyts" in extra_args:
+                    logger.error(
+                        "Native timestamp preservation forbids automatic timestamp repair."
+                    )
+                    _delete_partial_output(
+                        output_path, reason="invalid native timestamps"
+                    )
+                    return None
                 logger.warning(
                     "FFmpeg reported corrupt timestamps for %s; "
                     "retrying with timestamp repair.",

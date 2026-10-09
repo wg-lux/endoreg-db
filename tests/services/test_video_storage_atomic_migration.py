@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 from endoreg_db.schemas.video_storage import (
+    CanonicalTimestampTransformation,
     VideoArtifactProbe,
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage import normalization
 from endoreg_db.services.video_storage import canonical_timelines
 from tests.helpers.canonical_timestamps import decoded_test_timestamps
@@ -205,8 +207,10 @@ def test_integrity_gate_failure_never_calls_atomic_publication(
         output: VideoArtifactProbe,
         profile: VideoStorageProfile,
         segments: object,
+        canonical_timestamps: CanonicalTimestampTransformation | None = None,
+        artifact_kind: VideoArtifactKind = VideoArtifactKind.RAW,
     ) -> VideoStorageNormalizationEvidence:
-        del source, output, profile, segments
+        del source, output, profile, segments, canonical_timestamps, artifact_kind
         raise VideoStorageNormalizationError(
             "controlled timeline and integrity mismatch"
         )

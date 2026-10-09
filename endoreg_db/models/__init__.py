@@ -1,7 +1,22 @@
 from __future__ import annotations
 
+from .media.video.video_transcode_job import VideoTranscodeJob
+
+from .hub.storage_operator_dispatch_receipt import StorageOperatorDispatchReceipt
+
+from .hub.storage_node_action_receipt import StorageNodeActionReceipt
+
+from .hub.storage_artifact_publication import StorageArtifactPublication
+
+from .hub.outbound_hub_transfer_job import OutboundHubTransferJob
+
+from .aidataset.ai_dataset_split_plan import AIDatasetSplitPlan
+
 from .other.clinical_reference_import import ClinicalReferenceImport
 from .other.reference_catalog_import import ReferenceCatalogImport
+from .other.study_table_import import StudyTableImport
+from .other.study import Study
+from .other.study_cohort import StudyCohort
 
 ####### Administration ########
 from .administration import (
@@ -210,6 +225,12 @@ from .state.audit_ledger import AuditLedger, LedgerHead
 
 
 __all__ = [
+    "VideoTranscodeJob",
+    "StorageOperatorDispatchReceipt",
+    "StorageNodeActionReceipt",
+    "StorageArtifactPublication",
+    "OutboundHubTransferJob",
+    "AIDatasetSplitPlan",
     ####### Administration ########
     # AI
     "AiModel",
@@ -389,6 +410,9 @@ __all__ = [
     ####### Other #######
     "ClinicalReferenceImport",
     "ReferenceCatalogImport",
+    "StudyTableImport",
+    "Study",
+    "StudyCohort",
     "Material",
     "Resource",
     "TransportRoute",

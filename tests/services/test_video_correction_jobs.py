@@ -241,7 +241,6 @@ def test_detector_correction_missing_capability_never_publishes(
         pytest.fail("Unsupported detector runtime reached processing or publication")
 
     for operation in (
-        "mask_video_with_detector_compat",
         "_promote_output",
         "update_processed_file",
         "materialize_video_hls",

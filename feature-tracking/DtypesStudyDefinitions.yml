@@ -20,6 +20,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/study_table_import.md
+  disposition: reference
+  note: YAML-Zuordnung, Tabellenimport, API, Identität und importierter Kohortenscope.
 - path: docs/wiki/dataloader_yaml_authoring.md
   disposition: reference
   note: Host versioned catalogue authoring, compatibility commands, dry-run reconciliation and recovery.
@@ -34,6 +37,152 @@ source_documents:
   note: Dataset annotation attachment is a separate authorized operation; creating a definition must not
     implicitly attach all annotations.
 definition_of_done:
+- id: study_persistence
+  category: functionality
+  title: Persist studies and cohorts in endoreg-db with multiple cohorts per study
+  acceptance:
+  - Validated endoreg_db Study and StudyCohort models persist owned study definitions and cohort membership
+    without an lx-annotate persistence dependency.
+  - Owned study CRUD is available through the media API; multiple owned cohorts can reference one study.
+  - Migrations create parent studies and move existing cohorts to endoreg-db while preserving IDs, definitions,
+    timestamps and all memberships; compatibility imports preserve callers.
+  - Tests cover persistence, validation, ownership, cohort linkage and deletion without clinical data
+    loss.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright and focused study model, API, migration and cohort regression tests.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/other/study.py
+    - kind: code
+      reference: endoreg_db/models/other/study_cohort.py
+    - kind: test
+      reference: tests/models/other/test_study.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_persistence.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/migrations/test_study_cohort_move.py
+    - kind: document
+      reference: docs/study_table_import.md
+    note: 'Lokal geprüft am 2026-10-09: Study und StudyCohort liegen in endoreg-db; lx-annotate verwendet
+      kanonische Modelle und behält Importkompatibilität. EndoReg-Pyright 0 Fehler/10 bestehende Warnungen,
+      fokussierte Prüfungen in beiden Anwendungen und lx-dtypes 0 Fehler. Insgesamt 79 unterschiedliche
+      fokussierte Tests bestanden: 45 lx-annotate-API-Regressionen, 33 EndoReg-Modell/API/Import/Routen-Tests
+      nach Korrektur des leeren Filterdefaults sowie 1 echte PostgreSQL-Migrationsprüfung (93.44s) mit
+      Vorwärts-/Rückwärtslauf, IDs, Zeitstempeln, Snapshots, beiden M2M-Beziehungen, Sequenzen, befülltem
+      Ziel und Wiederherstellung aller aktuellen Migrationen. Makemigrations --check meldet keinen Drift;
+      Ruff und diff --check bestanden. Zwischenzeitliche Fehler durch parallel bearbeitete Routenerwartungen,
+      Test-Schema-Teardown und lx-dtypes-Imports wurden vor Abschluss aufgelöst. EndoReg 0095/0096 und
+      lx-annotate 0014/0015 enthalten diese Änderung; spätere parallele Migrationen 0097/0016 bleiben
+      erhalten. Keine Produktivmigration ausgeführt.'
+    assessed_by: codex-lx-table-import-20261008
+    assessed_at: '2026-10-09T08:19:29.988036Z'
+- id: dataset_lifecycle
+  category: functionality
+  title: Manage imported datasets, study links, combination, splitting and explicit deletion
+  acceptance:
+  - Each committed Excel or CSV import creates or reuses one named clinical dataset; studies reference
+    its examination membership.
+  - Authenticated authorized users can create, read, rename and delete datasets and studies and assign
+    or unassign dataset-study relations.
+  - Combining creates a deduplicated union and splitting creates disjoint patient-based datasets; source
+    datasets remain intact and operations are atomic.
+  - Deletion requires an explicit choice between membership-only deletion and removal of exclusively owned
+    imported clinical records, with a reviewed preview and fresh authorization checks.
+  - Shared, media-linked, edited or unproven clinical records are retained; default datasets and active
+    workflow references are protected.
+  - Frontend controls, documented API contracts and regression tests cover import, CRUD, relations, deletion
+    choices, scope, rollback and patient-safe partitioning.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright and focused dataset lifecycle, import, study API and frontend regression
+      tests.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/services/dataset_lifecycle.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_dataset_lifecycle.py
+    - kind: test
+      reference: tests/services/test_study_table_import.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_dataset_lifecycle.py
+    - kind: test
+      reference: ../dev/lx-annotate/frontend/src/components/AiDataset/DatasetManager.test.ts
+    - kind: document
+      reference: docs/study_table_import.md
+    note: 'Lokal geprüft am 2026-10-09: EndoReg-Pyright 0 Fehler/10 Warnungen; fokussiertes lx-annotate-
+      und lx-dtypes-Pyright jeweils 0 Fehler; Vue-Typprüfung, gezieltes ESLint/Ruff und git diff --check
+      bestanden. EndoReg-Import/Settings: 76 Tests und 3 Subtests bestanden; lx-annotate-Lifecycle/Import/Studien/Trainingssplits/Settings:
+      73 bestanden; lx-dtypes-Verträge: 77 bestanden; Frontend: 33 bestanden. Abgedeckt sind beide expliziten
+      Löschmodi, geteilte/medienverknüpfte/bearbeitete/historische Datensätze, verifizierte Metadaten,
+      veraltete Vorschautoken, Eigentümerprüfung, Retry-Training, Patiententeilung, Bestandsmigration
+      und Erhalt von Videos/Annotationen/Trainingssnapshots. Migrationserkennung ohne Drift. Gemeinsame
+      Paketveröffentlichung und Deployment mit EndoReg 0094 sowie lx-annotate 0013 bleiben Betriebsschritte;
+      keine Produktivmigration ausgeführt.'
+    assessed_by: codex-lx-table-import-20261008
+    assessed_at: '2026-10-09T07:42:04.640864Z'
+- id: researcher_table_import
+  category: functionality
+  title: YAML-Spaltenzuordnung importiert validierte LX-Datensätze in ausgewählte Kohorten
+  acceptance:
+  - Versionierte YAML-Zuordnungen unterstützen benannte CSV- und Excel-Spalten, explizite Spaltengruppen,
+    Datumsformate und injizierbare Extraktoren einschließlich zustandsisolierter lx-anonymizer-spaCy-Extraktion.
+  - Pydantic und die versionierte Knowledge Base validieren vollständige Patientenidentität und klinische
+    Konzepte vor dem atomaren Datenbankimport; Fehler nennen Zeile und Zielfeld ohne Patientendaten.
+  - Vollständige SensitiveMeta-Identitäten verwenden die bestehenden Hash- und Pseudonymisierungsdienste;
+    Medien werden nur bei übereinstimmender Identität und Untersuchung zugeordnet, Konflikte blockieren.
+  - Authentifizierte API-Aufrufer erstellen und lesen eigene unveränderliche Mappingdateien unter dem
+    kanonischen Runtime-Speicher und importieren nur in eigene Kohorten und erlaubte Zentren.
+  - Wiederholte Imports erzeugen keine doppelten klinischen Einträge; abweichende Inhalte derselben Quellidentität
+    werden abgelehnt. Importzuordnungen erweitern den autorisierten Kohortenscope, während Filter und
+    aktuelle Zugriffsrechte weiter gelten.
+  - Dokumentation, YAML-Beispiel und Frontend erlauben Mappingauswahl, Validierung und expliziten Import;
+    Tests prüfen ungültige Eingaben, Rollback, Reimport, Identität, Zugriff und Kohortenzuordnung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Gemeinsame Verträge, Parser-, Persistenz-, API- und Frontendtests sowie Pyright ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/studies/table_import.py
+    - kind: document
+      reference: docs/study_table_import.md
+    - kind: test
+      reference: tests/services/test_study_table_import.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_table_import.py
+    - kind: test
+      reference: ../dev/lx-annotate/frontend/src/components/StudyTableImport.test.ts
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/table_import.py
+    note: 'Source implementation verified on 2026-10-08. EndoReg full Pyright: 0 errors, 10 warnings,
+      including missing lx-anonymizer stubs; focused shared and annotate Pyright: 0 errors. Backend persistence/cohort/path
+      regressions: 139 passed. Importer plus existing report/video import unit tests: 164 passed. Final
+      importer file: 28 passed, including CSV/XLS/XLSX, malformed workbook containers, isolated real spaCy
+      extraction, PostgreSQL concurrent replay, full rollback, report/video matching and conflicting media
+      rejection. Parser-only selection initially exposed the existing test-harness missing lx_test setup;
+      complete focused file passed with normal database fixtures. Annotate API/cohort: 25 passed. Vue
+      typecheck and targeted ESLint passed; frontend importer/page/API: 16 passed. Shared study contracts:
+      40 passed. No migration drift in endoreg_db or lx_annotate. Dependency lock, diff whitespace and
+      all 37 feature definitions validate. Repository model inventory remains blocked by unrelated existing
+      UploadJobFile classification and other pre-existing metadata drift; new importer model and consumers
+      are registered. Release requires coordinated lx-dtypes/endoreg-db/lx-annotate packages, runtime
+      directory bootstrap and migrations 0093/0012; no production deployment or clinical data import performed.
+      Supported target scope is identity, examinations, findings and categorical classifications; unsupported
+      study targets fail explicitly.'
+    assessed_by: codex-lx-table-import-20261008
+    assessed_at: '2026-10-08T15:17:30.988249Z'
 - id: independent_local_center_defaults
   category: interoperability
   title: Local center provisioning remains independent of study and clinical fixture loading

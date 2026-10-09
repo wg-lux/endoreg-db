@@ -344,11 +344,22 @@ definition_of_done:
     - kind: test
       reference: /endoreg-db/tests/authz/test_lx_dtypes_report_template_access.py
       note: Host-Integration prüft sechs Rollen- und Fail-Closed-Fälle.
-    note: Serverseitige Authentifizierung sowie getrennte Read-/Write-Kapazitäten und Fail-Closed-Tests
-      sind implementiert. Offen bleiben Auditierung, explizite Modul-/Center-Scopes, CSRF-/Paralleländerungstests
-      und der vollständige Produktionsnachweis.
-    assessed_by: Codex
-    assessed_at: '2026-07-30T12:43:10.986249Z'
+    - kind: test
+      reference: '2026-10-09 portable study draft export: new POST /report-templates/builder/package requires
+        report_template:write; authorized, anonymous and denied request tests pass. Shared record generator
+        emits config.yaml, report_templates.yml and validators.yml without installed-file mutations. Full
+        lx-data-models pytest 1213 passed, 1 skipped, 23 warnings; focused backend lane 23 passed. Real
+        exported package loads with ColoReg dependencies and executes conditional rules. Host mounted
+        builder integration 1 passed; frontend 44 passed plus final page ZIP-content test lane 10 passed.'
+    - kind: command
+      reference: Focused Pyright and Ruff passed. Full Pyright reports one error in untouched lx_dtypes/models/contracts/reference_catalog.py:143.
+        Vue application type checking and scoped ESLint passed. No deployment or production acceptance.
+    - kind: test
+      reference: 'Final 2026-10-09 follow-up: 25 backend tests passed after duplicate-name and empty-condition
+        guard coverage. Focused Pyright and Ruff passed. Export remains non-mutating and requires existing
+        report_template:write capability.'
+    assessed_by: codex-gc10-cleanup-review-20261007
+    assessed_at: '2026-10-09T07:58:21.141122Z'
 - id: localized_report_generation
   category: functionality
   title: Die Berichtssprache ist explizit und an die versionierte Terminologie gebunden

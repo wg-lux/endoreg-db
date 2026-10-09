@@ -40,10 +40,16 @@ from endoreg_db.services.video_storage.workflow import (
     segment_timeline_references,
     validate_normalized_output,
 )
+from endoreg_db.services.video_storage.contracts import VideoBitrateExceeded
+from endoreg_db.services.video_files.types import VideoArtifactKind
+from endoreg_db.services.video_storage.processed_timelines import (
+    publish_processed_coordinates,
+)
+from endoreg_db.utils.structured_logging import emit_structured_event
 from endoreg_db.services.video_storage.canonical_timelines import (
     append_canonical_timeline_history,
     capture_canonical_timeline,
-    with_canonical_timestamps,
+    validate_canonical_output,
 )
 from endoreg_db.utils.ffmpeg_wrapper import blacken_video_frame_intervals
 from endoreg_db.utils.file_operations import (
@@ -201,26 +207,60 @@ def _rebuild_processed_video_owned(
             atomic_create_file(
                 destination=staged_output_path, content=(), file_mode=0o600
             )
-            rebuilt_path = blacken_video_frame_intervals(
-                processed_path,
-                staged_output_path,
-                intervals=intervals,
+            profile = configured_video_storage_profile()
+            segments = segment_timeline_references(
+                video, timeline=source_probe.timeline
             )
-            if rebuilt_path is None:
-                raise AssertionError("Failed to rebuild processed video with FFmpeg.")
-
-            normalization_evidence = validate_normalized_output(
-                source=source_probe,
-                output=probe_video_artifact(rebuilt_path),
-                profile=configured_video_storage_profile(),
-                segments=segment_timeline_references(
-                    video, timeline=source_probe.timeline
-                ),
-            )
+            bitrate_cap: int | None = None
+            for attempt in range(3):
+                # Always retry from the original, never a lossy rejected encode.
+                rebuilt_path = blacken_video_frame_intervals(
+                    processed_path,
+                    staged_output_path,
+                    intervals=intervals,
+                    max_bit_rate_bps=bitrate_cap,
+                )
+                if rebuilt_path is None:
+                    raise AssertionError(
+                        "Failed to rebuild processed video with FFmpeg."
+                    )
+                try:
+                    normalization_evidence = validate_canonical_output(
+                        source=source_probe,
+                        output=probe_video_artifact(rebuilt_path),
+                        profile=profile,
+                        segments=segments,
+                        before=source_timestamps,
+                        output_path=rebuilt_path,
+                        validate_output=validate_normalized_output,
+                        artifact_kind=VideoArtifactKind.PROCESSED,
+                    )
+                except VideoBitrateExceeded as exc:
+                    if attempt == 2:
+                        raise
+                    previous_cap = bitrate_cap or profile.max_bit_rate_bps
+                    if previous_cap <= 1:
+                        raise
+                    bitrate_cap = max(
+                        1,
+                        min(
+                            previous_cap * 4 // 5,
+                            previous_cap * exc.maximum * 9 // (exc.observed * 10),
+                        ),
+                    )
+                    emit_structured_event(
+                        logger,
+                        "outside_blackening_bitrate_retry",
+                        video_id=video.pk,
+                        attempt=attempt + 2,
+                        observed_bit_rate_bps=exc.observed,
+                        max_bit_rate_bps=bitrate_cap,
+                    )
+                else:
+                    break
+            else:
+                raise RuntimeError("Outside blackening retry budget exhausted")
             new_processed_hash = get_file_hash(rebuilt_path)
-            normalization_evidence = with_canonical_timestamps(
-                normalization_evidence, source_timestamps, rebuilt_path
-            )
             if (
                 type(video)
                 .objects.filter(processed_video_hash=new_processed_hash)
@@ -264,12 +304,16 @@ def _rebuild_processed_video_owned(
                     previous_hash=previous_hash,
                     strict=True,
                 )
+                publish_processed_coordinates(video, normalization_evidence)
                 video.save(
                     update_fields=[
                         "processed_file",
                         "processed_video_hash",
                         "meta",
                         "date_modified",
+                        "fps",
+                        "duration",
+                        "frame_count",
                     ]
                 )
             published = True

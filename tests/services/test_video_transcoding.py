@@ -8,6 +8,21 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.services.video_storage import transcoding as video_transcoding
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
+from tests.services.test_video_processed_transcode_encryption import probe
+from endoreg_db.schemas.video_storage import VideoArtifactProbe
+
+
+@pytest.fixture
+def directory_timestamps(monkeypatch: MonkeyPatch) -> None:
+    def fake_probe(_path: Path) -> VideoArtifactProbe:
+        return probe()
+
+    monkeypatch.setattr(video_transcoding, "probe_video_artifact", fake_probe)
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
 
 
 def _fake_compliant_video_format(path: Path) -> SimpleNamespace:
@@ -37,6 +52,7 @@ def _fake_30000_1001_stream_info(path: Path) -> dict[str, object]:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("directory_timestamps")
 def test_transcode_video_directory_stages_and_moves_output(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -87,7 +103,7 @@ def test_transcode_video_directory_stages_and_moves_output(
     assert summary.scanned_files == 1
     assert summary.transcoded_files == 1
     assert summary.failed_files == 0
-    assert summary.target_fps == 50.0
+    assert summary.target_fps is None
     assert destination.read_bytes() == b"standardized-video"
     assert captured["input_path"] == source.resolve()
     assert captured["output_path"] != destination
@@ -101,8 +117,11 @@ def test_transcode_video_directory_stages_and_moves_output(
             "yuv420p",
             "-color_range",
             "pc",
-            "-fpsmax",
-            "50",
+            "-copyts",
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base",
+            "demux",
         ],
         "quality_mode": "quality",
         "force_cpu": True,
@@ -133,7 +152,7 @@ def test_transcode_video_directory_dry_run_does_not_create_output_dir(
 
 
 @pytest.mark.unit
-def test_transcode_video_directory_uses_configured_target_fps(
+def test_transcode_video_directory_uses_explicit_target_fps(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     input_dir = tmp_path / "input"
@@ -152,7 +171,6 @@ def test_transcode_video_directory_uses_configured_target_fps(
         output_path.write_bytes(b"standardized-video")
         return output_path
 
-    monkeypatch.setattr(video_transcoding, "_default_target_fps", lambda: 29.97)
     monkeypatch.setattr(
         video_transcoding.ffmpeg_wrapper,
         "transcode_video",
@@ -173,6 +191,7 @@ def test_transcode_video_directory_uses_configured_target_fps(
         input_dir=input_dir,
         output_dir=output_dir,
         allow_unmanaged_output=True,
+        target_fps=29.97,
     )
 
     assert summary.transcoded_files == 1

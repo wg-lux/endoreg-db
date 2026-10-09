@@ -960,7 +960,7 @@ class TransferJobContractTests(TestCase):
             TransferJob.TransferStatus.RETRY_WAIT,
             TransferJob.TransferStatus.LOST,
         ):
-            with self.subTest(status=status):
+            with self.subTest(status=status.value):
                 # Arrange
                 retryable = self._create_transfer(
                     transfer_key=f"transfer-retryable-{status}",

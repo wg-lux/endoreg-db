@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
+
+from lx_dtypes.models.contracts.video_provenance import VideoProvenanceBundle
 from typing import Any, Self
 
 from pydantic import (
@@ -228,6 +230,7 @@ class TransferCaseResolutionPayload(BaseModel):
 
 
 class TransferProvenancePayload(BaseModel):
+    video_frame_provenance: VideoProvenanceBundle | None = None
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     entrypoint: str | None = None

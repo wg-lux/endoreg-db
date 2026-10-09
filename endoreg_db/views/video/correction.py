@@ -104,8 +104,8 @@ class ProcessingHistoryRecord(Protocol):
 
 
 try:
-    from lx_anonymizer import (
-        FrameCleaner as _FrameCleaner,  # pyright: ignore[reportMissingTypeStubs]
+    from endoreg_db.services.video_storage.provenance_cleaner import (
+        create_frame_cleaner as _FrameCleaner,
     )
 
     FrameCleaner = cast(Any, _FrameCleaner)

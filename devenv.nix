@@ -67,7 +67,7 @@ let
   ];
 
   
-  SYNC_CMD = "uv sync --extra dev";
+  SYNC_CMD = "uv sync --python .devenv/state/venv/bin/python --extra dev";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
   FAST_TEST_ENV = ''
     export SKIP_EXPENSIVE_TESTS=true
@@ -132,6 +132,7 @@ in
       enable = true;
       package = uvPackage;
       sync.enable = true;
+      sync.extras = [ "dev" ];
     };
   };
 
@@ -394,7 +395,7 @@ in
     };
     "test:sync" = {
       description = "Ensure pytest";
-      exec = "uv sync --extra dev";
+      exec = SYNC_CMD;
     };
     "test:fast" = {
       description = "Run the fast PR pytest lane with slow-test timings";

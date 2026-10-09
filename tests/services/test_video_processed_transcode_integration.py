@@ -6,7 +6,13 @@ import subprocess
 import pytest
 from django.core.files import File
 
-from endoreg_db.models import Center, VideoFile
+from endoreg_db.models import (
+    Center,
+    VideoFile,
+    Label,
+    LabelVideoSegment,
+    ImageClassificationAnnotation,
+)
 from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.services.video_storage import processed_transcode as service
 from endoreg_db.services.video_files.queries import (
@@ -28,13 +34,48 @@ from endoreg_db.services.video_storage.probes import probe_video_frame_timestamp
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.ffmpeg
+@pytest.mark.parametrize("native_variable", [False, True])
 def test_real_downsizing_preserves_import_identity_frames_and_playback(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    native_variable: bool,
 ) -> None:
     # Undo the global probe substitutes: this regression must inspect real bytes.
     monkeypatch.setattr(ffmpeg_wrapper, "get_stream_info", real_stream_info)
     monkeypatch.setattr(transcode_execution, "get_stream_info", real_stream_info)
     source = Path(__file__).parents[1] / "assets" / "test.mp4"
+    if native_variable:
+        executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+        assert executable is not None
+        source = tmp_path / "native-variable.mp4"
+        subprocess.run(
+            [
+                executable,
+                "-nostdin",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=64x64:rate=60:duration=1",
+                "-vf",
+                "settb=1/60000,select='not(eq(mod(n,5),2))',"
+                "setpts='PTS+if(eq(mod(N,3),1),180,0)+1.4/TB'",
+                "-fps_mode",
+                "passthrough",
+                "-enc_time_base",
+                "filter",
+                "-c:v",
+                "libx264",
+                "-crf",
+                "0",
+                "-an",
+                str(source),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
     source_hash = get_file_hash(source)
     probe = service.probe_video_artifact(source)
     center = Center.objects.create(
@@ -54,6 +95,21 @@ def test_real_downsizing_preserves_import_identity_frames_and_playback(
     video.save(update_fields=["processed_file", "processed_video_hash"])
     initialize_video_frames(video)
     persist_video_source_timeline(video, source)
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        label=Label.objects.create(name="preserved-native-segment"),
+        start_frame_number=10,
+        end_frame_number=20,
+    )
+    segment_before = LabelVideoSegment.objects.filter(pk=segment.pk).values().get()
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=video.frames.get(frame_number=10),
+        label=segment.label,
+        value=True,
+    )
+    annotation_before = (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+    )
     identity = (video.pk, video.uuid, video.raw_video_hash)
     frames = list(
         video.frames.order_by("frame_number").values_list(
@@ -76,6 +132,13 @@ def test_real_downsizing_preserves_import_identity_frames_and_playback(
     assert 0 < result.new_size < result.old_size
     video.refresh_from_db()
     assert (video.pk, video.uuid, video.raw_video_hash) == identity
+    assert (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+        == annotation_before
+    )
+    assert (
+        LabelVideoSegment.objects.filter(pk=segment.pk).values().get() == segment_before
+    )
     assert video_hash_exists(source_hash)
     assert get_video_by_content_hash(source_hash).pk == video.pk
     assert video.processed_video_hash == result.new_hash != source_hash
@@ -95,14 +158,18 @@ def test_real_downsizing_preserves_import_identity_frames_and_playback(
         ]
     assert get_file_hash(video.processed_file) == result.new_hash
     assert get_file_hash(video.raw_file) == source_hash
-    assert (
-        list(
-            video.frames.order_by("frame_number").values_list(
-                "pk", "frame_number", "timestamp"
-            )
+    mapped_frames = list(
+        video.frames.order_by("frame_number").values_list(
+            "pk", "frame_number", "timestamp"
         )
-        == frames
     )
+    assert [(pk, number) for pk, number, _ in mapped_frames] == [
+        (pk, number) for pk, number, _ in frames
+    ]
+    assert [timestamp for _, _, timestamp in mapped_frames] == [
+        tick * entry.after.time_base_num / entry.after.time_base_den
+        for tick in entry.after.presentation_timestamps
+    ]
     with Path(video.processed_file.path).open("rb") as encrypted:
         assert encrypted.read(len(MAGIC)) == MAGIC
     assert raw_path.exists()
@@ -111,6 +178,35 @@ def test_real_downsizing_preserves_import_identity_frames_and_playback(
     assert artifact is not None
     assert artifact.source_content_hash == result.new_hash
     assert artifact.source_file_name == video.processed_file.name
+    if native_variable:
+        repeated = service.transcode_processed_video_for_storage_pressure(
+            video,
+            apply=True,
+            force_cpu=True,
+        )
+        assert repeated.status in {
+            "changed",
+            "skipped_not_smaller",
+            "skipped_same_hash",
+        }, repeated
+        assert (
+            LabelVideoSegment.objects.filter(pk=segment.pk).values().get()
+            == segment_before
+        )
+        assert (
+            ImageClassificationAnnotation.objects.filter(pk=annotation.pk)
+            .values()
+            .get()
+            == annotation_before
+        )
+        assert (
+            list(
+                video.frames.order_by("frame_number").values_list(
+                    "pk", "frame_number", "timestamp"
+                )
+            )
+            == mapped_frames
+        )
 
 
 @pytest.mark.django_db(transaction=True)

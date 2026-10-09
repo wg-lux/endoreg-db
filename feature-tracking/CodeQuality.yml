@@ -10,6 +10,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/persistence_model_ownership.md
+  disposition: reference
+  note: Canonical persistence ownership and coordinated reversible application cutover.
 - path: docs/model_layer_map_for_agents.md
   disposition: reference
   note: Definiert bestehende Modell-, Service-, Helper- und Importgrenzen.
@@ -449,9 +452,9 @@ definition_of_done:
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
-  - Die sechs Radon-E/F-Funktionen der Kohorte radon_function_consolidation erreichen höchstens C;
-    gemeinsame Entscheidungen werden zentralisiert, Transaktions- und Sperrgrenzen bleiben erhalten,
-    Pyright sowie positive, negative und konkurrierende Regressionen werden dokumentiert.
+  - Die sechs Radon-E/F-Funktionen der Kohorte radon_function_consolidation erreichen höchstens C; gemeinsame
+    Entscheidungen werden zentralisiert, Transaktions- und Sperrgrenzen bleiben erhalten, Pyright sowie
+    positive, negative und konkurrierende Regressionen werden dokumentiert.
   - Die Service-Wurzel enthält ausschließlich die Paketinitialisierung und eine YAML-Strukturübersicht;
     jedes Unterpaket hat eine beschriebene fachliche Zuständigkeit. Alle verschobenen Service-Module sind
     über ihren kanonischen neuen Pfad importierbar; interne Aufrufer und aktive Qualitätsinventare verwenden
@@ -1032,3 +1035,51 @@ definition_of_done:
       is not claimed as verified.
     assessed_by: codex-storage-reaper-20260910
     assessed_at: '2026-09-10T12:45:08.812355Z'
+- id: persistence_ownership
+  category: functionality
+  title: Endoreg-db owns reusable persistence from lx-annotate
+  acceptance:
+  - All six remaining lx-annotate concrete models register under endoreg_db only; old Python imports resolve
+    to the same classes.
+  - Split snapshot validation has one owning implementation without an endoreg-db dependency on lx-annotate.
+  - Fresh installation and reversible upgrade preserve primary keys, foreign keys, immutable snapshots,
+    job state, constraints, content types and permission assignments.
+  - Occupied target tables fail migration atomically; schema checks and existing import, streaming, transfer
+    and concurrency tests pass.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright, migration and model ownership tests, inventory guard, and affected lx-annotate
+      consumer suites.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'Core persistence and inventory: 14 passed; scoped moved-model inventory: 1 passed; import,
+        encrypted streaming, lease and report concurrency regressions: 249 passed. Logs: .devenv/state/persistence-model-tests.log,
+        persistence-inventory-tests.log, persistence-integration-tests.log.'
+    - kind: command
+      reference: 'Full Endoreg Pyright: 0 errors, 10 existing warnings. Full LX-Annotate Pyright: 0 errors,
+        0 warnings. Both makemigrations --check --dry-run: No changes detected; test-profile database
+        port 1 unavailable for history checks. Focused Ruff and both git diff --check passed.'
+    - kind: test
+      reference: 'Initial PostgreSQL ownership and reversible migration suite: 10 passed. Expanded final
+        consumer suite in progress in lx-annotate/.devenv/state/persistence-consumer-tests.log.'
+    - kind: test
+      reference: 'Final lx-annotate consumer and migration lane: 275 passed in 56.80s. Includes actual
+        PostgreSQL upgrade/rollback, occupied-target atomic rejection, identities/timestamps/JSON, sequences,
+        user/group permission merges, admin history, cohort permission retention on six-model rollback,
+        registry aliases, nullable retry guards, split/transcode APIs/workers and storage/hub regressions.
+        Log: /home/admin/dev/lx-annotate/.devenv/state/persistence-consumer-tests.log.'
+    - kind: document
+      reference: docs/persistence_model_ownership.md describes ownership, matching package release, stopped
+        writers, table locking, fail-closed migration conflicts and rollback order.
+    note: 'Local scope verified: 539 unique focused tests pass across both repositories; full Pyright
+      zero errors in each, no migration drift, focused Ruff and diff checks pass. Existing Study/StudyCohort
+      work preserved. No application persistence models remain registered under lx_annotate. Whole inventory
+      guard still reports unrelated UploadJobFile and consumer-metadata drift; six transferred entries
+      pass their own reusable scoped inventory guard. No matching package release, deployment or production
+      database migration performed.'
+    assessed_by: codex-persistence-move-20261009
+    assessed_at: '2026-10-09T08:26:51.923855Z'

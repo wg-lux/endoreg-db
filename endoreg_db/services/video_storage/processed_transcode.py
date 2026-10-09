@@ -23,7 +23,7 @@ from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
     VideoFpsResamplingEvidence,
     VideoStorageNormalizationEvidence,
-    VideoTimelineContract,
+    CanonicalFrameTimeline,
 )
 from endoreg_db.services.streaming.hls_media import (
     hls_result_is_ready,
@@ -43,16 +43,19 @@ from endoreg_db.services.video_storage.canonical_timelines import (
     append_canonical_timeline_history,
     capture_canonical_timeline,
     with_canonical_timestamps,
+    validate_canonical_output,
 )
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
+from endoreg_db.services.video_files.types import VideoArtifactKind
+from endoreg_db.services.video_storage.processed_timelines import (
+    publish_processed_coordinates,
+)
 from endoreg_db.services.video_storage.workflow import (
-    assert_temporal_equivalence,
     configured_video_storage_profile,
     evidence_as_json,
     probe_video_artifact,
     persist_video_source_timeline,
     segment_timeline_references,
-    timeline_from_video_metadata,
     validate_annotation_fps_resample,
     validate_normalized_output,
 )
@@ -305,22 +308,6 @@ def _validate_resampling_preconditions(
         )
 
 
-def _stored_video_timeline(video: VideoFile) -> VideoTimelineContract:
-    stored_fps = video.fps
-    stored_duration = video.duration
-    stored_frame_count = video.frame_count
-    if stored_fps is None or stored_duration is None or stored_frame_count is None:
-        raise RuntimeError(
-            "Stored FPS, duration, and frame count are required before "
-            "normalizing an existing processed video."
-        )
-    return timeline_from_video_metadata(
-        fps=float(stored_fps),
-        duration_seconds=float(stored_duration),
-        frame_count=int(stored_frame_count),
-    )
-
-
 def _segment_references_for_candidate(
     video: VideoFile,
     *,
@@ -329,12 +316,8 @@ def _segment_references_for_candidate(
 ) -> list[SegmentTimelineReference]:
     if resample_max_fps is not None:
         return []
-    profile = configured_video_storage_profile()
-    assert_temporal_equivalence(
-        _stored_video_timeline(video),
-        source_probe.timeline,
-        profile=profile,
-    )
+    # Decoded generation proof and publication-time frame identities govern mapping;
+    # legacy nominal/average FPS fields are not annotation coordinates.
     return segment_timeline_references(video, timeline=source_probe.timeline)
 
 
@@ -388,15 +371,21 @@ def _validate_candidate_output(
     output_probe: VideoArtifactProbe,
     segment_references: list[SegmentTimelineReference],
     resample_max_fps: float | None,
+    source_timestamps: CanonicalFrameTimeline,
+    candidate_path: Path,
 ) -> tuple[VideoStorageNormalizationEvidence, VideoFpsResamplingEvidence | None]:
     profile = configured_video_storage_profile()
     if resample_max_fps is None:
         return (
-            validate_normalized_output(
+            validate_canonical_output(
                 source=source_probe,
                 output=output_probe,
                 profile=profile,
                 segments=segment_references,
+                before=source_timestamps,
+                output_path=candidate_path,
+                validate_output=validate_normalized_output,
+                artifact_kind=VideoArtifactKind.PROCESSED,
             ),
             None,
         )
@@ -498,6 +487,8 @@ def _build_transcode_candidate(
         output_probe=output_probe,
         segment_references=segment_references,
         resample_max_fps=resample_max_fps,
+        source_timestamps=source_timestamps,
+        candidate_path=candidate_path,
     )
     new_hash, new_name = _validate_candidate_policy(
         video,
@@ -507,9 +498,13 @@ def _build_transcode_candidate(
         new_size=new_size,
         allow_larger=allow_larger,
     )
-    normalization_evidence = with_canonical_timestamps(
-        normalization_evidence, source_timestamps, candidate_path
-    )
+    if fps_evidence is not None:
+        normalization_evidence = with_canonical_timestamps(
+            normalization_evidence,
+            source_timestamps,
+            candidate_path,
+            preserve_timestamps=False,
+        )
     return _TranscodeCandidate(
         path=candidate_path,
         old_size=old_size,
@@ -577,6 +572,8 @@ def _publish_transcode_candidate(
         current.processed_file.name = candidate.processed_name
         current.processed_video_hash = candidate.content_hash
         _apply_candidate_metadata(current, candidate)
+        if candidate.fps_resampling_evidence is None:
+            publish_processed_coordinates(current, candidate.normalization_evidence)
         record_processed_replacement(
             current,
             previous_name=original.processed_name,

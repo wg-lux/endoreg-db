@@ -27,6 +27,19 @@ from tests.helpers.hls import FakeHlsOutputRecorder
 pytestmark = pytest.mark.django_db
 
 
+@pytest.mark.parametrize("origin", [0.0, 1.4, 17.25])
+def test_playlist_boundaries_are_anchored_to_source_origin(
+    tmp_path: Path, origin: float
+) -> None:
+    playlist = tmp_path / "playlist.m3u8"
+    playlist.write_text("#EXTM3U\n#EXTINF:1.5,\nseg_0.ts\n#EXTINF:1.5,\nseg_1.ts\n")
+    segments = hls_media._parse_hls_segment_boundaries(
+        playlist, source_origin_seconds=origin
+    )
+    assert [s.start_timestamp_seconds for s in segments] == [origin, origin + 1.5]
+    assert segments[-1].end_timestamp_seconds == origin + 3.0
+
+
 @pytest.mark.parametrize(
     "failure_stage", ["before_publication", "after_file_move", "after_commit"]
 )

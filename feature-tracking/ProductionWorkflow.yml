@@ -20,6 +20,8 @@ definition_of_done:
   - Fehler bei der Metadatenkorrektur werden weitergegeben; es gibt keinen zweiten Schreibpfad als Fallback.
   - Ein fehlendes Metadaten-Ergebnis wird nicht als erfolgreiche Validierung behandelt.
   - Bei fehlgeschlagener Korrektur erfolgen weder Anonymisierungsfreigabe noch Rohdatenbereinigung.
+  - Erfolgreiche Validierung über VideoFile erhält den typisierten Metadatenvertrag; ein fehlendes Center
+    wird aus dem Video ergänzt, ohne die Eingabedaten zu verändern.
   required: true
   verification:
     kind: command
@@ -40,10 +42,17 @@ definition_of_done:
       reference: '.devenv/state/venv/bin/pyright: 0 Fehler, 10 Warnungen; pytest tests/services/test_video_metadata_validation.py
         tests/services/test_sensitive_meta_external_id_validation.py tests/models/video/test_validation_deletion.py
         -q: 14 bestanden, 2 Warnungen (126.51s)'
-    note: Nur Fehlerweitergabe und fehlendes Ergebnis des Metadatenupdates geprüft. Keine Freigabe des
-      gesamten Import-/Exportworkflows oder Änderung der Löschpolicy.
-    assessed_by: codex-workflow-validation-20261007
-    assessed_at: '2026-10-07T10:44:27.604784Z'
+    - kind: command
+      reference: '2026-10-09: Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen. Fokussierter paralleler
+        Regressionslauf: 237 bestanden, 3 Subtests bestanden, 1 anschließend behobener Route-Vertragsfehler
+        (462.23s). Abschließender Lauf: tests/utils/test_media_urlpatterns_contract.py tests/services/test_video_metadata_validation.py
+        tests/models/video/test_create_video_without_outside_frames_output_path.py tests/docs/test_show_urls_contract.py
+        -q --tb=short: 16 bestanden, 2 Warnungen (155.81s).'
+    note: 'Typisierter Erfolgspfad und unveränderte Fehlerweitergabe geprüft: VideoFile reicht VideoTextMetaPayload
+      direkt weiter; fehlendes Center wird validiert im Root-Payload ergänzt, ohne die Eingabe zu verändern.
+      Keine Änderung der Freigabe- oder Löschgates.'
+    assessed_by: codex-sidecar-20261008-a
+    assessed_at: '2026-10-09T08:10:04.531240Z'
 - id: workflow_invariants
   category: requirements
   title: Kritische Workflowinvarianten sind explizit und zentral definiert

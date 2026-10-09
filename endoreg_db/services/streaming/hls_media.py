@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from lx_dtypes.models.contracts.video_provenance import VideoFrameTimeline
+from endoreg_db.services.video_storage.frame_provenance import (
+    encoder_provenance_args,
+    read_encoder_provenance,
+    persist_frame_provenance,
+)
+from endoreg_db.utils.file_operations import atomic_create_file
+
+
 import logging
 import math
 import os
@@ -1501,6 +1510,8 @@ def _ffmpeg_command(
         HLS_VIDEO_COLOR_RANGE,
         "-fps_mode",
         "passthrough",
+        "-enc_time_base",
+        "demux",
         "-an",
         "-f",
         "hls",
@@ -1518,10 +1529,14 @@ def _ffmpeg_command(
     ]
 
 
-def _parse_hls_segment_boundaries(playlist_path: Path) -> list[HlsSegmentBoundary]:
+def _parse_hls_segment_boundaries(
+    playlist_path: Path, *, source_origin_seconds: float = 0.0
+) -> list[HlsSegmentBoundary]:
     boundaries: list[HlsSegmentBoundary] = []
     pending_duration: Decimal | None = None
-    current_start = Decimal("0")
+    if not math.isfinite(source_origin_seconds) or source_origin_seconds < 0:
+        raise ValueError("Source timestamp origin must be finite and nonnegative")
+    current_start = Decimal(str(source_origin_seconds))
     for line_number, raw_line in enumerate(
         playlist_path.read_text(encoding="utf-8").splitlines(),
         start=1,
@@ -1666,6 +1681,8 @@ def _validate_generated_hls_profile(
     source_pts: PresentationTimestampTimeline | None,
     validation: _HlsTimelineValidation,
     source_frame_timestamps: list[FramePresentationTimestamp],
+    encoder_stats_path: Path | None = None,
+    source_content_hash: str | None = None,
 ) -> None:
     validation_path = _local_hls_validation_playlist(
         playlist_path=playlist_path,
@@ -1682,11 +1699,20 @@ def _validate_generated_hls_profile(
         output_probe = output_probe.model_copy(
             update={"size_bytes": total_size_bytes},
         )
-        output_frame_timestamps = probe_video_frame_timestamps(validation_path)
+        output_frame_timestamps = (
+            probe_video_frame_timestamps(validation_path, require_original_pts=True)
+            if encoder_stats_path is not None
+            else probe_video_frame_timestamps(validation_path)
+        )
         output_probe = _hls_probe_with_decoded_frame_count(
             output_probe, output_frame_timestamps
         )
-        segment_boundaries = _parse_hls_segment_boundaries(playlist_path)
+        if not source_frame_timestamps:
+            raise VideoStorageNormalizationError("HLS source has no decoded frames")
+        segment_boundaries = _parse_hls_segment_boundaries(
+            playlist_path,
+            source_origin_seconds=source_frame_timestamps[0].presentation_time_seconds,
+        )
         if len(segment_boundaries) != len(tuple(playlist_path.parent.glob("seg_*.ts"))):
             raise VideoStorageNormalizationError(
                 "HLS playlist segment count does not match staged segment files"
@@ -1726,6 +1752,43 @@ def _validate_generated_hls_profile(
                 output_timestamps=output_frame_timestamps,
                 segments=segment_boundaries,
                 profile=profile,
+            )
+        if encoder_stats_path is not None:
+            if source_content_hash is None:
+                raise ValueError("HLS provenance requires source content identity")
+            if (
+                source_probe.timeline.time_base_num is None
+                or source_probe.timeline.time_base_den is None
+                or output_probe.timeline.time_base_num is None
+                or output_probe.timeline.time_base_den is None
+            ):
+                raise ValueError(
+                    "HLS provenance requires exact source and output time bases"
+                )
+            source_coordinates = VideoFrameTimeline(
+                content_hash=source_content_hash,
+                time_base_num=source_probe.timeline.time_base_num,
+                time_base_den=source_probe.timeline.time_base_den,
+                presentation_timestamps=[
+                    frame.presentation_timestamp for frame in source_frame_timestamps
+                ],
+            )
+            output_coordinates = VideoFrameTimeline(
+                content_hash=get_file_hash(playlist_path),
+                time_base_num=output_probe.timeline.time_base_num,
+                time_base_den=output_probe.timeline.time_base_den,
+                presentation_timestamps=[
+                    frame.presentation_timestamp for frame in output_frame_timestamps
+                ],
+            )
+            persist_frame_provenance(
+                read_encoder_provenance(
+                    encoder_stats_path,
+                    source=source_coordinates,
+                    output=output_coordinates,
+                    allow_container_offset=True,
+                    allow_decoder_offset=True,
+                )
             )
         logger.info(
             "Validated HLS transcoding profile, frame PTS, and segment "
@@ -1812,8 +1875,11 @@ def _run_ffmpeg_hls(
                     source_path,
                     boundaries=list(timeline_validation.proof.boundaries),
                 )
+            source_content_hash = get_file_hash(source_path)
             input_arg = str(source_path)
-            source_frame_timestamps = probe_video_frame_timestamps(source_path)
+            source_frame_timestamps = probe_video_frame_timestamps(
+                source_path, require_original_pts=True
+            )
     except BaseException:
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
@@ -1829,8 +1895,13 @@ def _run_ffmpeg_hls(
         segment_base_url=segment_base_url,
         encoding_profile=encoding_profile,
     )
+    encoder_stats_path = temp_source_dir / "encoder-provenance.txt"
+    stats_created = False
     stderr_chunks: deque[bytes] = deque()
     try:
+        atomic_create_file(destination=encoder_stats_path, content=(), file_mode=0o600)
+        stats_created = True
+        command[-1:-1] = encoder_provenance_args(encoder_stats_path)
         with _timed_hls_phase(WorkloadPhase.ENCODE):
             process = subprocess.Popen(
                 command,
@@ -1907,20 +1978,25 @@ def _run_ffmpeg_hls(
                     "FFmpeg HLS pipeline failed: "
                     f"returncode={return_code} stderr={_stderr_tail(stderr_chunks)}"
                 )
+        if get_file_hash(source_path) != source_content_hash:
+            raise ValueError("HLS source changed during provenance capture")
+        with _timed_hls_phase(WorkloadPhase.OUTPUT_VALIDATION):
+            _validate_generated_hls_profile(
+                playlist_path=playlist_path,
+                key_info_path=key_info_path,
+                source_probe=source_probe,
+                source_pts=source_pts,
+                validation=timeline_validation,
+                source_frame_timestamps=source_frame_timestamps,
+                encoder_stats_path=encoder_stats_path,
+                source_content_hash=source_content_hash,
+            )
     finally:
+        if stats_created:
+            safe_unlink_file(encoder_stats_path, missing_ok=True)
         _cleanup_seekable_plaintext_source(
             temp_source_dir=temp_source_dir,
             source_path=source_path,
-        )
-
-    with _timed_hls_phase(WorkloadPhase.OUTPUT_VALIDATION):
-        _validate_generated_hls_profile(
-            playlist_path=playlist_path,
-            key_info_path=key_info_path,
-            source_probe=source_probe,
-            source_pts=source_pts,
-            validation=timeline_validation,
-            source_frame_timestamps=source_frame_timestamps,
         )
 
 

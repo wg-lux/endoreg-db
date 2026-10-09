@@ -574,16 +574,17 @@ def _gc10_timeline(
     frame_count: int = 500,
     duration_seconds: float = 10.0,
     time_base_denominator: int = 12_800,
+    nominal_fps: int = 50,
 ) -> VideoTimelineContract:
     return VideoTimelineContract(
         fps_num=average_numerator,
         fps_den=average_denominator,
         duration_seconds=duration_seconds,
         frame_count=frame_count,
-        variable_frame_rate=average_numerator != 50 * average_denominator,
+        variable_frame_rate=average_numerator != nominal_fps * average_denominator,
         time_base_num=1,
         time_base_den=time_base_denominator,
-        nominal_frame_rate=NominalFrameRate(numerator=50, denominator=1),
+        nominal_frame_rate=NominalFrameRate(numerator=nominal_fps, denominator=1),
         measured_average_frame_rate=MeasuredAverageFrameRate(
             numerator=average_numerator,
             denominator=average_denominator,
@@ -594,48 +595,59 @@ def _gc10_timeline(
 def _pts_summary(
     *,
     boundary: PresentationTimestampBoundary,
-    maximum_cadence_seconds: float = 0.02,
+    maximum_cadence_seconds: float | None = None,
+    target_fps: int = 50,
 ) -> PresentationTimestampTimeline:
     return PresentationTimestampTimeline(
-        frame_count=500,
+        frame_count=target_fps * 10,
         first_timestamp_seconds=0.0,
-        last_timestamp_seconds=9.98,
-        minimum_cadence_seconds=0.02,
-        maximum_cadence_seconds=maximum_cadence_seconds,
+        last_timestamp_seconds=10 - 1 / target_fps,
+        minimum_cadence_seconds=1 / target_fps,
+        maximum_cadence_seconds=maximum_cadence_seconds
+        if maximum_cadence_seconds is not None
+        else 1 / target_fps,
         boundaries=[boundary],
     )
 
 
 @pytest.mark.unit
-def test_proven_50_fps_hls_accepts_measured_average_rate_difference() -> None:
+@pytest.mark.parametrize("target_fps", [25, 50])
+def test_proven_profile_fps_hls_accepts_measured_average_rate_difference(
+    target_fps: int,
+) -> None:
     profile = normalization.VideoStorageProfile(
         name="test",
         max_bit_rate_bps=12_000_000,
         max_bytes_per_second=1_600_000,
         fixed_overhead_bytes=1024,
+        annotation_max_fps=target_fps,
     )
     source = _probe(
         timeline=_gc10_timeline(
-            average_numerator=498549,
+            average_numerator=target_fps * 9970,
             average_denominator=10000,
+            nominal_fps=target_fps,
+            frame_count=target_fps * 10,
         )
     )
     output = _probe(
         timeline=_gc10_timeline(
-            average_numerator=50,
+            average_numerator=target_fps,
             average_denominator=1,
+            nominal_fps=target_fps,
+            frame_count=target_fps * 10,
             time_base_denominator=90_000,
         )
     )
     persisted_boundary = PresentationTimestampBoundary(
         coordinate_kind="segment_start",
         reference_id=7,
-        frame_number=100,
+        frame_number=target_fps * 2,
         timestamp_seconds=2.0,
     )
     provenance = VideoFpsResamplingEvidence(
         normalized_at=datetime.now(UTC),
-        max_fps=50.0,
+        max_fps=float(target_fps),
         source=_probe(timeline=_timeline(fps_num=60, frame_count=600)),
         output=source,
     )
@@ -654,8 +666,8 @@ def test_proven_50_fps_hls_accepts_measured_average_rate_difference() -> None:
     normalization.validate_proven_resampled_hls_equivalence(
         source=source,
         output=output,
-        source_pts=_pts_summary(boundary=persisted_boundary),
-        output_pts=_pts_summary(boundary=persisted_boundary),
+        source_pts=_pts_summary(boundary=persisted_boundary, target_fps=target_fps),
+        output_pts=_pts_summary(boundary=persisted_boundary, target_fps=target_fps),
         context=context,
         profile=profile,
     )
@@ -1000,7 +1012,7 @@ def test_probe_video_frame_timestamps_preserves_ffprobe_command_contract(
             "v:0",
             "-show_frames",
             "-show_entries",
-            "frame=best_effort_timestamp,best_effort_timestamp_time",
+            "frame=pts,pts_time,best_effort_timestamp,best_effort_timestamp_time",
             "-of",
             "json",
             "video.mp4",
@@ -1534,7 +1546,18 @@ def _frame_timestamps(values: list[float]) -> list[FramePresentationTimestamp]:
 
 
 @pytest.mark.unit
-def test_hls_pts_and_segment_gate_accepts_equivalent_timeline() -> None:
+@pytest.mark.parametrize("source_origin", [0.0, 1.4, 17.25])
+@pytest.mark.parametrize(
+    "relative_times",
+    [
+        [0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
+        [0.0, 0.3, 1.0, 1.5, 2.2, 2.5],
+    ],
+)
+def test_hls_pts_and_segment_gate_accepts_equivalent_timeline(
+    source_origin: float,
+    relative_times: list[float],
+) -> None:
     profile = normalization.VideoStorageProfile(
         name="test",
         max_bit_rate_bps=12_000_000,
@@ -1551,20 +1574,22 @@ def test_hls_pts_and_segment_gate_accepts_equivalent_timeline() -> None:
     normalization.validate_hls_segment_and_pts_equivalence(
         source_timeline=timeline,
         output_timeline=timeline,
-        source_timestamps=_frame_timestamps([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]),
-        output_timestamps=_frame_timestamps([1.4, 1.9, 2.4, 2.9, 3.4, 3.9]),
+        source_timestamps=_frame_timestamps(
+            [source_origin + t for t in relative_times]
+        ),
+        output_timestamps=_frame_timestamps([1.4 + t for t in relative_times]),
         segments=[
             HlsSegmentBoundary(
                 segment_index=0,
-                start_timestamp_seconds=0.0,
+                start_timestamp_seconds=source_origin,
                 duration_seconds=1.5,
-                end_timestamp_seconds=1.5,
+                end_timestamp_seconds=source_origin + 1.5,
             ),
             HlsSegmentBoundary(
                 segment_index=1,
-                start_timestamp_seconds=1.5,
+                start_timestamp_seconds=source_origin + 1.5,
                 duration_seconds=1.5,
-                end_timestamp_seconds=3.0,
+                end_timestamp_seconds=source_origin + 3.0,
             ),
         ],
         profile=profile,

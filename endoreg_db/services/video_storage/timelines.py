@@ -74,7 +74,7 @@ def segment_timeline_references(
         persisted = {
             int(frame_number): float(timestamp)
             for frame_number, timestamp in frames.filter(
-                frame_number__in=frame_numbers,
+                frame_number__in=frame_numbers | {0},
                 timestamp__isnull=False,
             ).values_list("frame_number", "timestamp")
         }
@@ -86,6 +86,11 @@ def segment_timeline_references(
             f"every boundary; missing frames: {missing}"
         )
     mapping = _mapping_from_contract(timeline)
+    first_timestamp = persisted.get(0)
+    if first_timestamp is not None:
+        from dataclasses import replace
+
+        mapping = replace(mapping, first_timestamp_seconds=float(first_timestamp))
     references: list[SegmentTimelineReference] = []
     for segment_id, start_frame, end_frame in segment_rows:
         start_number = int(start_frame)
@@ -94,6 +99,7 @@ def segment_timeline_references(
             references.append(
                 SegmentTimelineReference(
                     segment_id=int(segment_id),
+                    origin_timestamp_seconds=mapping.first_timestamp_seconds,
                     start_frame=start_number,
                     end_frame=end_number,
                     start_timestamp_seconds=frame_number_to_seconds(
@@ -201,6 +207,8 @@ def persist_video_source_timeline(
             persisted_at=datetime.now(UTC),
             source=source,
             timestamp_mapping=mapping,
+            first_timestamp_seconds=timestamps[0],
+            end_timestamp_seconds=timestamps[0] + source.timeline.duration_seconds,
         )
         meta: VideoFileMetaJsonObject = dict(video.meta or {})
         meta["source_timeline"] = evidence_as_json(evidence)

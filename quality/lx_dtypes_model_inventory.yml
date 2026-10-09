@@ -126,6 +126,36 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.AIDatasetSplitPlan
+  kind: registered
+  python_path: endoreg_db.models.aidataset.ai_dataset_split_plan.AIDatasetSplitPlan
+  source_path: endoreg_db/models/aidataset/ai_dataset_split_plan.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_aidatasetsplitplan
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - snapshot
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Endoreg row-identity snapshot validated by the single strict split boundary; host schema
+    imports are aliases.
+  ownership_evidence:
+  - endoreg_db/models/aidataset/ai_dataset_split_plan.py:AIDatasetSplitPlan
+  - endoreg_db/schemas/ai_dataset_splits.py:SplitSnapshot
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.ai_dataset_splits.SplitSnapshot
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.AIModelTrainingRun
   kind: registered
   python_path: endoreg_db.models.aidataset.aidataset.AIModelTrainingRun
@@ -614,6 +644,7 @@ models:
   - api:endoreg_db/views/anonymization/validate.py
   - api:endoreg_db/views/media/hub/transfers.py
   - api:endoreg_db/views/media/patient_media_timeline.py
+  - api:endoreg_db/views/media/table_mappings.py
   - api:endoreg_db/views/misc/application_settings.py
   - api:endoreg_db/views/misc/application_settings_network_nodes.py
   - api:endoreg_db/views/misc/center.py
@@ -629,6 +660,7 @@ models:
   - import:endoreg_db/management/commands/import_sap_ish_zip.py
   - import:endoreg_db/management/commands/kcache_video_import.py
   - import:endoreg_db/services/raw_pdf_files/imports.py
+  - import:endoreg_db/services/studies/table_import.py
   - import:endoreg_db/services/video_files/_imports.py
   - job:endoreg_db/management/commands/load_legacy_data.py
   - job:endoreg_db/management/commands/profile_segment_updates.py
@@ -1454,6 +1486,7 @@ models:
   - api:endoreg_db/views/misc/stats.py
   - api:endoreg_db/views/patient_examination/patient_examination.py
   - api:endoreg_db/views/stats/stats_views.py
+  - import:endoreg_db/services/studies/table_import.py
   - service:endoreg_db/admin.py
   - service:endoreg_db/data/examination/examinations/data.yaml
   - service:endoreg_db/helpers/default_objects.py
@@ -2178,6 +2211,7 @@ models:
   - api:endoreg_db/serializers/administration/gender.py
   - api:endoreg_db/serializers/patient/patient.py
   - api:endoreg_db/views/misc/gender.py
+  - import:endoreg_db/services/studies/table_import.py
   - service:endoreg_db/data/case_template/rule/01_patient-set-gender.yaml
   - service:endoreg_db/helpers/default_objects.py
   - service:endoreg_db/services/patient_identity/update.py
@@ -3129,6 +3163,36 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.OutboundHubTransferJob
+  kind: registered
+  python_path: endoreg_db.models.hub.outbound_hub_transfer_job.OutboundHubTransferJob
+  source_path: endoreg_db/models/hub/outbound_hub_transfer_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_outboundhubtransferjob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - envelope_receipt
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Local outbound ledger validates envelope receipts through the existing shared HubMediaEnvelopeReceipt
+    contract; no competing receipt schema.
+  ownership_evidence:
+  - endoreg_db/models/hub/outbound_hub_transfer_job.py:OutboundHubTransferJob
+  - lx-dtypes:lx_dtypes.models.contracts.hub_media_envelope.HubMediaEnvelopeReceipt
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.hub_media_envelope.HubMediaEnvelopeReceipt
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.Patient
   kind: registered
   python_path: endoreg_db.models.administration.person.patient.patient.Patient
@@ -3299,6 +3363,7 @@ models:
   - api:endoreg_db/views/stats/stats_views.py
   - api:endoreg_db/views/video/video_examination_viewset.py
   - import:endoreg_db/services/interoperability/dicom_import.py
+  - import:endoreg_db/services/studies/table_import.py
   - service:endoreg_db/integrations/lx_dtypes_host_models.py
   - service:endoreg_db/services/cases/auto_resolution.py
   - service:endoreg_db/services/cases/documents.py
@@ -4193,6 +4258,7 @@ models:
   - import:endoreg_db/import_files/report_import_service.py
   - import:endoreg_db/services/raw_pdf_files/imports.py
   - import:endoreg_db/services/reports/import_lifecycle.py
+  - import:endoreg_db/services/studies/table_import.py
   - job:endoreg_db/management/commands/emergency_storage_relief.py
   - job:endoreg_db/management/commands/evaluate_lx_anonymizer_performance.py
   - job:endoreg_db/management/commands/migrate_media_storage.py
@@ -4630,6 +4696,7 @@ models:
   - import:endoreg_db/import_files/pseudonymization/k_anonymity.py
   - import:endoreg_db/import_files/pseudonymization/k_pseudonymity.py
   - import:endoreg_db/services/jobs/video_reimport_jobs.py
+  - import:endoreg_db/services/studies/table_import.py
   - import:endoreg_db/services/video_files/reimport_orchestrator.py
   - job:endoreg_db/management/commands/rotate_identity_salt.py
   - job:endoreg_db/services/jobs/report_llm_jobs.py
@@ -4810,6 +4877,32 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.StorageArtifactPublication
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_artifact_publication.StorageArtifactPublication
+  source_path: endoreg_db/models/hub/storage_artifact_publication.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storageartifactpublication
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Relational operation state moved from lx-annotate; HTTP, dispatch and worker orchestration
+    remain in the consuming application.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_artifact_publication.py:StorageArtifactPublication
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.StorageBalanceCancellationReceipt
   kind: registered
   python_path: endoreg_db.models.hub.storage_balancing.StorageBalanceCancellationReceipt
@@ -4919,6 +5012,32 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.StorageNodeActionReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_node_action_receipt.StorageNodeActionReceipt
+  source_path: endoreg_db/models/hub/storage_node_action_receipt.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storagenodeactionreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Relational operation state moved from lx-annotate; HTTP, dispatch and worker orchestration
+    remain in the consuming application.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_node_action_receipt.py:StorageNodeActionReceipt
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.StorageNodeCapability
   kind: registered
   python_path: endoreg_db.models.hub.storage_placement.StorageNodeCapability
@@ -5001,6 +5120,32 @@ models:
   boundary_consumers:
   - service:endoreg_db/services/hub/storage_balancing.py
   - service:endoreg_db/services/hub/storage_operator_control.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StorageOperatorDispatchReceipt
+  kind: registered
+  python_path: endoreg_db.models.hub.storage_operator_dispatch_receipt.StorageOperatorDispatchReceipt
+  source_path: endoreg_db/models/hub/storage_operator_dispatch_receipt.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_storageoperatordispatchreceipt
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Relational operation state moved from lx-annotate; HTTP, dispatch and worker orchestration
+    remain in the consuming application.
+  ownership_evidence:
+  - endoreg_db/models/hub/storage_operator_dispatch_receipt.py:StorageOperatorDispatchReceipt
+  boundary_consumers: []
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -5347,6 +5492,99 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.Study
+  kind: registered
+  python_path: endoreg_db.models.other.study.Study
+  source_path: endoreg_db/models/other/study.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_study
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Shared study validation; Django owns persistent identity and user ownership.
+  ownership_evidence:
+  - endoreg_db/models/other/study.py:Study.clean
+  - lx-dtypes:lx_dtypes.models.contracts.study.StudyDefinition
+  boundary_consumers:
+  - api:endoreg_db/views/media/studies.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.study.StudyDefinition
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StudyCohort
+  kind: registered
+  python_path: endoreg_db.models.other.study_cohort.StudyCohort
+  source_path: endoreg_db/models/other/study_cohort.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_studycohort
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - definition_snapshot
+  - filters
+  - study_metadata
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Shared cohort and study document validation; Django owns persistence and memberships.
+  ownership_evidence:
+  - endoreg_db/models/other/study_cohort.py:StudyCohort.clean
+  - lx-dtypes:lx_dtypes.models.contracts.cohort_definition.CohortDefinition
+  - lx-dtypes:lx_dtypes.models.contracts.study_setup.StudySetupDefinition
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.cohort_definition.CohortDefinition
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.study_setup.StudySetupDefinition
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.StudyTableImport
+  kind: registered
+  python_path: endoreg_db.models.other.study_table_import.StudyTableImport
+  source_path: endoreg_db/models/other/study_table_import.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_studytableimport
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - deletion_record
+  - payload
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: LX owns the validated import receipt; Django owns identity relations and replay uniqueness.
+  ownership_evidence:
+  - endoreg_db/models/other/study_table_import.py:StudyTableImport.clean
+  - lx-dtypes:lx_dtypes.models.contracts.table_import.TableImportReceiptPayload
+  boundary_consumers:
+  - import:endoreg_db/services/studies/table_import.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.dtypes_record_persistence.DtypesRecordPersistencePayload
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.table_import.TableImportReceiptPayload
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.Tag
   kind: registered
   python_path: endoreg_db.models.other.tag.Tag
@@ -5608,6 +5846,7 @@ models:
   - import:endoreg_db/import_files/video_import_service.py
   - import:endoreg_db/management/commands/kcache_video_import.py
   - import:endoreg_db/services/jobs/video_reimport_jobs.py
+  - import:endoreg_db/services/studies/table_import.py
   - import:endoreg_db/services/video_files/direct_import.py
   - import:endoreg_db/services/video_files/imports.py
   - import:endoreg_db/services/video_files/reimport_orchestrator.py
@@ -5647,6 +5886,7 @@ models:
   - service:endoreg_db/services/hub/storage_rotation.py
   - service:endoreg_db/services/hub/storage_transfer.py
   - service:endoreg_db/services/hub/transfers.py
+  - service:endoreg_db/services/hub/video_provenance.py
   - service:endoreg_db/services/media/integrity.py
   - service:endoreg_db/services/media/operation_gate.py
   - service:endoreg_db/services/patient_identity/validated_media_identity.py
@@ -5726,6 +5966,36 @@ models:
   - lx_dtypes.models.contracts.video_text_metadata.VideoTextMetaPayload
   module_endoreg_schema_imports:
   - endoreg_db.schemas.validate_video_file_meta_payload
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.VideoFrameProvenance
+  kind: registered
+  python_path: endoreg_db.models.media.video.frame_provenance.VideoFrameProvenance
+  source_path: endoreg_db/models/media/video/frame_provenance.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videoframeprovenance
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - payload
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: Immutable frame lineage is shared between recording sites and Hub; workflow and persistence
+    remain local.
+  ownership_evidence:
+  - lx_dtypes.models.contracts.video_provenance.VideoFrameProvenancePayload
+  boundary_consumers:
+  - service:endoreg_db/services/video_storage/frame_provenance.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.video_provenance.VideoFrameProvenancePayload
+  module_endoreg_schema_imports: []
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
@@ -6055,6 +6325,32 @@ models:
   dynamic_model_references:
   - endoreg_db/services/video_files/_frames/_delete_frames.py
   - endoreg_db/services/video_files/state.py
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.VideoTranscodeJob
+  kind: registered
+  python_path: endoreg_db.models.media.video.video_transcode_job.VideoTranscodeJob
+  source_path: endoreg_db/models/media/video/video_transcode_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videotranscodejob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: false
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Relational operation state moved from lx-annotate; HTTP, dispatch and worker orchestration
+    remain in the consuming application.
+  ownership_evidence:
+  - endoreg_db/models/media/video/video_transcode_job.py:VideoTranscodeJob
+  boundary_consumers: []
+  dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
   exception_owner: null

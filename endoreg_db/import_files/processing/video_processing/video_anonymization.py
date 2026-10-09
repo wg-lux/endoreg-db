@@ -19,7 +19,9 @@ from endoreg_db.utils.ffmpeg_wrapper import (
     resolve_ffmpeg_executable as _resolve_ffmpeg_executable,
     resolve_ffprobe_executable as _resolve_ffprobe_executable,
 )
-from lx_anonymizer.frame_cleaner import FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
+from endoreg_db.services.video_storage.provenance_cleaner import (
+    create_frame_cleaner as FrameCleaner,
+)
 from lx_dtypes.models import SensitiveMeta
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.media_streaming import (

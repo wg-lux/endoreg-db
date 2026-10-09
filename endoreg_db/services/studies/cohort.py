@@ -245,7 +245,9 @@ def _video_case_filter(case_ids: QuerySet[PatientExamination]) -> Q:
     return Q(examination_id__in=case_id_subquery)
 
 
-def _base_case_queryset() -> QuerySet[PatientExamination]:
+def _base_case_queryset(
+    *, include_without_media: bool = False
+) -> QuerySet[PatientExamination]:
     eligible_reports = _eligible_report_queryset().filter(
         Q(examination_id=OuterRef("pk"))
         | Q(anonym_examination_report__patient_examination_id=OuterRef("pk"))
@@ -253,8 +255,10 @@ def _base_case_queryset() -> QuerySet[PatientExamination]:
     eligible_videos = _eligible_video_queryset().filter(
         Q(examination_id=OuterRef("pk"))
     )
-    return (
-        PatientExamination.objects.select_related("patient", "examination")
+    queryset = (
+        PatientExamination.objects.select_related(
+            "patient", "patient__center", "examination"
+        )
         .filter(
             patient__is_real_person=False,
             patient__patient_hash__isnull=False,
@@ -264,13 +268,17 @@ def _base_case_queryset() -> QuerySet[PatientExamination]:
             cohort_has_report=Exists(eligible_reports),
             cohort_has_video=Exists(eligible_videos),
         )
-        .filter(Q(cohort_has_report=True) | Q(cohort_has_video=True))
     )
+    if not include_without_media:
+        queryset = queryset.filter(Q(cohort_has_report=True) | Q(cohort_has_video=True))
+    return queryset
 
 
 def _apply_filters(
     queryset: QuerySet[PatientExamination],
     filters: StudyCohortFilters,
+    *,
+    include_without_media: bool = False,
 ) -> QuerySet[PatientExamination]:
     if filters.date_from is not None:
         queryset = queryset.filter(date_start__gte=filters.date_from)
@@ -298,10 +306,13 @@ def _apply_filters(
             Q(examination_id=OuterRef("pk")),
             center__center_key=filters.center_key,
         )
+        center_match = Q(cohort_center_report=True) | Q(cohort_center_video=True)
+        if include_without_media:
+            center_match |= Q(patient__center__center_key=filters.center_key)
         queryset = queryset.annotate(
             cohort_center_report=Exists(matching_report),
             cohort_center_video=Exists(matching_video),
-        ).filter(Q(cohort_center_report=True) | Q(cohort_center_video=True))
+        ).filter(center_match)
 
     if filters.document_type:
         matching_report = _eligible_report_queryset().filter(
@@ -410,11 +421,14 @@ def _build_cohort_scope(
     filters: StudyCohortFilters,
     *,
     case_scope: QuerySet[PatientExamination] | None = None,
+    include_without_media: bool = False,
 ) -> _CohortScope:
-    candidates = _base_case_queryset()
+    candidates = _base_case_queryset(include_without_media=include_without_media)
     if case_scope is not None:
         candidates = candidates.filter(pk__in=case_scope.values("pk"))
-    filtered_cases = _apply_filters(candidates, filters)
+    filtered_cases = _apply_filters(
+        candidates, filters, include_without_media=include_without_media
+    )
     patient_count = filtered_cases.values("patient__patient_hash").distinct().count()
     reports = _eligible_report_queryset().filter(_report_case_filter(filtered_cases))
     videos = _eligible_video_queryset().filter(_video_case_filter(filtered_cases))
@@ -606,6 +620,7 @@ def _build_case_row(
     media: _PreviewMedia,
     findings_by_case: dict[int, list[PatientFindingHistoryData]],
     annotations_by_video: dict[int, set[str]],
+    include_without_media: bool = False,
 ) -> StudyCaseRow | None:
     latest_examination = patient_examinations[0]
     case_ids = [patient_examination.pk for patient_examination in patient_examinations]
@@ -623,6 +638,8 @@ def _build_case_row(
         report_rows.extend(case_report_rows)
         video_rows.extend(case_video_rows)
         center_keys.update(media.center_keys_by_case.get(case_id, set()))
+        if include_without_media and patient_examination.patient.center is not None:
+            center_keys.add(patient_examination.patient.center.center_key)
         case_findings = findings_by_case.get(case_id, [])
         findings.update(
             finding["finding_name"]
@@ -640,7 +657,7 @@ def _build_case_row(
                 "findings": case_findings,
             }
         )
-    if not report_rows and not video_rows:
+    if not report_rows and not video_rows and not include_without_media:
         return None
     report_rows.sort(key=lambda row: row["id"])
     video_rows.sort(key=lambda row: row["id"])
@@ -675,6 +692,7 @@ def _build_case_rows(
     media: _PreviewMedia,
     findings_by_case: dict[int, list[PatientFindingHistoryData]],
     annotations_by_video: dict[int, set[str]],
+    include_without_media: bool = False,
 ) -> list[StudyCaseRow]:
     cases: list[StudyCaseRow] = []
     examinations_by_patient: dict[str, list[PatientExamination]] = {}
@@ -689,6 +707,7 @@ def _build_case_rows(
             media=media,
             findings_by_case=findings_by_case,
             annotations_by_video=annotations_by_video,
+            include_without_media=include_without_media,
         )
         if case is not None:
             cases.append(case)
@@ -780,8 +799,15 @@ def build_study_cohort_payload(
     *,
     request: Any | None = None,
     case_scope: QuerySet[PatientExamination] | None = None,
+    include_without_media: bool = False,
 ) -> StudyCohortPayload:
-    scope = _build_cohort_scope(filters, case_scope=case_scope)
+    if include_without_media and case_scope is None:
+        raise ValueError(
+            "Including examinations without media requires an explicit authorized scope"
+        )
+    scope = _build_cohort_scope(
+        filters, case_scope=case_scope, include_without_media=include_without_media
+    )
     preview_case_ids = [case.pk for case in scope.preview_cases]
     media = _collect_preview_media(preview_case_ids, request=request)
     findings_by_case = get_patient_finding_summaries(preview_case_ids)
@@ -791,6 +817,7 @@ def build_study_cohort_payload(
         media=media,
         findings_by_case=findings_by_case,
         annotations_by_video=annotations_by_video,
+        include_without_media=include_without_media,
     )
     scope_options = _query_scope_options(scope.filtered_cases)
     # Include taxonomy values from the complete filtered scope, not only the preview page.

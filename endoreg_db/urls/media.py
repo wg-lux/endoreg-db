@@ -16,6 +16,11 @@ from endoreg_db.views.media.hub import (
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
 from endoreg_db.views.media.study_cohort import StudyCohortPreviewView
+from endoreg_db.views.media.studies import StudiesView, StudyDetailView
+from endoreg_db.views.media.table_mappings import (
+    TableMappingsView,
+    TableMappingDetailView,
+)
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -129,6 +134,10 @@ QUARANTINE_URLPATTERNS: list[URLPattern] = [
 ]
 
 MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
+    path("media/studies/", StudiesView.as_view(), name="studies"),
+    path(
+        "media/studies/<int:study_id>/", StudyDetailView.as_view(), name="study-detail"
+    ),
     path(
         "media/studies/cohort-preview/",
         StudyCohortPreviewView.as_view(),
@@ -450,7 +459,21 @@ PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
     ),
 ]
 
+STUDY_TABLE_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/studies/table-mappings/",
+        TableMappingsView.as_view(),
+        name="study-table-mappings",
+    ),
+    path(
+        "media/studies/table-mappings/<uuid:mapping_id>/",
+        TableMappingDetailView.as_view(),
+        name="study-table-mapping-detail",
+    ),
+]
+
 urlpatterns: list[URLPattern] = [
+    *STUDY_TABLE_URLPATTERNS,
     *HUB_TRANSFER_URLPATTERNS,
     *QUARANTINE_URLPATTERNS,
     *MEDIA_OVERVIEW_URLPATTERNS,

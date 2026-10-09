@@ -59,6 +59,8 @@ class _ProbePayload(BaseModel):
 class _FrameProbeRow(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
 
+    pts: int | str | None = None
+    pts_time: str | None = None
     best_effort_timestamp_time: str | None = None
     best_effort_timestamp: int | str | None = None
 
@@ -350,7 +352,7 @@ def _build_frame_timestamp_probe_command(
         "v:0",
         "-show_frames",
         "-show_entries",
-        "frame=best_effort_timestamp,best_effort_timestamp_time",
+        "frame=pts,pts_time,best_effort_timestamp,best_effort_timestamp_time",
         "-of",
         "json",
     ]
@@ -458,12 +460,22 @@ def _parse_frame_timestamp_rows(
     return timestamps
 
 
-def probe_video_frame_timestamps(path: Path) -> list[FramePresentationTimestamp]:
+def probe_video_frame_timestamps(
+    path: Path, *, require_original_pts: bool = False
+) -> list[FramePresentationTimestamp]:
     """Return exact timestamp ticks and seconds for every decoded video frame."""
     ffprobe = _require_ffprobe_executable()
     command = _build_frame_timestamp_probe_command(ffprobe, path)
     stdout = _run_frame_timestamp_probe(command, path=path)
     payload = _parse_frame_probe_payload(stdout, path=path)
+    if require_original_pts:
+        for frame in payload.frames:
+            if frame.pts is None or frame.pts_time is None:
+                raise VideoStorageNormalizationError(
+                    "Frame provenance requires original presentation timestamps"
+                )
+            frame.best_effort_timestamp = frame.pts
+            frame.best_effort_timestamp_time = frame.pts_time
     return _parse_frame_timestamp_rows(payload)
 
 

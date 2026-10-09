@@ -753,12 +753,7 @@ class VideoFile(models.Model):
     ) -> bool:
         from endoreg_db.services.video_files import validate_video_metadata_annotation
 
-        payload: VideoTextMetaPayload | None = (
-            extracted_data_dict.model_dump()
-            if extracted_data_dict is not None
-            else None
-        )
-        return validate_video_metadata_annotation(self, payload)
+        return validate_video_metadata_annotation(self, extracted_data_dict)
 
     def initialize(self) -> "VideoFile":
         from endoreg_db.services.video_files import initialize_video_file

@@ -210,7 +210,14 @@ def blacken_video_frame_intervals(
     intervals: Iterable[tuple[int, int]],
     quality_mode: str = "balanced",
     force_cpu: bool = False,
+    max_bit_rate_bps: int | None = None,
 ) -> Optional[Path]:
+    if max_bit_rate_bps is not None and not (
+        0 < max_bit_rate_bps <= configured_video_storage_profile().max_bit_rate_bps
+    ):
+        raise ValueError(
+            "Blackening bitrate cap must be positive and within the storage profile"
+        )
     if not input_path.exists():
         logger.error("Input file not found for outside blackening: %s", input_path)
         return None
@@ -236,6 +243,14 @@ def blacken_video_frame_intervals(
         vf_index = encoder_args.index("-vf")
         del encoder_args[vf_index : vf_index + 2]
 
+    if max_bit_rate_bps is not None:
+        for flag, value in (
+            ("-b:v", max_bit_rate_bps),
+            ("-maxrate", max_bit_rate_bps),
+            ("-bufsize", max_bit_rate_bps * 2),
+        ):
+            _update_or_append_ffmpeg_arg(encoder_args, flag, str(value))
+
     filter_args, filter_script_path = _blacken_filter_args_from_normalized(
         normalized_intervals,
         script_dir=output_path.parent,
@@ -246,8 +261,7 @@ def blacken_video_frame_intervals(
         *filter_args,
         "-color_range",
         STANDARD_VIDEO_ENCODING.color_range,
-        "-fpsmax",
-        STANDARD_VIDEO_ENCODING.max_fps_arg(),
+        *STANDARD_VIDEO_ENCODING.timestamp_passthrough_args(),
         "-movflags",
         "+faststart",
     ]
@@ -348,8 +362,7 @@ def mask_video_to_roi_and_blacken_intervals(
         *filter_args,
         "-color_range",
         STANDARD_VIDEO_ENCODING.color_range,
-        "-fpsmax",
-        STANDARD_VIDEO_ENCODING.max_fps_arg(),
+        *STANDARD_VIDEO_ENCODING.timestamp_passthrough_args(),
         "-movflags",
         "+faststart",
     ]
@@ -370,14 +383,6 @@ def mask_video_to_roi_and_blacken_intervals(
             "-bufsize",
             str(profile.max_bit_rate_bps * 2),
         ]
-    )
-
-    command = _build_filter_transcode_command(
-        ffmpeg_executable=ffmpeg_executable,
-        input_path=input_path,
-        output_path=output_path,
-        encoder_args=encoder_args,
-        extra_args=extra_args,
     )
 
     command = _build_filter_transcode_command(

@@ -12,6 +12,19 @@ from endoreg_db.services.video_files.timeline import (
 )
 
 
+def test_nonzero_origin_terminal_is_an_absolute_pts_boundary() -> None:
+    mapping = VideoTimelineMapping(
+        fps=25,
+        frame_count=4,
+        duration_seconds=0.16,
+        requires_persisted_pts=True,
+        first_timestamp_seconds=1.4,
+    )
+    terminal = frame_number_to_seconds(mapping, 4, persisted_timestamp=None)
+    assert abs(terminal - 1.56) < 1e-12
+    assert seconds_to_frame_number(mapping, 1.56, neighboring_timestamps={3: 1.52}) == 4
+
+
 @pytest.mark.parametrize(
     ("frame_number", "persisted_timestamp", "expected"),
     [(25, None, 1.0), (25, 1.017, 1.017), (250, None, 10.0)],

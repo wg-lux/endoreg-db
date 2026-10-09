@@ -25,6 +25,94 @@ from tests.helpers.canonical_timestamps import decoded_test_timestamps
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@pytest.mark.parametrize(
+    "bitrates, succeeds",
+    [
+        ([16_012_805, 800_000], True),
+        ([16_012_805, 14_000_000, 800_000], True),
+        ([16_012_805, 14_000_000, 13_000_000], False),
+    ],
+)
+def test_bitrate_retry_preserves_source_until_validated(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    bitrates: list[int],
+    succeeds: bool,
+) -> None:
+    original_name = str(video.processed_file.name)
+    caps: list[object] = []
+    paths: list[Path] = []
+    monkeypatch.setattr(
+        service,
+        "probe_video_artifact",
+        Mock(
+            side_effect=[
+                probe(),
+                *(
+                    probe().model_copy(update={"bit_rate_bps": rate})
+                    for rate in bitrates
+                ),
+            ]
+        ),
+    )
+
+    def encode(source: Path, output: Path, **kwargs: object) -> Path:
+        # Every attempt consumes the same decrypted original, not its predecessor.
+        assert source.read_bytes() == b"processed"
+        assert video.processed_file.name == original_name
+        assert video.processed_file.storage.exists(original_name)
+        assert kwargs["intervals"] == [(10, 20)]
+        caps.append(kwargs.get("max_bit_rate_bps"))
+        paths.extend([source, output])
+        atomic_write_file(destination=output, content=[b"blackened"], file_mode=0o600)
+        return output
+
+    monkeypatch.setattr(service, "blacken_video_frame_intervals", encode)
+    assert (
+        service.rebuild_processed_video_without_outside_frames(
+            video, outside_intervals=[(10, 20)]
+        )
+        is succeeds
+    )
+    assert len(caps) == len(bitrates)
+    assert caps[0] is None
+    previous = 12_000_000
+    for cap in caps[1:]:
+        assert isinstance(cap, int) and 0 < cap < previous
+        previous = cap
+    video.refresh_from_db()
+    assert Path(video.processed_file.path).read_bytes().startswith(MAGIC)
+    if not succeeds:
+        assert video.processed_file.name == original_name
+        assert video.processed_file.storage.exists(original_name)
+    assert all(not path.exists() for path in paths)
+
+
+def test_blackening_does_not_retry_timeline_failure(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_name = video.processed_file.name
+    invalid = probe().model_copy(
+        update={"timeline": probe().timeline.model_copy(update={"frame_count": 249})}
+    )
+    monkeypatch.setattr(
+        service, "probe_video_artifact", Mock(side_effect=[probe(), invalid])
+    )
+
+    def encode(source: Path, output: Path, **kwargs: object) -> Path:
+        return output
+
+    encoder = Mock(side_effect=encode)
+    monkeypatch.setattr(service, "blacken_video_frame_intervals", encoder)
+    assert not service.rebuild_processed_video_without_outside_frames(
+        video, outside_intervals=[(10, 20)]
+    )
+    assert encoder.call_count == 1
+    video.refresh_from_db()
+    assert video.processed_file.name == original_name
+
+
 @pytest.fixture
 def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
     monkeypatch.setattr(

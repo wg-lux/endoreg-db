@@ -9,6 +9,36 @@ RouteContract = tuple[str, str, str]
 
 EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
+        "media/studies/",
+        "studies",
+        "endoreg_db.views.media.studies.StudiesView",
+    ),
+    (
+        "media/studies/<int:study_id>/",
+        "study-detail",
+        "endoreg_db.views.media.studies.StudyDetailView",
+    ),
+    (
+        "media/studies/table-mappings/",
+        "study-table-mappings",
+        "endoreg_db.views.media.table_mappings.TableMappingsView",
+    ),
+    (
+        "media/studies/table-mappings/<uuid:mapping_id>/",
+        "study-table-mapping-detail",
+        "endoreg_db.views.media.table_mappings.TableMappingDetailView",
+    ),
+    (
+        "media/videos/<int:pk>/download/",
+        "video-download",
+        "endoreg_db.views.media.export_downloads.VideoExportDownloadView",
+    ),
+    (
+        "media/videos/<int:pk>/timestamps.csv",
+        "video-timestamps-download",
+        "endoreg_db.views.media.export_downloads.VideoExportDownloadView",
+    ),
+    (
         "media/studies/cohort-preview/",
         "study-cohort-preview",
         "endoreg_db.views.media.study_cohort.StudyCohortPreviewView",
@@ -377,6 +407,7 @@ def _route_contract(pattern: URLPattern) -> RouteContract:
 
 def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
     assert media.urlpatterns == [
+        *media.STUDY_TABLE_URLPATTERNS,
         *media.HUB_TRANSFER_URLPATTERNS,
         *media.QUARANTINE_URLPATTERNS,
         *media.MEDIA_OVERVIEW_URLPATTERNS,

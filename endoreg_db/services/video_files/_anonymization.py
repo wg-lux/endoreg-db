@@ -24,8 +24,6 @@ from endoreg_db.services.video_storage.generation_cleanup import (
 )
 from endoreg_db.services.video_storage.workflow import (
     configured_video_storage_profile,
-    assert_temporal_equivalence,
-    timeline_from_video_metadata,
     probe_video_artifact,
     segment_timeline_references,
     validate_normalized_output,
@@ -33,7 +31,11 @@ from endoreg_db.services.video_storage.workflow import (
 from endoreg_db.services.video_storage.canonical_timelines import (
     append_canonical_timeline_history,
     capture_canonical_timeline,
-    with_canonical_timestamps,
+    validate_canonical_output,
+)
+from endoreg_db.services.video_files.types import VideoArtifactKind
+from endoreg_db.services.video_storage.processed_timelines import (
+    publish_processed_coordinates,
 )
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
@@ -199,19 +201,6 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
         with cast(_LocalRawFileProvider, video).ensure_local_raw_file() as raw_path:
             source_probe = probe_video_artifact(Path(raw_path))
             source_timestamps = capture_canonical_timeline(Path(raw_path), source_probe)
-            if video.fps is None or video.duration is None or video.frame_count is None:
-                raise RuntimeError(
-                    "Stored video timeline is required for reanonymization."
-                )
-            assert_temporal_equivalence(
-                timeline_from_video_metadata(
-                    fps=float(video.fps),
-                    duration_seconds=float(video.duration),
-                    frame_count=int(video.frame_count),
-                ),
-                source_probe.timeline,
-                profile=configured_video_storage_profile(),
-            )
             streamed_path = mask_video_to_roi_and_blacken_intervals(
                 Path(raw_path),
                 anonymized_video_path,
@@ -227,16 +216,17 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
                 f"Processed video file not found after streamed anonymization for {video.raw_video_hash}: {anonymized_video_path}"
             )
 
-        normalization_evidence = validate_normalized_output(
+        normalization_evidence = validate_canonical_output(
             source=source_probe,
             output=probe_video_artifact(anonymized_video_path),
             profile=configured_video_storage_profile(),
             segments=segment_timeline_references(video, timeline=source_probe.timeline),
+            before=source_timestamps,
+            output_path=anonymized_video_path,
+            validate_output=validate_normalized_output,
+            artifact_kind=VideoArtifactKind.PROCESSED,
         )
         new_processed_hash = get_file_hash(anonymized_video_path)
-        normalization_evidence = with_canonical_timestamps(
-            normalization_evidence, source_timestamps, anonymized_video_path
-        )
         if (
             type(video)
             .objects.filter(processed_video_hash=new_processed_hash)
@@ -280,7 +270,17 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
                     previous_hash=previous_hash,
                     strict=True,
                 )
-            video.save(update_fields=["processed_video_hash", "processed_file", "meta"])
+            publish_processed_coordinates(video, normalization_evidence)
+            video.save(
+                update_fields=[
+                    "processed_video_hash",
+                    "processed_file",
+                    "meta",
+                    "fps",
+                    "duration",
+                    "frame_count",
+                ]
+            )
         published = True
 
         # The writer lease spans HLS work, without a long publication transaction.

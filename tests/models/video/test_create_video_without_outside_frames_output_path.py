@@ -25,6 +25,7 @@ from endoreg_db.services.media.operation_gate import (
 )
 from endoreg_db.utils.paths import to_storage_relative, get_runtime_paths
 from endoreg_db.services.video_files import post_validation_blackening as service
+from endoreg_db.services.video_files.frames import initialize_video_frames
 from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from tests.services.test_video_processed_transcode_encryption import probe
 from endoreg_db.services.video_storage import canonical_timelines
@@ -213,7 +214,9 @@ def test_create_video_without_outside_frames_uses_streamed_rebuild(
         intervals: Iterable[tuple[int, int]],
         quality_mode: str = "balanced",
         force_cpu: bool = False,
+        max_bit_rate_bps: int | None = None,
     ) -> Path:
+        assert max_bit_rate_bps is None
         captured.append(
             _BlackeningCall(
                 input_path=input_path,
@@ -354,7 +357,9 @@ def test_create_video_without_outside_frames_merges_adjacent_intervals_and_noops
         intervals: Iterable[tuple[int, int]],
         quality_mode: str = "balanced",
         force_cpu: bool = False,
+        max_bit_rate_bps: int | None = None,
     ) -> Path:
+        assert max_bit_rate_bps is None
         calls.append(list(intervals))
         return _write_filtered_video(output_path)
 
@@ -397,7 +402,9 @@ def test_create_video_without_outside_frames_uses_supplied_intervals(
         intervals: Iterable[tuple[int, int]],
         quality_mode: str = "balanced",
         force_cpu: bool = False,
+        max_bit_rate_bps: int | None = None,
     ) -> Path:
+        assert max_bit_rate_bps is None
         calls.append(list(intervals))
         return _write_filtered_video(output_path)
 
@@ -428,12 +435,8 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
     video, processed_path = _create_video(tmp_path)
     outside_label, _ = Label.objects.get_or_create(name="outside")
     source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
-    outside_frame = Frame.objects.create(
-        video=video,
-        frame_number=44,
-        relative_path="frame_0000044.jpg",
-        is_extracted=False,
-    )
+    initialize_video_frames(video)
+    outside_frame = Frame.objects.get(video=video, frame_number=44)
     ImageClassificationAnnotation.objects.create(
         frame=outside_frame,
         label=outside_label,
@@ -455,7 +458,9 @@ def test_create_video_without_outside_frames_includes_frame_level_outside_annota
         intervals: Iterable[tuple[int, int]],
         quality_mode: str = "balanced",
         force_cpu: bool = False,
+        max_bit_rate_bps: int | None = None,
     ) -> Path:
+        assert max_bit_rate_bps is None
         calls.append(list(intervals))
         return _write_filtered_video(output_path)
 

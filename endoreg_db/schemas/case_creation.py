@@ -25,8 +25,12 @@ class PatientExaminationCreatePayload(BaseModel):
     examination: NonEmptyStrictString
     date_start: date
     date_end: date | None = None
+    knowledge_base_module: NonEmptyStrictString = ""
+    knowledge_base_version: NonEmptyStrictString = ""
 
-    @field_validator("patient", "examination")
+    @field_validator(
+        "patient", "examination", "knowledge_base_module", "knowledge_base_version"
+    )
     @classmethod
     def reject_blank_identifiers(cls, value: str) -> str:
         normalized = value.strip()

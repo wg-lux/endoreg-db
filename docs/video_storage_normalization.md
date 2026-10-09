@@ -7,6 +7,166 @@ the only authoritative source for implementation and approval status.
 
 ## Canonical runtime paths and filenames
 
+Outside-frame blackening retries an output-bitrate validation failure at most
+twice before failing and cleaning its staged output. Each retry reads the same
+scoped, decrypted original and reapplies the reviewed blackening intervals;
+rejected lossy output is never used as the next input. The measured overshoot
+reduces the encoder's target and maximum bitrate with safety headroom, while the
+storage profile's acceptance limits stay unchanged. Every candidate still passes
+the full storage, timeline, hash and publication checks. Other validation failures
+do not trigger this retry. Exhaustion preserves the existing encrypted master and
+removes scoped plaintext. Structured `outside_blackening_bitrate_retry` events
+record the video identifier, attempt number, measured bitrate and next cap.
+
+Blackening uses timestamp passthrough without a fixed frame-rate cap. Native
+variable presentation timestamps remain authoritative; bitrate adaptation does
+not request cadence conversion. Complete canonical
+source/output timestamp sequences continue to be retained in provenance. HLS
+playlist boundaries are anchored to the source container origin and checked in
+relative time, allowing container offsets without masking frame timeline drift.
+The separate explicit resampling proof derives its constant cadence from
+`profile.annotation_max_fps`; it does not impose uniform cadence on native media.
+
+Telemetry alignment requires a shared clock origin and an explicit maximum join
+distance before nearest-timestamp matching can be enabled. A frame-count tolerance
+alone cannot identify where a frame was dropped or safely relocate an annotation.
+
+### Out-of-band frame provenance and independent recording clocks
+
+The authoritative scope and evidence remain in
+[`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml)
+and [`HubTransfer.yml`](../feature-tracking/HubTransfer.yml). Out-of-band means the
+frame mapping is stored separately from encoded pixels, in the database.
+
+`VideoFrameProvenance` retains immutable, typed transformation receipts. Each
+receipt contains the complete source/output presentation timestamp sequences,
+rational time bases, plaintext content hashes, and a source-frame-index array
+whose position is the output presentation-frame index. The shared contract lives
+in `lx_dtypes.models.contracts.video_provenance`. Apply migration
+`0092_video_frame_provenance` before running updated encoding workers. Site and Hub
+must deploy the matching shared contract and application changes together.
+
+The pinned `lx-dtypes` 0.4.4 package contains the provenance contract. Development
+verification of the new execution hooks requires the matching `lx-anonymizer`
+checkout installed into the project environment:
+
+```sh
+uv pip install --python .devenv/state/venv/bin/python --no-deps -e ../lx-anonymizer
+```
+
+Run this after dependency synchronization, then invoke the project virtual
+environment's pytest directly. The repository test tasks synchronize dependencies
+again and can replace the editable package with the published package. This local
+setup is not a substitute for releasing and pinning the execution hooks before
+deployment.
+
+Before each FFmpeg transcode attempt, ffprobe captures source coordinates. FFmpeg
+`stats_enc_pre` records the actual decoder frame index carried to the encoder,
+including frame drops and repetitions introduced by resampling. After encoding,
+every row is checked against decoded output coordinates and source coordinates.
+Packet order is not presentation order: encoder input statistics avoid confusion
+from bidirectionally predicted frames. Explicit decoder/container clock-origin
+offsets are retained as rational values and must be constant across the complete
+sequence. They never select a source frame. Unsupported or incomplete encoder
+provenance fails the operation; there is no nearest-timestamp ancestry fallback.
+
+The shared transcode runner covers normalization, masking, blackening, storage
+transcoding, and compatibility MP4 output. HLS records a derivative receipt bound
+to its canonical source and playlist content identity, after existing segment and
+timeline validation. HLS remains a derivative, not a canonical generation. The
+OpenCV detector compatibility path records the frame indices actually read and
+written and rejects incomplete decoding. Temporary encoder statistics use an
+owned private directory inside the protected runtime storage boundary and are
+removed after success or failure. Receipts are evidence of encoding ancestry,
+not evidence of clinical approval or current publication.
+
+The host's `create_frame_cleaner` factory returns the ordinary `lx-anonymizer`
+`FrameCleaner`, configured with attempt-local `VideoExecutionHooks`. Initial import,
+processor-region correction, detector masking, and frame removal execute the
+library's existing implementations. The hooks route encoding through the host
+runner and observe actual decoder indices immediately after each frame is written.
+The host validates complete input/output sequences before persisting a receipt;
+decoder or finalization failure never commits a receipt. The compute library does
+not gain database or publication ownership. With provenance hooks, empty
+frame-removal requests fail explicitly and full-image masks encode an identity
+filter instead of taking an unobserved stream-copy path. Deploy the matching
+`lx-anonymizer` hook interface with this host factory; an older package cannot
+provide this integration.
+
+Hub exports carry only the strict `video_frame_provenance` bundle in transfer
+provenance. They require approved processed media and verified content identity;
+arbitrary video metadata, filenames, keys, and raw media are not included.
+Transformations compose from the recording hash to the transferred processed
+hash. A missing or ambiguous historical chain blocks export; old source indices
+are not reconstructed from similar timestamps. The receiver preserves the bundle
+in validated database metadata, binds both endpoint hashes, and checks its final
+timeline against the received processed media before accepting processing success.
+Existing transfers without a bundle remain readable but cannot provide electrical
+alignment. Native transport authentication and encryption requirements still apply.
+
+An independent electrical device needs synchronization evidence **during
+recording**. Video presentation timestamps alone do not identify its clock offset.
+The recording integration must retain:
+
+| Evidence | Purpose |
+| --- | --- |
+| Opaque recording-session and clock-epoch identifiers | Prevent joining different sessions or a clock that reset |
+| Native integer timestamps and rational time bases | Preserve units and precision without average-frame-rate conversion |
+| At least two paired observations of shared events | Establish clock offset and relative rate; repeated events bound changing drift |
+| A conservative measured uncertainty bound | Cover event measurement and drift between synchronization anchors |
+
+A shared hardware event or measured clock correlation supplies paired anchors.
+After finalizing the recording content hash, its acquisition integration calls
+`record_video_synchronization`; this service validates and stores the supplied
+anchors, but does not acquire them from hardware. Device-specific recording hooks
+are required before a real electrical recording can be aligned. No anchor,
+shared clock, or uncertainty bound is invented from a video file.
+
+On the Hub, `map_video_to_electrical_samples` accepts an `ElectricalTimestampSeries`
+with explicit device units and identity, plus a rational maximum error in seconds.
+It follows actual frame ancestry, interpolates only between recorded anchors,
+and returns electrical sample indices in output-video frame order. It rejects
+clock/session/unit mismatches, clock resets, extrapolation, ties, uncertainty that
+could change the chosen sample, and matches exceeding the error budget. It does
+not change clinical annotation coordinates or interpolate measurement values.
+
+Size reduction, default transcoding, ROI masking and compatibility derivatives use
+the same native-timestamp arguments: `-copyts`, `-fps_mode passthrough` and
+`-enc_time_base demux`. These retain the container origin and encoder timestamp
+precision. HLS also uses the demuxer time base; its container origin is checked
+through the relative-timeline gate described above. Automatic timestamp repair is
+disabled when `-copyts` is requested, so invalid timestamps fail instead of being
+regenerated. Existing storage limits still apply.
+
+Before canonical publication, complete decoded source/output PTS sequences prove
+exact frame counts. Raw normalization retains the strict half-output-tick rounding
+limit. Processed publication allows origin changes and bounded timestamp corrections:
+relative drift cannot exceed one local source frame interval or the profile duration
+tolerance, plus half an output tick. Container FPS metadata alone does not reject
+a processed candidate with valid decoded proof; codec, bitrate and storage limits
+still apply. Native encoding never requests a new frame cadence.
+
+Processed publication atomically maps segment boundaries to the nearest processed
+PTS (ties choose the earlier boundary), updates active frame timestamps, and binds
+`source_timeline` to the processed content hash. Frame identities and image
+annotations remain intact. Both frame-based and seconds-based segment mappings
+are recorded with their previous and new coordinates in canonical history.
+Terminal boundaries use container origin plus duration. Raw PTS history remains
+available independently for external telemetry alignment; missing legacy history
+is not reconstructed from nominal FPS. No additional human review is required.
+Dropped/added frames, collapsed segments, excessive drift, concurrent coordinate
+changes, or mappings extending outside-frame blackening coverage fail processing
+and retain the existing master and coordinates.
+Explicit pre-annotation FPS resampling alone opts out of this
+equivalence check and retains its existing coordinate-reset preconditions.
+
+Directory transcoding now preserves timestamps by default (`target_fps: null` in
+its JSON summary), rather than deriving a rate cap from `VIDEO_DEFAULT_FPS`.
+Its Python API still accepts an explicit `target_fps` for intentional rate changes;
+that mode must not be used to replace annotated media. Ordinary storage-pressure
+transcoding probes the actual source timeline and complete decoded PTS instead of
+reconstructing temporal equivalence from stored average FPS metadata.
+
 `LX_RUNTIME_ROOT` is the single runtime root. Application code resolves the
 topology at use time through `endoreg_db.utils.paths.get_runtime_paths()`.
 Packaged seed resources under `endoreg_db.data` are independent of this root.

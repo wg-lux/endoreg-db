@@ -1116,6 +1116,11 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
         video.center = source_center
         _apply_video_file_payload(video, video_file_payload)
+        frame_provenance = transfer_job.provenance.get("video_frame_provenance")
+        if frame_provenance is not None:
+            from endoreg_db.services.hub.video_provenance import accept_video_provenance
+
+            accept_video_provenance(video, frame_provenance)
 
         video.save()
         video_state = get_or_create_video_state(video)
@@ -2036,6 +2041,11 @@ def _expected_processed_report_hash(*, transfer_job: TransferJob) -> str:
 
 
 def _mark_video_transfer_as_processed(video: VideoFile) -> None:
+    from endoreg_db.services.hub.video_provenance import (
+        validate_received_video_timeline,
+    )
+
+    validate_received_video_timeline(video)
     state = get_or_create_video_state(video)
     state.processing_started = True
     state.anonymized = True

@@ -107,13 +107,15 @@ def _ai_dataset_name(dataset: AIDataSet) -> str:
 
 def _ai_dataset_type(dataset: AIDataSet) -> DatasetType:
     value = dataset.dataset_type
-    if value not in ("image", "video"):
+    if value not in ("image", "video", "clinical"):
         raise ValueError(f"Unsupported AI dataset type: {value!r}.")
     return value
 
 
-def _ai_dataset_model_type(dataset: AIDataSet) -> AIModelType:
+def _ai_dataset_model_type(dataset: AIDataSet) -> AIModelType | None:
     value = dataset.ai_model_type
+    if value is None and dataset.dataset_type == "clinical":
+        return None
     if value not in (
         "image_multilabel_classification",
         "phi_region_detector",
@@ -225,10 +227,13 @@ def _parse_ai_dataset_create_options(
         return None, errors
 
 
-def _create_ai_dataset(options: AIDataSetCreateContract) -> AIDataSet:
+def _create_ai_dataset(
+    options: AIDataSetCreateContract, *, owner_id: int | None = None
+) -> AIDataSet:
     with transaction.atomic():
         return AIDataSet.objects.create(
             name=options.name,
+            owner_id=owner_id,
             description=options.description,
             dataset_type=options.dataset_type,
             ai_model_type=options.ai_model_type,
@@ -236,12 +241,14 @@ def _create_ai_dataset(options: AIDataSetCreateContract) -> AIDataSet:
         )
 
 
-def _create_ai_dataset_response(data: object) -> Response:
+def _create_ai_dataset_response(
+    data: object, *, owner_id: int | None = None
+) -> Response:
     options, errors = _parse_ai_dataset_create_options(data)
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
     assert options is not None
-    dataset = _create_ai_dataset(options)
+    dataset = _create_ai_dataset(options, owner_id=owner_id)
     return Response(
         _application_settings_dataset_entry_data(
             _application_settings_ai_dataset_entry(
@@ -889,7 +896,10 @@ def _training_manifest_response(
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_datasets_dropdown(request: Request) -> Response:
     if request.method == "POST":
-        return _create_ai_dataset_response(request.data)
+        return _create_ai_dataset_response(
+            request.data,
+            owner_id=request.user.pk if request.user.is_authenticated else None,
+        )
     return Response(
         _application_settings_dataset_entries_data(),
         status=status.HTTP_200_OK,

@@ -11,7 +11,6 @@ from lx_dtypes.models.knowledge_base.study_preset import (
     PresetLabelSet,
     PresetLabelType,
 )
-
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label_set import LabelSet

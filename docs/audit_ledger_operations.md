@@ -13,6 +13,13 @@ changed without detection. Each entry contains the hash of its predecessor.
 The `LedgerHead` singleton is locked during append within the same database
 transaction and set to the new entry.
 
+Verification follows the persisted predecessor hashes backwards from the head,
+checking every row exactly once and checking the head's last-entry pointer. It
+does not sort by timestamp or UUID: timestamps may be equal or assigned before
+the append lock is acquired. Verification holds the head lock, so appends wait
+until the scan completes. The scan uses memory proportional to ledger size.
+There is no hash-format change or rewrite of existing records.
+
 The ledger detects tampering, but it is neither a digital signature nor an
 external timestamping service. Anyone who controls both ledger rows and the
 ledger head, as well as all backups, is outside the demonstrated trust model.
@@ -51,10 +58,10 @@ The currently intentional persisted producers are:
 
 | Action | Business rationale | Required evidence | Error behavior |
 | --- | --- | --- | --- |
-| `identity_committed` | Binding validated media metadata to pseudonymous case identities | Media type and ID, SensitiveMeta-ID, hash identities, pseudonymous and linked IDs, resolution result, and payload hash | Identity resolution remains transactional; the generic append helper cannot create an entry when the ledger table has not yet been migrated and logs this |
+| `identity_committed` | Binding validated media metadata to pseudonymous case identities | Media type and ID, SensitiveMeta-ID, hash identities, pseudonymous and linked IDs, resolution result, and payload hash | Any audit persistence failure propagates and rolls back transactional identity resolution; missing migrations must be fixed before retry |
 | `ready_for_export` | Approval of a validated, redacted processed video artifact | Center key, persisted relative artifact name, SHA-256, and approval status; no absolute path | A ledger entry that cannot be proven persisted aborts export approval with HTTP 503 and rolls back the state change |
 | `center_admin_bootstrapped` | Promotion of an already Keycloak-synchronized member from `center_scope:admin` | Target user, required group, previous and new roles, and initiator | A missing ledger proof aborts the promotion and rolls back the transaction |
-| `media_storage_migrated` / `media_storage_failed` | Idempotent media storage migration or its classified failure | Object reference and migration evidence from the management command | Unavailable ledger tables are surfaced as a warning; the migration command manages its own failure decision |
+| `media_storage_migrated` / `media_storage_failed` | Idempotent media storage migration or its classified failure | Object reference and migration evidence from the management command | Audit writes propagate database errors; the migration command manages its own failure decision |
 
 New actions requiring auditing need a stable action code, a named producer, a
 minimal typed payload, a clear transaction boundary, and negative tests for

@@ -74,3 +74,31 @@ def test_missing_metadata_result_cannot_approve_existing_identity(
     video.refresh_from_db()
     assert video.state is not None
     assert not video.state.anonymization_validated
+
+
+@pytest.mark.parametrize("include_center", [False, True])
+def test_model_validation_preserves_typed_payload_and_supplies_center(
+    video: VideoFile,
+    include_center: bool,
+) -> None:
+    video.sensitive_meta = None
+    video.save(update_fields=["sensitive_meta"])
+    values = {
+        "patient_first_name": "Max",
+        "patient_last_name": "Mustermann",
+        "patient_dob": "1994-03-21",
+        "examination_date": "2024-02-15",
+    }
+    if include_center:
+        values["center_name"] = video.center.name
+    payload = VideoTextMetaPayload.model_validate(values)
+
+    assert video.validate_metadata_annotation(payload) is True
+
+    video.refresh_from_db()
+    assert video.sensitive_meta is not None
+    assert video.sensitive_meta.center == video.center
+    assert video.sensitive_meta.patient_first_name == "Max"
+    assert video.state is not None
+    assert video.state.anonymization_validated
+    assert ("center_name" in payload.root) is include_center
