@@ -1,0 +1,39 @@
+version: 1
+tier: module
+path: endoreg_db/management
+summary: Django management commands and shared command adapters.
+responsibilities:
+- Expose data loading, deployment setup, reconciliation and operator workflows.
+boundaries:
+- Commands use domain services and protected storage; destructive media migration needs tracked approvals.
+files:
+- file: commands/load_base_db_data.py
+  role: Canonical base reference-data command.
+- file: commands/setup_endoreg_db.py
+  role: Application setup command.
+- file: commands/materialize_video_hls.py
+  role: HTTP Live Streaming (HLS) derivative backfill.
+- file: commands/normalize_video_storage.py
+  role: Canonical video storage normalization.
+- file: reference_catalog_command.py
+  role: Shared reference catalog command adapter.
+- file: command_errors.py
+  role: Typed command error translation.
+dependencies:
+  internal:
+  - endoreg_db/services
+  - endoreg_db/import_files
+  - endoreg_db/utils
+  - endoreg_db/data
+  external:
+  - django
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/management/commands
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/management/commands
+parent: ../structure.yml
+submodules: []

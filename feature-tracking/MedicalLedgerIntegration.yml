@@ -24,6 +24,37 @@ source_documents:
   disposition: reference
   note: Beschreibt Ledger-Modelle, EndoReg-Adapter und den vorgesehenen Django-Host-Integrationspfad.
 definition_of_done:
+- id: case_medication_periods_and_measurements
+  category: functionality
+  title: Case setup records medication periods and laboratory measurements
+  acceptance:
+  - Canonical medication and laboratory reference catalogs load through the standard dtype loader and
+    reject invalid ranges and references.
+  - Medication periods preserve timezone-aware start_at and end_at across create, patch, persistence and
+    ledger export; reversed or end-only periods are rejected.
+  - Case setup links to a medication and laboratory entry page using persisted terminology and the selected
+    patient and case.
+  - Medication and measurement creation links only newly created rows to the selected patient's case atomically,
+    with idempotent retries and rejection of foreign cases.
+  - Focused contract, API and frontend tests cover roundtrips, invalid input and context changes.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused dtype, medical ledger API and case medication frontend tests, and type checks.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'Focused backend regression lane: 85 passed; frontend case pages/API: 13 passed; dtype
+        contracts and loader tests passed; Pyright zero errors.'
+    - kind: document
+      reference: docs/medical_ledger_contract.md
+    note: Canonical medication/lab catalog validation, timezone-aware medication periods, atomic case
+      linkage and case setup entry are implemented and tested. Full frontend lint has an unrelated existing
+      attribute-order warning in AnonymizationValidationComponent.vue.
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-12T15:12:55.742868Z'
 - id: sap_ish_structured_clinical_import
   category: interoperability
   title: SAP-IS-H-Tabellen werden mit stabiler Identität in kanonische Medizinmodelle überführt
@@ -392,8 +423,18 @@ definition_of_done:
         .devenv/state/venv/bin/pytest tests/services/test_medical_ledger_transactions.py tests/api/test_medical_ledger_create.py
         -q
       note: Exit-Code 0
-    assessed_by: Codex
-    assessed_at: '2026-07-29T13:39:25.739469Z'
+    - kind: command
+      reference: 'Additional regression 2026-10-13: lookup of an existing matching receipt precedes the
+        open-case write check. A completed import replays after case closure without inserting records;
+        a new key still rejects writes to that closed case. Transaction, bounded retry and rollback hooks
+        retained. Revision/ledger transaction/roundtrip PostgreSQL lane: 31 passed; targeted Pyright and
+        Ruff pass.'
+    note: 'Additional regression 2026-10-13: lookup of an existing matching receipt precedes the open-case
+      write check. A completed import replays after case closure without inserting records; a new key
+      still rejects writes to that closed case. Transaction, bounded retry and rollback hooks retained.
+      Revision/ledger transaction/roundtrip PostgreSQL lane: 31 passed; targeted Pyright and Ruff pass.'
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-13T09:48:33.476419Z'
 - id: migrations_and_existing_data
   category: interoperability
   title: Bestehende medizinische Daten werden kompatibel übernommen und geprüft

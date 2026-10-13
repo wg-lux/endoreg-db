@@ -1,0 +1,90 @@
+version: 1
+tier: service
+path: endoreg_db/services/video_storage
+parent: ../structure.yml
+summary: Typed video storage profiles, timeline validation and generation publication.
+responsibilities:
+- Validate typed storage profiles, complete timelines and frame provenance.
+- Normalize canonical video generations and retire recorded superseded artifacts.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: normalize_video_file
+  file: normalization.py
+  purpose: Normalize one file in place and leave it untouched on failure.
+- name: commit_processed_replacements
+  file: generation_cleanup.py
+  purpose: Bind cleanup receipts to the successful replacement generation inside the publication transaction.
+files:
+- file: __init__.py
+  role: Internal modules for the video storage normalization service.
+- file: canonical_timelines.py
+  role: Canonical raw/processed timestamp provenance; streaming builds are excluded.
+- file: contracts.py
+  role: Exports configured_video_storage_profile, video_storage_capacity, evidence_as_json.
+- file: dimension_backfill.py
+  role: Exports backfill_video_anonymized_dimensions, backfill_anonymized_video_dimensions.
+- file: format_reconciliation.py
+  role: Exports default_managed_video_roots, legacy_compatibility_video_roots, reconcile_video_formats.
+- file: frame_provenance.py
+  role: Capture actual decoder ancestry at the encoder boundary and retain it in SQL.
+- file: generation_cleanup.py
+  role: Retire recorded processed generations after their replacement commits.
+- file: hls_encoding.py
+  role: Exports hls_encoding_profile_by_name, configured_hls_encoding_profile, assert_hls_encoder_runtime_available.
+- file: inventory.py
+  role: Exports inventory_video_storage, video_normalization_evidence, raw_cleanup_blockers.
+- file: normalization.py
+  role: Exports ensure_video_file_profile, normalize_video_file.
+- file: probes.py
+  role: Exports probe_video_artifact, probe_video_frame_timestamps, probe_video_frame_pts.
+- file: processed_timelines.py
+  role: Processed-video coordinates; original raw sequences remain in canonical history.
+- file: processed_transcode.py
+  role: Exports transcode_processed_video_for_storage_pressure, ensure_local_processed_video_file, summarize_processed_video_transcode_results.
+- file: provenance_cleaner.py
+  role: Configure lx-anonymizer with host-owned execution and provenance persistence.
+- file: timelines.py
+  role: Exports timeline_from_video_metadata, segment_timeline_references, persist_video_source_timeline.
+- file: transcoding.py
+  role: Exports transcode_video_directory.
+- file: validation.py
+  role: Exports assert_temporal_equivalence, validate_proven_resampled_hls_equivalence, assert_storage_compliance.
+- file: workflow.py
+  role: Backward-compatible facade for video storage normalization.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/media
+  - endoreg_db/services/streaming
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_anonymizer
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_provenance.py tests/services/test_canonical_video_timelines.py
+    tests/services/test_processed_timelines.py
+  files:
+  - tests/services/test_frame_provenance.py
+  - tests/services/test_canonical_video_timelines.py
+  - tests/services/test_processed_timelines.py

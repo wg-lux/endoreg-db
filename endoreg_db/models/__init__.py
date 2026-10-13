@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from .other.study_setup_import import StudySetupImport
+
+from .medical.patient.examination_revision import (
+    ExaminationRevision,
+    CaseExaminationRecord,
+)
+
 from .media.video.video_transcode_job import VideoTranscodeJob
 
 from .hub.storage_operator_dispatch_receipt import StorageOperatorDispatchReceipt
@@ -225,6 +232,9 @@ from .state.audit_ledger import AuditLedger, LedgerHead
 
 
 __all__ = [
+    "StudySetupImport",
+    "ExaminationRevision",
+    "CaseExaminationRecord",
     "VideoTranscodeJob",
     "StorageOperatorDispatchReceipt",
     "StorageNodeActionReceipt",

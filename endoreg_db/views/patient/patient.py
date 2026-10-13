@@ -234,6 +234,16 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["get"], url_path="medical-terminology")
+    def medical_terminology(self, request: Request, pk: int | None = None) -> Response:
+        """List canonical medication, laboratory and unit definitions for entry."""
+        self.get_object()
+        from endoreg_db.services.interoperability.medical_ledger import (
+            medical_ledger_terminology,
+        )
+
+        return Response(medical_ledger_terminology().model_dump(mode="json"))
+
     @action(detail=True, methods=["post"], url_path="medications")
     def create_medication(self, request: Request, pk: int | None = None) -> Response:
         """Create one validated medication record for this visible patient."""
@@ -304,6 +314,8 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             )
         except MedicalLedgerPatientResourceNotFound:
             return _medical_resource_not_found_response()
+        except PydanticValidationError as exc:
+            return _medical_validation_response(exc)
         except MedicalLedgerReferenceConflict as exc:
             return _medical_reference_conflict_response(exc.field_name)
         return Response(

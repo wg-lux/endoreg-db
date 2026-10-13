@@ -4,6 +4,12 @@ Rotate one secret family at a time. Deployment readiness is tracked in
 [Anonymization.yml](../feature-tracking/Anonymization.yml), criterion
 `online_secret_rotation`.
 
+Cross-repository ownership and ordered rotation gates are defined only in
+[LuxNix secrets-management.yml](https://github.com/wg-lux/luxnix/blob/main/secrets-management.yml).
+LuxNix provisions private generations and activates consumers; LX-Annotate
+converts the environment; endoreg-db owns keyring validation and data migration.
+The catalog checker validates all three source checkouts without reading secrets.
+
 | Secret | Protects | Required overlap |
 | --- | --- | --- |
 | Identity salt | Patient, examination and examiner hashes | Keep verified previous salts as retiring readers until all identities and references are accounted for. |
@@ -53,12 +59,14 @@ python -m django rotate_identity_salt --review-file /absolute/private/review.yml
 python -m django rotate_identity_salt --review-file /absolute/private/review.yml --apply
 ```
 
-Omit `--review-file` when no reviewed mapping is required. The command can commit
-valid groups while reporting failure for others: a nonzero exit does not mean
-nothing changed. Preserve the preview, counts and encrypted recovery snapshot.
-For an explicitly authorized partial salvage, migrate only independently verified
-groups through the canonical migration services; retain unresolved groups and
-all required legacy readers. Do not fabricate a review mapping from guesses.
+Omit `--review-file` when no reviewed mapping is required. The current command
+rolls back an incomplete apply by default. Only `--apply --allow-partial`
+explicitly permits committing independently verified groups while reporting
+remaining blockers. Inspect `applied` and `rolled_back` in the result. Older
+endoreg-db 1.3.8 commands could commit partially without this flag: verify the
+installed command before interpreting a failed exit. Preserve the preview,
+counts, encrypted recovery snapshot and required legacy readers. Do not
+fabricate a review mapping from guesses.
 
 Media rotation uses its own preview and application command:
 
@@ -84,6 +92,34 @@ Never pass raw encrypted filesystem paths to plaintext consumers.
   separately secured recovery mechanism.
 
 ## If recovery is incomplete
+
+Normal anonymization validation now uses the same complete direct-identifier
+clearing operation as privacy-policy application. It keeps committed patient
+and examination hashes, collision fingerprints, and clinical foreign keys,
+records an erasure receipt, and does not recreate examiner relations on later
+saves. LX-Annotate's outbound worker also applies this operation after payload
+validation and before registration, covering older validated metadata. Deploy
+the backend and sender changes together. This is metadata erasure, not proof
+that redacted report text or processed media is free of residual identifiers.
+
+Identity salts are durable matching material. Routine credential renewal or
+recovery must not regenerate them. LuxNix can provision a center-scoped salt
+through the existing Vault machine-enrollment workflow, configured in inventory
+with `django.centerIdentitySalt`. Moving a machine to another center does not
+authorize replacing its historical salt or merging its existing patient records.
+The default compatibility path retains established generations; a different
+center source is an explicit migration blocker rather than silent key rotation.
+
+File-content SHA-256 hashes are unsalted integrity/deduplication identifiers;
+they are not patient pseudonyms. The legacy patient/examination helpers in
+`endoreg_db/utils/hashs.py` append the configured identity secret to demographic
+input, and SensitiveMeta hashes that result again. They use the center name,
+not its stable key. Local keyed fingerprints detect ambiguous legacy encoding,
+but are not a cross-installation identifier. Sharing a center salt therefore
+also requires consistent center names and demographic inputs. Identical
+demographics and same-day examinations can still be indistinguishable. A new
+canonical HMAC identity format needs a reviewed alias migration, including
+already exported hub records; this enrollment change does not perform one.
 
 Keep the old readers, encrypted snapshots and original records. A salt cannot
 recover missing source identifiers, and an identity-hash mismatch is not a media

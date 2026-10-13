@@ -1,14 +1,144 @@
+version: 1
+tier: domain
+path: endoreg_db/services
+parent: ../structure.yml
+summary: Service workflows grouped by domain, with lazy aliases preserving historical imports.
+responsibilities:
+- Route workflows to domain packages and preserve canonical module identity for compatibility imports.
+boundaries:
+- Keep package-root initialization free of database, network and media operations.
+- Feature readiness stays in feature-tracking YAML; this map describes current ownership.
+entrypoints:
+- name: endoreg_db.services
+  file: __init__.py
+  purpose: Lazy compatibility aliases for relocated domain service modules.
+files:
+- file: __init__.py
+  role: Canonical domain imports and historical module aliases.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/utils
+  external: []
+submodules:
+- name: ai
+  path: ai
+  manifest: ai/structure.yml
+  summary: Model-weight acquisition and model metadata provisioning.
+- name: annotations
+  path: annotations
+  manifest: annotations/structure.yml
+  summary: Frame and segment annotation selection, mutation and validation workflows.
+- name: application_settings
+  path: application_settings
+  manifest: application_settings/structure.yml
+  summary: Application dataset-export settings and download responses.
+- name: audit
+  path: audit
+  manifest: audit/structure.yml
+  summary: Audit-ledger integrity status and refresh workflows.
+- name: cases
+  path: cases
+  manifest: cases/structure.yml
+  summary: Case lifecycle, document attachment and examination revision relationships.
+- name: centers
+  path: centers
+  manifest: centers/structure.yml
+  summary: Center access, local import defaults and optional employee projection.
+- name: datasets
+  path: datasets
+  manifest: datasets/structure.yml
+  summary: Dataset-scoped training selection, active learning and annotation exports.
+- name: frames
+  path: frames
+  manifest: frames/structure.yml
+  summary: Processed training-frame materialization, retention and segment reconciliation.
+- name: hub
+  path: hub
+  manifest: hub/structure.yml
+  summary: Center intake, authenticated transfer and distributed processed-media placement.
+- name: imports
+  path: imports
+  manifest: imports/structure.yml
+  summary: Shared import execution fencing, lease mechanics and tabular input formats.
+- name: interoperability
+  path: interoperability
+  manifest: interoperability/structure.yml
+  summary: FHIR, DICOM, SAP IS-H and typed medical-ledger integrations.
+- name: jobs
+  path: jobs
+  manifest: jobs/structure.yml
+  summary: Background-work admission, dispatch, execution ownership and recovery.
+- name: media
+  path: media
+  manifest: media/structure.yml
+  summary: Media integrity, operation leases and approved processed-media exports.
+- name: patient_identity
+  path: patient_identity
+  manifest: patient_identity/structure.yml
+  summary: External patient identifiers and verified sensitive-metadata updates.
+- name: privacy
+  path: privacy
+  manifest: privacy/structure.yml
+  summary: Anonymization workflows, patient pseudonyms and release-quality evaluation.
+- name: queue
+  path: queue
+  manifest: queue/structure.yml
+  summary: Typed conversion of frame-annotation queue payloads.
+- name: raw_pdf_files
+  path: raw_pdf_files
+  manifest: raw_pdf_files/structure.yml
+  summary: Raw report imports, protected file access, integrity and processing state.
+- name: reference_data
+  path: reference_data
+  manifest: reference_data/structure.yml
+  summary: Transactional projection and reconciliation of versioned clinical catalogs.
+- name: reports
+  path: reports
+  manifest: reports/structure.yml
+  summary: Report persistence, fenced import lifecycle, clinical context and PDF rendering.
+- name: runtime
+  path: runtime
+  manifest: runtime/structure.yml
+  summary: Deployment readiness, offline execution, polling and reconciliation.
+- name: secret_rotation
+  path: secret_rotation
+  manifest: secret_rotation/structure.yml
+  summary: Transactional identity-salt migration and encrypted-storage rotation.
+- name: streaming
+  path: streaming
+  manifest: streaming/structure.yml
+  summary: HTTP Live Streaming and seekable streamable derivatives of canonical media.
+- name: studies
+  path: studies
+  manifest: studies/structure.yml
+  summary: Study presets, cohort queries, examination exports and mapped table imports.
+- name: video_files
+  path: video_files
+  manifest: video_files/structure.yml
+  summary: Canonical video import, processing, frame operations and clinical coordinates.
+- name: video_storage
+  path: video_storage
+  manifest: video_storage/structure.yml
+  summary: Typed video storage profiles, timeline validation and generation publication.
+contracts:
+- name: Service helper ownership
+  doc: feature-tracking/CodeQuality.yml
+- name: Model/service boundaries
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/services
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services
 schema_version: '1.0'
 feature_definition: ../../feature-tracking/CodeQuality.yml
 criterion: helper_class_boundaries
 rules:
 - Die Wurzel enthält keine Workflow-Implementierungen.
-- Module nach fachlicher Aufgabe öffnen; konkrete Funktionen aus dem zuständigen Modul
-  importieren.
+- Module nach fachlicher Aufgabe öffnen; konkrete Funktionen aus dem zuständigen Modul importieren.
 - Unterpakete initialisieren keine Datenbank-, Netzwerk- oder Medienoperationen.
 - Bestehende Modellfassaden und Import-Einstiegspunkte behalten ihr Verhalten.
-- Alle bisherigen direkten Service-Modulpfade bleiben über verzögert geladene Aliase
-  in __init__.py verfügbar. Legacy- und kanonischer Import verwenden dasselbe Modulobjekt.
+- Alle bisherigen direkten Service-Modulpfade bleiben über verzögert geladene Aliase in __init__.py verfügbar. Legacy-
+  und kanonischer Import verwenden dasselbe Modulobjekt.
 - Das Paket cases reicht die bisherigen Lifecycle-Symbole weiter und erhält seine Untermodule.
 domains:
   datasets:
@@ -62,6 +192,7 @@ domains:
   application_settings:
     purpose: Anwendungseinstellungen für Datensatzexporte
 module_moves:
+  endoreg_db/services/video_masks.py: endoreg_db/services/video_files/video_masks.py
   endoreg_db/services/aidataset_active_learning.py: endoreg_db/services/datasets/active_learning.py
   endoreg_db/services/aidataset_active_learning_shortlist.py: endoreg_db/services/datasets/active_learning_shortlist.py
   endoreg_db/services/aidataset_exports.py: endoreg_db/services/datasets/exports.py

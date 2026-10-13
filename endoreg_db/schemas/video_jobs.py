@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+from lx_dtypes.models.contracts.video_masks import VideoMaskProfile
 
 
 VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND: Literal["video_anonymization_correction"] = (
@@ -27,6 +28,7 @@ class VideoCorrectionRegion(BaseModel):
     mode: Literal["device", "custom"]
     device_name: str
     roi: VideoCorrectionRoi | None = None
+    mask_profile: VideoMaskProfile | None = None
 
 
 class VideoAnonymizationCorrectionJobConfig(BaseModel):

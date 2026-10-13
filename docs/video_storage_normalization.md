@@ -765,6 +765,16 @@ missing; it logs the blockers and preserves every raw artifact.
 
 ## Abort and Recovery
 
+Model availability is distinct from media integrity. The compute contract in
+[`video_import_concurrency_contract.md`](video_import_concurrency_contract.md)
+permits a bounded OCR cascade and, on complete OCR failure, a configured-mask,
+silent unpublished candidate for reprocessing. The `model_execution` summary
+records actual model use, failures, configured masking and the need to
+reprocess; metadata coverage must not claim complete recognition. Such a
+candidate does not establish clinical quality, authorize replacing the previous
+master, or relax any storage, timeline, lease, publication or cleanup gate.
+Deploy the host summary handling together with the matching compute package.
+
 The import success boundary is identical across this runbook, the hub ingest
 runbook, and the feature tracker: a video is successful only after the
 canonical master, required HLS generations (both raw and processed for regular

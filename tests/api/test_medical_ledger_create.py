@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from datetime import time
+from datetime import datetime, time, timezone
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from endoreg_db.models import (
     Center,
+    Case,
+    LabValue,
+    PatientLabValue,
     Medication,
     MedicationIntakeTime,
     Patient,
@@ -594,3 +598,149 @@ def test_create_medical_ledger_hides_foreign_center_patient(
 
     assert response.status_code == 404
     assert not PatientMedication.objects.filter(patient=foreign_patient).exists()
+
+
+@pytest.mark.django_db
+def test_case_period_measurement_roundtrip_and_replay(api_client: APIClient) -> None:
+    patient = _patient("Period")
+    medication, unit, _ = _terminology()
+    lab = LabValue.objects.create(name="case_setup_lab", default_unit=unit)
+    case = Case.objects.create(
+        patient=patient, start_date=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
+    old = PatientMedication.objects.create(patient=patient, medication=medication)
+    payload = {
+        "patient": str(patient.pk),
+        "case_id": case.pk,
+        "medications": [
+            {
+                "medication": medication.name,
+                "unit": unit.name,
+                "dosage": 2.0,
+                "start_at": "2026-01-01T10:00:00Z",
+                "end_at": "2026-01-02T10:00:00Z",
+            }
+        ],
+        "lab_values": [
+            {
+                "lab_value": lab.name,
+                "value": 0.0,
+                "unit": unit.name,
+                "timestamp": "2026-01-01T11:00:00+01:00",
+            }
+        ],
+    }
+    url = f"/api/patients/{patient.pk}/medical-ledger/"
+    first = api_client.post(
+        url, payload, format="json", HTTP_IDEMPOTENCY_KEY="case-period"
+    )
+    assert first.status_code == 201, first.content
+    replay = api_client.post(
+        url, payload, format="json", HTTP_IDEMPOTENCY_KEY="case-period"
+    )
+    assert replay.status_code == 200, replay.content
+    assert replay["Idempotency-Replayed"] == "true"
+    assert case.patient_medications.count() == 1
+    assert not case.patient_medications.filter(pk=old.pk).exists()
+    record = case.patient_medications.get()
+    assert record.start_at == datetime(2026, 1, 1, 10, tzinfo=timezone.utc)
+    assert record.end_at == datetime(2026, 1, 2, 10, tzinfo=timezone.utc)
+    assert case.patient_lab_values.get().value == 0.0
+    assert case.patient_lab_values.get().timestamp == datetime(
+        2026, 1, 1, 10, tzinfo=timezone.utc
+    )
+    read = api_client.get(url)
+    assert read.status_code == 200
+    assert any(
+        item["end_at"] == "2026-01-02T10:00:00Z" for item in read.json()["medications"]
+    )
+
+    invalid_patch = api_client.patch(
+        f"/api/patients/{patient.pk}/medications/{record.pk}/",
+        {"start_at": "2026-01-03T10:00:00Z"},
+        format="json",
+    )
+    assert invalid_patch.status_code == 422, invalid_patch.content
+    record.refresh_from_db()
+    assert record.start_at == datetime(2026, 1, 1, 10, tzinfo=timezone.utc)
+    clear = api_client.patch(
+        f"/api/patients/{patient.pk}/medications/{record.pk}/",
+        {"end_at": None},
+        format="json",
+    )
+    assert clear.status_code == 200, clear.content
+    record.refresh_from_db()
+    assert record.end_at is None
+    record.start_at = None
+    record.end_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    with pytest.raises(ValidationError):
+        record.save()
+
+
+@pytest.mark.django_db
+def test_case_write_rejects_foreign_case_and_rolls_back_late_failure(
+    api_client: APIClient,
+) -> None:
+    patient = _patient("CaseOwner")
+    foreign = _patient("ForeignCase")
+    medication, unit, _ = _terminology()
+    case = Case.objects.create(
+        patient=foreign, start_date=datetime(2026, 1, 1, tzinfo=timezone.utc)
+    )
+    lab = LabValue.objects.create(name="case_setup_rollback", default_unit=unit)
+    payload = {
+        "patient": str(patient.pk),
+        "case_id": case.pk,
+        "medications": [{"medication": medication.name}],
+        "lab_values": [
+            {"lab_value": lab.name, "value": 1.0, "timestamp": "2026-01-01T10:00:00Z"}
+        ],
+    }
+    response = api_client.post(
+        f"/api/patients/{patient.pk}/medical-ledger/",
+        payload,
+        format="json",
+        HTTP_IDEMPOTENCY_KEY="foreign",
+    )
+    assert response.status_code == 409, response.content
+    assert not PatientMedication.objects.filter(patient=patient).exists()
+    case.patient = patient
+    case.save()
+    with patch(
+        "endoreg_db.services.interoperability.medical_ledger._after_aggregate_persistence_step",
+        side_effect=RuntimeError("injected"),
+    ):
+        with pytest.raises(RuntimeError, match="injected"):
+            api_client.post(
+                f"/api/patients/{patient.pk}/medical-ledger/",
+                payload,
+                format="json",
+                HTTP_IDEMPOTENCY_KEY="rollback",
+            )
+    assert not PatientLabValue.objects.filter(patient=patient).exists()
+    assert case.patient_lab_values.count() == 0
+    assert case.patient_medications.count() == 0
+
+
+@pytest.mark.django_db
+def test_medical_terminology_uses_canonical_catalog_records(
+    api_client: APIClient,
+) -> None:
+    from lx_dtypes.models.contracts.reference_catalog import ReferenceCatalogPayload
+
+    patient = _patient("Catalog")
+    medication, unit, _ = _terminology()
+    lab = LabValue.objects.create(
+        name="case_catalog_lab",
+        default_unit=unit,
+        default_normal_range={"min": 0.0, "max": 5.0},
+    )
+    response = api_client.get(f"/api/patients/{patient.pk}/medical-terminology/")
+    assert response.status_code == 200, response.content
+    catalog = ReferenceCatalogPayload.model_validate(response.json())
+    assert {medication.name, lab.name, unit.name} <= {
+        record.identity.name for record in catalog.records
+    }
+    assert (
+        api_client.get("/api/patients/99999999/medical-terminology/").status_code == 404
+    )

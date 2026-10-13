@@ -55,7 +55,7 @@ TRACKING_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = _REPOSITORY_ROOT
 POLICY_FILE_NAME = "policy.yml"
 DONE_DIRECTORY_NAME = "done"
-NON_FEATURE_FILES = frozenset({POLICY_FILE_NAME, "schema.example.yml"})
+NON_FEATURE_FILES = frozenset({POLICY_FILE_NAME, "schema.example.yml", "structure.yml"})
 LOCK_DIRECTORY_NAME = ".locks"
 LOCK_MUTEX_FILE_NAME = ".registry.lock"
 MESSAGE_DIRECTORY_NAME = ".messages"
@@ -728,7 +728,11 @@ def _feature_paths(directory: Path) -> tuple[Path, ...]:
     active_paths = tuple(
         path for path in directory.glob("*.yml") if path.name not in NON_FEATURE_FILES
     )
-    done_paths = tuple((directory / DONE_DIRECTORY_NAME).glob("*.yml"))
+    done_paths = tuple(
+        path
+        for path in (directory / DONE_DIRECTORY_NAME).glob("*.yml")
+        if path.name not in NON_FEATURE_FILES
+    )
     return tuple(sorted((*active_paths, *done_paths)))
 
 

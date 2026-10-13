@@ -24,6 +24,10 @@ unsafe commands exit `2`.
 
 ## Feature locks and messages
 
+Local operational messages live in `feature-tracking/.messages/`; they are not
+readiness evidence. The directory navigation map `structure.yml` is excluded
+from feature discovery in both the working tree and Git index.
+
 Before changing a file, acquire a time-limited lock. Omitting `--criterion` and
 `--file` locks the whole feature; narrower scopes allow independent work.
 
@@ -134,8 +138,9 @@ criterion, and an assessment. Allowed states are `not_assessed`, `in_progress`,
 
 Evidence is a durable, reviewable test, command, review identifier, runbook,
 dashboard, approved document, or reproducible demonstration. “Works locally”
-and percentages are insufficient. Commands are argument lists executed without
-a shell. Multi-repository checks use ordered commands with absolute working
+and percentages are insufficient.
+Commands are argument lists executed without a shell.
+Multi-repository checks use ordered commands with absolute working
 directories. A criterion may define `command` or `commands`, never both.
 
 ## Maintenance workflow

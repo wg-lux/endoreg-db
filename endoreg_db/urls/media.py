@@ -1,4 +1,5 @@
 from django.urls import URLPattern, path
+from endoreg_db.views.media.finding_suggestions import FindingSuggestionsView
 from endoreg_db.views.media.export_downloads import VideoExportDownloadView
 
 from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
@@ -78,6 +79,7 @@ from endoreg_db.views.video.ai import (
     prediction_model_list,
     rerun_prediction_segments,
 )
+from endoreg_db.views.video.masks import VideoMasksView
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
     VideoAnonymizationCorrectionView,
@@ -156,6 +158,13 @@ MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
 ]
 
 VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
+    path("media/videos/masks/", VideoMasksView.as_view(), name="video-masks"),
+    path(
+        "media/videos/<int:pk>/finding-suggestions/",
+        FindingSuggestionsView.as_view(),
+        {"kind": "videos"},
+        name="video-finding-suggestions",
+    ),
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
     path(
         "media/videos/<int:pk>/", VideoStreamView.as_view(), name="video-detail-stream"
@@ -432,6 +441,12 @@ SENSITIVE_METADATA_URLPATTERNS: list[URLPattern] = [
 ]
 
 PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/pdfs/<int:pk>/finding-suggestions/",
+        FindingSuggestionsView.as_view(),
+        {"kind": "pdfs"},
+        name="pdf-finding-suggestions",
+    ),
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
     path(

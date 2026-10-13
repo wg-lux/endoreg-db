@@ -51,13 +51,6 @@ class DummyVideo:
         self.saved_update_fields = list(update_fields or [])
 
 
-def _root_provider(path: Path) -> Callable[[], Path]:
-    def provide_path() -> Path:
-        return path
-
-    return provide_path
-
-
 def _fs_streamable_policy(kind: PayloadKind) -> StoragePolicy:
     return StoragePolicy.FS_STREAMABLE
 

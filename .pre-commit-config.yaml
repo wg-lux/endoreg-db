@@ -12,6 +12,12 @@ repos:
         pass_filenames: false
   - repo: local
     hooks:
+      - id: repository-structure
+        name: hierarchical agent context paths
+        entry: .devenv/state/venv/bin/python scripts/lint_structure.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: canonical-type-contracts
         name: canonical type ownership and contract boundaries
         entry: python scripts/check_lx_dtypes_contract_boundaries.py

@@ -247,22 +247,9 @@ class AnonymizationService:
                 )
                 return None
 
-            processor_name = _related_text(
-                _related_object(video, "video_meta") or video,
-                "processor",
-                "name",
-            )
-            center_name = _required_text(
-                _related_text(video, "center", "name"),
-                fallback="unknown_center",
-            )
-
-            with ensure_local_file(raw_file) as file_path:
-                self.video_service.import_and_anonymize(
-                    file_path=file_path,
-                    center_name=center_name,
-                    processor_name=processor_name or "unknown_processor",
-                )
+            # This is an existing record, including an explicitly reconciled one.
+            # Generic import may short-circuit on its content hash before backfilling.
+            self.video_service.reanonymize_existing_video(video)
 
             logger.info(f"Video anonymization completed for VideoFile ID: {file_id}")
             return "video"

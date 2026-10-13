@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Any, Unpack
 
 from django.db import models
 from django.core.exceptions import ValidationError
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_patient_medication_dosage
+from lx_dtypes.models.contracts.medication import MedicationPeriodFields
+from pydantic import ValidationError as PydanticValidationError
 
 # Added imports for type hints
 if TYPE_CHECKING:
@@ -60,6 +63,12 @@ class PatientMedication(models.Model):
     )
     dosage: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
     active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    start_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(null=True, blank=True)
+    )
+    end_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(null=True, blank=True)
+    )
 
     objects: ClassVar[models.Manager["PatientMedication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()
@@ -67,6 +76,12 @@ class PatientMedication(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        try:
+            MedicationPeriodFields.model_validate(
+                {"start_at": self.start_at, "end_at": self.end_at}, strict=True
+            )
+        except PydanticValidationError as exc:
+            raise ValidationError({"end_at": "Invalid medication period."}) from exc
         try:
             self.dosage = validate_patient_medication_dosage(self.dosage)
         except ValueError as exc:
@@ -109,6 +124,16 @@ class PatientMedication(models.Model):
     class Meta:
         verbose_name = "Patient Medication"
         verbose_name_plural = "Patient Medications"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_at__isnull=True)
+                | (
+                    models.Q(start_at__isnull=False)
+                    & models.Q(end_at__gte=models.F("start_at"))
+                ),
+                name="patient_medication_valid_period",
+            )
+        ]
 
     @classmethod
     def create_by_patient_and_indication(

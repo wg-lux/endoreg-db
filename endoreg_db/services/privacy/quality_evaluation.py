@@ -775,13 +775,46 @@ def _apply_or_audit_sensitive_meta_policy(
         missing_count = _direct_identifier_residual_count(sensitive_meta)
         return ("pending_clear" if missing_count else "cleared"), missing_count
 
-    with transaction.atomic():
-        locked_meta = SensitiveMeta.objects.select_for_update().get(
-            pk=sensitive_meta.pk
+    clear_sensitive_meta_direct_identifiers(sensitive_meta)
+    return "cleared", _direct_identifier_residual_count(sensitive_meta)
+
+
+@transaction.atomic
+def clear_sensitive_meta_direct_identifiers(sensitive_meta: SensitiveMeta) -> None:
+    """Erase direct fields while retaining committed hashes and clinical links.
+
+    Validation and policy application share this operation. Repeated calls retain
+    the original erasure receipt; a timestamp alone never hides residual fields.
+    """
+    locked = SensitiveMeta.objects.select_for_update().get(pk=sensitive_meta.pk)
+    identity_fields = (
+        "patient_hash",
+        "examination_hash",
+        "pseudo_patient_id",
+        "pseudo_examination_id",
+    )
+    if any(
+        getattr(locked, name) != getattr(sensitive_meta, name)
+        for name in identity_fields
+    ):
+        raise ValueError("Identity changed before metadata erasure; reload and retry")
+    if (
+        locked.direct_identifiers_cleared_at is None
+        or _direct_identifier_residual_count(locked)
+    ):
+        _clear_sensitive_meta_direct_identifiers(
+            locked, policy=SensitiveMetaHandlingPolicy.CLEAR_DIRECT_IDENTIFIERS
         )
-        _clear_sensitive_meta_direct_identifiers(locked_meta, policy=policy)
-        locked_meta.refresh_from_db()
-        return "cleared", _direct_identifier_residual_count(locked_meta)
+    sensitive_meta.refresh_from_db()
+
+
+def require_erased_sensitive_meta(sensitive_meta: SensitiveMeta) -> None:
+    """An erasure receipt cannot authorize persisting direct identifiers again."""
+    if (
+        sensitive_meta.direct_identifiers_cleared_at is None
+        or _direct_identifier_residual_count(sensitive_meta)
+    ):
+        raise ValueError("Erased metadata cannot contain direct identifiers")
 
 
 def _mark_sensitive_meta_policy(

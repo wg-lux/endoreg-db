@@ -130,7 +130,7 @@ def test_repository_registry_is_valid_and_tracks_current_assessments() -> None:
             *TRACKING_DIR.glob("*.yml"),
             *(TRACKING_DIR / "done").glob("*.yml"),
         )
-        if path.name not in {"policy.yml", "schema.example.yml"}
+        if path.name not in {"policy.yml", "schema.example.yml", "structure.yml"}
     )
 
     assert len(features) == len(feature_paths)
@@ -555,6 +555,10 @@ def test_commit_guard_uses_staged_readiness_not_unstaged_yaml(
         yaml.safe_dump(feature.model_dump(mode="json"), sort_keys=False),
         encoding="utf-8",
     )
+    (tracking_dir / "structure.yml").write_text("version: 1\ntier: domain\n")
+    (tracking_dir / "done").mkdir()
+    (tracking_dir / "done" / "structure.yml").write_text("version: 1\ntier: module\n")
+    assert len(load_registry(tracking_dir)[1]) == 1
     _run_git(tmp_path, "init", "--quiet")
     _run_git(tmp_path, "add", "feature-tracking")
 

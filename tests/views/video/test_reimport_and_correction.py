@@ -192,7 +192,7 @@ def test_anonymization_correction_payload_requires_human_review() -> None:
     module: Any = _load_video_view_module("correction")
 
     with pytest.raises(ValueError, match="human_review_required"):
-        module.VideoAnonymizationCorrectionView._validate_payload(
+        module.VideoAnonymizationCorrectionView.validate_payload(
             {"strategy": "detector_assisted"}
         )
 
@@ -200,7 +200,7 @@ def test_anonymization_correction_payload_requires_human_review() -> None:
 def test_anonymization_correction_accepts_detector_all_frame_strategy() -> None:
     module: Any = _load_video_view_module("correction")
 
-    payload = module.VideoAnonymizationCorrectionView._validate_payload(
+    payload = module.VideoAnonymizationCorrectionView.validate_payload(
         {
             "strategy": "detector_assisted",
             "processing_method": "streaming",
@@ -216,7 +216,7 @@ def test_anonymization_correction_accepts_detector_all_frame_strategy() -> None:
 def test_anonymization_correction_normalizes_custom_processor_region() -> None:
     module: Any = _load_video_view_module("correction")
 
-    payload = module.VideoAnonymizationCorrectionView._validate_payload(
+    payload = module.VideoAnonymizationCorrectionView.validate_payload(
         {
             "strategy": "processor_region",
             "processing_method": "direct",

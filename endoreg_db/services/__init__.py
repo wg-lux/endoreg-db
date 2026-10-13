@@ -16,6 +16,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 _LEGACY_MODULES: dict[str, str] = {
+    "video_masks": ".video_files.video_masks",
     "aidataset_active_learning": ".datasets.active_learning",
     "aidataset_active_learning_shortlist": ".datasets.active_learning_shortlist",
     "aidataset_exports": ".datasets.exports",
@@ -209,6 +210,7 @@ if not any(
 
 
 if TYPE_CHECKING:
+    video_masks: ModuleType
     aidataset_active_learning: ModuleType
     aidataset_active_learning_shortlist: ModuleType
     aidataset_exports: ModuleType

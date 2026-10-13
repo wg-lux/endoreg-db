@@ -28,32 +28,22 @@ def _normalize_box_envelope_payload(value: object) -> object:
     if not isinstance(annotations, list):
         return dict(mapping)
 
-    outer_frame_id = mapping.get("frame_id")
-    outer_source = (
-        mapping.get("information_source_name")
-        or mapping.get("information_source")
-        or "manual_annotation"
-    )
-    outer_annotator = mapping.get("annotator")
-
+    # Compatibility for pinned lx-dtypes: empty legacy values mean omitted.
+    # Shared validators own inheritance, defaults and cross-frame checks.
+    normalized_envelope = dict(mapping)
+    for key in ("annotator", "information_source_name", "information_source"):
+        if normalized_envelope.get(key) is None:
+            normalized_envelope.pop(key, None)
     normalized_annotations: list[object] = []
     for item in cast(list[object], annotations):
-        if not isinstance(item, Mapping):
+        if isinstance(item, Mapping):
+            normalized_item = dict(cast(Mapping[str, object], item))
+            for key in ("frame_id", "information_source_name", "annotator"):
+                if normalized_item.get(key) in (None, ""):
+                    normalized_item.pop(key, None)
+            normalized_annotations.append(normalized_item)
+        else:
             normalized_annotations.append(item)
-            continue
-        normalized_item = dict(cast(Mapping[str, object], item))
-        if normalized_item.get("frame_id") in {None, ""} and outer_frame_id is not None:
-            normalized_item["frame_id"] = outer_frame_id
-        if not normalized_item.get("information_source_name"):
-            normalized_item["information_source_name"] = outer_source
-        if (
-            normalized_item.get("annotator") in {None, ""}
-            and outer_annotator is not None
-        ):
-            normalized_item["annotator"] = outer_annotator
-        normalized_annotations.append(cast(object, normalized_item))
-
-    normalized_envelope = dict(mapping)
     normalized_envelope["annotations"] = normalized_annotations
     return normalized_envelope
 
@@ -61,7 +51,7 @@ def _normalize_box_envelope_payload(value: object) -> object:
 def validate_frame_annotation_bulk_ingress(
     value: object,
 ) -> FrameAnnotationBulkEnvelopePayload:
-    """Backport strict lx_dtypes mutation handling for the pinned 0.2.9 runtime."""
+    """Accept the legacy list envelope and validate the shared contract."""
 
     envelope = _coerce_bulk_envelope_payload(value)
     return FrameAnnotationBulkEnvelopePayload.model_validate(envelope)
@@ -78,7 +68,7 @@ def validate_frame_annotation_skip_ingress(
 def validate_frame_box_annotation_bulk_ingress(
     value: object,
 ) -> FrameBoxAnnotationBulkEnvelopePayload:
-    """Backport the next shared box normalization without a local payload model."""
+    """Normalize legacy omissions before shared box-envelope validation."""
 
     envelope = _normalize_box_envelope_payload(value)
     return FrameBoxAnnotationBulkEnvelopePayload.model_validate(envelope)

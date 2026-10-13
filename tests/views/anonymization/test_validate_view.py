@@ -899,7 +899,7 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
-    def test_validate_video_persists_tags_and_validation_comment(
+    def test_validate_video_persists_tags_and_erases_free_text_comment(
         self, factory: APIRequestFactory, user: User, video_file: _MediaFileFixture
     ) -> None:
         data = {
@@ -930,9 +930,8 @@ class TestAnonymizationValidateView:
         video_file.refresh_from_db()
         sensitive_meta = video_file.sensitive_meta
         assert sensitive_meta is not None
-        assert sensitive_meta.validation_comment == (
-            "Bitte vor Freigabe nochmal ansehen."
-        )
+        # Free text is erased by the shared direct-identifier policy.
+        assert sensitive_meta.validation_comment == ""
         assert set(sensitive_meta.tags.values_list("name", flat=True)) == {
             "Nochmal Überprüfen",
             "Ausgeschlossen",

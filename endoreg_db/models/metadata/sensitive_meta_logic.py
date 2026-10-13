@@ -429,7 +429,7 @@ def get_or_create_pseudo_patient_examination_logic(
 
 
 @transaction.atomic  # Ensure all operations within save succeed or fail together
-def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
+def perform_save_logic(instance: "SensitiveMeta") -> "Examiner | None":
     """
     Resolve complete identities without manufacturing missing clinical data.
 
@@ -445,7 +445,12 @@ def perform_save_logic(instance: "SensitiveMeta") -> "Examiner":
         raise ValueError("Center must be set before saving SensitiveMeta.")
     if instance.direct_identifiers_cleared_at is not None:
         # The audited tombstone preserves the committed identity after erasure.
-        return create_pseudo_examiner_logic(instance)
+        from endoreg_db.services.privacy.quality_evaluation import (
+            require_erased_sensitive_meta,
+        )
+
+        require_erased_sensitive_meta(instance)
+        return None
     if not _has_patient_identity(instance):
         if instance.external_id is not None:
             patient = instance.external_id.patient
@@ -1325,75 +1330,10 @@ def _map_gender_string_to_standard(gender_str: str) -> Optional[str]:
     return None
 
 
-@transaction.atomic
-def _create_anonymized_record(
-    instance: "SensitiveMeta",
-    DEFAULT_ANONYMIZED: str = "None",
-    DEFAULT_ANONYMIZED_DATE: datetime = timezone.make_aware(datetime(1900, 1, 1)),
-    *,
-    preserve_identity: bool = True,
-) -> None:
-    """
-    Create a SensitiveMeta instance with all sensitive fields set to anonymized defaults.
-    This is only called after anonymization and will delete all data that can identify a patient from the database.
-    What is left will only be the patient hash.
+def _create_anonymized_record(instance: "SensitiveMeta") -> None:
+    """Erase direct metadata through the shared policy, preserving identity."""
+    from endoreg_db.services.privacy.quality_evaluation import (
+        clear_sensitive_meta_direct_identifiers,
+    )
 
-    Args:
-        instance: The existing SensitiveMeta instance to anonymize
-        DEFAULT_ANONYMIZED: Usually None, The default string to use for anonymized fields (e.g., "anonymized,")
-    """
-
-    caller = instance
-    instance = instance.__class__.objects.select_for_update().get(pk=instance.pk)
-    patient_hash = instance.patient_hash
-
-    pseudo_patient = None
-    dob_value = instance.patient_dob
-    dob_date: date | None
-    if isinstance(dob_value, datetime):
-        dob_date = dob_value.date()
-    else:
-        dob_date = dob_value
-
-    if (
-        patient_hash
-        and instance.center is not None
-        and instance.patient_gender is not None
-        and dob_date is not None
-    ):
-        pseudo_patient, _created = Patient.get_or_create_pseudo_patient_by_hash(
-            patient_hash=patient_hash,
-            center=instance.center,
-            gender=instance.patient_gender,
-            birth_month=dob_date.month,
-            birth_year=dob_date.year,
-        )
-    elif patient_hash:
-        pseudo_patient, _created = Patient.get_or_create_pseudo_patient_by_hash(
-            patient_hash=patient_hash
-        )
-
-    if pseudo_patient and pseudo_patient.dob:
-        preserved_dob = timezone.make_aware(
-            datetime.combine(pseudo_patient.dob, datetime.min.time())
-        )
-    else:
-        preserved_dob = DEFAULT_ANONYMIZED_DATE
-
-    anonymized_data = {
-        "patient_first_name": DEFAULT_ANONYMIZED,
-        "patient_last_name": DEFAULT_ANONYMIZED,
-        "patient_dob": preserved_dob,
-        "examination_date": DEFAULT_ANONYMIZED_DATE,
-        "patient_gender": pseudo_patient.gender
-        if pseudo_patient
-        else instance.patient_gender,
-        "center": pseudo_patient.center if pseudo_patient else instance.center,
-    }
-    if preserve_identity:
-        # Explicit identity erasure must never recalculate hashes from redacted values.
-        instance.__class__.objects.filter(pk=instance.pk).update(**anonymized_data)
-        caller.refresh_from_db()
-        return
-    sensitive_meta = update_sensitive_meta_from_dict(instance, anonymized_data)
-    sensitive_meta.save()
+    clear_sensitive_meta_direct_identifiers(instance)

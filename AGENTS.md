@@ -12,6 +12,39 @@ New typing helpers are only allowed if they unify typing usage across various fi
 
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
+## Source of Truth Hierarchy & Agent Context Protocol
+
+`structure.yml` is the authoritative directory navigation and ownership map.
+Feature YAML remains authoritative for scope and readiness; code and tests establish
+actual behavior. See [docs/agent_context.md](docs/agent_context.md) for the schema.
+
+- Before searching or editing, read root `structure.yml`, then follow `submodules`
+  to the nearest manifest. Read relevant entrypoints, contracts, and applicable
+  ancestor or nested `AGENTS.md` instructions. Explicitly read YAML maps; do not
+  assume automatic loading.
+- Start searches within that scope using `rg`. Follow internal dependencies and
+  inspect relevant callers, tests, or registrations when correctness requires
+  crossing boundaries. Explain undeclared dependencies and repair the map rather
+  than assuming the map proves that no dependency exists.
+- Delegate with the nearest manifest, explicit editable paths, required contracts,
+  acceptance criteria, and verification commands. Subagents keep edits within their
+  assigned scope and return changed paths, manifest diffs, results, and blockers.
+  Parent agents review integration and applicable feature locks.
+- Every modifying agent must update the nearest `structure.yml` in the same change
+  when adding, moving, deleting, or changing file ownership, entrypoints, contracts,
+  responsibilities, dependencies, or verification commands. List new files under
+  `files` or `entrypoints`, or route new domains through `submodules` and child
+  manifests. Retarget moves and remove stale references. Behavior-only edits require
+  checking map accuracy, without meaningless manifest churn.
+- Keep maps concise: roles and key entrypoints first, detailed contracts by link.
+  Add child manifests at meaningful ownership boundaries. Do not duplicate source,
+  global instructions, or feature readiness evidence. Never include secrets,
+  patient information, or machine-specific runtime state.
+- Before completion, run `.devenv/state/venv/bin/python scripts/lint_structure.py`
+  from the repository root. Review semantic accuracy too; valid links cannot prove
+  behavior or test-command relevance. For code changes, run Pyright before relevant
+  pytest checks as required in the Tests section.
+
 Before editing:
 1. Inspect the relevant files and call sites.
 2. Identify the existing patterns, helpers, types, tests, and ownership boundaries.

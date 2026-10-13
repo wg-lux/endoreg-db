@@ -10,6 +10,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/agent_context.md
+  disposition: reference
+  note: Hierarchical navigation schema, maintenance rules and public context guidance.
 - path: docs/persistence_model_ownership.md
   disposition: reference
   note: Canonical persistence ownership and coordinated reversible application cutover.
@@ -20,6 +23,46 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: hierarchical_agent_context
+  category: documentation
+  title: Hierarchical agent context maps describe actual ownership and navigation
+  acceptance:
+  - Root and bounded domain manifests form a reachable hierarchy with actual file, dependency, contract
+    and test references.
+  - Existing service relocation and hub helper ownership metadata remain compatible with their consumers.
+  - AGENTS.md requires progressive discovery, scoped delegation and same-change manifest maintenance.
+  - The typed validator rejects malformed schemas, stale references, escaping paths, broken parent links
+    and orphan manifests; focused tests and pre-commit integration pass.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/lint_structure.py
+    timeout_seconds: 60
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/python scripts/lint_structure.py: 65 manifests valid'
+    - kind: test
+      reference: '.devenv/state/venv/bin/pytest tests/scripts/test_lint_structure.py tests/services/test_service_structure.py
+        feature-tracking/test_tracker.py -q: 259 passed, 1 pytest import-rewrite warning; cleanup warnings
+        from existing temporary runtime directories'
+    - kind: command
+      reference: 'Full project Pyright: 0 errors, 18 warnings in existing files; explicit validator and
+        tracker Pyright: 0 errors, 0 warnings'
+    - kind: command
+      reference: 'uv tool run --from pre-commit pre-commit run repository-structure --all-files: passed;
+        project interpreter used by hook'
+    - kind: document
+      reference: docs/agent_context.md
+    note: Reviewed actual paths, ownership contracts and preserved compatibility metadata with scoped
+      agents. Validator, service import compatibility and tracker registry regressions passed. Documentation
+      governance, focused Ruff and whitespace checks passed. Global code_quality readiness remains governed
+      by its other criteria.
+    assessed_by: codex-structure-20261013
+    assessed_at: '2026-10-13T08:18:05.685761Z'
 - id: anonymization_validation_helpers
   category: maintainability
   title: Anonymisierungsvalidierung verwendet eindeutige Helper und den kanonischen Metadatenvertrag
@@ -452,6 +495,10 @@ definition_of_done:
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
+  - safe_log_value verwendet eine gemeinsame Collection-Konvertierung und safe_log_payload als einzige
+    Mapping-Konvertierung; Dispatcher und skalarer Helper erreichen Radon-Komplexität höchstens B. Direkte
+    Unit-Tests erhalten Redaktionspriorität, verschachtelte Schlüssel, Skalartypen und die Grenze von
+    100 Elementen für list, tuple, set und frozenset ohne Mutation der Eingabe.
   - Die sechs Radon-E/F-Funktionen der Kohorte radon_function_consolidation erreichen höchstens C; gemeinsame
     Entscheidungen werden zentralisiert, Transaktions- und Sperrgrenzen bleiben erhalten, Pyright sowie
     positive, negative und konkurrierende Regressionen werden dokumentiert.
@@ -532,15 +579,43 @@ definition_of_done:
         0 Fehler, 9 Warnungen außerhalb der Änderungen. .devenv/state/venv/bin/pytest tests/utils/test_dates.py
         -q --tb=short: 13 bestanden, 1 Plugin-Warnung. Ruff check/format und git diff --check bestanden.
         Keine Gesamtsuite oder Produktionsfreigabe behauptet.'
+    - kind: review
+      reference: 'Logging-Kohorte: rg-Aufrufsuche in endoreg_db, tests, lx-data-models und lx-annotate;
+        aktive Aufrufer in Audit, Medienintegrität, UploadJob, Hub-Ingest und transfer_logging. Vier Collection-Zweige
+        und Mapping-Comprehension konsolidiert; öffentliche Namen erhalten. transfer_logging.sanitize
+        bleibt wegen abweichender Schlüssel-, Identifier- und Objektredaktion ein eigener Vertrag. Keine
+        Symbole als confirmed_dead gelöscht; keine Aussage über globale Nichterreichbarkeit oder Nicht-Python-Code.'
+    - kind: command
+      reference: 'Radon cc/raw endoreg_db/utils/structured_logging.py sowie radon.complexity.cc_visit/radon.raw.analyze
+        ohne Shell-Subprozess: Basis fd95ba86ccc56782fc2f5a41cbf64c5c08741616 safe_log_value=18, LOC=284,
+        SLOC=252; danach Dispatcher=6, skalarer Helper=7, LOC=279, SLOC=244.'
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/utils/test_structured_logging.py
+        tests/test_request_logging.py -q: 52 bestanden; pytest --noconftest tests/services/test_hub_transfer_logging.py
+        -q: 5 bestanden. Vor Refactoring: 35 direkte Vertragstests bestanden. Log /tmp/codex-quality-tests-after.log.
+        no_db nutzt bestehenden Opt-out für reine Unit-Tests; Transferprüfung isoliert globale Datenbank-Fixtures.'
+    - kind: command
+      reference: 'CWD /home/admin/endoreg-db, Basis fd95ba86ccc56782fc2f5a41cbf64c5c08741616 plus Logging-Kohorte:
+        devenv shell -- .devenv/state/venv/bin/python -m trace --count -C /tmp/codex-quality-logging-trace
+        --ignore-dir /nix/store:/home/admin/endoreg-db/.devenv --module pytest --noconftest tests/utils/test_structured_logging.py
+        -q: 40 bestanden; Trace zeigt Dispatcher, skalaren Helper und Mapping-Konvertierung ausgeführt.'
+    - kind: command
+      reference: 'Vollständiger Pyright vor finalem pytest: 0 Fehler, 17 Warnungen; fokussierter Pyright:
+        0 Fehler/0 Warnungen. Ruff check/format und git diff --check bestanden. quality:dead-code vor/nach:
+        einzig neues Finding rust_backend.py:24 master_keys (100%). quality:boundaries vor/nach: unverändert
+        broad_exception 367 statt 389, type_suppression 107 statt 109; keine Baseline angepasst. Tracker
+        check: nicht produktionsreif, 13/19.'
     note: 'Legacy-Kompatibilität zentral wiederhergestellt: alle 99 alten Service-Modulpfade, Paketwurzel-
       und Sternimporte geprüft; verzögertes Laden und kanonische Modulidentität erhalten. cases reicht
       Lifecycle-Symbole weiter und erhält Untermodule. 201 Alias-/Strukturtests sowie 149 Import-/Layer-Regressionen
       bestanden. Voller Pyright: 0 Fehler/8 bestehende Warnungen; fokussiert: 0 Fehler/0 Warnungen. Django-Start
       und Modellinventar sauber. Bisherige lx-annotate-Laufzeitimports benötigen keine Pfadmigration.
       Bestehende Evidenz feature-tracking/reports/service_structure.yml erweitert; breiteres Qualitätskriterium
-      bleibt in_progress.'
-    assessed_by: codex-beautify-20261002-a
-    assessed_at: '2026-10-02T12:42:51.967232Z'
+      bleibt in_progress. Logging-Kohorte 2026-10-12: 57 Regressionen bestanden, 40 davon zusätzlich unter
+      Trace; Komplexität 18 auf 6, skalarer Helper 7. Gesamtstatus bleibt in_progress; bestehende Guard-Befunde
+      unverändert.'
+    assessed_by: codex-quality-20261012-a
+    assessed_at: '2026-10-12T09:06:33.123848Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
@@ -779,14 +854,27 @@ definition_of_done:
         -q -rs --tb=short: 2 passed, 1 failed with SQLite database table is locked during first cold import.
         Isolated rerun of ::TestReportImportService::test_import_and_anonymize_success: 1 passed, 2 warnings,
         exit 0. No retries or error suppression added to application code.'
+    - kind: command
+      reference: '2026-10-13: PostgreSQL-Regressionslauf der neun gemeldeten Fehler samt angrenzender
+        Integrationen: 419 passed, 1 failed in 314.29s. Geprüft: frame_provenance, anonymization overview/validate,
+        deployment_setup, service_structure, video_correction_jobs, media_urlpatterns_contract, openapi_metadata,
+        video_masks (Service/API), finding_extraction, anonymization_quality_evaluation, video_finalize_success
+        und video_import_normalization. Restfehler ExaminationRevisionViewSet-OpenAPI-Metadaten korrigiert.
+        Nachlauf: PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest tests/utils/test_openapi_metadata.py
+        tests/utils/test_media_urlpatterns_contract.py tests/services/test_examination_revisions.py -q
+        --tb=short: 11 passed, 1 warning in 51.80s. Installierter Nachlauf durch parallelen neuen StudySetupImportReceipt-Import
+        blockiert; Typ nur im Geschwister-Checkout vorhanden. Abschließender Gesamt-Pyright: 0 errors,
+        19 warnings; Ruff und git diff --check bestanden. Vollsuite nicht wiederholt. Tracker-CLI nach
+        paralleler Änderung an ImportPipelineRobustness.yml ungültig: ingest_helper_modules fehlen assessed_by/assessed_at;
+        Evidenz über vorhandene validierte Tracker-Funktionen gespeichert, keine Produktionsfreigabe.'
     note: 'Regression 2026-09-29: Basisdaten innerhalb der Testtransaktion, Migrationsteardown auf aktuelle
       Migrationsblätter und vertragskonforme Job-/PDF-Testaufbauten. Gemeinsame Regression: 205 bestanden,
       3 übersprungen. Aktivierte Report-Importfälle über Haupt-/Nachlauf bestanden; einmaliger SQLite-Schreibkonflikt
       bleibt als sporadischer Befund dokumentiert. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen;
       sieben geänderte Testdateien: 0 Fehler/0 Warnungen, Ruff bestanden. Breite Fast-Lane wegen fremder
       laufender lx-annotate-Suite nicht gestartet; keine vollständige Suite oder Produktionsfreigabe behauptet.'
-    assessed_by: codex-20260929-testfix
-    assessed_at: '2026-09-29T08:18:42.812273Z'
+    assessed_by: codex-test-fixes-20261013
+    assessed_at: '2026-10-13T07:46:19.977709Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam

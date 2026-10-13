@@ -6,6 +6,69 @@ tracker remains the only source of completion and approval status.
 
 Inventory version: `case_graph_v1`.
 
+## Persisted alternatives and explicit completion
+
+Owner: EndoReg case services; reusable snapshot contracts live in
+`lx_dtypes.models.contracts.examination_revision`. Apply migrations `0098` and
+`0099` before enabling the case medication and examination-record pages.
+Existing cases are not automatically assigned a revision or finalized.
+
+An `ExaminationRevision` is a persisted, editable clinical snapshot. It may
+originate from an Excel/table import, a saved clinical examination, an authored
+report, a video, or a report/video combination. Evidence is optional. Multiple
+alternatives may reference the same examination and media. Report identity,
+version, template provenance and source text are captured; video evidence pins
+the processed SHA-256 generation. An optional annotator selection freezes the
+frame annotations, integer presentation timestamps, rational time base and
+annotation source/model identifiers. Medication periods and lab measurements
+are copied into the snapshot; later changes to live rows do not rewrite it.
+
+`POST /api/examination-revisions/` captures existing saved content. Supply
+`source_revision_id` to copy an alternative instead. GET lists by
+`patient_examination_id`; GET detail reloads persisted content. PUT replaces
+`content` and title using `expected_version`, supporting addition, editing and
+removal of nested findings, descriptors, medications and measurements. DELETE
+also requires `expected_version` and only removes drafts. Patient/center scope,
+examination identity and recorded terminology identity are enforced.
+
+`POST /api/examination-revisions/{id}/finalize/` validates references, semantic
+admissibility and selected report-template requirements against the recorded KB
+version. Selected video evidence must pass the existing media integrity and
+anonymization export gate and still match its captured generation. Finalized
+revisions are immutable; corrections create another draft. Captured report text
+is source evidence, not a regenerated rendering of subsequent snapshot edits.
+
+`GET/POST /api/cases/{case_id}/select-examination/` reads or assigns one finalized
+revision per case examination. POST requires `revision_id` and
+`expected_version`. Case closure and research export require a selection for
+every examination. Closed cases reject graph/selection changes; reopening
+clears the leave date and permits follow-ups. Adding a follow-up requires its
+own finalized selection before closing or exporting the complete case again.
+
+## Selected research exports
+
+`GET /api/cases/{case_id}/research-export/?output=json|xlsx` exports the selected
+snapshots. `POST /api/cases/research-export/` accepts unique `case_ids` (up to
+1000) and `output` for a combined study export. All cases must be visible,
+complete and pseudonymous. An open case can be exported once all its currently
+recorded examinations have selections. Export does not itself close a case.
+
+XLSX provides Cases, Case examinations, Examinations, Clinical values,
+Medications, Laboratory, Annotations, Evidence, Data dictionary and Metadata
+sheets. Stable revision IDs join the sheets; repeated observations have distinct
+indices/JSON pointers. Numeric zero stays numeric; null and empty containers
+have explicit type markers in the long-form table. Text cells are written as
+text, including spreadsheet formula prefixes. Integers longer than Excel's
+15-digit precision are exact decimal text. A revision shared across cases appears
+once in clinical sheets with separate case membership rows. JSON keeps
+the complete typed snapshots and source evidence for downstream processing.
+
+These exports contain data and media-generation references, not video bytes.
+Training pipelines must retrieve the matching processed artifact through the
+existing authorized media download/export paths and verify its hash. They must
+also apply their study-specific eligibility, consent and split rules. The
+existing live cohort overview workbook remains a separate operational view.
+
 ## Ownership rules
 
 `Case` owns the admission episode and references one or more
@@ -41,7 +104,7 @@ examination, infer a patient, or mutate a closed case.
 | Frame/image | `Frame.video -> VideoFile` | many per video, unique frame number | frame number and presentation timestamp | cascades with video; extracted-file retention is media-owned | frame APIs |
 | Frame annotation | annotation points to `Frame` | many per frame/annotator | information source and annotation workflow provenance | follows annotation/frame lifecycle | annotation APIs |
 | DICOM export job/study | both point to `PatientExamination` | many jobs/studies per examination | source system, schema version, manifest hash and study date | protected references preserve imported identity | DICOM APIs |
-| Medication | `Case.patient_medications` references patient-owned `PatientMedication` | many | current normalized row; no immutable case snapshot yet | relation removal does not delete medication | ID list |
+| Medication | `Case.patient_medications` references patient-owned `PatientMedication` | many | live normalized row with timezone-aware period; selected examination revisions freeze copies | relation removal does not delete medication | ID list |
 | Medication schedule | `Case.patient_medication_schedules` references patient-owned schedule | many | created/updated timestamps; no immutable case snapshot yet | relation removal does not delete schedule | ID list |
 | Lab sample | `Case.patient_lab_samples` references patient-owned sample | many | sample timestamp | relation removal does not delete sample | ID list |
 | Lab value | `Case.patient_lab_values` references patient-owned value | many | measurement timestamp and range/unit fields | relation removal does not delete value | ID list |
@@ -125,8 +188,7 @@ Case persistence never exports raw media or deletes a file.
 
 The following remain explicit gaps rather than implied behavior:
 
-- immutable case snapshots or audited revisions for medication and laboratory
-  state;
+- actor-level audit and retention policy for finalized examination revisions;
 - unique ownership rules when one examination is referenced by multiple cases;
 - image and DICOM summaries in the case response;
 - retention, reconciliation, backup/restore, and concurrency-conflict

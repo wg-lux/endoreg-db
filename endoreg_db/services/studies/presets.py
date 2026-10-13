@@ -148,6 +148,10 @@ def import_study_preset(knowledge_base: KnowledgeBase) -> None:
     PostgreSQL serializes
     cooperating writers across hosts using a transaction-scoped advisory lock.
     """
+    # Models are mutable; reparse nested shared contracts before any ORM work.
+    knowledge_base = KnowledgeBase.model_validate(
+        knowledge_base.model_dump(exclude_unset=True)
+    )
     presets = list(knowledge_base.study_preset.values())
     centers = [record for preset in presets for record in preset.centers]
     genders = [record for preset in presets for record in preset.genders]

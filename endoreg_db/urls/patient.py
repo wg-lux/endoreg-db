@@ -11,6 +11,7 @@ from django.urls import path, include
 from django.http import HttpResponse
 from rest_framework.viewsets import ViewSetMixin
 from endoreg_db.views.case import CaseViewSet
+from endoreg_db.views.examination_revision import ExaminationRevisionViewSet
 
 
 class _ViewSetAsViewLike(Protocol):
@@ -20,6 +21,11 @@ class _ViewSetAsViewLike(Protocol):
 router = DefaultRouter()
 router.register(r"patients", PatientViewSet)
 router.register(r"cases", CaseViewSet, basename="case")
+router.register(
+    r"examination-revisions",
+    ExaminationRevisionViewSet,
+    basename="examination-revision",
+)
 router.register(r"centers", CenterViewSet)
 router.register(r"genders", GenderViewSet)
 

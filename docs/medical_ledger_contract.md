@@ -2,6 +2,26 @@
 
 ## Scope and ownership
 
+Medication and laboratory terminology use the existing canonical
+`MedicationReference` and `LabValueReference` catalog records. The standard
+dtype loader validates them, including finite, ordered normal ranges and
+non-negative precision/adjustment fields. Patient-scoped
+`GET /api/patients/{id}/medical-terminology/` returns these persisted references
+and units for case setup.
+
+Medication records and writes accept optional timezone-aware `start_at` and
+`end_at`. An end requires a start and cannot precede it; the database also
+enforces ordering. PATCH validates the merged period. The aggregate ledger
+POST may include `case_id` (the numeric case primary key), atomically linking
+only its newly created children to that patient's open, nondeleted case.
+Omitting the case preserves patient-only creation. Existing idempotency keys
+remain compatible with omitted additive period/case fields.
+
+The case setup medication page creates medication periods and timestamped
+numeric or text lab measurements using those references. Completed examination
+snapshots copy selected rows; see [case graph persistence](case_graph_persistence.md)
+for alternative drafts, selection, follow-ups and immutable research exports.
+
 The medical ledger is a patient-scoped interchange view over canonical
 `endoreg_db` tables. It never creates patient demographics. Every read or write
 starts from an already existing, center-visible `Patient`; the patient primary

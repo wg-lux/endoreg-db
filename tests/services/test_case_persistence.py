@@ -25,6 +25,42 @@ def _patient() -> Patient:
     )
 
 
+def _select_complete_examination(case: Case) -> None:
+    from endoreg_db.models import Examination, PatientExamination
+    from lx_dtypes.models.contracts.dtypes_record_persistence import (
+        DtypesRecordPersistencePayload,
+    )
+    from lx_dtypes.models.contracts.examination_revision import (
+        CaseExaminationSelection,
+        ExaminationRevisionCreate,
+    )
+    from endoreg_db.services.cases.examination_revisions import (
+        capture_examination_revision,
+        finalize_examination_revision,
+        select_case_examination_revision,
+    )
+
+    examination_type = Examination.objects.create(name=f"lifecycle-{uuid4().hex}")
+    examination = PatientExamination.objects.create(
+        patient=case.patient, examination=examination_type, hash=uuid4().hex
+    )
+    examination.dtypes_record = DtypesRecordPersistencePayload(
+        patient=str(case.patient.pk), examination=examination_type.name
+    ).model_dump(mode="json")
+    examination.save()
+    case.patient_examinations.add(examination)
+    revision = capture_examination_revision(
+        examination,
+        ExaminationRevisionCreate(
+            patient_examination_id=examination.pk, title="Complete examination"
+        ),
+    )
+    finalize_examination_revision(revision, 1)
+    select_case_examination_revision(
+        case, CaseExaminationSelection(revision_id=revision.pk, expected_version=1)
+    )
+
+
 @pytest.mark.django_db
 def test_close_and_reopen_case_are_idempotent() -> None:
     start_date = timezone.now()
@@ -34,6 +70,7 @@ def test_close_and_reopen_case_are_idempotent() -> None:
         start_date=start_date,
     )
 
+    _select_complete_examination(patient_case)
     closed = close_case(instance=patient_case, end_date=leave_date)
     repeated_close = close_case(instance=closed, end_date=leave_date)
 
@@ -46,7 +83,7 @@ def test_close_and_reopen_case_are_idempotent() -> None:
     repeated_reopen = reopen_case(instance=reopened)
 
     assert repeated_reopen.pk == patient_case.pk
-    assert repeated_reopen.end_date == leave_date
+    assert repeated_reopen.end_date is None
     assert not repeated_reopen.is_closed
     assert repeated_reopen.is_active
 
@@ -71,6 +108,7 @@ def test_close_case_rejects_invalid_or_conflicting_end_date() -> None:
     assert not patient_case.is_closed
     assert patient_case.is_active
 
+    _select_complete_examination(patient_case)
     closed = close_case(instance=patient_case, end_date=leave_date)
     with pytest.raises(CaseLifecycleError, match="different end date"):
         close_case(instance=closed, end_date=leave_date + timedelta(seconds=1))
@@ -92,6 +130,7 @@ def test_case_lifecycle_actions_persist_and_validate_state(
         start_date=start_date,
     )
     case_id = str(patient_case.case_id)
+    _select_complete_examination(patient_case)
 
     close_response = api_client.post(
         f"/api/cases/{case_id}/close/",
@@ -119,6 +158,6 @@ def test_case_lifecycle_actions_persist_and_validate_state(
     assert reopen_body["is_active"] is True
 
     patient_case.refresh_from_db()
-    assert patient_case.end_date == leave_date
+    assert patient_case.end_date is None
     assert not patient_case.is_closed
     assert patient_case.is_active

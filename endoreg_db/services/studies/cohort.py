@@ -161,6 +161,9 @@ def _parse_optional_date(query_params: Mapping[str, Any], key: str) -> date | No
 
 
 def _parse_optional_bool(query_params: Mapping[str, Any], key: str) -> bool | None:
+    value = query_params.get(key)
+    if isinstance(value, bool):
+        return value
     raw_value = _query_text(query_params, key).lower()
     if not raw_value:
         return None

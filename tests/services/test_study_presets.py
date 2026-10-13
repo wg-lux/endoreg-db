@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 
 import pytest
+from pydantic import ValidationError
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
 from django.core.management import call_command
 from django.test import override_settings
@@ -285,3 +286,27 @@ def test_concurrent_preset_imports_preserve_one_identity() -> None:
     assert Gender.objects.filter(name="unknown").count() == 1
     assert Label.objects.filter(name="low_quality").count() == 1
     assert Examination.objects.filter(name="inspection").count() == 1
+
+
+@pytest.mark.parametrize(
+    "mutation", ["blank_label", "duplicate_gender", "invalid_version"]
+)
+def test_mutated_shared_preset_is_rejected_before_transaction(mutation: str) -> None:
+    knowledge_base = package()
+    preset = knowledge_base.study_preset["setup"]
+    if mutation == "blank_label":
+        preset.labels[0].name = " "
+    elif mutation == "duplicate_gender":
+        preset.genders.append(preset.genders[0])
+    else:
+        preset.label_sets[0] = preset.label_sets[0].model_copy(update={"version": True})
+
+    with patch(
+        "endoreg_db.services.studies.presets.reference_catalog_transaction"
+    ) as transaction:
+        with pytest.raises(ValidationError):
+            import_study_preset(knowledge_base)
+
+    transaction.assert_not_called()
+    assert not Center.objects.filter(center_key="clinic").exists()
+    assert not Label.objects.filter(name="low_quality").exists()

@@ -1,0 +1,25 @@
+version: 1
+tier: domain
+path: tests
+parent: ../structure.yml
+summary: Pytest suites for contracts, services, HTTP APIs and clinical workflows.
+responsibilities:
+- Verify behavior, invalid inputs, integration contracts and concurrency.
+- Use repository runtime isolation and intentional foreground test commands.
+boundaries:
+- Do not run expensive background suites through editor coverage commands.
+files:
+- file: conftest.py
+  role: Shared Django and clinical test fixture setup
+- file: plugins/runtime_paths.py
+  role: Process-owned runtime path isolation
+- file: scripts/test_lint_structure.py
+  role: Agent map schema and graph regression tests
+- file: services/test_service_structure.py
+  role: Service ownership map and legacy import compatibility tests
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests
+  fast_lane_command: devenv tasks run test:fast

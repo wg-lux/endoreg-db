@@ -1,0 +1,76 @@
+version: 1
+tier: service
+path: endoreg_db/services/annotations
+parent: ../structure.yml
+summary: Frame and segment annotation selection, mutation and validation workflows.
+responsibilities:
+- Select eligible annotation frames and normalize queue workflow inputs.
+- Maintain segment annotations, bulk mutations and final validation state.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: normalize_frame_task_mode
+  file: workflow.py
+  purpose: Validate and normalize the requested frame-annotation task mode.
+- name: bulk_mutate_video_segments
+  file: segments_bulk_mutation.py
+  purpose: Validate and apply a batch of clinical segment mutations.
+files:
+- file: __init__.py
+  role: Frame- und Segmentannotation, Auswahl und Validierungsabläufe.
+- file: annotation_access.py
+  role: Exports can_override_annotation_principal, resolve_trusted_annotation_principal, validate_interactive_annotation_source.
+- file: buckets.py
+  role: Request-local frame membership queries without per-row relation lookups.
+- file: label_video_segment_states.py
+  role: Exports ensure_label_video_segment_states.
+- file: sampling.py
+  role: Share eligibility work and random-sampling pools for one task batch.
+- file: segment_annotations.py
+  role: Exports ensure_segment_annotations, ensure_prediction_segment_annotations.
+- file: segment_frame_annotations.py
+  role: Exports sync_frame_annotations_for_segment, delete_frame_annotations_for_segment.
+- file: segment_identity.py
+  role: Segment identity and classification boundary for frame annotations.
+- file: segment_sync.py
+  role: Service for synchronizing annotation updates with LabelVideoSegment creation.
+- file: segment_validation_workflow.py
+  role: Stable service boundary for video segment-validation workflows.
+- file: segments_bulk_mutation.py
+  role: Exports bulk_mutate_video_segments, validate_bulk_segment_mutation_payload.
+- file: workflow.py
+  role: Exports normalize_frame_task_mode, normalize_frame_sampling_strategy, resolve_request_annotator.
+dependencies:
+  internal:
+  - endoreg_db/helpers
+  - endoreg_db/models
+  - endoreg_db/serializers/label_video_segment
+  - endoreg_db/services/media
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+  - rest_framework
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_annotation_bucket_builders_unit.py
+    tests/services/test_annotation_access.py tests/services/test_frame_segment_reconciliation.py
+  files:
+  - tests/services/test_frame_annotation_bucket_builders_unit.py
+  - tests/services/test_annotation_access.py
+  - tests/services/test_frame_segment_reconciliation.py

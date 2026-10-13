@@ -85,9 +85,22 @@ def sanitize_log_string(value: str, *, key: str | None = None) -> str:
     return value
 
 
-def safe_log_value(value: Any, *, key: str | None = None) -> JsonValue:
+def safe_log_value(value: object, *, key: str | None = None) -> JsonValue:
     if _is_sensitive_key(key):
         return "<redacted:sensitive>"
+    if isinstance(value, Mapping):
+        return safe_log_payload(cast(Mapping[str, object], value))
+    if isinstance(value, (list, tuple, set, frozenset)):
+        typed_items = cast(
+            list[object] | tuple[object, ...] | set[object] | frozenset[object], value
+        )
+        items = typed_items if isinstance(typed_items, list) else list(typed_items)
+        return [safe_log_value(item, key=key) for item in items[:100]]
+    return _safe_log_scalar(value, key=key)
+
+
+def _safe_log_scalar(value: object, *, key: str | None) -> JsonValue:
+    """Convert a non-container value after the sensitive-key guard."""
     if isinstance(value, Path):
         return path_reference(value)
     if isinstance(value, bytes):
@@ -97,24 +110,6 @@ def safe_log_value(value: Any, *, key: str | None = None) -> JsonValue:
         }
     if isinstance(value, str):
         return sanitize_log_string(value, key=key)
-    if isinstance(value, Mapping):
-        typed_mapping = cast(Mapping[str, Any], value)
-        return {
-            str(item_key): safe_log_value(item_value, key=str(item_key))
-            for item_key, item_value in typed_mapping.items()
-        }
-    if isinstance(value, list):
-        typed_items = cast(list[Any], value)
-        return [safe_log_value(item, key=key) for item in typed_items[:100]]
-    if isinstance(value, tuple):
-        typed_items = cast(tuple[Any, ...], value)
-        return [safe_log_value(item, key=key) for item in list(typed_items)[:100]]
-    if isinstance(value, set):
-        typed_items = cast(set[Any], value)
-        return [safe_log_value(item, key=key) for item in list(typed_items)[:100]]
-    if isinstance(value, frozenset):
-        typed_items = cast(frozenset[Any], value)
-        return [safe_log_value(item, key=key) for item in list(typed_items)[:100]]
     if isinstance(value, BaseException):
         return {
             "type": value.__class__.__name__,
@@ -125,7 +120,7 @@ def safe_log_value(value: Any, *, key: str | None = None) -> JsonValue:
     return str(value)
 
 
-def safe_log_payload(payload: Mapping[str, Any]) -> JsonObject:
+def safe_log_payload(payload: Mapping[str, object]) -> JsonObject:
     return {
         str(key): safe_log_value(value, key=str(key)) for key, value in payload.items()
     }

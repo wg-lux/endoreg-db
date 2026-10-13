@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.utils import timezone
 from django.db.models import QuerySet
 
 if TYPE_CHECKING:
@@ -135,19 +134,17 @@ class Case(models.Model):
 
     def close(self, end_date: datetime | None = None) -> None:
         """Close this case with a provided end date or the current time."""
-        self.is_closed = True
-        self.is_active = False
-        if end_date:
-            self.end_date = end_date
-        elif not self.end_date:
-            self.end_date = timezone.now()
-        self.save()
+        from endoreg_db.services.cases.lifecycle import close_case
+
+        close_case(instance=self, end_date=end_date)
+        self.refresh_from_db()
 
     def reopen(self) -> None:
         """Reopen this case if it was closed."""
-        self.is_closed = False
-        self.is_active = True
-        self.save()
+        from endoreg_db.services.cases.lifecycle import reopen_case
+
+        reopen_case(instance=self)
+        self.refresh_from_db()
 
     @property
     def reports(self) -> QuerySet["PatientExaminationReport"]:

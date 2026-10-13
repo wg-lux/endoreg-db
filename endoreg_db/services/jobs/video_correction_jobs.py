@@ -151,9 +151,13 @@ def apply_video_anonymization_strategy(
         to_dict = getattr(summary, "to_dict", None)
         return cast(dict[str, object], to_dict() if callable(to_dict) else {})
 
-    if config.region.mode == "device":
+    if config.region.mask_profile is not None:
+        mask_config = config.region.mask_profile.mask.model_dump(mode="json")
+    elif config.region.mode == "device":
         frame_cleaner.mask_application.device_name = config.region.device_name
-        mask_config = frame_cleaner.mask_application._load_mask()
+        mask_config = frame_cleaner.mask_application._load_mask().model_dump(
+            mode="json"
+        )
     else:
         if config.region.roi is None:
             raise ValueError("region.roi is required for a custom processor region")

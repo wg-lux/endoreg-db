@@ -17,6 +17,7 @@ from lx_dtypes.models.contracts.hub_ingest import (
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub import watcher_handoff
+from endoreg_db.services.hub.upload_job_cancellation import UploadJobImportCancelled
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     is_in_progress_handoff_path,
@@ -59,6 +60,162 @@ def _write_test_file(path: Path, content: bytes) -> Path:
 
 def _validated_upload_provenance(upload_job: UploadJob) -> UploadProvenancePayload:
     return parse_upload_provenance_payload(upload_job.processing_provenance)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["cancel_requested", "cancelled"])
+@pytest.mark.parametrize("with_sidecar", [False, True])
+def test_watcher_reuse_preserves_cancelled_drop(
+    tmp_path: Path,
+    status: str,
+    with_sidecar: bool,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    sidecar = _write_test_file(tmp_path / "report.yaml", b"metadata")
+    job = UploadJob.objects.create(content_type="text/plain")
+    UploadJob.objects.filter(pk=job.pk).update(status=status)
+
+    result = ingest._reuse_watcher_upload_job(
+        upload_job=job,
+        created=False,
+        watched_path=source,
+        sidecar_path=sidecar if with_sidecar else None,
+    )
+
+    assert result is job
+    assert job.status == status
+    assert source.read_bytes() == b"report"
+    assert sidecar.read_bytes() == b"metadata"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["cancel_requested", "cancelled"])
+def test_watcher_processing_rechecks_cancellation_after_lookup(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    job = UploadJob.objects.create(content_type="text/plain")
+    UploadJob.objects.filter(pk=job.pk).update(status=status)
+
+    with pytest.raises(UploadJobImportCancelled):
+        ingest._mark_watcher_upload_job_processing(upload_job=job, watched_path=source)
+
+    job.refresh_from_db()
+    assert job.status == status
+    assert "watcher_processing_path" not in job.processing_provenance
+    assert source.exists()
+
+
+@pytest.mark.django_db
+def test_settled_watcher_source_does_not_wait_again(
+    tmp_path: Path,
+    watcher_center: Center,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    settled = watcher_handoff.wait_for_watcher_file_ready(
+        source, stable_after_seconds=0
+    )
+    with patch.object(ingest, "_wait_for_watcher_file_ready") as wait:
+        job, created = ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            source_center=watcher_center,
+            settled_stat=settled,
+        )
+    wait.assert_not_called()
+    assert created
+    assert job.content_hash == get_file_hash(source)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("change", ["append", "replace", "symlink"])
+def test_settled_watcher_source_is_revalidated_before_hashing(
+    tmp_path: Path,
+    watcher_center: Center,
+    change: str,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    settled = source.stat()
+    if change == "append":
+        source.write_bytes(b"changed report")
+    else:
+        replacement = _write_test_file(tmp_path / "replacement.txt", b"report")
+        if change == "replace":
+            replacement.replace(source)
+        else:
+            source.unlink()
+            source.symlink_to(replacement)
+
+    with (
+        patch.object(ingest, "get_file_hash") as hash_file,
+        pytest.raises((WatcherFileNotReadyError, ValueError)),
+    ):
+        ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            source_center=watcher_center,
+            settled_stat=settled,
+        )
+    hash_file.assert_not_called()
+    assert UploadJob.objects.count() == 0
+    assert source.exists()
+
+
+def test_supplied_snapshot_does_not_allow_temporary_handoff_name(
+    tmp_path: Path,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt.part", b"report")
+    with pytest.raises(WatcherFileNotReadyError, match="in-progress"):
+        ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            settled_stat=source.stat(),
+        )
+
+
+@pytest.mark.django_db
+def test_preanonymized_import_observes_cancellation_before_processing(
+    tmp_path: Path,
+    watcher_center: Center,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    sidecar = _write_test_file(tmp_path / "report.yaml", b"metadata")
+    job = UploadJob.objects.create(content_type="text/plain")
+    context = ingest._PreanonymizedWatcherContext(
+        normalized_type="report",
+        content_type="text/plain",
+        source_center=watcher_center,
+        metadata_payload=None,
+        sidecar_path=sidecar,
+    )
+
+    def cancel_after_reuse_check(**_kwargs: object) -> None:
+        UploadJob.objects.filter(pk=job.pk).update(
+            status=UploadJob.Status.CANCEL_REQUESTED
+        )
+
+    with (
+        patch.object(
+            ingest, "_prepare_preanonymized_watcher_context", return_value=context
+        ),
+        patch.object(
+            ingest, "_create_preanonymized_upload_job", return_value=(job, True)
+        ),
+        patch.object(
+            ingest, "_reuse_watcher_upload_job", side_effect=cancel_after_reuse_check
+        ),
+        patch.object(ingest, "_finalize_preanonymized_watcher_media") as finalize,
+        pytest.raises(UploadJobImportCancelled),
+    ):
+        ingest.process_preanonymized_watcher_file(
+            file_path=source, center=watcher_center
+        )
+
+    finalize.assert_not_called()
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.CANCEL_REQUESTED
+    assert source.exists() and sidecar.exists()
 
 
 def _create_completed_video_upload(
@@ -395,17 +552,40 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     assert watched_file.name not in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("suffix", "content_type"),
+    [(".pdf", "application/pdf"), (".txt", "text/plain"), (".TXT", "text/plain")],
+)
+def test_watcher_report_format_contract(suffix: str, content_type: str) -> None:
+    assert ingest._watcher_file_contract("report", Path(f"report{suffix}")) == (
+        "report",
+        content_type,
+    )
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".json", ".jpg", ".zip"])
+def test_watcher_rejects_unsupported_report_formats(suffix: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported watcher report suffix"):
+        ingest._watcher_file_contract("report", Path(f"report{suffix}"))
+
+
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [("incoming-report.pdf", "application/pdf"), ("incoming-report.txt", "text/plain")],
+)
 def test_create_or_reuse_watcher_upload_job_records_storage_contract(
     tmp_path: Path,
     watcher_center: Center,
+    filename: str,
+    content_type: str,
 ) -> None:
-    watched_file = tmp_path / "incoming-report.pdf"
+    watched_file = tmp_path / filename
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
     upload_job, created = ingest.create_or_reuse_watcher_upload_job(
         file_path=watched_file,
-        content_type="application/pdf",
+        content_type=content_type,
         source_center=watcher_center,
         processing_provenance={"file_type": "report"},
     )
@@ -418,6 +598,9 @@ def test_create_or_reuse_watcher_upload_job_records_storage_contract(
     assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
     assert upload_job.source_file_persisted is True
     assert upload_job.original_filename == watched_file.name
+    assert upload_job.content_type == content_type
+    assert upload_job.file.name is not None
+    assert Path(upload_job.file.name).suffix == watched_file.suffix
     provenance = _validated_upload_provenance(upload_job)
     assert provenance.entrypoint == "watcher"
     assert provenance.watched_path == str(watched_file)

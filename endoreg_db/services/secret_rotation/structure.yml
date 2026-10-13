@@ -1,0 +1,51 @@
+version: 1
+tier: service
+path: endoreg_db/services/secret_rotation
+parent: ../structure.yml
+summary: Transactional identity-salt migration and encrypted-storage rotation.
+responsibilities:
+- Preview or apply encrypted-storage rotation using managed key generations.
+- Serialize reviewed identity-salt migration while preserving clinical relationships.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: rotate_storage
+  file: storage.py
+  purpose: Preview or apply encrypted-artifact rotation using the configured master keyring.
+- name: identity_rotation_transaction
+  file: identity.py
+  purpose: Serialize identity migration and resolution in a transaction with a fixed keyring snapshot.
+files:
+- file: __init__.py
+  role: Explicit online rotation workflows; never provision or publish secrets.
+- file: identity.py
+  role: Transactional salt migration of existing identities, including legacy enrollment.
+- file: storage.py
+  role: Exports rotate_storage.
+dependencies:
+  internal:
+  - endoreg_db/config
+  - endoreg_db/models
+  - endoreg_db/services/media
+  - endoreg_db/services/streaming
+  - endoreg_db/utils
+  external:
+  - cryptography
+  - django
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Managed key rotation
+  doc: docs/key_rotation.md
+- name: Identity keyring enrollment
+  doc: docs/identity_ring_enrollment.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_identity_salt_rotation.py tests/services/test_hls_media.py
+    tests/services/test_secret_rotation.py
+  files:
+  - tests/services/test_identity_salt_rotation.py
+  - tests/services/test_hls_media.py
+  - tests/services/test_secret_rotation.py

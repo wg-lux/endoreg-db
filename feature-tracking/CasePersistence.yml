@@ -21,6 +21,50 @@ source_documents:
   disposition: reference
   note: Versioniertes Relationsinventar, Ownership-, Kardinalitäts-, API- und Abfragevertrag des Fallgraphs.
 definition_of_done:
+- id: examination_revision_selection
+  category: functionality
+  title: Persist complete examination alternatives and select one per case examination
+  acceptance:
+  - Excel-only, report-only, video-only and combined clinical revisions persist independently of media
+    availability, using canonical typed descriptor, medication and lab shapes.
+  - Draft revisions support create, read, update and delete with optimistic concurrency; finalized revisions
+    preserve immutable clinical and evidence snapshots.
+  - Case selection permits exactly one finalized revision per examination, validates patient ownership,
+    and retains unselected alternatives.
+  - Case closure requires complete selections; reopening preserves prior selections and permits follow-up
+    examinations.
+  - JSON and normalized workbook exports use selected immutable revisions, preserving study joins, units,
+    missingness and annotation media generation provenance.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run revision contract, API, lifecycle and workbook tests including invalid ownership,
+      stale updates and reopening follow-ups.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: 'Backend regression lane: 85 passed; final revision suite after missing-media and Excel
+        integer fixes: 6 passed; revision contracts: 10 passed; frontend cases: 13 passed. Migration drift
+        check: no changes detected.'
+    - kind: document
+      reference: docs/case_graph_persistence.md
+    - kind: command
+      reference: 'Production hardening 2026-10-13 adds strict SelectedCaseExport validation, duplicate-case/conflicting-revision
+        rejection, ownership revalidation, XLSX text-limit checks, safe 409 export errors and no-store
+        responses. Existing per-case/revision functionality retained. Backend revision/ledger lane: 31
+        passed; updated revision API suite: 9 passed. Shared focused contracts: 51 passed; frontend cohort/medication/revision/export
+        lane: 18 passed. All three structure maps validate. Actor audit, retention, coherent packaged
+        deployment and backup/restore remain separate open readiness criteria.'
+    note: 'Production hardening 2026-10-13 adds strict SelectedCaseExport validation, duplicate-case/conflicting-revision
+      rejection, ownership revalidation, XLSX text-limit checks, safe 409 export errors and no-store responses.
+      Existing per-case/revision functionality retained. Backend revision/ledger lane: 31 passed; updated
+      revision API suite: 9 passed. Shared focused contracts: 51 passed; frontend cohort/medication/revision/export
+      lane: 18 passed. All three structure maps validate. Actor audit, retention, coherent packaged deployment
+      and backup/restore remain separate open readiness criteria.'
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-13T09:48:31.236304Z'
 - id: repeated_finding_instances
   category: data_integrity
   title: Mehrere Läsionen desselben Befundtyps bleiben getrennte Instanzen im bestehenden Fallgraph

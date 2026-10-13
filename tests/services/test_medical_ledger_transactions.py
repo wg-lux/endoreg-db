@@ -486,3 +486,40 @@ def test_parallel_identical_requests_create_one_graph_and_one_receipt() -> None:
         PatientMedicationSchedule.objects.get(patient=patient_id).medication.count()
         == 1
     )
+
+
+def test_completed_case_import_replays_after_closure_without_new_writes() -> None:
+    from django.utils import timezone
+    from endoreg_db.models import Case
+
+    patient = _patient("Closed replay")
+    case = Case.objects.create(patient=patient, start_date=timezone.now())
+    data = _full_payload_data(patient)
+    data["case_id"] = case.pk
+    payload = PatientMedicalLedgerCreate.model_validate(data)
+    original = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="closed-case-replay"
+    )
+    case.is_closed = True
+    case.save(update_fields=["is_closed"])
+    before = (
+        PatientMedication.objects.count(),
+        PatientLabValue.objects.count(),
+        MedicalLedgerWriteReceipt.objects.count(),
+    )
+    replay = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="closed-case-replay"
+    )
+    assert replay.replayed
+    assert replay.ledger.model_dump(mode="json") == original.ledger.model_dump(
+        mode="json"
+    )
+    with pytest.raises(medical_ledger.MedicalLedgerReferenceConflict):
+        create_patient_medical_ledger(
+            patient=patient, payload=payload, idempotency_key="new-write-to-closed-case"
+        )
+    assert (
+        PatientMedication.objects.count(),
+        PatientLabValue.objects.count(),
+        MedicalLedgerWriteReceipt.objects.count(),
+    ) == before

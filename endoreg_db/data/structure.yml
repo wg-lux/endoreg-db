@@ -1,0 +1,26 @@
+version: 1
+tier: module
+path: endoreg_db/data
+summary: Packaged YAML reference data and versioned study presets.
+responsibilities:
+- Provide reference vocabularies and setup inputs consumed by data loaders.
+boundaries:
+- Follow shared terminology and package version registry; do not place patient data or secrets here.
+files:
+- file: setup_config.yaml
+  role: Packaged setup configuration.
+- file: __init__.py
+  role: Packaged data namespace.
+dependencies:
+  internal:
+  - endoreg_db/management
+  - endoreg_db/helpers
+  external: []
+contracts:
+- name: YAML authoring and versioned presets
+  doc: docs/wiki/dataloader_yaml_authoring.md
+tests:
+  directory: tests/dataloader
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/dataloader
+parent: ../structure.yml
+submodules: []

@@ -9,6 +9,21 @@ RouteContract = tuple[str, str, str]
 
 EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
+        "media/pdfs/<int:pk>/finding-suggestions/",
+        "pdf-finding-suggestions",
+        "endoreg_db.views.media.finding_suggestions.FindingSuggestionsView",
+    ),
+    (
+        "media/videos/<int:pk>/finding-suggestions/",
+        "video-finding-suggestions",
+        "endoreg_db.views.media.finding_suggestions.FindingSuggestionsView",
+    ),
+    (
+        "media/videos/masks/",
+        "video-masks",
+        "endoreg_db.views.video.masks.VideoMasksView",
+    ),
+    (
         "media/studies/",
         "studies",
         "endoreg_db.views.media.studies.StudiesView",

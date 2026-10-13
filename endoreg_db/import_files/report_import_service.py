@@ -49,6 +49,9 @@ from endoreg_db.services.raw_pdf_files import (
     require_usable_completed_report,
 )
 from endoreg_db.services.reports.import_lifecycle import ReportImportLifecycle
+from endoreg_db.services.reports.finding_extraction import (
+    record_report_finding_presence,
+)
 from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.services.reports.import_fencing import (
     ReportImportBusyError,
@@ -373,12 +376,12 @@ class ReportImportService:
 
         renew_report_import_fence(fence)
         with report_import_finalization_guard(fence):
+            if ctx.current_report is None:
+                raise RuntimeError("Report anonymization returned no report")
+            record_report_finding_presence(ctx.current_report)
             finalize_report_success(ctx)
             if self.lifecycle is not None:
-                report = ctx.current_report
-                if report is None:
-                    raise RuntimeError("Report publication returned no report")
-                self.lifecycle.succeeded(report)
+                self.lifecycle.succeeded(ctx.current_report)
 
         return ctx.current_report
 

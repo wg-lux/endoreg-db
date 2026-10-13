@@ -6,6 +6,56 @@ For sender implementers and reviewers, [`hub_transfer_typed_contract.md`](https:
 
 Production-critical import monitoring—including transient errors, quarantine, and HTTP Live Streaming (HLS) materialization—is evaluated exclusively in [`feature-tracking/ImportMonitoring.yml`](https://www.google.com/search?q=../feature-tracking/ImportMonitoring.yml). This runbook describes operations, but does not maintain a parallel completion status.
 
+## Kontinuierlicher Ordnerimport
+
+Die verbindlichen Kriterien stehen in
+[`ImportPipelineRobustness.yml`](../feature-tracking/ImportPipelineRobustness.yml),
+Kriterium `continuous_format_folder_ingestion`. Vier Eingangsordner genügen:
+Berichte, Videos, voranonymisierte Dateien und SAP-Exporte. Dateiendungen bestimmen
+das Format innerhalb eines Eingangs; separate Ordner pro Dateiendung entfallen.
+Die bestehenden Speicherpfade und der Dateiverschieber bleiben erhalten.
+
+Der Dateiverschieber veröffentlicht vollständige Berichtsstapel atomar unter
+einem eindeutigen Unterordner. Wiederholte Ordnernamen überschreiben dadurch
+keine früheren Stapel. Seit dem Kopieren veränderte Quelldateien bleiben für
+einen späteren Durchlauf erhalten. Berichte werden vor dem möglicherweise
+lang laufenden Videozweig übergeben.
+
+| Desktop-Verknüpfung | Ziel | Verarbeitung |
+| --- | --- | --- |
+| `Report_Input` | Konfigurierter Berichtseingang des Dateiverschiebers → `report_import` | PDF und TXT anonymisieren |
+| `Video_Input` | Konfigurierter Videoeingang des Dateiverschiebers → `video_import` | MP4, AVI, MOV, MKV, WEBM und M4V über den bestehenden Videoimport |
+| `preanonymized_import` | `preanonymized_import` | PDF, TXT und MP4 mit zugehöriger Metadatendatei |
+| `sap_import` | `sap_import` | SAP-ZIP in TXT-Berichte samt Metadatendateien umwandeln |
+
+`Report_Input` ersetzt den Desktop-Namen `PDF_Input`, ohne dessen Zielpfad zu
+verschieben. Bestehende Unterordner bleiben lesbar und werden nicht gelöscht.
+Voranonymisierte Dateien bleiben vom Rohimport getrennt, weil dieselben
+Dateiendungen hier einen anderen Metadaten- und Freigabevertrag haben. SAP-Exporte
+benötigen ihren eigenen Konverter. Unterordner werden rekursiv eingelesen. Voranonymisierte
+Nutzdateien und ihre JSON- oder YAML-Metadatendateien müssen zusammen im selben
+Ordner liegen. TXT-Tabellen eines SAP-Exports sind keine gewöhnlichen TXT-Berichte:
+zusammengehörige Tabellen als SAP-ZIP ablegen oder den vorhandenen Befehl
+`import_sap_ish_txt` ausdrücklich verwenden. Allgemeine CSV-, FHIR- und
+Einzelbild-Ordnerimporte sind hier nicht implementiert; entsprechende Export-
+oder Tabellenfunktionen sind keine solchen Importverträge.
+
+Dateien zunächst unter einem temporären Namen schreiben und nach vollständigem
+Schreiben atomar auf ihren endgültigen Namen umbenennen. Temporäre Dateien,
+temporäre Verzeichnisse und symbolische Links werden nicht importiert.
+Systemd reagiert auf Änderungen in den Eingangsordnern. Der bestehende Watcher-Timer
+holt übersehene oder noch nicht stabile Dateien nach; für SAP gilt ein eigener
+Timer fünf Minuten nach Abschluss des letzten Durchlaufs, zuzüglich bis zu
+30 Sekunden Zufallsverzögerung. Änderungen tiefer innerhalb vorhandener
+Unterordner werden spätestens beim nächsten periodischen Durchlauf erkannt.
+
+Backend, LX-Annotate-Watcher und LuxNix-Konfiguration gemeinsam ausrollen.
+NixOS `tmpfiles` legt die Ordner mit Modus `0770` und Dienstgruppe an;
+Quellordner gehören `root`, interne Eingänge dem Dienstbenutzer.
+Die Übergabe an den verschlüsselten UploadJob-Speicher kann die
+Quelldatei entfernen, bevor die asynchrone Anonymisierung abgeschlossen ist;
+den Abschluss am UploadJob prüfen.
+
 ## Import Monitoring and State Axes
 
 Import attempt, anonymization, HLS materialization, and cleanup are monitored separately, but share a common commit boundary for video success. A video import is only successful when the canonical master, raw and processed HLS, states, and successful `ProcessingHistory` reference the same validated generation. An HLS or history error before this boundary leaves the attempt failed or retryable, while a previous valid generation remains readable. Report imports do not require HLS, but publish PDF, text, `SensitiveMeta`, state, and success history under the same fencing token.

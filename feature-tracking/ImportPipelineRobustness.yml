@@ -25,6 +25,108 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: ingest_helper_modules
+  category: maintainability
+  title: Ingest metadata helpers have discoverable owners and compatible historical imports
+  acceptance:
+  - Upload provenance and preanonymized metadata each have one implementation in a focused module; neither
+    helper module imports the ingest orchestrator.
+  - Historical ingest helper names and UploadProvenance remain importable as the same function and type
+    objects, with unchanged signatures and behavior.
+  - A local YAML module map and the existing engineering guide identify entrypoints, helper owners, transaction
+    responsibilities and relevant tests without a parallel readiness tracker.
+  - Type checks and provenance, identity, preanonymized, watcher and dispatch regression tests preserve
+    import, storage and concurrency contracts; no publication or lease logic changes.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright before focused compatibility and existing ingest regression tests; inspect
+      helper dependency direction and historical call sites.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/ingest_provenance.py; endoreg_db/services/hub/preanonymized_metadata.py;
+        explicit aliases in ingest.py; tests/services/test_ingest_helper_compatibility.py
+    - kind: document
+      reference: endoreg_db/services/hub/structure.yml; docs/wiki/hub_ingest_current_state.md; six scoped
+        consumer updates in quality/lx_dtypes_model_inventory.yml
+    - kind: command
+      reference: '2026-10-13: Full .devenv/state/venv/bin/pyright: 0 errors, 18 existing warnings. Ruff
+        check --no-cache, format --check and scoped git diff --check passed. Structural comparison of
+        113 retained and 9 extracted definitions against the pre-extraction index preserves function bodies,
+        signatures and decorators, except public canonical names. Scoped boundary comparison retains the
+        same 17 findings with no new handlers or suppressions.'
+    - kind: test
+      reference: '2026-10-13: PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false WATCHER_STABLE_AFTER_SECONDS=0 WATCHER_POLL_INTERVAL_SECONDS=0.01 .devenv/state/venv/bin/pytest
+        tests/services/test_ingest_helper_compatibility.py tests/services/test_hub_ingest_unit.py tests/services/test_hub_ingest_active_learning_provenance.py
+        tests/services/test_preanonymized_external_identity.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_watcher_storage_import.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_hub_ingest_dispatch.py -q --tb=short: 118 passed, 4 subtests passed, 133 terminology/plugin
+        warnings, no skips, exit 0 in 113.85s; existing temporary-directory cleanup warnings.'
+    note: Local helper extraction verified; ingest.py reduced from 3419 to 3044 lines. Historical helper
+      names and UploadProvenance resolve to canonical objects, including the external-identity atomic
+      decorator. No entrypoint, publication, lease, cleanup or clinical behavior changes; process tests
+      and prior evidence preserved. Tests use the matching local lx-data-models checkout because parallel
+      StudySetupImport changes exceed the installed package. Repository-wide quality-boundary and model-inventory
+      checks still report pre-existing drift (389/109 expected vs 364/108 actual exception/suppression
+      counts, plus unrelated new/changed models); this move changes one existing handler location and
+      updates only its six model consumer entries. No broad baseline reset or production-readiness claim.
+    assessed_by: codex-report-watchers-20261013
+    assessed_at: '2026-10-13T07:56:23.812016Z'
+- id: continuous_format_folder_ingestion
+  category: functionality
+  title: Supported report formats reach their existing import workers continuously
+  acceptance:
+  - Raw and preanonymized watcher jobs share cancellation-safe processing transitions and duplicate-drop
+    handling; cancellation observed after job lookup preserves the incoming source and sidecar.
+  - A settled source is revalidated before and after hashing without repeating the settling wait; replacement,
+    mutation and symbolic links fail before upload-job creation.
+  - PDF and TXT watcher inputs preserve their media type and dispatch to the report worker.
+  - LX-Annotate scans nested format folders, including preanonymized TXT with its required sidecar.
+  - LuxNix exposes four workflow inputs (reports, videos, preanonymized files and SAP exports), sharing
+    each input across its supported formats without relocating existing intake paths.
+  - Temporary paths and symlink escapes are excluded; existing duplicate-content and encrypted storage
+    contracts remain enforced.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright, watcher storage and dispatch tests, LX-Annotate watcher tests, and LuxNix
+      evaluated folder contracts.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '2026-10-12: pytest tests/services/test_watcher_storage_import.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_preanonymized_watcher_ingest.py -q --tb=short: 59 passed, 16 skipped, 4 subtests
+        passed; video/expensive lanes disabled by repository configuration.'
+    - kind: command
+      reference: '2026-10-12: full .devenv/state/venv/bin/pyright: 0 errors, 18 warnings; focused Ruff
+        checks passed.'
+    - kind: test
+      reference: '2026-10-12 folder simplification: LuxNix contract suite 19 passed, confirming four workflow
+        inputs and no extension-specific provisioning; backend and watcher format dispatch unchanged.'
+    - kind: command
+      reference: '2026-10-13: Full backend Pyright: 0 errors, 17 existing warnings; final scoped Pyright:
+        0 errors, 0 warnings. Ruff check --no-cache, format --check and scoped git diff --check passed.'
+    - kind: test
+      reference: '2026-10-13: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false WATCHER_STABLE_AFTER_SECONDS=0
+        WATCHER_POLL_INTERVAL_SECONDS=0.01 .devenv/state/venv/bin/pytest tests/services/test_watcher_storage_import.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/services/test_hub_ingest_import_job_contract.py
+        tests/services/test_hub_ingest_dispatch.py -q --tb=short: 96 passed, 4 subtests passed, no skips;
+        one plugin warning and existing temporary-directory cleanup warnings. PostgreSQL test fixture;
+        explicit stability-window and slow-writer tests retain nonzero waits.'
+    note: Watcher entrypoints now share cancellation-aware reuse and a locked processing transition. Settled
+      snapshots are rechecked before and after hashing without another wait; temporary names and symlinks
+      remain rejected. Removed unreachable inline prediction code. Regression tests cover stale cancellation,
+      preanonymized cancellation before processing, source mutation/replacement, symlinks and temporary
+      names. Full multi-process cancellation/publication guarantees and coordinated deployment remain
+      outside this refactor; no production readiness asserted.
+    assessed_by: codex-report-watchers-20261013
+    assessed_at: '2026-10-13T07:15:39.900024Z'
 - id: pseudonym_identity_resolution
   category: data_integrity
   title: Import pseudonym resolution rejects ambiguous or conflicting identities
@@ -465,8 +567,8 @@ definition_of_done:
   title: Report-Heartbeat und Fencing umfassen auch Text und SensitiveMeta
   acceptance:
   - Lesbarkeitsänderungen an Report-Anlage und Report-Anonymisierung erhalten öffentliche Signaturen,
-    Rückgabeflags, Validierungsreihenfolge und Mutationsgrenzen. Bestehende Tests für Neuanlage,
-    Duplikate, Reparatur und den Anonymisierungsvertrag bestehen unverändert.
+    Rückgabeflags, Validierungsreihenfolge und Mutationsgrenzen. Bestehende Tests für Neuanlage, Duplikate,
+    Reparatur und den Anonymisierungsvertrag bestehen unverändert.
   - Report- und Video-Orchestrierung sind in derselben Leserichtung in Kontextvorbereitung, Quellen-/Inhaltssperre,
     Wiederverwendung, eigenen Importversuch und Anonymisierung/Publikation gegliedert. Formatabhängige
     Ownership-, Retry- und Bereinigungsregeln bleiben unverändert und werden am jeweiligen Phasenübergang
@@ -613,6 +715,9 @@ definition_of_done:
   category: testing
   title: Konkurrenz- und Teilfehlertests decken alle Ingest-Eingänge ab
   acceptance:
+  - Getrennte PostgreSQL-Prozesse prüfen beide Reihenfolgen von Abbruchanforderung und gefencetem UploadJob-Abschluss.
+    Ein bestätigter Abbruch verhindert den späteren Erfolgsabschluss; ein bereits abgeschlossener Job
+    weist den Abbruch zurück. Die verschlüsselte Quelle bleibt bytegleich erhalten.
   - Prozessbasierte Tests decken API, regulären Watcher, voranonymisierten Watcher, Transfer, CLI und
     direkte Service-Aufrufe mit gleichem Pfad, gleichem Inhalt und unabhängigen Inhalten ab.
   - Tests injizieren Lease-Verlust, Worker-Abbruch, Datenbankfehler, Disk-full, HLS-Fehler, History-Fehler
@@ -648,16 +753,53 @@ definition_of_done:
       reference: '2026-09-07: .devenv/state/venv/bin/pytest tests/services/test_ingest_idempotency_quarantine.py
         tests/services/test_report_import_concurrency.py tests/services/test_video_import_service.py::test_same_content_imports_serialize_and_only_one_runs_heavy_work
         -q: 18 passed, 4 warnings.'
-    note: Arrange–Act–Assert-Regressionen prüfen wiederholte abgeschlossene Report- und Videoimporte bei
-      gleichem beziehungsweise geändertem Dateinamen ohne erneute Verarbeitung. Video-Streamingfehler
-      propagieren vor Cleanup; erneute Zustellung liefert dieselbe Medieninstanz. Reportfehler erhalten
-      Quelle und Ausnahmeidentität und entfernen Ausführungs- und Mutationsguards. Sieben zusätzliche
-      parametrisierte Testfälle; ergänzende bestehende Tests prüfen Upload-Idempotenz, Quarantäne, Fehlerbehandlung
-      und Konkurrenz. Die lokale Datenbank-Lane verwendet SQLite; serviceinterne Datenbank- und Verarbeitungsgrenzen
-      sind in den Unit-Tests ersetzt. Die vollständige prozessbasierte PostgreSQL-/Produktionsstorage-Matrix
-      bleibt offen.
-    assessed_by: codex-import-aaa-20260907
-    assessed_at: '2026-09-07T11:37:18.171326Z'
+    - kind: command
+      reference: '2026-10-13: Vollstaendige .devenv/state/venv/bin/pyright: 0 errors, 19 warnings, 0 informations.
+        Danach RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_database_recovery.py
+        tests/services/test_report_task_recovery.py tests/services/test_video_import_failure_recovery_aaa.py
+        -q --tb=short: 21 passed, 1 warning in 56.99s, keine Skips, Exit 0. Zusaetzliche Warnungen bei
+        Bereinigung vorhandener temporaerer pytest-Verzeichnisse. PostgreSQL-Testfixture; bestaetigt begrenztes
+        Retry-Backoff, redigierte Datenbankfehler, Report-Task-Recovery, Quellerhalt bei Timeout und Ablehnung
+        veralteter Lease-Owner. Kein echter Broker-Ausfall, harter Worker-Abbruch, vollstaendiger Mehrprozess-Publikationslauf
+        oder Deploymentnachweis. Unabhaengiger Folgecheck nach Watcher-Handoff; keine Anwendungsaenderung.'
+    - kind: test
+      reference: '2026-10-13: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_upload_job_import_lease_postgresql.py tests/services/test_upload_job_cancellation.py
+        -q --tb=short: 28 passed, 1 plugin warning in 56.60s, no skips, exit 0; additional existing temporary-directory
+        cleanup warnings. Two new cases run a separate worker process against PostgreSQL and the real
+        fenced UploadJob completion boundary: cancellation committed first prevents completion and is
+        acknowledged by its owner; completion committed first rejects later cancellation. Both retain
+        identical encrypted source bytes and clear execution ownership. This is ordered job-completion
+        evidence, not full media-publication, broker-loss or hard-worker-kill coverage.'
+    - kind: command
+      reference: '2026-10-13: Full .devenv/state/venv/bin/pyright after test-fixture typing corrections:
+        0 errors, 19 existing warnings, exit 0. Scoped Ruff check and format, git diff --check passed.'
+    - kind: test
+      reference: '2026-10-13: Vollstaendige .devenv/state/venv/bin/pyright: 0 errors, 19 warnings. Abschliessender
+        scoped Pyright fuer tests/services/test_upload_job_import_lease_postgresql.py: 0 errors, 0 warnings;
+        Ruff check und format --check bestanden. Erster pytest-Start scheiterte vor Sammlung: parallel
+        hinzugefuegtes StudySetupImportReceipt fehlt im installierten lx-dtypes. Ohne Veraenderung der
+        gemeinsamen Umgebung erneut mit PYTHONPATH=/home/admin/lx-data-models:/home/admin/endoreg-db RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_upload_job_import_lease_postgresql.py
+        tests/services/test_upload_job_cancellation.py -q --tb=short: 30 passed, 1 plugin warning in 59.36s,
+        keine Skips, Exit 0; zusaetzliche bestehende temporaere Verzeichnis-Cleanup-Warnungen. Zwei neue
+        SIGKILL-Faelle vor/nach dem aeusseren Datenbank-Commit pruefen echte gefencete Abschlussfunktion,
+        Rollback/Commit-Erhalt, unveraendertes Chiffrat und kontrolliert abgelaufene Lease vor Wiederaufnahme.
+        Keine Anwendungsaenderungen; bestehende Abbruchtests nutzen dieselbe verschluesselte Fixture und
+        denselben Worker.'
+    note: 'Sequential coordination with codex-long-term-20261013: retained prior recovery evidence and
+      added separate-process cancellation/completion ordering regressions. No application changes or ingest
+      module split. Process tests cover PostgreSQL execution ownership, stale-worker takeover and the
+      terminal UploadJob completion boundary; the full cross-entrypoint media-publication and production-storage
+      matrix, broker loss, hard-worker termination and deployment acceptance remain open. 2026-10-13:
+      Zwei harte Prozessabbrueche pruefen nun die Datenbank-Commit-Grenze des UploadJob-Abschlusses mit
+      gemeinsamem Worker-Helfer und verschluesselter Fixture. Abbruch vor Commit rollt den Abschluss zurueck;
+      Wiederaufnahme bleibt bis Lease-Ablauf gesperrt und verwendet danach eine neue Fencing-Epoche. Abbruch
+      nach Commit erhaelt den terminalen Zustand und die noch nicht freigegebene Lease. Die Quelle bleibt
+      bytegleich. Dies ersetzt keinen Medienpublikations-, Broker- oder Deploymentnachweis; installierter
+      lx-dtypes-Vertrag separat noch inkompatibel.'
+    assessed_by: codex-long-term-20261013
+    assessed_at: '2026-10-13T07:42:31.212074Z'
 - id: import_reconciliation_and_recovery
   category: operations
   title: Partielle Importe werden sicher erkannt und wiederaufgenommen
@@ -738,8 +880,12 @@ definition_of_done:
         validierte Rohbereinigung, Validierung/Quellwechsel während Kandidatensuche und sichtbare echte
         Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Dokumentation: docs/video_datenerhalt_gc02_gc10_20260923.yml.
         Kein Rollout.'
-    assessed_by: codex-video-import-20260923-a
-    assessed_at: '2026-09-23T08:39:52.120429Z'
+    note: '2026-10-12: Start now reprocesses the existing VideoFile through fenced reanonymization, avoiding
+      generic import duplicate short-circuit after explicit state reset. Targeted Pyright and Ruff passed;
+      pytest tests/views/anonymization/test_anonymization_overview.py -q: 64 passed, 13 skipped. Deployment
+      and real-media backfill acceptance remain outstanding.'
+    assessed_by: codex-hub-gc09-20261012
+    assessed_at: '2026-10-12T15:37:31.601993Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert

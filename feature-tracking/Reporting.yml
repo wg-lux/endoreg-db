@@ -12,11 +12,94 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/report_finding_extraction.md
+  disposition: reference
+  note: YAML-Regeln, Terminologieauswahl und Präsenznachweise für Bericht-, SAP- und FHIR-Import.
 - path: docs/report_import_concurrency_implementation.md
   disposition: reference
   note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
     Vertrag mit lx-anonymizer.
 definition_of_done:
+- id: finding_suggestion_review
+  category: functionality
+  title: Erkannte Import- und KI-Befunde werden explizit bestätigt
+  acceptance:
+  - Die Anonymisierungsansicht zeigt Importnachweise und nur versioniert zugeordnete KI-Vorhersagelabels.
+  - Übernahmen erfordern eine verknüpfte Untersuchung, positive Evidenz und eine bewusste Aktion; Wiederholungen
+    sind idempotent.
+  - Medienwechsel verwerfen alte Vorschläge; Fehler bleiben sichtbar und Zentrenzugriff wird serverseitig
+    geprüft.
+  required: true
+  verification:
+    kind: manual
+    instructions: Komponenten-, API- und Typprüfungen für Befundvorschläge ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'Frontend: vitest run findingsApi, FindingSuggestionReview, AnonymizationValidationComponent:
+        59 passed.'
+    - kind: test
+      reference: 'Backend: tests/services/test_finding_extraction.py plus test_patient_finding_instance_create_is_repeatable_and_keeps_two_polyps:
+        16 passed; remaining API test fixture corrected and targeted rerun: 1 passed, 2 warnings. Earlier
+        failures were invalid test fixtures (missing video center and deliberately malformed persisted
+        JSON).'
+    - kind: command
+      reference: 'Full backend Pyright: 0 errors, 18 warnings. Final scoped Pyright including shared finding_review
+        contract: 0 errors, 0 warnings. vue-tsc passed; scoped ESLint, Ruff and git diff --check passed.'
+    - kind: document
+      reference: docs/report_finding_extraction.md
+    note: Implementiert und automatisiert geprüft. Keine Browser-Abnahme oder Produktionsfreigabe; Backend,
+      lx-dtypes und Frontend gemeinsam ausliefern. Video-Zuordnungen müssen zur ausgewählten Terminologieversion
+      passen. Bestehende Terminologie- und temporäre Cleanup-Warnungen im Testlauf.
+    assessed_by: codex-report-concepts-20261012
+    assessed_at: '2026-10-12T12:56:14.872760Z'
+- id: yaml_finding_extraction
+  category: functionality
+  title: YAML-gesteuerte Befundpräsenz für Bericht-, SAP- und FHIR-Import
+  acceptance:
+  - Versionierte Terminologie definiert typisierte spaCy-Regeln mit kanonischen Befundnamen; die konfigurierte
+    Registry bestimmt die Quelle.
+  - Bericht- und SAP-Import speichern validierte Präsenznachweise atomar; Wiederholungen duplizieren keine
+    Nachweise.
+  - Negierte und unsichere Erwähnungen werden nicht als positive Befunde gewertet; fehlende Erwähnungen
+    bleiben unbekannt.
+  - FHIR-Observation-Import unterstützt dieselben kanonischen Namen und einen expliziten Textextraktor
+    ohne spaCy-Abhängigkeit im Datenmodell.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_finding_extraction.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_finding_extraction.py
+        tests/services/test_report_import_service_unit.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_sap_ish_import.py tests/management/commands/test_import_sap_ish_txt.py tests/management/commands/test_import_sap_ish_zip.py
+        -q --tb=short: 109 passed, 4 subtests passed, 2 warnings'
+    - kind: command
+      reference: 'Scoped endoreg-db Pyright: 0 errors, 2 missing-stub warnings; scoped lx-data-models
+        Pyright: 0 errors, 0 warnings. Scoped Ruff and git diff --check passed.'
+    - kind: test
+      reference: 'lx-data-models: .venv/bin/pytest tests/test_fhir_clinical.py tests/unit/lx_dtypes/models/knowledge_base/fhir/test_terminology.py
+        -q: 65 passed.'
+    - kind: document
+      reference: docs/report_finding_extraction.md
+    - kind: code
+      reference: endoreg_db/services/reports/finding_extraction.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 18 warnings (2026-10-12)'
+    note: 'Import-Regressionsnachweise bleiben gültig. Die zuvor gemeldeten fremden Typfehler sind behoben:
+      vollständiger endoreg-db Pyright-Lauf am 2026-10-12 mit 0 Fehlern und 18 Warnungen. Klinische Vollständigkeit
+      der studienspezifischen Regeln und gemeinsame Auslieferung bleiben gesondert zu prüfen.'
+    assessed_by: codex-report-concepts-20261012
+    assessed_at: '2026-10-12T12:53:41.462905Z'
 - id: independent_report_persistence
   category: data_integrity
   title: Mehrere Berichte pro Patient bleiben unabhängig persistiert

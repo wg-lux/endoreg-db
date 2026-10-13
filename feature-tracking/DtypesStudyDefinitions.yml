@@ -276,7 +276,7 @@ definition_of_done:
   - Add an lx-annotate host service and management entry point for validate, dry-run, and import; expose
     the same service through an authorized API consumed by lx-annotate without putting orchestration in
     Django models or importing lx-annotate into endoreg_db.
-  - Persist datasets as existing endoreg_db AIDataSet rows and cohorts as existing lx_annotate StudyCohort
+  - Persist datasets as existing endoreg_db AIDataSet rows and cohorts as existing endoreg_db StudyCohort
     rows with their existing many-to-many relations; records appear in the current dataset dropdown and
     saved-cohort list after reload.
   - Persist a validated immutable mapping from author, definition identity, version, and content digest
@@ -305,8 +305,47 @@ definition_of_done:
       Compare the dry-run plan to the committed result and confirm no annotations were attached.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/services/study_setup_import.py
+    - kind: code
+      reference: endoreg_db/models/other/study_setup_import.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_setup_import.py
+    - kind: document
+      reference: ../dev/lx-annotate/docs/guides/study-definitions.yml
+    - kind: command
+      reference: env -u PYTHONPATH .devenv/state/venv/bin/pytest tests/services/test_study_cohort_identity.py
+        -o usefixtures=db -q --tb=short
+    - kind: code
+      reference: quality/lx_dtypes_model_inventory.yml
+    - kind: command
+      reference: '100 distinct focused tests passed: 40 lx-dtypes contracts, 53 PostgreSQL API/integration,
+        7 endoreg grouping with -o usefixtures=db. Full dtypes and targeted endoreg/app Pyright: 0 errors.
+        Migration drift: none. StudySetupImport scoped model inventory matches; global inventory still
+        has other missing/changed models and is not claimed clean.'
+    - kind: command
+      reference: 'Production hardening 2026-10-13: active patient-write authorization rechecked under
+        the actor lock; immutable receipt identity/digest validated on replay, including current cohort
+        dataset access. Per-cohort downloads no longer duplicate the complete import definition. Invalid
+        input returns safe 422 issue paths/codes; immutable conflicts return 409. PostgreSQL study import/cohort/workbook/table
+        API lane: 55 passed. Full shared and targeted app/backend Pyright: zero errors. Coordinated installed-package
+        rollout and operational proof remain open.'
+    - kind: command
+      reference: 'lx-data-models: .venv/bin/pytest -q — 1531 passed, 1 skipped, 438 warnings, exit 0;
+        .venv/bin/pyright — 0 errors, 0 warnings.'
+    note: 'Production hardening 2026-10-13: active patient-write authorization rechecked under the actor
+      lock; immutable receipt identity/digest validated on replay, including current cohort dataset access.
+      Per-cohort downloads no longer duplicate the complete import definition. Invalid input returns safe
+      422 issue paths/codes; immutable conflicts return 409. PostgreSQL study import/cohort/workbook/table
+      API lane: 55 passed. Full shared and targeted app/backend Pyright: zero errors. Coordinated installed-package
+      rollout and operational proof remain open. Final full shared suite: 1531 passed, 1 skipped, 438
+      warnings in 378.17s; exit 0. Final workbook narrative-exclusion regression: 1 passed. All 3 readiness
+      YAML files validate. Both wheel builds contain the touched contract/service files and receipt migration;
+      no clean-install or production rollout is claimed.'
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-13T09:52:28.576880Z'
 - id: saved_cohort_live_membership
   category: data_integrity
   title: First delivery - Re-evaluate YAML-created cohorts against current authorized records
@@ -339,8 +378,33 @@ definition_of_done:
       above the preview limit, and export consistency with the reviewed selection.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/views/study_cohorts.py
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/views/study_export.py
+    - kind: code
+      reference: endoreg_db/services/studies/cohort.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_cohorts.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_excel_export.py
+    - kind: command
+      reference: 'Additional hardening 2026-10-13: removed duplicate dataset-video queries and DEBUG read-permission
+        bypass; write routes require patient:write, inactive actors are rejected. Unsaved existing-cohort
+        edits cannot be previewed as the saved definition. Media references and workbook responses retain
+        center scope and private/no-store caching. 55 PostgreSQL study API tests and 18 frontend tests
+        passed. Legacy workbook metadata now correctly describes reviewed IDs with current authorized
+        values. Immutable reviewed-value snapshot/provenance and full-population semantics remain open.'
+    note: 'Additional hardening 2026-10-13: removed duplicate dataset-video queries and DEBUG read-permission
+      bypass; write routes require patient:write, inactive actors are rejected. Unsaved existing-cohort
+      edits cannot be previewed as the saved definition. Media references and workbook responses retain
+      center scope and private/no-store caching. 55 PostgreSQL study API tests and 18 frontend tests passed.
+      Legacy workbook metadata now correctly describes reviewed IDs with current authorized values. Immutable
+      reviewed-value snapshot/provenance and full-population semantics remain open.'
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-13T09:48:29.051162Z'
 - id: field_and_dependency_inventory
   category: requirements
   title: Phase 1 - Inventory every lx-data-models field and host bootstrap dependency
@@ -788,6 +852,9 @@ definition_of_done:
     - kind: command
       reference: PYTHONPATH=/home/admin/lx-data-models /home/admin/endoreg-db/.devenv/state/venv/bin/pytest
         tests -q
+    - kind: command
+      reference: 'uv build --wheel --out-dir /tmp/codex-medlab-production-wheels (lx-data-models and endoreg-db):
+        both succeeded; dependency declarations remain inconsistent.'
     note: 'DeploymentSetup v1 mit vier YAML-Vorlagen, JSON Schema und setup_deployment provision/validate/plan/apply
       implementiert. Der geprüfte Lock bindet Manifest und tatsächlich geladene Paketabhängigkeiten; Center-Auswahl
       und alle Referenzkataloge werden gemeinsam transaktional geschrieben. Optionale Registry-Aktivierung
@@ -813,9 +880,17 @@ definition_of_done:
       bestanden, 1 Fehler im neuen Pakettest wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad
       korrigiert. Anschließender Paket-/Integrationslauf: 74 bestanden, 2 Warnungen in 81.51s, einschließlich
       des korrigierten Tests. Insgesamt 297 unterschiedliche Tests erfolgreich. Keine Produktivdaten oder
-      Deployments geändert; PostgreSQL-/Produktivprobe bleibt offen.'
-    assessed_by: codex-stash-review-20260929
-    assessed_at: '2026-09-29T10:01:01.607550Z'
+      Deployments geändert; PostgreSQL-/Produktivprobe bleibt offen.
+
+
+      2026-10-13 source hardening review: wheel builds succeed for current lx-dtypes 0.5.1 and endoreg-db
+      1.5.3. This is not a clean-install proof: endoreg-db declares lx-dtypes==0.5.0; lx-annotate declares
+      endoreg-db==1.5.2 and lx-dtypes==0.4.4. Coordinate releases and regenerate consumer locks before
+      deployment. The backend virtualenv launcher is currently unavailable; backend checks used the application
+      interpreter with explicit source PYTHONPATH. No production deployment, immutable legacy cohort value-snapshot
+      or complete backup/restore rehearsal is claimed.'
+    assessed_by: codex-medlab-20261012-a
+    assessed_at: '2026-10-13T09:48:36.065582Z'
 - id: researcher_and_operator_guides
   category: documentation
   title: Publish one canonical authoring guide and one host migration runbook

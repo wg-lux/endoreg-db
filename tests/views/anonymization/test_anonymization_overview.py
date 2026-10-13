@@ -6,6 +6,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core.files.base import ContentFile
+from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 from django.test import override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -827,3 +828,32 @@ def test_failed_duplicates_do_not_overlay_completed_media(
     assert UploadJob.objects.filter(pk__in=[job.pk for job in jobs]).count() == len(
         jobs
     )
+
+
+@pytest.mark.django_db
+def test_start_reset_video_reprocesses_existing_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import Mock
+    from endoreg_db.services.privacy import workflow
+
+    def file_exists(field: FieldFile) -> bool:
+        return bool(field.name)
+
+    video = VideoFile.objects.create(
+        raw_video_hash="reset-existing-video",
+        center=Center.objects.create(name="reset-existing-video"),
+        raw_file="retained-source.mp4",
+        meta={},
+        state=VideoState.objects.create(was_created=False),
+    )
+    importer = Mock(spec=workflow.VideoImportService)
+    monkeypatch.setattr(workflow, "VideoImportService", lambda: importer)
+    monkeypatch.setattr(workflow, "file_exists", file_exists)
+    service = AnonymizationService()
+
+    assert service.start(video.pk, kind="video") == "video"
+    importer.reanonymize_existing_video.assert_called_once()
+    assert importer.reanonymize_existing_video.call_args.args[0].pk == video.pk
+    importer.import_and_anonymize.assert_not_called()
+    assert VideoFile.objects.filter(raw_video_hash=video.raw_video_hash).count() == 1

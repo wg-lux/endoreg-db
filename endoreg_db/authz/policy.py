@@ -78,6 +78,7 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
     "patient-medical-ledger": "patient",
+    "patient-medical-terminology": "patient",
     "patient-create-medication": "patient",
     "patient-update-medication": "patient",
     "patient-create-medication-schedule": "patient",
@@ -87,6 +88,12 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "case-detail": "patient",
     "case-close": "patient",
     "case-reopen": "patient",
+    "case-select-examination": "patient",
+    "case-research-export": "patient",
+    "case-research-study-export": "patient",
+    "examination-revision-list": "patient",
+    "examination-revision-detail": "patient",
+    "examination-revision-finalize": "patient",
     "case-create-with-examination": "patient",
     "case-attach-document": "patient",
     # Custom patient helper

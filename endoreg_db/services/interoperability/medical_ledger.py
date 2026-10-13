@@ -33,8 +33,14 @@ from lx_dtypes.models.ledger.medical.Write import (
     PatientMedicationScheduleUpdate,
     PatientMedicationUpdate,
 )
+from lx_dtypes.models.contracts.reference_catalog import (
+    ReferenceCatalogPayload,
+    ReferenceKind,
+)
+from lx_dtypes.models.contracts.medication import MedicationPeriodFields
 
 from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.administration.case.case import Case
 from endoreg_db.models.medical.disease import (
     Disease,
     DiseaseClassificationChoice,
@@ -76,6 +82,28 @@ MedicalLedgerPersistenceStep = Literal[
     "medication_schedule",
     "receipt",
 ]
+
+
+def medical_ledger_terminology() -> ReferenceCatalogPayload:
+    """Expose persisted reference definitions through their canonical dtype shape."""
+    from endoreg_db.services.reference_data.catalog_export import export_reference_row
+
+    records = [
+        export_reference_row(kind, row).model_dump(mode="json")
+        for kind, rows in (
+            (
+                ReferenceKind.MEDICATION,
+                Medication.objects.select_related("default_unit").order_by("name"),
+            ),
+            (
+                ReferenceKind.LAB_VALUE,
+                LabValue.objects.select_related().order_by("name"),
+            ),
+            (ReferenceKind.UNIT, Unit.objects.order_by("name")),
+        )
+        for row in rows
+    ]
+    return ReferenceCatalogPayload.model_validate({"records": records})
 
 
 class MedicalLedgerReferenceConflict(ValueError):
@@ -234,6 +262,22 @@ def _resolve_intake_times(names: list[str]) -> list[MedicationIntakeTime]:
     if len(by_name) != len(names):
         raise MedicalLedgerReferenceConflict("intake_times")
     return [by_name[name] for name in names]
+
+
+def validate_medical_references(
+    *,
+    medications: list[PatientMedicationCreate],
+    lab_values: list[PatientLabValueCreate],
+) -> None:
+    """Validate snapshot references without creating or modifying clinical rows."""
+    for medication in medications:
+        _resolve_medication(medication.medication)
+        _resolve_indication(medication.medication_indication)
+        _resolve_unit(medication.unit)
+        _resolve_intake_times(medication.intake_times)
+    for value in lab_values:
+        _resolve_lab_value(value.lab_value)
+        _resolve_unit(value.unit)
 
 
 def _patient_medications_by_ids(
@@ -416,8 +460,16 @@ def _create_lab_sample(
 def _canonical_medical_ledger_request_hash(
     payload: PatientMedicalLedgerCreate,
 ) -> str:
+    # Preserve receipt hashes for pre-period clients that omit the additive fields.
+    data = payload.model_dump(mode="json")
+    if payload.case_id is None:
+        data.pop("case_id")
+    for medication in data["medications"]:
+        for field in ("start_at", "end_at"):
+            if medication[field] is None:
+                medication.pop(field)
     serialized = json.dumps(
-        payload.model_dump(mode="json"),
+        data,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
@@ -590,6 +642,21 @@ def _create_patient_medical_ledger_once(
         if payload.patient != str(locked_patient.pk):
             raise MedicalLedgerReferenceConflict("patient")
 
+        case = None
+        if payload.case_id is not None:
+            case = (
+                Case.objects.select_for_update()
+                .filter(
+                    pk=payload.case_id,
+                    patient=locked_patient,
+                    is_deleted=False,
+                    is_closed=False,
+                )
+                .first()
+            )
+            if case is None:
+                raise MedicalLedgerReferenceConflict("case_id")
+
         for disease_payload in payload.diseases:
             _create_disease(patient=locked_patient, payload=disease_payload)
             _after_aggregate_persistence_step("disease")
@@ -597,10 +664,15 @@ def _create_patient_medical_ledger_once(
             _create_event(patient=locked_patient, payload=event_payload)
             _after_aggregate_persistence_step("event")
         for sample_payload in payload.lab_samples:
-            _create_lab_sample(patient=locked_patient, payload=sample_payload)
+            sample = _create_lab_sample(patient=locked_patient, payload=sample_payload)
+            if case is not None:
+                case.patient_lab_samples.add(sample)
+                case.patient_lab_values.add(*sample.values.all())
             _after_aggregate_persistence_step("lab_sample")
         for value_payload in payload.lab_values:
-            _create_lab_value(patient=locked_patient, payload=value_payload)
+            value = _create_lab_value(patient=locked_patient, payload=value_payload)
+            if case is not None:
+                case.patient_lab_values.add(value)
             _after_aggregate_persistence_step("lab_value")
 
         medication_records: list[PatientMedication] = []
@@ -612,6 +684,8 @@ def _create_patient_medical_ledger_once(
                 )
             )
             _after_aggregate_persistence_step("medication")
+        if case is not None:
+            case.patient_medications.add(*medication_records)
         for schedule_payload in payload.medication_schedules:
             schedule = PatientMedicationSchedule.objects.create(patient=locked_patient)
             schedule.medication.set(
@@ -621,6 +695,8 @@ def _create_patient_medical_ledger_once(
                 ]
             )
             _after_aggregate_persistence_step("medication_schedule")
+            if case is not None:
+                case.patient_medication_schedules.add(schedule)
 
         record_ids = _record_ids_for_patient(locked_patient)
         receipt = MedicalLedgerWriteReceipt(
@@ -703,6 +779,8 @@ def _create_patient_medication_record(
         unit=_resolve_unit(payload.unit),
         dosage=payload.dosage,
         active=payload.active,
+        start_at=payload.start_at,
+        end_at=payload.end_at,
     )
     medication.intake_times.set(_resolve_intake_times(payload.intake_times))
     return medication
@@ -732,7 +810,20 @@ def update_patient_medication(
     if medication is None:
         raise MedicalLedgerPatientResourceNotFound
 
+    # Validate the complete interval before mutating a partially updated row.
+    MedicationPeriodFields.model_validate(
+        {
+            "start_at": medication.start_at,
+            "end_at": medication.end_at,
+            **payload.model_dump(include={"start_at", "end_at"}, exclude_unset=True),
+        },
+        strict=True,
+    )
     update_fields: list[str] = []
+    for period_field in ("start_at", "end_at"):
+        if period_field in payload.model_fields_set:
+            setattr(medication, period_field, getattr(payload, period_field))
+            update_fields.append(period_field)
     if "medication" in payload.model_fields_set:
         medication.medication = _resolve_medication(payload.medication or "")
         update_fields.append("medication")

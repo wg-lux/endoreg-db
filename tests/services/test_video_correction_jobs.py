@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from collections.abc import Generator
 
 import pytest
+from lx_dtypes.models.contracts.video_processing import VideoMaskConfig
 
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 import endoreg_db.services.jobs.video_correction_jobs as video_correction_jobs
@@ -296,18 +297,21 @@ def test_processor_region_does_not_require_detector_capability(tmp_path: Path) -
     class MaskApplication:
         device_name: str = ""
 
-        def _load_mask(self) -> dict[str, str]:
-            return {"device_name": self.device_name}
+        def _load_mask(self) -> VideoMaskConfig:
+            assert self.device_name == "olympus_cv_1500"
+            return VideoMaskConfig(
+                x=0, y=0, width=100, height=80, image_width=160, image_height=120
+            )
 
         def mask_video_streaming(
             self,
             *,
             input_video: Path,
-            mask_config: dict[str, str],
+            mask_config: dict[str, object],
             output_video: Path,
             use_named_pipe: bool,
         ) -> bool:
-            assert mask_config == {"device_name": "olympus_cv_1500"}
+            assert mask_config == self._load_mask().model_dump(mode="json")
             calls.append((input_video, output_video, use_named_pipe))
             return True
 

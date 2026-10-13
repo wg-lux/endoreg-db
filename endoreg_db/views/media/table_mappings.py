@@ -32,7 +32,7 @@ from endoreg_db.services.studies.table_parser import (
 class TableImportPermission(BasePermission):
     def has_permission(self, request: Request, view: object) -> bool:
         del view
-        if not request.user.is_authenticated:
+        if not request.user.is_authenticated or not request.user.is_active:
             return False
         user = cast(User, request.user)
         role = (

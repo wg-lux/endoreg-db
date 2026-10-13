@@ -2,18 +2,132 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
+import pytest
 from _pytest.logging import LogCaptureFixture
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.utils.structured_logging import (
     StructuredJsonFormatter,
     emit_structured_event,
     path_reference,
     request_log_context,
+    safe_log_payload,
+    safe_log_value,
 )
+
+pytestmark = pytest.mark.no_db
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, None),
+        (True, True),
+        (7, 7),
+        (2.5, 2.5),
+        ("ready", "ready"),
+        (b"abc", {"bytes_redacted": True, "length": 3}),
+        (
+            ValueError("invalid input"),
+            {"type": "ValueError", "message": "invalid input"},
+        ),
+        (1j, "1j"),
+    ],
+)
+def test_safe_log_value_scalar_contract(value: object, expected: JsonValue) -> None:
+    actual = safe_log_value(value)
+
+    assert actual == expected
+    assert type(actual) is type(expected)
+
+
+@pytest.mark.parametrize("container", [list, tuple, set, frozenset])
+@pytest.mark.parametrize("size", [0, 1, 100, 101])
+def test_safe_log_value_collection_limit(
+    container: Callable[
+        [range], list[int] | tuple[int, ...] | set[int] | frozenset[int]
+    ],
+    size: int,
+) -> None:
+    value = container(range(size))
+    expected = list(value)[:100]
+
+    actual = safe_log_value(value)
+
+    assert actual == expected
+    assert len(value) == size
+
+
+@pytest.mark.parametrize(
+    "value", [Path("report.pdf"), b"abc", {"x": 1}, [1], ValueError("bad")]
+)
+def test_sensitive_key_precedes_value_conversion(value: object) -> None:
+    actual = safe_log_value(value, key="API_TOKEN")
+
+    assert actual == "<redacted:sensitive>"
+
+
+@pytest.mark.parametrize("container", [list, tuple, set, frozenset])
+def test_collection_elements_are_sanitized(
+    container: Callable[[list[bytes]], object],
+) -> None:
+    value = container([b"abc"])
+
+    actual = safe_log_value(value)
+
+    assert actual == [{"bytes_redacted": True, "length": 3}]
+
+
+def test_invalid_path_encoding_raises_instead_of_returning_unredacted_text() -> None:
+    value = "/\ud800"
+
+    with pytest.raises(UnicodeEncodeError):
+        safe_log_value(value)
+
+
+def test_safe_log_value_nested_mapping_uses_each_child_key() -> None:
+    value = {1: ({"password": b"abc", "count": 2},), "secret": ["hidden"]}
+    expected = {
+        "1": [{"password": "<redacted:sensitive>", "count": 2}],
+        "secret": "<redacted:sensitive>",
+    }
+
+    actual = safe_log_value(value)
+
+    assert actual == expected
+    assert value["secret"] == ["hidden"]
+
+
+def test_safe_log_payload_and_nested_mapping_have_identical_outputs() -> None:
+    value: JsonObject = {"items": [{"cookie": "hidden", "ok": True}], "empty": {}}
+
+    actual = safe_log_payload(value)
+
+    assert actual == {
+        "items": [{"cookie": "<redacted:sensitive>", "ok": True}],
+        "empty": {},
+    }
+    assert actual == safe_log_value(value)
+
+
+def test_safe_log_value_path_and_exception_redaction() -> None:
+    path = Path("report.pdf")
+
+    path_value = safe_log_value(path)
+    error_value = safe_log_value(ValueError("report.pdf"))
+
+    assert path_value == {
+        "path_sha256": "6466e450a16b77b865c5829d6b6c56d9f892956475642dbeb9ccc4340fe01b15",
+        "suffix": ".pdf",
+    }
+    assert error_value == {
+        "type": "ValueError",
+        "message": "<redacted:media_filename:sha256=6466e450a16b77b865c5829d6b6c56d9f892956475642dbeb9ccc4340fe01b15>",
+    }
 
 
 def test_structured_json_formatter_outputs_json_and_redacts_sensitive_values() -> None:

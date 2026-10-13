@@ -1,0 +1,27 @@
+version: 1
+tier: domain
+path: docs
+parent: ../structure.yml
+summary: Architecture contracts, operational runbooks and documentation navigation.
+responsibilities:
+- Maintain linked architecture and operational references.
+boundaries:
+- Feature scope and readiness evidence belong in feature-tracking YAML.
+files:
+- file: key_rotation.md
+  role: Application rotation procedure linked to the central LuxNix catalog
+- file: secret_rotation.yml
+  role: Backend keyring and migration contracts; readiness remains in feature YAML
+- file: README.md
+  role: Documentation navigation
+- file: agent_context.md
+  role: Agent map schema and design rationale
+- file: model_layer_map_for_agents.md
+  role: Model ownership and staged refactoring rules
+- file: video_storage_normalization.md
+  role: Canonical video architecture and operational contract
+- file: hub_ingest_operations.md
+  role: Hub ingestion operations
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md

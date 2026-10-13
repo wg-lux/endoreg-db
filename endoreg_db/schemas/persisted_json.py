@@ -19,6 +19,7 @@ from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferVideoSegmentPayload,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.contracts.finding_extraction import FindingExtractionEvidence
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
@@ -329,6 +330,8 @@ class RawPdfMetaPayload(BaseModel):
     """
 
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
+
+    finding_extraction: FindingExtractionEvidence | None = None
 
     document_type: DocumentType | str | None = None
     validation_source: str | None = None

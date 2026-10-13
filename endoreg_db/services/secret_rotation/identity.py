@@ -20,6 +20,10 @@ from endoreg_db.config.identity_hashing import (
     identity_keyring_snapshot,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
+from endoreg_db.utils.hashs import (
+    get_identity_salt_fingerprint as salt_fingerprint,
+    get_patient_identity_fingerprint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,23 +86,10 @@ def identity_rotation_transaction(function: Callable[P, R]) -> Callable[P, R]:
     return wrapped
 
 
-def salt_fingerprint(salt: bytes) -> str:
-    return hmac.new(salt, b"endoreg-identity-salt-v1", hashlib.sha256).hexdigest()
-
-
 def identity_fingerprint(source: IdentitySource, center_id: int, salt: bytes) -> str:
-    payload = json.dumps(
-        [
-            "patient-identity-v1",
-            source.first_name,
-            source.last_name,
-            source.dob.isoformat(),
-            center_id,
-        ],
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode()
-    return hmac.new(salt, payload, hashlib.sha256).hexdigest()
+    return get_patient_identity_fingerprint(
+        source.first_name, source.last_name, source.dob, center_id, salt=salt
+    )
 
 
 def legacy_hash(

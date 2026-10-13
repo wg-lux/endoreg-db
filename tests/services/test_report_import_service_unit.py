@@ -806,6 +806,9 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         report_import_module, "mark_report_import_fence_failed", release
     )
     monkeypatch.setattr(report_import_module, "finalize_report_success", finalize)
+    extract = Mock(side_effect=require_guard)
+    calls.attach_mock(extract, "extract_findings")
+    monkeypatch.setattr(report_import_module, "record_report_finding_presence", extract)
     monkeypatch.setattr(
         service,
         "_get_existing_completed_report",
@@ -830,6 +833,7 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         if existing or not needs_processing:
             anonymize.assert_not_called()
             finalize.assert_not_called()
+            extract.assert_not_called()
             if existing:
                 if with_lifecycle:
                     acquire.assert_called_once()
@@ -844,7 +848,11 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
             else:
                 release.assert_not_called()
         else:
-            assert calls.mock_calls == [call.anonymize(context), call.finalize(context)]
+            assert calls.mock_calls == [
+                call.anonymize(context),
+                call.extract_findings(report),
+                call.finalize(context),
+            ]
             if processed or retry:
                 assert context.retry is True
                 assert create.call_count == 2

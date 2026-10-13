@@ -154,7 +154,7 @@ def test_dependency_edit_invalidates_reviewed_lock(
     setup = template("coloreg")
     resolved = validate_deployment(setup, registry)
     root = registry.source_paths("endoreg_reference", "1.0.0")[0]
-    source = root / "endoreg_reference" / "unit.yml"
+    source = root / "terminology" / "endoreg_reference" / "unit.yml"
     source.write_text(source.read_text() + "\n# changed after plan\n")
     with pytest.raises(ValueError, match="sources differ"):
         apply_deployment(setup, resolved.lock, registry)

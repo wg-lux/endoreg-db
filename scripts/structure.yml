@@ -1,0 +1,25 @@
+version: 1
+tier: domain
+path: scripts
+parent: ../structure.yml
+summary: Repository checks, diagnostics and development utilities.
+responsibilities:
+- Provide reusable read-only quality and contract checks.
+boundaries:
+- Quality checks must not perform clinical import or mutate runtime storage.
+files:
+- file: lint_structure.py
+  role: Typed structure graph and path validator
+- file: check_documentation_governance.py
+  role: Documentation policy and inventory validation
+- file: check_lx_dtypes_contract_boundaries.py
+  role: Canonical type ownership guard
+- file: check_django_startup_imports.py
+  role: Import and startup smoke checks
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests/scripts
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/scripts/test_lint_structure.py
+    -q

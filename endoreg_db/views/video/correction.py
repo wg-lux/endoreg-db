@@ -57,6 +57,7 @@ from endoreg_db.services.streaming.hls_media import (
     get_ready_hls_artifact,
     hls_playlist_path,
 )
+from endoreg_db.services.video_files.video_masks import get_video_mask
 from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.jobs.video_correction_jobs import (
     VideoAnonymizationCorrectionJobConfig,
@@ -259,7 +260,7 @@ class VideoAnonymizationCorrectionView(APIView):
     def post(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(VideoFile, pk=pk)
         try:
-            payload = self._validate_payload(_request_payload_data(request))
+            payload = self.validate_payload(_request_payload_data(request))
         except ValueError as exc:
             return _error_response(str(exc), status.HTTP_400_BAD_REQUEST)
         try:
@@ -294,7 +295,7 @@ class VideoAnonymizationCorrectionView(APIView):
         )
 
     @classmethod
-    def _validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
+    def validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
         strategy = str(data.get("strategy") or "").strip()
         if strategy not in cls._STRATEGIES:
             raise ValueError("strategy must be detector_assisted or processor_region")
@@ -310,6 +311,22 @@ class VideoAnonymizationCorrectionView(APIView):
             if isinstance(region_value, Mapping)
             else cast(Mapping[str, object], {})
         )
+        profile_name = region.get("mask_name")
+        if profile_name is not None:
+            if not isinstance(profile_name, str) or region.get("mode") != "profile":
+                raise ValueError("mask_name requires region.mode=profile")
+            profile = get_video_mask(profile_name)
+            return {
+                "strategy": strategy,
+                "processing_method": processing_method,
+                "region": {
+                    "mode": "custom",
+                    "device_name": profile.device_name,
+                    "mask_profile": profile.model_dump(mode="json"),
+                },
+                "human_review_required": True,
+                "apply_all_frames": True,
+            }
         normalized_region: dict[str, object] = {
             "mode": str(region.get("mode") or "device"),
             "device_name": str(region.get("device_name") or "olympus_cv_1500"),

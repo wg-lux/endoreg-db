@@ -337,7 +337,7 @@ def test_library_cleaner_records_each_real_encoding_path(
                 return [(0, 0, 8, 8)]
 
             monkeypatch.setattr(
-                "lx_anonymizer.frame_cleaner.detect_phi_regions", detect_regions
+                "lx_anonymizer.frame_cleaner.cleaner.detect_phi_regions", detect_regions
             )
             assert (
                 cleaner.mask_video_with_phi_detector(source, output).frames_processed

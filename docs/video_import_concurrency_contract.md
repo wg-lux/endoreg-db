@@ -209,9 +209,24 @@ Video import explicitly constructs `FrameCleaner(quality_profile="exhaustive")`
 inside the existing `VideoAnonymizer` adapter. Deploy this caller with the
 matching lx-anonymizer package; older packages that lack this profile must fail
 rather than silently use sampled analysis. The profile decodes every source
-frame and applies full-frame RapidOCR, with no sampling cap or metadata-driven
+frame and applies a full-frame OCR cascade, with no sampling cap or metadata-driven
 early stopping. It preserves the source timeline and the existing masking,
 storage-validation, and publication paths.
+
+The default model order is RapidOCR, Tesserocr, then Pytesseract. Model blocks
+are lazy and execute sequentially in attempt-owned processes with loading and
+inference deadlines. Failure terminates the worker before the next block starts.
+`model_execution` records model names that succeeded or failed. If every OCR
+block fails, the compute library may return a configured-mask, silent candidate
+with the source dimensions and timeline, marked `configured_mask_fallback=true` and
+`reprocessing_required=true`. Metadata coverage is incomplete with
+`cap_reason=model_failure`; empty OCR is never evidence of no sensitive content.
+This candidate is for review/reprocessing, not clinical release or an automatic
+replacement of a validated master. `extract_only` still returns no artifact.
+Decoder, encoder, integrity and cleanup failures continue to raise. Host
+storage/profile/timeline gates, publication and retry ownership are unchanged.
+Host persistence and review presentation of the new model summary must be
+verified before deploying this compute contract.
 
 Compute-side optimizations reuse OCR only for pixel-identical consecutive
 frames and cache repeated text within the current invocation. Optional

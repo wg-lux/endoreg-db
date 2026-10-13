@@ -22,14 +22,21 @@ def get_identity_salt() -> str:
     return validate_identity_salt(getattr(settings, "DJANGO_SALT", None))
 
 
-def get_identity_salt_fingerprint() -> str:
+def get_identity_salt_fingerprint(salt: bytes | None = None) -> str:
     return hmac.new(
-        get_identity_salt().encode("utf-8"), b"endoreg-identity-salt-v1", hashlib.sha256
+        get_identity_salt().encode("utf-8") if salt is None else salt,
+        b"endoreg-identity-salt-v1",
+        hashlib.sha256,
     ).hexdigest()
 
 
 def get_patient_identity_fingerprint(
-    first_name: str, last_name: str, dob: date, center_id: int
+    first_name: str,
+    last_name: str,
+    dob: date,
+    center_id: int,
+    *,
+    salt: bytes | None = None,
 ) -> str:
     """Disambiguate legacy hashes without changing their persisted identity keys."""
     birthday = dob.date() if isinstance(dob, datetime) else dob
@@ -39,7 +46,9 @@ def get_patient_identity_fingerprint(
         separators=(",", ":"),
     ).encode("utf-8")
     return hmac.new(
-        get_identity_salt().encode("utf-8"), payload, hashlib.sha256
+        get_identity_salt().encode("utf-8") if salt is None else salt,
+        payload,
+        hashlib.sha256,
     ).hexdigest()
 
 

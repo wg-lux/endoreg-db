@@ -640,10 +640,24 @@ definition_of_done:
   category: functionality
   title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte
   acceptance:
+  - All model blocks failing still applies the explicitly configured mask or shared default and marks
+    the candidate for human review and reprocessing; encoder and integrity failures remain errors.
+  - Mask defaults load from lx-dtypes package data using VideoMaskConfig; authenticated catalogue
+    APIs create immutable runtime masks and resolve selections into persisted job snapshots.
+  - LX-Annotate can create and select a mask; invalid coordinates, duplicate names, unknown selections
+    and unauthorized writes are rejected and tested.
+
   - Videoimporte wählen ausdrücklich das exhaustive-Profil von lx-anonymizer. Jeder Quellframe wird vollständig
-    mit RapidOCR analysiert; Sampling und Metadaten-Early-Stopping dürfen Einzelbild-Patienteninformationen
+    mit einer explizit geordneten OCR-Kaskade analysiert (Standard RapidOCR, Tesserocr, Pytesseract);
+    Modellladen und Inferenz besitzen Prozess-Deadlines. Sampling und Metadaten-Early-Stopping dürfen Einzelbild-Patienteninformationen
     nicht ausschließen. Exakte OCR-Caches bleiben versuchslokal; Storage-, Lease- und Publikationseigentum
     bleiben unverändert.
+  - Ausgeschöpfte OCR-Modelle liefern keine negative PHI-Erkennung. lx-anonymizer darf ausschließlich
+    einen mit der konfigurierten Maske verarbeiteten, stummen, unveröffentlichten Kandidaten mit unveränderter Bildfolge
+    für erneute Verarbeitung zurückgeben. model_execution benennt verwendete und fehlgeschlagene Modelle,
+    configured_mask_fallback und reprocessing_required; Metadatenabdeckung bleibt bei Modellfehlern unvollständig.
+    Decoder-, Encoder-, Integritäts- und Bereinigungsfehler bleiben harte Fehler. Publikation, klinische
+    Freigabe und erneute Verarbeitung verbleiben beim Host; ein Fallback-Kandidat ist keine klinische Freigabe.
   - Ein persistierter, typisierter Importversuch besitzt eine eindeutige aktive Lease, durch Datenbankzeit
     bestimmte Ablaufzeit, Heartbeat und monotonen Fencing-Token. Dateisperren sind ausschließlich lokale
     Optimierungen und dürfen nicht allein anhand ihres Alters fremd übernommen werden.
@@ -693,6 +707,13 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: test
+      reference: '2026-10-12 codex-model-loading-20261012: tests/services/test_video_masks.py and tests/views/media/test_video_masks.py: 10 passed, 2 warnings. Shared mask creation/loading, immutable processing snapshots, invalid rectangles, duplicate/unknown names and authentication/write permissions covered.'
+    - kind: command
+      reference: 'Mask service/view, correction view/job/schema and tests: focused Pyright 0 errors, 1 existing missing-stub warning. Full Pyright encountered unrelated report-import/finding-extraction errors during concurrent work; no production-readiness claim.'
+    - kind: test
+      reference: 'Paired anonymizer source: 205 model/frame/report/real-video regressions passed; final 55 model/report/LLM tests passed, including nested-worker prevention. LX-Annotate: 11 API/drawing/correction tests passed; application and test TypeScript plus focused ESLint passed.'
+
     - kind: code
       reference: endoreg_db/services/hub/upload_job_import_lease.py
     - kind: code

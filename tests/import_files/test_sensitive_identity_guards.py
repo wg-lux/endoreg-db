@@ -12,6 +12,77 @@ from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     persist_sensitive_meta_candidate,
 )
 from endoreg_db.models import Center, Patient, RawPdfFile, SensitiveMeta
+from endoreg_db.services.privacy.quality_evaluation import DIRECT_IDENTIFIER_FIELDS
+
+
+@pytest.mark.django_db
+def test_validation_erasure_is_complete_idempotent_and_preserves_identity(
+    base_db_data: bool,
+) -> None:
+    center = Center.objects.create(name=f"erasure-{uuid4().hex}")
+    meta = SensitiveMeta.objects.create(
+        center=center,
+        patient_first_name="Ada",
+        patient_last_name="Lovelace",
+        patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
+        examination_date=date(2026, 9, 21),
+        casenumber="private-case",
+        examiner_first_name="Private",
+        examiner_last_name="Examiner",
+        text="Private source text",
+        anonymized_text="Unverified residual text",
+        file_path="private-source.pdf",
+        endoscope_sn="private-serial",
+        validation_comment="Private comment",
+    )
+    identity = (
+        meta.patient_hash,
+        meta.examination_hash,
+        meta.pseudo_patient_id,
+        meta.pseudo_examination_id,
+        meta.identity_fingerprint,
+    )
+    meta.create_anonymized_record()
+    assert all(getattr(meta, name) in (None, "") for name in DIRECT_IDENTIFIER_FIELDS)
+    assert not meta.examiners.exists()
+    receipt = meta.direct_identifier_tombstone
+    assert meta.direct_identifiers_cleared_at is not None
+    assert receipt["pseudonym_hashes_retained"] is True
+    meta.create_anonymized_record()
+    meta.save()
+    meta.refresh_from_db()
+    assert meta.direct_identifier_tombstone == receipt
+    assert not meta.examiners.exists()
+    assert (
+        meta.patient_hash,
+        meta.examination_hash,
+        meta.pseudo_patient_id,
+        meta.pseudo_examination_id,
+        meta.identity_fingerprint,
+    ) == identity
+    meta.patient_first_name = "Reintroduced"
+    with pytest.raises(ValueError, match="cannot contain direct identifiers"):
+        meta.save()
+    meta.refresh_from_db()
+    assert meta.patient_first_name is None
+
+
+@pytest.mark.django_db
+def test_erasure_rejects_identity_changed_since_validation(base_db_data: bool) -> None:
+    center = Center.objects.create(name=f"changed-before-erasure-{uuid4().hex}")
+    meta = SensitiveMeta.objects.create(
+        center=center,
+        patient_first_name="Ada",
+        patient_last_name="Lovelace",
+        patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
+        examination_date=date(2026, 9, 21),
+    )
+    SensitiveMeta.objects.filter(pk=meta.pk).update(patient_hash="f" * 64)
+    with pytest.raises(ValueError, match="Identity changed"):
+        meta.create_anonymized_record()
+    meta.refresh_from_db()
+    assert meta.patient_first_name == "Ada"
+    assert meta.direct_identifiers_cleared_at is None
 
 
 @pytest.mark.django_db
@@ -67,7 +138,7 @@ def test_erased_legacy_identity_requires_explicit_enrollment_review(
         identity_fingerprint="",
         identity_salt_fingerprint="",
     )
-    with pytest.raises(ValueError, match="requires explicit review"):
+    with pytest.raises(ValueError, match="explicit review"):
         SensitiveMeta.objects.create(
             center=center,
             patient_first_name="Ada",

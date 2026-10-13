@@ -51,6 +51,10 @@ def persist_case_graph(
     patient_id = getattr(patient, "pk", None)
     if not isinstance(patient_id, int):
         raise ValueError("A persisted patient is required")
+    if scalar_values.get("is_closed") is True:
+        raise CaseLifecycleError(
+            "Use the close action after selecting complete examinations."
+        )
     validate_case_relationships(
         patient_id=patient_id,
         relationships=relationships,
@@ -64,6 +68,14 @@ def persist_case_graph(
         if instance.pk is None:
             raise ValueError("A persisted case is required for updates")
         case = Case.objects.select_for_update().get(pk=instance.pk)
+        if case.is_closed or case.is_deleted:
+            raise CaseLifecycleError(
+                "Reopen the case before changing its clinical graph."
+            )
+        if case.patient.pk != patient_id:
+            raise CaseLifecycleError(
+                "The patient of an existing case cannot be reassigned."
+            )
         for field_name, value in scalar_values.items():
             setattr(case, field_name, value)
         case.full_clean(exclude=CASE_RELATION_FIELDS)
@@ -72,6 +84,16 @@ def persist_case_graph(
     for field_name, values in relationships.items():
         relation = cast(_SettableCaseRelation, getattr(case, field_name))
         relation.set(values)
+    if "patient_examinations" in relationships:
+        from endoreg_db.models.medical.patient.examination_revision import (
+            CaseExaminationRecord,
+        )
+
+        CaseExaminationRecord.objects.filter(case=case).exclude(
+            patient_examination_id__in=case.patient_examinations.values_list(
+                "pk", flat=True
+            )
+        ).delete()
     return case
 
 
@@ -89,6 +111,14 @@ def close_case(*, instance: Case, end_date: datetime | None = None) -> Case:
             )
         return case
 
+    from endoreg_db.services.cases.examination_revisions import (
+        assert_case_examinations_complete,
+    )
+
+    try:
+        assert_case_examinations_complete(case)
+    except ValueError as exc:
+        raise CaseLifecycleError(str(exc)) from exc
     case.end_date = target_end_date
     case.is_closed = True
     case.is_active = False
@@ -106,6 +136,7 @@ def reopen_case(*, instance: Case) -> Case:
 
     case.is_closed = False
     case.is_active = True
+    case.end_date = None
     case.full_clean()
-    case.save(update_fields=("is_closed", "is_active", "updated_at"))
+    case.save(update_fields=("is_closed", "is_active", "end_date", "updated_at"))
     return case

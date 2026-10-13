@@ -82,15 +82,21 @@ def _report_dispatch_result(
 
 class TestReportImportJobHandoff:
     @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        ("content_type", "filename"),
+        [("application/pdf", "report.pdf"), ("text/plain", "report.txt")],
+    )
     def test_dispatches_report_upload_with_the_import_job_contract(
         self,
         ingest_center: Center,
+        content_type: str,
+        filename: str,
     ) -> None:
         # Arrange
         upload_job = _create_upload_job(
             center=ingest_center,
-            content_type="application/pdf",
-            filename="report.pdf",
+            content_type=content_type,
+            filename=filename,
         )
         dispatch_result = _report_dispatch_result("queued")
 

@@ -418,8 +418,17 @@ definition_of_done:
             devenv shell -- npm exec -- vitest run src/api/__tests__/coreConcepts.test.ts src/api/__tests__/reportTemplatesApi.test.ts
             && devenv shell -- npm run type-check (working directory /dev/lx-annotate/frontend; 20 passed;
             type-check exit 0)
-      assessed_by: codex-dtypes-consistency-20260813
-      assessed_at: "2026-08-13T11:47:01.588500Z"
+        - kind: review
+          reference: feature-tracking/reports/lx_dtypes_release_parity.yml
+      note: '2026-10-13 candidate 0.5.0 audit: 130 public contracts; 649 per-repository imported symbols resolve
+        in 327 consumer files. Fixed shared metadata nested-state and empty-crop defaults; Pyright, 558 contract/ledger
+        tests, 18 post-fix metadata/export tests and 85 anonymizer tests passed. Publication parity is not established:
+        annotate 0.4.4 pin lacks study-import contracts, installed EndoReg lacks its study-import model, host
+        model clean() omits owner/KB checks and falsy identifiers bypass canonical rejection. Annotate checks
+        12 passed/3 failed; full host database/migration checks not run. Detailed findings and scoped evidence
+        are in the audit YAML.'
+      assessed_by: codex-dtypes-parity-20261013
+      assessed_at: '2026-10-13T09:00:38.552651Z'
   - id: persisted_model_validation
     category: data_integrity
     title: Persistierte Modellzustände und JSON-Payloads besitzen eine zentrale Validierungsgrenze

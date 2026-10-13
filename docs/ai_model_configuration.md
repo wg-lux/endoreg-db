@@ -16,7 +16,11 @@ The repository contains:
 
 The runtime API is `endoreg_db.utils.setup_config.SetupConfig`. It validates
 configuration with the typed `lx_dtypes.models.contracts.setup_config` payloads
-and provides:
+using the shared bounded YAML parser (duplicate keys and unsafe tags are rejected).
+The default path is the bundled `endoreg_db/data/setup_config.yaml`; an explicit
+path replaces it. Missing files, invalid YAML and contract violations raise
+instead of selecting a different model through built-in defaults. The YAML is
+the single source of bootstrap defaults. The API provides:
 
 ```python
 from endoreg_db.utils.setup_config import setup_config
@@ -60,10 +64,12 @@ repository; validation is currently private to `setup_endoreg_db`.
 
 ## Weight resolution
 
-`SetupConfig.find_model_weights_files()` expands environment variables in the
-configured directories and evaluates each configured glob. The current file
-search order starts with `${STORAGE_DIR}/model_weights`, followed by
-`tests/assets`, `assets`, and `model_weights`.
+`SetupConfig.find_model_weights_files()` searches `get_runtime_paths().weights`
+first, followed by the YAML's additional directories (`tests/assets`, `assets`,
+and `model_weights` in the bundled configuration). Duplicate directories are
+removed while preserving order. Environment variables in additional directories
+must resolve; an unresolved variable raises. Runtime storage always comes from
+`endoreg_db.utils.paths`, without a second `STORAGE_DIR` setting.
 
 When no local weight file is found and the Hugging Face fallback is enabled,
 `setup_endoreg_db` attempts `ModelMeta.setup_default_from_huggingface(...)` only
@@ -76,22 +82,18 @@ inference is ready.
 
 These constraints are important when interpreting setup output:
 
-- `SetupConfig` currently derives its default path with
-  `Path(__file__).resolve().parents[2] / "data" / "setup_config.yaml"`, which
-  resolves to repository-root `data/setup_config.yaml`, not the bundled
-  `endoreg_db/data/setup_config.yaml`. Unless a caller supplies the path
-  explicitly, the loader logs that the file is absent and uses its built-in
-  defaults. Editing the bundled setup file therefore does not currently prove
-  that runtime behavior changed.
 - Missing weights and Hugging Face download failures are non-fatal in this
   command. Operators must independently verify that the selected
   `AiModel.active_meta` has an accessible weight file before enabling inference.
 - `SetupConfig.get_model_specific_config()` parses model-specific YAML hints,
-  but no production call site currently consumes that method.
+  but no production call site currently consumes that method. It validates JSON
+  structure and projects only the model selectors and `setup_config` into their
+  shared contracts; those contracts do not describe the surrounding ORM fixture.
+  Invalid hints raise; a missing matching model returns `None`.
 
-These are descriptions of the current code, not recommended end states. Fixes
-belong in application code and tests and should be tracked before this document
-is changed to claim stronger behavior.
+The stricter configuration boundary does not change the command's treatment of
+missing weight artifacts. Setup completion still requires the operational checks
+below before enabling inference.
 
 ## Focused verification
 
@@ -100,7 +102,7 @@ The narrow repository tests for this workflow are:
 ```bash
 .devenv/state/venv/bin/pyright
 .devenv/state/venv/bin/pytest tests/management/commands/test_setup_endoreg_db.py \
-  tests/dataloader/test_dataloader.py -q
+  tests/utils/test_setup_config.py tests/dataloader/test_dataloader.py -q
 ```
 
 For an actual deployment, also verify the configured runtime storage path, the

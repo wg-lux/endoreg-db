@@ -669,7 +669,9 @@ models:
   - service:endoreg_db/services/centers/defaults.py
   - service:endoreg_db/services/centers/employees.py
   - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/ingest_provenance.py
   - service:endoreg_db/services/hub/network_nodes.py
+  - service:endoreg_db/services/hub/preanonymized_metadata.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/sap_ish_clinical.py
   - service:endoreg_db/services/patient_identity/update.py
@@ -3233,7 +3235,7 @@ models:
   - service:endoreg_db/data/report_reader_flag/ukw-histology-generic.yaml
   - service:endoreg_db/data/tabular_import_format/document_templates.yaml
   - service:endoreg_db/helpers/default_objects.py
-  - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/preanonymized_metadata.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/medical_ledger.py
   - service:endoreg_db/services/privacy/patient_pseudonyms.py
@@ -3368,7 +3370,7 @@ models:
   - service:endoreg_db/services/cases/auto_resolution.py
   - service:endoreg_db/services/cases/documents.py
   - service:endoreg_db/services/cases/examination_links.py
-  - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/preanonymized_metadata.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/fhir_r4.py
   - service:endoreg_db/services/reports/finding_sync.py
@@ -3491,7 +3493,7 @@ models:
   - endoreg_db/models/administration/person/patient/patient_external_id.py:PatientExternalID
   - service:endoreg_db/services/hub/ingest.py
   boundary_consumers:
-  - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/preanonymized_metadata.py
   - service:endoreg_db/services/interoperability/sap_ish_clinical.py
   - service:endoreg_db/services/patient_identity/external_ids.py
   dynamic_model_references: []
@@ -4702,6 +4704,7 @@ models:
   - job:endoreg_db/services/jobs/report_llm_jobs.py
   - service:endoreg_db/services/cases/documents.py
   - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/preanonymized_metadata.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/sap_ish_clinical.py
   - service:endoreg_db/services/patient_identity/external_ids.py
@@ -5553,6 +5556,36 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.StudySetupImport
+  kind: registered
+  python_path: endoreg_db.models.other.study_setup_import.StudySetupImport
+  source_path: endoreg_db/models/other/study_setup_import.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_studysetupimport
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - payload
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: LX owns the validated study setup receipt; Django owns author relations, immutable provenance
+    and replay uniqueness. The lx-annotate study_setup_import service owns authorized transactional provisioning.
+  ownership_evidence:
+  - endoreg_db/models/other/study_setup_import.py:StudySetupImport.clean
+  - lx-dtypes:lx_dtypes.models.contracts.study_setup.StudySetupImportReceipt
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  - lx_dtypes.models.contracts.study_setup.StudySetupImportReceipt
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.StudyTableImport
   kind: registered
   python_path: endoreg_db.models.other.study_table_import.StudyTableImport
@@ -5762,6 +5795,7 @@ models:
   - job:endoreg_db/services/jobs/report_llm_jobs.py
   - service:endoreg_db/services/hub/cleanup.py
   - service:endoreg_db/services/hub/ingest.py
+  - service:endoreg_db/services/hub/ingest_provenance.py
   - service:endoreg_db/services/hub/media_integrity.py
   - service:endoreg_db/services/hub/quarantine.py
   - service:endoreg_db/services/media/integrity.py
