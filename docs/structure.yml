@@ -8,6 +8,10 @@ responsibilities:
 boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
+- file: implementation_standards_review.md
+  role: Technical standards and security review snapshot linked to authoritative feature definitions.
+- file: annotation_comparisons.md
+  role: Named practitioner overlap metrics, report eligibility and dashboard API contract.
 - file: key_rotation.md
   role: Application rotation procedure linked to the central LuxNix catalog
 - file: secret_rotation.yml

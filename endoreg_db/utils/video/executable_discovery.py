@@ -2,6 +2,7 @@
 import logging
 import os
 import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
@@ -94,6 +95,36 @@ def _resolve_ffprobe_executable() -> Optional[str]:
 
 def resolve_ffprobe_executable() -> Optional[str]:
     return _resolve_ffprobe_executable()
+
+
+def assert_media_tools_available() -> None:
+    """Require tools on inherited PATH, including for bare-name compute calls."""
+    for name in ("ffmpeg", "ffprobe"):
+        # Nix-store/override discovery does not make bare subprocess calls work.
+        executable = shutil.which(name)
+        hint = (
+            "Install FFmpeg with ffprobe in the worker service environment and "
+            "include its bin directory in PATH, then restart the worker."
+        )
+        if executable is None:
+            raise RuntimeError(
+                f"Required media executable {name} is unavailable on PATH. {hint}"
+            )
+        try:
+            subprocess.run(
+                [executable, "-version"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            # Do not propagate process output or environment details into job errors.
+            raise RuntimeError(
+                f"Required media executable {name} failed its version check "
+                f"({type(exc).__name__}). {hint}"
+            ) from exc
 
 
 def is_ffmpeg_available() -> bool:

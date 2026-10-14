@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: annotation_comparisons.py
+  role: Typed annotation and clinical finding comparison results shared by service and API.
 - file: persisted_json.py
   role: Persistence-specific payload validators.
 - file: hub_payloads.py

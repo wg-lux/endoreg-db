@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Renew operation leases; preserve presentation timestamp identity and reject unsafe raw media export.
 files:
+- file: provenance_recovery.py
+  role: Authenticated center-scoped provenance recovery without clinical approval changes.
 - file: video_stream.py
   role: Canonical video stream endpoint.
 - file: hls_stream.py

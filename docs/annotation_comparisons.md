@@ -1,0 +1,73 @@
+# Personal Annotation Comparisons
+
+Scope and verification evidence: [API Contracts](../feature-tracking/ApiContracts.yml),
+criterion `practitioner_annotation_comparisons`. The interface is located in
+the LX-Annotate dashboard and uses `GET media/annotations/comparisons/?page=1`.
+The canonical mount point is `/endoreg-api/`. Each page contains at most five
+videos with the user's own accessible human annotations.
+
+## Attribution and Comparison
+
+The logged-in user's identifier is compared against the existing `annotator`
+field of the frame annotations. This also includes annotations created during
+segment validation; the collaboratively editable current segment boundaries
+are not interpreted as historical individual assessments. Other annotators'
+names are visible. Selecting other users' identifiers through the request is
+not permitted. Unconfirmed model predictions and unattributed annotations are
+excluded. Explicitly human-confirmed annotations retain their attribution even
+when model metadata is retained as provenance evidence.
+Historical identifiers are not retroactively reassigned to another person.
+
+Identical frame–label observations are counted once per annotator. Frame–label
+pairs with conflicting positive and negative observations from the same
+annotator are excluded and counted. A conflicting pair is excluded on both
+sides of the respective comparison. Label agreement counts matching values
+only among frame–label pairs unambiguously assessed by both annotators; the
+denominator is displayed.
+
+Temporal overlap is the intersection divided by the union of positive
+frame–label time intervals. A frame spans the interval from its stored
+presentation timestamp to the timestamp of the immediately following frame.
+Where applicable, the final boundary is taken from the versioned source
+timeline. Nominal frame rates do not substitute for missing timestamps.
+Multiple labels are counted separately; this is label-time, not the total
+duration of the video. If a required boundary is missing, the entire temporal
+comparison cannot be evaluated, and the number of affected pairs is displayed.
+Empty denominators yield `null`, not 0 or 100 percent.
+
+## Clinical Findings
+
+The existing versioned `annotation_mappings.yml` maps positive labels to
+finding names, taking their modality into account. Missing mappings are
+displayed. The comparison concerns finding types, not individual lesions,
+classifications, or diagnostic correctness. The absence of an annotation
+is not a negative finding.
+
+Reports must be active and finalized, belong to the same examination, and
+contain a stored `dtypes_record` with an identical terminology version.
+The person identified by `finalized_by` is considered responsible.
+Current, mutable examination findings do not replace a historical report
+state. Each report is displayed individually; drafts and imported document
+texts are not included. Missing attribution, missing snapshots, and
+terminology mismatches are reported. The finding similarity ratio is the
+number of finding types in the intersection divided by the number in the
+union; lists show shared types and types exclusive to each side.
+
+## Operation and Limitations
+
+Authentication is required even in development mode. Existing video read
+permissions, including the hub exception for anonymized media, remain in
+effect; reports retain their center-level access restrictions. Disclosure
+of names does not expand clinical access rights. The response contains
+neither patient names nor texts.
+
+The query is read-only, creates no files, starts no jobs, and does not modify
+imports, streaming, or annotations. Results are recalculated on every request;
+concurrent editing may change the results of the next request. This is not an
+audit-proof statistical export. Existing annotations and time boundaries are
+read for each video; production load testing with large annotation datasets
+is still required. No database migration is needed.
+
+Verification: Run Pyright before `pytest tests/services/test_annotation_comparisons.py`;
+in the LX-Annotate frontend, run the `AnnotationComparisons` and dashboard
+component tests.

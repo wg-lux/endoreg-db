@@ -21,6 +21,8 @@ files:
   role: Feature registry, evidence, locking and message regression tests
 - file: reports/lx_dtypes_release_parity.yml
   role: Candidate release contract consumer inventory and validation/persistence parity evidence
+- file: reports/media_worker_release.yml
+  role: Media worker release artifact hashes, dependency repair provenance and installation contracts
 contracts:
 - name: Agent workflow
   doc: AGENTS.md

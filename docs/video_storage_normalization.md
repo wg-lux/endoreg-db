@@ -5,6 +5,73 @@ This document is the operational and architecture runbook for the
 feature. The feature definition in YAML Ain't Markup Language (YAML) format is
 the only authoritative source for implementation and approval status.
 
+## Recover usable media with unresolved frame mapping
+
+Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**
+on the video examination page. Every authenticated user assigned to the video's
+center can preview this single-record operation; administrator privileges are not
+required. Stop playback if an active media lease blocks the operation.
+
+1. Enter recording start and end only when acquisition records establish them.
+   The browser sends timezone-qualified timestamps. Leave unknown times empty;
+   file creation dates and average frame rate are not acquisition evidence.
+2. Choose **Reparatur prüfen**. The backend authenticates encrypted media, verifies
+   its current content hash and captures its actual presentation timestamps (PTS).
+   It preserves original PTS and their rational time base from existing canonical
+   history or from a retained original whose hash matches the recording identity.
+3. Choose **Ungeklärte Frame-Zuordnung speichern** to explicitly replace the active
+   missing/unresolved mapping status for this media generation. This writes an
+   audited `video_provenance_recovery` receipt into endoreg-db's `VideoFile.meta`.
+   It does not fabricate frame indices, delete immutable transformation receipts,
+   alter the video, mark reviews complete or queue a transfer.
+4. Complete the normal anonymization, segment-cleanup, integrity and export gates,
+   then retry the existing transfer. Missing historical frame mapping alone no
+   longer blocks transfer after acknowledgment. Outside-frame rebuild failures
+   still need a successful rebuild; saving this receipt does not blacken frames.
+
+The receipt stores `mapping_status=unresolved`, `electrical_matching_eligible=false`,
+the recording identity, current processed content hash, complete processed PTS,
+optional original PTS, and optional recording start/end timestamps. The first and
+last PTS are frame presentation boundaries, not substitutes for wall-clock recording
+start/end or proof of which original frame produced an output frame. Missing
+original evidence remains null. A verified current mapping cannot be overwritten.
+Content mismatch, lost integrity and concurrent processing block recovery.
+
+Recovery returns HTTP 409 with a stable `code` and an explanatory `error`:
+`active_media_operation` means an operation lease prevents mutation,
+`active_processing` means a pending or running processing job must finish, and
+`recovery_precondition_failed` requires resolving the reported integrity or
+provenance condition. The video page pauses its own playback before an explicit
+recovery request; other viewers and background work can still block it. Recovery
+never clears leases or automatically retries.
+
+Recording times use the shared `RecordingTimeRange` contract from `lx-dtypes`
+0.5.3 or newer and are checked before media reads, including combinations with
+previously recorded times. Identical acknowledgments revalidate the media but
+leave the existing audit receipt and modification timestamp unchanged; changed
+evidence creates a new audit entry. Publish the shared dependency before the
+backend release and regenerate dependency locks through normal resolution.
+
+A rebuild that refuses publication must preserve preexisting frame files, rows
+and extraction state: blackening owns its staged video, not those frame caches.
+An uncommitted cleanup receipt can be retired without deleting media only when
+the current master matches its source identity and authenticated hash, and the
+recorded replacement is absent and unreferenced. Unknown or surviving replacement
+artifacts remain blockers; a dry run retains the receipt. Do not clear a live
+receipt merely because a job failed or a retry interval elapsed.
+
+The sender carries this explicit receipt instead of a verified frame-lineage bundle.
+The hub validates its media identities and checks the received file's actual
+processed timeline before accepting it. Electrical-data matching rejects an
+unresolved receipt even when start/end times are known: independent clocks also
+need acquisition anchors and an established frame mapping. Later verified evidence
+can supersede the recovery receipt through the verified-provenance path.
+
+Deploy matching lx-dtypes, endoreg-db and LX-Annotate packages on sender and hub
+before enabling this workflow. Older strict receivers reject the new receipt;
+there is no silent compatibility fallback. No database migration is needed: the
+existing JSON metadata boundary validates the new shared typed receipt.
+
 ## Canonical runtime paths and filenames
 
 Outside-frame blackening retries an output-bitrate validation failure at most
@@ -93,12 +160,13 @@ filter instead of taking an unobserved stream-copy path. Deploy the matching
 `lx-anonymizer` hook interface with this host factory; an older package cannot
 provide this integration.
 
-Hub exports carry only the strict `video_frame_provenance` bundle in transfer
-provenance. They require approved processed media and verified content identity;
+Hub exports carry either the strict `video_frame_provenance` bundle or the
+explicit `video_provenance_recovery` receipt in transfer provenance. They require approved processed media and verified content identity;
 arbitrary video metadata, filenames, keys, and raw media are not included.
 Transformations compose from the recording hash to the transferred processed
-hash. A missing or ambiguous historical chain blocks export; old source indices
-are not reconstructed from similar timestamps. The receiver preserves the bundle
+hash. A missing or ambiguous historical chain requires explicit unresolved-provenance
+recovery before export; old source indices are never reconstructed from similar
+timestamps. Without that operator acknowledgment export remains blocked. The receiver preserves the bundle
 in validated database metadata, binds both endpoint hashes, and checks its final
 timeline against the received processed media before accepting processing success.
 Existing transfers without a bundle remain readable but cannot provide electrical
@@ -198,6 +266,69 @@ are preserved unless the existing explicit deletion policy permits their removal
 Ordinary report reads do not search import folders or guess replacement files.
 
 ## Import reservation and delivery recovery
+
+### Media worker startup
+
+Workers consuming the configured pipeline, FFmpeg media, or report large language
+model (LLM) inference queues require `--pool=prefork --max-tasks-per-child=1`.
+Concurrency remains configurable. Celery retains each job's soft and hard time
+limits and replaces the task process after each job. Do not substitute solo or
+threads: those pools do not preserve these execution and recycling guarantees.
+The Devenv tasks select these options; external worker definitions must also do so.
+
+The installed `lx-anonymizer` must expose model process isolation contract version
+2. Startup rejects older dependencies before consuming deliveries. Optical
+character recognition (OCR) model execution uses a subprocess supervisor rather
+than Python multiprocessing inside the daemon task process. The supervisor observes
+parent liveness independently of model output and kills and reaps its descendants,
+including children that start separate sessions. The caller enforces model-block
+deadlines through bounded supervisor disposal.
+Celery's whole-task deadlines still cover processing and finalization; model-block
+deadlines do not replace them. Late acknowledgements, worker-loss redelivery and
+import lease fencing remain unchanged.
+
+The service manager must retain control-group containment (`KillMode=control-group`
+or an equivalent reviewed policy) as the outer boundary when the supervisor itself
+is killed. Do not configure descendant escape from that service boundary. Verify
+this in the evaluated target service, together with encrypted staging, before
+activating a candidate. A package capability check is not proof of host storage
+protection or a completed clinical import.
+
+For pipeline and FFmpeg consumers, the same startup hook requires both bare
+`ffmpeg` and `ffprobe` to resolve on the inherited `PATH` and execute `-version`
+within ten seconds each. Nix-store discovery or application-specific overrides
+alone do not satisfy this contract: anonymizer consumers also use bare tool names.
+Before deployment or media backfill, run
+`python manage.py check --deploy --tag media` in the actual service environment.
+An interactive shell's successful check does not establish worker availability.
+Provision both tools in the worker service and restart through the deployment
+workflow. These checks do not retry failed imports or mutate media.
+
+### Coordinated worker releases
+
+The intended release order is `lx-anonymizer 1.0.8`, `endoreg-db 1.5.5`, then
+`lx-annotate 1.5.4`. Publish and validate the dependency releases before selecting
+application version `1.5.4` through the ordinary LuxNix package configuration.
+Application and backend metadata pin their compatible dependencies; do not inject
+local wheels into the NixOS generation or force-install dependency overrides.
+
+Nix supplies native tools and libraries: `ffmpeg-headless` provides both `ffmpeg`
+and `ffprobe`, while the configured Tesseract package supplies OCR binaries and
+language data. The application services and wheel wrapper use the same native
+closure and inherited executable `PATH`. Python package dependency resolution
+remains separate from this system-tool provisioning.
+
+Local wheel hashes and isolated test evidence are retained in
+[`media_worker_release.yml`](../feature-tracking/reports/media_worker_release.yml).
+That record includes an earlier repaired-Decord experiment and injected candidate
+build; those are verification artifacts, not the selected deployment recipe.
+Decord's original wheel advertises a Python-independent ABI in its filename but
+has inconsistent internal wheel tags. Both `pip check` and `uv pip check` reject
+the original wheel on Python 3.12, although decoding succeeds. A corrected
+dependency release remains required; do not substitute a patched dependency in
+production. The pinned Nixpkgs has no existing Decord package.
+Validate the normal release dependency graph before promotion, and verify protected
+plaintext staging separately before activating clinical processing.
 
 Source and content-hash import locks use the existing process-owned operating
 system advisory-lock wrapper. Lock files are persistent and must not be unlinked

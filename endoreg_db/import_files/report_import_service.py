@@ -322,16 +322,8 @@ class ReportImportService:
                     with report_import_mutation_guard(fence):
                         self.lifecycle.started(ctx.current_report)
 
-                if ctx.retry:
-                    renew_report_import_fence(fence)
-                    with report_import_mutation_guard(fence):
-                        finalize_failure(ctx, preserve_sensitive_staging=True)
-                        ctx.current_report, _, needs_processing = (
-                            create_or_retrieve_report_file(ctx)
-                        )
-                    if needs_processing is not True:
-                        raise ValueError(f"File already processed: {ctx.original_path}")
-
+                # The fenced processing-start transition resets retry readiness.
+                # Retrying is not a failed attempt and must retain its artifacts/history.
                 return self._anonymize_and_finalize(ctx, fence)
 
         except ReportImportBusyError:

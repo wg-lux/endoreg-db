@@ -697,6 +697,7 @@ class TestDuplicateCleanup:
         (False, False, True, False, None),
         (True, False, True, False, None),
         (False, True, True, False, None),
+        (True, True, False, False, None),
         (False, False, False, False, None),
         (True, False, False, False, None),
         (False, False, True, True, None),
@@ -830,7 +831,7 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         assert snapshot_path.exists() is isinstance(failure, OperationalError)
     else:
         assert service._process_import_pipeline(context, retry) is report
-        if existing or not needs_processing:
+        if existing or (not needs_processing and not retry):
             anonymize.assert_not_called()
             finalize.assert_not_called()
             extract.assert_not_called()
@@ -855,13 +856,11 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
             ]
             if processed or retry:
                 assert context.retry is True
-                assert create.call_count == 2
-                retry_cleanup.assert_called_once_with(
-                    context, preserve_sensitive_staging=True
-                )
+                create.assert_called_once_with(context)
+            retry_cleanup.assert_not_called()
     if with_lifecycle and failure is None:
         lifecycle.succeeded.assert_called_once_with(report)
-    if with_lifecycle and (existing or not needs_processing):
+    if with_lifecycle and (existing or (not needs_processing and not retry)):
         lifecycle.started.assert_not_called()
     assert context.file_hash == CONTENT_HASH
     assert context.file_path == snapshot_path

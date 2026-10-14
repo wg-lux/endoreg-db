@@ -19,6 +19,8 @@ entrypoints:
   file: segments_bulk_mutation.py
   purpose: Validate and apply a batch of clinical segment mutations.
 files:
+- file: comparisons.py
+  role: Read-only named practitioner overlap and finalized report snapshot comparisons.
 - file: __init__.py
   role: Frame- und Segmentannotation, Auswahl und Validierungsabläufe.
 - file: annotation_access.py
@@ -47,6 +49,7 @@ dependencies:
   internal:
   - endoreg_db/helpers
   - endoreg_db/models
+  - endoreg_db/schemas
   - endoreg_db/serializers/label_video_segment
   - endoreg_db/services/media
   - endoreg_db/services/video_files
@@ -69,8 +72,9 @@ contracts:
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_annotation_bucket_builders_unit.py
-    tests/services/test_annotation_access.py tests/services/test_frame_segment_reconciliation.py
+    tests/services/test_annotation_access.py tests/services/test_frame_segment_reconciliation.py tests/services/test_annotation_comparisons.py
   files:
+  - tests/services/test_annotation_comparisons.py
   - tests/services/test_frame_annotation_bucket_builders_unit.py
   - tests/services/test_annotation_access.py
   - tests/services/test_frame_segment_reconciliation.py

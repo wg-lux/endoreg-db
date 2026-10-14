@@ -11,6 +11,7 @@ from lx_dtypes.models.contracts.video_provenance import (
     RecordingSynchronization,
     ElectricalTimestampSeries,
     VideoProvenanceBundle,
+    VideoProvenanceRecovery,
 )
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
@@ -20,7 +21,9 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def export_video_provenance(video: VideoFile) -> VideoProvenanceBundle:
+def export_video_provenance(
+    video: VideoFile,
+) -> VideoProvenanceBundle | VideoProvenanceRecovery:
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.media.operation_gate import create_video_stream_lease
 
@@ -38,12 +41,21 @@ def export_video_provenance(video: VideoFile) -> VideoProvenanceBundle:
         return result
 
 
-def _export_current_video_provenance(video: VideoFile) -> VideoProvenanceBundle:
+def _export_current_video_provenance(
+    video: VideoFile,
+) -> VideoProvenanceBundle | VideoProvenanceRecovery:
     """Export only an approved, hash-verified processed artifact's ancestry."""
     from endoreg_db.services.media.export_downloads import validate_video_download
 
     validate_video_download(video)
     meta = VideoFileMetaPayload.model_validate(video.meta or {})
+    recovery = meta.video_provenance_recovery
+    if recovery is not None:
+        if recovery.recording_hash != video.raw_video_hash or (
+            recovery.processed_timeline.content_hash != video.processed_video_hash
+        ):
+            raise ValueError("Unresolved provenance acknowledgment is stale")
+        return recovery
     existing = meta.video_frame_provenance
     if existing is not None:
         previous_hash = existing.transformations[-1].output.content_hash
@@ -85,8 +97,22 @@ def accept_video_provenance(video: VideoFile, payload: object) -> None:
             "Transferred frame provenance does not match processed media identity"
         )
     meta = dict(video.meta or {})
+    meta.pop("video_provenance_recovery", None)
     meta["video_frame_provenance"] = proof.model_dump(mode="json")
     video.meta = meta
+
+
+def accept_video_provenance_recovery(video: VideoFile, payload: object) -> None:
+    """Persist an explicit unresolved receipt after binding both media identities."""
+    receipt = VideoProvenanceRecovery.model_validate(payload)
+    if receipt.recording_hash != video.raw_video_hash or (
+        receipt.processed_timeline.content_hash != video.processed_video_hash
+    ):
+        raise ValueError("Unresolved provenance receipt belongs to different media")
+    video.meta = {
+        **(video.meta or {}),
+        "video_provenance_recovery": receipt.model_dump(mode="json"),
+    }
 
 
 def validate_received_video_timeline(
@@ -98,6 +124,22 @@ def validate_received_video_timeline(
     from endoreg_db.services.video_storage.probes import probe_video_artifact
     from endoreg_db.utils.storage import ensure_local_file
 
+    recovery = VideoFileMetaPayload.model_validate(
+        video.meta or {}
+    ).video_provenance_recovery
+    if recovery is not None:
+        if (
+            recovery.recording_hash != video.raw_video_hash
+            or recovery.processed_timeline.content_hash != video.processed_video_hash
+        ):
+            raise ValueError("Recovered provenance does not match received media")
+        with ensure_local_file(video.processed_file) as path:
+            actual = capture_canonical_timeline(
+                path, probe_video_artifact(path), require_original_pts=True
+            )
+        if actual != recovery.processed_timeline:
+            raise ValueError("Recovered timestamps disagree with received media")
+        return
     if proof is None:
         proof = VideoFileMetaPayload.model_validate(
             video.meta or {}
@@ -245,8 +287,13 @@ def map_video_to_electrical_samples(
     samples: ElectricalTimestampSeries,
     max_error_seconds: Fraction,
 ) -> list[int]:
+    proof = export_video_provenance(video)
+    if isinstance(proof, VideoProvenanceRecovery):
+        raise ValueError(
+            "Electrical matching is unavailable: frame mapping is unresolved"
+        )
     return electrical_sample_indices(
-        export_video_provenance(video),
+        proof,
         samples=samples,
         max_error_seconds=max_error_seconds,
     )

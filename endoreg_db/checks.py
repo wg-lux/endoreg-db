@@ -13,6 +13,7 @@ from endoreg_db.config.env import (
     celery_broker_transport_error,
     celery_broker_url_uses_secure_transport,
 )
+from endoreg_db.utils.video.executable_discovery import assert_media_tools_available
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,21 @@ ALWAYS_CELERY_LABELS = ("upload pipeline ingest",)
 type AppConfigSequence = Sequence[AppConfig] | None
 type DatabaseAliasSequence = Sequence[str] | None
 type CheckKwargValue = str | bool | int | AppConfigSequence | DatabaseAliasSequence
+
+
+@register("media", deploy=True)
+def check_media_runtime_configuration(
+    *,
+    app_configs: AppConfigSequence = None,
+    databases: DatabaseAliasSequence = None,
+    **kwargs: CheckKwargValue,
+) -> list[CheckMessage]:
+    """Check executables in the calling service's actual deployment environment."""
+    try:
+        assert_media_tools_available()
+    except RuntimeError as exc:
+        return [Error(str(exc), id="endoreg_db.E004")]
+    return []
 
 
 def _job_mode(mode: CeleryMode) -> str:

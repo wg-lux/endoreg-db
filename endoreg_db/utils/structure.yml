@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: video/executable_discovery.py
+  role: Shared media executable discovery and bounded worker/deployment preflight.
 - file: file_operations.py
   role: Actual atomic filesystem wrapper implementation.
 - file: storage_profile.py

@@ -27,6 +27,8 @@ entrypoints:
   file: storage_placement.py
   purpose: Atomically reserve capacity and persist the primary placement intent.
 files:
+- file: video_provenance_recovery.py
+  role: Explicit audited acknowledgment of unresolved frame mapping with current hashes and retained original timestamps.
 - file: __init__.py
   role: Package imports and compatibility exports.
 - file: audit.py

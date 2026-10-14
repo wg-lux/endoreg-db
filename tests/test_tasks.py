@@ -58,6 +58,7 @@ def test_celery_defaults_bound_worker_memory_pressure() -> None:
     assert settings.CELERY_TASK_SOFT_TIME_LIMIT < settings.CELERY_TASK_TIME_LIMIT
 
 
+@pytest.mark.no_db
 def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
     queue = settings.CELERY_FFMPEG_MEDIA_QUEUE
     assert settings.CELERY_TASK_ROUTES[
@@ -68,11 +69,15 @@ def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
     }
 
     devenv_source = Path("devenv.nix").read_text(encoding="utf-8")
-    assert re.search(
-        r'"celery:worker:ffmpeg".*CELERY_FFMPEG_MEDIA_CONCURRENCY:-1',
-        devenv_source,
-        flags=re.DOTALL,
-    )
+    for worker in ("pipeline", "ffmpeg", "inference"):
+        worker_task = re.search(
+            rf'"celery:worker:{worker}" = \{{(.*?)\n    \}};',
+            devenv_source,
+            flags=re.DOTALL,
+        )
+        assert worker_task is not None
+        assert "--pool=prefork" in worker_task.group(1)
+        assert "--max-tasks-per-child=1" in worker_task.group(1)
 
 
 def test_task_module_defers_service_imports_until_execution() -> None:

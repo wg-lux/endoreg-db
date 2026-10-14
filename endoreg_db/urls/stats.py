@@ -1,4 +1,5 @@
 from django.urls import path
+from endoreg_db.views.media.annotation_comparisons import AnnotationComparisonsView
 
 from endoreg_db.views import (
     ExaminationStatsView,
@@ -9,6 +10,11 @@ from endoreg_db.views import (
 )
 
 url_patterns = [
+    path(
+        "media/annotations/comparisons/",
+        AnnotationComparisonsView.as_view(),
+        name="annotation-comparisons",
+    ),
     # ---------------------------------------------------------------------------------------
     # STATISTICS API ENDPOINTS
     #

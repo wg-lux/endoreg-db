@@ -22,6 +22,89 @@ source_documents:
   disposition: reference
   note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
 definition_of_done:
+- id: media_worker_process_isolation
+  category: operations
+  title: Media workers retain bounded process isolation and executable readiness
+  acceptance:
+  - Pipeline, media and report-model workers use prefork with per-job recycling and preserve configured
+    Celery soft and hard task deadlines, late acknowledgement and lease fencing.
+  - The installed anonymizer supervisor works in daemon workers and bounds loading, inference, cancellation
+    and parent death; real-process tests prove detached descendants are killed and reaped.
+  - Both bare ffmpeg and ffprobe resolve and execute in the actual worker service PATH; discovery elsewhere
+    on the machine is not sufficient.
+  - Candidate packaged dependencies pass capability checks; deployment verifies encrypted staging, descendant
+    containment and a representative import before production acceptance.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run strict typing, worker and executable tests, real-process anonymizer lifecycle tests
+      and package-install checks; verify service PATH and storage protection on the target.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '2026-10-14: lx-anonymizer model lifecycle suite28 passed; endoreg installed-wheel Billiard
+        lifecycle suite3 passed, proving soft/hard deadlines, detached descendant reaping and next-job
+        success; worker/routing20 passed and PATH preflight13 passed.'
+    - kind: command
+      reference: Full Pyright endoreg-db0 errors18 warnings; lx-anonymizer0 errors13 warnings. Structure
+        and documentation governance checks pass. Candidate package resolver and target storage acceptance
+        still pending.
+    - kind: document
+      reference: feature-tracking/reports/media_worker_release.yml
+    - kind: test
+      reference: 'Final stable exact installed wheels: isolated Python -I Billiard suite3 passed16.22s;
+        frozen app lock installs332 packages with zero dependency drift and uv pip check pass. Four-frame
+        actual Decord decode pass. Full four-artifact gc-10 NixOS candidate build passes without activation.'
+    note: Earlier repaired-wheel experiments passed but are not the selected deployment recipe. Ordinary
+      resolution installs, but both pip check and uv pip check fail on upstream Decord wheel metadata.
+      Corrected dependency publication, encrypted plaintext staging and target clinical acceptance remain
+      required. Nix supplies native FFmpeg-headless and Tesseract; no production wheel injection.
+    assessed_by: codex-endoreg-durable-01a1398f
+    assessed_at: '2026-10-14T09:29:51.967861Z'
+- id: operator_transfer_media_repair
+  category: functionality
+  title: Users can recover transfer media without bypassing provenance or review
+  acceptance:
+  - Every authenticated center member can preview and acknowledge unresolved frame provenance for one
+    usable video without administrator privileges.
+  - Integrity failures and active media work block recovery; missing original evidence remains explicitly
+    unknown. Media, annotations and audit history are preserved.
+  - An audited typed recovery receipt retains current hashes and processed PTS, available original PTS
+    and known recording start/end. Normal transfer gates remain; electrical matching is prohibited for
+    unresolved mapping.
+  - Segment review success is distinguished from media rebuild failure; worker failures retain actionable
+    diagnostics.
+  - Recovery conflicts distinguish active media leases, active processing and failed integrity or provenance
+    preconditions; the browser pauses its own playback before explicit recovery requests without bypassing
+    other leases or automatically retrying.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run repair component and backend workflow tests, type checks and structure validation;
+      complete a deployed unresolved-provenance transfer before production acceptance.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_provenance_recovery.py
+    - kind: test
+      reference: '2026-10-14: recovery API suite13 passed including lease/pending/running/integrity no-mutation
+        regressions; frontend47 component tests passed. Source/test TypeScript and ESLint pass; full backend
+        Pyright0 errors6 warnings.'
+    - kind: test
+      reference: '2026-10-14 final: recovery18 passed with explicit shared-source PYTHONPATH (no installation);
+        identical acknowledgment preserves audit count/date_modified, changed evidence audited, invalid
+        raw/merged dates reject before media IO. Shared contract23 passed via isolated --noconftest; normal
+        shared pytest lacks django_stubs_ext. Focused Pyright0/0, frontend47 component tests+6 final generated-type
+        panel tests, TypeScript/ESLint pass.'
+    note: Local recovery checks pass, including replay no-op and shared pre-I/O date validation. Publish
+      lx-dtypes0.5.3 then refresh backend lock through normal resolution before release; registry currently
+      stops at0.5.2. Protected staging and deployed recovery/transfer acceptance remain outstanding.
+    assessed_by: codex-endoreg-durable-01a1398f
+    assessed_at: '2026-10-14T12:30:48.279524Z'
 - id: browser_video_annotation_downloads
   category: functionality
   title: Direkte Video- und Annotationsexporte auf der Exportseite
@@ -642,22 +725,22 @@ definition_of_done:
   acceptance:
   - All model blocks failing still applies the explicitly configured mask or shared default and marks
     the candidate for human review and reprocessing; encoder and integrity failures remain errors.
-  - Mask defaults load from lx-dtypes package data using VideoMaskConfig; authenticated catalogue
-    APIs create immutable runtime masks and resolve selections into persisted job snapshots.
+  - Mask defaults load from lx-dtypes package data using VideoMaskConfig; authenticated catalogue APIs
+    create immutable runtime masks and resolve selections into persisted job snapshots.
   - LX-Annotate can create and select a mask; invalid coordinates, duplicate names, unknown selections
     and unauthorized writes are rejected and tested.
-
   - Videoimporte wählen ausdrücklich das exhaustive-Profil von lx-anonymizer. Jeder Quellframe wird vollständig
     mit einer explizit geordneten OCR-Kaskade analysiert (Standard RapidOCR, Tesserocr, Pytesseract);
-    Modellladen und Inferenz besitzen Prozess-Deadlines. Sampling und Metadaten-Early-Stopping dürfen Einzelbild-Patienteninformationen
-    nicht ausschließen. Exakte OCR-Caches bleiben versuchslokal; Storage-, Lease- und Publikationseigentum
-    bleiben unverändert.
+    Modellladen und Inferenz besitzen Prozess-Deadlines. Sampling und Metadaten-Early-Stopping dürfen
+    Einzelbild-Patienteninformationen nicht ausschließen. Exakte OCR-Caches bleiben versuchslokal; Storage-,
+    Lease- und Publikationseigentum bleiben unverändert.
   - Ausgeschöpfte OCR-Modelle liefern keine negative PHI-Erkennung. lx-anonymizer darf ausschließlich
-    einen mit der konfigurierten Maske verarbeiteten, stummen, unveröffentlichten Kandidaten mit unveränderter Bildfolge
-    für erneute Verarbeitung zurückgeben. model_execution benennt verwendete und fehlgeschlagene Modelle,
-    configured_mask_fallback und reprocessing_required; Metadatenabdeckung bleibt bei Modellfehlern unvollständig.
-    Decoder-, Encoder-, Integritäts- und Bereinigungsfehler bleiben harte Fehler. Publikation, klinische
-    Freigabe und erneute Verarbeitung verbleiben beim Host; ein Fallback-Kandidat ist keine klinische Freigabe.
+    einen mit der konfigurierten Maske verarbeiteten, stummen, unveröffentlichten Kandidaten mit unveränderter
+    Bildfolge für erneute Verarbeitung zurückgeben. model_execution benennt verwendete und fehlgeschlagene
+    Modelle, configured_mask_fallback und reprocessing_required; Metadatenabdeckung bleibt bei Modellfehlern
+    unvollständig. Decoder-, Encoder-, Integritäts- und Bereinigungsfehler bleiben harte Fehler. Publikation,
+    klinische Freigabe und erneute Verarbeitung verbleiben beim Host; ein Fallback-Kandidat ist keine
+    klinische Freigabe.
   - Ein persistierter, typisierter Importversuch besitzt eine eindeutige aktive Lease, durch Datenbankzeit
     bestimmte Ablaufzeit, Heartbeat und monotonen Fencing-Token. Dateisperren sind ausschließlich lokale
     Optimierungen und dürfen nicht allein anhand ihres Alters fremd übernommen werden.
@@ -708,12 +791,17 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: '2026-10-12 codex-model-loading-20261012: tests/services/test_video_masks.py and tests/views/media/test_video_masks.py: 10 passed, 2 warnings. Shared mask creation/loading, immutable processing snapshots, invalid rectangles, duplicate/unknown names and authentication/write permissions covered.'
+      reference: '2026-10-12 codex-model-loading-20261012: tests/services/test_video_masks.py and tests/views/media/test_video_masks.py:
+        10 passed, 2 warnings. Shared mask creation/loading, immutable processing snapshots, invalid rectangles,
+        duplicate/unknown names and authentication/write permissions covered.'
     - kind: command
-      reference: 'Mask service/view, correction view/job/schema and tests: focused Pyright 0 errors, 1 existing missing-stub warning. Full Pyright encountered unrelated report-import/finding-extraction errors during concurrent work; no production-readiness claim.'
+      reference: 'Mask service/view, correction view/job/schema and tests: focused Pyright 0 errors, 1
+        existing missing-stub warning. Full Pyright encountered unrelated report-import/finding-extraction
+        errors during concurrent work; no production-readiness claim.'
     - kind: test
-      reference: 'Paired anonymizer source: 205 model/frame/report/real-video regressions passed; final 55 model/report/LLM tests passed, including nested-worker prevention. LX-Annotate: 11 API/drawing/correction tests passed; application and test TypeScript plus focused ESLint passed.'
-
+      reference: 'Paired anonymizer source: 205 model/frame/report/real-video regressions passed; final
+        55 model/report/LLM tests passed, including nested-worker prevention. LX-Annotate: 11 API/drawing/correction
+        tests passed; application and test TypeScript plus focused ESLint passed.'
     - kind: code
       reference: endoreg_db/services/hub/upload_job_import_lease.py
     - kind: code
@@ -1021,6 +1109,10 @@ definition_of_done:
   - Receipt-based retirement recognizes historical attempt, post_validation and filtered filenames only
     for the owning video's exact raw hash, with digest and reference checks unchanged. Scoped plaintext
     is removed after success and failure; raw input is preserved by blackening.
+  - An uncommitted receipt may be retired without deleting media only when its source is the authenticated
+    current master and its recorded replacement is absent and unreferenced. Ambiguous receipts remain
+    blockers; preview does not mutate the journal. Failed rebuilds preserve preexisting frame artifacts
+    and extraction state when the rebuild owns no frame-cache writes.
   - Speicherplatz-Transkodierung erhält Video-Primärschlüssel, UUID und raw_video_hash sowie die Importauflösung
     über get_video_by_content_hash und video_hash_exists auch nach wiederholtem Ersatz. processed_video_hash
     entspricht dem entschlüsselten Inhalt der neuen Generation; reale Encoder- und HLS-Integration bestätigt
@@ -1172,8 +1264,15 @@ definition_of_done:
         tests/services/test_video_source_hash.py -q: 13 passed, 2 warnings. Insgesamt 66 fokussierte Backendtests,
         90 lx-annotate-Quellintegrationstests und 23 Frontendtests bestanden. Tracker check bleibt wegen
         offener übergreifender Produktionsfreigaben nicht erfolgreich (4/19); keine Deployment-Aussage.'
-    assessed_by: codex-downsize-20260921
-    assessed_at: '2026-09-21T14:54:53.621535Z'
+    - kind: test
+      reference: '2026-10-14: cleanup suite50 passed; additional final reconciliation cohort10 passed41
+        deselected including HLS content-hash alias guard. Jobs and post-validation generation cleanup
+        suites44 passed. Focused Pyright and Ruff pass; full backend Pyright0 errors6 warnings before
+        additive recovery-contract follow-up.'
+    note: Conservative receipt-only reconciliation and rebuild frame preservation verified locally. Unknown
+      live receipts remain blockers; no production reconciliation or clinical acceptance performed.
+    assessed_by: codex-endoreg-durable-01a1398f
+    assessed_at: '2026-10-14T12:28:12.604301Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze

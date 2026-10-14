@@ -16,6 +16,8 @@ files:
   role: Deployment URL root.
 - file: celery.py
   role: Worker application setup.
+- file: celery_worker.py
+  role: Pre-consumption media worker pool and executable validation.
 - file: checks.py
   role: Django runtime checks.
 - file: integrations/lx_dtypes_host_models.py
@@ -40,7 +42,9 @@ entrypoints:
   file: urls/__init__.py
   purpose: Application API routes.
 dependencies:
-  internal: []
+  internal:
+  - endoreg_db/config
+  - endoreg_db/utils
   external:
   - django
   - celery

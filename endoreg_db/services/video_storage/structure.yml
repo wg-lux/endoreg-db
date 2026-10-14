@@ -32,7 +32,7 @@ files:
 - file: frame_provenance.py
   role: Capture actual decoder ancestry at the encoder boundary and retain it in SQL.
 - file: generation_cleanup.py
-  role: Retire recorded processed generations after their replacement commits.
+  role: Retire committed superseded generations and reconcile proven rolled-back receipts without deleting media.
 - file: hls_encoding.py
   role: Exports hls_encoding_profile_by_name, configured_hls_encoding_profile, assert_hls_encoder_runtime_available.
 - file: inventory.py

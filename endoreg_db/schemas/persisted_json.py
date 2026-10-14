@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from lx_dtypes.models.contracts.video_provenance import VideoProvenanceRecovery
 from lx_dtypes.models.contracts.video_provenance import (
     VideoProvenanceBundle,
     RecordingSynchronization,
@@ -299,6 +300,7 @@ class VideoFileMetaPayload(BaseModel):
     storage_normalization: VideoStorageNormalizationEvidence | None = None
     canonical_timeline_history: list[CanonicalTimelineHistoryEntry] | None = None
     video_frame_provenance: VideoProvenanceBundle | None = None
+    video_provenance_recovery: VideoProvenanceRecovery | None = None
     recording_synchronization: RecordingSynchronization | None = None
     fps_normalization: VideoFpsResamplingEvidence | None = None
     source_timeline: VideoSourceTimelineEvidence | None = None

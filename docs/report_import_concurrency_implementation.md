@@ -80,6 +80,12 @@ source-path claim
 
 A later stage must never acquire an earlier lock in reverse order.
 
+An explicit retry clears readiness and enters processing under the current
+content fence. This reset retains source snapshots, staged candidates and prior
+processing history; it does not invoke terminal failure cleanup. Terminal failure
+finalization runs only after an actual owned attempt error. Normal successful
+publication and cleanup still apply to the new attempt.
+
 ## Native snapshot contract
 
 The Rust implementation belongs in `rust/endoreg_rust_backend`. Python calls it

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
+from lx_dtypes.models.contracts.video_provenance import VideoProvenanceRecovery
 from lx_dtypes.models.contracts.video_provenance import VideoProvenanceBundle
 from typing import Any, Self
 
@@ -231,6 +232,7 @@ class TransferCaseResolutionPayload(BaseModel):
 
 class TransferProvenancePayload(BaseModel):
     video_frame_provenance: VideoProvenanceBundle | None = None
+    video_provenance_recovery: VideoProvenanceRecovery | None = None
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     entrypoint: str | None = None

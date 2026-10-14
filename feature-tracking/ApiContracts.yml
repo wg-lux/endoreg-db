@@ -13,6 +13,46 @@ source_documents:
   disposition: migrated
   note: The route matrix remains the coverage reference; completion status is derived here.
 definition_of_done:
+- id: practitioner_annotation_comparisons
+  category: functionality
+  title: Named practitioner annotation and finalized report comparisons
+  acceptance:
+  - Authenticated users compare their attributed human annotations with named peers on accessible videos;
+    predictions and unattributed records are excluded.
+  - Positive label overlap uses persisted presentation timestamps, deduplicates frame-label observations,
+    and reports missing timing and conflicting observations explicitly.
+  - Clinical comparison uses versioned label-to-finding mappings and finalized report snapshots from the
+    same examination; missing reports or mappings are not disagreements.
+  - The hub dashboard exposes paginated comparisons, denominators, empty states and failures without changing
+    annotation, import or streaming workflows.
+  - Focused service, authorization and frontend tests pass after type checks.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright, tests/services/test_annotation_comparisons.py and the LX-Annotate AnnotationComparisons
+      component tests; review docs/annotation_comparisons.md.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_annotation_comparisons.py
+    - kind: document
+      reference: docs/annotation_comparisons.md
+    - kind: command
+      reference: '2026-10-14: full Pyright 0 errors, 18 existing warnings; focused final modules/tests
+        0 errors, 0 warnings. Comparison tests 20 passed plus segment-validation integration 1 passed.
+        Access/report persistence/streaming regressions 44 passed; import-finalization regressions 10
+        passed. Ruff and structure lint passed.'
+    - kind: command
+      reference: 'LX-Annotate: 6 dashboard/component tests passed; full npm run type-check including schema
+        freshness, TypeScript and ESLint passed with matching local endoreg-db and lx-dtypes sources on
+        PYTHONPATH.'
+    note: Named existing annotator tracks and human-confirmed model provenance are preserved. No migration,
+      import/storage mutation or deployment. Production-scale load testing is not claimed; frontend and
+      backend must ship together.
+    assessed_by: codex-annotation-overlap-20261014
+    assessed_at: '2026-10-14T08:07:57.887403Z'
 - id: documented_scope
   category: requirements
   title: Canonical and compatible routes are fully inventoried

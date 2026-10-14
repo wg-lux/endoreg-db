@@ -432,3 +432,66 @@ def test_staging_cleanup_waits_for_commit(
         assert path.exists()
         transaction.set_rollback(rollback)
     assert path.exists() is rollback
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("stale", [False, True])
+def test_report_retry_start_preserves_artifacts_and_success_history(
+    tmp_path: Path,
+    stale: bool,
+) -> None:
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+    from endoreg_db.models.state.processing_history.processing_history import (
+        ProcessingHistory,
+    )
+    from endoreg_db.services.reports.import_fencing import StaleReportImportAttemptError
+    from endoreg_db.utils.file_operations import atomic_write_file
+
+    center = Center.objects.create(name="report-retry-state")
+    paths = [tmp_path / name for name in ("source.pdf", "snapshot.pdf", "candidate.pdf")]
+    for path in paths:
+        atomic_write_file(destination=path, content=[path.name.encode()])
+    report = RawPdfFile.objects.create(center=center, pdf_hash="b" * 64)
+    state = report.get_or_create_state()
+    state.anonymized = True
+    state.anonymization_validated = True
+    state.sensitive_meta_processed = True
+    state.processed_file_sha256 = "c" * 64
+    state.save()
+    history = ProcessingHistory.get_or_create_for_hash(
+        obj=report, file_hash="b" * 64, success=True
+    )
+    ctx = ImportContext(
+        mutation_guard=nullcontext,
+        file_path=paths[1],
+        original_path=paths[0],
+        sensitive_path=paths[1],
+        anonymized_path=paths[2],
+        file_hash="b" * 64,
+        center_name=center.name,
+        file_type="report",
+        retry=True,
+    )
+    ctx.current_report = report
+    if stale:
+        def reject() -> NoReturn:
+            raise StaleReportImportAttemptError("superseded retry")
+
+        ctx.execution_guard = reject
+        with pytest.raises(StaleReportImportAttemptError, match="superseded retry"):
+            state_management.mark_instance_processing_started(report, ctx)
+    else:
+        state_management.mark_instance_processing_started(report, ctx)
+
+    state.refresh_from_db()
+    history.refresh_from_db()
+    assert history.success is True
+    assert not state.processing_error
+    assert state.processing_started is (not stale)
+    assert state.anonymized is stale
+    assert state.anonymization_validated is stale
+    assert state.sensitive_meta_processed is stale
+    assert state.processed_file_sha256 == ("c" * 64 if stale else "")
+    assert ctx.sensitive_path == paths[1]
+    assert ctx.anonymized_path == paths[2]
+    assert all(path.read_bytes() == path.name.encode() for path in paths)

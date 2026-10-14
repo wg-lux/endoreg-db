@@ -423,6 +423,44 @@ def _referenced(receipt: ProcessedGenerationCleanupReceipt) -> bool:
     )
 
 
+def _abandoned_replacement(
+    video: VideoFile, receipt: ProcessedGenerationCleanupReceipt
+) -> bool:
+    """Prove rollback restored its source and left no replacement to account for."""
+    if (
+        receipt.committed
+        or receipt.source_kind != "processed"
+        or receipt.source_name != video.processed_file.name
+        or receipt.source_sha256 != video.processed_video_hash
+        or receipt.replacement_name == receipt.source_name
+    ):
+        return False
+    replacement = receipt.model_copy(
+        update={
+            "source_name": receipt.replacement_name,
+            "source_sha256": receipt.replacement_sha256,
+        }
+    )
+    if (
+        _referenced(replacement)
+        or VideoHlsArtifact.objects.filter(
+            Q(source_file_name=receipt.replacement_name)
+            | Q(source_content_hash=receipt.replacement_sha256)
+        ).exists()
+    ):
+        return False
+    field = FieldFile(video, video.processed_file.field, receipt.replacement_name)
+    replacement_path = _owned_path(Path(field.path), get_runtime_paths().anonym_video)
+    if field.storage.exists(receipt.replacement_name) or replacement_path.exists():
+        return False
+    # Authenticate the retained master through its storage adapter. A recorded
+    # digest alone cannot establish that rollback left a usable source.
+    if not video.processed_file.storage.exists(receipt.source_name):
+        return False
+    _owned_path(Path(video.processed_file.path), get_runtime_paths().anonym_video)
+    return get_file_hash(video.processed_file) == receipt.source_sha256
+
+
 def cleanup_processed_video_generations(
     video_id: int, *, apply: bool = False
 ) -> ProcessedGenerationCleanupResult:
@@ -460,6 +498,39 @@ def _cleanup_processed_video_generations_owned(
     )
     if not receipts:
         return result
+    result.reason = "active_media_lease"
+    from endoreg_db.services.media.operation_gate import (
+        video_has_active_media_operation_leases,
+    )
+
+    if video_has_active_media_operation_leases(video_id):
+        return result
+    abandoned = [item for item in receipts if _abandoned_replacement(video, item)]
+    if abandoned:
+        if not apply:
+            result.reason = "dry_run"
+            return result
+        receipts = [item for item in receipts if item not in abandoned]
+        video.meta = {
+            **(video.meta or {}),
+            "processed_generation_cleanup": [
+                item.model_dump(mode="json") for item in receipts
+            ],
+        }
+        video.save(update_fields=["meta", "date_modified"])
+        result.pending = len(receipts)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "abandoned_processed_cleanup_receipts_reconciled",
+                    "video_id": video_id,
+                    "receipt_ids": [str(item.receipt_id) for item in abandoned],
+                }
+            )
+        )
+        if not receipts:
+            result.reason = "nothing_pending"
+            return result
     result.reason = "replacement_not_committed"
     if any(
         not item.committed
@@ -467,13 +538,6 @@ def _cleanup_processed_video_generations_owned(
         or item.replacement_sha256 != video.processed_video_hash
         for item in receipts
     ):
-        return result
-    result.reason = "active_media_lease"
-    from endoreg_db.services.media.operation_gate import (
-        video_has_active_media_operation_leases,
-    )
-
-    if video_has_active_media_operation_leases(video_id):
         return result
     # Database blockers are cheap; do not decrypt/hash a large replacement when
     # a referenced source already makes this cleanup attempt ineligible.

@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Routes live under media; heavy streaming may be delegated to the configured proxy.
 files:
+- file: annotation_comparisons.py
+  role: Authenticated paginated personal annotation comparisons with explicit response serializers.
 - file: video_media.py
   role: Video list and detail API.
 - file: pdf_media.py
@@ -21,6 +23,7 @@ dependencies:
   internal:
   - endoreg_db/views/video
   - endoreg_db/services/media
+  - endoreg_db/services/annotations
   - endoreg_db/authz
   - endoreg_db/serializers
   external:

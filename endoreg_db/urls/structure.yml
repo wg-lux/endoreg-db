@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Deployment proxy adds the api prefix; avoid adding a second prefix in application routes.
 files:
+- file: stats.py
+  role: Statistics routes including media annotation comparisons.
 - file: __init__.py
   role: DRF and Django Ninja URL composition.
 - file: media.py

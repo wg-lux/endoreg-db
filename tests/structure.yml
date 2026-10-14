@@ -9,6 +9,17 @@ responsibilities:
 boundaries:
 - Do not run expensive background suites through editor coverage commands.
 files:
+
+- file: test_model_worker_prefork.py
+  role: Real billiard prefork recycling, task deadlines and detached OCR descendant cleanup.
+- file: test_celery_worker.py
+  role: Media worker startup pool compatibility and preflight regression tests.
+- file: utils/video/test_executable_discovery.py
+  role: FFmpeg and ffprobe executable startup preflight regression tests.
+- file: services/test_annotation_comparisons.py
+  role: Annotation weighting, attribution, report eligibility and access regression tests.
+- file: services/test_video_provenance_recovery.py
+  role: Audited unresolved provenance, original timestamps, encrypted media and center access tests
 - file: conftest.py
   role: Shared Django and clinical test fixture setup
 - file: plugins/runtime_paths.py

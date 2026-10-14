@@ -129,6 +129,121 @@ def test_dry_run_then_apply_is_idempotent(replacement: Replacement) -> None:
     )
 
 
+def _restore_previous_master(
+    replacement: Replacement,
+) -> ProcessedGenerationCleanupReceipt:
+    video = replacement.video
+    receipt = cleanup_receipts(video.meta)[0].model_copy(update={"committed": False})
+    video.processed_file.storage.delete(receipt.replacement_name)
+    replacement.ready.delete()
+    video.processed_file.name = receipt.source_name
+    video.processed_video_hash = receipt.source_sha256
+    video.meta = {
+        **(video.meta or {}),
+        "processed_generation_cleanup": [receipt.model_dump(mode="json")],
+    }
+    video.save()
+    return receipt
+
+
+def test_abandoned_receipt_reconciliation_preserves_restored_master_and_hls(
+    replacement: Replacement,
+) -> None:
+    video = replacement.video
+    receipt = _restore_previous_master(replacement)
+    dry = cleanup.cleanup_processed_video_generations(video.pk)
+    assert dry.reason == "dry_run" and dry.pending == 1 and dry.cleaned == 0
+    video.refresh_from_db()
+    assert cleanup_receipts(video.meta) == [receipt]
+    with (
+        patch.object(cleanup, "safe_delete_field_file") as delete,
+        patch.object(cleanup, "safe_rmtree") as rmtree,
+        patch.object(cleanup, "safe_unlink_file") as unlink,
+    ):
+        cleanup.reconcile_previous_processed_cleanup(video)
+        delete.assert_not_called()
+        rmtree.assert_not_called()
+        unlink.assert_not_called()
+    assert cleanup_receipts(video.meta) == []
+    assert video.processed_file.name == receipt.source_name
+    assert cleanup.get_file_hash(video.processed_file) == receipt.source_sha256
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+    assert (
+        cleanup.cleanup_processed_video_generations(video.pk, apply=True).reason
+        == "nothing_pending"
+    )
+
+
+@pytest.mark.parametrize(
+    "blocker",
+    [
+        "replacement_exists",
+        "source_missing",
+        "source_hash",
+        "current_hash",
+        "hls",
+        "hls_hash",
+        "reference",
+        "lease",
+        "committed",
+    ],
+)
+def test_ambiguous_uncommitted_receipt_remains_blocked(
+    replacement: Replacement, blocker: str
+) -> None:
+    video = replacement.video
+    receipt = _restore_previous_master(replacement)
+    if blocker == "replacement_exists":
+        video.processed_file.storage.save(
+            receipt.replacement_name, ContentFile(b"new processed")
+        )
+    elif blocker == "source_missing":
+        video.processed_file.storage.delete(receipt.source_name)
+    elif blocker == "source_hash":
+        video.processed_file.storage.delete(receipt.source_name)
+        video.processed_file.storage.save(
+            receipt.source_name, ContentFile(b"changed source")
+        )
+    elif blocker == "current_hash":
+        video.processed_video_hash = "0" * 64
+        video.save()
+    elif blocker in {"hls", "hls_hash"}:
+        VideoHlsArtifact.objects.create(
+            video=video,
+            artifact_kind="processed",
+            status="queued",
+            source_file_name=(
+                receipt.replacement_name if blocker == "hls" else "alias.mp4"
+            ),
+            source_content_hash=receipt.replacement_sha256,
+        )
+    elif blocker == "reference":
+        VideoFile.objects.create(
+            center=video.center,
+            raw_video_hash=uuid4().hex,
+            processed_file=receipt.replacement_name,
+        )
+    elif blocker == "lease":
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type="stream",
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+    else:
+        receipt = receipt.model_copy(update={"committed": True})
+        video.meta = {
+            **(video.meta or {}),
+            "processed_generation_cleanup": [receipt.model_dump(mode="json")],
+        }
+        video.save()
+    with pytest.raises(RuntimeError, match="cleanup is pending"):
+        cleanup.reconcile_previous_processed_cleanup(video)
+    video.refresh_from_db()
+    assert cleanup_receipts(video.meta) == [receipt]
+    assert replacement.old_hls.exists()
+
+
 @pytest.mark.parametrize("kind", ["raw", "processed"])
 @pytest.mark.parametrize("status", ["superseded", "failed"])
 def test_periodic_derivatives_retire_legacy_records_without_deleting_masters(

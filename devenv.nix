@@ -338,7 +338,7 @@ in
         devenv tasks run celery:check
         queue=''${CELERY_PIPELINE_QUEUE:-pipeline}
         concurrency=''${CELERY_PIPELINE_CONCURRENCY:-2}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-pipeline@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-pipeline@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:ffmpeg" = {
@@ -347,7 +347,7 @@ in
         devenv tasks run celery:check
         queue=''${CELERY_FFMPEG_MEDIA_QUEUE:-ffmpeg_media}
         concurrency=''${CELERY_FFMPEG_MEDIA_CONCURRENCY:-1}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:frames" = {
@@ -365,7 +365,7 @@ in
         devenv tasks run celery:check
         queues=''${CELERY_INFERENCE_QUEUE:-inference},''${CELERY_LLM_INFERENCE_QUEUE:-llm_inference}
         concurrency=''${CELERY_INFERENCE_CONCURRENCY:-1}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queues" -n "endoreg-inference@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queues" -n "endoreg-inference@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:training" = {

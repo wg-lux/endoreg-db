@@ -34,7 +34,6 @@ from endoreg_db.services.annotations.segment_validation_workflow import (
 from endoreg_db.services.frames.frame_retention import (
     prune_unused_validated_outside_frames,
 )
-from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
 from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
@@ -272,9 +271,8 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
             continue
         reason = (
             "Outside-frame blackening job was still running after "
-            f"{STALE_REBUILD_RUNNING_TIMEOUT}; rolling back extracted frames."
+            f"{STALE_REBUILD_RUNNING_TIMEOUT}."
         )
-        rollback_video_frame_artifacts(video, reason=reason)
         history.mark_failure(reason)
         fail_deferred_temporal_inference_for_rebuild(
             video_id=video.pk,
@@ -357,15 +355,6 @@ def _run_video_post_validation_rebuild(
         if history.status == VideoProcessingHistory.STATUS_SUCCESS:
             return True
         defer_if_video_media_busy(video_id=video_id, history=history)
-        if history.status == VideoProcessingHistory.STATUS_RUNNING:
-            history_video = VideoFile.objects.get(pk=video_id)
-            rollback_video_frame_artifacts(
-                history_video,
-                reason=(
-                    "Restarting post-validation rebuild for a previously running "
-                    f"history {history.pk}."
-                ),
-            )
         history.mark_running()
 
     video: VideoFile | None = None
@@ -389,14 +378,11 @@ def _run_video_post_validation_rebuild(
                 video,
                 only_validated=run_config.only_validated,
                 outside_intervals=rebuild_outside_intervals,
+                raise_on_error=True,
             )
         )
         if not rebuilt:
             mark_post_validation_incomplete(video)
-            rollback_video_frame_artifacts(
-                video,
-                reason="Post-validation rebuild returned false.",
-            )
             if history is not None:
                 reason = "Outside-frame blackening rebuild returned false."
                 history.mark_failure(reason)
@@ -445,17 +431,9 @@ def _run_video_post_validation_rebuild(
     except Exception as exc:
         if video is not None:
             mark_post_validation_incomplete(video)
-            try:
-                rollback_video_frame_artifacts(
-                    video,
-                    reason=f"Post-validation rebuild failed: {exc}",
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to rollback frame artifacts after post-validation "
-                    "rebuild failure for video %s.",
-                    video.pk,
-                )
+            # The rebuild service owns its staged video candidates, not frame
+            # caches. Failure (including a preflight refusal) grants no authority
+            # to delete existing frame files, annotations or extraction state.
         if history is not None:
             history.mark_failure(str(exc))
             fail_deferred_temporal_inference_for_rebuild(

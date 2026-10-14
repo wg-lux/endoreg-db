@@ -675,6 +675,25 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         )
         self.assertEqual(history.status, VideoProcessingHistory.STATUS_PENDING)
 
+    def test_bulk_validation_retains_saved_count_when_postprocessing_raises(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {"segment_ids": [self.segment.pk], "is_validated": True},
+            format="json",
+        )
+        with patch(
+            "endoreg_db.views.video.segments_crud._postprocess_bulk_validation",
+            side_effect=RuntimeError("encoder failed"),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(data["updated_count"], 1)
+        self.assertIn("Segment review saved", data["error"])
+        self.assertEqual(data["detail"], "encoder failed")
+        self.segment.state.refresh_from_db()
+        self.assertTrue(self.segment.state.is_validated)
+
     def test_bulk_validation_dispatch_failure_stays_non_final(self):
         outside_label, _ = Label.objects.get_or_create(name="outside")
         outside_segment = LabelVideoSegment.objects.create(

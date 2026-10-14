@@ -1753,7 +1753,10 @@ def _bulk_validation_response(
     post_processing: _BulkValidationPostProcessing,
 ) -> Response:
     response_data: dict[str, object] = {
-        "message": f"Bulk validation completed. {updated_count} segments updated.",
+        "message": (
+            f"Segment review saved for {updated_count} segments. "
+            "Transfer readiness depends on successful media post-processing."
+        ),
         "updated_count": updated_count,
         "requested_count": requested_count,
         "is_validated": is_validated,
@@ -1811,6 +1814,7 @@ def _execute_bulk_validation(
     is_validated = payload.is_validated
     information_source_name = payload.information_source_name
     annotation_annotator = payload.annotator
+    updated_count = 0
     try:
         segments = _bulk_validation_segments(
             video=video,
@@ -1854,6 +1858,9 @@ def _execute_bulk_validation(
                 annotator=annotation_annotator,
             )
             if post_processing.error_response is not None:
+                post_processing.error_response.data.setdefault(
+                    "updated_count", updated_count
+                )
                 return post_processing.error_response
         return _bulk_validation_response(
             video=video,
@@ -1873,7 +1880,16 @@ def _execute_bulk_validation(
             exc,
         )
         return Response(
-            {"error": f"Bulk validation failed: {str(exc)}"},
+            {
+                "error": (
+                    "Segment review saved; media post-processing failed."
+                    if updated_count
+                    else "Bulk validation failed."
+                ),
+                "detail": str(exc),
+                "updated_count": updated_count,
+                "video_id": video_id,
+            },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 

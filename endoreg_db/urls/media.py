@@ -1,3 +1,4 @@
+from endoreg_db.views.video.provenance_recovery import VideoProvenanceRecoveryView
 from django.urls import URLPattern, path
 from endoreg_db.views.media.finding_suggestions import FindingSuggestionsView
 from endoreg_db.views.media.export_downloads import VideoExportDownloadView
@@ -356,6 +357,11 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/segments/",
         video_segments_by_video,
         name="video-segments-by-video",
+    ),
+    path(
+        "media/videos/<int:pk>/provenance/recover/",
+        VideoProvenanceRecoveryView.as_view(),
+        name="video-provenance-recovery",
     ),
     path(
         "media/videos/<int:pk>/segments/blacken-outside/",

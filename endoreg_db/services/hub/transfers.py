@@ -1121,6 +1121,17 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             from endoreg_db.services.hub.video_provenance import accept_video_provenance
 
             accept_video_provenance(video, frame_provenance)
+        recovery = transfer_job.provenance.get("video_provenance_recovery")
+        if recovery is not None:
+            from endoreg_db.services.hub.video_provenance import (
+                accept_video_provenance_recovery,
+            )
+
+            if frame_provenance is not None:
+                raise ValueError(
+                    "Transfer must select verified or unresolved provenance"
+                )
+            accept_video_provenance_recovery(video, recovery)
 
         video.save()
         video_state = get_or_create_video_state(video)

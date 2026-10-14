@@ -183,10 +183,12 @@ def test_repeated_rebuilds_keep_one_encrypted_master_and_no_plaintext(
 
 
 @pytest.mark.parametrize("failure", ["wrong_key", "tamper", "loader", "encoder"])
+@pytest.mark.parametrize("raise_on_error", [False, True])
 def test_failures_preserve_encrypted_master_and_remove_scoped_plaintext(
     video: VideoFile,
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
+    raise_on_error: bool,
 ) -> None:
     original_name = str(video.processed_file.name)
     paths: list[Path] = []
@@ -218,9 +220,15 @@ def test_failures_preserve_encrypted_master_and_remove_scoped_plaintext(
         "storage",
         wrong if failure == "wrong_key" else storage,
     ):
-        assert not service.rebuild_processed_video_without_outside_frames(
-            video, outside_intervals=[(10, 20)]
-        )
+        if raise_on_error:
+            with pytest.raises(RuntimeError, match="Outside-frame rebuild failed"):
+                service.rebuild_processed_video_without_outside_frames(
+                    video, outside_intervals=[(10, 20)], raise_on_error=True
+                )
+        else:
+            assert not service.rebuild_processed_video_without_outside_frames(
+                video, outside_intervals=[(10, 20)]
+            )
     video.refresh_from_db()
     assert video.processed_file.name == original_name
     assert storage.exists(original_name)

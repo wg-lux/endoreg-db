@@ -139,12 +139,16 @@ def rebuild_processed_video_without_outside_frames(
     *,
     only_validated: bool = False,
     outside_intervals: Sequence[tuple[int, int]] | None = None,
+    raise_on_error: bool = False,
 ) -> bool:
     """Serialize replacement, playback publication and generation retirement."""
     with video_artifact_mutation(video_id=int(video.pk)):
         video.refresh_from_db()
         return _rebuild_processed_video_owned(
-            video, only_validated=only_validated, outside_intervals=outside_intervals
+            video,
+            only_validated=only_validated,
+            outside_intervals=outside_intervals,
+            raise_on_error=raise_on_error,
         )
 
 
@@ -153,6 +157,7 @@ def _rebuild_processed_video_owned(
     *,
     only_validated: bool,
     outside_intervals: Sequence[tuple[int, int]] | None,
+    raise_on_error: bool,
 ) -> bool:
     """
     Rebuild the processed video by blackening frames in outside intervals.
@@ -345,6 +350,11 @@ def _rebuild_processed_video_owned(
             ae,
             exc_info=True,
         )
+        if raise_on_error:
+            raise RuntimeError(
+                "Outside-frame encoding failed. Retry outside-frame blackening; if it fails again, "
+                "ask the administrator to inspect the encoder log."
+            ) from ae
         return False
     except MediaOperationDeferred:
         raise
@@ -355,6 +365,12 @@ def _rebuild_processed_video_owned(
             e,
             exc_info=True,
         )
+        if raise_on_error:
+            raise RuntimeError(
+                f"Outside-frame rebuild failed ({type(e).__name__}). "
+                "The video is not approved for transfer. Retry outside-frame blackening; "
+                "if it fails again, ask the administrator to inspect the worker log."
+            ) from e
         return False
     finally:
         if not published and candidate_name:
