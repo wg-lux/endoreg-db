@@ -1,0 +1,83 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_location_default"
+    name_de: "Koloskopie Standard"
+    name_en: "Colonoscopy Default"
+    classification_types: ["location"]
+    choices:
+      [
+        "terminal_ileum",
+        "cecum",
+        "ascending_colon",
+        "right_flexure",
+        "transverse_colon",
+        "left_flexure",
+        "descending_colon",
+        "sigmoid_colon",
+        "rectum",
+        "anal_canal",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_location_coarse"
+    name_de: "Koloskopie Grob"
+    name_en: "Colonoscopy Coarse"
+    classification_types: ["location"]
+    choices: ["left_colon", "right_colon", "rectum"]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_boston"
+    classification_types: ["bowel_prep"]
+    name_de: "Boston Bowel Preparation Scale"
+    name_en: "Boston Bowel Preparation Scale"
+    choices:
+      [
+        "bowel_prep_boston_0",
+        "bowel_prep_boston_1",
+        "bowel_prep_boston_2",
+        "bowel_prep_boston_3",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_boston_simplified"
+    classification_types: ["bowel_prep"]
+    name_de: "Boston Bowel Preparation Scale"
+    name_en: "Boston Bowel Preparation Scale"
+    choices:
+      [
+        "bowel_prep_boston_0",
+        "bowel_prep_boston_1",
+        "bowel_prep_boston_2",
+        "bowel_prep_boston_3",
+      ]
+
+#Aronchick
+- model: endoreg_db.finding_classification
+  fields:
+    name: "bowel_prep_aronchick"
+    classification_types: ["bowel_prep"]
+    name_de: "Aronchick Bowel Preparation Scale"
+    name_en: "Aronchick Bowel Preparation Scale"
+    choices:
+      [
+        "bowel_prep_aronchick_0",
+        "bowel_prep_aronchick_1",
+        "bowel_prep_aronchick_2",
+        "bowel_prep_aronchick_3",
+      ]
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_not_complete_reason"
+    classification_types: []
+    choices:
+      [
+        "colonoscopy_incomplete_insufficient_preparation",
+        "colonoscopy_incomplete_complication",
+        "colonoscopy_incomplete_pain",
+        "colonoscopy_incomplete_stenosis",
+        "colonoscopy_incomplete_other",
+      ]

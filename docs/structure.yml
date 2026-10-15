@@ -1,0 +1,45 @@
+version: 1
+tier: domain
+path: docs
+parent: ../structure.yml
+summary: Architecture contracts, operational runbooks and documentation navigation.
+responsibilities:
+- Maintain linked architecture and operational references.
+boundaries:
+- Feature scope and readiness evidence belong in feature-tracking YAML.
+files:
+- file: implementation_standards_review.md
+  role: Technical standards and security review snapshot linked to authoritative feature definitions.
+- file: annotation_comparisons.md
+  role: Named practitioner overlap metrics, report eligibility and dashboard API contract.
+- file: key_rotation.md
+  role: Application rotation procedure linked to the central LuxNix catalog
+- file: annotation_training_selection.md
+  role: Reviewed annotation selection and training manifest provenance contract.
+- file: training-streams.md
+  role: Authorized processed-frame streaming for local training.
+- file: video_reimport_budget.md
+  role: Reimport throughput budgeting and timeout operations.
+- file: video_datenerhalt_gc02_gc10_20260923.md
+  role: Historical sanitized data-retention investigation; not current runtime evidence.
+- file: wiki/reference_catalog_migration.md
+  role: Bounded legacy colorectal catalogue reconciliation runbook.
+- file: video_pts_fps_callsite_inventory.md
+  role: Frame-rate, presentation-timestamp and decoder ancestry call-site review.
+- file: video_frame_extraction_contract.md
+  role: In-memory frame decoding, export-only materialization and legacy cache diagnostics.
+- file: secret_rotation.md
+  role: Backend keyring and migration contracts; readiness remains in feature YAML
+- file: README.md
+  role: Documentation navigation
+- file: agent_context.md
+  role: Agent map schema and design rationale
+- file: model_layer_map_for_agents.md
+  role: Model ownership and staged refactoring rules
+- file: video_storage_normalization.md
+  role: Canonical video architecture and operational contract
+- file: hub_ingest_operations.md
+  role: Hub ingestion operations
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md

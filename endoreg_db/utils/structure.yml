@@ -1,0 +1,52 @@
+version: 1
+tier: domain
+path: endoreg_db/utils
+summary: Shared runtime paths, file integrity, protected storage and narrow utilities.
+responsibilities:
+- Own runtime path and hash helpers and shared integration adapters.
+boundaries:
+- Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
+files:
+- file: video/executable_discovery.py
+  role: Shared media executable discovery and bounded worker/deployment preflight.
+- file: file_operations.py
+  role: Actual atomic filesystem wrapper implementation.
+- file: storage_profile.py
+  role: Versioned media storage limits.
+- file: storage_streaming.py
+  role: Protected streaming adapters.
+- file: frame_stream.py
+  role: Timestamp-preserving streaming decoder and generation-bound JPEG reads.
+- file: profiling.py
+  role: Opt-in function profiling.
+- file: encryption/__init__.py
+  role: Encryption utilities.
+- file: storage/__init__.py
+  role: Encrypted storage integration.
+entrypoints:
+- name: get_runtime_paths
+  file: paths.py
+  purpose: Canonical typed runtime path topology.
+- name: get_file_hash
+  file: hashs.py
+  purpose: Canonical file content hashing.
+dependencies:
+  internal:
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/services/streaming
+  - endoreg_db/config
+  - endoreg_db/schemas
+  external:
+  - django
+  - lx_dtypes
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/utils
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/utils
+parent: ../structure.yml
+submodules: []

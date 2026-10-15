@@ -1,0 +1,17 @@
+version: 1
+tier: domain
+path: deployment
+parent: ../structure.yml
+summary: Deployment proxy configuration for authenticated hub transfer.
+responsibilities:
+- Supply nginx hub transfer routing configuration.
+boundaries:
+- Required mutual TLS must fail closed; raw media export remains prohibited.
+files:
+- file: nginx/hub-transfer.conf
+  role: Hub transfer proxy configuration
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+- name: Hub transfer contract
+  doc: docs/hub_transfer_typed_contract.en.md

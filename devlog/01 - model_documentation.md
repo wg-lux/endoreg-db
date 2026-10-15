@@ -4,14 +4,12 @@
 ### Models
 #### AiModel
 Represents a generic AI model that encapsulates high-level metadata about the model,
-    including names (default, German, and English), a description, categorization details,
+    including its unique name, description, categorization details,
     and associated label sets and meta information.
 
         name (str): Unique name of the AI model.
-        name_de (str): Optional German name of the AI model.
-        name_en (str): Optional English name of the AI model.
         description (str): Optional detailed description of the AI model.
-        model_type (str): Optional type/category of the AI model.
+        model_type (ModelType): Optional type/category of the AI model.
         model_subtype (str): Optional subtype within the broader model type.
         video_segmentation_labelset (VideoSegmentationLabelSet): Optional associated label set for video segmentation tasks.
         active_meta (ModelMeta): Optional reference to the currently active ModelMeta instance associated with the model.

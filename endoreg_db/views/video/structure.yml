@@ -1,0 +1,41 @@
+version: 1
+tier: module
+path: endoreg_db/views/video
+summary: Protected video streaming, segment editing and reimport endpoints.
+responsibilities:
+- Adapt stream, segment-coordinate and reimport operations.
+boundaries:
+- Renew operation leases; preserve presentation timestamp identity and reject unsafe raw media export.
+files:
+- file: provenance_recovery.py
+  role: Authenticated center-scoped provenance recovery without clinical approval changes.
+- file: video_stream.py
+  role: Canonical video stream endpoint.
+- file: hls_stream.py
+  role: HTTP Live Streaming (HLS) playlist, key and segment endpoints.
+- file: segments_crud.py
+  role: Segment CRUD boundary.
+- file: reimport.py
+  role: Video reimport endpoint.
+- file: export_annotated.py
+  role: Anonymized annotated-export endpoint.
+dependencies:
+  internal:
+  - endoreg_db/services/media
+  - endoreg_db/services/video_files
+  - endoreg_db/authz
+  external:
+  - django
+  - rest_framework
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Timeline call-site inventory
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests/views/video
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/views/video
+parent: ../structure.yml
+submodules: []

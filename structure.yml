@@ -1,0 +1,76 @@
+version: 1
+tier: root
+path: .
+parent: null
+summary: Django clinical endoscopy registry with protected import, storage and interoperability.
+responsibilities:
+- Route agents to domain ownership and authoritative contracts.
+- Define dependencies, development environment and repository verification.
+boundaries:
+- Clinical ingestion and storage mutations use domain services and protected wrappers.
+- Feature readiness remains exclusively in feature-tracking YAML.
+entrypoints:
+- name: manage.py
+  file: manage.py
+  purpose: Django management entrypoint.
+- name: devenv tasks
+  file: devenv.nix
+  purpose: Development environment and named verification lanes.
+files:
+- file: AGENTS.md
+  role: Binding agent instructions and map maintenance protocol
+- file: pyproject.toml
+  role: Project dependencies and packaging
+- file: .pre-commit-config.yaml
+  role: Local automated preflight hooks
+- file: pytest.ini
+  role: Pytest markers and runtime plugin
+- file: .github/workflows/ci.yml
+  role: Continuous integration checks
+submodules:
+- name: endoreg_db
+  path: endoreg_db
+  manifest: endoreg_db/structure.yml
+  summary: Django application, persistence, transport and domain services.
+- name: docs
+  path: docs
+  manifest: docs/structure.yml
+  summary: Architecture contracts, operational runbooks and documentation navigation.
+- name: feature-tracking
+  path: feature-tracking
+  manifest: feature-tracking/structure.yml
+  summary: Authoritative feature definitions, acceptance criteria, evidence and coordination.
+- name: scripts
+  path: scripts
+  manifest: scripts/structure.yml
+  summary: Repository checks, diagnostics and development utilities.
+- name: quality
+  path: quality
+  manifest: quality/structure.yml
+  summary: Versioned policies and reviewed baselines consumed by repository checks.
+- name: workflow
+  path: workflow
+  manifest: workflow/structure.yml
+  summary: Snakemake workflows invoking application import and media services.
+- name: deployment
+  path: deployment
+  manifest: deployment/structure.yml
+  summary: Deployment proxy configuration for authenticated hub transfer.
+- name: rust
+  path: rust
+  manifest: rust/structure.yml
+  summary: Native backend for typed media, encryption and lifecycle primitives.
+- name: tests
+  path: tests
+  manifest: tests/structure.yml
+  summary: Pytest suites for contracts, services, HTTP APIs and clinical workflows.
+contracts:
+- name: Project overview
+  doc: README.md
+- name: Context schema and rationale
+  doc: docs/agent_context.md
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests
+  fast_lane_command: devenv tasks run test:fast

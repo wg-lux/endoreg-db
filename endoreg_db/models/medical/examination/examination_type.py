@@ -1,7 +1,9 @@
+from __future__ import annotations
+from typing import Any
 from django.db import models
 
 
-class ExaminationTypeManager(models.Manager):
+class ExaminationTypeManager(models.Manager["ExaminationType"]):
     """
     Manager for ExaminationType with custom query methods.
     """
@@ -9,10 +11,10 @@ class ExaminationTypeManager(models.Manager):
     def get_by_natural_key(self, name: str) -> "ExaminationType":
         """
         Retrieves an ExaminationType instance using its natural key.
-        
+
         Args:
             name: The natural identifier for the ExaminationType, typically the unique name.
-        
+
         Returns:
             The ExaminationType instance that matches the given name.
         """
@@ -28,21 +30,20 @@ class ExaminationType(models.Model):
     """
 
     objects = ExaminationTypeManager()
-    name = models.CharField(max_length=100, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
 
     def __str__(self) -> str:
         """
         Return the string representation of the examination type using its name.
         """
-        name = self.name_en or self.name
-        name = str(name)
+        name = str(self.name)
         return name
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the examination type.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)

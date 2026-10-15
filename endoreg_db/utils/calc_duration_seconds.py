@@ -1,24 +1,23 @@
+from __future__ import annotations
+
+import math
 from typing import TYPE_CHECKING
 
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+
 if TYPE_CHECKING:
-    from endoreg_db.models import VideoFile
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def _calc_duration_vf(obj:"VideoFile") -> float:
-    """
-    Calculate duration of a VideoFile.
-    """
-    if not obj.ffmpeg_meta:
-        raise ValueError("ffmpeg_meta is missing, cannot calculate duration.")
-
-    fps = obj.get_fps()
-    frame_count = obj.frame_count #TODO similar implementation as in get_fps
-
-    duration = frame_count / fps if fps > 0 else -1
-    if duration > 0:
-        return duration
-    else:
-        raise ValueError(
-            f"Invalid duration calculated for video {obj.uuid}: {duration}. "
-            "Ensure the video file is valid and accessible."
-        )
+def _calc_duration_vf(obj: VideoFile) -> float:
+    timeline = VideoFileMetaPayload.model_validate(obj.meta or {}).source_timeline
+    if timeline is not None:
+        if (
+            timeline.artifact_kind == "processed"
+            and timeline.content_hash != obj.processed_video_hash
+        ):
+            raise ValueError("Duration belongs to another processed generation.")
+        return timeline.source.timeline.duration_seconds
+    if obj.duration is None or not math.isfinite(obj.duration) or obj.duration <= 0:
+        raise ValueError("Video requires a persisted positive duration.")
+    return float(obj.duration)

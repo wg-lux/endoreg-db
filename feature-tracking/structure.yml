@@ -1,0 +1,37 @@
+version: 1
+tier: domain
+path: feature-tracking
+parent: ../structure.yml
+summary: Authoritative feature definitions, acceptance criteria, evidence and coordination.
+responsibilities:
+- Validate feature definitions and assess criteria using tracker commands.
+- Coordinate scoped agent locks and local messages.
+boundaries:
+- Do not place secrets, patient information or parallel readiness records in messages.
+files:
+- file: reports/gc10_import_timing_20261015.yml
+  role: Sanitized gc-10 phase timings and bounded decoder-thread comparison; no production readiness claim.
+- file: reports/gc10_import_incident_20261015.yml
+  role: Sanitized operational evidence for the gc-10 intake retry loop, stale leases and targeted service stop.
+- file: README.md
+  role: Tracker CLI, coordination and evidence governance reference
+- file: tracker.py
+  role: Typed feature validation, verification, locks and messages
+- file: policy.yml
+  role: Required feature categories and evidence policy
+- file: CodeQuality.yml
+  role: Code quality scope including hierarchical agent context
+- file: test_tracker.py
+  role: Feature registry, evidence, locking and message regression tests
+- file: reports/lx_dtypes_release_parity.yml
+  role: Candidate release contract consumer inventory and validation/persistence parity evidence
+- file: reports/media_worker_release.yml
+  role: Media worker release artifact hashes, dependency repair provenance and installation contracts
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: feature-tracking
+  fast_lane_command: .devenv/state/venv/bin/pytest feature-tracking/test_tracker.py -q
+  files:
+  - feature-tracking/test_tracker.py

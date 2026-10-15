@@ -1,5 +1,6 @@
 # Major Changes
-# Major Changes
+
+> Historical release note: the `Requirement*` models described below existed in version 0.6.4 and were removed by migration `0013_remove_legacy_requirement_models`. They are not part of the current production model.
 
 ## Improve CLI
 
@@ -24,7 +25,7 @@ Risk and RequirementSet have a Many2Many relationship which is defined in the ri
 
 RequirementSet and Requirement have a Many2Many relationship defined in the RequirementSet.
 
-RequirementSet has an "evaluate" function which expects fetches all linked Requirements and call
+At the time of this release, `RequirementSet` exposed an evaluation function for its linked requirements.
 
 Requirement references RequirementValueType (e.g. LabValue, PerformedIntervention, PlannedIntervention) as ForeignKey. This also determines the required inputs for the evaluate function.
 

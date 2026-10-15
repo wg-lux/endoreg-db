@@ -1,0 +1,88 @@
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_esophagus_mucosa"
+    name_de: "Speiseröhren-Schleimhaut"
+    name_en: "Esophagus Mucosa"
+    finding_types:
+      - baseline
+    finding_classifications: [] #TODO
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_gastroesophageal_junction"
+    name_de: "Gastroösophagealer Übergang"
+    name_en: "Gastroesophageal Junction"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_fundus_mucosa"
+    name_de: "Magenfundus-Schleimhaut"
+    name_en: "Gastric Fundus Mucosa"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_corpus_mucosa"
+    name_de: "Magenkörper-Schleimhaut"
+    name_en: "Gastric Corpus Mucosa"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_antrum_mucosa"
+    name_de: "Antrum-Schleimhaut"
+    name_en: "Antrum Mucosa"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_pylorus"
+    name_de: "Pylorus"
+    name_en: "Pylorus"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_angulus_flexure_mucosa"
+    name_de: "Angulusfalte"
+    name_en: "Angulus Flexure"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_duodenum_bulbus_mucosa"
+    name_de: "Duodenum-Bulbus"
+    name_en: "Duodenum Bulbus"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_duodenum_mucosa"
+    name_de: "Duodenum-Schleimhaut"
+    name_en: "Duodenum Mucosa"
+    finding_types:
+      - baseline
+    finding_classifications: []
+    finding_interventions: []

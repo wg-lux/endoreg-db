@@ -1,274 +1,146 @@
+from __future__ import annotations
+# pyright: reportUnknownVariableType=false
+
+from endoreg_db.utils.translation import build_multilingual_response
+
 from .anonymization import (
     AnonymizationOverviewView,
     AnonymizationValidateView,
-    anonymization_status,
     anonymization_current,
+    anonymization_status,
     start_anonymization,
 )
+from .auth import keycloak_callback, keycloak_login, public_home
 
-
-from ..utils.translation import build_multilingual_response
-
-
-from .auth import (
-    KeycloakVideoView,
-    keycloak_login,
-    keycloak_callback,
-    public_home,
+from .media import (
+    get_sensitive_metadata_pk,
+    label_list,
+    pdf_sensitive_metadata,
+    pdf_sensitive_metadata_list,
+    pdf_sensitive_metadata_verify,
+    sensitive_metadata_list,
+    video_sensitive_metadata,
+    video_sensitive_metadata_verify,
 )
-
-from .examination import (
-    ExaminationManifestCache,
-    ExaminationViewSet,
-
-    get_classification_choices_for_examination,
-    get_morphology_classification_choices_for_examination,
-    get_location_classification_choices_for_examination,
-
-    get_classifications_for_examination,
-    get_location_classifications_for_examination,
-    get_morphology_classifications_for_examination,
-
-    get_findings_for_examination,
-    get_instruments_for_examination,
-    get_interventions_for_examination,
-)
-
-from .finding import (
-    get_interventions_for_finding,
-    get_classifications_for_finding,
-    FindingViewSet
-)
-
-from .finding_classification import (
-    FindingClassificationViewSet,
-    get_classification_choices,
-    get_morphology_choices, # DEPRECATED
-    get_location_choices, # DEPRECATED
-)
-
-from .label_video_segment import (
-    create_video_segment_annotation,
-    video_segments_by_label_id_view,
-    video_segments_by_label_name_view,
-    video_segment_detail_view,
-    video_segments_view,
-    update_label_video_segment,
-    get_lvs_by_name_and_video_id
-)
-
-from .meta import (
-    AvailableFilesListView,
-    SensitiveMetaDetailView,
-    SensitiveMetaListView,
-    SensitiveMetaVerificationView,
-    ReportFileMetadataView,
-)
-
 from .misc import (
+    AuditLedgerIntegrityStatusView,
     CenterViewSet,
-    csrf_token_view,
-    GenderViewSet,
     ExaminationStatsView,
-    VideoSegmentStatsView,
-    SensitiveMetaStatsView,
+    GenderViewSet,
     GeneralStatsView,
-    SecureFileUrlView,
-    SecureFileServingView,
-    validate_secure_url,
-    ExaminationTranslationOptions,
-    FindingTranslationOptions,
-    FindingClassificationTranslationOptions,
-    FindingClassificationChoiceTranslationOptions,
-    InterventionTranslationOptions,
-    TranslatedFieldMixin,
-    TranslationMigrationHelper,
-    TranslatedFixtureLoader,
-    MODELTRANSLATION_SETTINGS,
+    SensitiveMetaStatsView,
     UploadFileView,
     UploadStatusView,
+    VideoSegmentStatsView,
+    application_settings_ai_dataset_attachments,
+    application_settings_ai_dataset_export,
+    application_settings_ai_dataset_export_download,
+    application_settings_ai_dataset_frame_bucket_distribution,
+    application_settings_ai_dataset_training_manifest,
+    application_settings_ai_datasets_dropdown,
+    application_settings_annotators_dropdown,
+    application_settings_centers_dropdown,
+    application_settings_detail,
+    application_settings_backup,
+    application_settings_model_training_options,
+    application_settings_model_training_run_detail,
+    application_settings_model_training_runs,
+    application_settings_network_node_detail,
+    application_settings_network_node_roles_dropdown,
+    application_settings_network_nodes,
+    application_settings_processors_dropdown,
+    application_settings_report_templates_dropdown,
+    application_settings_video_dimension_backfill_run_detail,
+    application_settings_video_dimension_backfill_runs,
+    csrf_token_view,
 )
-
 from .patient import PatientViewSet
-
 from .patient_examination import (
     ExaminationCreateView,
     PatientExaminationDetailView,
     PatientExaminationListView,
     PatientExaminationViewSet,
 )
-
-from .patient_finding import (
-    PatientFindingViewSet,
-    OptimizedPatientFindingViewSet
-)
-
-from .patient_finding_classification import (
-    create_patient_finding_classification,
-)
-
-from .pdf import (
-    PdfReimportView,
-    PdfStreamView,
-)
-
 from .report import (
-    ReportListView,
-    ReportWithSecureUrlView,
-    start_examination,
+    PatientExaminationReportApi,
+    ReportLlmJobStatusView,
+    ReportReimportView,
+    ReportStreamView,
 )
-
-from .requirement import (
-    evaluate_requirements,
-    LookupViewSet,
-)
-
 from .video import (
-    # Video Correction (Phase 1.1) - Implemented
-    VideoMetadataView,
-    VideoProcessingHistoryView,
     VideoApplyMaskView,
-    VideoRemoveFramesView,
-    
-    # Existing views
-    VideoReimportView,
-    VideoViewSet,
-    VideoStreamView,
-    VideoLabelView,
-    UpdateLabelSegmentsView,
-    rerun_segmentation,
-    video_timeline_view,
-    VideoExaminationViewSet,
     VideoCorrectionView,
+    VideoExaminationViewSet,
+    VideoReimportView,
+    VideoRemoveFramesView,
+    VideoStreamView,
 )
 
 __all__ = [
-    # Anonymization views
     "anonymization_status",
     "anonymization_current",
     "start_anonymization",
     "AnonymizationOverviewView",
     "AnonymizationValidateView",
-
-    # Auth views
-    "KeycloakVideoView",
     "keycloak_login",
     "keycloak_callback",
     "public_home",
-
-    # Examination views
-    "ExaminationManifestCache",
-    'ExaminationViewSet',
-
-    'get_classification_choices_for_examination',
-    'get_morphology_classification_choices_for_examination',
-    'get_location_classification_choices_for_examination',
-
-    'get_classifications_for_examination',
-    'get_location_classifications_for_examination',
-    'get_morphology_classifications_for_examination',
-
-    'get_findings_for_examination',
-    'get_instruments_for_examination',
-    'get_interventions_for_examination',
-
-    # Finding Views
-    "FindingViewSet",
-    "get_interventions_for_finding",
-    "get_classifications_for_finding",
-
-    # Finding Classification Views
-    "FindingClassificationViewSet",
-    "get_classification_choices",
-    "get_morphology_choices", # DEPRECATED
-    "get_location_choices", # DEPRECATED
-
-    # Label Video Segment Views
-    'create_video_segment_annotation',
-    'video_segments_by_label_id_view',
-    'video_segments_by_label_name_view',
-    'video_segment_detail_view',
-    'video_segments_view',
-    'update_label_video_segment',
-    "get_lvs_by_name_and_video_id",
-
-    # Meta Views
-    "AvailableFilesListView",
-    "SensitiveMetaDetailView",
-    "SensitiveMetaListView",
-    "SensitiveMetaVerificationView",
-    "ReportFileMetadataView",
-
-    # Misc
     "CenterViewSet",
-    'csrf_token_view',
+    "application_settings_detail",
+    "application_settings_backup",
+    "application_settings_centers_dropdown",
+    "application_settings_processors_dropdown",
+    "application_settings_annotators_dropdown",
+    "application_settings_report_templates_dropdown",
+    "application_settings_ai_datasets_dropdown",
+    "application_settings_ai_dataset_attachments",
+    "application_settings_ai_dataset_frame_bucket_distribution",
+    "application_settings_ai_dataset_training_manifest",
+    "application_settings_model_training_options",
+    "application_settings_model_training_runs",
+    "application_settings_model_training_run_detail",
+    "application_settings_video_dimension_backfill_runs",
+    "application_settings_video_dimension_backfill_run_detail",
+    "application_settings_ai_dataset_export",
+    "application_settings_ai_dataset_export_download",
+    "application_settings_network_nodes",
+    "application_settings_network_node_detail",
+    "application_settings_network_node_roles_dropdown",
+    "csrf_token_view",
     "GenderViewSet",
-    'ExaminationStatsView',
-    'VideoSegmentStatsView',
-    'SensitiveMetaStatsView',
+    "ExaminationStatsView",
+    "VideoSegmentStatsView",
+    "SensitiveMetaStatsView",
     "GeneralStatsView",
-    "SecureFileUrlView",
-    "SecureFileServingView",
-    "validate_secure_url",
-    'ExaminationTranslationOptions',
-    'FindingTranslationOptions',
-    'FindingClassificationTranslationOptions',
-    'FindingClassificationChoiceTranslationOptions',
-    'InterventionTranslationOptions',
-    'TranslatedFieldMixin',
-    'TranslationMigrationHelper',
-    'TranslatedFixtureLoader',
+    "AuditLedgerIntegrityStatusView",
     "build_multilingual_response",
-    'MODELTRANSLATION_SETTINGS',
-    'UploadFileView',
-    'UploadStatusView',
-
-    # Patient Views
+    "UploadFileView",
+    "UploadStatusView",
     "PatientViewSet",
-
-    # Patient Examination Views
     "ExaminationCreateView",
     "PatientExaminationDetailView",
     "PatientExaminationListView",
     "PatientExaminationViewSet",
-
-    # Patient Finding Views
-    "PatientFindingViewSet",
-    "OptimizedPatientFindingViewSet",
-
-    # Patient Finding Classification Views
-    "create_patient_finding_classification",
-
-    # PDF
-    "PdfMediaView",
-    "PdfReimportView",
-    "PdfStreamView",
-
-    # Report
-    "ReportListView",
-    "ReportWithSecureUrlView",
-    "start_examination",
-    
-    # Requirement Views
-    
-    "evaluate_requirements",
-    "LookupViewSet",
-
-    # Video Views (Phase 1.1 - Implemented)
-    'VideoMetadataView',
-    'VideoProcessingHistoryView',
-    'VideoApplyMaskView',
-    'VideoRemoveFramesView',
-
-    'VideoCorrectionView',
-    
-    # Video Views (Existing)
-    'VideoReimportView',
-    'VideoViewSet',
-    'VideoStreamView',
-    'VideoLabelView',
-    'UpdateLabelSegmentsView',
-    'rerun_segmentation',
-    'video_timeline_view',
+    "ReportReimportView",
+    "ReportLlmJobStatusView",
+    "ReportStreamView",
+    "PatientExaminationReportApi",
+    "VideoApplyMaskView",
+    "VideoRemoveFramesView",
+    "VideoCorrectionView",
+    "VideoReimportView",
+    "VideoStreamView",
     "VideoExaminationViewSet",
+    "label_list",
+    "get_sensitive_metadata_pk",
+    "video_sensitive_metadata",
+    "video_sensitive_metadata_verify",
+    "pdf_sensitive_metadata",
+    "pdf_sensitive_metadata_verify",
+    "sensitive_metadata_list",
+    "pdf_sensitive_metadata_list",
 ]
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))

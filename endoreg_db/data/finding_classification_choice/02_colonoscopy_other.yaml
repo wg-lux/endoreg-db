@@ -1,0 +1,34 @@
+# Hemorrhoids classification
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "hemorrhoids_grade_0_no_hemorrhoids"
+    name_de: "Keine Hämorrhoiden"
+    name_en: "No hemorrhoids"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "hemorrhoids_grade_1"
+    name_de: "Grad 1"
+    name_en: "Grade 1"
+    description: "Mucosal hemorrhoids that do not prolapse"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "hemorrhoids_grade_2"
+    name_de: "Grad 2"
+    name_en: "Grade 2"
+    description: "Hemorrhoids that prolapse during straining but reduce spontaneously"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "hemorrhoids_grade_3"
+    name_de: "Grad 3"
+    name_en: "Grade 3"
+    description: "Hemorrhoids that prolapse during straining and require manual reduction"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "hemorrhoids_grade_4"
+    name_de: "Grad 4"
+    name_en: "Grade 4"
+    description: "Irreducible prolapsed hemorrhoids"

@@ -1,0 +1,137 @@
+version: 1
+tier: service
+path: endoreg_db/services/video_files
+parent: ../structure.yml
+summary: Canonical video import, processing, frame operations and clinical coordinates.
+responsibilities:
+- Own direct video imports, reimports and processing workflows.
+- Manage protected video access, frame extraction and persisted clinical coordinates.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: VideoImportService
+  file: direct_import.py
+  purpose: Own durable direct-import claims while importing or reanonymizing canonical videos.
+- name: VideoReimportOrchestrator
+  file: reimport_orchestrator.py
+  purpose: Coordinate explicit video reimport after source availability and integrity checks.
+- name: frame_number_to_seconds
+  file: timeline.py
+  purpose: Resolve a frame boundary, preferring its persisted presentation time.
+files:
+- file: __init__.py
+  role: Package imports and compatibility exports.
+- file: _ai.py
+  role: Exports VideoFrameScoreResult.
+- file: _anonymization.py
+  role: 'Internal helpers: _LocalRawFileProvider, _video_integrity_failure_detail, _video_has_integrity_failure.'
+- file: _imports.py
+  role: Exports check_storage_capacity, atomic_copy_with_fallback.
+- file: _segments.py
+  role: Exports get_outside_frames, get_outside_segments, convert_sequences_to_db_segments.
+- file: _time.py
+  role: 'Internal helpers: _ensure_default_fps, _frame_number_to_s, _seconds_to_frame_number.'
+- file: ai.py
+  role: Exports predict_video, extract_text_from_video_frames.
+- file: anonymization.py
+  role: Exports anonymize_video_file, cleanup_video_raw_assets, merge_outside_frame_intervals.
+- file: clinical_contracts.py
+  role: Exports resolve_lx_anonymization_state, resolve_segment_labelset_name, build_lx_sensitive_meta.
+- file: deletion.py
+  role: Explicit video deletion using persisted ownership, never filename searches.
+- file: direct_import.py
+  role: Direct video imports acquire the same durable ownership as queued imports.
+- file: frame_coordinates.py
+  role: Generation-bound decoded timestamps and persisted prediction windows.
+- file: frames.py
+  role: Exports extract_video_frames, initialize_video_frames, delete_video_frames.
+- file: imports.py
+  role: Exports create_video_file_from_path, create_initialized_video_file_from_path, initialize_video_file.
+- file: io.py
+  role: Exports streamable_path_is_safe_plaintext, resolve_streamable_path, get_raw_video_file_path.
+- file: metadata.py
+  role: Exports get_video_ffmpeg_meta, update_video_meta, initialize_video_specs.
+- file: post_validation_blackening.py
+  role: Exports merge_outside_frame_intervals, rebuild_processed_video_without_outside_frames.
+- file: processor_resolution.py
+  role: Exports get_default_video_processor_name, resolve_processor_name_for_import.
+- file: queries.py
+  role: Exports video_hash_exists, get_video_by_pk, get_video_by_content_hash.
+- file: reimport_orchestrator.py
+  role: Exports VideoReimportOrchestrator.
+- file: segment_blackening.py
+  role: Typed configuration boundary for outside-frame video blackening.
+- file: segments.py
+  role: Exports get_video_outside_segments.
+- file: source_hash.py
+  role: Reuse verified plaintext hashes within one encrypted-filesystem process.
+- file: state.py
+  role: Exports get_or_create_video_state.
+- file: streaming.py
+  role: Exports get_active_raw_video_file, get_active_video_file, get_active_video_file_path.
+- file: temporal_inference.py
+  role: Exports extract_temporal_options, normalize_temporal_options, build_lx_temporal_options.
+- file: timeline.py
+  role: Exports frame_number_to_seconds, seconds_to_frame_number, validate_frame_number.
+- file: types.py
+  role: Exports parse_video_artifact_kind.
+- file: validation.py
+  role: Exports validate_video_metadata_annotation.
+- file: video_masks.py
+  role: Host persistence for immutable masks validated and loaded by lx-dtypes.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/import_files
+  - endoreg_db/import_files/context
+  - endoreg_db/import_files/file_storage
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/annotations
+  - endoreg_db/services/centers
+  - endoreg_db/services/hub
+  - endoreg_db/services/imports
+  - endoreg_db/services/jobs
+  - endoreg_db/services/media
+  - endoreg_db/services/streaming
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - cv2
+  - django
+  - lx_anonymizer
+  - lx_dtypes
+  - numpy
+  - pydantic
+  - rest_framework
+  - yaml
+submodules:
+- name: _frames
+  path: _frames
+  manifest: _frames/structure.yml
+  summary: Internal frame extraction, initialization and cache ownership helpers.
+- name: _metadata
+  path: _metadata
+  manifest: _metadata/structure.yml
+  summary: Internal video specification, crop, region and metadata helpers.
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_file_services_contract.py tests/services/test_canonical_playback_selection.py
+    tests/services/test_segment_frame_extraction.py
+  files:
+  - tests/services/test_video_file_services_contract.py
+  - tests/services/test_canonical_playback_selection.py
+  - tests/services/test_segment_frame_extraction.py

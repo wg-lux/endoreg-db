@@ -1,0 +1,38 @@
+version: 1
+tier: domain
+path: tests
+parent: ../structure.yml
+summary: Pytest suites for contracts, services, HTTP APIs and clinical workflows.
+responsibilities:
+- Verify behavior, invalid inputs, integration contracts and concurrency.
+- Use repository runtime isolation and intentional foreground test commands.
+boundaries:
+- Do not run expensive background suites through editor coverage commands.
+files:
+
+- file: test_model_worker_prefork.py
+  role: Real billiard prefork recycling, task deadlines and detached OCR descendant cleanup.
+- file: test_celery_worker.py
+  role: Media worker startup pool compatibility and preflight regression tests.
+- file: utils/video/test_executable_discovery.py
+  role: FFmpeg and ffprobe executable startup preflight regression tests.
+- file: services/test_annotation_comparisons.py
+  role: Annotation weighting, attribution, report eligibility and access regression tests.
+- file: services/test_video_provenance_recovery.py
+  role: Audited unresolved provenance, original timestamps, encrypted media and center access tests
+- file: services/test_frame_coordinates.py
+  role: Canonical generation selection, timestamp windows and duration regressions.
+- file: conftest.py
+  role: Shared Django and clinical test fixture setup
+- file: plugins/runtime_paths.py
+  role: Process-owned runtime path isolation
+- file: scripts/test_lint_structure.py
+  role: Agent map schema and graph regression tests
+- file: services/test_service_structure.py
+  role: Service ownership map and legacy import compatibility tests
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests
+  fast_lane_command: devenv tasks run test:fast

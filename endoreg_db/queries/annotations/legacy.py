@@ -1,157 +1,118 @@
-from ...models import LabelSet, ImageClassificationAnnotation
-from django.db.models import Q, F
-from django.db import models
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Protocol, TypedDict, cast
+from django.db.models import F, Window
+from django.db.models.functions import RowNumber
 from tqdm import tqdm
-from collections import defaultdict
 
-# def get_legacy_annotations_for_labelset(labelset_name, version=None):
-#     """
-#     Retrieve annotations for a given label set for training.
-
-#     Args:
-#     - labelset_name (str): The name of the label set.
-#     - version (int, optional): The version of the label set. If not specified, the latest version is fetched.
-
-#     Returns:
-#     - list[dict]: A list of dictionaries. Each dictionary represents an image and its annotations.
-#                   Format: [{"frame": <frame_object>, "annotations": [{"label": <label_name>, "value": <value>}, ...]}, ...]
-
-#     Example:
-#         annotations_for_training = get_annotations_for_labelset("YourLabelSetName", version=2)
-
-#     """
-
-#     # Fetch the label set based on the name and optionally the version
-#     if version:
-#         labelset = LabelSet.objects.get(name=labelset_name, version=version)
-#     else:
-#         labelset = LabelSet.objects.filter(name=labelset_name).order_by('-version').first()
-#         if not labelset:
-#             raise ValueError(f"No label set found with the name: {labelset_name}")
-
-#     # Retrieve all labels in the label set
-#     labels_in_set = labelset.labels.all()
-
-#     # Get the most recent annotations for each frame/label combination
-#     annotations = ImageClassificationAnnotation.objects.filter(label__in=labels_in_set)
-#     annotations = annotations.annotate(
-#         latest_annotation=models.Window(
-#             expression=models.functions.RowNumber(),
-#             partition_by=[F('legacy_image'), F('label')],
-#             order_by=F('date_modified').desc()
-#         )
-#     ).filter(latest_annotation=1)
-
-#     # Organize the annotations by image/frame
-#     organized_annotations = []
-
-#     for annotation in tqdm(annotations):
-#         # ic(annotation)
-#         # Check if the frame is already in the organized list
-#         existing_entry = next((entry for entry in organized_annotations if entry['legacy_image'] == annotation.legacy_frame), None)
-
-#         if existing_entry:
-#             # Add this annotation to the existing frame's annotations
-#             existing_entry['annotations'].append({
-#                 "label": annotation.label.name,
-#                 "value": annotation.value
-#             })
-#         else:
-#             # Create a new entry for this frame
-#             organized_annotations.append({
-#                 "legacy_image": annotation.legacy_image,
-#                 "annotations": [{
-#                     "label": annotation.label.name,
-#                     "value": annotation.value
-#                 }]
-#             })
-
-#     return organized_annotations
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
+from endoreg_db.models.label.label_set import LabelSet
 
 
+class LegacyAnnotationEntry(TypedDict):
+    frame: object
+    annotations: list["LegacyLabelValueEntry"]
 
-def get_legacy_annotations_for_labelset(labelset_name, version=None):
-    """
-    ... [rest of your docstring]
-    """
 
-    # Fetch the label set based on the name and optionally the version
-    if version:
-        labelset = LabelSet.objects.get(name=labelset_name, version=version)
-    else:
-        labelset = LabelSet.objects.filter(name=labelset_name).order_by('-version').first()
-        if not labelset:
-            raise ValueError(f"No label set found with the name: {labelset_name}")
+class LegacyLabelValueEntry(TypedDict):
+    label: str
+    value: int
 
-    # Retrieve all labels in the label set
+
+class LegacyDatasetFrameEntry(TypedDict):
+    path: str
+    labels: list[int]
+
+
+class LegacyAnnotationBucket(TypedDict):
+    frame: object
+    annotations: list[LegacyLabelValueEntry]
+
+
+class _FramePathLike(Protocol):
+    pk: int
+
+    @property
+    def file_path(self) -> Path: ...
+
+
+def _labelset_or_raise(labelset_name: str, version: int | None) -> LabelSet:
+    if version is not None:
+        return LabelSet.objects.get(name=labelset_name, version=version)
+
+    labelset = LabelSet.objects.filter(name=labelset_name).order_by("-version").first()
+    if labelset is None:
+        raise ValueError(f"No label set found with the name: {labelset_name}")
+    return labelset
+
+
+def get_legacy_annotations_for_labelset(
+    labelset_name: str,
+    version: int | None = None,
+) -> list[LegacyAnnotationEntry]:
+    labelset = _labelset_or_raise(labelset_name, version)
     labels_in_set = labelset.labels.all()
 
-    # Get the most recent annotations for each frame/label combination
-    annotations = (ImageClassificationAnnotation.objects
-                   .filter(label__in=labels_in_set)
-                   .select_related('legacy_image', 'label')  # Reduce number of queries
-                   .annotate(
-                        latest_annotation=models.Window(
-                            expression=models.functions.RowNumber(),
-                            partition_by=[F('legacy_image'), F('label')],
-                            order_by=F('date_modified').desc()
-                        )
-                    ).filter(latest_annotation=1))
+    annotations = (
+        ImageClassificationAnnotation.objects.filter(label__in=labels_in_set)
+        .select_related("frame", "label")
+        .annotate(
+            latest_annotation=Window(
+                expression=RowNumber(),
+                partition_by=[F("frame"), F("label")],
+                order_by=F("date_modified").desc(),
+            )
+        )
+        .filter(latest_annotation=1)
+    )
 
-    # Organize the annotations by image/frame using a defaultdict
-    organized_annotations_dict = defaultdict(lambda: {
-        "legacy_image": None,
-        "annotations": []
-    })
-
+    organized_annotations_dict: dict[int, LegacyAnnotationBucket] = {}
     for annotation in tqdm(annotations):
-        organized_entry = organized_annotations_dict[annotation.legacy_image.id]
-        organized_entry["legacy_image"] = annotation.legacy_image
-        organized_entry["annotations"].append({
-            "label": annotation.label.name,
-            "value": annotation.value
-        })
+        frame = cast(_FramePathLike, annotation.frame)
+        frame_id = int(frame.pk)
+        entry = organized_annotations_dict.get(frame_id)
+        if entry is None:
+            annotations_list: list[LegacyLabelValueEntry] = []
+            entry = cast(
+                LegacyAnnotationBucket,
+                {"frame": frame, "annotations": annotations_list},
+            )
+            organized_annotations_dict[frame_id] = entry
+        annotations_list = entry["annotations"]
+        annotations_list.append(
+            {"label": annotation.label.name, "value": int(annotation.value)}
+        )
 
-    # Convert organized_annotations_dict to a list
-    organized_annotations = list(organized_annotations_dict.values())
+    return list(organized_annotations_dict.values())
 
-    return organized_annotations
 
-def generate_legacy_dataset_output(labelset_name, version=None):
-    """
-    Generate an output suitable for creating PyTorch datasets.
-
-    Args:
-    - labelset_name (str): The name of the label set.
-    - version (int, optional): The version of the label set. If not specified, the latest version is fetched.
-
-    Returns:
-    - list[dict]: A list of dictionaries, where each dictionary contains the file path and the labels.
-                  Format: [{"path": <file_path>, "labels": [<label_1_value>, <label_2_value>, ...]}, ...]
-    - labelset[LabelSet]: The label set that was used to generate the output.
-    """
-
-    # First, retrieve the organized annotations using the previously defined function
-    organized_annotations = get_legacy_annotations_for_labelset(labelset_name, version)
-
-    # Fetch all labels from the labelset for consistent ordering
-    labelset = LabelSet.objects.get(name=labelset_name, version=version)
+def generate_legacy_dataset_output(
+    labelset_name: str,
+    version: int | None = None,
+) -> tuple[list[LegacyDatasetFrameEntry], LabelSet]:
+    organized_annotations = get_legacy_annotations_for_labelset(
+        labelset_name,
+        version,
+    )
+    labelset = _labelset_or_raise(labelset_name, version)
     all_labels = labelset.get_labels_in_order()
 
-    dataset_output = []
-
+    dataset_output: list[LegacyDatasetFrameEntry] = []
     for entry in organized_annotations:
-        # Prepare a dictionary for each frame
-        frame_data = {
-            "path": entry['legacy_image'].image.path,  # Assuming 'image' field stores the file path
-            "labels": [-1] * len(all_labels)  # Initialize with -1 for all labels
+        frame = cast(_FramePathLike, entry["frame"])
+        frame_data: LegacyDatasetFrameEntry = {
+            "path": str(frame.file_path),
+            "labels": [-1] * len(all_labels),
         }
 
-        # Update the labels based on the annotations
-        for annotation in entry['annotations']:
-            index = next((i for i, label in enumerate(all_labels) if label.name == annotation['label']), None)
-            if index is not None:
-                frame_data['labels'][index] = int(annotation['value'])
+        for annotation in entry["annotations"]:
+            for index, label in enumerate(all_labels):
+                if label.name == annotation["label"]:
+                    frame_data["labels"][index] = int(annotation["value"])
+                    break
 
         dataset_output.append(frame_data)
 

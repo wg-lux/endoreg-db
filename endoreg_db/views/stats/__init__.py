@@ -6,8 +6,8 @@ from .stats_views import (
 )
 
 __all__ = [
-    'ExaminationStatsView',
-    'VideoSegmentStatsView', 
-    'SensitiveMetaStatsView',
-    'GeneralStatsView',
+    "ExaminationStatsView",
+    "VideoSegmentStatsView",
+    "SensitiveMetaStatsView",
+    "GeneralStatsView",
 ]

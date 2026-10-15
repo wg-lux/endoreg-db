@@ -1,0 +1,45 @@
+version: 1
+tier: service
+path: endoreg_db/services/imports
+parent: ../structure.yml
+summary: Shared import execution fencing, lease mechanics and tabular input formats.
+responsibilities:
+- Provide shared execution fencing and renewable import-lease mechanics.
+- Normalize tabular document templates at the input boundary.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: ImportExecutionFence
+  file: execution.py
+  purpose: Check ownership between stages and hold it through short database mutations.
+- name: ImportLeaseHeartbeat
+  file: lease.py
+  purpose: Renew on a worker connection; surface failure before the next mutation.
+files:
+- file: __init__.py
+  role: Gemeinsame Importausführung, Besitzprüfung und tabellarische Eingaben.
+- file: execution.py
+  role: Shared execution authority; ownership and renewal remain domain responsibilities.
+- file: lease.py
+  role: Shared import lease mechanics; domain adapters own persistence and policy.
+- file: tabular_import_formats.py
+  role: Exports normalize_patient_gender, load_document_templates, resolve_document_template.
+dependencies:
+  internal:
+  - endoreg_db/data
+  - endoreg_db/services/jobs
+  external:
+  - django
+  - yaml
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_service_structure.py tests/services/test_hub_ingest_import_job_contract.py
+    tests/services/test_import_execution.py
+  files:
+  - tests/services/test_service_structure.py
+  - tests/services/test_hub_ingest_import_job_contract.py
+  - tests/services/test_import_execution.py

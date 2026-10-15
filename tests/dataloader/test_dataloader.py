@@ -17,12 +17,12 @@ from ..helpers.data_loader import (
     load_lab_value_data,
     load_pdf_type_data,
     load_report_reader_flag_data,
-    load_requirement_data,
     load_information_source_data,
     load_unit_data,
     load_risk_data,
     load_base_db_data,
 )
+
 
 class TestDataLoader(TestCase):
     """
@@ -30,6 +30,7 @@ class TestDataLoader(TestCase):
     Each test method runs in its own transaction, ensuring isolation.
     The database state is automatically reset after each test by Django's TestCase.
     """
+
     def test_load_base_db_data(self):
         """
         Test if the load_base_db_data command runs without errors.
@@ -218,15 +219,6 @@ class TestDataLoader(TestCase):
         except Exception as e:
             self.fail(f"load_medication_data command failed: {e}")
 
-    def test_load_requirement_data(self):
-        """
-        Test if the load_requirement_data command runs without errors.
-        """
-        try:
-            load_requirement_data()
-        except Exception as e:
-            self.fail(f"load_requirement_data command failed: {e}")
-
     def test_load_ai_model_label_data(self):
         """
         Test if the load_ai_model_label_data command runs without errors.
@@ -244,5 +236,3 @@ class TestDataLoader(TestCase):
             load_ai_model_data()
         except Exception as e:
             self.fail(f"load_ai_model_data command failed: {e}")
-
-

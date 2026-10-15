@@ -6,8 +6,11 @@
       [
         "appendix",
         "blood",
+        "bubbles",
+        "cold_snare",
         "diverticule",
         "grasper",
+        "hot_snare",
         "ileocaecalvalve",
         "ileum",
         "low_quality",
@@ -15,7 +18,9 @@
         "needle",
         "outside",
         "polyp",
+        "smoke",
         "snare",
+        "tissue_on_snare",
         "water_jet",
         "wound",
       ]
@@ -37,4 +42,23 @@
         "polyp",
         "water_jet",
         "wound",
+      ]
+
+- model:
+  fields:
+    name: "multilabel_classification_colonoscopy_subset"
+    version: 1
+    labels:
+      [
+        "clip",
+        "snare",
+        "grasper",
+        "needle",
+        "digital",
+        "chromo",
+        "nbi",
+        "outside",
+        "water_jet",
+        "skin",
+        "ileum"
       ]

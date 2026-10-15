@@ -1,44 +1,57 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .patient_examination import PatientExamination
-    from ..examination import (
-        ExaminationIndication,
+    from endoreg_db.models.medical.examination.examination import Examination
+    from endoreg_db.models.medical.examination.examination_indication import (
         ExaminationIndicationClassificationChoice,
     )
+    from endoreg_db.models.administration.person.patient.patient import Patient
+    from endoreg_db.models.medical.patient.patient_examination import (
+        PatientExamination,
+    )
+
+
 class PatientExaminationIndication(models.Model):
-    '''A model to store the indication for a patient examination.'''
-    patient_examination = models.ForeignKey('PatientExamination', on_delete=models.CASCADE, related_name='indications')
-    examination_indication = models.ForeignKey('ExaminationIndication', on_delete=models.CASCADE)
-    indication_choice = models.ForeignKey('ExaminationIndicationClassificationChoice', on_delete=models.CASCADE, blank=True, null=True)
+    """A model to store the indication for a patient examination."""
+
+    patient_examination: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "PatientExamination", on_delete=models.CASCADE, related_name="indications"
+    )
+    examination_indication: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "ExaminationIndication", on_delete=models.CASCADE
+    )
+    indication_choice: models.ForeignKey[Any, Any] = models.ForeignKey(
+        "ExaminationIndicationClassificationChoice",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
 
     if TYPE_CHECKING:
-        patient_examination: "PatientExamination"
-        examination_indication: "ExaminationIndication"
-        indication_choice: "ExaminationIndicationClassificationChoice"
+        pass
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.patient_examination} - {self.examination_indication}"
 
-    def get_examination(self):
+    def get_examination(self) -> Examination:
         pe = self.get_patient_examination()
-        e = pe.examination
+        return pe.examination_safe
 
-        return e
-    
-    def get_patient_examination(self):
+    def get_patient_examination(self) -> PatientExamination:
         pe = self.patient_examination
         return pe
-    
-    def get_patient(self):
-        pe = self.get_patient_examination()
-        patient = pe.patient
-        return patient
-    
-    def get_choices(self):
 
+    def get_patient(self) -> Patient:
+        return self.get_patient_examination().patient
+
+    def get_choices(self) -> list[ExaminationIndicationClassificationChoice]:
         examination_indication = self.examination_indication
-        choices = [_ for _ in examination_indication.get_choices()]
+        choices = [
+            choice
+            for classification in examination_indication.classifications.all()
+            for choice in classification.choices.all()
+        ]
         return choices
-    

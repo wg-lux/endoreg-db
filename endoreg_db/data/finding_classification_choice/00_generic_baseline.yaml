@@ -1,0 +1,23 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_generic_location_inpatient"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "examination_setting_generic_location_outpatient"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "sedation_propofol"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "sedation_midazolam"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "sedation_propofol_midazolam"
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "sedation_other"

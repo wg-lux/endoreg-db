@@ -1,0 +1,35 @@
+version: 1
+tier: module
+path: endoreg_db/models/hub
+summary: Node, upload, transfer, quarantine and storage control-plane persistence.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+- Preserve concurrent operation ownership and canonical media generation identity; raw media export is
+  prohibited.
+files:
+- file: network_node.py
+  role: Node role and request-authentication configuration.
+- file: upload_job.py
+  role: Upload lifecycle and provenance boundary.
+- file: transfer_job.py
+  role: Transfer mode and provenance validation.
+- file: storage_placement.py
+  role: Typed placement, capability and reservation rows.
+- file: storage_balancing.py
+  role: Balancing and reconciliation receipts.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/models/hub
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models/hub
+parent: ../structure.yml
+submodules: []

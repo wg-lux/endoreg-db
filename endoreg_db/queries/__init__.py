@@ -1,5 +1,3 @@
-from .annotations import (
-    generate_legacy_dataset_output
-)
+from .annotations import generate_legacy_dataset_output
 
-from .get import *
+__all__ = ["generate_legacy_dataset_output"]

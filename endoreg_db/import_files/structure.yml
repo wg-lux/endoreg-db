@@ -1,0 +1,49 @@
+version: 1
+tier: module
+path: endoreg_db/import_files
+summary: Concurrent video and report import orchestration.
+responsibilities:
+- Import and reimport source documents through shared context, storage and processing phases.
+boundaries:
+- Preserve content-hash deduplication, encrypted storage, fenced publication and failure propagation.
+files:
+- file: context/import_context.py
+  role: Typed source and import context.
+- file: context/file_lock.py
+  role: File and content-hash locking.
+- file: file_storage/state_management.py
+  role: Import finalization and derivative readiness.
+- file: file_storage/cleanup.py
+  role: Owned staging cleanup.
+- file: processing/report_processing/report_anonymization.py
+  role: Document anonymization adapter.
+entrypoints:
+- name: VideoImportService
+  file: video_import_service.py
+  purpose: Canonical video import coordinator.
+- name: ReportImportService
+  file: report_import_service.py
+  purpose: Document import coordinator.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/imports
+  - endoreg_db/services/hub
+  - endoreg_db/utils
+  external:
+  - django
+  - pydantic
+  - pymupdf
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Import robustness authority
+  doc: feature-tracking/ImportPipelineRobustness.yml
+tests:
+  directory: tests/import_files
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/import_files
+parent: ../structure.yml
+submodules: []

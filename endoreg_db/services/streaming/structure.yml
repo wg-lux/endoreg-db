@@ -1,0 +1,66 @@
+version: 1
+tier: service
+path: endoreg_db/services/streaming
+parent: ../structure.yml
+summary: HTTP Live Streaming and seekable streamable derivatives of canonical media.
+responsibilities:
+- Resolve and synchronize streamable media derivatives.
+- Provide seekable protected byte input and HTTP Live Streaming materialization.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: sync_video_streamable_artifacts
+  file: streamable_media.py
+  purpose: Reconcile streamable derivative state for the selected canonical video.
+- name: serve_seekable_media_input
+  file: seekable_media_input.py
+  purpose: Expose one FieldFile to local FFmpeg as a seekable HTTP byte source.
+files:
+- file: __init__.py
+  role: HTTP Live Streaming, streambare Medien und seekbare Eingaben.
+- file: hls_media.py
+  role: Exports hls_result_is_ready, coerce_hls_artifact_kind, resolve_hls_source.
+- file: seekable_media_input.py
+  role: Exports serve_seekable_media_input.
+- file: streamable_media.py
+  role: Exports resolve_streamable_media_state, sync_video_streamable_artifacts.
+- file: streamable_media_state.py
+  role: Exports build_streamable_media_state.
+- file: streamable_media_transcoding.py
+  role: Exports is_encrypted_file, is_faststart_mp4, transcode_streamable_mp4.
+- file: streamable_media_types.py
+  role: Exports StreamableArtifactKind, StreamableArtifactDisposition, StreamableArtifactSpec.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/jobs
+  - endoreg_db/services/media
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - cryptography
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_processed_transcode_encryption.py tests/services/test_canonical_playback_selection.py
+    tests/services/test_hls_encoder_preflight.py
+  files:
+  - tests/services/test_video_processed_transcode_encryption.py
+  - tests/services/test_canonical_playback_selection.py
+  - tests/services/test_hls_encoder_preflight.py

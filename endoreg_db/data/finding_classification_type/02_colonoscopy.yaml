@@ -1,0 +1,9 @@
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "colonoscopy_bowel_prep"
+    name_de: "Darmvorbereitung"
+    name_en: "Bowel Preparation"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "colonoscopy_advanced_imaging"

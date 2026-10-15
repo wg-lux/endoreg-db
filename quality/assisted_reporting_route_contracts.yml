@@ -1,0 +1,73 @@
+schema_version: "1.0"
+wire_contract:
+  backend_fields: snake_case
+  frontend_response_fields: camelCase
+  request_conversion_owner: frontend/src/api/axiosInstance.ts
+  response_conversion_owner: frontend/src/api/axiosInstance.ts
+routes:
+  - id: terminology_bundles
+    method: GET
+    path: /dtypes-api/terminology/bundles
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/terminology_routes.py
+    implementation_marker: '@api.get("/terminology/bundles")'
+    frontend_file: frontend/src/api/terminologyApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "dtypesApi('terminology')"
+    query_parameters: []
+  - id: examination_findings
+    method: GET
+    path: /dtypes-api/examinations/{examination_id}/findings/
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/findings_routes.py
+    implementation_marker: '@api.get("/examinations/{examination_id}/findings/")'
+    frontend_file: frontend/src/api/findingsApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "dtypesApi(`examinations/${String(examinationId)}/findings/`)"
+      - "module_name:"
+      - "module_version:"
+      - "patient_examination_id:"
+    query_parameters:
+      - module_name
+      - module_version
+      - patient_examination_id
+  - id: patient_findings
+    method: GET
+    path: /dtypes-api/patient-findings/
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/findings_routes.py
+    implementation_marker: '@api.get("/patient-findings/")'
+    frontend_file: frontend/src/api/findingsApi.ts
+    frontend_markers:
+      - "import axiosInstance, { dtypesApi }"
+      - "patientFindings: dtypesApi('patient-findings/')"
+      - "params: { patient_examination: validPatientExaminationId }"
+    query_parameters:
+      - patient_examination
+  - id: knowledge_base_graph
+    method: GET
+    path: /dtypes-api/knowledge-bases/{module_name}/{module_version}/graph
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/knowledge_base_graph_routes.py
+    implementation_marker: '@api.get("/knowledge-bases/{module_name}/{version}/graph")'
+    frontend_file: frontend/src/api/knowledgeBaseGraphApi.ts
+    frontend_markers:
+      - "export async function fetchKnowledgeBaseGraphSnapshot("
+      - "${graphBasePath(moduleName, version)}/graph"
+    query_parameters: []
+  - id: examination_reporting_context
+    method: GET
+    path: /dtypes-api/knowledge-bases/{module_name}/{module_version}/examinations/{examination_name}/reporting-context
+    owner_repository: lx_dtypes
+    implementation_file: lx_dtypes/django/api/knowledge_base_graph_routes.py
+    implementation_marker: "def examination_reporting_context("
+    frontend_file: frontend/src/api/knowledgeBaseGraphApi.ts
+    frontend_markers:
+      - "export async function fetchExaminationReportingContext("
+      - "/examinations/${encodeURIComponent(examinationName)}/reporting-context"
+    query_parameters: []
+forbidden_frontend_markers:
+  - VITE_FINDINGS_BACKEND
+  - /endoreg-api/findings/

@@ -1,0 +1,50 @@
+version: 1
+tier: service
+path: endoreg_db/services/patient_identity
+parent: ../structure.yml
+summary: External patient identifiers and verified sensitive-metadata updates.
+responsibilities:
+- Resolve typed external identifiers and commit validated media identity.
+- Update and verify sensitive metadata through canonical identity rules.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: commit_validated_media_identity
+  file: validated_media_identity.py
+  purpose: Resolve and append-only commit the validated non-PII identity for a media item.
+- name: assign_patient_external_id
+  file: external_ids.py
+  purpose: Resolve or create and persist the typed external-ID relation.
+files:
+- file: __init__.py
+  role: Patientenkennungen und verifizierte sensible Metadaten.
+- file: external_ids.py
+  role: Exports split_patient_external_id, assign_patient_external_id.
+- file: update.py
+  role: Exports update_sensitive_meta.
+- file: validated_media_identity.py
+  role: Exports commit_validated_media_identity.
+- file: verification.py
+  role: Exports update_sensitive_meta_verification.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/cases
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Identity keyring enrollment
+  doc: docs/identity_ring_enrollment.md
+- name: Identity salt migration
+  doc: docs/key_rotation.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_sensitive_meta_update.py tests/services/test_sensitive_meta_verification.py
+  files:
+  - tests/services/test_sensitive_meta_update.py
+  - tests/services/test_sensitive_meta_verification.py

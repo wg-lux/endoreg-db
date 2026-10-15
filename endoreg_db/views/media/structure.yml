@@ -1,0 +1,41 @@
+version: 1
+tier: module
+path: endoreg_db/views/media
+summary: Unified media, upload, hub and study HTTP endpoints.
+responsibilities:
+- Adapt media requests and enforce center and operation permissions.
+boundaries:
+- Routes live under media; heavy streaming may be delegated to the configured proxy.
+files:
+- file: annotation_comparisons.py
+  role: Authenticated paginated personal annotation comparisons with explicit response serializers.
+- file: video_media.py
+  role: Video list and detail API.
+- file: pdf_media.py
+  role: Report media API.
+- file: frame_media.py
+  role: Decoded frame streaming API.
+- file: sensitive_metadata.py
+  role: Sensitive metadata and case-resolution API.
+- file: hub/__init__.py
+  role: Hub transfer and quarantine API.
+dependencies:
+  internal:
+  - endoreg_db/views/video
+  - endoreg_db/services/media
+  - endoreg_db/services/annotations
+  - endoreg_db/authz
+  - endoreg_db/serializers
+  external:
+  - django
+  - rest_framework
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/views/media
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/views/media
+parent: ../structure.yml
+submodules: []

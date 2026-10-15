@@ -1,0 +1,24 @@
+version: 1
+tier: domain
+path: quality
+parent: ../structure.yml
+summary: Versioned policies and reviewed baselines consumed by repository checks.
+responsibilities:
+- Define canonical ownership, documentation and dead-code review policies.
+boundaries:
+- Policies do not replace feature readiness evidence or runtime contracts.
+files:
+- file: documentation_governance.yml
+  role: Cross-repository documentation inventory policy
+- file: lx_dtypes_contract_policy.yml
+  role: Shared type ownership policy
+- file: dead_code_baseline.yml
+  role: Reviewed dead-code findings
+- file: quality_boundary_baseline.yml
+  role: Reviewed exception and dependency boundaries
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests/scripts
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/scripts/test_check_quality_boundaries.py -q

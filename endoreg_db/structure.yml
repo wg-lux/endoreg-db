@@ -1,0 +1,109 @@
+version: 1
+tier: domain
+path: endoreg_db
+summary: Django application, clinical persistence, ingestion and scoped APIs.
+responsibilities:
+- Register Django models and checks; compose API and worker entrypoints.
+boundaries:
+- Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
+  boundaries.
+files:
+- file: tasks.py
+  role: Celery task adapters; there is no tasks directory.
+- file: api_urls.py
+  role: Public API routing composition.
+- file: root_urls.py
+  role: Deployment URL root.
+- file: celery.py
+  role: Worker application setup.
+- file: celery_worker.py
+  role: Pre-consumption media worker pool and executable validation.
+- file: checks.py
+  role: Django runtime checks.
+- file: integrations/lx_dtypes_host_models.py
+  role: Host integration registration for shared clinical types.
+- file: migrations/__init__.py
+  role: Schema migrations package; review schema changes with owning model manifest.
+- file: export/frames/export_frames_with_labels.py
+  role: Frame export workflow compatibility boundary.
+- file: helpers/data_loader.py
+  role: Reference-data loader helpers.
+- file: factories/__init__.py
+  role: Test fixture factories.
+- file: queries/__init__.py
+  role: Query helper package.
+- file: admin.py
+  role: Django admin registration.
+entrypoints:
+- name: EndoregDbConfig
+  file: apps.py
+  purpose: Application startup registration.
+- name: urlpatterns
+  file: urls/__init__.py
+  purpose: Application API routes.
+dependencies:
+  internal:
+  - endoreg_db/config
+  - endoreg_db/utils
+  external:
+  - django
+  - celery
+  - rest_framework
+  - ninja
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/app
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/app
+parent: ../structure.yml
+submodules:
+- name: models
+  path: models
+  manifest: models/structure.yml
+  summary: Persistence models grouped by clinical and operational ownership.
+- name: import_files
+  path: import_files
+  manifest: import_files/structure.yml
+  summary: Concurrent video and report import orchestration.
+- name: utils
+  path: utils
+  manifest: utils/structure.yml
+  summary: Shared runtime paths, file integrity, protected storage and narrow utilities.
+- name: schemas
+  path: schemas
+  manifest: schemas/structure.yml
+  summary: Validated local API, workflow and persisted-payload contracts.
+- name: views
+  path: views
+  manifest: views/structure.yml
+  summary: HTTP request adaptation, authorization and domain-service delegation.
+- name: serializers
+  path: serializers
+  manifest: serializers/structure.yml
+  summary: REST framework representation and typed request adapters.
+- name: urls
+  path: urls
+  manifest: urls/structure.yml
+  summary: Application route composition and public media URL ownership.
+- name: authz
+  path: authz
+  manifest: authz/structure.yml
+  summary: Authentication, authorization policy and identity middleware.
+- name: management
+  path: management
+  manifest: management/structure.yml
+  summary: Django management commands and shared command adapters.
+- name: config
+  path: config
+  manifest: config/structure.yml
+  summary: Environment, private keyring and identity-salt configuration boundaries.
+- name: data
+  path: data
+  manifest: data/structure.yml
+  summary: Packaged YAML reference data and versioned study presets.
+- name: services
+  path: services
+  manifest: services/structure.yml
+  summary: Domain services and explicit workflow side effects.

@@ -1,0 +1,310 @@
+import hashlib
+import logging
+from endoreg_db.services.hub.upload_job_files import (
+    record_working_file,
+    track_working_directory,
+)
+import stat
+from contextlib import nullcontext
+from pathlib import Path
+from typing import Protocol, cast
+from uuid import uuid4
+
+from django.db import transaction
+from lx_dtypes.models.contracts.report_anonymization import (
+    ReportAnonymizationOptions,
+    ReportAnonymizationRequest,
+    ReportAnonymizationResult,
+)
+from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
+
+from endoreg_db.import_files.context import ImportContext
+from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
+    persist_sensitive_meta_candidate,
+)
+from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.models.administration.person.patient.patient import (
+    Patient,
+    canonical_pseudo_patient_name,
+)
+from endoreg_db.utils.hashs import get_patient_hash
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.file_operations import ensure_directory, get_file_hash
+from endoreg_db.utils.structured_logging import emit_structured_event
+
+logger = logging.getLogger(__name__)
+
+
+class _ReportReader(Protocol):
+    llm_available: bool
+
+    def process_report(
+        self, request: ReportAnonymizationRequest
+    ) -> ReportAnonymizationResult: ...
+
+
+class _PatientPseudonymResolver(Protocol):
+    def __call__(self, sensitive_meta: LxSensitiveMeta) -> tuple[str, str]: ...
+
+
+class _NamedCenter(Protocol):
+    name: str
+
+
+class _ReportStorageRecord(Protocol):
+    pk: int
+    pdf_hash: str
+    text: str
+    anonymized_text: str
+    center: _NamedCenter | None
+
+    def save(self, *args: object, **kwargs: object) -> None: ...
+
+
+class _PersistableReportAnonymizationResult(Protocol):
+    @property
+    def original_text(self) -> str: ...
+
+    @property
+    def anonymized_text(self) -> str: ...
+
+    @property
+    def extracted_metadata(self) -> LxSensitiveMeta: ...
+
+
+@transaction.atomic
+def persist_report_anonymization_result(
+    *,
+    report_id: int,
+    result: _PersistableReportAnonymizationResult,
+) -> RawPdfFile:
+    report = RawPdfFile.objects.select_for_update().get(pk=report_id)
+
+    updates: list[str] = []
+
+    if report.text != result.original_text:
+        report.text = result.original_text
+        updates.append("text")
+
+    if report.anonymized_text != result.anonymized_text:
+        report.anonymized_text = result.anonymized_text
+        updates.append("anonymized_text")
+
+    sensitive_meta = persist_sensitive_meta_candidate(
+        instance=report,
+        candidate=result.extracted_metadata,
+    )
+    if report.sensitive_meta_id != sensitive_meta.pk:
+        report.sensitive_meta = sensitive_meta
+        updates.append("sensitive_meta")
+
+    if updates:
+        report.save(update_fields=updates)
+
+    return report
+
+
+def _report_staging_dir() -> Path:
+    return get_runtime_paths().import_anonymized_report
+
+
+def _validate_report_result(
+    result: object,
+    *,
+    request: ReportAnonymizationRequest,
+    output_directory: Path,
+) -> ReportAnonymizationResult:
+    """Validate library evidence against the host-owned attempt before mutation."""
+    # A type annotation (or a model constructed without validation) is not a
+    # runtime contract. Revalidate nested values rather than trusting an instance.
+    if not isinstance(result, ReportAnonymizationResult):
+        raise TypeError("Report anonymizer returned an unsupported result contract")
+    result = ReportAnonymizationResult.model_validate(result.model_dump())
+    if result.attempt_id != request.attempt_id:
+        raise ValueError("Report anonymization attempt identity does not match")
+    if result.source_sha256 != request.source_sha256:
+        raise ValueError("Report anonymization source identity does not match")
+
+    artifact = result.artifact_path
+    if ".." in artifact.parts:
+        raise ValueError("Report anonymization artifact path contains traversal")
+    artifact = artifact.absolute()
+    if not artifact.is_relative_to(output_directory):
+        raise ValueError("Report anonymization artifact is outside its attempt")
+    # Inspect the assigned directory as well as intermediate components; resolve()
+    # alone would hide a symlink that happens to point back into the attempt.
+    for component in (artifact, *artifact.parents):
+        if component.is_symlink():
+            raise ValueError("Report anonymization artifact path contains a symlink")
+        if component == output_directory:
+            break
+    before = artifact.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError("Report anonymization artifact must be a regular file")
+    if before.st_size != result.artifact_size_bytes:
+        raise ValueError("Report anonymization artifact size does not match")
+    if get_file_hash(artifact) != result.artifact_sha256:
+        raise ValueError("Report anonymization artifact hash does not match")
+    after = artifact.lstat()
+    if (
+        before.st_dev,
+        before.st_ino,
+        before.st_mode,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_mode,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    ):
+        raise ValueError("Report anonymization artifact changed during validation")
+    return result
+
+
+class ReportAnonymizer:
+    @staticmethod
+    def _is_txt_input(ctx: ImportContext) -> bool:
+        source_path = ctx.original_path if isinstance(ctx.original_path, Path) else None
+        if source_path is None:
+            source_path = ctx.file_path
+        return source_path.suffix.lower() == ".txt"
+
+    def anonymize_report(self, ctx: ImportContext) -> ImportContext:
+        if not isinstance(ctx.current_report, RawPdfFile):
+            raise TypeError("Report anonymization requires a persisted RawPdfFile")
+        report_model = ctx.current_report
+        report = cast(_ReportStorageRecord, report_model)
+        if self._is_txt_input(ctx):
+            raise ValueError(
+                "Raw TXT report anonymization is disabled. Use a PDF or the "
+                "validated preanonymized import workflow."
+            )
+
+        anonymized_dir = ensure_directory(_report_staging_dir())
+        report_reader = self._instantiate_report_reader(report_model)
+        use_llm = report_reader.llm_available
+        emit_structured_event(
+            logger,
+            (
+                "report_anonymization.llm_ready_selected"
+                if use_llm
+                else "report_anonymization.spacy_fallback_selected"
+            ),
+            llm_available=use_llm,
+            selected_backend="configured_llm" if use_llm else "spacy_regex",
+        )
+
+        ctx.require_execution_ownership()
+
+        attempt_directory = ensure_directory(
+            anonymized_dir / f"attempt-{uuid4().hex}"
+        ).resolve(strict=True)
+        if not isinstance(ctx.file_hash, str):
+            raise RuntimeError(
+                "Stable report snapshot hash is required for anonymization."
+            )
+        request = ReportAnonymizationRequest(
+            attempt_id=uuid4(),
+            source_path=ctx.file_path,
+            source_sha256=ctx.file_hash,
+            source_size_bytes=ctx.file_path.stat().st_size,
+            output_directory=attempt_directory,
+            options=ReportAnonymizationOptions(use_llm=use_llm),
+        )
+        with track_working_directory(attempt_directory):
+            anonymization_result = _validate_report_result(
+                report_reader.process_report(request),
+                request=request,
+                output_directory=attempt_directory,
+            )
+        ctx.original_text = anonymization_result.original_text
+        ctx.anonymized_text = anonymization_result.anonymized_text
+        ctx.extracted_metadata = anonymization_result.extracted_metadata
+        ctx.anonymized_path = anonymization_result.artifact_path
+        record_working_file(ctx.anonymized_path)
+
+        if not ctx.anonymized_path.exists():
+            raise RuntimeError(
+                "Report anonymization did not produce a readable anonymized PDF."
+            )
+
+        ctx.require_execution_ownership()
+        mutation_guard = ctx.mutation_guard
+        with mutation_guard() if mutation_guard is not None else nullcontext():
+            report = persist_report_anonymization_result(
+                report_id=report.pk,
+                result=anonymization_result,
+            )
+        ctx.current_report = report
+        return ctx
+
+    @staticmethod
+    def _patient_pseudonym_resolver(
+        report: RawPdfFile,
+    ) -> _PatientPseudonymResolver:
+        center = getattr(report, "center", None)
+        center_name = getattr(center, "name", None)
+        if not isinstance(center_name, str) or not center_name.strip():
+            raise ValueError(
+                "Report center is required for canonical pseudonym resolution"
+            )
+
+        def resolve(sensitive_meta: LxSensitiveMeta) -> tuple[str, str]:
+            candidate = sensitive_meta
+            if candidate.dob is None:
+                has_patient_name = any(
+                    value.strip().casefold() not in {"", "unknown"}
+                    for value in (candidate.first_name, candidate.last_name)
+                )
+                if has_patient_name:
+                    raise ValueError(
+                        "Patient DOB is required to resolve a canonical report pseudonym"
+                    )
+                seed = hashlib.sha256(
+                    f"{center_name}|{candidate.first_name}|{candidate.last_name}".encode()
+                ).hexdigest()
+            else:
+                hash_material = get_patient_hash(
+                    first_name=candidate.first_name,
+                    last_name=candidate.last_name,
+                    dob=candidate.dob,
+                    center=center_name,
+                )
+                seed = hashlib.sha256(hash_material.encode()).hexdigest()
+
+            existing = Patient.get_pseudo_patient_by_hash(seed, center)
+            if existing is not None:
+                return existing.first_name, existing.last_name
+            return canonical_pseudo_patient_name(
+                patient_hash=seed,
+                gender_name=candidate.gender,
+            )
+
+        return resolve
+
+    def _instantiate_report_reader(
+        self,
+        report: RawPdfFile,
+    ) -> _ReportReader:
+        """Instantiate the canonical report reader."""
+        from lx_anonymizer.report_reader import ReportReader  # pyright: ignore[reportMissingTypeStubs]
+
+        from endoreg_db.services.centers.employees import center_employee_overrides
+
+        resolver = self._patient_pseudonym_resolver(report)
+        center = report.center
+        if center is None:
+            raise ValueError("Report center is required for employee recognition")
+        employee_overrides = center_employee_overrides(center)
+        return cast(
+            _ReportReader,
+            ReportReader(
+                patient_pseudonym_resolver=resolver,
+                employee_first_names=employee_overrides.get("employee_first_names"),
+                employee_last_names=employee_overrides.get("employee_last_names"),
+            ),
+        )

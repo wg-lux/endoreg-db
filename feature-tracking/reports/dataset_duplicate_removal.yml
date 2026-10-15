@@ -1,0 +1,72 @@
+feature: code_quality
+criterion: dead_code_reduction
+assessor: codex-duplicate-cleanup-20261001
+date: '2026-10-01'
+working_directory: /home/admin/endoreg-db
+scope: Identische private Feldkonvertierungen der Datensatzdienste.
+removed_implementations:
+  path: endoreg_db/services/aidataset_exports.py
+  canonical_source: endoreg_db/utils/model_fields.py
+  symbols:
+  - _model_value
+  - _model_text
+  - _model_optional_text
+  - _model_bool
+  - _model_int
+  - _model_optional_int
+  - _model_datetime
+  evidence:
+  - Alle sieben vollständigen Funktionsdefinitionen vor Entfernung mittels ast.dump
+    ohne Positionsdaten identisch verglichen.
+  - Aufrufstellen im Exportdienst bleiben erhalten; explizite Aliasimporte erhalten
+    die bisherigen Modulnamen.
+  - Beide Dienste importieren dieselben öffentlichen Helper aus utils/model_fields.py
+    unter den bisherigen privaten Namen; keine Abhängigkeit zwischen den Diensten
+    eingeführt.
+  - Bestehende AAA-Tests in tests/services/test_aidataset_frame_buckets_unit.py prüfen
+    gültige Konvertierungen und ungültige Zahlen sowie Datumswerte.
+  risk: Künftige Helperänderungen müssen beide Datensatzdienste berücksichtigen; Laufzeittests
+    stehen aus.
+metrics:
+  raw_command: .devenv/state/venv/bin/python -m radon raw endoreg_db/services/aidataset_exports.py
+  before: 415 LOC, 352 SLOC
+  after: Exportdienst 378 LOC; zusätzlich Frame-Bucket-Dienst verkürzt und gemeinsames
+    Helpermodul angelegt.
+  complexity_command: .devenv/state/venv/bin/python -m radon cc -s endoreg_db/services/aidataset_exports.py
+  result: Sieben doppelte Funktionen entfernt, gemeinsame Implementierung ins Utils-Modul
+    verschoben; Komplexität der Funktionen unverändert.
+  combined_loc:
+    before: 844
+    after: 817
+    net_removed: 27
+verification:
+- command: git diff --check -- endoreg_db/services/aidataset_exports.py
+  result: Exit 0.
+- command: .devenv/state/venv/bin/python scripts/check_dead_code.py
+  result: Exit 1; unabhängiger Fund endoreg_db/utils/rust_backend.py:24, unused variable
+    master_keys, 100 Prozent Konfidenz.
+- command: ./feature-tracking/tracker.py validate
+  result: Exit 0; 37 gültige Feature-Definitionen.
+- command: ./feature-tracking/tracker.py show code_quality
+  result: Exit 0; vorhandene Bewertungen unverändert.
+- command: ./feature-tracking/tracker.py check code_quality
+  result: Exit 1; Gesamtfeature nicht produktionsreif, 11 von 17 Pflichtkriterien
+    verifiziert.
+- command: .devenv/state/venv/bin/pyright
+  result: 'Erster Gesamtlauf: 23 Fehler, 8 Warnungen; sieben eingeführte Private-Usage-Fehler
+    anschließend durch öffentliches gemeinsames Helpermodul behoben. Übrige 16 Fehler
+    außerhalb des Änderungsumfangs.'
+- command: .devenv/state/venv/bin/pyright endoreg_db/utils/model_fields.py endoreg_db/services/aidataset_frame_buckets.py
+    endoreg_db/services/aidataset_exports.py
+  result: Exit 0; 0 Fehler, 0 Warnungen.
+- review: AST-Vergleich gemeinsamer Helper mit HEAD-Implementierungen nach normalisierter
+    Umbenennung
+  result: Alle sieben Funktionen identisch.
+limitations:
+- Auf ausdrücklichen Benutzerwunsch keine Tests ausgeführt und keine neue Laufzeitverifikation
+  behauptet.
+- Keine dynamische Trace-Messung; ausschließlich Entfernung identischer Implementierungen,
+  keine Einstufung aktiver Funktionen als unbenutzt.
+- Keine Änderung an Import, Speicherung, Streaming, klinischen Koordinaten, Modellen
+  oder bestehenden Tests.
+- Keine unabhängige Bereitschaftsbewertung; CodeQuality.yml bleibt maßgeblich.
