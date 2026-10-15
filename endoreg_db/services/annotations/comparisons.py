@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from math import isfinite
 from typing import cast
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     parse_dtypes_record_persistence_payload,
 )
@@ -17,6 +17,9 @@ from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.label.label_video_segment.label_video_segment import (
+    LabelVideoSegment,
+)
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.schemas.annotation_comparisons import (
     AnnotationComparison,
@@ -199,6 +202,35 @@ def video_comparisons(
                     for key, value in tracks[author].items()
                     if key not in ambiguous
                 },
+                durations,
+            )
+        )
+
+    # Keep prediction runs separate and reuse the same positive label-time metric.
+    predictions: dict[int | None, dict[tuple[int, str], bool]] = defaultdict(dict)
+    ambiguous_own = {
+        key for key, values in observations[principal].items() if len(values) > 1
+    }
+    for run, label, start, end in LabelVideoSegment.objects.filter(
+        Q(prediction_meta__isnull=False) | Q(source__name="prediction"),
+        video_file=video,
+    ).values_list(
+        "prediction_meta_id", "label__name", "start_frame_number", "end_frame_number"
+    ):
+        if label is None:
+            result.unavailable.append("prediction_missing_label")
+            continue
+        track = predictions[run]
+        for number in range(start, end):
+            key = (number, str(label))
+            if key not in ambiguous_own:
+                track[key] = True
+    for run, track in sorted(predictions.items(), key=lambda item: item[0] or 0):
+        result.predictions.append(
+            compare_annotations(
+                f"KI-Lauf {run}" if run is not None else "KI ohne Laufzuordnung",
+                own,
+                track,
                 durations,
             )
         )

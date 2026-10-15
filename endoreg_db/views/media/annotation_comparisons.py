@@ -50,6 +50,7 @@ class AnnotationComparisonSerializer(serializers.Serializer[dict[str, object]]):
 class VideoComparisonSerializer(serializers.Serializer[dict[str, object]]):
     video = serializers.IntegerField()
     annotations = AnnotationComparisonSerializer(many=True)
+    predictions = AnnotationComparisonSerializer(many=True)
     findings = FindingComparisonSerializer(many=True)
     conflicts = serializers.IntegerField()
     unmapped = serializers.ListField(child=serializers.CharField())
@@ -59,6 +60,7 @@ class VideoComparisonSerializer(serializers.Serializer[dict[str, object]]):
 class ComparisonPageSerializer(serializers.Serializer[dict[str, object]]):
     practitioner = serializers.CharField()
     count = serializers.IntegerField()
+    total = serializers.IntegerField()
     page = serializers.IntegerField()
     pages = serializers.IntegerField()
     results = VideoComparisonSerializer(many=True)
@@ -103,6 +105,12 @@ class AnnotationComparisonsView(OpenApiAPIView):
             {
                 "practitioner": principal,
                 "count": paginator.count,
+                "total": human_annotations()
+                .filter(annotator=principal, frame__video__in=videos)
+                .order_by()
+                .values("frame_id", "label_id")
+                .distinct()
+                .count(),
                 "page": page,
                 "pages": paginator.num_pages,
                 "results": [

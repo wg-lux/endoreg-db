@@ -18,7 +18,9 @@ definition_of_done:
   title: Named practitioner annotation and finalized report comparisons
   acceptance:
   - Authenticated users compare their attributed human annotations with named peers on accessible videos;
-    predictions and unattributed records are excluded.
+    predictions and unattributed records are excluded from human comparisons.
+  - Dashboard totals count distinct own frame-label pairs across accessible videos; AI segment overlap
+    is read-only, grouped by prediction run, timestamp-weighted and explicit about missing timing.
   - Positive label overlap uses persisted presentation timestamps, deduplicates frame-label observations,
     and reports missing timing and conflicting observations explicitly.
   - Clinical comparison uses versioned label-to-finding mappings and finalized report snapshots from the
@@ -33,7 +35,7 @@ definition_of_done:
       component tests; review docs/annotation_comparisons.md.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: test
       reference: tests/services/test_annotation_comparisons.py
@@ -48,11 +50,17 @@ definition_of_done:
       reference: 'LX-Annotate: 6 dashboard/component tests passed; full npm run type-check including schema
         freshness, TypeScript and ESLint passed with matching local endoreg-db and lx-dtypes sources on
         PYTHONPATH.'
-    note: Named existing annotator tracks and human-confirmed model provenance are preserved. No migration,
-      import/storage mutation or deployment. Production-scale load testing is not claimed; frontend and
-      backend must ship together.
-    assessed_by: codex-annotation-overlap-20261014
-    assessed_at: '2026-10-14T08:07:57.887403Z'
+    - kind: command
+      reference: '2026-10-15: scoped Pyright 0 errors/0 warnings; comparison suite 22 passed with 2 environment
+        skips, followed by both skipped tests passing with SKIP_EXPENSIVE_TESTS=false (24 unique tests
+        passed). Ruff, structure lint, tracker validation and diff checks passed. Frontend: 13 tests plus
+        vue-tsc, ESLint and OpenAPI freshness passed.'
+    note: Added accessible distinct own frame-label totals and separate timestamp-weighted AI prediction-run
+      comparisons. Read-only; no inference, storage, permission or annotation mutation changes. Live browser
+      and production-scale load testing remain unverified; frontend/backend must ship together. Existing
+      pytest plugin and stale temporary-directory cleanup warnings observed.
+    assessed_by: codex-dashboard-20261015
+    assessed_at: '2026-10-15T07:55:28.986920Z'
 - id: documented_scope
   category: requirements
   title: Canonical and compatible routes are fully inventoried

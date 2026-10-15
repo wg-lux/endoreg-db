@@ -32,6 +32,9 @@ class VideoComparison:
     annotations: list[AnnotationComparison] = field(
         default_factory=list[AnnotationComparison]
     )
+    predictions: list[AnnotationComparison] = field(
+        default_factory=list[AnnotationComparison]
+    )
     findings: list[FindingComparison] = field(default_factory=list[FindingComparison])
     conflicts: int = 0
     unmapped: list[str] = field(default_factory=list[str])

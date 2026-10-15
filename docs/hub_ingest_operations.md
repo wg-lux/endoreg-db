@@ -8,6 +8,38 @@ Production-critical import monitoring—including transient errors, quarantine, 
 
 ## Kontinuierlicher Ordnerimport
 
+### Native frame rates and interrupted ownership
+
+Directory transcoding accepts any valid positive source frame rate and preserves
+source timestamps by default. The annotation frame-rate target is not an intake
+limit. Codec, pixel format, integrity and complete timestamp-equivalence checks
+still apply; a high or low frame rate alone must not reject usable media. No
+automatic frame-rate conversion is introduced.
+
+The LuxNix mover never quarantines media because of its frame rate, including
+legacy FPS-rejection reports. Successful files complete independently, with an
+atomic source claim protecting later arrivals and preexisting outputs. Changed
+sources and failures are retained; retries have a bounded delay. Explicit
+pre-annotation resampling remains separate and requires its coordinate
+prerequisites; it is not a condition for importing the original media.
+
+The periodic upload retry dispatcher also reconciles a bounded batch of expired
+raw-video processing ownership. It rechecks the expiry under a row lock, advances the
+fencing token and records `import_interrupted` without deleting media or claiming
+success. Broker redelivery cannot reacquire that interruption automatically.
+Cancellation intent is retained; an expired owner does not prove that plaintext
+cleanup completed, so this case is an explicit error requiring review, not a
+successful cancellation. Ordinary retry and reimport do not clear this marker.
+Inspect the previous process, attempt artifacts and retained source before a
+separately reviewed recovery action; this change does not provide an automatic
+reset or assert that abandoned workspaces were cleaned.
+
+For the 2026-10-15 incident, the recorded mover stop was temporary: reboot or
+activation can restart enabled units. Ship the backend native-rate acceptance and
+lease migration together with the mover changes before restoring intake through
+the documented deployment workflow. A local test run does not reconcile the
+reported live jobs or attest the encryption of the staging filesystem.
+
 Die verbindlichen Kriterien stehen in
 [`ImportPipelineRobustness.yml`](../feature-tracking/ImportPipelineRobustness.yml),
 Kriterium `continuous_format_folder_ingestion`. Vier Eingangsordner genügen:

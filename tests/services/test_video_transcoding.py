@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from unittest.mock import Mock
 from types import SimpleNamespace
 from typing import Any
 
@@ -14,10 +16,25 @@ from tests.services.test_video_processed_transcode_encryption import probe
 from endoreg_db.schemas.video_storage import VideoArtifactProbe
 
 
+pytestmark = pytest.mark.no_db
+
+
 @pytest.fixture
-def directory_timestamps(monkeypatch: MonkeyPatch) -> None:
+def directory_timestamps(
+    monkeypatch: MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
     def fake_probe(_path: Path) -> VideoArtifactProbe:
-        return probe()
+        value = probe()
+        return value.model_copy(
+            update={
+                "timeline": value.timeline.model_copy(
+                    update={
+                        "fps_num": int(float(getattr(request, "param", 25)) * 1000),
+                        "fps_den": 1000,
+                    }
+                )
+            }
+        )
 
     monkeypatch.setattr(video_transcoding, "probe_video_artifact", fake_probe)
     monkeypatch.setattr(
@@ -53,6 +70,9 @@ def _fake_30000_1001_stream_info(path: Path) -> dict[str, object]:
 
 @pytest.mark.unit
 @pytest.mark.usefixtures("directory_timestamps")
+@pytest.mark.parametrize(
+    "directory_timestamps", [25, 50, 59.7979, 60, 120, 240], indirect=True
+)
 def test_transcode_video_directory_stages_and_moves_output(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -152,8 +172,9 @@ def test_transcode_video_directory_dry_run_does_not_create_output_dir(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("target_fps", [29.97, 50.0])
 def test_transcode_video_directory_uses_explicit_target_fps(
-    monkeypatch: MonkeyPatch, tmp_path: Path
+    monkeypatch: MonkeyPatch, tmp_path: Path, target_fps: float
 ) -> None:
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
@@ -191,11 +212,11 @@ def test_transcode_video_directory_uses_explicit_target_fps(
         input_dir=input_dir,
         output_dir=output_dir,
         allow_unmanaged_output=True,
-        target_fps=29.97,
+        target_fps=target_fps,
     )
 
     assert summary.transcoded_files == 1
-    assert summary.target_fps == 29.97
+    assert summary.target_fps == target_fps
     assert captured["kwargs"] == {
         "extra_args": [
             "-profile:v",
@@ -207,7 +228,7 @@ def test_transcode_video_directory_uses_explicit_target_fps(
             "-color_range",
             "pc",
             "-fpsmax",
-            "29.97",
+            f"{target_fps:g}",
         ],
         "quality_mode": "balanced",
         "force_cpu": False,
@@ -239,3 +260,107 @@ def test_transcode_video_directory_skips_existing_destination(
         summary.reports[0].action
         == video_transcoding.VideoTranscodeAction.SKIP_EXISTING
     )
+
+
+@pytest.mark.parametrize("fps", [None, "0/0", "not-a-rate"])
+def test_unknown_source_fps_still_fails_decoder_validation(
+    monkeypatch: MonkeyPatch, tmp_path: Path, fps: str | None
+) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    (input_dir / "clip.mp4").write_bytes(b"source")
+    stream: dict[str, object] = {
+        "codec_type": "video",
+        "codec_name": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 64,
+        "height": 64,
+        "duration": "1",
+        "avg_frame_rate": fps,
+    }
+    monkeypatch.setattr(
+        video_transcoding.ffmpeg_wrapper,
+        "get_stream_info",
+        Mock(return_value={"streams": [stream]}),
+    )
+    capture = Mock()
+    encode = Mock()
+    monkeypatch.setattr(video_transcoding, "capture_canonical_timeline", capture)
+    monkeypatch.setattr(video_transcoding.ffmpeg_wrapper, "transcode_video", encode)
+    summary = video_transcoding.transcode_video_directory(
+        input_dir=input_dir,
+        output_dir=tmp_path / "output",
+        allow_unmanaged_output=True,
+    )
+    assert summary.failed_files == 1
+    assert summary.reports[0].error
+    capture.assert_not_called()
+    encode.assert_not_called()
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("fps", [59.7979, 60.0, 120.0, 240.0])
+def test_real_high_fps_transcode_preserves_complete_native_timestamps(
+    tmp_path: Path, fps: float, monkeypatch: MonkeyPatch
+) -> None:
+    from endoreg_db.services.video_storage import frame_provenance
+    from endoreg_db.utils.transcode_execution import get_stream_info
+
+    # This integration lane must never inherit the suite's fabricated probe fallback.
+    monkeypatch.setattr(
+        video_transcoding.ffmpeg_wrapper, "get_stream_info", get_stream_info
+    )
+    persist_proof = Mock()
+    monkeypatch.setattr(frame_provenance, "persist_frame_provenance", persist_proof)
+    executable = video_transcoding.ffmpeg_wrapper.resolve_ffmpeg_executable()
+    assert executable is not None, "FFmpeg is required for this integration test"
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    source = input_dir / "source.mp4"
+    subprocess.run(
+        [
+            executable,
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc2=size=64x64:rate={fps:g}:duration=0.2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-color_range",
+            "pc",
+            str(source),
+        ],
+        check=True,
+        timeout=30,
+    )
+    source_bytes = source.read_bytes()
+    source_timeline = canonical_timelines.capture_canonical_timeline(
+        source, video_transcoding.probe_video_artifact(source)
+    )
+    summary = video_transcoding.transcode_video_directory(
+        input_dir=input_dir,
+        output_dir=tmp_path / "output",
+        allow_unmanaged_output=True,
+        force_cpu=True,
+        quality_mode="fast",
+    )
+    assert summary.failed_files == 0, summary.as_dict()
+    assert summary.transcoded_files == 1
+    destination = Path(summary.reports[0].destination)
+    output_timeline = canonical_timelines.capture_canonical_timeline(
+        destination, video_transcoding.probe_video_artifact(destination)
+    )
+    assert (
+        source_timeline.presentation_timestamps
+        == output_timeline.presentation_timestamps
+    )
+    assert source_timeline.time_base_num == output_timeline.time_base_num
+    assert source_timeline.time_base_den == output_timeline.time_base_den
+    assert source.read_bytes() == source_bytes
+    assert video_transcoding.classify_video_format(destination).compliant
+    persist_proof.assert_called_once()

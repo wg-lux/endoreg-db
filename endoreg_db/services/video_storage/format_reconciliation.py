@@ -42,7 +42,6 @@ VIDEO_EXTENSIONS = frozenset(
 REQUIRED_CODEC = STANDARD_VIDEO_ENCODING.codec_name
 REQUIRED_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 REQUIRED_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
-REQUIRED_MAX_FPS = STANDARD_VIDEO_ENCODING.max_fps
 FULL_RANGE_YUV420P_PIXEL_FORMATS = frozenset({REQUIRED_PIXEL_FORMAT, "yuvj420p"})
 DEFAULT_MIN_FREE_BYTES = 20 * 1024 * 1024 * 1024
 LEGACY_ROOT_READ_ONLY = "legacy_root_read_only"
@@ -471,13 +470,6 @@ def _format_mismatch_reasons(
         )
     if report.fps is None:
         reasons.append("fps_missing")
-    elif report.fps > REQUIRED_MAX_FPS and not math.isclose(
-        report.fps,
-        REQUIRED_MAX_FPS,
-        rel_tol=0.001,
-        abs_tol=0.01,
-    ):
-        reasons.append(f"fps_exceeds_max:{report.fps}>{REQUIRED_MAX_FPS:g}")
     return reasons
 
 

@@ -50,6 +50,7 @@ class VideoStorageProfile:
     fixed_overhead_bytes: int
     max_width: int = 4096
     max_height: int = 2160
+    # Deprecated compatibility field; native source/output FPS is never capped.
     max_source_fps: float = 120.0
     annotation_max_fps: float = 50.0
     max_duration_drift_seconds: float = 0.1
@@ -68,10 +69,6 @@ class VideoStorageProfile:
             raise ValueError("Maximum source FPS must be finite and positive")
         if not math.isfinite(self.annotation_max_fps) or self.annotation_max_fps <= 0:
             raise ValueError("Annotation maximum FPS must be finite and positive")
-        if self.annotation_max_fps > self.max_source_fps:
-            raise ValueError(
-                "Annotation maximum FPS must not exceed source maximum FPS"
-            )
         if self.max_duration_drift_seconds < 0:
             raise ValueError("Duration drift tolerance must not be negative")
         if self.fps_relative_tolerance <= 0:

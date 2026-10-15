@@ -448,7 +448,9 @@ def test_report_retry_start_preserves_artifacts_and_success_history(
     from endoreg_db.utils.file_operations import atomic_write_file
 
     center = Center.objects.create(name="report-retry-state")
-    paths = [tmp_path / name for name in ("source.pdf", "snapshot.pdf", "candidate.pdf")]
+    paths = [
+        tmp_path / name for name in ("source.pdf", "snapshot.pdf", "candidate.pdf")
+    ]
     for path in paths:
         atomic_write_file(destination=path, content=[path.name.encode()])
     report = RawPdfFile.objects.create(center=center, pdf_hash="b" * 64)
@@ -474,6 +476,7 @@ def test_report_retry_start_preserves_artifacts_and_success_history(
     )
     ctx.current_report = report
     if stale:
+
         def reject() -> NoReturn:
             raise StaleReportImportAttemptError("superseded retry")
 

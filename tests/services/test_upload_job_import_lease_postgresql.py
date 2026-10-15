@@ -35,6 +35,7 @@ from endoreg_db.services.hub.upload_job_cancellation import (
 from endoreg_db.services.hub.upload_job_state_machine import mark_upload_job_processing
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.services.hub.upload_job_import_lease import (
+    reconcile_expired_upload_job_import_leases,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseLost,
     acquire_upload_job_import_lease,
@@ -362,8 +363,10 @@ def test_simultaneous_deliveries_have_one_execution_owner(
             writer.close()
 
 
+@pytest.mark.parametrize("reconcile", [False, True])
 def test_delayed_process_cannot_write_or_release_after_takeover(
     postgres_job: UploadJob,
+    reconcile: bool,
 ) -> None:
     connections.close_all()
     context = multiprocessing.get_context("fork")
@@ -379,9 +382,16 @@ def test_delayed_process_cannot_write_or_release_after_takeover(
         UploadJob.objects.filter(pk=postgres_job.pk).update(
             processing_lease_expires_at=Now() - timedelta(seconds=1)
         )
-        current = acquire_upload_job_import_lease(
-            upload_job_id=str(postgres_job.pk), owner="new-worker"
-        )
+        if reconcile:
+            UploadJob.objects.filter(pk=postgres_job.pk).update(
+                status=UploadJob.Status.PROCESSING
+            )
+            assert reconcile_expired_upload_job_import_leases() == 1
+            current = None
+        else:
+            current = acquire_upload_job_import_lease(
+                upload_job_id=str(postgres_job.pk), owner="new-worker"
+            )
         parent.send("takeover")
         for expected in ("write_fenced", "release_fenced"):
             assert parent.poll(30)
@@ -389,9 +399,13 @@ def test_delayed_process_cannot_write_or_release_after_takeover(
         process.join(timeout=10)
         assert process.exitcode == 0
         postgres_job.refresh_from_db()
-        assert postgres_job.error_detail == ""
-        assert postgres_job.processing_lease_owner == current.owner
-        release_upload_job_import_lease(current)
+        if current is not None:
+            assert postgres_job.error_detail == ""
+            assert postgres_job.processing_lease_owner == current.owner
+            release_upload_job_import_lease(current)
+        else:
+            assert postgres_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+            assert not postgres_job.processing_lease_owner
     finally:
         if process.is_alive():
             process.terminate()
@@ -485,3 +499,65 @@ def test_simultaneous_state_creation_preserves_one_state(
         for reader, writer in pipes:
             reader.close()
             writer.close()
+
+
+def _blocked_reconciler(job_id: str, result: Connection) -> None:
+    from endoreg_db.services.hub import upload_job_import_lease as leases
+
+    connections.close_all()
+    original = leases._locked_job
+
+    def signal_selection(selected_id: str) -> UploadJob:
+        assert selected_id == job_id
+        result.send("selected")
+        return original(selected_id)
+
+    try:
+        if not result.poll(30):
+            raise TimeoutError("Parent did not acquire row lock")
+        assert result.recv() == "start"
+        with patch.object(leases, "_locked_job", side_effect=signal_selection):
+            result.send(reconcile_expired_upload_job_import_leases())
+    finally:
+        connections.close_all()
+        result.close()
+
+
+def test_reconciler_rechecks_new_owner_after_waiting_for_row_lock(
+    postgres_job: UploadJob,
+) -> None:
+    assert connections["default"].vendor == "postgresql"
+    acquire_upload_job_import_lease(upload_job_id=str(postgres_job.pk), owner="expired")
+    UploadJob.objects.filter(pk=postgres_job.pk).update(
+        status=UploadJob.Status.PROCESSING,
+        processing_lease_expires_at=Now() - timedelta(seconds=1),
+    )
+    connections.close_all()
+    context = multiprocessing.get_context("fork")
+    parent, child = context.Pipe()
+    process = context.Process(
+        target=_blocked_reconciler, args=(str(postgres_job.pk), child)
+    )
+    process.start()
+    child.close()
+    try:
+        with transaction.atomic():
+            UploadJob.objects.select_for_update().get(pk=postgres_job.pk)
+            parent.send("start")
+            assert parent.poll(30)
+            assert parent.recv() == "selected"
+            current = acquire_upload_job_import_lease(
+                upload_job_id=str(postgres_job.pk), owner="replacement"
+            )
+        assert parent.poll(30)
+        assert parent.recv() == 0
+        process.join(timeout=10)
+        assert process.exitcode == 0
+        with locked_upload_job_import_lease(current) as job:
+            assert job.status == UploadJob.Status.PROCESSING
+            assert job.error_code == ""
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=10)
+        parent.close()

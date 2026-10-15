@@ -122,7 +122,20 @@ def validate_upload_job_status_transition(
         )
 
 
+def _guard_interrupted_upload_job(upload_job: UploadJob) -> None:
+    from endoreg_db.services.hub.upload_job_import_lease import (
+        raise_if_upload_job_import_interrupted,
+    )
+
+    # Callers hold this lock through their transition; a stale in-memory object
+    # must not erase a reconciliation decision committed by another worker.
+    current = UploadJob.objects.select_for_update().get(pk=upload_job.pk)
+    raise_if_upload_job_import_interrupted(current)
+
+
+@transaction.atomic
 def mark_upload_job_processing(upload_job: UploadJob) -> None:
+    _guard_interrupted_upload_job(upload_job)
     validate_upload_job_status_transition(
         current_status=upload_job.status,
         target_status=UploadJob.Status.PROCESSING.value,
@@ -130,11 +143,13 @@ def mark_upload_job_processing(upload_job: UploadJob) -> None:
     upload_job.mark_processing()
 
 
+@transaction.atomic
 def mark_upload_job_completed(
     upload_job: UploadJob,
     *,
     sensitive_meta: UploadJobSensitiveMeta = None,
 ) -> None:
+    _guard_interrupted_upload_job(upload_job)
     validate_upload_job_status_transition(
         current_status=upload_job.status,
         target_status=UploadJob.Status.ANONYMIZED.value,
@@ -142,12 +157,14 @@ def mark_upload_job_completed(
     upload_job.mark_completed(sensitive_meta=sensitive_meta)
 
 
+@transaction.atomic
 def mark_upload_job_error(
     upload_job: UploadJob,
     error_detail: str,
     *,
     error_code: str = UploadJob.ErrorCode.PROCESSING_FAILED.value,
 ) -> None:
+    _guard_interrupted_upload_job(upload_job)
     validate_upload_job_status_transition(
         current_status=upload_job.status,
         target_status=UploadJob.Status.ERROR.value,
@@ -155,12 +172,14 @@ def mark_upload_job_error(
     upload_job.mark_error(error_detail, error_code=error_code)
 
 
+@transaction.atomic
 def mark_upload_job_integrity_lost(
     upload_job: UploadJob,
     error_detail: str,
     *,
     error_code: str = UploadJob.ErrorCode.SOURCE_MISSING.value,
 ) -> None:
+    _guard_interrupted_upload_job(upload_job)
     validate_upload_job_status_transition(
         current_status=upload_job.status,
         target_status=UploadJob.Status.LOST.value,
@@ -185,6 +204,7 @@ def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
         )
 
 
+@transaction.atomic
 def schedule_upload_job_retry(
     upload_job: UploadJob,
     error_detail: str,
@@ -194,6 +214,7 @@ def schedule_upload_job_retry(
     max_retries: int | None = None,
 ) -> bool:
     """Validate a bounded retry decision before the existing atomic mutation."""
+    _guard_interrupted_upload_job(upload_job)
     retry_limit = upload_job.max_retries if max_retries is None else max_retries
     if retry_limit < 1:
         raise ValueError("max_retries must be positive")
@@ -234,13 +255,14 @@ def transition_reimport_upload_jobs(
         raise ValueError("Unsupported reimport upload job transition")
     selected = tuple(jobs)
     for job in selected:
+        _guard_interrupted_upload_job(job)
         validate_upload_job_status_transition(
             current_status=job.status,
             target_status=status.value,
         )
     for job in selected:
         if status == UploadJob.Status.PROCESSING:
-            job.mark_processing()
+            mark_upload_job_processing(job)
         elif status == UploadJob.Status.ANONYMIZED:
             job.sensitive_meta_id = sensitive_meta_id
             job.mark_completed()

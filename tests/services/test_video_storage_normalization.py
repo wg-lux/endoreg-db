@@ -83,7 +83,6 @@ def _probe(
     [
         (_probe(width=4097), "Source dimensions"),
         (_probe(height=2161), "Source dimensions"),
-        (_probe(timeline=_timeline(fps_num=121)), "Source FPS"),
         (_probe(timeline=_timeline(variable_frame_rate=True)), "time-base metadata"),
     ],
 )
@@ -232,7 +231,7 @@ def test_annotation_fps_profile_downsamples_without_spatial_resampling() -> None
 
 
 @pytest.mark.unit
-def test_storage_profile_rejects_output_above_resolution_or_fps_caps() -> None:
+def test_storage_profile_rejects_output_above_resolution_cap() -> None:
     profile = normalization.VideoStorageProfile(
         name="test",
         max_bit_rate_bps=12_000_000,
@@ -252,14 +251,35 @@ def test_storage_profile_rejects_output_above_resolution_or_fps_caps() -> None:
             profile=profile,
         )
 
-    with pytest.raises(
-        normalization.VideoStorageNormalizationError,
-        match="Output FPS exceeds profile",
-    ):
-        normalization.assert_storage_compliance(
-            _probe(timeline=_timeline(fps_num=61, frame_count=610)),
-            profile=profile,
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("fps_num", "fps_den"), [(1, 2), (299, 5), (240, 1), (1000, 1)])
+def test_native_normalization_preserves_any_positive_fps(
+    fps_num: int, fps_den: int
+) -> None:
+    # A legacy configured cap below the annotation target must be inert too.
+    profile = normalization.VideoStorageProfile(
+        name="legacy-config",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+        max_source_fps=1.0,
+    )
+    probe = _probe(
+        timeline=_timeline(
+            fps_num=fps_num, fps_den=fps_den, frame_count=10 * fps_num // fps_den,
         )
+    )
+    assert_normalization_source_supported(source=probe, profile=profile)
+    normalization.assert_storage_compliance(probe, profile=profile)
+    evidence = normalization.validate_normalized_output(
+        source=probe, output=probe, profile=profile
+    )
+    assert evidence.source.timeline == probe.timeline
+    assert evidence.output.timeline == probe.timeline
+    args = profile.ffmpeg_output_args()
+    assert "-fpsmax" not in args
+    assert "fps=" not in args[args.index("-vf") + 1]
 
 
 @pytest.mark.unit

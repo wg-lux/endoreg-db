@@ -50,7 +50,7 @@ files:
 - file: timelines.py
   role: Exports timeline_from_video_metadata, segment_timeline_references, persist_video_source_timeline.
 - file: transcoding.py
-  role: Exports transcode_video_directory.
+  role: Directory transcoding preserving native timestamps without a numerical source FPS limit.
 - file: validation.py
   role: Exports assert_temporal_equivalence, validate_proven_resampled_hls_equivalence, assert_storage_compliance.
 - file: workflow.py
@@ -88,3 +88,4 @@ tests:
   - tests/services/test_frame_provenance.py
   - tests/services/test_canonical_video_timelines.py
   - tests/services/test_processed_timelines.py
+  - tests/services/test_video_transcoding.py

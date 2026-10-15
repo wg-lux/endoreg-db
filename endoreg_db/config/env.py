@@ -681,6 +681,7 @@ def get_video_storage_max_height() -> int:
 
 
 def get_video_storage_max_source_fps() -> float:
+    """Read the deprecated compatibility setting; it does not cap native FPS."""
     value = env_float(
         "ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS",
         DEFAULT_VIDEO_STORAGE_MAX_SOURCE_FPS,

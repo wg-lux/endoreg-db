@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 from __future__ import annotations
 
 from datetime import timedelta
@@ -9,6 +10,8 @@ from django.utils import timezone
 
 from endoreg_db.models import Center, UploadJob
 from endoreg_db.services.hub.upload_job_import_lease import (
+    UploadJobImportInterrupted,
+    reconcile_expired_upload_job_import_leases,
     UploadJobCleanupInProgress,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseLost,
@@ -199,3 +202,142 @@ def test_import_lease_is_blocked_by_durable_cleanup_receipt() -> None:
             error_code=UploadJob.ErrorCode.DISPATCH_UNAVAILABLE,
             delay_seconds=30,
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("cancel_requested", [False, True])
+def test_expired_attempt_is_fenced_and_retained(
+    cancel_requested: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.hub.upload_job_cancellation import (
+        finalize_upload_job_cancellation,
+    )
+
+    job = _upload_job(Center.objects.create(name="interrupted-import"))
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="lost-worker"
+    )
+    requested_at = timezone.now() if cancel_requested else None
+    UploadJob.objects.filter(pk=job.pk).update(
+        status=UploadJob.Status.CANCEL_REQUESTED
+        if cancel_requested
+        else UploadJob.Status.PROCESSING,
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+        cancellation_requested_at=requested_at,
+    )
+    source_name = job.file.name
+    assert reconcile_expired_upload_job_import_leases() == 1
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+    assert job.processing_fencing_token == lease.fencing_epoch + 1
+    assert not job.processing_lease_owner
+    assert job.processing_lease_expires_at is None
+    assert job.cancellation_requested_at == requested_at
+    assert job.cleanup_status == UploadJob.CleanupStatus.SKIPPED
+    assert not job.retryable and job.next_retry_at is None
+    assert job.retry_count == 0
+    assert job.file.name == source_name
+    with job.file.open("rb") as source:
+        assert source.read() == b"video"
+    assert finalize_upload_job_cancellation(lease) is False
+    with pytest.raises(UploadJobImportLeaseLost):
+        with locked_upload_job_import_lease(lease):
+            pytest.fail("old owner reached publication")
+    with pytest.raises(UploadJobImportInterrupted):
+        acquire_upload_job_import_lease(upload_job_id=str(job.pk), owner="redelivered")
+    from endoreg_db.services.hub.ingest import process_upload_job
+    from endoreg_db.tasks import run_video_upload_import_task
+    from endoreg_db.services.hub.upload_job_state_machine import (
+        mark_upload_job_processing,
+        schedule_upload_job_retry,
+        transition_reimport_upload_jobs,
+        mark_upload_job_error,
+    )
+
+    for consumer in (process_upload_job, run_video_upload_import_task.run):
+        with pytest.raises(UploadJobImportInterrupted):
+            consumer(str(job.pk))
+    with pytest.raises(UploadJobImportInterrupted):
+        mark_upload_job_processing(job)
+    with pytest.raises(UploadJobImportInterrupted):
+        schedule_upload_job_retry(
+            job,
+            "retry",
+            error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+            delay_seconds=1,
+        )
+    with pytest.raises(UploadJobImportInterrupted):
+        transition_reimport_upload_jobs([job], status=UploadJob.Status.PROCESSING)
+    job.error_code = ""  # A stale snapshot must not erase the committed marker.
+    with pytest.raises(UploadJobImportInterrupted):
+        mark_upload_job_error(job, "stale failure")
+    job.refresh_from_db()
+    assert job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+    assert not job.retryable and job.next_retry_at is None
+    from endoreg_db.services.hub import ingest
+    from pathlib import Path
+
+    source_path = Path(job.file.path)
+    assert (
+        ingest._reuse_watcher_upload_job(
+            upload_job=job, created=False, watched_path=source_path
+        )
+        == job
+    )
+    assert source_path.exists()
+
+    # Simulate reconciliation winning after the consumer's early snapshot.
+    def stale_snapshot_guard(_job: UploadJob) -> None:
+        pass
+
+    monkeypatch.setattr(
+        ingest, "raise_if_upload_job_import_interrupted", stale_snapshot_guard
+    )
+    with pytest.raises(UploadJobImportInterrupted):
+        process_upload_job(str(job.pk))
+    job.refresh_from_db()
+    assert job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+    assert reconcile_expired_upload_job_import_leases() == 0
+
+
+@pytest.mark.django_db
+def test_retry_dispatch_reconciles_only_expired_owned_attempts() -> None:
+    from unittest.mock import Mock
+    from endoreg_db.services.hub.import_monitoring import (
+        dispatch_due_upload_job_retries,
+    )
+
+    center = Center.objects.create(name="reconcile-batch")
+    jobs = [_upload_job(center) for _ in range(4)]
+    for index, job in enumerate(jobs):
+        acquire_upload_job_import_lease(
+            upload_job_id=str(job.pk), owner=f"worker-{index}"
+        )
+    UploadJob.objects.filter(pk__in=[job.pk for job in jobs]).update(
+        status=UploadJob.Status.PROCESSING
+    )
+    UploadJob.objects.filter(pk__in=[job.pk for job in jobs[:2]]).update(
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    UploadJob.objects.filter(pk=jobs[3].pk).update(
+        processing_lease_owner="",
+        processing_lease_expires_at=None,
+        processing_heartbeat_at=None,
+    )
+    dispatcher = Mock()
+    result = dispatch_due_upload_job_retries(
+        dispatcher=dispatcher, queue="test", limit=1
+    )
+    assert result.dispatched_count == 0
+    dispatcher.apply_async.assert_not_called()
+    assert (
+        UploadJob.objects.filter(
+            error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED
+        ).count()
+        == 1
+    )
+    assert reconcile_expired_upload_job_import_leases(limit=1) == 1
+    for job in jobs[2:]:
+        job.refresh_from_db()
+        assert job.status == UploadJob.Status.PROCESSING

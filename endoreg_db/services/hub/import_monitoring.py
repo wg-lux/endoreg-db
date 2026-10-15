@@ -194,6 +194,11 @@ def dispatch_due_upload_job_retries(
 ) -> UploadJobRetryDispatchResult:
     if limit < 1:
         raise ValueError("limit must be positive")
+    from endoreg_db.services.hub.upload_job_import_lease import (
+        reconcile_expired_upload_job_import_leases,
+    )
+
+    reconcile_expired_upload_job_import_leases(limit=limit)
     due_ids = tuple(
         UploadJob.objects.filter(
             status=UploadJob.Status.RETRYING,

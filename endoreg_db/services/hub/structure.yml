@@ -84,7 +84,7 @@ files:
 - file: upload_job_files.py
   role: Central ownership inventory shared by import staging and source cleanup.
 - file: upload_job_import_lease.py
-  role: Exports acquire_upload_job_import_lease, heartbeat_upload_job_import_lease, locked_upload_job_import_lease.
+  role: Renewable fenced ownership and bounded expired-attempt reconciliation invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
   role: Exports validate_upload_job_status_transition, mark_upload_job_processing, mark_upload_job_completed.
 - file: video_provenance.py
@@ -186,7 +186,7 @@ modules:
   watcher_handoff.py:
     owns: Temporary-name rejection, source settling and stat snapshot checks
   upload_job_import_lease.py:
-    owns: Execution ownership, heartbeat and fenced row access
+    owns: Execution ownership, heartbeat, fenced row access and expired-attempt interruption without media deletion
   upload_job_cancellation.py:
     owns: Cancellation intent and owner acknowledgement
   upload_job_state_machine.py:

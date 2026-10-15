@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models.functions import Now
 
 from endoreg_db.services.imports.lease import (
     ImportLeaseHeartbeat,
@@ -38,6 +39,17 @@ class UploadJobImportLeaseBusy(RuntimeError):
 
 class UploadJobImportLeaseLost(RuntimeError):
     """Raised when a worker no longer owns the current fencing epoch."""
+
+
+class UploadJobImportInterrupted(RuntimeError):
+    """Interrupted ownership requires reviewed recovery before another execution."""
+
+
+def raise_if_upload_job_import_interrupted(job: UploadJob) -> None:
+    if job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
+        raise UploadJobImportInterrupted(
+            "Interrupted import requires reviewed recovery before retry"
+        )
 
 
 class UploadJobCleanupInProgress(RuntimeError):
@@ -97,6 +109,7 @@ def acquire_upload_job_import_lease(
         )
 
         raise_if_upload_job_cancellation_requested(job)
+        raise_if_upload_job_import_interrupted(job)
         if job.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
             emit_structured_event(
                 logger,
@@ -307,3 +320,71 @@ class UploadJobImportLeaseHeartbeat(ImportLeaseHeartbeat):
             fencing_epoch=self._lease.fencing_epoch,
             error_type=error.__class__.__name__,
         )
+
+
+def reconcile_expired_upload_job_import_leases(*, limit: int = 100) -> int:
+    """Fence abandoned attempts without inferring media cleanup or success.
+
+    Expiry revokes publication authority, but does not prove the process exited
+    or its plaintext workspaces were removed. Preserve all artifacts for review.
+    """
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    active_statuses = (UploadJob.Status.PROCESSING, UploadJob.Status.CANCEL_REQUESTED)
+    candidates = tuple(
+        UploadJob.objects.filter(
+            status__in=active_statuses,
+            content_type__startswith="video/",
+            processing_lease_expires_at__lte=Now(),
+        )
+        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+        .exclude(processing_lease_owner="")
+        .exclude(cleanup_status=UploadJob.CleanupStatus.DELETING)
+        .order_by("processing_lease_expires_at", "pk")
+        .values_list("pk", flat=True)[:limit]
+    )
+    reconciled = 0
+    for job_id in candidates:
+        with transaction.atomic():
+            job = _locked_job(str(job_id))
+            # Re-read after the lock: a heartbeat, new owner or finalizer may
+            # have committed since candidate selection.
+            if (
+                job.status not in active_statuses
+                or not job.processing_lease_owner
+                or job.processing_lease_expires_at is None
+                or job.processing_lease_expires_at > _database_now(str(job_id))
+                or job.cleanup_status == UploadJob.CleanupStatus.DELETING
+            ):
+                continue
+            cancellation = job.status == UploadJob.Status.CANCEL_REQUESTED
+            job.processing_fencing_token += 1
+            job.processing_lease_owner = ""
+            job.processing_lease_expires_at = None
+            job.processing_heartbeat_at = None
+            job.cleanup_status = UploadJob.CleanupStatus.SKIPPED
+            job.save(
+                update_fields=[
+                    "processing_fencing_token",
+                    "processing_lease_owner",
+                    "processing_lease_expires_at",
+                    "processing_heartbeat_at",
+                    "cleanup_status",
+                    "updated_at",
+                ]
+            )
+            job.mark_error(
+                "Import lease expired; previous owner fenced. "
+                + ("Cancellation cleanup is unverified. " if cancellation else "")
+                + "Media retained; review attempt artifacts before explicit recovery.",
+                error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED.value,
+            )
+            emit_structured_event(
+                logger,
+                "video_import.expired_lease_reconciled",
+                upload_job_id=str(job.pk),
+                fencing_epoch=int(job.processing_fencing_token),
+                cancellation_requested=cancellation,
+            )
+            reconciled += 1
+    return reconciled

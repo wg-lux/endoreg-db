@@ -90,6 +90,7 @@ class UploadJob(models.Model):
         INVALID_INPUT = "invalid_input", "Invalid Input"
         MEDIA_INTEGRITY_FAILED = "media_integrity_failed", "Media Integrity Failed"
         PROCESSING_FAILED = "processing_failed", "Processing Failed"
+        IMPORT_INTERRUPTED = "import_interrupted", "Import Interrupted"
         SOURCE_MISSING = "source_missing", "Source Missing"
 
     class IngestMode(models.TextChoices):

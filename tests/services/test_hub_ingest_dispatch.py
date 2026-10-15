@@ -29,6 +29,7 @@ class _FakeVideoUploadJob:
     source_center = object()
     processing_provenance: dict[str, object] = {}
     error_detail = ""
+    error_code = ""
 
     def __init__(self) -> None:
         self.saved_update_fields: list[str] | None = None
@@ -187,10 +188,14 @@ class UploadJobDispatchTests(TestCase):
         with (
             patch("endoreg_db.services.hub.ingest.UploadJob", fake_upload_job_model),
             patch(
+                "endoreg_db.services.hub.upload_job_state_machine.UploadJob.objects.select_for_update"
+            ) as transition_lock,
+            patch(
                 "endoreg_db.services.hub.ingest.acquire_upload_job_import_lease",
                 return_value=lease,
             ),
         ):
+            transition_lock.return_value.get.return_value = job
             reserved_job, reserved_lease, should_dispatch = (
                 _reserve_video_upload_import_handoff(
                     upload_job_id="upload-job-id",

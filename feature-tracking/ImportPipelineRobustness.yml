@@ -90,6 +90,10 @@ definition_of_done:
     each input across its supported formats without relocating existing intake paths.
   - Temporary paths and symlink escapes are excluded; existing duplicate-content and encrypted storage
     contracts remain enforced.
+  - Intake and native-output compliance accept every valid positive source frame rate without an FPS ceiling
+    or automatic resampling; complete frame timestamps and codec/integrity checks remain mandatory.
+  - The mover never quarantines media solely for FPS, including legacy rejection reports. Successful inputs
+    complete independently; real failures retain source bytes and use bounded retry delays.
   required: true
   verification:
     kind: manual
@@ -119,14 +123,28 @@ definition_of_done:
         tests/services/test_hub_ingest_dispatch.py -q --tb=short: 96 passed, 4 subtests passed, no skips;
         one plugin warning and existing temporary-directory cleanup warnings. PostgreSQL test fixture;
         explicit stability-window and slow-writer tests retain nonzero waits.'
-    note: Watcher entrypoints now share cancellation-aware reuse and a locked processing transition. Settled
-      snapshots are rechecked before and after hashing without another wait; temporary names and symlinks
-      remain rejected. Removed unreachable inline prediction code. Regression tests cover stale cancellation,
-      preanonymized cancellation before processing, source mutation/replacement, symlinks and temporary
-      names. Full multi-process cancellation/publication guarantees and coordinated deployment remain
-      outside this refactor; no production readiness asserted.
-    assessed_by: codex-report-watchers-20261013
-    assessed_at: '2026-10-13T07:15:39.900024Z'
+    - kind: test
+      reference: '2026-10-15: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/services/test_video_transcoding.py
+        tests/management/commands/test_transcode_video.py -q --tb=short:15 passed0 skipped; focused Pyright0errors0warnings,
+        Ruff/structure pass. Pure modules use no_db; initial missing test DB setup errors were not product
+        failures.'
+    - kind: test
+      reference: 2026-10-15 final LuxNix python -m pytest -q tests/lx-annotate/test_file_mover_filewatcher_contract.py:37
+        passed66.21s; Nix parse, structure23, docs:check, tracker11 and diff checks pass. Covers exact
+        single JSON, malformed/mismatched responses, source replacement before/after claim, symlinks,
+        nested-file cleanup, peers and existing-output preservation.
+    - kind: test
+      reference: '2026-10-15 FPS correction: enabled transcoding, format and command suites 34 passed,
+        zero skipped; real FFmpeg 59.7979/60/120/240 FPS preserve full decoded PTS and timebases. LuxNix
+        mover suite 36 passed including real 59.8/120 FPS and legacy rejection reports retaining source.
+        Nix parse, structure and LuxNix docs checks passed.'
+    - kind: test
+      reference: '2026-10-15 downstream FPS correction: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        USE_STUB_MODEL_META=true .devenv/state/venv/bin/python -m pytest tests/services/test_video_storage_normalization.py
+        -q: 91 passed. Native 0.5/59.8/240/1000 FPS accepted with legacy cap 1.0; annotation resampling
+        and integrity guards preserved. Full .devenv/state/venv/bin/pyright: 0 errors, 19 warnings.'
+    assessed_by: codex-endoreg-durable-01a1398f
+    assessed_at: '2026-10-15T07:41:34.219397Z'
 - id: pseudonym_identity_resolution
   category: data_integrity
   title: Import pseudonym resolution rejects ambiguous or conflicting identities
@@ -809,6 +827,10 @@ definition_of_done:
   - Automatische Reparatur verändert nur eindeutig besessene, wiederherstellbare Zustände; unbekannte
     oder klinisch unsichere Zustände werden als LOST oder Quarantäne sichtbar und bleiben erhalten.
   - Retry ist begrenzt, idempotent, kapazitätsgeprüft und löscht nie die einzige gültige Quelle oder Generation.
+  - Expired upload ownership is rechecked under row lock and fenced before terminal interruption; delayed
+    workers cannot publish or automatically reacquire a reconciled interruption. Unproven cancellation
+    cleanup is reported as an interruption, never successful cancellation. Source media and cancellation
+    intent remain preserved for explicit review.
   - Nach klinischer Validierung darf die Start-Reconciliation entfernte Rohdateien nicht aus alten Kopien
     wieder verknüpfen; vor der Mutation wird der aktuelle Zustand unter Zeilensperre erneut geprüft. Die
     Übersicht zeigt historische Rohstream-Fehler bei validiertem Video und belegter aktueller fertiger
@@ -880,12 +902,19 @@ definition_of_done:
         validierte Rohbereinigung, Validierung/Quellwechsel während Kandidatensuche und sichtbare echte
         Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Dokumentation: docs/video_datenerhalt_gc02_gc10_20260923.yml.
         Kein Rollout.'
-    note: '2026-10-12: Start now reprocesses the existing VideoFile through fenced reanonymization, avoiding
-      generic import duplicate short-circuit after explicit state reset. Targeted Pyright and Ruff passed;
-      pytest tests/views/anonymization/test_anonymization_overview.py -q: 64 passed, 13 skipped. Deployment
-      and real-media backfill acceptance remain outstanding.'
-    assessed_by: codex-hub-gc09-20261012
-    assessed_at: '2026-10-12T15:37:31.601993Z'
+    - kind: test
+      reference: '2026-10-15: lease unit/process, cancellation, monitoring, state-machine and ingest dispatch
+        suites79 passed; sole existing fake-object test corrected and targeted rerun1 passed, all80 selected
+        cases verified. Disposable PostgreSQL concurrency proves late-owner fencing and renewed/replaced
+        owner survival. Migration0101 applied in test DB; makemigrations --check --dry-run no changes.
+        Full backend Pyright0errors6warnings; scoped typing/Ruff/structure pass.'
+    - kind: document
+      reference: feature-tracking/reports/gc10_import_incident_20261015.yml
+    note: Bounded expired raw-video ownership reconciliation and durable interruption guards implemented/tested.
+      No live job mutation; interrupted jobs retain media and require reviewed recovery, cancellation
+      cleanup is not assumed.
+    assessed_by: codex-endoreg-durable-01a1398f
+    assessed_at: '2026-10-15T07:32:21.341455Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert

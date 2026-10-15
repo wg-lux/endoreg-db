@@ -20,6 +20,7 @@ from endoreg_db.models import (
     AiModel,
     LabelSet,
     ModelMeta,
+    VideoPredictionMeta,
     LabelVideoSegment,
 )
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
@@ -363,6 +364,7 @@ def test_endpoint_scopes_videos_and_reports(annotated_video: VideoFile) -> None:
         response = AnnotationComparisonsView.as_view()(request)
     assert response.status_code == 200
     assert response.data["count"] == 0
+    assert response.data["total"] == 0
     with (
         patch(
             "endoreg_db.views.access_control._allowed_center_ids",
@@ -377,4 +379,119 @@ def test_endpoint_scopes_videos_and_reports(annotated_video: VideoFile) -> None:
     assert response.status_code == 200
     assert response.data["practitioner"] == "me"
     assert response.data["count"] == 1
+    assert response.data["total"] == 2
     assert response.data["results"][0]["annotations"][0]["practitioner"] == "peer"
+
+
+@pytest.mark.django_db
+def test_prediction_ranges_are_deduplicated_read_only_and_timestamp_weighted(
+    annotated_video: VideoFile,
+) -> None:
+    for _ in range(2):
+        LabelVideoSegment.objects.create(
+            video_file=annotated_video,
+            label=Label.objects.get(name="polyp"),
+            source=InformationSource.objects.get(name="prediction"),
+            start_frame_number=0,
+            end_frame_number=1,
+        )
+    before = ImageClassificationAnnotation.objects.count()
+    with patch(
+        "endoreg_db.services.annotations.comparisons._mapping", return_value=mapping()
+    ):
+        result = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    assert len(result.predictions) == 1
+    prediction = result.predictions[0]
+    assert prediction.practitioner == "KI ohne Laufzuordnung"
+    assert prediction.overlap is not None and isclose(prediction.overlap, 25)
+    assert prediction.union is not None and isclose(prediction.union, 0.4)
+    assert ImageClassificationAnnotation.objects.count() == before
+    Frame.objects.filter(video=annotated_video, frame_number=2).update(timestamp=None)
+    with patch(
+        "endoreg_db.services.annotations.comparisons._mapping", return_value=mapping()
+    ):
+        missing = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    assert missing.predictions[0].overlap is None
+    assert missing.predictions[0].missing == 1
+
+
+@pytest.mark.django_db
+def test_manual_segments_are_not_ai_and_no_predictions_is_unavailable(
+    annotated_video: VideoFile,
+) -> None:
+    LabelVideoSegment.objects.create(
+        video_file=annotated_video,
+        label=Label.objects.get(name="polyp"),
+        source=InformationSource.objects.get(name="manual_annotation"),
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    with patch(
+        "endoreg_db.services.annotations.comparisons._mapping", return_value=mapping()
+    ):
+        result = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    assert result.predictions == []
+
+
+@pytest.mark.django_db
+def test_prediction_runs_stay_separate_and_conflicts_are_excluded(
+    annotated_video: VideoFile,
+) -> None:
+    model = AiModel.objects.create(name="comparison-ai")
+    labels = LabelSet.objects.create(name="comparison-ai-labels", version=1)
+    for version, start, end in (("1", 0, 1), ("2", 1, 2)):
+        metadata = ModelMeta.objects.create(
+            name="comparison-ai-meta", version=version, model=model, labelset=labels
+        )
+        run = VideoPredictionMeta.objects.create(
+            model_meta=metadata, video_file=annotated_video
+        )
+        LabelVideoSegment.objects.create(
+            video_file=annotated_video,
+            label=Label.objects.get(name="polyp"),
+            prediction_meta=run,
+            start_frame_number=start,
+            end_frame_number=end,
+        )
+    with patch(
+        "endoreg_db.services.annotations.comparisons._mapping", return_value=mapping()
+    ):
+        result = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    assert len(result.predictions) == 2
+    assert result.predictions[0].overlap is not None and isclose(
+        result.predictions[0].overlap, 25
+    )
+    assert result.predictions[1].overlap is not None and isclose(
+        result.predictions[1].overlap, 75
+    )
+    ImageClassificationAnnotation.objects.filter(
+        annotator="me",
+        information_source__name="human_annotation",
+        frame__frame_number=0,
+    ).update(value=False)
+    with patch(
+        "endoreg_db.services.annotations.comparisons._mapping", return_value=mapping()
+    ):
+        result = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    assert result.predictions[0].overlap == 0
+    assert result.predictions[1].overlap == 100

@@ -11,6 +11,9 @@ from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from endoreg_db.services.video_storage import format_reconciliation as reconciliation
 
 
+pytestmark = pytest.mark.no_db
+
+
 def _stream_info(
     *,
     codec_name: str = "h264",
@@ -61,10 +64,6 @@ def _yuvj420p_full_range_stream_info(path: Path) -> JsonObject:
 
 def _yuvj420p_tv_range_stream_info(path: Path) -> JsonObject:
     return _stream_info(pixel_format="yuvj420p", color_range="tv")
-
-
-def _non_compliant_60_fps_stream_info(path: Path) -> JsonObject:
-    return _stream_info(frame_rate="60/1")
 
 
 def _compliant_30_fps_stream_info(path: Path) -> JsonObject:
@@ -154,23 +153,29 @@ def test_classify_video_format_preserves_lower_source_fps(
 
 
 @pytest.mark.unit
-def test_classify_video_format_rejects_fps_above_standard_maximum(
+@pytest.mark.parametrize("fps", [59.7979, 60.0, 120.0, 240.0])
+def test_classify_video_format_accepts_native_high_fps(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    fps: float,
 ) -> None:
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")
+
+    def high_fps_stream(_path: Path) -> JsonObject:
+        return _stream_info(frame_rate=str(fps))
+
     monkeypatch.setattr(
         reconciliation.ffmpeg_wrapper,
         "get_stream_info",
-        _non_compliant_60_fps_stream_info,
+        high_fps_stream,
     )
 
     report = reconciliation.classify_video_format(video_path)
 
-    assert report.compliant is False
-    assert report.fps == 60.0
-    assert report.reasons == ["fps_exceeds_max:60.0>50"]
+    assert report.compliant is True
+    assert report.fps == fps
+    assert report.reasons == []
 
 
 @pytest.mark.unit

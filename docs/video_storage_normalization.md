@@ -230,6 +230,10 @@ equivalence check and retains its existing coordinate-reset preconditions.
 
 Directory transcoding now preserves timestamps by default (`target_fps: null` in
 its JSON summary), rather than deriving a rate cap from `VIDEO_DEFAULT_FPS`.
+Intake accepts every valid positive source frame rate; the annotation target is
+not a source-admission or native-output compliance ceiling. The mover must not
+quarantine media based on FPS. Codec, integrity and timestamp-equivalence checks
+remain mandatory.
 Its Python API still accepts an explicit `target_fps` for intentional rate changes;
 that mode must not be used to replace annotated media. Ordinary storage-pressure
 transcoding probes the actual source timeline and complete decoded PTS instead of
@@ -550,8 +554,8 @@ Faststart, and frames-per-second passthrough. Its default limits are:
 - maximum total size budget: 1,600,000 bytes per video second plus 4 MiB fixed
   container overhead;
 - maximum source and output resolution: 4096 × 2160 pixels;
-- maximum source FPS: 120; the separate annotation profile normalizes videos
-  above 50 FPS to exactly 50 FPS;
+- no source or native-output FPS ceiling; the separate explicit annotation
+  workflow can resample videos above 50 FPS to exactly 50 FPS;
 - no resolution reduction until a clinically approved frame-quality benchmark
   exists;
 - identical rational FPS and identical frame count;
@@ -561,12 +565,15 @@ The limits are configurable through
 `ENDOREG_VIDEO_STORAGE_MAX_BIT_RATE_BPS`,
 `ENDOREG_VIDEO_STORAGE_MAX_BYTES_PER_SECOND`,
 `ENDOREG_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES`,
-`ENDOREG_VIDEO_STORAGE_MAX_WIDTH`, `ENDOREG_VIDEO_STORAGE_MAX_HEIGHT`,
-`ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS`, and
+`ENDOREG_VIDEO_STORAGE_MAX_WIDTH`, `ENDOREG_VIDEO_STORAGE_MAX_HEIGHT`, and
 `ENDOREG_VIDEO_STORAGE_ANNOTATION_MAX_FPS`. Invalid or non-positive values fail
 loudly instead of falling back. Media outside the profile is rejected. Release
 then requires either a new versioned profile or an explicit quarantine review.
 Stream copy, upsampling, and unbounded source-quality encoding are prohibited.
+
+`ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS` and the serialized `max_source_fps`
+profile field are deprecated compatibility settings. They remain readable but
+do not restrict source or native-output frame rates.
 
 HLS encoding has a separate versioned encoder-profile selector,
 `ENDOREG_HLS_ENCODING_PROFILE`. The default

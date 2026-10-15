@@ -17,6 +17,9 @@ from tests.services.test_video_transcoding import (
 )
 
 
+pytestmark = pytest.mark.no_db
+
+
 def _compliant_video_format(path: Path) -> SimpleNamespace:
     _ = path
     return SimpleNamespace(compliant=True, reasons=[], error="")

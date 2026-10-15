@@ -92,10 +92,12 @@ from endoreg_db.services.hub.import_monitoring import (
 )
 from endoreg_db.services.hub.upload_job_import_lease import (
     UploadJobImportLease,
+    UploadJobImportInterrupted,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseHeartbeat,
     UploadJobImportLeaseLost,
     acquire_upload_job_import_lease,
+    raise_if_upload_job_import_interrupted,
     locked_upload_job_import_lease,
     release_upload_job_import_lease,
 )
@@ -1666,6 +1668,7 @@ def process_upload_job(job_id: str) -> bool:
     job = upload_job_manager.select_related("source_center", "sensitive_meta").get(
         id=job_id
     )
+    raise_if_upload_job_import_interrupted(job)
     if job.status in {UploadJob.Status.CANCEL_REQUESTED, UploadJob.Status.CANCELLED}:
         return False
     if job.status == UploadJob.Status.ANONYMIZED.value:
@@ -1754,6 +1757,8 @@ def process_upload_job(job_id: str) -> bool:
                 )
                 owned_job.save(update_fields=["processing_provenance", "updated_at"])
         return True
+    except UploadJobImportInterrupted:
+        raise
     except Exception as exc:
         logger.exception("Video upload import handoff failed for %s: %s", job_id, exc)
         if reserved_lease is not None:
@@ -2201,6 +2206,8 @@ def _run_watcher_upload_job_inline(
     processor_name: str | None = None,
 ) -> UploadJob:
     upload_job.refresh_from_db()
+    if upload_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
+        return upload_job
     if upload_job.status in {
         UploadJob.Status.CANCEL_REQUESTED,
         UploadJob.Status.CANCELLED,
@@ -2445,6 +2452,8 @@ def _reuse_watcher_upload_job(
     sidecar_path: Path | None = None,
 ) -> UploadJob | None:
     upload_job.refresh_from_db()
+    if upload_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
+        return upload_job
     if upload_job.status in {
         UploadJob.Status.CANCEL_REQUESTED,
         UploadJob.Status.CANCELLED,
@@ -2558,6 +2567,8 @@ def _handle_watcher_handoff_failure(
         error=safe_log_value(technical_error, key="error"),
     )
     upload_job.refresh_from_db()
+    if upload_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
+        return upload_job
     if upload_job.status in {
         UploadJob.Status.CANCEL_REQUESTED,
         UploadJob.Status.CANCELLED,

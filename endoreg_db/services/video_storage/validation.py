@@ -290,11 +290,6 @@ def assert_storage_compliance(
             f"{output.width}x{output.height}>"
             f"{profile.max_width}x{profile.max_height}"
         )
-    if output.timeline.fps > profile.max_source_fps:
-        raise VideoStorageNormalizationError(
-            "Output FPS exceeds profile: "
-            f"{output.timeline.fps:g}>{profile.max_source_fps:g}"
-        )
     if output.codec_name != STANDARD_VIDEO_ENCODING.codec_name:
         raise VideoStorageNormalizationError(
             f"Output codec {output.codec_name!r} is not H.264"
@@ -448,11 +443,6 @@ def assert_normalization_source_supported(
         raise VideoStorageNormalizationError(
             "Source dimensions exceed profile and require explicit quarantine or "
             "a separately approved resize profile"
-        )
-    if source.timeline.fps > profile.max_source_fps:
-        raise VideoStorageNormalizationError(
-            "Source FPS exceeds profile and requires explicit quarantine or a "
-            "separately approved resampling profile"
         )
     assert_temporal_equivalence(source.timeline, source.timeline, profile=profile)
 
