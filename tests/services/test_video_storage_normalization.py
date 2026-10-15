@@ -253,7 +253,9 @@ def test_storage_profile_rejects_output_above_resolution_cap() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(("fps_num", "fps_den"), [(1, 2), (299, 5), (240, 1), (1000, 1)])
+@pytest.mark.parametrize(
+    ("fps_num", "fps_den"), [(1, 2), (299, 5), (240, 1), (1000, 1)]
+)
 def test_native_normalization_preserves_any_positive_fps(
     fps_num: int, fps_den: int
 ) -> None:
@@ -267,7 +269,9 @@ def test_native_normalization_preserves_any_positive_fps(
     )
     probe = _probe(
         timeline=_timeline(
-            fps_num=fps_num, fps_den=fps_den, frame_count=10 * fps_num // fps_den,
+            fps_num=fps_num,
+            fps_den=fps_den,
+            frame_count=10 * fps_num // fps_den,
         )
     )
     assert_normalization_source_supported(source=probe, profile=profile)

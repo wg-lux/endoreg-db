@@ -20,6 +20,8 @@ files:
   role: Annotation weighting, attribution, report eligibility and access regression tests.
 - file: services/test_video_provenance_recovery.py
   role: Audited unresolved provenance, original timestamps, encrypted media and center access tests
+- file: services/test_frame_coordinates.py
+  role: Canonical generation selection, timestamp windows and duration regressions.
 - file: conftest.py
   role: Shared Django and clinical test fixture setup
 - file: plugins/runtime_paths.py

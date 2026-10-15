@@ -654,7 +654,7 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/reference_catalog_migration.py
     - kind: document
-      reference: docs/wiki/reference_catalog_migration.yml
+      reference: docs/wiki/reference_catalog_migration.md
     - kind: command
       reference: '.devenv/state/venv/bin/pytest tests/services/test_reference_catalog_migration.py -q
         --tb=short -x: 11 passed (2026-09-29)'

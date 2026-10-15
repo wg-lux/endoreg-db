@@ -707,28 +707,18 @@ def _smooth_scores_by_presentation_time(
     if window_seconds <= 0 or score_result.frame_count == 0:
         return score_result
 
-    radius_seconds = window_seconds / 2.0
-    scores = score_result.frame_scores
-    prefix = np.vstack(
-        (
-            np.zeros((1, scores.shape[1]), dtype=np.float64),
-            np.cumsum(scores, axis=0, dtype=np.float64),
-        )
+    from endoreg_db.utils.ai.postprocess import make_smooth_preds
+
+    smoothed = np.column_stack(
+        [
+            make_smooth_preds(
+                score_result.frame_scores[:, index].tolist(),
+                window_seconds,
+                timestamps=timeline.timestamps,
+            )
+            for index in range(score_result.frame_scores.shape[1])
+        ]
     )
-    smoothed = np.empty(scores.shape, dtype=np.float64)
-    left = 0
-    right = 0
-    row_count = score_result.frame_count
-    for index, timestamp in enumerate(timeline.timestamps):
-        lower = timestamp - radius_seconds
-        upper = timestamp + radius_seconds
-        while left < row_count and timeline.timestamps[left] < lower:
-            left += 1
-        if right < index:
-            right = index
-        while right < row_count and timeline.timestamps[right] <= upper:
-            right += 1
-        smoothed[index] = (prefix[right] - prefix[left]) / float(right - left)
 
     return replace(score_result, frame_scores=smoothed)
 

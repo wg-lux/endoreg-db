@@ -181,7 +181,6 @@ class Command(BaseCommand):
                     seed_segments=seed_segments,
                     options=command_options,
                     frame_count=frame_count,
-                    fps=fps,
                 ),
                 config=profiling_config,
             )
@@ -231,7 +230,6 @@ def _run_profiled_segment_updates(
     seed_segments: list[LabelVideoSegment],
     options: _CommandOptions,
     frame_count: int,
-    fps: float,
 ) -> dict[str, object]:
     payload: dict[str, object] = {}
     if options.runs_bulk_mutation:
@@ -240,7 +238,6 @@ def _run_profiled_segment_updates(
             label=label,
             seed_segments=seed_segments,
             options=options,
-            fps=fps,
         )
 
     if options.runs_frame_removal:
@@ -259,7 +256,6 @@ def _run_bulk_mutation_profile(
     label: Label,
     seed_segments: list[LabelVideoSegment],
     options: _CommandOptions,
-    fps: float,
 ) -> dict[str, object]:
     label_id = _required_pk(label, "Label")
     update_targets = seed_segments[: options.update_count]
@@ -274,7 +270,7 @@ def _run_bulk_mutation_profile(
             {
                 "client_id": -(index + 1),
                 "label_id": label_id,
-                **_time_payload(create_start_index + index, fps),
+                **_time_payload(create_start_index + index, video),
             }
             for index in range(options.create_count)
         ],
@@ -282,7 +278,7 @@ def _run_bulk_mutation_profile(
             {
                 "id": _required_pk(segment, "LabelVideoSegment"),
                 "label_id": label_id,
-                **_time_payload(update_start_index + index, fps),
+                **_time_payload(update_start_index + index, video),
             }
             for index, segment in enumerate(update_targets)
         ],
@@ -439,11 +435,11 @@ def _frame_bounds(index: int) -> tuple[int, int]:
     return start, start + 2
 
 
-def _time_payload(index: int, fps: float) -> dict[str, float]:
+def _time_payload(index: int, video: VideoFile) -> dict[str, float]:
     start_frame, end_frame = _frame_bounds(index)
     return {
-        "start_time": start_frame / fps,
-        "end_time": end_frame / fps,
+        "start_time": video.frame_number_to_s(start_frame),
+        "end_time": video.frame_number_to_s(end_frame),
     }
 
 

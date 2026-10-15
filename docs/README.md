@@ -47,6 +47,7 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 
 - [Data privacy and storage overview](../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
 - [Key rotation and recovery](key_rotation.md)
+- [Online secret rotation contracts](secret_rotation.md)
 - [API route test matrix](api_route_test_matrix.md)
 - [Center access operations](center_access_operations.md)
 - [Anonymization and release contract](anonymization_contract.md)
@@ -60,6 +61,7 @@ Cross-repository ownership, lifecycle, and publication rules are defined in the
 - [Configuration guide](../setup/CONFIGURATION_GUIDE.md)
 - [AI model setup](../setup/AI_MODEL_SETUP.md)
 - [Dataloader YAML authoring](wiki/dataloader_yaml_authoring.md)
+- [Legacy reference catalogue reconciliation](wiki/reference_catalog_migration.md)
 - [Dataloader layers and naming](wiki/dataloader_layers_and_naming.md)
 - [Supported tabular import formats](supported_formats_csv.md)
 - [Stable concurrent report imports](report_import_concurrency_implementation.md)
@@ -82,6 +84,9 @@ storage, transcoding, publication, or cleanup behavior.
 - [Frame annotation support](wiki/frame_annotation_current_support.md)
 - [Annotation export](annotation_export_guide.md)
 - [Annotation source scope for training](annotation_source_scope_training.md)
+- [Reviewed training annotation selection](annotation_training_selection.md)
+- [Processed training frame streams](training-streams.md)
+- [Video reimport processing budget](video_reimport_budget.md)
 
 ## Deployment and Operations
 
@@ -129,7 +134,7 @@ linked feature definition for current status and evidence.
   [`HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
 
 - [Report import concurrency implementation notes](report_import_concurrency_implementation.md) describe design and implementation context; current scope and readiness belong to [`Reporting.yml`](../feature-tracking/Reporting.yml).
-- [Video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.yml) is dated investigation evidence; current scope belongs to [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
+- [Video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.md) is dated investigation evidence; current scope belongs to [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
 
 ## Authoring Rules
 

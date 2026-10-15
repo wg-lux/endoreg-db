@@ -34,6 +34,7 @@ dependencies:
   internal:
   - endoreg_db/models
   - endoreg_db/services/patient_identity
+  - endoreg_db/services/video_storage
   - endoreg_db/services/video_files
   - endoreg_db/utils
   external:

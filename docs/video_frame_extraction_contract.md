@@ -1,145 +1,80 @@
 # Video Frame Extraction Contract
 
-## Scope
+Reviewed against repository code on 2026-10-15. Scope and readiness belong to
+[VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml).
+The [video storage runbook](video_storage_normalization.md) owns publication,
+encrypted staging, media leases and cleanup gates.
 
-This document describes how video frame extraction services are expected to
-behave for full pipeline runs, on-demand frame streaming, and post-validation
-video rebuilds.
+## Current consumers
 
-The key invariant is:
+| Consumer | Entry point | Behavior |
+| --- | --- | --- |
+| Annotation image and legacy stream routes | `endoreg_db/views/media/frame_media.py` | Decode one frame in memory; processed media is the default and the legacy stream route accepts only processed media. |
+| Local training | `endoreg_db/services/frames/training_images.py` | Recheck authorized frame membership and processed-media release gates on every read; decode through the shared image reader. |
+| Temporal prediction | `endoreg_db/services/video_files/temporal_inference.py` | Use streaming; requesting `frame_source_mode="cache"` raises an error. |
+| Outside-frame rebuild | `endoreg_db/services/video_files/post_validation_blackening.py` | Encode a staged video from the reviewed intervals; preserve existing frame rows, annotations and legacy files on failure. |
+| Post-validation job | `endoreg_db/services/jobs/video_post_validation_jobs.py` | `_verify_processed_video_contract` checks the processed video and blackening samples, without creating or requiring a frame cache. |
+| Explicit annotation export | `endoreg_db/export/frames/export_frames_with_labels.py` | Materialize selected frame images for export while preserving source-frame identity. |
 
-> A full extraction may be reused only when completeness is verified. The
-> presence of any frame file, or a stale `Frame.is_extracted=True` flag, is not
-> enough.
+## Frame identity and presentation timestamps
 
-This matters because explicit cache-mode consumers depend on a complete, stable
-frame set before OCR, prediction, or export work. A single on-demand frame in
-the frame directory must not cause full extraction to be skipped.
+Frame numbers are zero-based within a concrete canonical generation. The
+persisted presentation timestamp (PTS), timeline version and content identity
+bind a frame to that generation. The [call-site inventory](video_pts_fps_callsite_inventory.md)
+distinguishes current consumers from legacy rate-based decoder helpers.
 
-## Stable Frame Path Contract
+`read_video_file_frame_jpeg` in `endoreg_db/utils/frame_stream.py` asks
+`video.frame_number_to_s` for the authoritative timestamp before decoding.
+`endoreg_db/services/video_files/timeline.py` prefers persisted timestamps and
+rejects missing timestamps for variable-frame-rate media. Constant-frame-rate
+fallback includes the timeline origin. Terminal segment boundaries use origin
+plus duration; a terminal boundary is not a decodable frame.
 
-Frame files and DB rows must use zero-based frame numbers:
+For encrypted media, the image reader gives FFmpeg a short-lived authenticated
+loopback byte-range source. It does not materialize a complete plaintext video
+or read a legacy frame cache. Storage and decoder failures propagate. Raw
+images require the separate authorized anonymization-review path; local
+training accepts only approved processed media.
 
-- frame `0` -> `frame_0000000.jpg`
-- frame `1` -> `frame_0000001.jpg`
-- frame `n` -> `frame_{n:07d}.jpg`
+Timestamp-selected decoding does not itself prove which original frame entered
+an encoder. Transformation ancestry is recorded separately by
+`endoreg_db/services/video_storage/frame_provenance.py`, using actual decoder
+indices and complete source/output PTS sequences. Nearest-timestamp clinical
+boundary mapping must never be used to invent that ancestry.
 
-The stable DB path is stored on `Frame.relative_path`. Callers outside the model
-boundary should fetch frames through the `Frame` row and its stable path. They
-should not infer alternate one-based names or depend on temporary extraction
-output.
+## Retired materialization entry points
 
-Full ffmpeg extraction is invoked with `-start_number 0` so emitted filenames
-match DB frame numbering. Range extraction starts at the requested `start_frame`,
-so it already produces names aligned with DB numbering.
+`extract_video_frames` and `extract_video_frame_range` in
+`endoreg_db/services/video_files/frames.py` retain compatibility signatures, but
+their internal extraction helpers raise `RuntimeError` explaining that frame
+file materialization is export-only. The timestamp-range wrapper resolves
+coordinates first and then reaches the same retired helper. It does not provide
+a cache-repair workflow. Use an explicit export when image files are required.
 
-## Full Extraction Reuse Rule
+Existing `Frame.relative_path`, extraction flags and legacy files remain
+historical state. An image request or rebuild must not recreate or delete them
+as a side effect. Existing diagnostic cache validation does not enable extraction.
 
-`endoreg_db.services.video_files.extract_video_frames(video, overwrite=False)`
-may skip ffmpeg only when all of the following are true:
+## Legacy cache diagnostics
 
-- The expected frame count is known from `video.frame_count` or the associated
-  `VideoState.frame_count`.
-- The frame directory contains exactly the expected frame filenames for the
-  range `0..expected_count-1`.
-- Every expected file exists as a regular file.
+`build_frame_cache_manifest` and `validate_video_frame_cache` in
+`endoreg_db/services/video_files/_frames/_extract_frames.py` remain available
+for inspection. A complete legacy set requires a known expected count, exactly
+`frame_0000000.jpg` through `frame_{count - 1:07d}.jpg`, matching database rows,
+matching relative paths, extraction flags and regular files. A nonempty directory
+or a lone `Frame.is_extracted=True` flag does not establish completeness.
+These checks describe cache consistency; they do not establish content ancestry,
+clinical approval or current generation identity.
 
-If this exact check fails and any old frame files or extracted state exist, the
-partial frame set is treated as inconsistent. The extractor clears the partial
-frame files and DB extraction flags, then runs full extraction again.
+## Verification references
 
-After ffmpeg completes, full extraction normalizes output to the stable zero-based
-paths and verifies the extracted frame-number set against the expected count when
-the expected count is known. Missing or extra frame numbers fail loudly.
-
-## Range Extraction Reuse Rule
-
-`endoreg_db.services.video_files.extract_video_frame_range(...)` is used for
-on-demand frame streaming and other small range requests.
-
-Range extraction may skip ffmpeg only when the stable files for every requested
-frame exist. Stale `Frame.is_extracted=True` rows are not trusted by themselves.
-If DB rows say extracted but the stable files are missing, the range is marked
-unextracted, stale files in the range are removed, and the requested range is
-extracted again.
-
-Range extraction does not mark `VideoState.frames_extracted=True`, because a
-range is not a complete video extraction.
-
-## Trigger Matrix
-
-| Trigger                       | Entry point                                                                                                                                                         | Extraction mode | Source video                         | Expected behavior                                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Explicit cache prediction     | `endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference(..., frame_source_mode="cache")` -> `extract_video_frames(video, overwrite=False)` | Full            | Raw                                  | Reuse only a complete frame set. Partial/on-demand files force full re-extraction.                                                           |
-| Frame stream request          | `endoreg_db.services.video_files.extract_video_frame_range(video, start_frame=frame, end_frame=frame + 1)`                                                          | Range           | Raw                                  | Recreate the requested stable frame file if missing. Never fall back to full extraction on the request path.                                 |
-| Outside-frame video rebuild   | `endoreg_db.services.video_files.rebuild_processed_video_without_outside_frames(video)`                                                                             | Full            | Processed                            | Force processed-video extraction with `overwrite=True`, censor outside frames, then reassemble. Extracted frames remain available afterward. |
-| Post-validation rebuild job   | `endoreg_db/services/jobs/video_post_validation_jobs.py` -> `rebuild_processed_video_without_outside_frames(video)`                                                 | Full            | Processed                            | After rebuild, verify exact stable frame rows and files are still present. Fail if frames cannot be fetched/recreated by stable DB paths.    |
-| Segment CRUD post-processing  | `endoreg_db/views/video/segments_crud.py` -> `dispatch_video_post_validation_rebuild(...)`                                                                          | Job dispatch    | Processed via job                    | Trigger post-validation rebuild after outside-segment changes.                                                                               |
-| Legacy compatibility wrappers | `VideoFile.extract_frames(...)`, `VideoFile.extract_specific_frame_range(...)`, `VideoFile.create_video_without_outside_frames(...)`                                | Full or range   | Raw/processed depending on arguments | Preserved for existing callers; new code should use `endoreg_db.services.video_files`.                                                       |
-
-## Cache Prediction Failure Mode This Prevents
-
-Before the completeness check, full extraction could skip when any file existed
-in the frame directory. A frame stream request could create one file such as
-`frame_0000007.jpg`; later explicit cache prediction could see a non-empty frame
-directory and skip ffmpeg, leaving OCR and prediction with an incomplete frame
-set.
-
-The current rule prevents that:
-
-- A lone frame file does not satisfy the exact expected filename set.
-- A stale `frames_extracted=True` state does not satisfy the file completeness
-  check.
-- Partial state is cleared before the full extraction attempt.
-- Explicit cache prediction only proceeds after the extracted files satisfy the
-  complete frame-set contract.
-
-## Post-Validation Frame Availability
-
-The post-validation rebuild must leave extracted frames available after the full
-annotation/rebuild flow. `video_post_validation_jobs._verify_extracted_frame_contract`
-checks:
-
-- `state.frames_extracted` is true.
-- A positive expected frame count is known.
-- The frame directory exists.
-- DB rows exist for exactly `0..expected_count-1`.
-- Every row uses `frame_{frame_number:07d}.jpg`.
-- Every row is marked `is_extracted=True`.
-- Every stable file exists on disk.
-
-If any of those checks fail, the job raises a `RuntimeError`. This is intentional:
-missing or unstable frame rows would break outside callers that fetch frames by
-stable DB paths.
-
-## Implementation References
-
-- Full extraction implementation:
-  `endoreg_db/services/video_files/_frames/_extract_frames.py`
-- Range extraction implementation:
-  `endoreg_db/services/video_files/_frames/_manage_frame_range.py`
-- Service entrypoints:
-  `endoreg_db/services/video_files/frames.py`,
-  `endoreg_db/services/video_files/anonymization.py`
-- ffmpeg command builder:
-  `endoreg_db/utils/video/ffmpeg_wrapper.py`
-- Frame streaming view:
-  `endoreg_db/views/media/frame_media.py`
-- Post-validation rebuild:
-  `endoreg_db/services/jobs/video_post_validation_jobs.py`
-- Outside-frame rebuild:
-  `endoreg_db/services/video_files/post_validation_blackening.py`
-
-## Maintenance Checklist
-
-When changing frame extraction or frame streaming:
-
-- Do not skip full extraction because the frame directory is non-empty.
-- Do not trust `Frame.is_extracted=True` without verifying the file exists.
-- Keep DB numbering and filenames zero-based.
-- Keep range extraction from marking the whole video as fully extracted.
-- Keep post-validation rebuild frames available after the rebuild completes.
-- Use typed filesystem wrappers from `endoreg_db.utils.filesystem.file_operations` for
-  production filesystem mutations.
-- Add or update tests that cover partial files, stale DB flags, and stable
-  `Frame.relative_path` values.
+- `tests/utils/video/test_frame_stream.py`: shared decoder and seekable input.
+- `tests/views/media/test_frame_stream.py`: image routes and source selection.
+- `tests/models/video/test_frame_extraction_completeness.py`: cache diagnostics
+  and retired materialization behavior.
+- `tests/services/test_video_post_validation_jobs.py`: processed-video validation.
+- `tests/services/test_post_validation_generation_cleanup.py`: retained state on
+  rebuild failure.
+- `tests/services/test_video_temporal_mapping.py`: irregular timestamps, terminal
+  boundaries and constant-rate fallback.
+- `tests/services/test_frame_provenance.py`: actual ancestry and invalid receipts.

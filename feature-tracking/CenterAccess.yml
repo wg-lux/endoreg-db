@@ -283,7 +283,7 @@ definition_of_done:
             endoreg_db/services/frames/training_images.py; endoreg_db/services/aidataset_training_manifests.py;
             endoreg_db/utils/ai/model_training/dataset.py; endoreg_db/export/frames/export_frames_with_labels.py
         - kind: document
-          reference: docs/training-streams.yml
+          reference: docs/training-streams.md
         - kind: test
           reference: tests/views/test_central_hub_training_access.py
         - kind: test

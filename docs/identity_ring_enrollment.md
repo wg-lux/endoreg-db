@@ -4,7 +4,7 @@ Read [Key rotation and recovery](key_rotation.md) before provisioning or migrati
 
 An identity keyring links a new Django salt with explicitly allowed older Django salt generations. This enables compatible applications to recognize existing patients and create new identities using the new Django salt.
 
-This setup specifically affects identity hashes. The separate rotation of media files and Django signature keys is described in [secret_rotation.yml](secret_rotation.yml). Host verifications and open shares are documented exclusively in [Anonymization.yml, criterion online_secret_rotation](../feature-tracking/Anonymization.yml).
+This setup specifically affects identity hashes. The separate rotation of media files and Django signature keys is described in [secret_rotation.md](secret_rotation.md). Host verifications and open shares are documented exclusively in [Anonymization.yml, criterion online_secret_rotation](../feature-tracking/Anonymization.yml).
 
 ## 1. Verify the Correct Machine and Existing Django Salt Inventory
 
@@ -100,7 +100,7 @@ python -m django rotate_identity_salt
 
 ```
 
-Blocked groups require review. For previously deleted identifiers, a private, verified source file is required; the format is defined in [secret_rotation.yml](secret_rotation.yml). Once the dry run preview is resolved, apply the migration within the same service context:
+Blocked groups require review. For previously deleted identifiers, a private, verified source file is required; the format is defined in [secret_rotation.md](secret_rotation.md). Once the dry run preview is resolved, apply the migration within the same service context:
 
 ```bash
 python -m django rotate_identity_salt --apply

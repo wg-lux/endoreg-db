@@ -32,7 +32,6 @@ from lx_dtypes.models.contracts.video_file import FrameSourceMode
 from numpy.typing import NDArray
 from safetensors import safe_open
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
@@ -1358,37 +1357,37 @@ def _readable_prediction_rows(
     ]
 
 
-def _sequence_fps(video: VideoFile) -> int:
-    frames_per_second = video.get_fps()
-    if not frames_per_second:
-        logger.warning(
-            "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
-            video.raw_video_hash,
-            DEFAULT_VIDEO_FPS,
-        )
-        frames_per_second = DEFAULT_VIDEO_FPS
-    return int(frames_per_second)
-
-
 def _prediction_sequences(
     *,
     video: VideoFile,
-    merged_predictions: Dict[str, Any],
+    frame_scores: VideoFrameScoreResult,
     smooth_window_size_s: int,
     binarize_threshold: float,
     components: _AiPipelineComponents,
 ) -> Dict[str, List[Tuple[int, int]]]:
-    frames_per_second = _sequence_fps(video)
+    from endoreg_db.services.video_files.temporal_inference import (
+        _resolve_score_timeline,
+    )
+
+    timeline = _resolve_score_timeline(video, frame_scores)
     sequences: Dict[str, List[Tuple[int, int]]] = {}
-    for label, prediction_array in merged_predictions.items():
+    for index, label in enumerate(frame_scores.labels):
         smoothed = components.smooth_predictions(
-            prediction_array=prediction_array,
+            prediction_array=frame_scores.frame_scores[:, index],
             window_size_s=smooth_window_size_s,
-            fps=frames_per_second,
+            timestamps=timeline.timestamps,
         )
-        sequences[label] = components.find_true_prediction_sequences(
-            smoothed > binarize_threshold
-        )
+        sequences[label] = [
+            (
+                timeline.frame_numbers[start],
+                timeline.frame_numbers[end + 1]
+                if end + 1 < len(timeline.frame_numbers)
+                else timeline.terminal_frame_number,
+            )
+            for start, end in components.find_true_prediction_sequences(
+                smoothed > binarize_threshold
+            )
+        ]
     return sequences
 
 
@@ -1430,7 +1429,7 @@ def _postprocess_predictions(
             return frame_scores
         sequences = _prediction_sequences(
             video=video,
-            merged_predictions=merged_predictions,
+            frame_scores=frame_scores,
             smooth_window_size_s=smooth_window_size_s,
             binarize_threshold=binarize_threshold,
             components=components,

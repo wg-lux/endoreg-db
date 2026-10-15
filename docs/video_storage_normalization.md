@@ -113,19 +113,12 @@ in `lx_dtypes.models.contracts.video_provenance`. Apply migration
 `0092_video_frame_provenance` before running updated encoding workers. Site and Hub
 must deploy the matching shared contract and application changes together.
 
-The pinned `lx-dtypes` 0.4.4 package contains the provenance contract. Development
-verification of the new execution hooks requires the matching `lx-anonymizer`
-checkout installed into the project environment:
-
-```sh
-uv pip install --python .devenv/state/venv/bin/python --no-deps -e ../lx-anonymizer
-```
-
-Run this after dependency synchronization, then invoke the project virtual
-environment's pytest directly. The repository test tasks synchronize dependencies
-again and can replace the editable package with the published package. This local
-setup is not a substitute for releasing and pinning the execution hooks before
-deployment.
+Dependency versions come from `pyproject.toml` and `uv.lock`; the current source
+requires `lx-dtypes>=0.5.3` and pins `lx-anonymizer[gpu]==1.0.8`. Synchronize the
+project environment before verification and check the installed execution-hook
+interface. A sibling checkout used by static analysis does not establish that
+the installed worker package provides those hooks. Use the coordinated release
+procedure below for deployment.
 
 Before each FFmpeg transcode attempt, ffprobe captures source coordinates. FFmpeg
 `stats_enc_pre` records the actual decoder frame index carried to the encoder,
@@ -450,7 +443,7 @@ Security requirements and verification evidence belong to
 
 Online encryption-key and identity-salt rotation is governed by
 `feature-tracking/Anonymization.yml`, criterion `online_secret_rotation`.
-The operational procedure is in `docs/secret_rotation.yml`. Rotation preserves
+The operational procedure is in [Online secret rotation](secret_rotation.md). Rotation preserves
 the plaintext video bytes and timeline; it is not a storage-normalization or
 frame-rate conversion. Compatible readers must be deployed before key activation.
 Active media leases defer ciphertext replacement. HTTP Live Streaming generations
@@ -558,7 +551,8 @@ Faststart, and frames-per-second passthrough. Its default limits are:
   workflow can resample videos above 50 FPS to exactly 50 FPS;
 - no resolution reduction until a clinically approved frame-quality benchmark
   exists;
-- identical rational FPS and identical frame count;
+- identical frame count; raw normalization checks rational FPS, while processed
+  publication uses complete decoded timestamp proof as described below;
 - maximum duration drift: 100 ms or one source frame when that frame is longer.
 
 The limits are configurable through
@@ -747,8 +741,12 @@ persisted coordinates and stored with the source and output probes in
 `VideoFile.meta.storage_normalization`.
 
 Variable frame rate is allowed only when source and output time bases are
-available. Divergent frame rate, frame count, duration, or resolution prevents
-publication. Resolution remains unchanged so that high-quality frames can be
+available. Raw normalization enforces the strict rate and temporal-equivalence
+checks. Processed publication may accept differing container rate metadata only
+with complete decoded timestamp proof under the bounded correction gate in
+[Canonical runtime paths and filenames](#canonical-runtime-paths-and-filenames).
+Frame-count changes, excessive timeline drift, or resolution changes prevent
+ordinary canonical replacement. Resolution remains unchanged so that high-quality frames can be
 extracted at persisted segment timestamps. Any later resolution reduction first
 requires a versioned benchmark with representative clinical videos and reviewer
 approval.

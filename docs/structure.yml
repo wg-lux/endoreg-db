@@ -14,7 +14,21 @@ files:
   role: Named practitioner overlap metrics, report eligibility and dashboard API contract.
 - file: key_rotation.md
   role: Application rotation procedure linked to the central LuxNix catalog
-- file: secret_rotation.yml
+- file: annotation_training_selection.md
+  role: Reviewed annotation selection and training manifest provenance contract.
+- file: training-streams.md
+  role: Authorized processed-frame streaming for local training.
+- file: video_reimport_budget.md
+  role: Reimport throughput budgeting and timeout operations.
+- file: video_datenerhalt_gc02_gc10_20260923.md
+  role: Historical sanitized data-retention investigation; not current runtime evidence.
+- file: wiki/reference_catalog_migration.md
+  role: Bounded legacy colorectal catalogue reconciliation runbook.
+- file: video_pts_fps_callsite_inventory.md
+  role: Frame-rate, presentation-timestamp and decoder ancestry call-site review.
+- file: video_frame_extraction_contract.md
+  role: In-memory frame decoding, export-only materialization and legacy cache diagnostics.
+- file: secret_rotation.md
   role: Backend keyring and migration contracts; readiness remains in feature YAML
 - file: README.md
   role: Documentation navigation

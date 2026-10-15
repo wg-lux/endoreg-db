@@ -91,12 +91,20 @@ definition_of_done:
       reference: //lx-anonymizer/docs/VIDEO_IMPORT_CONCURRENCY_CONTRACT.md
     - kind: test
       reference: tests/scripts/test_check_documentation_governance.py
-    note: Canonical ownership is registered in machine-readable form for assisted reporting, date rules,
+    note: 'Canonical ownership is registered in machine-readable form for assisted reporting, date rules,
       Pydantic patterns, and video-import concurrency. The video contract remains canonical in endoreg-db;
       lx-anonymizer contains only the stricter component contract and documents conflict and change rules.
       Complete topic triage and a generated audience index remain outstanding.
-    assessed_by: Codex
-    assessed_at: '2026-07-31T10:16:11.271206Z'
+
+      2026-10-15: converted six prose documents under docs/ from YAML to Markdown; preserved machine-consumed
+      maps, feature definitions, configuration and docs/examples/finding_extraction.yml. Retargeted incoming
+      links and feature evidence paths, listed all converted files plus frame/timestamp contracts in docs/structure.yml,
+      and corrected stale frame-cache, module ownership and dependency-version guidance against code.
+      All 65 structure manifests validate; git diff --check passes. Remaining decoder work is tracked
+      under VideoStorageNormalization.yml/decoder_timestamp_authority; documentation language-policy findings
+      are under automated_validation. No production-readiness assertion.'
+    assessed_by: codex-docs-20261015-a
+    assessed_at: '2026-10-15T08:12:12.299648Z'
 - id: automated_validation
   category: testing
   title: Documentation, README.md, and AGENTS.md have reproducible validation gates
@@ -112,6 +120,9 @@ definition_of_done:
     across repository boundaries.
   - Pull requests run checks only for relevant changes, a periodic full check detects external link rot
     and drift, and exceptions include an owner, reason, and expiration date.
+  - Language validation distinguishes canonical English runbooks from historical German operational reports
+    required by AGENTS.md; converting prose YAML to Markdown preserves report evidence and does not introduce
+    an unreviewed language-policy exemption.
   required: true
   verification:
     kind: manual
@@ -136,15 +147,24 @@ definition_of_done:
         -q --tb=short -x: 47 passed, 2 warnings, 4 subtests passed in 179.59s. Alle sieben vom Nutzer
         gemeldeten Fehlerfaelle bestanden, einschliesslich teurem Videoimport. Pyright zuvor 0 errors,
         0 warnings; Ruff bestanden.'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python scripts/check_documentation_governance.py: 2 non_english_source
+        errors (historical report and existing standards review)'
     note: 'Seven governance tests check artifact classes, entry points, local links, workstation links,
       sensitive captures, generated-output exceptions, and canonical and related document paths. The live
       inventory and strict Sphinx lanes pass; continuous-integration wiring and executable examples remain
       outstanding. 2026-09-07: Nach Nutzerfehlerbericht unterscheidet die vorhandene Link-Testfixture
       root-relative Weblinks (/private.md) von verbotenen Workstation-Links (/home/test/private.md). Produktionsvalidator
       unveraendert; 47 Tests der gemeinsamen Regression bestanden. Diese lokale Fixturekorrektur ist keine
-      vollstaendige Dokumentationsabnahme.'
-    assessed_by: codex-idempotency-20260907-a
-    assessed_at: '2026-09-07T12:56:48.346689Z'
+      vollstaendige Dokumentationsabnahme.
+
+      2026-10-15: prose YAML conversion exposed a governance policy conflict: docs/video_datenerhalt_gc02_gc10_20260923.md
+      is a historical German operational report preserved under AGENTS.md, but the checker enforces English
+      on every Markdown source. docs/implementation_standards_review.md already fails the same check.
+      No checker exception or weakened policy was introduced. Language-aware report classification needs
+      implementation and verification.'
+    assessed_by: codex-docs-20261015-a
+    assessed_at: '2026-10-15T08:11:30.339793Z'
 - id: publication_safety
   category: security
   title: Only approved and sanitized content can be published publicly

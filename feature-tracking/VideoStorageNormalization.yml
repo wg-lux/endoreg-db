@@ -927,11 +927,10 @@ definition_of_done:
   - Sobald Segmentzeilen existieren, lehnt der FPS-Pfad jede Änderung der Framekoordinaten laut ab. Seeking
     sowie Segmentanfang und -ende referenzieren nach Storage-Normalisierung deterministisch denselben
     klinischen Bildinhalt.
-  - Die Nachverarbeitung nach Segmentvalidierung extrahiert nach erfolgreichem Outside-Frame-Rebuild den
-    vollständigen stabilen Frame-Satz zwingend aus der neu veröffentlichten Processed-Generation. Sie
-    markiert die Validierung erst nach Prüfung von positivem Frame-Count, lückenlosen nullbasierten Framezeilen,
-    kanonischen Dateinamen, gesetztem Extraktionsstatus und vorhandenen Dateien als abgeschlossen; ein
-    fehlender oder unvollständiger Frame-Cache schlägt laut und wiederholbar fehl.
+  - Post-validation verifies the rebuilt processed video through _verify_processed_video_contract without
+    creating or requiring a frame-file cache. Failed or refused publication preserves existing frame rows,
+    annotations, legacy files and extraction flags; frame_materialization_boundary governs export-only
+    image materialization.
   - Der Einzelbild-Decode verwendet den autoritativen Präsentationszeitstempel und einen nur an Loopback
     gebundenen, nicht erratbaren Byte-Range-Zugriff auf das ausgewählte verschlüsselte Artefakt. Er erzeugt
     keine vollständige temporäre Klartextkopie, entschlüsselt nur die von FFmpeg angeforderten Chunks
@@ -1526,14 +1525,14 @@ definition_of_done:
         skipped by policy; the resume-safety failure path passed separately with the expensive-test skip
         disabled (1 passed)'
     - kind: document
-      reference: docs/secret_rotation.yml; docs/video_storage_normalization.md
+      reference: docs/secret_rotation.md; docs/video_storage_normalization.md
     note: 'The English runbook documents eager HLS readiness, encrypted pre-publication validation, timeline
       gates, and now the bounded inventory contract: default/max batch sizes, stable primary-key cursor
       fields, resume commands, within-batch prioritization, and partial-apply reconciliation. Formal operations,
       security, storage-owner, and clinical review remain outstanding.
 
 
-      2026-09-21: Der kanonische englische Runbook verweist jetzt auf docs/secret_rotation.yml und Anonymization.yml#online_secret_rotation.
+      2026-09-21: Der kanonische englische Runbook verweist jetzt auf docs/secret_rotation.md und Anonymization.yml#online_secret_rotation.
       Dokumentiert sind Schlüsselüberlappung, frische Dateischlüssel, HLS-Neugenerierung, Medien-Leases,
       Wiederaufnahme und getrennte Stilllegungsprüfung. 189 Integrationsprüfungen bestanden einschließlich
       echter HLS-Schlüsselrotation. Die bestehenden formalen Freigaben bleiben offen.'
@@ -1893,3 +1892,58 @@ definition_of_done:
         Ruff und git diff --check bestanden.'
     assessed_by: codex-frame-standardization-20260921
     assessed_at: '2026-09-21T11:48:34.232997Z'
+- id: decoder_timestamp_authority
+  category: data_integrity
+  title: Every frame decoder exposes authoritative generation-bound presentation timestamps
+  acceptance:
+  - iter_video_path_frame_samples exposes independently observed presentation timestamps with passthrough
+    decoding and exact decoded counts; unused single-frame array APIs are removed.
+  - iter_video_file_frame_samples and read_video_file_frame_jpeg use the selected canonical generation
+    content hash and its persisted timestamp sequence, preserving raw and processed origins.
+  - read_video_path_frame_jpeg requires an explicit authoritative timestamp and seeks in the absolute
+    container timeline; rate-derived timestamp fallbacks are removed.
+  - Regression tests compare timestamps and pixels for irregular variable-rate media and nonzero origins,
+    and reject missing coordinates, invalid timestamps and replaced generations.
+  - Unused FPS conversions in lx-annotate timeHelpers.ts and timeUtils.ts are removed; annotation navigation
+    and export continue to use backend timestamps.
+  - Prediction smoothing and minimum durations use persisted presentation-time windows without shifting
+    frame identities; duration, metadata initialization and profiling do not reconstruct clinical coordinates
+    from average frame rates. Duplicate prediction workflows are removed.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run strict Pyright before focused frame-stream, temporal-mapping and processed-timeline
+      tests, then verify frontend consumers and real variable-rate decode pixel/timestamp identity.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/utils/frame_stream.py
+    - kind: test
+      reference: '2026-10-15: 135 passed, 1 plugin warning in 47.78s: tests/utils/video/test_frame_stream.py,
+        tests/services/test_frame_coordinates.py, tests/models/metadata/test_video_prediction_meta.py,
+        tests/services/test_video_temporal_inference.py, tests/services/test_video_temporal_mapping.py,
+        tests/services/test_processed_timelines.py, tests/services/test_frame_materialization_boundary.py,
+        tests/views/media/test_frame_stream.py, tests/management/commands/test_profile_segment_updates.py,
+        tests/serializers/video/test_video_file_serializer.py, tests/import_files/test_video_import_normalization.py,
+        tests/import_files/test_video_finalize_success.py, tests/services/test_video_initialize_specs.py.
+        Ausgeführt über devenv shell mit RUN_VIDEO_TESTS=true und SKIP_EXPENSIVE_TESTS=false.'
+    - kind: test
+      reference: 'Abschließende Decoder-/Metadaten-Suite: 14 passed, 1 plugin warning in 39.81s. Echte
+        FFmpeg-Dekodierung mit unregelmäßigen Zeitstempeln, Ursprung 2 Sekunden, Zeitbasen 1/1000 und
+        1/90000; JPEG-Pixelidentität, verschlüsselte Bytebereiche, fehlende Koordinaten und Generationenwechsel
+        geprüft. Ein früherer Lauf verwendete gemockte Probe-Metadaten; final durch echte Probe ersetzt.'
+    - kind: command
+      reference: 'Vollständiger Pyright: 0 errors, 20 warnings; finaler Decoder-Test-Pyright: 0 errors,
+        0 warnings. Ruff, git diff --check und 65 Strukturmanifeste bestanden.'
+    - kind: test
+      reference: 'lx-annotate: vue-tsc --build --force, gezielter ESLint und 50 Vitest-Tests bestanden:
+        timeHelpers, ExportAnnotations.pts-contract und VideoExaminationAnnotation.dropdown. Frontend-Strukturprüfung
+        und 55 Feature-Definitionen gültig.'
+    note: 'Implementiert: beobachtete Decoder-Zeitstempel, Hash-gebundene kanonische Koordinaten, absolute
+      JPEG-Zeitsuche, zeitbasierte Modellfenster und beobachtete Metadaten. Unbenutzte Array-Einzeldecoder,
+      doppelte Vorhersagelogik, Classifier-Nachverarbeitung und Frontend-FPS-Konvertierungen entfernt.
+      Bestehende Import- und Segmentverträge durch Regressionen geprüft.'
+    assessed_by: codex-fps-20261015-a
+    assessed_at: '2026-10-15T08:33:13.327227Z'

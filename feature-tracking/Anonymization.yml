@@ -42,10 +42,80 @@ definition_of_done:
     - kind: test
       reference: 2026-09-28 focused backend regression 71 passed and paired anonymizer regression 111
         passed
-    note: Backend regression 71 passed; paired anonymizer regression 111 passed. Benchmark and frame observation
-      capacity above 100000 remain deployment blockers.
-    assessed_by: codex-gc02-import-20260928
-    assessed_at: '2026-09-28T07:40:42.056770Z'
+    note: 'Backend regression 71 passed; paired anonymizer regression 111 passed. Benchmark and frame
+      observation capacity above 100000 remain deployment blockers.
+
+      2026-10-15 documentation migration: verification and deployment follow-up moved from docs/video_reimport_budget.yml
+      to this criterion. Retained historical verification text follows (not a new test run):
+
+      ## Validation
+
+
+      - Run Pyright and focused budget, dispatch, timeout, metadata, OCR and exhaustive-coverage tests.
+
+      - Benchmark representative long videos in an isolated encrypted test runtime before deployment;
+      measure whole-task throughput and finalization overhead.
+
+      - Verify frame observation capacity separately; increasing a time budget does not increase that
+      independent bound.
+
+      - Publish compatible endoreg-db and lx-anonymizer releases and deploy through the normal reviewed
+      workflow.
+
+
+      ## Historical verification commands
+
+
+      These results were retained from the original YAML document; current assessment
+
+      and outstanding deployment work are maintained in the feature tracker.
+
+
+      ### Backend tests
+
+
+      | Field | Value |
+
+      | --- | --- |
+
+      | `command` | RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.postgresql SKIP_EXPENSIVE_TESTS=false
+      .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py
+      tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py
+      -q |
+
+      | `result` | 71 passed |
+
+
+      ### Anonymizer tests
+
+
+      | Field | Value |
+
+      | --- | --- |
+
+      | `command` | devenv shell -- .devenv/state/venv/bin/pytest tests/test_frame_metadata_extractor_dates.py
+      tests/test_sensitive_meta_interface.py tests/test_ocr_frame_rapidocr.py tests/test_exhaustive_video_metadata.py
+      tests/test_frame_report_helper_logic.py -q |
+
+      | `result` | 111 passed |
+
+
+      ### Static checks
+
+
+      - Full Pyright passed with zero errors in both repositories (6 backend warnings and 8 anonymizer
+      warnings); focused changed-file checks had zero warnings.
+
+      - Backend focused Ruff passed; anonymizer touched-file Ruff has 91 findings compared with 101 in
+      HEAD, with no increased rule counts.
+
+      - Backend feature definitions validate; anonymization readiness remains nonzero (6 of 12 criteria
+      verified).
+
+      - Anonymizer YAML and added criteria validate; full backend tracker validation is not compatible
+      with that repository''s existing feature format and missing policy.yml.'
+    assessed_by: codex-docs-20261015-a
+    assessed_at: '2026-10-15T08:12:45.332889Z'
 - id: typed_media_deletion
   category: data_integrity
   title: Explicit media identity controls individual deletion
@@ -554,7 +624,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: document
-      reference: docs/secret_rotation.yml
+      reference: docs/secret_rotation.md
     - kind: test
       reference: tests/services/test_secret_rotation.py; tests/services/test_identity_salt_rotation.py;
         tests/services/test_hls_media.py (PostgreSQL, echte FFmpeg-Ausführung)

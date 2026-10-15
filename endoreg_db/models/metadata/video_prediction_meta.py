@@ -13,9 +13,11 @@ from endoreg_db.models.label.label_set import LabelSet
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
-from endoreg_db.services.video_files.metadata import get_video_fps
+from endoreg_db.services.video_files.frame_coordinates import (
+    smooth_prediction_confidences,
+    prediction_segments,
+)
 
-from ..utils import find_segments_in_prediction_array
 
 logger = logging.getLogger(__name__)
 
@@ -242,47 +244,13 @@ class VideoPredictionMeta(models.Model):
         confidence_array: ConfidenceArray,
         window_size_in_seconds: Optional[float] = None,
     ) -> ConfidenceArray:
-        """
-        Apply a running mean filter to the confidence array for smoothing, assuming a padding
-        of 0.5 for the edges.
-        """
-        video_obj = self.get_video()
-        fps = get_video_fps(video_obj)
-
-        if fps <= 0:
-            logger.warning(
-                f"Invalid FPS ({fps}) for {video_obj}. Cannot apply running mean. Returning original array."
-            )
-            return confidence_array
-
-        if window_size_in_seconds is None:
-            window_size_in_seconds = DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN
-
-        window_size_in_frames = int(window_size_in_seconds * fps)
-        window_size_in_frames = max(window_size_in_frames, 1)
-
-        window = np.ones(window_size_in_frames) / window_size_in_frames
-        pad_size = window_size_in_frames // 2
-
-        padded_confidences = np.pad(
+        return smooth_prediction_confidences(
+            self.get_video(),
             confidence_array,
-            (pad_size, pad_size),
-            "constant",
-            constant_values=(0.5, 0.5),
+            DEFAULT_WINDOW_SIZE_IN_SECONDS_FOR_RUNNING_MEAN
+            if window_size_in_seconds is None
+            else window_size_in_seconds,
         )
-
-        running_mean = np.convolve(padded_confidences, window, mode="same")
-        start_index = pad_size
-        end_index = start_index + len(confidence_array)
-        running_mean = running_mean[start_index:end_index]
-
-        if running_mean.shape != confidence_array.shape:
-            logger.warning(
-                f"Running mean output shape {running_mean.shape} differs from input {confidence_array.shape}. Check padding/slicing."
-            )
-            return confidence_array
-
-        return running_mean
 
     def create_video_segments_for_label(
         self, segments: List[Tuple[int, int]], label: "Label"
@@ -342,21 +310,6 @@ class VideoPredictionMeta(models.Model):
             )
         return prediction_array
 
-    def _create_segments_for_labels(
-        self,
-        *,
-        prediction_array: PredictionArray,
-        label_list: list["Label"],
-        min_frame_length: int,
-    ) -> None:
-        for index, label in enumerate(label_list):
-            binary_predictions = prediction_array[:, index].astype(bool)
-            segments = find_segments_in_prediction_array(
-                binary_predictions, min_frame_length
-            )
-            if segments:
-                self.create_video_segments_for_label(segments, label)
-
     def create_video_segments(
         self, segment_length_threshold_in_s: Optional[float] = None
     ) -> None:
@@ -365,18 +318,6 @@ class VideoPredictionMeta(models.Model):
         """
         if segment_length_threshold_in_s is None:
             segment_length_threshold_in_s = DEFAULT_VIDEO_SEGMENT_LENGTH_THRESHOLD_IN_S
-
-        video_obj = self.get_video()
-        fps = get_video_fps(video_obj)
-
-        if fps <= 0:
-            logger.warning(
-                f"Cannot create video segments for {video_obj} with invalid FPS ({fps})."
-            )
-            return
-
-        min_frame_length = int(segment_length_threshold_in_s * fps)
-        min_frame_length = max(min_frame_length, 1)
 
         label_list = self.get_label_list()
 
@@ -390,12 +331,12 @@ class VideoPredictionMeta(models.Model):
             )
             return
 
-        logger.info(
-            f"Creating video segments for {self} (min length: {min_frame_length} frames)..."
-        )
-        self._create_segments_for_labels(
-            prediction_array=prediction_array,
-            label_list=label_list,
-            min_frame_length=min_frame_length,
-        )
-        logger.info(f"Finished creating video segments for {self}.")
+        for label, segments in zip(
+            label_list,
+            prediction_segments(
+                self.get_video(), prediction_array, segment_length_threshold_in_s
+            ),
+            strict=True,
+        ):
+            if segments:
+                self.create_video_segments_for_label(segments, label)

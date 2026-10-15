@@ -643,7 +643,7 @@ definition_of_done:
             fuer 11 geaenderte Pythondateien bestanden. scripts/check_django_startup_imports.py: startup-smoke
             ok, 7 root URL patterns. git diff --check bestanden."
         - kind: document
-          reference: docs/annotation_training_selection.yml
+          reference: docs/annotation_training_selection.md
       note:
         Gemeinsame Quellenfreigabe manual_or_confirmed_v1 fuer Trainingsbuilder, Trainingsframe-Vorbereitung
         und HTTP-Manifest umgesetzt. Direkte manuelle Annotationen sowie manuelle oder einzeln bestaetigte

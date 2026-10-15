@@ -16,7 +16,7 @@ files:
 - file: storage_streaming.py
   role: Protected streaming adapters.
 - file: frame_stream.py
-  role: Streaming frame decoder facade.
+  role: Timestamp-preserving streaming decoder and generation-bound JPEG reads.
 - file: profiling.py
   role: Opt-in function profiling.
 - file: encryption/__init__.py
@@ -32,6 +32,9 @@ entrypoints:
   purpose: Canonical file content hashing.
 dependencies:
   internal:
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/services/streaming
   - endoreg_db/config
   - endoreg_db/schemas
   external:

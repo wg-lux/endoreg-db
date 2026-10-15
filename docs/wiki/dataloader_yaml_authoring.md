@@ -85,7 +85,7 @@ reviewing the plan. Adoption retains equivalent rows and their primary keys;
 different fields or relationships remain conflicts. The default is `false`.
 
 The known seven-indication colorectal upgrade has a separate
-[one-time reconciliation command](reference_catalog_migration.yml). It creates the
+[one-time reconciliation command](reference_catalog_migration.md). It creates the
 missing intervention dependencies, updates the seven indication relationships, and
 verifies the complete catalogue in one transaction. An optional `--dry-run` previews
 the changes; no review file is required. Strict adoption and startup behavior remain unchanged.

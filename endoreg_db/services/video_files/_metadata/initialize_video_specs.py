@@ -5,9 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import cv2
 from django.db.models.fields.files import FieldFile
 
+from endoreg_db.services.video_storage.probes import (
+    probe_video_artifact,
+    probe_video_frame_pts,
+)
 from endoreg_db.utils.file_operations import _emit_file_operation_event
 from endoreg_db.utils.storage import ensure_local_file
 
@@ -26,6 +29,7 @@ class _ObservedVideoSpecs:
     width: int
     height: int
     frame_count: int
+    duration_seconds: float
 
 
 def _select_metadata_field_file(
@@ -62,19 +66,14 @@ def _read_video_specs(video_path: Path) -> _ObservedVideoSpecs:
         )
         raise FileNotFoundError(f"Staged file missing: {video_path}")
 
-    video_capture = cv2.VideoCapture(video_path.as_posix())
-    if not video_capture.isOpened():
-        video_capture.release()
-        raise RuntimeError(f"OpenCV could not open staged file {video_path}")
-    try:
-        return _ObservedVideoSpecs(
-            frames_per_second=float(video_capture.get(cv2.CAP_PROP_FPS)),
-            width=int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            height=int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-            frame_count=int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT)),
-        )
-    finally:
-        video_capture.release()
+    probe = probe_video_artifact(video_path)
+    return _ObservedVideoSpecs(
+        frames_per_second=probe.timeline.fps,
+        width=probe.width,
+        height=probe.height,
+        frame_count=len(probe_video_frame_pts(video_path)),
+        duration_seconds=probe.timeline.duration_seconds,
+    )
 
 
 def _set_missing_positive_value(
@@ -89,19 +88,6 @@ def _set_missing_positive_value(
         fields_to_update.append(field_name)
 
 
-def _set_missing_duration(
-    video: "VideoFile",
-    *,
-    fields_to_update: list[str],
-) -> None:
-    if video.duration is not None:
-        return
-    if video.frame_count is None or video.fps is None or video.fps <= 0:
-        return
-    video.duration = video.frame_count / video.fps
-    fields_to_update.append("duration")
-
-
 def _apply_observed_video_specs(
     video: "VideoFile",
     *,
@@ -114,6 +100,7 @@ def _apply_observed_video_specs(
         ("width", observed_specs.width),
         ("height", observed_specs.height),
         ("frame_count", observed_specs.frame_count),
+        ("duration", observed_specs.duration_seconds),
     ):
         _set_missing_positive_value(
             video,
@@ -121,7 +108,6 @@ def _apply_observed_video_specs(
             observed_value=observed_value,
             fields_to_update=fields_to_update,
         )
-    _set_missing_duration(video, fields_to_update=fields_to_update)
     if not fields_to_update:
         return
     _emit_file_operation_event(
@@ -139,7 +125,7 @@ def _initialize_video_specs(
     local_video_path: Path | None = None,
 ) -> bool:
     """
-    Initializes video specifications using OpenCV, aligned with storage-agnostic I/O patterns.
+    Initialize missing specifications from observed media and decoded frame counts.
     """
     source_context = _select_metadata_source(
         video,

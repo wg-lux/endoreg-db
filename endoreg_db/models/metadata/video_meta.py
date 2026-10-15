@@ -274,15 +274,17 @@ class VideoMeta(models.Model):
 
     @property
     def frame_count(self) -> int | None:
-        """Calculates frame count based on duration and FPS from FFMpegMeta."""
-        if (
-            self.ffmpeg_meta
-            and self.ffmpeg_meta.duration is not None
-            and self.ffmpeg_meta.fps is not None
-            and self.ffmpeg_meta.fps > 0
-        ):
-            return int(self.ffmpeg_meta.duration * self.ffmpeg_meta.fps)
-        return None
+        """Return the observed stream count; duration and rate are not frame identity."""
+        if self.ffmpeg_meta is None or self.ffmpeg_meta.raw_probe_data is None:
+            return None
+        payload = FfmpegProbeDataPayload.model_validate(self.ffmpeg_meta.raw_probe_data)
+        stream = next(iter(payload.video_streams), None)
+        if stream is None or stream.nb_frames in (None, "N/A"):
+            return None
+        count = int(stream.nb_frames)
+        if count <= 0:
+            raise ValueError("Observed video frame count must be positive.")
+        return count
 
 
 class FFMpegMeta(models.Model):

@@ -53,7 +53,7 @@ definition_of_done:
       Pyright-Lauf: 0 Fehler, 6 bestehende Warnungen. Integrationslane: 133 bestanden; abschließende Native-/Import-/Range-Lane:
       39 bestanden; jeweils 3 Warnungen. Zwei Rust-Unit-Tests bestanden mit explizitem libpython-Link.
       Ruff, cargo fmt und git diff --check bestanden. Native Keyring-/24-Byte-Schlüssel-Divergenz und
-      Headerparser-Unterschiede bleiben in docs/secret_rotation.yml dokumentiert. Keine Produktionsfreigabe.
+      Headerparser-Unterschiede bleiben in docs/secret_rotation.md dokumentiert. Keine Produktionsfreigabe.
 
       2026-09-24, zweite Secret-Runde: Gemeinsamer Rust-Headervertrag für Python-, Range- und Hashleser;
       native Einzel-/Batch-Hashleser erhalten einen validierten aktiven/auslaufenden Schlüssel-Snapshot
@@ -67,7 +67,7 @@ definition_of_done:
       übersprungen; daraus folgt kein PostgreSQL-Parallelitätsnachweis. Ruff, cargo fmt, git diff --check
       und Tracker-Validierung bestanden. Keine Produktionsdaten oder Deployments geändert. LXENC01 benötigt
       gegen den Verlust vollständiger letzter Chunks weiterhin einen unabhängigen Soll-Hash; Details in
-      docs/secret_rotation.yml. Produktionsabnahme und PostgreSQL-Nachweis bleiben erforderlich.'
+      docs/secret_rotation.md. Produktionsabnahme und PostgreSQL-Nachweis bleiben erforderlich.'
     assessed_by: codex-secret-reliability-20260924
     assessed_at: '2026-09-24T09:26:04.932090Z'
 - id: encrypted_at_rest
