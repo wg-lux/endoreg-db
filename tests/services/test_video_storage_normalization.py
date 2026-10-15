@@ -1030,6 +1030,8 @@ def test_probe_video_frame_timestamps_preserves_ffprobe_command_contract(
     assert observed_commands == [
         [
             "/usr/bin/ffprobe",
+            "-threads",
+            "4",
             "-v",
             "error",
             "-select_streams",

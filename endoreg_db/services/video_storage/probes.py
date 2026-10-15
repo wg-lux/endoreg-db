@@ -25,6 +25,9 @@ from endoreg_db.services.video_storage.contracts import (
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 
+# Bound decoder parallelism per probe; every frame is still decoded and checked.
+_FRAME_PROBE_DECODE_ARGS = ("-threads", "4")
+
 
 class _ProbeStream(BaseModel):
     model_config = ConfigDict(extra="ignore", strict=True)
@@ -346,6 +349,7 @@ def _build_frame_timestamp_probe_command(
 ) -> list[str]:
     command = [
         ffprobe,
+        *_FRAME_PROBE_DECODE_ARGS,
         "-v",
         "error",
         "-select_streams",
@@ -490,6 +494,7 @@ def _build_streaming_frame_timestamp_probe_command(
 ) -> list[str]:
     return [
         ffprobe,
+        *_FRAME_PROBE_DECODE_ARGS,
         "-v",
         "error",
         "-select_streams",

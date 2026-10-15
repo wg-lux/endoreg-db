@@ -24,6 +24,7 @@ from endoreg_db.services.video_storage.frame_provenance import (
     provenance_chain,
     read_encoder_provenance,
 )
+from endoreg_db.services.video_storage import probes
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.transcode_execution import (
     _run_ffmpeg_command,
@@ -32,6 +33,67 @@ from endoreg_db.utils.transcode_execution import (
     get_stream_info as real_stream_info,
 )
 from endoreg_db.utils.video.executable_discovery import resolve_ffmpeg_executable
+
+
+@pytest.mark.no_db
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("irregular", [False, True])
+@pytest.mark.parametrize("origin", [0, 17])
+def test_parallel_timestamp_probes_preserve_complete_decoded_sequence(
+    tmp_path: Path, irregular: bool, origin: int
+) -> None:
+    ffmpeg = resolve_ffmpeg_executable()
+    ffprobe = ffmpeg_wrapper.resolve_ffprobe_executable()
+    assert ffmpeg is not None and ffprobe is not None
+    source = tmp_path / "timestamps.mp4"
+    cadence = "N+floor(N/3)" if irregular else "N"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=60:duration=1",
+            "-vf",
+            f"setpts=({cadence})/60/TB+{origin}/TB",
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base",
+            "demux",
+            "-c:v",
+            "libx264",
+            "-bf",
+            "3",
+            "-an",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    for build_command in (
+        probes._build_frame_timestamp_probe_command,
+        probes._build_streaming_frame_timestamp_probe_command,
+    ):
+        parallel = build_command(ffprobe, source)
+        serial = parallel.copy()
+        serial[serial.index("-threads") + 1] = "1"
+        expected = subprocess.run(
+            serial, check=True, capture_output=True, text=True, timeout=30
+        ).stdout
+        actual = subprocess.run(
+            parallel, check=True, capture_output=True, text=True, timeout=30
+        ).stdout
+        assert actual == expected
+    frames = probes.probe_video_frame_timestamps(source, require_original_pts=True)
+    assert len(frames) == 60
+    assert frames[0].presentation_time_seconds == origin
+    assert all(
+        before.presentation_timestamp < after.presentation_timestamp
+        for before, after in zip(frames, frames[1:])
+    )
 
 
 def timeline(digest: str, ticks: list[int]) -> VideoFrameTimeline:

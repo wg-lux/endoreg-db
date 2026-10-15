@@ -22,6 +22,43 @@ source_documents:
   disposition: reference
   note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
 definition_of_done:
+- id: bounded_timestamp_probe_decoding
+  category: operations
+  title: Vollständige Zeitstempelprüfungen nutzen begrenzte Decoderparallelität
+  acceptance:
+  - Beide vollständigen ffprobe-Zeitstempelpfade verwenden höchstens vier Decoderthreads pro Prozess;
+    keine unbegrenzte automatische Threadzahl und keine Reduktion der geprüften Frames.
+  - Reale Medien mit konstanter und variabler Bildrate, verschobenem Zeitursprung und bidirektional prädizierten
+    Frames liefern dieselben vollständigen Zeitstempel wie ein einzelner Decoderthread.
+  - Ungültige Zeitstempel und Decoderfehler bleiben Fehler; Herkunfts-, Hash-, Lease- und Publikationsprüfungen
+    bleiben unverändert. Hostmessungen unterscheiden begrenzte Stichproben von vollständigen Importläufen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor den Probe-, Herkunfts-, HLS- und Importregressionen ausführen; bereinigte
+      gc-10-Messungen in feature-tracking/reports/gc10_import_timing_20261015.yml prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: feature-tracking/reports/gc10_import_timing_20261015.yml
+    - kind: test
+      reference: '2026-10-15: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_frame_provenance.py tests/services/test_video_storage_normalization.py tests/services/test_canonical_video_timelines.py
+        tests/services/test_hls_media.py tests/services/test_hls_workload_timing.py tests/import_files/test_video_import_normalization.py
+        -q --tb=short: 231 passed, 1 plugin warning, no skips, 89.35s; existing temporary-directory cleanup
+        warnings.'
+    - kind: command
+      reference: '2026-10-15: Full .devenv/state/venv/bin/pyright: 0 errors, 20 warnings; Ruff, git diff
+        --check, 65 structure manifests and 37 feature definitions passed. Direct pytest initially failed
+        before collection because libpq was unavailable outside devenv; devenv run passed.'
+    note: Lokale Implementierung und Regressionen bestanden. Vier begrenzte Decoderthreads reduzieren
+      die gemessene gc-10-Probezeit um rund 62 Prozent bei identischen 1800 Frame-Datensätzen. Keine Publikations-,
+      Validierungs-, Lease- oder Anonymisierungsänderung. Kein Deployment; vollständiger repräsentativer
+      Importlauf unter paralleler Last bleibt für die operative Freigabe ausstehend.
+    assessed_by: codex-import-8020-20261015
+    assessed_at: '2026-10-15T08:53:23.149410Z'
 - id: media_worker_process_isolation
   category: operations
   title: Media workers retain bounded process isolation and executable readiness
